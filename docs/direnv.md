@@ -7,11 +7,12 @@ can sometimes conflict with each other.
 
 ::: warning
 The official stance is you should not use direnv with mise. Issues arising
-from incompatibilities are not considered bugs. If mise has feature gaps
-that direnv resolves, please open an issue so we can close those gaps.
-While that's the official stance, the reality is mise and direnv usually
-will work together just fine despite this. It's only more advanced use-cases
-where problems arise.
+from incompatibilities are not considered bugs and PRs to improve direnv
+compatibility will not be accepted.
+While that's the official stance, the reality is mise and direnv can
+coexist for simple cases like setting unrelated environment variables.
+Anything involving PATH — which is most of what people use both tools
+for — is where problems arise.
 :::
 
 If you have an issue, it's likely to do with the ordering of PATH. This means it would
@@ -28,8 +29,7 @@ binaries to PATH. In these cases, mise will not interfere with direnv.
 ## mise inside of direnv (`use mise` in `.envrc`)
 
 ::: warning
-`use mise` is deprecated and no longer supported. If `mise activate` does
-not fit your use-case please post an issue.
+`use mise` is deprecated and no longer supported.
 :::
 
 If you do encounter issues with `mise activate`, or just want to use direnv in an alternate way,
@@ -75,8 +75,6 @@ If you continue to struggle, you can also try using the [shims method](dev-tools
 
 ### Do you need direnv?
 
-While making mise compatible with direnv is, and will always be a major goal of this project, I also
-want mise to be capable of replacing direnv if needed. This is why mise includes support for
-managing
-env vars and [virtualenv](lang/python.md#automatic-virtualenv-activation)
+mise is capable of replacing direnv for most use-cases. This is why mise includes support for
+managing env vars and [virtualenv](lang/python.md#automatic-virtualenv-activation)
 for python using `mise.toml`.

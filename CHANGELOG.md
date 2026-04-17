@@ -1,5 +1,507 @@
 # Changelog
 
+## [2026.4.16](https://github.com/jdx/mise/compare/v2026.4.15..v2026.4.16) - 2026-04-17
+
+### 🚀 Features
+
+- **(registry)** add .perl-version support for perl by @ergofriend in [#9102](https://github.com/jdx/mise/pull/9102)
+- **(task)** add Tera template support for inline table run tasks by @iamkroot in [#9079](https://github.com/jdx/mise/pull/9079)
+
+### 🐛 Bug Fixes
+
+- **(env)** use runtime symlink paths for fuzzy versions by @jdx in [#9143](https://github.com/jdx/mise/pull/9143)
+- **(github)** use full token resolution chain for attestation verification by @jdx in [#9154](https://github.com/jdx/mise/pull/9154)
+- **(go)** Remove install-time version override for subpath packages by @c22 in [#9135](https://github.com/jdx/mise/pull/9135)
+- **(npm)** respect install_before when resolving dist-tag versions by @webkaz in [#9145](https://github.com/jdx/mise/pull/9145)
+- **(self-update)** ensure subcommand exists by @salim-b in [#9144](https://github.com/jdx/mise/pull/9144)
+- **(task)** show available tasks when run target missing by @jdx in [#9141](https://github.com/jdx/mise/pull/9141)
+- **(task)** forward task help args and add raw_args by @jdx in [#9118](https://github.com/jdx/mise/pull/9118)
+- **(task)** remove red/yellow from task prefix colors by @lechuckcaptain in [#8782](https://github.com/jdx/mise/pull/8782)
+- **(task)** merge TOML task block into same-named file task and surface resolved dir by @jdx in [#9147](https://github.com/jdx/mise/pull/9147)
+- **(toolset)** round-trip serialized tool options by @atharvasingh7007 in [#9124](https://github.com/jdx/mise/pull/9124)
+- **(vfox)** fallback to absolute bin path if env_keys not set by @80avin in [#9151](https://github.com/jdx/mise/pull/9151)
+
+### 📚 Documentation
+
+- make agent guide wording generic by @jdx in [#9142](https://github.com/jdx/mise/pull/9142)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:deb docker digest to e019cb9 by @renovate[bot] in [#9160](https://github.com/jdx/mise/pull/9160)
+- update ghcr.io/jdx/mise:copr docker digest to 8d25608 by @renovate[bot] in [#9159](https://github.com/jdx/mise/pull/9159)
+- update ghcr.io/jdx/mise:rpm docker digest to 22e52da by @renovate[bot] in [#9161](https://github.com/jdx/mise/pull/9161)
+- update ghcr.io/jdx/mise:alpine docker digest to a3da97c by @renovate[bot] in [#9158](https://github.com/jdx/mise/pull/9158)
+- update rust docker digest to 4a2ef38 by @renovate[bot] in [#9162](https://github.com/jdx/mise/pull/9162)
+- update ubuntu:24.04 docker digest to c4a8d55 by @renovate[bot] in [#9164](https://github.com/jdx/mise/pull/9164)
+- update rust crate aws-lc-rs to v1.16.3 by @renovate[bot] in [#9165](https://github.com/jdx/mise/pull/9165)
+- update ubuntu docker tag to resolute-20260413 by @renovate[bot] in [#9169](https://github.com/jdx/mise/pull/9169)
+- update rust crate clap to v4.6.1 by @renovate[bot] in [#9166](https://github.com/jdx/mise/pull/9166)
+- update taiki-e/install-action digest to a2352fc by @renovate[bot] in [#9163](https://github.com/jdx/mise/pull/9163)
+- update rust crate ctor to 0.10 by @renovate[bot] in [#9170](https://github.com/jdx/mise/pull/9170)
+- update rust crate tokio to v1.52.1 by @renovate[bot] in [#9167](https://github.com/jdx/mise/pull/9167)
+- update rust crate rmcp-macros to 0.17 by @renovate[bot] in [#9173](https://github.com/jdx/mise/pull/9173)
+- update rust crate signal-hook to 0.4 by @renovate[bot] in [#9177](https://github.com/jdx/mise/pull/9177)
+- update rust crate zipsign-api to 0.2 by @renovate[bot] in [#9180](https://github.com/jdx/mise/pull/9180)
+- update rust crate toml_edit to 0.25 by @renovate[bot] in [#9179](https://github.com/jdx/mise/pull/9179)
+- update rust crate strum to 0.28 by @renovate[bot] in [#9178](https://github.com/jdx/mise/pull/9178)
+
+### 📦 Registry
+
+- add ibmcloud by @dnwe in [#9139](https://github.com/jdx/mise/pull/9139)
+- add rush by @jdx in [#9146](https://github.com/jdx/mise/pull/9146)
+
+### New Contributors
+
+- @80avin made their first contribution in [#9151](https://github.com/jdx/mise/pull/9151)
+- @atharvasingh7007 made their first contribution in [#9124](https://github.com/jdx/mise/pull/9124)
+- @lechuckcaptain made their first contribution in [#8782](https://github.com/jdx/mise/pull/8782)
+- @ergofriend made their first contribution in [#9102](https://github.com/jdx/mise/pull/9102)
+- @dnwe made their first contribution in [#9139](https://github.com/jdx/mise/pull/9139)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`controlplaneio-fluxcd/flux-operator`](https://github.com/controlplaneio-fluxcd/flux-operator)
+- [`dependency-check/DependencyCheck`](https://github.com/dependency-check/DependencyCheck)
+- [`kiro.dev/kiro-cli`](https://github.com/kiro.dev/kiro-cli)
+
+#### Updated Packages (2)
+
+- [`jreleaser/jreleaser/standalone`](https://github.com/jreleaser/jreleaser/standalone)
+- [`sigstore/cosign`](https://github.com/sigstore/cosign)
+
+## [2026.4.15](https://github.com/jdx/mise/compare/v2026.4.14..v2026.4.15) - 2026-04-16
+
+### 🐛 Bug Fixes
+
+- **(env)** use OS path separator for path-list env vars on Windows by @richardthe3rd in [#9058](https://github.com/jdx/mise/pull/9058)
+- check all github token sources in 403 rate limit warning by @jdx in [#9121](https://github.com/jdx/mise/pull/9121)
+
+### 📚 Documentation
+
+- add settings section for java by @roele in [#9126](https://github.com/jdx/mise/pull/9126)
+
+### 📦 Registry
+
+- added podlet by @tony-sol in [#9134](https://github.com/jdx/mise/pull/9134)
+- add maturin by @Bing-su in [#9113](https://github.com/jdx/mise/pull/9113)
+
+### New Contributors
+
+- @Bing-su made their first contribution in [#9113](https://github.com/jdx/mise/pull/9113)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (2)
+
+- [`fwdcloudsec/granted`](https://github.com/fwdcloudsec/granted)
+- [`watchexec/watchexec`](https://github.com/watchexec/watchexec)
+
+## [2026.4.14](https://github.com/jdx/mise/compare/v2026.4.13..v2026.4.14) - 2026-04-15
+
+### Chore
+
+- bump sigstore-verification by @jdx in [#9128](https://github.com/jdx/mise/pull/9128)
+
+## [2026.4.13](https://github.com/jdx/mise/compare/v2026.4.12..v2026.4.13) - 2026-04-15
+
+### 🐛 Bug Fixes
+
+- **(go)** honor install_before for module versions by @mariusvniekerk in [#9097](https://github.com/jdx/mise/pull/9097)
+- **(vfox-plugin)** support Git URL with commit hash for mise.toml by @Oyami-Srk in [#9099](https://github.com/jdx/mise/pull/9099)
+- `MISE_FETCH_REMOTE_VERSIONS_CACHE` not respected by @mcncl in [#9096](https://github.com/jdx/mise/pull/9096)
+
+### 📦️ Dependency Updates
+
+- unblock cargo-deny advisories check by @jdx in [#9112](https://github.com/jdx/mise/pull/9112)
+
+### New Contributors
+
+- @mariusvniekerk made their first contribution in [#9097](https://github.com/jdx/mise/pull/9097)
+- @mcncl made their first contribution in [#9096](https://github.com/jdx/mise/pull/9096)
+- @Oyami-Srk made their first contribution in [#9099](https://github.com/jdx/mise/pull/9099)
+
+## [2026.4.12](https://github.com/jdx/mise/compare/v2026.4.11..v2026.4.12) - 2026-04-15
+
+### 🚀 Features
+
+- **(npm)** use --min-release-age for npm 11.10.0+ supply chain protection by @webkaz in [#9072](https://github.com/jdx/mise/pull/9072)
+- **(registry)** add openfga by @mnm364 in [#9084](https://github.com/jdx/mise/pull/9084)
+- **(task)** allow to set confirmation default by @roele in [#9089](https://github.com/jdx/mise/pull/9089)
+- support os/arch compound syntax in tool os filtering by @RobertDeRose in [#9088](https://github.com/jdx/mise/pull/9088)
+
+### 🐛 Bug Fixes
+
+- **(activate)** export __MISE_EXE and resolve bare ARGV0 to absolute path by @fru1tworld in [#9081](https://github.com/jdx/mise/pull/9081)
+- **(install)** support aliased installs sharing a backend by @jdx in [#9093](https://github.com/jdx/mise/pull/9093)
+- **(shim)** use which_no_shims when resolving mise binary in reshim and doctor by @kevinswiber in [#9071](https://github.com/jdx/mise/pull/9071)
+- filter empty segments in colon-separated env var parsing by @baby-joel in [#9076](https://github.com/jdx/mise/pull/9076)
+
+### 📚 Documentation
+
+- fix wrong file reference to forgejo backend implemenation by @roele in [#9090](https://github.com/jdx/mise/pull/9090)
+- fix cli token command for token resolution by @roele in [#9077](https://github.com/jdx/mise/pull/9077)
+
+### 📦 Registry
+
+- add trzsz-go ([aqua:trzsz/trzsz-go](https://github.com/trzsz/trzsz-go)) by @ZeroAurora in [#9083](https://github.com/jdx/mise/pull/9083)
+- add copilot ([aqua:github/copilot-cli](https://github.com/github/copilot-cli)) by @risu729 in [#9082](https://github.com/jdx/mise/pull/9082)
+
+### Chore
+
+- add AGENTS.md symlink by @jdx in [#9094](https://github.com/jdx/mise/pull/9094)
+
+### New Contributors
+
+- @kevinswiber made their first contribution in [#9071](https://github.com/jdx/mise/pull/9071)
+- @webkaz made their first contribution in [#9072](https://github.com/jdx/mise/pull/9072)
+- @RobertDeRose made their first contribution in [#9088](https://github.com/jdx/mise/pull/9088)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (7)
+
+- [`IBM-Cloud/ibm-cloud-cli-release`](https://github.com/IBM-Cloud/ibm-cloud-cli-release)
+- [`max-sixty/worktrunk`](https://github.com/max-sixty/worktrunk)
+- [`micelio.dev/hif`](https://github.com/micelio.dev/hif)
+- [`pgplex/pgschema`](https://github.com/pgplex/pgschema)
+- [`rose-pine/rose-pine-bloom`](https://github.com/rose-pine/rose-pine-bloom)
+- [`santosr2/TerraTidy`](https://github.com/santosr2/TerraTidy)
+- [`trzsz/trzsz-go`](https://github.com/trzsz/trzsz-go)
+
+#### Updated Packages (3)
+
+- [`mvdan/sh`](https://github.com/mvdan/sh)
+- [`rvben/rumdl`](https://github.com/rvben/rumdl)
+- [`temporalio/temporal`](https://github.com/temporalio/temporal)
+
+## [2026.4.11](https://github.com/jdx/mise/compare/v2026.4.10..v2026.4.11) - 2026-04-13
+
+### 🐛 Bug Fixes
+
+- **(docs)** typo in Go Backend by @dolmen in [#9065](https://github.com/jdx/mise/pull/9065)
+- **(task)** render dependency templates even when no args are passed by @MatthiasGrandl in [#9062](https://github.com/jdx/mise/pull/9062)
+- support npm semver ranges in devEngines by @risu729 in [#9061](https://github.com/jdx/mise/pull/9061)
+
+### New Contributors
+
+- @dolmen made their first contribution in [#9065](https://github.com/jdx/mise/pull/9065)
+- @MatthiasGrandl made their first contribution in [#9062](https://github.com/jdx/mise/pull/9062)
+
+## [2026.4.10](https://github.com/jdx/mise/compare/v2026.4.9..v2026.4.10) - 2026-04-12
+
+### 🐛 Bug Fixes
+
+- ignore MISE_TOOL_VERSION in nested postinstall runs by @risu729 in [#9050](https://github.com/jdx/mise/pull/9050)
+
+## [2026.4.9](https://github.com/jdx/mise/compare/v2026.4.8..v2026.4.9) - 2026-04-11
+
+### 🐛 Bug Fixes
+
+- **(docs)** upgrade esbuild to 0.28.0 with es2022 build target by @jdx in [#9047](https://github.com/jdx/mise/pull/9047)
+- **(env)** skip tools=true module hooks in dependency_env by @jdx in [#9011](https://github.com/jdx/mise/pull/9011)
+- **(lockfile)** resolve SLSA provenance URLs deterministically for all platforms by @cameronbrill in [#8982](https://github.com/jdx/mise/pull/8982)
+- **(registry)** test of docuum in registry by @jylenhof in [#8996](https://github.com/jdx/mise/pull/8996)
+- **(release)** publish extracted mise.exe alongside Windows zip by @zeitlinger in [#8997](https://github.com/jdx/mise/pull/8997)
+- **(schema)** add missing config fields by @risu729 in [#9044](https://github.com/jdx/mise/pull/9044)
+- **(task)** support sandbox fields in task templates by @risu729 in [#9046](https://github.com/jdx/mise/pull/9046)
+- **(tasks)** respect env precedence for task config by @risu729 in [#9039](https://github.com/jdx/mise/pull/9039)
+- prevent implicit enabling of `self_update` when rustls features are enabled by @salim-b in [#9040](https://github.com/jdx/mise/pull/9040)
+- allow installing bun and others when downloads folder is on a different mount by @bgeron in [#9032](https://github.com/jdx/mise/pull/9032)
+
+### 📚 Documentation
+
+- discourage direnv compatibility PRs and remove issue suggestions by @jdx in [ca78346](https://github.com/jdx/mise/commit/ca7834674fe5a926f462e9c65bb748f8cc0f2ccc)
+- tighten direnv compatibility language by @jdx in [ab140c8](https://github.com/jdx/mise/commit/ab140c8c988697a7b206b6603684b16a29cd2e05)
+- add Tera tip for unsupported version files by @risu729 in [#9048](https://github.com/jdx/mise/pull/9048)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:deb docker digest to 49fa8a4 by @renovate[bot] in [#8999](https://github.com/jdx/mise/pull/8999)
+- update ghcr.io/jdx/mise:copr docker digest to 61ba7b6 by @renovate[bot] in [#8998](https://github.com/jdx/mise/pull/8998)
+- update ghcr.io/jdx/mise:copr docker digest to fa351ff by @renovate[bot] in [#9002](https://github.com/jdx/mise/pull/9002)
+- update ghcr.io/jdx/mise:alpine docker digest to f3bb475 by @renovate[bot] in [#9001](https://github.com/jdx/mise/pull/9001)
+- update ghcr.io/jdx/mise:rpm docker digest to d45af2d by @renovate[bot] in [#9005](https://github.com/jdx/mise/pull/9005)
+- update ghcr.io/jdx/mise:deb docker digest to d7463ac by @renovate[bot] in [#9004](https://github.com/jdx/mise/pull/9004)
+- update jdx/mise-action digest to 5228313 by @renovate[bot] in [#9007](https://github.com/jdx/mise/pull/9007)
+- update rust docker digest to e8e2bb5 by @renovate[bot] in [#9008](https://github.com/jdx/mise/pull/9008)
+- update taiki-e/install-action digest to 97a5807 by @renovate[bot] in [#9010](https://github.com/jdx/mise/pull/9010)
+- update autofix-ci/action action to v1.3.3 by @renovate[bot] in [#9015](https://github.com/jdx/mise/pull/9015)
+- update ubuntu:24.04 docker digest to 84e77de by @renovate[bot] in [#9012](https://github.com/jdx/mise/pull/9012)
+- update actions/checkout action to v4.3.1 by @renovate[bot] in [#9014](https://github.com/jdx/mise/pull/9014)
+- update ubuntu:26.04 docker digest to cc925e5 by @renovate[bot] in [#9013](https://github.com/jdx/mise/pull/9013)
+- update rust crate tokio to v1.51.1 by @renovate[bot] in [#9018](https://github.com/jdx/mise/pull/9018)
+- update rust crate zip to v8.5.1 by @renovate[bot] in [#9019](https://github.com/jdx/mise/pull/9019)
+- update rust crate ctor to 0.9 by @renovate[bot] in [#9024](https://github.com/jdx/mise/pull/9024)
+- update ubuntu docker tag to resolute-20260404 by @renovate[bot] in [#9020](https://github.com/jdx/mise/pull/9020)
+- update dependency vitepress-plugin-tabs to ^0.8.0 by @renovate[bot] in [#9023](https://github.com/jdx/mise/pull/9023)
+- update rust crate indexmap to v2.14.0 by @renovate[bot] in [#9025](https://github.com/jdx/mise/pull/9025)
+- update rust crate nix to 0.31 by @renovate[bot] in [#9030](https://github.com/jdx/mise/pull/9030)
+- update taiki-e/install-action digest to 7a4939c by @renovate[bot] in [#9027](https://github.com/jdx/mise/pull/9027)
+- update dependency esbuild to v0.28.0 by @renovate[bot] in [#9022](https://github.com/jdx/mise/pull/9022)
+- update rust crate rand to 0.10 by @renovate[bot] in [#9031](https://github.com/jdx/mise/pull/9031)
+- update rust crate digest to 0.11.0 by @renovate[bot] in [#9028](https://github.com/jdx/mise/pull/9028)
+- update rust crate confique to 0.4 by @renovate[bot] in [#9026](https://github.com/jdx/mise/pull/9026)
+- update rust crate rattler to 0.40 by @renovate[bot] in [#9034](https://github.com/jdx/mise/pull/9034)
+- lock file maintenance by @renovate[bot] in [#8416](https://github.com/jdx/mise/pull/8416)
+- disable renovate for aws-config/aws-sdk-* crates by @jdx in [#9052](https://github.com/jdx/mise/pull/9052)
+- update swatinem/rust-cache digest to e18b497 by @renovate[bot] in [#9009](https://github.com/jdx/mise/pull/9009)
+
+### 📦 Registry
+
+- remove broken tool tests by @jdx in [#9017](https://github.com/jdx/mise/pull/9017)
+- update granted aqua backend repo by @risu729 in [#9033](https://github.com/jdx/mise/pull/9033)
+- fix atlas-community test expected output by @jdx in [#9054](https://github.com/jdx/mise/pull/9054)
+
+### Chore
+
+- use deprecated_at! macro for ubi backend deprecation by @jdx in [#9049](https://github.com/jdx/mise/pull/9049)
+
+### Security
+
+- **(ci)** run test-tool inside Docker container by @jdx in [#9055](https://github.com/jdx/mise/pull/9055)
+- **(ci)** avoid exposing MISE_GH_TOKEN to test-tool scripts by @jdx in [#9053](https://github.com/jdx/mise/pull/9053)
+
+### New Contributors
+
+- @bgeron made their first contribution in [#9032](https://github.com/jdx/mise/pull/9032)
+- @salim-b made their first contribution in [#9040](https://github.com/jdx/mise/pull/9040)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (2)
+
+- [`cloudnative-pg/cloudnative-pg/kubectl-cnpg`](https://github.com/cloudnative-pg/cloudnative-pg/kubectl-cnpg)
+- [`gleam-lang/gleam`](https://github.com/gleam-lang/gleam)
+
+## [2026.4.8](https://github.com/jdx/mise/compare/v2026.4.7..v2026.4.8) - 2026-04-10
+
+### 🚀 Features
+
+- **(config)** add lockfile_platforms setting to restrict lockfile platforms by @cameronbrill in [#8966](https://github.com/jdx/mise/pull/8966)
+- **(sandbox)** support wildcard patterns in allow_env by @jdx in [#8974](https://github.com/jdx/mise/pull/8974)
+- bump usage-lib v2 → v3 to render examples in task --help by @baby-joel in [#8890](https://github.com/jdx/mise/pull/8890)
+
+### 🐛 Bug Fixes
+
+- **(activate)** handle empty __MISE_FLAGS array with set -u on bash 3.2 by @jdx in [#8988](https://github.com/jdx/mise/pull/8988)
+- **(env)** add trace logging for module hook PATH diagnostics by @jdx in [#8981](https://github.com/jdx/mise/pull/8981)
+- **(go)** Query module proxy directly for version resolution by @c22 in [#8968](https://github.com/jdx/mise/pull/8968)
+- **(install)** render tera templates in tool postinstall hooks by @jdx in [#8978](https://github.com/jdx/mise/pull/8978)
+- **(install)** add missing env vars to tool postinstall hooks by @jdx in [#8977](https://github.com/jdx/mise/pull/8977)
+- **(task)** prevent hang when skipped task has dependents by @jdx in [#8937](https://github.com/jdx/mise/pull/8937)
+- **(task)** invalidate dependent task sources when dependency runs by @jdx in [#8975](https://github.com/jdx/mise/pull/8975)
+- **(task)** prevent deadlock when MISE_JOBS=1 with sub-task references by @jdx in [#8976](https://github.com/jdx/mise/pull/8976)
+- **(task)** fetch remote task files before parsing usage specs by @jdx in [#8979](https://github.com/jdx/mise/pull/8979)
+- **(task)** prevent panic when running parallel sub-tasks with replacing output by @jdx in [#8986](https://github.com/jdx/mise/pull/8986)
+- **(upgrade)** update lockfile and config when upgrading to specific version by @jdx in [#8983](https://github.com/jdx/mise/pull/8983)
+
+### 📚 Documentation
+
+- **(node)** remove "recommended for teams" from pin example by @jdx in [b334363](https://github.com/jdx/mise/commit/b3343637fb9eba60329c68a8e8662f213b66a780)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 17a29f2 by @renovate[bot] in [#8995](https://github.com/jdx/mise/pull/8995)
+- update docker/dockerfile:1 docker digest to 2780b5c by @renovate[bot] in [#8994](https://github.com/jdx/mise/pull/8994)
+
+### New Contributors
+
+- @baby-joel made their first contribution in [#8890](https://github.com/jdx/mise/pull/8890)
+- @cameronbrill made their first contribution in [#8966](https://github.com/jdx/mise/pull/8966)
+- @c22 made their first contribution in [#8968](https://github.com/jdx/mise/pull/8968)
+
+## [2026.4.7](https://github.com/jdx/mise/compare/v2026.4.6..v2026.4.7) - 2026-04-09
+
+### 🐛 Bug Fixes
+
+- **(python)** use native ARM64 precompiled Python on Windows ARM by @JohanLorenzo in [#8961](https://github.com/jdx/mise/pull/8961)
+
+### New Contributors
+
+- @JohanLorenzo made their first contribution in [#8961](https://github.com/jdx/mise/pull/8961)
+
+## [2026.4.6](https://github.com/jdx/mise/compare/v2026.4.5..v2026.4.6) - 2026-04-07
+
+### 🚀 Features
+
+- **(config)** Add Tera template support to miserc.toml by @richardthe3rd in [#8867](https://github.com/jdx/mise/pull/8867)
+
+### 🐛 Bug Fixes
+
+- **(env)** include tools-only redactions in `mise env --redacted` by @jakedgy in [#8956](https://github.com/jdx/mise/pull/8956)
+- **(env)** pass dependency env to vfox backend plugin hooks by @cprecioso in [#8952](https://github.com/jdx/mise/pull/8952)
+- **(shim)** fix race condition when removing in make_shim, when multiple plugins provide the same shim by @brander-john in [#8947](https://github.com/jdx/mise/pull/8947)
+- **(spm)** derive API URL from host for self-hosted instances by @ThomasDutartre in [#8955](https://github.com/jdx/mise/pull/8955)
+- **(task)** resolve env vars in usage tera templates when flags are provided by @jdx in [#8957](https://github.com/jdx/mise/pull/8957)
+
+### 📚 Documentation
+
+- **(python)** clarify attestation settings must be under [settings] in mise.toml by @fru1tworld in [#8939](https://github.com/jdx/mise/pull/8939)
+
+### 📦 Registry
+
+- added sing-box by @tony-sol in [#8944](https://github.com/jdx/mise/pull/8944)
+
+### Chore
+
+- **(ci)** remove auto-draft PR workflow by @jdx in [#8945](https://github.com/jdx/mise/pull/8945)
+
+### New Contributors
+
+- @ThomasDutartre made their first contribution in [#8955](https://github.com/jdx/mise/pull/8955)
+- @jakedgy made their first contribution in [#8956](https://github.com/jdx/mise/pull/8956)
+- @brander-john made their first contribution in [#8947](https://github.com/jdx/mise/pull/8947)
+- @fru1tworld made their first contribution in [#8939](https://github.com/jdx/mise/pull/8939)
+
+## [2026.4.5](https://github.com/jdx/mise/compare/v2026.4.4..v2026.4.5) - 2026-04-06
+
+### 🚀 Features
+
+- **(config)** report env files in config ls and doctor output by @SamSoldatenko in [#8853](https://github.com/jdx/mise/pull/8853)
+- add support for token sources in GitLab and Forgejo by @roele in [#8868](https://github.com/jdx/mise/pull/8868)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** prevent double .exe extension when Windows override URL already ends in .exe by @yusei-wy in [#8863](https://github.com/jdx/mise/pull/8863)
+- **(bash)** avoid duplicate trust warning after cd by @timothysparg in [#8920](https://github.com/jdx/mise/pull/8920)
+- **(env)** prevent config root injection into PATH via _.source by @jdx in [#8936](https://github.com/jdx/mise/pull/8936)
+- **(install)** suppress spurious dependency warning when tool is configured by @jdx in [#8923](https://github.com/jdx/mise/pull/8923)
+
+### 📚 Documentation
+
+- **(node)** add section on pinning npm version by @jdx in [#8925](https://github.com/jdx/mise/pull/8925)
+- add Windows default paths and mise.toml examples alongside CLI commands by @jdx in [#8926](https://github.com/jdx/mise/pull/8926)
+- clarify common sources of confusion from GitHub discussions by @jdx in [#8927](https://github.com/jdx/mise/pull/8927)
+- clarify Python venv mechanisms, JAVA_HOME behavior, and activation performance by @jdx in [#8928](https://github.com/jdx/mise/pull/8928)
+- add FAQ and troubleshooting entries based on common Discord questions by @jdx in [#8930](https://github.com/jdx/mise/pull/8930)
+
+### New Contributors
+
+- @SamSoldatenko made their first contribution in [#8853](https://github.com/jdx/mise/pull/8853)
+- @yusei-wy made their first contribution in [#8863](https://github.com/jdx/mise/pull/8863)
+
+## [2026.4.4](https://github.com/jdx/mise/compare/v2026.4.3..v2026.4.4) - 2026-04-05
+
+### 🚀 Features
+
+- **(ci)** auto-convert external PRs to draft mode by @jdx in [#8896](https://github.com/jdx/mise/pull/8896)
+- **(deps)** add `depends` field for user-specified tool dependencies by @cprecioso in [#8776](https://github.com/jdx/mise/pull/8776)
+- **(dotnet)** support runtime-only installs by @fragon10 in [#8524](https://github.com/jdx/mise/pull/8524)
+- **(npm)** apply install_before to transitive dependencies by @risu729 in [#8851](https://github.com/jdx/mise/pull/8851)
+- **(task)** allow passing arguments to task dependencies via {{usage.*}} templates by @jdx in [#8893](https://github.com/jdx/mise/pull/8893)
+- add options field to BackendListVersionsCtx by @esteve in [#8875](https://github.com/jdx/mise/pull/8875)
+
+### 🐛 Bug Fixes
+
+- **(backend)** filter PEP 440 .dev versions in fuzzy version matching by @richardthe3rd in [#8849](https://github.com/jdx/mise/pull/8849)
+- **(ci)** update COPR BuildRequires rust version to match MSRV 1.88 by @jdx in [#8911](https://github.com/jdx/mise/pull/8911)
+- **(ci)** add Ruby build dependencies to e2e Docker image by @jdx in [#8910](https://github.com/jdx/mise/pull/8910)
+- **(ci)** add missing build dependencies to e2e Docker image by @jdx in [#8912](https://github.com/jdx/mise/pull/8912)
+- **(ci)** add missing build dependencies to e2e Docker image by @jdx in [#8914](https://github.com/jdx/mise/pull/8914)
+- **(ci)** use Node 24 LTS for corepack e2e test by @jdx in [#8915](https://github.com/jdx/mise/pull/8915)
+- **(ci)** add libxml2 and pkg-config to e2e Docker image by @jdx in [#8917](https://github.com/jdx/mise/pull/8917)
+- **(ci)** add libxml2-dev to e2e image and disable Swift SPM tests by @jdx in [#8918](https://github.com/jdx/mise/pull/8918)
+- **(docs)** use sans-serif font for badges by @jdx in [#8887](https://github.com/jdx/mise/pull/8887)
+- **(env)** parse --env=VALUE and -E=VALUE flag forms correctly by @jdx in [#8889](https://github.com/jdx/mise/pull/8889)
+- **(exec)** use i64::from() for seccomp syscall numbers to survive autofix by @jdx in [#8882](https://github.com/jdx/mise/pull/8882)
+- **(github)** preserve tool options like filter_bins when version specified via CLI by @jdx in [#8888](https://github.com/jdx/mise/pull/8888)
+- **(github)** use alias-specific options when tool_alias has its own config by @jdx in [#8892](https://github.com/jdx/mise/pull/8892)
+- **(install)** add locked_verify_provenance setting and detect github attestations at lock time by @jdx in [#8901](https://github.com/jdx/mise/pull/8901)
+- **(lock)** prune stale version entries during filtered `mise lock <tool>` runs by @altendky in [#8599](https://github.com/jdx/mise/pull/8599)
+- **(python)** use lockfile URL for precompiled installs by @hehaoqian in [#8750](https://github.com/jdx/mise/pull/8750)
+- **(release)** verify all build targets succeed before releasing by @jdx in [#8886](https://github.com/jdx/mise/pull/8886)
+- **(ruby)** support build revisions for precompiled binaries in mise.lock by @jdx in [#8900](https://github.com/jdx/mise/pull/8900)
+- **(swift)** fall back to Ubuntu 24.04 for unsupported Ubuntu versions by @jdx in [#8916](https://github.com/jdx/mise/pull/8916)
+- **(zsh)** avoid duplicate trust warning after cd by @timothysparg in [#8898](https://github.com/jdx/mise/pull/8898)
+- update flake.lock and add fix for rust-bindgen to default.nix by @esteve in [#8874](https://github.com/jdx/mise/pull/8874)
+- when direnv diff is empty, do not try to parse it by @yaleman in [#8857](https://github.com/jdx/mise/pull/8857)
+- skip trust check for plain .tool-versions in task list by @dportalesr in [#8876](https://github.com/jdx/mise/pull/8876)
+
+### 🚜 Refactor
+
+- **(go)** rename go_* settings to go.* namespace by @jdbruijn in [#8598](https://github.com/jdx/mise/pull/8598)
+
+### 📚 Documentation
+
+- **(tasks)** clarify task_config.includes behavior by @risu729 in [#8905](https://github.com/jdx/mise/pull/8905)
+
+### 🧪 Testing
+
+- **(ci)** run e2e tests inside Docker containers by @jdx in [#8899](https://github.com/jdx/mise/pull/8899)
+
+### 📦️ Dependency Updates
+
+- bump ubi from 0.8 to 0.9 by @jdx in [#8906](https://github.com/jdx/mise/pull/8906)
+- bump zip from 3 to 8 by @jdx in [#8908](https://github.com/jdx/mise/pull/8908)
+- update lockfile deps (hold back rattler) by @jdx in [#8909](https://github.com/jdx/mise/pull/8909)
+- update bun.lock by @jdx in [#8913](https://github.com/jdx/mise/pull/8913)
+
+### 📦 Registry
+
+- add turso ([github:tursodatabase/turso-cli](https://github.com/tursodatabase/turso-cli)) by @kenn in [#8884](https://github.com/jdx/mise/pull/8884)
+- remove carp test by @jdx in [#8894](https://github.com/jdx/mise/pull/8894)
+
+### Chore
+
+- **(ci)** add workflow to warn PRs modifying vendored aqua-registry by @jdx in [#8897](https://github.com/jdx/mise/pull/8897)
+- **(ci)** use github.token for draft conversion in auto-draft workflow by @jdx in [#8903](https://github.com/jdx/mise/pull/8903)
+- remove deprecated settings older than 12 months by @jdx in [#8904](https://github.com/jdx/mise/pull/8904)
+
+### New Contributors
+
+- @dportalesr made their first contribution in [#8876](https://github.com/jdx/mise/pull/8876)
+- @timothysparg made their first contribution in [#8898](https://github.com/jdx/mise/pull/8898)
+- @hehaoqian made their first contribution in [#8750](https://github.com/jdx/mise/pull/8750)
+- @jdbruijn made their first contribution in [#8598](https://github.com/jdx/mise/pull/8598)
+- @cprecioso made their first contribution in [#8776](https://github.com/jdx/mise/pull/8776)
+- @yaleman made their first contribution in [#8857](https://github.com/jdx/mise/pull/8857)
+- @kenn made their first contribution in [#8884](https://github.com/jdx/mise/pull/8884)
+- @fragon10 made their first contribution in [#8524](https://github.com/jdx/mise/pull/8524)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (6)
+
+- [`ahkohd/oyo`](https://github.com/ahkohd/oyo)
+- [`bellicose100xp/jiq`](https://github.com/bellicose100xp/jiq)
+- [`kurama/dealve-tui`](https://github.com/kurama/dealve-tui)
+- [`micahkepe/jsongrep`](https://github.com/micahkepe/jsongrep)
+- [`textfuel/lazyjira`](https://github.com/textfuel/lazyjira)
+- [`ubugeeei/vize`](https://github.com/ubugeeei/vize)
+
+#### Updated Packages (1)
+
+- [`sigstore/cosign`](https://github.com/sigstore/cosign)
+
+## [2026.4.3](https://github.com/jdx/mise/compare/v2026.4.2..v2026.4.3) - 2026-04-03
+
+### 🐛 Bug Fixes
+
+- **(exec)** fix seccomp build on armv7 with i32-to-i64 syscall cast by @jdx in [#8869](https://github.com/jdx/mise/pull/8869)
+
+## [2026.4.2](https://github.com/jdx/mise/compare/v2026.4.1..v2026.4.2) - 2026-04-03
+
+### 🚀 Features
+
+- **(exec)** add process sandboxing for mise x and mise run by @jdx in [#8845](https://github.com/jdx/mise/pull/8845)
+
+### 📚 Documentation
+
+- fix values for RUNTIME.osType and RUNTIME.archType. Simplify examples by @esteve in [#8785](https://github.com/jdx/mise/pull/8785)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:copr docker digest to 6dd31ee by @renovate[bot] in [#8860](https://github.com/jdx/mise/pull/8860)
+- update ghcr.io/jdx/mise:alpine docker digest to 4b8b285 by @renovate[bot] in [#8859](https://github.com/jdx/mise/pull/8859)
+- update ghcr.io/jdx/mise:deb docker digest to 56ddc49 by @renovate[bot] in [#8861](https://github.com/jdx/mise/pull/8861)
+- update ghcr.io/jdx/mise:rpm docker digest to b37cc3b by @renovate[bot] in [#8862](https://github.com/jdx/mise/pull/8862)
+
+### New Contributors
+
+- @esteve made their first contribution in [#8785](https://github.com/jdx/mise/pull/8785)
+
 ## [2026.4.1](https://github.com/jdx/mise/compare/v2026.4.0..v2026.4.1) - 2026-04-02
 
 ### 🚀 Features

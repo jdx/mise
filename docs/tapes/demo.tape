@@ -32,7 +32,7 @@ Enter
 Type '# "mise exec <tool> -- <command>" allows you to run any tools with mise'
 Sleep 1s Enter Wait
 
-Type "mise exec node@24 -- node -v"
+Type "mise exec node@26 -- node -v"
 Sleep 500ms Enter Wait Sleep 2s
 
 Type '# node is only available in the mise environment, not globally' Sleep 500ms Enter Wait
@@ -95,20 +95,20 @@ Type 'mise ls' Sleep 500ms Enter Wait
 Sleep 3s
 
 Type 'clear' Sleep 500ms Enter Wait
-Type '# Lets enter a project directory where we will set up node@23 and pnpm@10' Enter
+Type '# Lets enter a project directory where we will set up node@26 and pnpm@10' Enter
 Sleep 1s
 
 Type "cd myproj" Sleep 500ms Enter Wait
 Sleep 1s
 
-Type "mise use node@23 pnpm@10" Sleep 500ms Enter Wait
+Type "mise use node@26 pnpm@10" Sleep 500ms Enter Wait
 Type "node -v" Enter Wait
 Sleep 2s
 
 Type "pnpm -v" Enter Wait
 Sleep 2s
 
-Type '# As expected, `node -v` is now v23.x' Enter Wait
+Type '# As expected, `node -v` is now v26.x' Enter Wait
 Sleep 2s
 
 Type 'bat mise.toml' Sleep 500ms Enter Wait

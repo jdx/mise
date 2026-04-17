@@ -133,7 +133,7 @@ impl RubyPlugin {
         ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
         file::un7z(tarball_path, &tv.download_path(), &Default::default())?;
-        file::rename(
+        file::move_file(
             tv.download_path()
                 .join(format!("rubyinstaller-{}-1-{arch}", tv.version)),
             tv.install_path(),

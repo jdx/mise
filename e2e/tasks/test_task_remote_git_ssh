@@ -12,7 +12,7 @@ fi
 REMOTE_TASKS_DIR="${MISE_CACHE_DIR}/remote-git-tasks-cache"
 #MISE_V2025117_CACHE_DIR="${REMOTE_TASKS_DIR}/27d097acd7d7d15682b9d5f22bfa7c363b1951a50bbbd2aff3923eb949be0ef0"
 
-cargo init --name hello_cargo
+git init
 
 #################################################################################
 # Test remote tasks with no ref

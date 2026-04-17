@@ -269,7 +269,7 @@ cmd exec help="Execute a command with tool(s) set" {
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
-    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'" var=#true {
         arg <VAR>
     }
     flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)\nmacOS only in v1; on Linux falls back to allowing all network" var=#true {
@@ -430,8 +430,8 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
         arg <OUTPUT> help="Output file path for the tool stub"
     }
 }
-cmd github subcommand_required=#true help="GitHub related commands" {
-    cmd token help="Display the GitHub token mise will use for a given host" {
+cmd github hide=#true subcommand_required=#true help="GitHub related commands" {
+    cmd token hide=#true help="Display the GitHub token mise will use for a given host" {
         long_help "Display the GitHub token mise will use for a given host\n\nShows which token source mise would use, useful for debugging\nauthentication issues. The token is masked by default."
         after_long_help "Examples:\n\n    $ mise github token\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise github token --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise github token github.mycompany.com\n    github.mycompany.com: (none)\n"
         flag --unmask help="Show the full unmasked token"
@@ -752,7 +752,7 @@ cmd run restart_token=::: help="Run task(s)" {
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
         arg <TOOL@VERSION>
     }
-    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'" var=#true {
         arg <VAR>
     }
     flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
@@ -1083,7 +1083,7 @@ cmd tasks help="Manage tasks" {
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
             arg <TOOL@VERSION>
         }
-        flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+        flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'" var=#true {
             arg <VAR>
         }
         flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
@@ -1138,6 +1138,23 @@ cmd test-tool help="Test a tool installs and executes" {
     flag --include-non-defined help="Also test tools not defined in registry/, guessing how to test it"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOLS]…" help="Tool(s) to test" required=#false var=#true
+}
+cmd token subcommand_required=#true help="Display git provider tokens mise will use" {
+    cmd forgejo help="Forgejo token" {
+        after_long_help "Examples:\n\n    $ mise token forgejo\n    codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)\n\n    $ mise token forgejo --unmask\n    codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)\n\n    $ mise token forgejo forgejo.mycompany.com\n    forgejo.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="Forgejo hostname" required=#false default=codeberg.org
+    }
+    cmd github help="GitHub token" {
+        after_long_help "Examples:\n\n    $ mise token github\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise token github --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise token github github.mycompany.com\n    github.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="GitHub hostname" required=#false default=github.com
+    }
+    cmd gitlab help="GitLab token" {
+        after_long_help "Examples:\n\n    $ mise token gitlab\n    gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)\n\n    $ mise token gitlab --unmask\n    gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)\n\n    $ mise token gitlab gitlab.mycompany.com\n    gitlab.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="GitLab hostname" required=#false default=gitlab.com
+    }
 }
 cmd tool help="Gets information about a tool" {
     after_long_help "Examples:\n\n    $ mise tool node\n    Backend:            core\n    Installed Versions: 20.0.0 22.0.0\n    Active Version:     20.0.0\n    Requested Version:  20\n    Config Source:      ~/.config/mise/mise.toml\n    Tool Options:       [none]\n"

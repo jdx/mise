@@ -79,6 +79,7 @@ impl Backend for DotnetBackend {
         self.warn_if_dependency_missing(
             &ctx.config,
             "dotnet",
+            &["dotnet"],
             "To use dotnet tools with mise, you need to install .NET SDK first:\n\
               mise use dotnet@latest\n\n\
             Or install .NET SDK via https://dotnet.microsoft.com/download",

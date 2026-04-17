@@ -124,7 +124,7 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
         })
         .lock();
 
-    let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
+    let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
     let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
 
     #[cfg(windows)]
@@ -552,9 +552,7 @@ async fn list_tool_bins(
 }
 
 async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
-    if shim.exists() {
-        file::remove_file_async(shim).await?;
-    }
+    file::remove_file_async_if_exists(shim).await?;
     file::write_async(
         shim,
         formatdoc! {r#"

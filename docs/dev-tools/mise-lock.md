@@ -147,6 +147,10 @@ mise settings locked=true
 MISE_LOCKED=1 mise install
 ```
 
+::: warning
+All mise settings are global in scope. Setting `locked = true` in a project's `mise.toml` applies to **all** tool resolution, including tools from your global `~/.config/mise/config.toml`. If you see warnings about global tools missing from the lockfile, run `mise lock -g` to generate a global lockfile.
+:::
+
 When enabled, `mise install` will fail if a tool doesn't have a URL for the current platform in the lockfile. To fix this, first populate the lockfile with URLs:
 
 ```sh
@@ -184,10 +188,46 @@ When you want to update tool versions:
 
 ```sh
 # Update tool version in mise.toml
-mise use node@24
+mise use node@26
 
 # This will update both the installation and mise.lock
 ```
+
+### Pinning a Locked Version
+
+You can pin a specific version in the lockfile while keeping a fuzzy specifier in `mise.toml`:
+
+```sh
+# mise.toml has node = "latest" or node = "22"
+mise upgrade node@22.15.0   # installs 22.15.0 and updates mise.lock
+mise lock node@22.15.0      # updates mise.lock without reinstalling
+```
+
+If the version doesn't match the current config prefix, the config is updated automatically. For example, if `mise.toml` has `node = "20"` and you run `mise upgrade node@22.15.0`, the config is bumped to `node = "22"` (preserving the same precision level) and the lockfile is set to `22.15.0`.
+
+## Command Behavior with Lockfiles
+
+The table below shows how each command interacts with `mise.toml` and `mise.lock`:
+
+| Command                     | Installs | Updates `mise.toml`                  | Updates `mise.lock`                     |
+| --------------------------- | -------- | ------------------------------------ | --------------------------------------- |
+| `mise use node@22`          | Yes      | Yes (sets `node = "22"`)             | Yes                                     |
+| `mise install`              | Yes      | No                                   | Yes                                     |
+| `mise install node`         | Yes      | No                                   | Yes (installs config version for node)  |
+| `mise install node@22.15.0` | Yes      | No                                   | No (one-off install, not config-driven) |
+| `mise upgrade`              | Yes      | No                                   | Yes                                     |
+| `mise upgrade node`         | Yes      | No                                   | Yes (upgrades node within its range)    |
+| `mise upgrade node@22.15.0` | Yes      | Only if version doesn't match prefix | Yes                                     |
+| `mise upgrade --bump`       | Yes      | Yes (bumps prefix to match)          | Yes                                     |
+| `mise lock`                 | No       | No                                   | Yes (regenerates for all tools)         |
+| `mise lock node@22.15.0`    | No       | Only if version doesn't match prefix | Yes                                     |
+
+**Key points:**
+
+- **`mise use`** is for changing which version you want in your config — it always writes to `mise.toml`
+- **`mise install`** installs what's in your config without changing it — `mise install node` installs the config's version of node and updates the lockfile, while `mise install node@22.15.0` is a one-off that doesn't
+- **`mise upgrade`** upgrades tools within their configured ranges and updates the lockfile — passing `tool@version` lets you target a specific version
+- **`mise lock`** regenerates lockfile entries without installing — passing `tool@version` lets you pin a specific version
 
 ## Backend Support
 
@@ -280,6 +320,34 @@ mise install
 # Set versions based on package.json
 mise use node@$(jq -r '.engines.node' package.json)
 ```
+
+## Provenance and Security
+
+When `mise lock` generates a lockfile, it records a provenance type (e.g., `slsa`, `cosign`, `minisign`, `github-attestations`) for each tool. For the **current platform**, mise downloads the artifact and performs full cryptographic verification at lock time -- ensuring the provenance entry in the lockfile is backed by actual verification, not just registry metadata. This applies to both the aqua and github backends. For cross-platform entries, provenance is detected from registry metadata without verification (since the artifact may not be runnable on the current machine).
+
+By default, when `mise install` sees a lockfile with both a checksum and a provenance entry, it trusts the lockfile and skips re-verification. This avoids redundant API calls (e.g., GitHub attestation queries) which can cause rate limit issues in CI. Since the current platform's provenance was already verified during `mise lock`, this is safe.
+
+For additional security, you can force provenance re-verification at install time on every install:
+
+```toml
+[settings]
+locked_verify_provenance = true
+```
+
+Or via environment variable:
+
+```sh
+MISE_LOCKED_VERIFY_PROVENANCE=1 mise install
+```
+
+This is also automatically enabled in [paranoid mode](/paranoid.html):
+
+```toml
+[settings]
+paranoid = true
+```
+
+When enabled, every `mise install` will cryptographically verify provenance regardless of what the lockfile contains, ensuring the artifact was built by a trusted CI pipeline.
 
 ## Minimum Release Age
 

@@ -61,6 +61,8 @@ When a task extends a template, fields are merged according to these rules:
 | `depends`, `depends_post`, `wait_for`   | Local overrides completely (not merged)                     |
 | `dir`                                   | Local overrides; defaults to config_root if not in template |
 | `sources`, `outputs`                    | Local overrides completely                                  |
+| Sandbox deny fields                     | Compose with task-local settings                            |
+| Sandbox allow fields                    | Template and task-local values are combined                 |
 | `description`, `shell`, `timeout`, etc. | Local overrides template (if set)                           |
 | `quiet`, `hide`, `raw`                  | Not carried over (must be set explicitly in task)           |
 

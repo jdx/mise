@@ -138,6 +138,16 @@ impl Doctor {
                 .collect(),
         );
         data.insert(
+            "env_files".into(),
+            config
+                .env_results()
+                .await?
+                .env_files
+                .iter()
+                .map(|f| f.to_string_lossy().to_string())
+                .collect(),
+        );
+        data.insert(
             "ignored_config_files".into(),
             IGNORED_CONFIG_FILES
                 .iter()
@@ -287,6 +297,7 @@ impl Doctor {
     }
     async fn analyze_config(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
         info::section("config_files", render_config_files(config))?;
+        info::section("env_files", render_env_files(config).await?)?;
         if IGNORED_CONFIG_FILES.is_empty() {
             println!();
             info::inline_section("ignored_config_files", "(none)")?;
@@ -374,7 +385,7 @@ impl Doctor {
     }
 
     async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) {
-        let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
+        let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
 
         if let Ok((missing, extra)) = shims::get_shim_diffs(config, mise_bin, toolset).await {
             let cmd = style::nyellow("mise reshim");
@@ -604,12 +615,20 @@ fn render_config_files(config: &Config) -> String {
         .join("\n")
 }
 
-fn render_backends() -> String {
-    let mut s = vec![];
-    for b in BackendType::iter().filter(|b| b != &BackendType::Unknown) {
-        s.push(format!("{b}"));
+async fn render_env_files(config: &Arc<Config>) -> eyre::Result<String> {
+    let env_files = &config.env_results().await?.env_files;
+    if env_files.is_empty() {
+        Ok("(none)".to_string())
+    } else {
+        Ok(env_files.iter().map(display_path).join("\n"))
     }
-    s.join("\n")
+}
+
+fn render_backends() -> String {
+    BackendType::iter()
+        .filter(|b| b != &BackendType::Unknown)
+        .map(|b| b.to_string())
+        .join("\n")
 }
 
 fn render_plugins() -> String {

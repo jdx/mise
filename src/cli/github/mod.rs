@@ -2,7 +2,7 @@ mod token;
 
 /// GitHub related commands
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[clap(verbatim_doc_comment, hide = true)]
 pub struct Github {
     #[clap(subcommand)]
     subcommand: Commands,

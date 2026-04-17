@@ -2,44 +2,78 @@
 source: src/shell/bash.rs
 expression: bash.activate(opts)
 ---
+# shellcheck shell=bash
+export __MISE_EXE=/some/dir/mise
+__MISE_FLAGS=(--status)
+__MISE_HOOK_ENABLED=1
+
 export MISE_SHELL=bash
 
 # On first activation, save the original PATH
 # On re-activation, we keep the saved original
 if [ -z "${__MISE_ORIG_PATH:-}" ]; then
-  export __MISE_ORIG_PATH="$PATH"
+	export __MISE_ORIG_PATH="$PATH"
 fi
+__MISE_BASH_CHPWD_RAN=0
 
 mise() {
-  local command
-  command="${1:-}"
-  if [ "$#" = 0 ]; then
-    command /some/dir/mise
-    return
-  fi
-  shift
+	local command
+	command="${1:-}"
+	if [ "$#" = 0 ]; then
+		command "$__MISE_EXE"
+		return
+	fi
+	shift
 
-  case "$command" in
-  deactivate|shell|sh)
-    # if argv doesn't contains -h,--help
-    if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
-      eval "$(command /some/dir/mise "$command" "$@")"
-      return $?
-    fi
-    ;;
-  esac
-  command /some/dir/mise "$command" "$@"
+	case "$command" in
+	deactivate | shell | sh)
+		# if argv doesn't contains -h,--help
+		if [[ ! " $* " =~ " --help " ]] && [[ ! " $* " =~ " -h " ]]; then
+			eval "$(command "$__MISE_EXE" "$command" "$@")"
+			return $?
+		fi
+		;;
+	esac
+	command "$__MISE_EXE" "$command" "$@"
 }
 
 _mise_hook() {
-  local previous_exit_status=$?;
-  eval "$(mise hook-env --status -s bash)";
-  return $previous_exit_status;
-};
-if [[ ";${PROMPT_COMMAND:-};" != *";_mise_hook;"* ]]; then
-  PROMPT_COMMAND="_mise_hook${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
-fi
-# shellcheck shell=bash
+	local previous_exit_status=$?
+	eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} -s bash)"
+	return $previous_exit_status
+}
+
+if [ "$__MISE_HOOK_ENABLED" = "1" ]; then
+	_mise_hook_prompt_command() {
+		local previous_exit_status=$?
+		if [[ ${__MISE_BASH_CHPWD_RAN:-0} == "1" ]]; then
+			__MISE_BASH_CHPWD_RAN=0
+			return $previous_exit_status
+		fi
+		eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} -s bash --reason precmd)"
+		return $previous_exit_status
+	}
+
+	_mise_hook_chpwd() {
+		local previous_exit_status=$?
+		__MISE_BASH_CHPWD_RAN=1
+		eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} -s bash --reason chpwd)"
+		return $previous_exit_status
+	}
+
+	_mise_add_prompt_command() {
+		if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
+			if [[ " ${PROMPT_COMMAND[*]} " != *" _mise_hook_prompt_command "* ]]; then
+				PROMPT_COMMAND=("_mise_hook_prompt_command" "${PROMPT_COMMAND[@]}")
+			fi
+		elif [[ ";${PROMPT_COMMAND:-};" != *";_mise_hook_prompt_command;"* ]]; then
+			local _mise_prompt_command_value="${PROMPT_COMMAND-}"
+			printf -v PROMPT_COMMAND '%s' "_mise_hook_prompt_command${_mise_prompt_command_value:+;$_mise_prompt_command_value}"
+		fi
+	}
+
+	_mise_add_prompt_command
+	# shellcheck shell=bash
 export -a chpwd_functions
 function __zsh_like_cd()
 {
@@ -59,7 +93,7 @@ function __zsh_like_cd()
   fi
 }
 
-# shellcheck shell=bash
+	# shellcheck shell=bash
 [[ -n "${ZSH_VERSION:-}" ]] ||
 {
   function cd()    { __zsh_like_cd cd    "$@" ; }
@@ -67,24 +101,28 @@ function __zsh_like_cd()
   function pushd() { __zsh_like_cd pushd "$@" ; }
 }
 
-chpwd_functions+=(_mise_hook)
-_mise_hook
-if [ -z "${_mise_cmd_not_found:-}" ]; then
-    _mise_cmd_not_found=1
-    if [ -n "$(declare -f command_not_found_handle)" ]; then
-        _mise_cmd_not_found_handle=$(declare -f command_not_found_handle)
-        eval "${_mise_cmd_not_found_handle/command_not_found_handle/_command_not_found_handle}"
-    fi
+	chpwd_functions+=(_mise_hook_chpwd)
+fi
 
-    command_not_found_handle() {
-        if [[ "$1" != "mise" && "$1" != "mise-"* ]] && /some/dir/mise hook-not-found -s bash -- "$1"; then
-          _mise_hook
-          "$@"
-        elif [ -n "$(declare -f _command_not_found_handle)" ]; then
-            _command_not_found_handle "$@"
-        else
-            echo "bash: command not found: $1" >&2
-            return 127
-        fi
-    }
+_mise_hook
+
+# shellcheck shell=bash
+if [ -z "${_mise_cmd_not_found:-}" ]; then
+	_mise_cmd_not_found=1
+	if [ -n "$(declare -f command_not_found_handle)" ]; then
+		_mise_cmd_not_found_handle=$(declare -f command_not_found_handle)
+		eval "${_mise_cmd_not_found_handle/command_not_found_handle/_command_not_found_handle}"
+	fi
+
+	command_not_found_handle() {
+		if [[ $1 != "mise" && $1 != "mise-"* ]] && /some/dir/mise hook-not-found -s bash -- "$1"; then
+			_mise_hook
+			"$@"
+		elif [ -n "$(declare -f _command_not_found_handle)" ]; then
+			_command_not_found_handle "$@"
+		else
+			echo "bash: command not found: $1" >&2
+			return 127
+		fi
+	}
 fi

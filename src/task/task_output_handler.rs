@@ -8,6 +8,8 @@ use indexmap::IndexMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+type TaskPrMap = Arc<Mutex<IndexMap<Task, Arc<Box<dyn SingleReport>>>>>;
+
 /// A single line of output, tagged by stream.
 pub enum KeepOrderLine {
     Stdout(String, String), // (prefix, line)
@@ -183,7 +185,7 @@ pub struct OutputHandlerConfig {
 /// Handles task output routing, formatting, and display
 pub struct OutputHandler {
     pub keep_order_state: Arc<Mutex<KeepOrderState>>,
-    pub task_prs: IndexMap<Task, Arc<Box<dyn SingleReport>>>,
+    pub task_prs: TaskPrMap,
     pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
 
     // Configuration from CLI args
@@ -212,10 +214,25 @@ impl Clone for OutputHandler {
 }
 
 impl OutputHandler {
+    /// Get or lazily create a progress reporter for a task in Replacing mode.
+    pub fn get_or_init_task_pr(&self, task: &Task) -> Arc<Box<dyn SingleReport>> {
+        let mut prs = self.task_prs.lock().unwrap();
+        if let Some(pr) = prs.get(task) {
+            pr.clone()
+        } else {
+            let pr = MultiProgressReport::get().add(&task.estyled_prefix());
+            let pr = Arc::new(pr);
+            prs.insert(task.clone(), pr.clone());
+            pr
+        }
+    }
+}
+
+impl OutputHandler {
     pub fn new(config: OutputHandlerConfig) -> Self {
         Self {
             keep_order_state: Arc::new(Mutex::new(KeepOrderState::new())),
-            task_prs: IndexMap::new(),
+            task_prs: Arc::new(Mutex::new(IndexMap::new())),
             timed_outputs: Arc::new(Mutex::new(IndexMap::new())),
             output: config.output,
             silent: config.silent,
@@ -236,8 +253,7 @@ impl OutputHandler {
                 }
             }
             TaskOutput::Replacing => {
-                let pr = MultiProgressReport::get().add(&task.estyled_prefix());
-                self.task_prs.insert(task.clone(), Arc::new(pr));
+                self.get_or_init_task_pr(task);
             }
             _ => {}
         }
@@ -300,7 +316,7 @@ impl OutputHandler {
                 );
             }
             TaskOutput::Replacing => {
-                let pr = self.task_prs.get(task).unwrap().clone();
+                let pr = self.get_or_init_task_pr(task);
                 pr.set_message(format!("{prefix} {line}"));
             }
             _ => {

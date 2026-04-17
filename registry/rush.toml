@@ -1,0 +1,3 @@
+backends = ["aqua:shenwei356/rush"]
+description = "A cross-platform command-line tool for executing jobs in parallel"
+test = { cmd = "rush --help", expected = "rush -- a cross-platform command-line tool for executing jobs in parallel" }

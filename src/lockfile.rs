@@ -638,6 +638,36 @@ impl Lockfile {
         self.cleanup_unreferenced_conda_packages();
     }
 
+    /// Remove entries for a tool whose version is not in the given set.
+    /// Used to prune stale version entries during filtered `mise lock <tool>` runs.
+    pub fn retain_tool_versions(&mut self, short: &str, keep_versions: &BTreeSet<String>) {
+        if let Some(tools) = self.tools.get_mut(short) {
+            tools.retain(|t| keep_versions.contains(&t.version));
+            if tools.is_empty() {
+                self.tools.remove(short);
+            }
+        }
+        self.cleanup_unreferenced_conda_packages();
+    }
+
+    /// Return versions of a tool that would be removed by `retain_tool_versions`.
+    pub fn stale_tool_versions(
+        &self,
+        short: &str,
+        keep_versions: &BTreeSet<String>,
+    ) -> Vec<String> {
+        self.tools
+            .get(short)
+            .map(|tools| {
+                tools
+                    .iter()
+                    .filter(|t| !keep_versions.contains(&t.version))
+                    .map(|t| t.version.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Return tool keys that would be removed by `retain_tools_by_short_or_backend`.
     pub fn stale_tool_shorts(
         &self,
@@ -1007,7 +1037,15 @@ fn check_provenance_regression(
 
 /// Determine target platforms using an already-loaded lockfile (used by auto-lock).
 /// Returns all common platforms + current platform + any existing platforms in the lockfile.
-fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Vec<Platform> {
+fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Result<Vec<Platform>> {
+    // If lockfile_platforms setting is configured, use it as the authoritative set
+    if let Some(configured) = Settings::get().lockfile_platforms()? {
+        let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
+        platforms.insert(Platform::current());
+        return Ok(platforms.into_iter().collect());
+    }
+
+    // Default: all common platforms + current + existing lockfile platforms
     let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
     platforms.insert(Platform::current());
     if let Some(lockfile) = lockfile {
@@ -1019,13 +1057,20 @@ fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Vec<
             }
         }
     }
-    platforms.into_iter().collect()
+    Ok(platforms.into_iter().collect())
 }
 
 /// Determine target platforms from an existing lockfile for explicit `mise lock` calls.
 /// If the lockfile already has platform entries, only those are targeted.
 /// Otherwise, falls back to all common platforms + current platform.
-pub fn determine_existing_platforms(lockfile_path: &Path) -> Vec<Platform> {
+pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform>> {
+    // If lockfile_platforms setting is configured, use it as the authoritative set
+    if let Some(configured) = Settings::get().lockfile_platforms()? {
+        let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
+        platforms.insert(Platform::current());
+        return Ok(platforms.into_iter().collect());
+    }
+
     if let Ok(lockfile) = Lockfile::read(lockfile_path) {
         let existing_keys = lockfile.all_platform_keys();
         if !existing_keys.is_empty() {
@@ -1038,14 +1083,14 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Vec<Platform> {
                 }
             }
             if !platforms.is_empty() {
-                return platforms.into_iter().collect();
+                return Ok(platforms.into_iter().collect());
             }
         }
     }
     // No lockfile, no platforms yet, or no valid platform keys — use common defaults
     let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
     platforms.insert(Platform::current());
-    platforms.into_iter().collect()
+    Ok(platforms.into_iter().collect())
 }
 
 /// After installing new tool versions, resolve checksums/URLs for all common platforms
@@ -1087,7 +1132,7 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         let mut lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
-        let target_platforms = determine_target_platforms_from_lockfile(Some(&lockfile));
+        let target_platforms = determine_target_platforms_from_lockfile(Some(&lockfile))?;
 
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
@@ -2430,5 +2475,95 @@ backend = "conda:jq"
             ..Default::default()
         };
         assert!(!info.is_empty());
+    }
+
+    #[test]
+    fn test_set_platform_info_all_platforms_get_slsa_url() {
+        // Regression guard: when all platforms have Slsa { url: Some(...) },
+        // the lockfile should serialize ALL entries with the expanded form.
+        let mut lockfile = Lockfile::default();
+        let platforms = vec!["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"];
+        for platform in &platforms {
+            lockfile.set_platform_info(
+                "sops",
+                "3.12.1",
+                Some("aqua:getsops/sops"),
+                &BTreeMap::new(),
+                platform,
+                PlatformInfo {
+                    checksum: Some("sha256:abc123".to_string()),
+                    url: Some(format!("https://example.com/sops-{platform}.tar.gz")),
+                    provenance: Some(ProvenanceType::Slsa {
+                        url: Some(format!("https://example.com/sops-{platform}.intoto.jsonl")),
+                    }),
+                    ..Default::default()
+                },
+            );
+        }
+        let temp_dir = std::env::temp_dir();
+        let test_lockfile = temp_dir.join("test_provenance_all_platforms.lock");
+        lockfile.save(&test_lockfile).unwrap();
+        let serialized = std::fs::read_to_string(&test_lockfile).unwrap();
+        let _ = std::fs::remove_file(&test_lockfile);
+        // ALL platform entries should have the expanded provenance.slsa form
+        for platform in &platforms {
+            assert!(
+                serialized.contains(&format!("\"platforms.{platform}\".provenance.slsa")),
+                "platform {platform} should have expanded provenance.slsa form, got:\n{serialized}"
+            );
+        }
+        // No short-form provenance should appear
+        assert!(
+            !serialized.contains("provenance = \"slsa\""),
+            "no short-form provenance should appear, got:\n{serialized}"
+        );
+    }
+
+    #[test]
+    fn test_set_platform_info_none_provenance_preserves_existing_url() {
+        // When new PlatformInfo has provenance=None, existing Slsa URL should be preserved
+        let mut lockfile = Lockfile::default();
+        // First: set platform info with Slsa URL
+        lockfile.set_platform_info(
+            "sops",
+            "3.12.1",
+            Some("aqua:getsops/sops"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:abc123".to_string()),
+                url: Some("https://example.com/sops.tar.gz".to_string()),
+                provenance: Some(ProvenanceType::Slsa {
+                    url: Some("https://example.com/sops.intoto.jsonl".to_string()),
+                }),
+                ..Default::default()
+            },
+        );
+        // Second: set same platform with provenance=None (simulates verification failure)
+        lockfile.set_platform_info(
+            "sops",
+            "3.12.1",
+            Some("aqua:getsops/sops"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:abc123".to_string()),
+                url: Some("https://example.com/sops.tar.gz".to_string()),
+                provenance: None,
+                ..Default::default()
+            },
+        );
+        // The existing Slsa URL should be preserved by merge
+        let tool = &lockfile.tools["sops"][0];
+        let info = &tool.platforms["linux-x64"];
+        match &info.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/sops.intoto.jsonl")
+                );
+            }
+            other => panic!("expected Slsa provenance with URL, got: {other:?}"),
+        }
     }
 }

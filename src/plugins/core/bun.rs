@@ -71,7 +71,7 @@ impl BunPlugin {
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path(), &Default::default())?;
-        file::rename(
+        file::move_file(
             tv.download_path()
                 .join(format!("bun-{}-{}", os(), arch()))
                 .join(bun_bin_name()),

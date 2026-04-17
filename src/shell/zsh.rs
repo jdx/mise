@@ -34,6 +34,7 @@ impl Shell for Zsh {
               export __MISE_ORIG_PATH="$PATH"
             fi
             export __MISE_ZSH_PRECMD_RUN=0
+            export __MISE_ZSH_CHPWD_RAN=0
 
             mise() {{
               local command
@@ -60,23 +61,23 @@ impl Shell for Zsh {
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
 
+            autoload -Uz add-zsh-hook
             _mise_hook() {{
               eval "$({exe} hook-env{flags} -s zsh)";
             }}
             _mise_hook_precmd() {{
+              if [[ "${{__MISE_ZSH_CHPWD_RAN:-0}}" == "1" ]]; then
+                export __MISE_ZSH_CHPWD_RAN=0
+                return
+              fi
               eval "$({exe} hook-env{flags} -s zsh --reason precmd)";
             }}
             _mise_hook_chpwd() {{
+              export __MISE_ZSH_CHPWD_RAN=1
               eval "$({exe} hook-env{flags} -s zsh --reason chpwd)";
             }}
-            typeset -ag precmd_functions;
-            if [[ -z "${{precmd_functions[(r)_mise_hook_precmd]+1}}" ]]; then
-              precmd_functions=( _mise_hook_precmd ${{precmd_functions[@]}} )
-            fi
-            typeset -ag chpwd_functions;
-            if [[ -z "${{chpwd_functions[(r)_mise_hook_chpwd]+1}}" ]]; then
-              chpwd_functions=( _mise_hook_chpwd ${{chpwd_functions[@]}} )
-            fi
+            add-zsh-hook precmd _mise_hook_precmd
+            add-zsh-hook chpwd _mise_hook_chpwd
 
             _mise_hook
             "#});
@@ -107,8 +108,9 @@ impl Shell for Zsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        precmd_functions=( ${{precmd_functions:#_mise_hook_precmd}} )
-        chpwd_functions=( ${{chpwd_functions:#_mise_hook_chpwd}} )
+        autoload -Uz add-zsh-hook
+        add-zsh-hook -d precmd _mise_hook_precmd 2>/dev/null
+        add-zsh-hook -d chpwd _mise_hook_chpwd 2>/dev/null
         (( $+functions[_mise_hook_precmd] )) && unset -f _mise_hook_precmd
         (( $+functions[_mise_hook_chpwd] )) && unset -f _mise_hook_chpwd
         (( $+functions[_mise_hook] )) && unset -f _mise_hook
@@ -117,6 +119,7 @@ impl Shell for Zsh {
         unset __MISE_DIFF
         unset __MISE_SESSION
         unset __MISE_ZSH_PRECMD_RUN
+        unset __MISE_ZSH_CHPWD_RAN
         "#}
     }
 

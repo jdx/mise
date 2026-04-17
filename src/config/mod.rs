@@ -284,24 +284,7 @@ impl Config {
     }
     pub async fn env_with_sources(self: &Arc<Self>) -> eyre::Result<&EnvWithSources> {
         self.env_with_sources
-            .get_or_try_init(async || {
-                let mut env = self.env_results().await?.env.clone();
-                for env_file in Settings::get().env_files() {
-                    match dotenvy::from_path_iter(&env_file) {
-                        Ok(iter) => {
-                            for item in iter {
-                                let (k, v) = item.unwrap_or_else(|err| {
-                                    warn!("env_file: {err}");
-                                    Default::default()
-                                });
-                                env.insert(k, (v, env_file.clone()));
-                            }
-                        }
-                        Err(err) => trace!("env_file: {err}"),
-                    }
-                }
-                Ok(env)
-            })
+            .get_or_try_init(async || Ok(self.env_results().await?.env.clone()))
             .await
     }
     pub async fn env_results(self: &Arc<Self>) -> Result<&EnvResults> {
@@ -351,17 +334,34 @@ impl Config {
         backend_arg: &Arc<BackendArg>,
     ) -> Result<Option<ToolVersionOptions>> {
         let trs = self.get_tool_request_set().await?;
-        // Try matching by resolved full name first for aliased tools.
+        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
+        // Also try matching by resolved full name for aliased tools.
         // e.g., ba.short="treesize" resolves to full="gitlab:FBibonne/treesize"
         // while the config entry has short="gitlab-f-bibonne-treesize" with api_url set.
-        // We check the resolved name first because the direct short match might find
-        // a CLI-created tool request without options.
         let full = backend_arg.full();
         let resolved_ba = BackendArg::new(full, None);
-        let tool_request = trs
-            .iter()
-            .find(|tr| tr.0.short == resolved_ba.short)
-            .or_else(|| trs.iter().find(|tr| tr.0.short == backend_arg.short));
+        let resolved_match = trs.iter().find(|tr| tr.0.short == resolved_ba.short);
+
+        let has_opts = |tr: &(&Arc<BackendArg>, &Vec<crate::toolset::ToolRequest>, _)| -> bool {
+            tr.1.first()
+                .is_some_and(|req| !req.options().opts.is_empty())
+        };
+        // Prefer whichever match has options set. When both have options,
+        // prefer the short (alias-specific) match since it's more specific.
+        // Fall back to the resolved match for cases where a CLI-created
+        // request without options shadows the config entry (treesize case).
+        let tool_request = match (short_match, resolved_match) {
+            (Some(s), Some(r)) => {
+                if has_opts(&s) {
+                    Some(s)
+                } else {
+                    Some(r)
+                }
+            }
+            (Some(s), None) => Some(s),
+            (None, Some(r)) => Some(r),
+            (None, None) => None,
+        };
         Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
     }
 
@@ -676,7 +676,7 @@ impl Config {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(
+        let mut env_results = EnvResults::resolve(
             self,
             self.tera_ctx.clone(),
             &env::PRISTINE_ENV,
@@ -688,6 +688,26 @@ impl Config {
             },
         )
         .await?;
+        for env_file in Settings::get().env_files() {
+            if env_results.env_files.contains(&env_file) {
+                continue;
+            }
+            debug!("env_file: {}", display_path(&env_file));
+            match dotenvy::from_path_iter(&env_file) {
+                Ok(iter) => {
+                    env_results.env_files.push(env_file.clone());
+                    for item in iter {
+                        match item {
+                            Ok((k, v)) => {
+                                env_results.env.insert(k, (v, env_file.clone()));
+                            }
+                            Err(err) => warn!("env_file: {err}"),
+                        }
+                    }
+                }
+                Err(err) => trace!("env_file: {err}"),
+            }
+        }
         let redact_keys = self
             .redaction_keys()
             .into_iter()
@@ -858,6 +878,7 @@ impl Config {
 }
 
 fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
+    // Highest precedence config files are returned first.
     let mut configs: Vec<&'a Arc<dyn ConfigFile>> = DEFAULT_CONFIG_FILENAMES
         .iter()
         .rev()
@@ -1079,7 +1100,7 @@ fn all_dirs_from(start_dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Returns true if a path is a .tool-versions file (lower priority for writes)
-fn is_tool_versions_file(p: &Path) -> bool {
+pub(crate) fn is_tool_versions_file(p: &Path) -> bool {
     p.file_name()
         .is_some_and(|f| f.to_string_lossy().ends_with(".tool-versions"))
 }
@@ -2167,9 +2188,29 @@ async fn load_config_and_file_tasks(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let config_root = cf.config_root();
-    let tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
+    let config_tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
     let file_tasks = load_file_tasks(config, cf.clone(), &config_root).await?;
-    Ok(tasks.into_iter().chain(file_tasks).collect())
+    Ok(merge_file_and_config_tasks(file_tasks, config_tasks))
+}
+
+/// Combine file tasks (auto-discovered executable scripts and included TOML
+/// files) with inline `[tasks.*]` blocks from the same config file.
+///
+/// When a name appears in both: the file task stays as the base and the TOML
+/// block is overlaid via [`Task::merge_toml_overlay`]. Otherwise both are kept.
+fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
+    let mut by_name: IndexMap<String, Task> = IndexMap::new();
+    for t in file_tasks {
+        by_name.insert(t.name.clone(), t);
+    }
+    for t in config_tasks {
+        if let Some(existing) = by_name.get_mut(&t.name) {
+            existing.merge_toml_overlay(t);
+        } else {
+            by_name.insert(t.name.clone(), t);
+        }
+    }
+    by_name.into_values().collect()
 }
 
 async fn load_config_tasks(
@@ -2345,11 +2386,10 @@ async fn load_file_tasks(
 pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
     let configs = configs_at_root(dir, config_files);
 
-    // Find the first config that has explicit task_config.includes
+    // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
     let (includes, resolve_dir) = configs
         .iter()
-        .rev()
         .find_map(|cf| {
             cf.task_config().includes.clone().map(|includes| {
                 // Resolve relative paths from the config root, not the config file's directory
@@ -2384,7 +2424,6 @@ pub async fn load_tasks_in_dir(
 
     let git_includes: Vec<String> = configs
         .iter()
-        .rev()
         .find_map(|cf| cf.task_config().includes.clone())
         .unwrap_or_default()
         .into_iter()
@@ -2397,11 +2436,8 @@ pub async fn load_tasks_in_dir(
         config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates).await?);
     }
 
-    // Find task_config.dir from the nearest config that defines it
-    let task_config_dir = configs
-        .iter()
-        .rev()
-        .find_map(|cf| cf.task_config().dir.clone());
+    // Find task_config.dir from the highest-precedence config that defines it
+    let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
 
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
@@ -2418,9 +2454,8 @@ pub async fn load_tasks_in_dir(
         file_tasks.extend(loaded);
     }
 
-    let mut tasks = file_tasks
+    let mut tasks = merge_file_and_config_tasks(file_tasks, config_tasks)
         .into_iter()
-        .chain(config_tasks)
         .sorted_by_cached_key(|t| t.name.clone())
         .collect::<Vec<_>>();
     let all_tasks = tasks

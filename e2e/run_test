@@ -5,6 +5,8 @@ ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
+# shellcheck source-path=SCRIPTDIR
+source "$SCRIPT_DIR/helpers.sh"
 
 TEST="$1"
 # Handle both relative and absolute paths
@@ -46,9 +48,10 @@ create_isolated_env() {
 	# Create the required directories
 	mkdir -p "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
 
-	# The dummy plugin is required for some tests
+	# The dummy and needs-dummy plugins are required for some tests
 	mkdir -p "$MISE_DATA_DIR/plugins"
 	ln -s "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
+	ln -s "$ROOT/test/data/plugins/needs-dummy" "$MISE_DATA_DIR/plugins/needs-dummy"
 }
 
 remove_isolated_env() {
@@ -84,6 +87,7 @@ within_isolated_env() {
 		LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
 		${proxy_vars[@]+"${proxy_vars[@]}"} \
 		MISE_CACHE_DIR="$MISE_CACHE_DIR" \
+		MISE_URL_REPLACEMENTS="${MISE_URL_REPLACEMENTS:-}" \
 		MISE_CACHE_PRUNE_AGE="0" \
 		MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
 		MISE_DATA_DIR="$MISE_DATA_DIR" \
@@ -111,6 +115,7 @@ within_isolated_env() {
 		TEST_SCRIPT="$TEST_SCRIPT" \
 		TMPDIR="$TEST_TMPDIR" \
 		EXCLUDE_FROM_CI="${CI:-}" \
+		MISE_E2E_INSIDE_DOCKER="${MISE_E2E_INSIDE_DOCKER:-}" \
 		"$@" || return $?
 }
 
@@ -171,4 +176,39 @@ os() {
 	esac
 }
 
-as_group "E2E $TEST" run_test
+run_in_docker() {
+	local image="${MISE_E2E_DOCKER_IMAGE:-ghcr.io/jdx/mise:e2e}"
+	local mise_bin
+	mise_bin="$(resolve_mise_bin)"
+
+	if ! file "$mise_bin" | grep -q "ELF"; then
+		err "The mise binary at '$mise_bin' is not a Linux ELF. On macOS, set MISE_E2E_BIN to a Linux-compiled mise binary."
+		return 1
+	fi
+
+	local docker_args=(
+		docker run --rm
+		-v "$ROOT:/mise-src:ro"
+		-v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
+		-e ROOT=/mise-src
+		-e CI="${CI:-}"
+		-e GITHUB_ACTION="${GITHUB_ACTION:-}"
+		-e GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+		-e MISE_DEBUG="${MISE_DEBUG:-0}"
+		-e MISE_TRACE="${MISE_TRACE:-0}"
+		-e MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}"
+		-e RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
+		-e MISE_E2E_INSIDE_DOCKER=1
+		-e CARGO_TARGET_DIR=/usr/local/lib/mise
+	)
+
+	"${docker_args[@]}" "$image" /mise-src/e2e/run_test "$TEST"
+}
+
+if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then
+	as_group "E2E $TEST" run_in_docker
+elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
+	run_test
+else
+	as_group "E2E $TEST" run_test
+fi

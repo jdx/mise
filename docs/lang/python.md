@@ -11,21 +11,21 @@ at [`./src/plugins/core/python.rs`](https://github.com/jdx/mise/blob/main/src/pl
 
 ## Usage
 
-The following installs the latest version of python-3.11.x and makes it the global
+The following installs the latest version of python-3.15.x and makes it the global
 default:
 
 ```sh
-mise use -g python@3.11
+mise use -g python@3.15
 ```
 
 You can also use multiple versions of python at the same time:
 
 ```sh
-$ mise use -g python@3.10 python@3.11
+$ mise use -g python@3.14 python@3.15
 $ python -V
-3.10.0
-$ python3.11 -V
-3.11.0
+3.14.0
+$ python3.15 -V
+3.15.0
 ```
 
 You can also install a specific python flavour. To get the latest version from a flavour just use the
@@ -43,19 +43,35 @@ See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examp
 
 ## Automatic virtualenv activation
 
-Python comes with virtualenv support built in, use it with `mise.toml` configuration like
-one of the following:
+mise has two ways to manage Python virtualenvs:
+
+| Mechanism             | Best for                     | Config location      |
+| --------------------- | ---------------------------- | -------------------- |
+| `python.uv_venv_auto` | uv projects (with `uv.lock`) | `[settings]` section |
+| `_.python.venv`       | Projects not using uv        | `[env]` section      |
+
+**`python.uv_venv_auto`** detects and sources the `.venv` managed by `uv`. Use `"source"` to only activate existing venvs, or `"create|source"` to create if missing. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
+
+**`_.python.venv`** creates/activates a venv and adds it to PATH. It works with both `mise activate` and `mise exec`. Use this for projects that don't use uv.
+
+::: warning
+These are separate mechanisms with different code paths. Options like `uv_create_args` and `python_create_args` in `_.python.venv` are not used by `python.uv_venv_auto`.
+:::
+
+### `_.python.venv` configuration
+
+Use `_.python.venv` in the `[env]` section of `mise.toml`:
 
 ```toml
 [tools]
-python = "3.11" # [optional] will be used for the venv
+python = "3.15" # [optional] will be used for the venv
 
 [env]
 _.python.venv = ".venv" # relative to this file's directory
 _.python.venv = "/root/.venv" # can be absolute
 _.python.venv = "{{env.HOME}}/.cache/venv/myproj" # can use templates
 _.python.venv = { path = ".venv", create = true } # create the venv if it doesn't exist
-_.python.venv = { path = ".venv", create = true, python = "3.10" } # use a specific python version
+_.python.venv = { path = ".venv", create = true, python = "3.15" } # use a specific python version
 _.python.venv = {
   path = ".venv", create = true,
   python_create_args = ["--without-pip"], # pass args to python -m venv
@@ -71,9 +87,24 @@ _.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
 The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
 See [env-directives](https://mise.jdx.dev/environments/#env-directives) for `_.python.venv`.
 
+::: tip
+Virtualenv activation requires `mise activate` or `mise exec`. When using [shims](/dev-tools/shims) alone, the venv's `bin/` directory is not added to PATH, so `which python` will point to the shim rather than the venv's interpreter.
+:::
+
+### `python.uv_venv_auto` setting
+
+For uv-managed projects (those with a `uv.lock` file), you can use the `python.uv_venv_auto` setting to automatically source or create the `.venv` that uv manages. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
+
+```toml [mise.toml]
+[settings]
+python.uv_venv_auto = "source"        # activate existing .venv
+# or
+python.uv_venv_auto = "create|source" # create .venv if missing, then activate
+```
+
 ## mise & uv
 
-If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` will use it to create virtual environments. Otherwise, it will use the built-in `python -m venv` command.
+If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` will use it to create virtual environments via `_.python.venv`. Otherwise, it will use the built-in `python -m venv` command.
 
 Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 
@@ -94,7 +125,7 @@ install path instead:
 
 ```toml
 [tools]
-python = "3.12"
+python = "3.15"
 
 [env]
 UV_PYTHON = { value = "{{ tools.python.path }}", tools = true }

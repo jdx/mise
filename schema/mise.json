@@ -40,6 +40,26 @@
         }
       ]
     },
+    "os_filter_item": {
+      "description": "operating system or os/arch pair to install on",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
+      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
+    },
+    "os_filter": {
+      "description": "operating system filters to install on",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/os_filter_item"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/os_filter_item"
+          }
+        }
+      ]
+    },
     "env_directive": {
       "type": "object",
       "properties": {
@@ -152,29 +172,75 @@
             "type": "object",
             "properties": {
               "age": {
+                "type": "string",
+                "description": "[experimental] age-encrypted value (simplified format)"
+              },
+              "tools": {
+                "type": "boolean",
+                "description": "load tools before resolving"
+              },
+              "redact": {
+                "type": "boolean",
+                "description": "redact the value from logs"
+              },
+              "required": {
                 "oneOf": [
                   {
-                    "type": "string",
-                    "description": "[experimental] age-encrypted value (simplified format)"
+                    "type": "boolean",
+                    "description": "require this environment variable to be defined before mise runs or in a later config file"
                   },
                   {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "string",
-                        "description": "[experimental] age-encrypted value"
-                      },
-                      "format": {
-                        "type": "string",
-                        "enum": ["raw", "zstd"],
-                        "description": "[experimental] compression format for the encrypted value"
-                      }
-                    },
-                    "required": ["value"],
-                    "additionalProperties": false,
-                    "description": "[experimental] age-encrypted value (complex format)"
+                    "type": "string",
+                    "description": "require this environment variable with user help text on how to set it"
                   }
-                ]
+                ],
+                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+              }
+            },
+            "required": ["age"],
+            "additionalProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "description": "[experimental] age-encrypted value"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": ["raw", "zstd"],
+                    "description": "[experimental] compression format for the encrypted value"
+                  },
+                  "tools": {
+                    "type": "boolean",
+                    "description": "load tools before resolving"
+                  },
+                  "redact": {
+                    "type": "boolean",
+                    "description": "redact the value from logs"
+                  },
+                  "required": {
+                    "oneOf": [
+                      {
+                        "type": "boolean",
+                        "description": "require this environment variable to be defined before mise runs or in a later config file"
+                      },
+                      {
+                        "type": "string",
+                        "description": "require this environment variable with user help text on how to set it"
+                      }
+                    ],
+                    "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+                  }
+                },
+                "required": ["value"],
+                "additionalProperties": false,
+                "description": "[experimental] age-encrypted value (complex format)"
               }
             },
             "required": ["age"],
@@ -502,11 +568,6 @@
           "description": "Architecture to use for precompiled binaries.",
           "type": "string"
         },
-        "asdf": {
-          "description": "use asdf as a default plugin backend",
-          "type": "boolean",
-          "deprecated": true
-        },
         "asdf_compat": {
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
           "type": "boolean",
@@ -548,11 +609,6 @@
               "type": "string"
             }
           }
-        },
-        "cargo_binstall": {
-          "description": "Use cargo-binstall instead of cargo install if available",
-          "type": "boolean",
-          "deprecated": true
         },
         "cd": {
           "description": "Path to change to after launching mise",
@@ -618,11 +674,6 @@
         "disable_default_registry": {
           "description": "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`.",
           "type": "boolean"
-        },
-        "disable_default_shorthands": {
-          "description": "Disables built-in shorthands to asdf/vfox plugins",
-          "type": "boolean",
-          "deprecated": true
         },
         "disable_hints": {
           "default": [],
@@ -735,6 +786,27 @@
           "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
           "type": "string"
         },
+        "forgejo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "credential_command": {
+              "default": "",
+              "description": "Shell command to run to obtain a Forgejo token for mise.",
+              "type": "string"
+            },
+            "fj_cli_tokens": {
+              "default": true,
+              "description": "Read Forgejo tokens from the fj CLI config.",
+              "type": "boolean"
+            },
+            "use_git_credentials": {
+              "default": false,
+              "description": "Use git credential helpers to obtain Forgejo tokens.",
+              "type": "boolean"
+            }
+          }
+        },
         "github": {
           "type": "object",
           "additionalProperties": false,
@@ -771,6 +843,27 @@
           "description": "Enable GitHub Artifact Attestations verification for supported tools.",
           "type": "boolean"
         },
+        "gitlab": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "credential_command": {
+              "default": "",
+              "description": "Shell command to run to obtain a GitLab token for mise.",
+              "type": "string"
+            },
+            "glab_cli_tokens": {
+              "default": true,
+              "description": "Read GitLab tokens from the glab CLI config.",
+              "type": "boolean"
+            },
+            "use_git_credentials": {
+              "default": false,
+              "description": "Use git credential helpers to obtain GitLab tokens.",
+              "type": "boolean"
+            }
+          }
+        },
         "gix": {
           "default": true,
           "description": "Use gix for git operations, set to false to shell out to git.",
@@ -784,24 +877,64 @@
           "description": "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var.",
           "type": "string"
         },
+        "go": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default_packages_file": {
+              "default": "~/.default-go-packages",
+              "description": "Path to a file containing default go packages to install when installing go.",
+              "type": "string"
+            },
+            "download_mirror": {
+              "default": "https://dl.google.com/go",
+              "description": "Mirror to download go sdk tarballs from.",
+              "type": "string"
+            },
+            "repo": {
+              "default": "https://github.com/golang/go",
+              "description": "URL to fetch go from.",
+              "type": "string"
+            },
+            "set_gobin": {
+              "description": "Changes where `go install` installs binaries to.",
+              "type": "boolean"
+            },
+            "set_gopath": {
+              "description": "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages.",
+              "type": "boolean",
+              "deprecated": true
+            },
+            "set_goroot": {
+              "default": true,
+              "description": "Sets GOROOT=~/.local/share/mise/installs/go/.../.",
+              "type": "boolean"
+            },
+            "skip_checksum": {
+              "description": "Set to true to skip checksum verification when downloading go sdk tarballs.",
+              "type": "boolean"
+            }
+          }
+        },
         "go_default_packages_file": {
-          "default": "~/.default-go-packages",
-          "description": "Path to a file containing default go packages to install when installing go",
-          "type": "string"
+          "description": "Path to a file containing default go packages to install when installing go.",
+          "type": "string",
+          "deprecated": true
         },
         "go_download_mirror": {
-          "default": "https://dl.google.com/go",
           "description": "Mirror to download go sdk tarballs from.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "go_repo": {
-          "default": "https://github.com/golang/go",
           "description": "URL to fetch go from.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "go_set_gobin": {
           "description": "Changes where `go install` installs binaries to.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "go_set_gopath": {
           "description": "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages.",
@@ -809,13 +942,14 @@
           "deprecated": true
         },
         "go_set_goroot": {
-          "default": true,
           "description": "Sets GOROOT=~/.local/share/mise/installs/go/.../.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "go_skip_checksum": {
           "description": "Set to true to skip checksum verification when downloading go sdk tarballs.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "gpg_verify": {
           "description": "Use gpg to verify all tool signatures.",
@@ -922,9 +1056,21 @@
           "description": "Require lockfile URLs to be present during installation.",
           "type": "boolean"
         },
+        "locked_verify_provenance": {
+          "default": false,
+          "description": "Re-verify provenance at install time even when the lockfile already has provenance.",
+          "type": "boolean"
+        },
         "lockfile": {
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
+        },
+        "lockfile_platforms": {
+          "description": "Platforms to target in lockfile operations.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "log_level": {
           "default": "info",
@@ -1091,10 +1237,6 @@
             }
           }
         },
-        "pipx_uvx": {
-          "description": "Use uvx instead of pipx if uv is installed and on PATH.",
-          "type": "boolean"
-        },
         "plugin_autoupdate_last_check_duration": {
           "default": "7d",
           "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
@@ -1175,46 +1317,6 @@
               "type": "boolean"
             }
           }
-        },
-        "python_compile": {
-          "description": "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
-          "type": "boolean",
-          "deprecated": true
-        },
-        "python_default_packages_file": {
-          "description": "Path to a file containing default python packages to install when installing python.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_patch_url": {
-          "description": "URL to fetch python patches from.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_patches_directory": {
-          "description": "Directory to fetch python patches from.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_precompiled_arch": {
-          "description": "Specify the architecture to use for precompiled binaries.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_precompiled_os": {
-          "description": "Specify the OS to use for precompiled binaries.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_pyenv_repo": {
-          "description": "URL to fetch pyenv from for compiling python.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_venv_stdlib": {
-          "description": "Prefer to use venv from Python's standard library.",
-          "type": "boolean",
-          "deprecated": true
         },
         "quiet": {
           "description": "Suppress all output except errors.",
@@ -1483,7 +1585,7 @@
               "type": "boolean"
             },
             "timeout": {
-              "description": "Default timeout for tasks. Can be overridden by individual tasks.",
+              "description": "Default timeout for tasks.",
               "type": "string"
             },
             "timings": {
@@ -1554,7 +1656,7 @@
         },
         "trusted_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will automatically mark as trusted.",
+          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable (`:` on Unix, `;` on Windows).",
           "type": "array",
           "items": {
             "type": "string"
@@ -1595,11 +1697,6 @@
         "verbose": {
           "description": "Shows more verbose output such as installation logs when installing tools.",
           "type": "boolean"
-        },
-        "vfox": {
-          "description": "Use vfox as a default plugin backend instead of asdf.",
-          "type": "boolean",
-          "deprecated": true
         },
         "windows_default_file_shell_args": {
           "default": "cmd /c",
@@ -1722,8 +1819,29 @@
               ]
             },
             "confirm": {
-              "description": "confirmation message before running this task",
-              "type": "string"
+              "oneOf": [
+                {
+                  "description": "confirmation message before running this task",
+                  "type": "string"
+                },
+                {
+                  "description": "confirmation message before running this task with default value",
+                  "properties": {
+                    "message": {
+                      "description": "confirmation message before running this task",
+                      "type": "string"
+                    },
+                    "default": {
+                      "description": "default value for confirmation (yes/no/true/false)",
+                      "enum": ["yes", "no", "y", "n", "true", "false"],
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message", "default"],
+                  "additionalProperties": false,
+                  "type": "object"
+                }
+              ]
             },
             "depends": {
               "oneOf": [
@@ -1800,20 +1918,7 @@
                         "type": "string"
                       },
                       "os": {
-                        "oneOf": [
-                          {
-                            "description": "operating system to install on",
-                            "type": "array"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "string"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "boolean"
-                          }
-                        ]
+                        "$ref": "#/$defs/os_filter"
                       }
                     },
                     "required": ["version"],
@@ -1891,6 +1996,11 @@
               "description": "directly connect task to stdin/stdout/stderr",
               "type": "boolean"
             },
+            "raw_args": {
+              "default": false,
+              "description": "skip mise's argument parsing for this task — all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
+              "type": "boolean"
+            },
             "run": {
               "oneOf": [
                 {
@@ -1948,6 +2058,59 @@
             "timeout": {
               "description": "timeout for this task",
               "type": "string"
+            },
+            "deny_all": {
+              "default": false,
+              "description": "block reads, writes, network, and env vars",
+              "type": "boolean"
+            },
+            "deny_read": {
+              "default": false,
+              "description": "block filesystem reads",
+              "type": "boolean"
+            },
+            "deny_write": {
+              "default": false,
+              "description": "block all filesystem writes",
+              "type": "boolean"
+            },
+            "deny_net": {
+              "default": false,
+              "description": "block all network access",
+              "type": "boolean"
+            },
+            "deny_env": {
+              "default": false,
+              "description": "block env var inheritance",
+              "type": "boolean"
+            },
+            "allow_read": {
+              "description": "allow reads from specific paths",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "allow_write": {
+              "description": "allow writes to specific paths",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "allow_net": {
+              "description": "allow network to specific hosts",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "allow_env": {
+              "description": "allow specific env vars through",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "extends": {
               "description": "name of the task template to extend",
@@ -2058,20 +2221,7 @@
               "type": "string"
             },
             "os": {
-              "oneOf": [
-                {
-                  "description": "operating system to install on",
-                  "type": "array"
-                },
-                {
-                  "description": "option to pass to tool",
-                  "type": "string"
-                },
-                {
-                  "description": "option to pass to tool",
-                  "type": "boolean"
-                }
-              ]
+              "$ref": "#/$defs/os_filter"
             },
             "install_env": {
               "type": "object",
@@ -2089,6 +2239,21 @@
                 ]
               },
               "description": "environment variables during tool installation"
+            },
+            "depends": {
+              "oneOf": [
+                {
+                  "description": "tools that must be installed before this tool",
+                  "type": "string"
+                },
+                {
+                  "description": "tools that must be installed before this tool",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
             },
             "postinstall": {
               "description": "command to run after tool installation",
@@ -2315,8 +2480,29 @@
           ]
         },
         "confirm": {
-          "description": "confirmation message before running this task",
-          "type": "string"
+          "oneOf": [
+            {
+              "description": "confirmation message before running this task",
+              "type": "string"
+            },
+            {
+              "description": "confirmation message before running this task with default value",
+              "properties": {
+                "message": {
+                  "description": "confirmation message before running this task",
+                  "type": "string"
+                },
+                "default": {
+                  "description": "default value for confirmation (yes/no/true/false)",
+                  "enum": ["yes", "no", "y", "n", "true", "false"],
+                  "type": "string"
+                }
+              },
+              "required": ["message", "default"],
+              "additionalProperties": false,
+              "type": "object"
+            }
+          ]
         },
         "depends": {
           "oneOf": [
@@ -2393,20 +2579,7 @@
                     "type": "string"
                   },
                   "os": {
-                    "oneOf": [
-                      {
-                        "description": "operating system to install on",
-                        "type": "array"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "string"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "boolean"
-                      }
-                    ]
+                    "$ref": "#/$defs/os_filter"
                   }
                 },
                 "required": ["version"],
@@ -2484,6 +2657,11 @@
           "description": "directly connect task to stdin/stdout/stderr",
           "type": "boolean"
         },
+        "raw_args": {
+          "default": false,
+          "description": "skip mise's argument parsing for this task — all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
+          "type": "boolean"
+        },
         "run": {
           "oneOf": [
             {
@@ -2541,6 +2719,59 @@
         "timeout": {
           "description": "timeout for this task",
           "type": "string"
+        },
+        "deny_all": {
+          "default": false,
+          "description": "block reads, writes, network, and env vars",
+          "type": "boolean"
+        },
+        "deny_read": {
+          "default": false,
+          "description": "block filesystem reads",
+          "type": "boolean"
+        },
+        "deny_write": {
+          "default": false,
+          "description": "block all filesystem writes",
+          "type": "boolean"
+        },
+        "deny_net": {
+          "default": false,
+          "description": "block all network access",
+          "type": "boolean"
+        },
+        "deny_env": {
+          "default": false,
+          "description": "block env var inheritance",
+          "type": "boolean"
+        },
+        "allow_read": {
+          "description": "allow reads from specific paths",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allow_write": {
+          "description": "allow writes to specific paths",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allow_net": {
+          "description": "allow network to specific hosts",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allow_env": {
+          "description": "allow specific env vars through",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"
@@ -2565,8 +2796,29 @@
           ]
         },
         "confirm": {
-          "description": "confirmation message before running this task",
-          "type": "string"
+          "oneOf": [
+            {
+              "description": "confirmation message before running this task",
+              "type": "string"
+            },
+            {
+              "description": "confirmation message before running this task with default value",
+              "properties": {
+                "message": {
+                  "description": "confirmation message before running this task",
+                  "type": "string"
+                },
+                "default": {
+                  "description": "default value for confirmation (yes/no/true/false)",
+                  "enum": ["yes", "no", "y", "n", "true", "false"],
+                  "type": "string"
+                }
+              },
+              "required": ["message", "default"],
+              "additionalProperties": false,
+              "type": "object"
+            }
+          ]
         },
         "depends": {
           "oneOf": [
@@ -2643,20 +2895,7 @@
                     "type": "string"
                   },
                   "os": {
-                    "oneOf": [
-                      {
-                        "description": "operating system to install on",
-                        "type": "array"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "string"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "boolean"
-                      }
-                    ]
+                    "$ref": "#/$defs/os_filter"
                   }
                 },
                 "required": ["version"],
@@ -2734,6 +2973,11 @@
           "description": "directly connect task to stdin/stdout/stderr",
           "type": "boolean"
         },
+        "raw_args": {
+          "default": false,
+          "description": "skip mise's argument parsing for this task — all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
+          "type": "boolean"
+        },
         "run": {
           "oneOf": [
             {
@@ -2791,6 +3035,59 @@
         "timeout": {
           "description": "timeout for this task",
           "type": "string"
+        },
+        "deny_all": {
+          "default": false,
+          "description": "block reads, writes, network, and env vars",
+          "type": "boolean"
+        },
+        "deny_read": {
+          "default": false,
+          "description": "block filesystem reads",
+          "type": "boolean"
+        },
+        "deny_write": {
+          "default": false,
+          "description": "block all filesystem writes",
+          "type": "boolean"
+        },
+        "deny_net": {
+          "default": false,
+          "description": "block all network access",
+          "type": "boolean"
+        },
+        "deny_env": {
+          "default": false,
+          "description": "block env var inheritance",
+          "type": "boolean"
+        },
+        "allow_read": {
+          "description": "allow reads from specific paths",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allow_write": {
+          "description": "allow writes to specific paths",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allow_net": {
+          "description": "allow network to specific hosts",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allow_env": {
+          "description": "allow specific env vars through",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "additionalProperties": false,
@@ -2859,6 +3156,57 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/env"
+          }
+        }
+      ]
+    },
+    "env_file": {
+      "description": "dotenv file(s) to load",
+      "deprecated": true,
+      "oneOf": [
+        {
+          "description": "dotenv file to load",
+          "type": "string"
+        },
+        {
+          "description": "dotenv files to load",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "dotenv": {
+      "description": "dotenv file(s) to load",
+      "deprecated": true,
+      "oneOf": [
+        {
+          "description": "dotenv file to load",
+          "type": "string"
+        },
+        {
+          "description": "dotenv files to load",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "env_path": {
+      "description": "PATH entries to add",
+      "deprecated": true,
+      "oneOf": [
+        {
+          "description": "PATH entry to add",
+          "type": "string"
+        },
+        {
+          "description": "PATH entries to add",
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         }
       ]

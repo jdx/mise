@@ -975,7 +975,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-env",
           description:
-            "[experimental] Allow specific env var through (implies --deny-env for everything else)",
+            "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
           isRepeatable: true,
           args: {
             name: "var",
@@ -1417,29 +1417,6 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "output",
             description: "Output file path for the tool stub",
-          },
-        },
-      ],
-    },
-    {
-      name: "github",
-      description: "GitHub related commands",
-      subcommands: [
-        {
-          name: "token",
-          description:
-            "Display the GitHub token mise will use for a given host",
-          options: [
-            {
-              name: "--unmask",
-              description: "Show the full unmasked token",
-              isRepeatable: false,
-            },
-          ],
-          args: {
-            name: "host",
-            description: "GitHub hostname",
-            isOptional: true,
           },
         },
       ],
@@ -2215,7 +2192,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-env",
           description:
-            "[experimental] Allow specific env var through (implies --deny-env for everything else)",
+            "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
           isRepeatable: true,
           args: {
             name: "var",
@@ -3126,7 +3103,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-env",
               description:
-                "[experimental] Allow specific env var through (implies --deny-env for everything else)",
+                "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
               isRepeatable: true,
               args: {
                 name: "var",
@@ -3381,6 +3358,60 @@ const completionSpec: Fig.Spec = {
         isOptional: true,
         isVariadic: true,
       },
+    },
+    {
+      name: "token",
+      description: "Display git provider tokens mise will use",
+      subcommands: [
+        {
+          name: "forgejo",
+          description: "Forgejo token",
+          options: [
+            {
+              name: "--unmask",
+              description: "Show the full unmasked token",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "host",
+            description: "Forgejo hostname",
+            isOptional: true,
+          },
+        },
+        {
+          name: "github",
+          description: "GitHub token",
+          options: [
+            {
+              name: "--unmask",
+              description: "Show the full unmasked token",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "host",
+            description: "GitHub hostname",
+            isOptional: true,
+          },
+        },
+        {
+          name: "gitlab",
+          description: "GitLab token",
+          options: [
+            {
+              name: "--unmask",
+              description: "Show the full unmasked token",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "host",
+            description: "GitLab hostname",
+            isOptional: true,
+          },
+        },
+      ],
     },
     {
       name: "tool",

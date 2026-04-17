@@ -203,6 +203,7 @@ impl Backend for PIPXBackend {
             self.warn_if_dependency_missing(
                 &ctx.config,
                 "pipx",
+                &["pipx"],
                 "To use pipx packages with mise, you need to install pipx first:\n\
                   mise use pipx@latest\n\n\
                 Alternatively, you can use uv/uvx by installing uv:\n\

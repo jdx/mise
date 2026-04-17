@@ -37,6 +37,19 @@ Note that shorthand versions (like `21` in the example) use [`OpenJDK`](https://
 For more information on which JDK to choose, see <https://whichjdk.com>.
 :::
 
+## JAVA_HOME
+
+mise automatically sets `JAVA_HOME` to the active Java installation. This requires [`mise activate`](/cli/activate) — shims alone do not set environment variables like `JAVA_HOME`.
+
+If `JAVA_HOME` appears stuck on an old version after changing your `mise.toml`, try:
+
+```sh
+cd . # triggers mise hook-env to re-evaluate
+echo $JAVA_HOME
+```
+
+If using an IDE that reads `JAVA_HOME` at startup, you may need to restart it after switching Java versions. For non-interactive environments (CI, scripts), use `mise exec` or `mise run` which always set up the full environment.
+
 ## macOS JAVA_HOME Integration
 
 Some applications in macOS rely on `/usr/libexec/java_home` to find installed Java runtimes.
@@ -122,3 +135,10 @@ mkdir -p ~/.asdf/installs/ && ln -s ~/.local/share/mise/installs/java ~/.asdf/in
 ```
 
 Otherwise, you can always use the [foojay-resolver-convention](https://plugins.gradle.org/plugin/org.gradle.toolchains.foojay-resolver-convention) plugin to let Gradle automatically install JDKs required by your project.
+
+## Settings
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="java" :level="3" />

@@ -391,6 +391,7 @@ impl Backend for AsdfBackend {
     }
 
     async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        let runtime_path = tv.runtime_path();
         Ok(self
             .cache
             .list_bin_paths(config, self, tv, async || {
@@ -398,7 +399,7 @@ impl Backend for AsdfBackend {
             })
             .await?
             .into_iter()
-            .map(|path| tv.install_path().join(path))
+            .map(|path| runtime_path.join(path))
             .collect())
     }
 

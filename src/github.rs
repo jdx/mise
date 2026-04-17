@@ -1,7 +1,7 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Settings;
-use crate::file::path_env_without_shims;
-use crate::{dirs, duration, env};
+use crate::tokens;
+use crate::{dirs, env};
 use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
@@ -83,6 +83,8 @@ static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::de
 
 pub static API_URL: &str = "https://api.github.com";
 
+pub static API_PATH: &str = "/api/v3";
+
 async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
     TAGS_CACHE
         .write()
@@ -90,7 +92,7 @@ async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-tags.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     TAGS_CACHE.read().await
@@ -103,7 +105,7 @@ async fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<Git
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-releases.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASES_CACHE.read().await
@@ -116,7 +118,7 @@ async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<Gith
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASE_CACHE.read().await
@@ -275,6 +277,49 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
         .clone())
 }
 
+/// Find the latest build revision for a version in a GitHub repo.
+///
+/// Build revisions use the pattern `{version}-{N}` where N is an incrementing integer.
+/// For example, given version "3.3.11", this will prefer tag "3.3.11-2" over "3.3.11-1"
+/// over "3.3.11". Returns the release with the highest build revision.
+///
+/// This is used by precompiled binary repos (e.g., jdx/ruby) where binaries may be
+/// rebuilt with different checksums while keeping the same upstream version.
+///
+/// Note: this relies on `list_releases` which may only return the first page of results
+/// when `MISE_LIST_ALL_VERSIONS` is not set. For repos with many releases, older versions
+/// may not be found, falling back to the exact version tag via `get_release`.
+pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Result<GithubRelease> {
+    let releases = list_releases(repo).await?;
+    match pick_best_build_revision(releases, version) {
+        Some(release) => Ok(release),
+        None => get_release(repo, version).await,
+    }
+}
+
+/// Select the release with the highest build revision for a given version.
+///
+/// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the one
+/// with the highest numeric `-N` suffix. The base version (no suffix) is treated as
+/// revision 0.
+fn pick_best_build_revision(releases: Vec<GithubRelease>, version: &str) -> Option<GithubRelease> {
+    let prefix = format!("{version}-");
+    releases
+        .into_iter()
+        .filter(|r| {
+            r.tag_name == version
+                || r.tag_name
+                    .strip_prefix(&prefix)
+                    .is_some_and(|suffix| suffix.parse::<u32>().is_ok())
+        })
+        .max_by_key(|r| {
+            r.tag_name
+                .strip_prefix(&prefix)
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0)
+        })
+}
+
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
     let url = if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
@@ -376,7 +421,8 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     // 3. credential_command
     let credential_command = &settings.github.credential_command;
     if !credential_command.is_empty()
-        && let Some(token) = get_credential_command_token(credential_command, lookup_host)
+        && let Some(token) =
+            tokens::get_credential_command_token("github", credential_command, lookup_host)
     {
         return Some((token, TokenSource::CredentialCommand));
     }
@@ -395,12 +441,23 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
 
     // 6. git credential fill
     if settings.github.use_git_credentials
-        && let Some(token) = get_git_credential_token(lookup_host)
+        && let Some(token) = tokens::get_git_credential_token("github", lookup_host)
     {
         return Some((token, TokenSource::GitCredential));
     }
 
     None
+}
+
+/// Resolve the GitHub token from a full API base URL (e.g., "https://api.github.com").
+/// Extracts the hostname and delegates to [`resolve_token`].
+pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
+    let parsed = url::Url::parse(api_url).ok();
+    let host = parsed
+        .as_ref()
+        .and_then(|u| u.host_str())
+        .unwrap_or("api.github.com");
+    resolve_token(host).map(|(t, _)| t)
 }
 
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
@@ -445,42 +502,13 @@ pub fn is_gh_host(host: &str) -> bool {
 static MISE_GITHUB_TOKENS: Lazy<HashMap<String, String>> =
     Lazy::new(|| read_mise_github_tokens().unwrap_or_default());
 
-#[derive(Deserialize)]
-struct MiseGithubTokensFile {
-    tokens: Option<HashMap<String, MiseGithubTokenEntry>>,
-}
-
-#[derive(Deserialize)]
-struct MiseGithubTokenEntry {
-    token: Option<String>,
-}
-
+#[cfg(test)]
 fn parse_github_tokens(contents: &str) -> Option<HashMap<String, String>> {
-    let file: MiseGithubTokensFile = toml::from_str(contents).ok()?;
-    Some(
-        file.tokens?
-            .into_iter()
-            .filter_map(|(host, entry)| entry.token.map(|t| (host, t)))
-            .collect(),
-    )
+    tokens::parse_tokens_toml(contents)
 }
 
 fn read_mise_github_tokens() -> Option<HashMap<String, String>> {
-    let path = env::MISE_CONFIG_DIR.join("github_tokens.toml");
-    let contents = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(e) => {
-            trace!("github_tokens.toml not readable at {}: {e}", path.display());
-            return None;
-        }
-    };
-    match parse_github_tokens(&contents) {
-        Some(tokens) => Some(tokens),
-        None => {
-            debug!("failed to parse github_tokens.toml at {}", path.display());
-            None
-        }
-    }
+    tokens::read_tokens_toml("github_tokens.toml", "github_tokens.toml")
 }
 
 // ── gh CLI hosts.yml ────────────────────────────────────────────────
@@ -547,116 +575,6 @@ struct GhHostEntry {
     oauth_token: Option<String>,
 }
 
-// ── credential_command ──────────────────────────────────────────────
-
-/// Cache for tokens obtained from `credential_command`.
-/// Maps hostname to the token (or None if the command failed).
-static CREDENTIAL_COMMAND_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String>>>> =
-    Lazy::new(Default::default);
-
-/// Get a GitHub token by running the user's `credential_command` setting.
-/// The host is passed as `$1` to the command. Results are cached per host.
-fn get_credential_command_token(cmd: &str, host: &str) -> Option<String> {
-    let mut cache = CREDENTIAL_COMMAND_CACHE
-        .lock()
-        .expect("CREDENTIAL_COMMAND_CACHE mutex poisoned");
-    if let Some(token) = cache.get(host) {
-        return token.clone();
-    }
-    let path_without_shims = path_env_without_shims();
-    let result = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .arg("mise-credential-helper") // $0
-        .arg(host) // $1
-        .env("PATH", &path_without_shims)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .ok()
-        .and_then(|output| {
-            if !output.status.success() {
-                if let Ok(err) = String::from_utf8(output.stderr)
-                    && !err.trim().is_empty()
-                {
-                    debug!("credential_command stderr: {}", err.trim());
-                }
-                return None;
-            }
-            String::from_utf8(output.stdout)
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-        });
-    trace!(
-        "credential_command for {host}: {}",
-        if result.is_some() {
-            "found"
-        } else {
-            "not found"
-        }
-    );
-    cache.insert(host.to_string(), result.clone());
-    result
-}
-
-// ── git credential fill ─────────────────────────────────────────────
-
-/// Cache for tokens obtained from `git credential fill`.
-/// Maps hostname to the token (or None if the command failed / git is not installed).
-static GIT_CREDENTIAL_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String>>>> =
-    Lazy::new(Default::default);
-
-/// Get a GitHub token for `host` by running `git credential fill`.
-/// Results are cached per hostname so the subprocess is only spawned once.
-// TODO: make async and use tokio::sync::Mutex to avoid blocking the runtime
-// thread during subprocess I/O. Requires making resolve_token and get_headers async.
-fn get_git_credential_token(host: &str) -> Option<String> {
-    let mut cache = GIT_CREDENTIAL_CACHE
-        .lock()
-        .expect("GIT_CREDENTIAL_CACHE mutex poisoned");
-    if let Some(token) = cache.get(host) {
-        return token.clone();
-    }
-    let path_without_shims = path_env_without_shims();
-    let input = format!("protocol=https\nhost={host}\n\n");
-    let result = std::process::Command::new("git")
-        .args(["credential", "fill"])
-        .env("PATH", &path_without_shims)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()
-        .and_then(|mut child| {
-            use std::io::Write;
-            child.stdin.take()?.write_all(input.as_bytes()).ok()?;
-            let output = child.wait_with_output().ok()?;
-            if !output.status.success() {
-                return None;
-            }
-            String::from_utf8(output.stdout)
-                .ok()?
-                .lines()
-                .find_map(|line| line.strip_prefix("password="))
-                .map(|p| p.to_string())
-                .filter(|s| !s.is_empty())
-        });
-    trace!(
-        "git credential fill for {host}: {}",
-        if result.is_some() {
-            "found"
-        } else {
-            "not found"
-        }
-    );
-    cache.insert(host.to_string(), result.clone());
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -695,5 +613,52 @@ something_else = "value"
 "#;
         let result = parse_github_tokens(toml).unwrap();
         assert!(result.is_empty());
+    }
+
+    fn make_release(tag: &str) -> GithubRelease {
+        GithubRelease {
+            tag_name: tag.to_string(),
+            draft: false,
+            prerelease: false,
+            created_at: String::new(),
+            assets: vec![],
+        }
+    }
+
+    #[test]
+    fn test_build_revision_selects_highest() {
+        let releases = vec![
+            make_release("3.3.11"),
+            make_release("3.3.11-1"),
+            make_release("3.3.11-2"),
+            make_release("3.3.10-1"),
+        ];
+        let best = pick_best_build_revision(releases, "3.3.11").unwrap();
+        assert_eq!(best.tag_name, "3.3.11-2");
+    }
+
+    #[test]
+    fn test_build_revision_falls_back_to_base() {
+        let releases = vec![make_release("3.3.11"), make_release("3.3.10-1")];
+        let best = pick_best_build_revision(releases, "3.3.11").unwrap();
+        assert_eq!(best.tag_name, "3.3.11");
+    }
+
+    #[test]
+    fn test_build_revision_no_match() {
+        let releases = vec![make_release("3.3.10"), make_release("3.3.10-1")];
+        let best = pick_best_build_revision(releases, "3.3.11");
+        assert!(best.is_none());
+    }
+
+    #[test]
+    fn test_build_revision_ignores_non_numeric_suffix() {
+        let releases = vec![
+            make_release("3.3.11"),
+            make_release("3.3.11-rc1"),
+            make_release("3.3.11-1"),
+        ];
+        let best = pick_best_build_revision(releases, "3.3.11").unwrap();
+        assert_eq!(best.tag_name, "3.3.11-1");
     }
 }
