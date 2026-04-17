@@ -1037,6 +1037,10 @@ like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are no
 allowing you to selectively use newer versions for specific tools while keeping others behind the
 cutoff date.
 
+Some package-manager backends also forward the cutoff to transitive dependency resolution during
+install. This includes `npm:` tools and `pipx:` tools installed through uv. The `pipx` fallback path
+does not receive a transitive release-age cutoff.
+
 Can be overridden with the `--before` CLI flag or per-tool with the `install_before` tool option.
 
 ```toml
