@@ -5861,7 +5861,7 @@ dependencies = [
  "xx",
  "xz2",
  "zip 8.5.1",
- "zipsign-api",
+ "zipsign-api 0.2.1",
  "zstd",
 ]
 
@@ -8523,7 +8523,7 @@ dependencies = [
  "tempfile",
  "urlencoding",
  "zip 2.4.2",
- "zipsign-api",
+ "zipsign-api 0.1.5",
 ]
 
 [[package]]
@@ -11624,6 +11624,17 @@ name = "zipsign-api"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dba6063ff82cdbd9a765add16d369abe81e520f836054e997c2db217ceca40c0"
+dependencies = [
+ "base64 0.22.1",
+ "ed25519-dalek",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "zipsign-api"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a55ebb27e67d9a9d116dd3a19637ee8cc0570c8ef816fb504c453f15448c99"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
