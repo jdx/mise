@@ -191,13 +191,8 @@ impl Backend for NPMBackend {
         let package_manager = Settings::get().npm.package_manager;
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
-                self.build_transitive_release_age_args(
-                    &ctx.config,
-                    package_manager,
-                    before_date,
-                    process_now(),
-                )
-                .await
+                self.build_transitive_release_age_args(&ctx.config, package_manager, before_date)
+                    .await
             }
             None => Vec::new(),
         };
@@ -308,9 +303,8 @@ impl NPMBackend {
         config: &Arc<Config>,
         package_manager: NpmPackageManager,
         before_date: Timestamp,
-        now: Timestamp,
     ) -> Vec<OsString> {
-        let seconds = Self::elapsed_seconds_ceil(before_date, now);
+        let seconds = Self::elapsed_seconds_ceil(before_date, process_now());
         match package_manager {
             NpmPackageManager::Npm => {
                 // Sub-day windows always emit --before because --min-release-age
