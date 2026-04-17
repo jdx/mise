@@ -4,33 +4,48 @@ packages:
     repo_owner: sassman
     repo_name: t-rec-rs
     description: Blazingly fast terminal recorder that generates animated gif images for the web written in rust
-    asset: t-rec-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-    format: tar.gz
-    replacements:
-      amd64: x86_64
-      darwin: apple-darwin
-      linux: unknown-linux-musl
-    supported_envs:
-      - linux/amd64
-      - darwin
-    rosetta2: true
     files:
       - name: t-rec
-    version_constraint: semver(">= 0.7.3")
+    version_constraint: "false"
     version_overrides:
-      - version_constraint: semver(">= 0.7.2")
-        replacements:
-          amd64: x86_64
-          linux: unknown-linux-musl
-        supported_envs:
-          - linux/amd64
-        rosetta2: false
-      - version_constraint: semver(">= 0.7.1")
-      - version_constraint: semver(">= 0.7.0")
+      - version_constraint: Version == "v0.7.0"
+        asset: t-rec-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
         replacements:
           amd64: x86_64
           darwin: apple-darwin
         supported_envs:
           - darwin
-      - version_constraint: semver("< 0.7.0")
+      - version_constraint: Version == "v0.7.1"
+        asset: t-rec-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.7.2"
+        asset: t-rec-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.6.2")
         no_asset: true
+      - version_constraint: "true"
+        asset: t-rec-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin

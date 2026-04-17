@@ -1,6 +1,5 @@
-use crate::config::Config;
-use crate::config::config_file::ConfigFile;
 use crate::config::tracking::Tracker;
+use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell};
@@ -38,6 +37,7 @@ impl ConfigLs {
 
     async fn display(&self) -> Result<()> {
         let config = Config::get().await?;
+        let env_results = config.env_results().await?;
         let configs = config
             .config_files
             .values()
@@ -57,33 +57,56 @@ impl ConfigLs {
             };
             table.add_row(vec![Cell::new(display_path(cfg.get_path())), tools]);
         }
+        let verbose = Settings::get().verbose;
+        for f in &env_results.env_files {
+            let description = if verbose {
+                env_results
+                    .env
+                    .iter()
+                    .filter(|(_, (_, src))| src == f)
+                    .map(|(k, _)| k.as_str())
+                    .join(", ")
+            } else {
+                String::new()
+            };
+            let tools = if description.is_empty() {
+                Cell::new("(none)")
+                    .add_attribute(Attribute::Italic)
+                    .add_attribute(Attribute::Dim)
+            } else {
+                Cell::new(description).add_attribute(Attribute::Dim)
+            };
+            table.add_row(vec![Cell::new(display_path(f)), tools]);
+        }
         table.truncate(true).print()
     }
 
     async fn display_json(&self) -> Result<()> {
-        let array_items = Config::get()
-            .await?
+        let config = Config::get().await?;
+        let env_results = config.env_results().await?;
+        let array_items: Vec<serde_json::Value> = config
             .config_files
             .values()
             .map(|cf| {
-                let c: &dyn ConfigFile = cf.as_ref();
-                let mut item = serde_json::Map::new();
-                item.insert(
-                    "path".to_string(),
-                    serde_json::Value::String(c.get_path().to_string_lossy().to_string()),
-                );
-                let plugins = c
+                let tools: Vec<String> = cf
                     .to_tool_request_set()
                     .unwrap()
                     .list_tools()
                     .into_iter()
-                    .map(|s| serde_json::Value::String(s.to_string()))
-                    .collect::<Vec<serde_json::Value>>();
-                item.insert("tools".to_string(), serde_json::Value::Array(plugins));
-
-                item
+                    .map(|s| s.to_string())
+                    .collect();
+                serde_json::json!({
+                    "path": cf.get_path().to_string_lossy(),
+                    "tools": tools,
+                })
             })
-            .collect::<serde_json::Value>();
+            .chain(env_results.env_files.iter().map(|f| {
+                serde_json::json!({
+                    "path": f.to_string_lossy(),
+                    "tools": [],
+                })
+            }))
+            .collect();
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
         Ok(())
     }

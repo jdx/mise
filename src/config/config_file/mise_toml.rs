@@ -770,8 +770,9 @@ impl ConfigFile for MiseToml {
                             ba_opts.opts.entry(k).or_insert(v);
                         }
                     }
-                    // Copy os and install_env from config (not cached)
+                    // Copy os, depends, and install_env from config (not cached)
                     ba_opts.os = options.os.clone();
+                    ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
                     ba.set_opts(Some(ba_opts.clone()));
                     ToolRequest::new_opts(ba.into(), &version, ba_opts, source.clone())?
@@ -1567,6 +1568,29 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
+                        "depends" => {
+                            match v {
+                                toml::Value::Array(arr) => {
+                                    options.depends = Some(
+                                    arr.iter()
+                                        .map(|v| {
+                                            v.as_str()
+                                                .ok_or_else(|| de::Error::custom("depends array must contain only strings"))
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
+                                );
+                                }
+                                toml::Value::String(s) => {
+                                    options.depends = Some(vec![s]);
+                                }
+                                _ => {
+                                    return Err(de::Error::custom(
+                                        "depends must be a string or array",
+                                    ));
+                                }
+                            }
+                        }
                         "install_env" => match v {
                             toml::Value::Table(env) => {
                                 for (k, v) in env {
@@ -1684,6 +1708,29 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
+                        "depends" => {
+                            match v {
+                                toml::Value::Array(arr) => {
+                                    options.depends = Some(
+                                    arr.iter()
+                                        .map(|v| {
+                                            v.as_str()
+                                                .ok_or_else(|| de::Error::custom("depends array must contain only strings"))
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
+                                );
+                                }
+                                toml::Value::String(s) => {
+                                    options.depends = Some(vec![s]);
+                                }
+                                _ => {
+                                    return Err(de::Error::custom(
+                                        "depends must be a string or array",
+                                    ));
+                                }
+                            }
+                        }
                         "install_env" => match v {
                             toml::Value::Table(env) => {
                                 for (k, v) in env {
@@ -2206,6 +2253,46 @@ mod tests {
         file::remove_file(&p).unwrap();
     }
 
+    #[test]
+    fn test_tasks_confirm_parses() {
+        let body = r#"
+[tasks.deploy]
+confirm = { message = "Are you sure you want to deploy to ({{ env.HOME }})?", default = "no" }
+run = 'echo " $usage_environment"'
+"#;
+
+        let path = std::path::Path::new("/tmp/mise.toml");
+        let rf = MiseToml::from_str(body, path).unwrap();
+        let task = rf.tasks.0.get("deploy").expect("deploy task should exist");
+
+        assert!(matches!(
+            task.confirm,
+            Some(crate::task::TaskConfirm::Options { .. })
+        ));
+    }
+
+    #[test]
+    fn test_task_templates_confirm_parses() {
+        let body = r#"
+[task_templates.deploy]
+confirm = { message = "Are you sure?", default = "no" }
+run = 'echo "template"'
+"#;
+
+        let path = std::path::Path::new("/tmp/mise.toml");
+        let rf = MiseToml::from_str(body, path).unwrap();
+        let template = rf
+            .task_templates
+            .0
+            .get("deploy")
+            .expect("deploy template should exist");
+
+        assert!(matches!(
+            template.confirm,
+            Some(crate::task::TaskConfirm::Options { .. })
+        ));
+    }
+
     #[tokio::test]
     async fn test_remove_alias() {
         let _config = Config::get().await.unwrap();
@@ -2413,6 +2500,54 @@ mod tests {
             opts2.get("pipx_args"),
             Some("--include-deps"),
             "non-overridden registry default pipx_args should still be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_depends_field_parsing() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            dummy = {{ version = "latest", depends = ["tiny"] }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let dummy = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "dummy")
+            .map(|(_, reqs)| reqs)
+            .expect("dummy should be in tool request set");
+        let opts = dummy[0].options();
+        assert_eq!(
+            opts.depends,
+            Some(vec!["tiny".to_string()]),
+            "depends should be parsed as a named field"
+        );
+        assert!(
+            !opts.opts.contains_key("depends"),
+            "depends should not leak into opts"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_depends_field_single_string() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            dummy = {{ version = "latest", depends = "tiny" }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let dummy = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "dummy")
+            .map(|(_, reqs)| reqs)
+            .expect("dummy should be in tool request set");
+        let opts = dummy[0].options();
+        assert_eq!(
+            opts.depends,
+            Some(vec!["tiny".to_string()]),
+            "single string depends should be wrapped in a vec"
         );
     }
 }

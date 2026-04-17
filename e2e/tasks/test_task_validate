@@ -229,3 +229,43 @@ SCRIPT
 chmod +x mise-tasks/multiple-alias
 
 assert_contains "mise tasks validate multiple-alias 2>&1 || true" "Cannot define both 'alias' and 'aliases'"
+
+# Clean up
+rm -rf mise-tasks
+
+# Test that run.tasks entries with inline arguments are accepted
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/test
+#!/usr/bin/env bash
+#MISE description="Run tests"
+#USAGE flag "--mode <mode>" {
+#USAGE   choices "integration" "unit"
+#USAGE   default "unit"
+#USAGE   help "Test suite to run"
+#USAGE }
+echo "running ${usage_mode} tests"
+SCRIPT
+chmod +x mise-tasks/test
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo building"
+
+[tasks.integrate]
+description = "Run integration tests"
+depends = ["build"]
+run = [
+  { task = "test --mode=integration" }
+]
+
+[tasks.parallel-tests]
+description = "Run tests in parallel"
+run = [
+  { tasks = ["test --mode=integration", "test --mode=unit"] }
+]
+EOF
+
+assert_contains "mise tasks validate" "✓ All 4 task(s) validated successfully"
+
+# Clean up
+rm -rf mise-tasks

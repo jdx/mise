@@ -1,4 +1,4 @@
-use mlua::{BorrowedStr, ExternalResult, Lua, MultiValue, Result, Table};
+use mlua::{BorrowedStr, ExternalResult, Lua, MultiValue, Result, Table, Value};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::http::CLIENT;
@@ -16,15 +16,33 @@ pub fn mod_http(lua: &Lua) -> Result<()> {
                 })?,
             ),
             (
+                "try_get",
+                lua.create_async_function(|lua: mlua::Lua, input| async move {
+                    try_get(&lua, input).await
+                })?,
+            ),
+            (
                 "head",
                 lua.create_async_function(|lua: mlua::Lua, input| async move {
                     head(&lua, input).await
                 })?,
             ),
             (
+                "try_head",
+                lua.create_async_function(|lua: mlua::Lua, input| async move {
+                    try_head(&lua, input).await
+                })?,
+            ),
+            (
                 "download_file",
                 lua.create_async_function(|_lua: mlua::Lua, input| async move {
                     download_file(&_lua, input).await
+                })?,
+            ),
+            (
+                "try_download_file",
+                lua.create_async_function(|_lua: mlua::Lua, input| async move {
+                    try_download_file(&_lua, input).await
                 })?,
             ),
         ])?,
@@ -101,6 +119,123 @@ async fn head(lua: &Lua, input: Table) -> Result<Table> {
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
     Ok(t)
+}
+
+async fn try_get(lua: &Lua, input: Table) -> Result<MultiValue> {
+    let url: String = input.get("url").into_lua_err()?;
+    let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
+        Some(tbl) => into_headers(&tbl)?,
+        None => HeaderMap::default(),
+    };
+    let resp = match CLIENT.get(&url).headers(headers).send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(lua.create_string(e.to_string())?),
+            ]));
+        }
+    };
+    let t = lua.create_table()?;
+    t.set("status_code", resp.status().as_u16())?;
+    t.set("headers", get_headers(lua, resp.headers())?)?;
+    match resp.text().await {
+        Ok(body) => t.set("body", body)?,
+        Err(e) => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(lua.create_string(e.to_string())?),
+            ]));
+        }
+    }
+    Ok(MultiValue::from_vec(vec![Value::Table(t), Value::Nil]))
+}
+
+async fn try_head(lua: &Lua, input: Table) -> Result<MultiValue> {
+    let url: String = input.get("url").into_lua_err()?;
+    let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
+        Some(tbl) => into_headers(&tbl)?,
+        None => HeaderMap::default(),
+    };
+    let resp = match CLIENT.head(&url).headers(headers).send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(lua.create_string(e.to_string())?),
+            ]));
+        }
+    };
+    let t = lua.create_table()?;
+    t.set("status_code", resp.status().as_u16())?;
+    t.set("headers", get_headers(lua, resp.headers())?)?;
+    Ok(MultiValue::from_vec(vec![Value::Table(t), Value::Nil]))
+}
+
+async fn try_download_file(_lua: &Lua, input: MultiValue) -> Result<MultiValue> {
+    let t = match input.front().and_then(|v| v.as_table()) {
+        Some(t) => t,
+        None => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(_lua.create_string("first argument must be a table")?),
+            ]));
+        }
+    };
+    let url: String = t.get("url").into_lua_err()?;
+    let headers = match t.get::<Option<Table>>("headers").into_lua_err()? {
+        Some(tbl) => into_headers(&tbl)?,
+        None => HeaderMap::default(),
+    };
+    let path = match input.get(1).and_then(|v| v.to_string().ok()) {
+        Some(p) => p,
+        None => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(_lua.create_string("second argument must be a string path")?),
+            ]));
+        }
+    };
+    let resp = match CLIENT.get(&url).headers(headers).send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(_lua.create_string(e.to_string())?),
+            ]));
+        }
+    };
+    if let Err(e) = resp.error_for_status_ref() {
+        return Ok(MultiValue::from_vec(vec![
+            Value::Nil,
+            Value::String(_lua.create_string(e.to_string())?),
+        ]));
+    }
+    let bytes = match resp.bytes().await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(_lua.create_string(e.to_string())?),
+            ]));
+        }
+    };
+    let mut file = match tokio::fs::File::create(&path).await {
+        Ok(f) => f,
+        Err(e) => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(_lua.create_string(e.to_string())?),
+            ]));
+        }
+    };
+    if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await {
+        return Ok(MultiValue::from_vec(vec![
+            Value::Nil,
+            Value::String(_lua.create_string(e.to_string())?),
+        ]));
+    }
+    Ok(MultiValue::from_vec(vec![Value::Boolean(true), Value::Nil]))
 }
 
 fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table> {
@@ -275,5 +410,143 @@ mod tests {
         );
 
         // TempDir automatically cleans up when dropped
+    }
+
+    #[tokio::test]
+    async fn test_try_get_success() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/get"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"message": "ok"}))
+                    .insert_header("content-type", "application/json"),
+            )
+            .mount(&server)
+            .await;
+
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        let url = server.uri() + "/get";
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local resp, err = http.try_get({ url = $url })
+            assert(err == nil, "expected no error, got: " .. tostring(err))
+            assert(resp ~= nil, "expected response")
+            assert(resp.status_code == 200)
+            assert(type(resp.body) == "string")
+        })
+        .exec_async()
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_try_get_failure() {
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        // Use a URL that will fail to connect
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local resp, err = http.try_get({ url = "http://127.0.0.1:1/" })
+            assert(resp == nil, "expected nil response")
+            assert(type(err) == "string", "expected error string, got: " .. type(err))
+        })
+        .exec_async()
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_try_head_success() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("HEAD"))
+            .and(path("/head"))
+            .respond_with(ResponseTemplate::new(200).insert_header("x-test", "value"))
+            .mount(&server)
+            .await;
+
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        let url = server.uri() + "/head";
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local resp, err = http.try_head({ url = $url })
+            assert(err == nil, "expected no error")
+            assert(resp.status_code == 200)
+            assert(resp.headers["x-test"] == "value")
+        })
+        .exec_async()
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_try_head_failure() {
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local resp, err = http.try_head({ url = "http://127.0.0.1:1/" })
+            assert(resp == nil, "expected nil response")
+            assert(type(err) == "string", "expected error string")
+        })
+        .exec_async()
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_try_download_file_success() {
+        let server = MockServer::start().await;
+        let test_content = "hello world";
+
+        Mock::given(method("GET"))
+            .and(path("/file.txt"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(test_content))
+            .mount(&server)
+            .await;
+
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("downloaded.txt");
+        let path_str = file_path.to_string_lossy().to_string();
+        let url = server.uri() + "/file.txt";
+
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local ok, err = http.try_download_file({ url = $url, headers = {} }, $path_str)
+            assert(ok == true, "expected true, got: " .. tostring(ok))
+            assert(err == nil, "expected no error, got: " .. tostring(err))
+        })
+        .exec_async()
+        .await
+        .unwrap();
+
+        let content = tokio::fs::read_to_string(&file_path).await.unwrap();
+        assert_eq!(content, test_content);
+    }
+
+    #[tokio::test]
+    async fn test_try_download_file_failure() {
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local _, err = http.try_download_file({ url = "http://127.0.0.1:1/", headers = {} }, "/tmp/should_not_exist.txt")
+            assert(type(err) == "string", "expected error string, got: " .. type(err))
+        })
+        .exec_async()
+        .await
+        .unwrap();
     }
 }

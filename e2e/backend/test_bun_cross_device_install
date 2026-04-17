@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Regression test: bun install should work when downloads and installs are on different filesystems.
+
+set -euo pipefail
+
+TEST_DIR="$(mktemp -d)"
+HTTP_PORT=8765
+SERVER_PID=""
+
+if [[ ! -d /dev/shm ]]; then
+	echo "skipping: /dev/shm is unavailable on this host" >&2
+	exit 0
+fi
+
+# Put downloads on /dev/shm and installs under /tmp so bun has to move files
+# across filesystems and hits the rename() cross-device case.
+downloads_dir="$(mktemp -d -p /dev/shm mise-bun-cross-device.XXXXXX)"
+installs_dir="$(mktemp -d -p /tmp mise-bun-cross-device.XXXXXX)"
+
+cleanup() {
+	if [[ -n $SERVER_PID ]]; then
+		kill "$SERVER_PID" 2>/dev/null || true
+	fi
+	# Remove the temporary test harness state and both temp dirs.
+	rm -rf "$TEST_DIR" "$downloads_dir" "$installs_dir"
+}
+trap cleanup EXIT
+
+# Serve a tiny Bun release fixture with a Python HTTP server so the test can
+# exercise the real Bun download + checksum + unzip path without relying on GitHub.
+python3 -u - "$TEST_DIR" "$HTTP_PORT" <<'PY' >/dev/null 2>&1 &
+import hashlib
+import io
+import sys
+import zipfile
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+root = Path(sys.argv[1])
+port = int(sys.argv[2])
+# Remember the most recent archive request so SHASUMS256.txt can match it.
+state_file = root / "last-requested-zip.txt"
+script = b"""#!/usr/bin/env bash
+if [[ ${1:-} == -v || ${1:-} == --version ]]; then
+  echo 1.3.10
+else
+  echo 'bun fixture' "$@"
+fi
+"""
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        return
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path.endswith(".zip"):
+            zip_name = Path(path).name
+            archive_name = zip_name.removesuffix(".zip")
+            body = io.BytesIO()
+            with zipfile.ZipFile(body, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                info = zipfile.ZipInfo(f"{archive_name}/bun")
+                info.create_system = 3
+                info.external_attr = 0o755 << 16
+                zf.writestr(info, script)
+            data = body.getvalue()
+            sha = hashlib.sha256(data).hexdigest()
+            state_file.write_text(f"{zip_name}\n{sha}\n")
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        if path.endswith("SHASUMS256.txt"):
+            # Bun asks for the checksum file separately, so answer with the hash
+            # of whichever archive the previous request selected.
+            if not state_file.exists():
+                raise RuntimeError("requested SHASUMS256.txt before any zip request")
+            zip_name, sha = state_file.read_text().splitlines()[:2]
+            data = f"{sha}  {zip_name}\n".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        self.send_error(404)
+
+HTTPServer(("127.0.0.1", port), Handler).serve_forever()
+PY
+SERVER_PID=$!
+sleep 1
+
+rm -rf "$MISE_DATA_DIR/installs/bun/1.3.10"
+MISE_URL_REPLACEMENTS="$(printf '{\"https://github.com/oven-sh/bun/releases/download\":\"http://127.0.0.1:%s\"}' "$HTTP_PORT")"
+export MISE_URL_REPLACEMENTS
+
+assert_succeed "MISE_DOWNLOADS_DIR='$downloads_dir' MISE_INSTALLS_DIR='$installs_dir' mise install bun@1.3.10"
+assert_contains "$installs_dir/bun/1.3.10/bin/bun -v" "1.3.10"

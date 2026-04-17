@@ -10,11 +10,13 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use eyre::Result;
+use tera::Context;
 
 use crate::config::settings::MisercSettings;
 use crate::dirs;
 use crate::env;
 use crate::file;
+use crate::tera::{get_miserc_tera, take_tera_accessed_files};
 
 static MISERC: OnceLock<MisercSettings> = OnceLock::new();
 
@@ -24,12 +26,21 @@ static MISERC: OnceLock<MisercSettings> = OnceLock::new();
 pub fn init() -> Result<()> {
     let settings = load_miserc_settings()?;
     let _ = MISERC.set(settings);
+    // Discard any files tracked via hash_file/file_size/last_modified during miserc
+    // template rendering. Those filters write to TERA_ACCESSED_FILES (used by hook-env
+    // for file-watch detection), but miserc is loaded before config and should not
+    // contribute to that list.
+    let _ = take_tera_accessed_files();
     Ok(())
 }
 
 /// Get the loaded miserc settings, or default if not initialized.
 pub fn get() -> &'static MisercSettings {
-    MISERC.get_or_init(|| load_miserc_settings().unwrap_or_default())
+    MISERC.get_or_init(|| {
+        let settings = load_miserc_settings().unwrap_or_default();
+        let _ = take_tera_accessed_files();
+        settings
+    })
 }
 
 /// Get the MISE_ENV value from miserc, if set.
@@ -57,6 +68,50 @@ pub fn get_override_tool_versions_filenames() -> Option<&'static Vec<String>> {
     get().override_tool_versions_filenames.as_ref()
 }
 
+/// Render any Tera template syntax in miserc content before TOML parsing.
+/// Uses a minimal context that is safe to build before the main config is loaded:
+/// - `env` – OS environment variables (from PRISTINE_ENV)
+/// - `config_root` – directory containing the miserc file
+/// - `cwd` – current working directory
+/// - `xdg_*` – XDG base directory variables
+///
+/// Notably absent (would cause circular initialization):
+/// - `mise_env` (depends on miserc itself)
+/// - `exec()` (depends on Settings, which are not yet loaded)
+/// - `read_file()` (not registered — needs per-file directory context not set up at this stage)
+fn render_miserc_template(
+    tera: &mut Option<tera::Tera>,
+    content: &str,
+    config_root: &Path,
+) -> String {
+    if !content.contains("{{") && !content.contains("{%") && !content.contains("{#") {
+        return content.to_string();
+    }
+    // Lazily initialize the Tera instance — only pay the clone cost if at least one file
+    // contains template syntax.
+    let tera = tera.get_or_insert_with(get_miserc_tera);
+    let mut context = Context::new();
+    context.insert("env", &*env::PRISTINE_ENV);
+    context.insert("config_root", config_root);
+    match std::env::current_dir() {
+        Ok(dir) => context.insert("cwd", &dir),
+        Err(e) => {
+            debug!("miserc template: could not determine cwd, `cwd` will be unavailable: {e}")
+        }
+    };
+    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
+    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
+    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
+    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+    match tera.render_str(content, &context) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            warn!("Failed to render template in miserc: {e}");
+            content.to_string()
+        }
+    }
+}
+
 /// Load and merge all miserc settings files.
 /// Precedence (highest to lowest):
 /// 1. Local .miserc.toml and .config/miserc.toml (closest to cwd wins)
@@ -68,8 +123,14 @@ fn load_miserc_settings() -> Result<MisercSettings> {
     // Load in reverse precedence order so later loads override earlier ones
     let files = find_miserc_files();
 
+    // Tera is initialized lazily inside render_miserc_template — only paid if a file
+    // actually contains template syntax. Shared across all files to avoid redundant clones.
+    let mut tera: Option<tera::Tera> = None;
+
     for path in files.into_iter().rev() {
         if let Ok(content) = file::read_to_string(&path) {
+            let config_root = path.parent().unwrap_or(Path::new("."));
+            let content = render_miserc_template(&mut tera, &content, config_root);
             match toml::from_str::<MisercSettings>(&content) {
                 Ok(settings) => {
                     merge_settings(&mut merged, settings);
@@ -177,5 +238,64 @@ ceiling_paths = ["/home/user"]
             Some(vec!["development".to_string(), "local".to_string()])
         );
         assert!(settings.ceiling_paths.is_some());
+    }
+
+    #[test]
+    fn test_render_miserc_template_no_op() {
+        // Content without template syntax should pass through unchanged
+        let mut tera = None;
+        let content = r#"env = ["development"]"#;
+        let result = render_miserc_template(&mut tera, content, Path::new("/home/user"));
+        assert_eq!(result, content);
+    }
+
+    #[test]
+    fn test_render_miserc_template_env_var() {
+        // env.HOME should expand using PRISTINE_ENV — the same source the template uses
+        let mut tera = None;
+        let home = env::PRISTINE_ENV
+            .get("HOME")
+            .cloned()
+            .unwrap_or_else(|| "/root".to_string());
+        let content = r#"ceiling_paths = ["{{ env.HOME }}"]"#;
+        let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
+        assert!(
+            result.contains(&home),
+            "Expected HOME ({home}) in rendered output, got: {result}"
+        );
+    }
+
+    #[test]
+    fn test_render_miserc_template_config_root() {
+        let mut tera = None;
+        let config_root = Path::new("/my/project");
+        let content = r#"ceiling_paths = ["{{ config_root }}"]"#;
+        let result = render_miserc_template(&mut tera, content, config_root);
+        assert!(
+            result.contains("/my/project"),
+            "Expected config_root in rendered output, got: {result}"
+        );
+    }
+
+    #[test]
+    fn test_render_miserc_template_os_function() {
+        let mut tera = None;
+        let content = r#"env = ["{{ os() }}"]"#;
+        let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
+        // os() should return a non-empty string (linux, macos, windows, etc.)
+        assert!(
+            !result.contains("{{ os() }}"),
+            "Template was not rendered: {result}"
+        );
+    }
+
+    #[test]
+    fn test_render_miserc_template_invalid_falls_back() {
+        // An invalid template should fall back to the original content (with a warning)
+        let mut tera = None;
+        let content = r#"ceiling_paths = ["{{ undefined_function_xyz() }}"]"#;
+        let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
+        // Should return original content unchanged on error
+        assert_eq!(result, content);
     }
 }

@@ -328,32 +328,39 @@ impl AquaPackage {
         } else if os == "windows" {
             let mut ctx = HashMap::default();
             let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
-            if self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
-                strs.insert(format!("{asset}.exe"));
-            } else {
-                strs.insert(asset);
-            }
+            strs.insert(self.complete_windows_ext_to_asset(&asset, v, os, arch)?);
             if arch == "arm64" {
                 ctx.insert("Arch".to_string(), "amd64".to_string());
                 strs.insert(self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?);
                 let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
-                if self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
-                    strs.insert(format!("{asset}.exe"));
-                } else {
-                    strs.insert(asset);
-                }
+                strs.insert(self.complete_windows_ext_to_asset(&asset, v, os, arch)?);
             }
         }
         Ok(strs)
     }
 
+    /// Apply Windows .exe extension to an asset or URL string if appropriate.
+    /// Mirrors upstream aqua's `completeWindowsExtToAsset` decision tree.
+    fn complete_windows_ext_to_asset(
+        &self,
+        s: &str,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<String> {
+        if os != "windows" || s.ends_with(".exe") {
+            return Ok(s.to_string());
+        }
+        if self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
+            return Ok(format!("{s}.exe"));
+        }
+        Ok(s.to_string())
+    }
+
     /// Get the URL for this package and version
     pub fn url(&self, v: &str, os: &str, arch: &str) -> Result<String> {
-        let mut url = self.url.clone();
-        if os == "windows" && self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
-            url.push_str(".exe");
-        }
-        self.parse_aqua_str(&url, v, &Default::default(), os, arch)
+        let url = self.parse_aqua_str(&self.url, v, &Default::default(), os, arch)?;
+        self.complete_windows_ext_to_asset(&url, v, os, arch)
     }
 
     /// Parse an Aqua template string with variable substitution and platform info
@@ -913,5 +920,114 @@ mod tests {
 
         let result = file.src(&pkg, "8.14.3", "darwin", "arm64").unwrap();
         assert_eq!(result, Some("gradle-8.14.3/bin/gradle".to_string()));
+    }
+
+    #[test]
+    fn test_aqua_file_src_empty_asset_produces_absolute_path() {
+        // When a linked version name like "brew" matches a wrong version_override
+        // that has no asset field, the package ends up with an empty asset.
+        // The src template "{{.AssetWithoutExt}}/name" then renders to "/name"
+        // which is an absolute path — this caused a StripPrefixError panic
+        // in the aqua backend's list_bin_paths.
+        let pkg = AquaPackage {
+            repo_owner: "mozilla".to_string(),
+            repo_name: "sccache".to_string(),
+            asset: String::new(),
+            ..Default::default()
+        };
+        let file = AquaFile {
+            name: "sccache".to_string(),
+            src: Some("{{.AssetWithoutExt}}/sccache".to_string()),
+        };
+
+        let result = file.src(&pkg, "brew", "darwin", "arm64").unwrap();
+        assert_eq!(result, Some("/sccache".to_string()));
+    }
+
+    #[test]
+    fn test_version_override_non_version_string_matches_semver() {
+        // Non-version strings like "brew" are parsed as valid General versions
+        // by the versions crate, and can match semver constraints unexpectedly.
+        // This documents the root cause of the linked-version panic.
+        let pkg = AquaPackage {
+            version_constraint: "false".to_string(),
+            version_overrides: vec![
+                AquaPackage {
+                    version_constraint: "semver(\"<= 0.2.13\")".to_string(),
+                    error_message: Some("too old".to_string()),
+                    ..Default::default()
+                },
+                AquaPackage {
+                    version_constraint: "true".to_string(),
+                    asset: "tool-{{.Version}}.tar.gz".to_string(),
+                    format: "tar.gz".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let result = pkg.version_override(&["brew"]);
+        // "brew" matches semver("<= 0.2.13") instead of "true",
+        // because Versioning::new("brew") parses as General(Alphanum("brew"))
+        // which sorts before numeric versions.
+        assert!(result.error_message.is_some());
+        assert!(result.asset.is_empty());
+    }
+
+    #[test]
+    fn test_url_no_double_exe_extension() {
+        // When a Windows override URL already ends in .exe, complete_windows_ext
+        // should not append another .exe (which would produce .exe.exe).
+        let pkg = AquaPackage {
+            url: "https://example.com/tool/{{.Version}}/tool.exe".to_string(),
+            format: "raw".to_string(),
+            complete_windows_ext: true,
+            ..Default::default()
+        };
+
+        let url = pkg.url("1.0.0", "windows", "amd64").unwrap();
+        assert!(
+            !url.ends_with(".exe.exe"),
+            "URL should not have double .exe extension, got: {url}"
+        );
+        assert!(url.ends_with(".exe"));
+    }
+
+    #[test]
+    fn test_url_adds_exe_when_missing() {
+        // When a Windows URL does not end in .exe and format is raw,
+        // complete_windows_ext should append .exe.
+        let pkg = AquaPackage {
+            url: "https://example.com/tool/{{.Version}}/tool".to_string(),
+            format: "raw".to_string(),
+            complete_windows_ext: true,
+            ..Default::default()
+        };
+
+        let url = pkg.url("1.0.0", "windows", "amd64").unwrap();
+        assert!(
+            url.ends_with(".exe"),
+            "URL should end with .exe, got: {url}"
+        );
+    }
+
+    #[test]
+    fn test_asset_strs_no_double_exe_extension() {
+        // asset_strs should also not double .exe when asset already ends in .exe.
+        let pkg = AquaPackage {
+            asset: "tool.exe".to_string(),
+            format: "raw".to_string(),
+            complete_windows_ext: true,
+            ..Default::default()
+        };
+
+        let strs = pkg.asset_strs("1.0.0", "windows", "amd64").unwrap();
+        for s in &strs {
+            assert!(
+                !s.ends_with(".exe.exe"),
+                "Asset string should not have double .exe, got: {s}"
+            );
+        }
     }
 }

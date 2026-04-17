@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Test that monorepo tasks pick up tools from idiomatic version files
+# Regression test for https://github.com/jdx/mise/discussions/8629
+export MISE_EXPERIMENTAL=1
+
+# Install the tiny plugin which supports idiomatic .tiny-version files
+mise plugin install tiny
+
+# Enable idiomatic version files for tiny
+mise settings set idiomatic_version_file_enable_tools tiny
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+
+# Create a subproject that uses an idiomatic version file instead of [tools]
+mkdir -p packages/app1
+echo "1.0.1" >packages/app1/.tiny-version
+cat <<EOF >packages/app1/mise.toml
+[tasks.check]
+run = 'rtx-tiny'
+EOF
+
+# Create a subproject that uses explicit [tools] for comparison
+mkdir -p packages/app2
+cat <<EOF >packages/app2/mise.toml
+[tools]
+tiny = "2.0.1"
+
+[tasks.check]
+run = 'rtx-tiny'
+EOF
+
+# Install tools from subdirectories
+mise -C packages/app1 install
+mise -C packages/app2 install
+
+# Test 1: Task in subdir with idiomatic version file should find the tool
+echo "=== Test 1: Monorepo task with idiomatic version file ==="
+assert_contains "mise run //packages/app1:check" "v1.0.1"
+
+# Test 2: Task in subdir with explicit [tools] should still work
+echo "=== Test 2: Monorepo task with explicit tools ==="
+assert_contains "mise run //packages/app2:check" "v2.0.1"
+
+# Test 3: Monorepo syntax from within the subdir still uses load_config_hierarchy_from_dir
+echo "=== Test 3: Monorepo syntax from within subdir with idiomatic file ==="
+assert_contains "mise run -C packages/app1 //packages/app1:check" "v1.0.1"
+
+echo "=== All idiomatic tool monorepo tests passed! ==="

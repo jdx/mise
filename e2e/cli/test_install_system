@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Test that `mise install --system` creates symlinks in the system installs dir,
+# not the user installs dir.
+# Regression test for https://github.com/jdx/mise/discussions/8596
+
+# Set up a custom system data dir within the test environment
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+SYSTEM_INSTALLS="$MISE_SYSTEM_DATA_DIR/installs"
+USER_INSTALLS="$MISE_DATA_DIR/installs"
+
+# Install a tool to the user dir first, then a different version to system dir.
+# This reproduces the scenario where the backend's installs_path points to the
+# user dir but versions also exist in the system dir.
+mise install tiny@1.0.0
+mise install --system tiny@2.1.0
+
+# Both directories should have their respective version installed
+assert_directory_exists "$USER_INSTALLS/tiny/1.0.0"
+assert_directory_exists "$SYSTEM_INSTALLS/tiny/2.1.0"
+
+# The system dir should have a "latest" symlink pointing to its own version
+assert "readlink $SYSTEM_INSTALLS/tiny/latest" "./2.1.0"
+
+# The user dir "latest" symlink should point to the user dir version, NOT a
+# version that only exists in the system dir (which would be a broken symlink)
+assert "readlink $USER_INSTALLS/tiny/latest" "./1.0.0"

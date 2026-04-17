@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
-use crate::config::Config;
+use crate::config::{self, Config};
+use crate::dirs;
 use crate::file::display_rel_path;
 use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
+use crate::task::task_list::find_non_executable_task_files;
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell, Row};
 use eyre::Result;
@@ -105,9 +107,9 @@ impl TasksLs {
             None
         };
 
-        let tasks = config
-            .tasks_with_context(ctx.as_ref())
-            .await?
+        let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+
+        let tasks = all_tasks
             .values()
             .filter(|t| self.hidden || !t.hide)
             .filter(|t| !self.local || !t.global)
@@ -122,12 +124,26 @@ impl TasksLs {
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
         TaskFetcher::new(false).fetch_tasks(&mut tasks).await?;
 
+        // Warn about non-executable files only when there are truly no tasks at all
+        // (not just filtered out by --hidden/--local/--global)
+        if all_tasks.is_empty()
+            && !cfg!(windows)
+            && let Some(cwd) = &*dirs::CWD
+        {
+            let includes = config::task_includes_for_dir(cwd, &config.config_files);
+            if !find_non_executable_task_files(&includes).is_empty() {
+                warn!(
+                    "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. Run `chmod +x` on the task files to fix this."
+                );
+            }
+        }
+
         if self.complete {
             return self.complete(tasks);
         } else if self.usage {
             self.display_usage(&config, tasks).await?;
         } else if self.json {
-            self.display_json(tasks)?;
+            self.display_json(&config, tasks).await?;
         } else {
             self.display(tasks)?;
         }
@@ -138,7 +154,7 @@ impl TasksLs {
         for t in tasks {
             let name = t.display_name.replace(":", "\\:");
             let description = t.description.replace(":", "\\:");
-            println!("{name}:{description}",);
+            calm_io::stdoutln!("{name}:{description}")?;
         }
         Ok(())
     }
@@ -165,6 +181,24 @@ impl TasksLs {
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }
+            // Ensure that completions after -- work.
+            task_spec.cmd.args.push(
+                usage::SpecArgBuilder::new()
+                    .name("-- ARGS_LAST")
+                    .help("Arguments to pass to the tasks. Use \":::\" to separate tasks.")
+                    .hide(true)
+                    .var(true)
+                    .build(),
+            );
+            if let Some(path) = crate::task::extract_monorepo_path(&task.display_name) {
+                let prefixed_aliases: Vec<String> = task_spec
+                    .cmd
+                    .aliases
+                    .iter()
+                    .map(|a| format!("//{}:{}", path, a))
+                    .collect();
+                task_spec.cmd.aliases.extend(prefixed_aliases);
+            }
             usage
                 .cmd
                 .subcommands
@@ -174,38 +208,49 @@ impl TasksLs {
         Ok(())
     }
 
-    fn display_json(&self, tasks: Vec<Task>) -> Result<()> {
-        let array_items = tasks
-            .into_iter()
-            .map(|task| {
-                json!({
-                  "name": task.display_name,
-                  "aliases": task.aliases,
-                  "description": task.description,
-                  "source": task.config_source,
-                  "depends": task.depends,
-                  "depends_post": task.depends_post,
-                  "wait_for": task.wait_for,
-                  "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
-                  "dir": task.dir,
-                  "hide": task.hide,
-                  "global": task.global,
-                  "raw": task.raw,
-                  "interactive": task.interactive,
-                  "sources": task.sources,
-                  "outputs": task.outputs,
-                  "shell": task.shell,
-                  "quiet": task.quiet,
-                  "silent": task.silent,
-                  "tools": task.tools,
-                  "usage": task.usage,
-                  "timeout": task.timeout,
-                  "run": task.run_script_strings(),
-                  "args": task.args,
-                  "file": task.file
-                })
-            })
-            .collect::<serde_json::Value>();
+    async fn display_json(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
+        let mut array_items: Vec<serde_json::Value> = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            // Report the resolved dir (including any inherited task_config.dir)
+            // so consumers see the directory the task will actually run in.
+            let resolved_dir = task
+                .dir(config)
+                .await?
+                .map(|p| p.to_string_lossy().to_string());
+            let env_strs: Vec<String> = task
+                .env
+                .0
+                .iter()
+                .chain(task.overlay_env.iter().map(|(d, _)| d))
+                .map(|d| d.to_string())
+                .collect();
+            array_items.push(json!({
+                "name": task.display_name,
+                "aliases": task.aliases,
+                "description": task.description,
+                "source": task.config_source,
+                "depends": task.depends,
+                "depends_post": task.depends_post,
+                "wait_for": task.wait_for,
+                "env": env_strs,
+                "dir": resolved_dir,
+                "hide": task.hide,
+                "global": task.global,
+                "raw": task.raw,
+                "interactive": task.interactive,
+                "sources": task.sources,
+                "outputs": task.outputs,
+                "shell": task.shell,
+                "quiet": task.quiet,
+                "silent": task.silent,
+                "tools": task.tools,
+                "usage": task.usage,
+                "timeout": task.timeout,
+                "run": task.run_script_strings(),
+                "args": task.args,
+                "file": task.file,
+            }));
+        }
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
         Ok(())
     }

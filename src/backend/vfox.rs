@@ -53,16 +53,24 @@ impl Backend for VfoxBackend {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
-                let (vfox, _log_rx) = this.plugin.vfox();
+                let (mut vfox, _log_rx) = this.plugin.vfox();
                 this.ensure_plugin_installed(config).await?;
+                if let Ok(dep_env) = this.dependency_env(config).await {
+                    vfox.cmd_env = Some(dep_env.into_iter().collect());
+                }
 
                 // Use backend methods if the plugin supports them
                 if this.is_backend_plugin() {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
+                    let opts = config
+                        .get_tool_opts(&this.ba)
+                        .await?
+                        .map(|o| o.opts)
+                        .unwrap_or_default();
                     let versions = vfox
-                        .backend_list_versions(&this.pathname, tool_name)
+                        .backend_list_versions(&this.pathname, tool_name, opts)
                         .await
                         .wrap_err("Backend list versions method failed")?;
                     return Ok(versions
@@ -99,13 +107,16 @@ impl Backend for VfoxBackend {
     ) -> eyre::Result<ToolVersion> {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
-        let (vfox, log_rx) = self.plugin.vfox();
+        let (mut vfox, log_rx) = self.plugin.vfox();
         thread::spawn(|| {
             for line in log_rx {
                 // TODO: put this in ctx.pr.set_message()
                 info!("{}", line);
             }
         });
+        if let Ok(dep_env) = self.dependency_env(&ctx.config).await {
+            vfox.cmd_env = Some(dep_env.into_iter().collect());
+        }
 
         // Use backend methods if the plugin supports them
         if self.is_backend_plugin() {
@@ -118,20 +129,28 @@ impl Backend for VfoxBackend {
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
-                tool_opts.opts_as_strings(),
+                tool_opts.opts,
             )
             .await
             .wrap_err("Backend install method failed")?;
             return Ok(tv);
         }
 
-        // Check lockfile provenance expectation before verification.
+        // Skip provenance verification if the lockfile already has a provenance entry for
+        // this platform — re-verifying would just be redundant API calls. Unlike aqua/github,
+        // the vfox backend doesn't populate PlatformInfo.checksum, so we check provenance alone.
+        let platform_key = self.get_platform_key();
+        let has_lockfile_provenance = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|pi| pi.provenance.is_some());
+        vfox.skip_verification = has_lockfile_provenance;
+
+        // Save expected provenance before take() so we can detect type changes afterward,
+        // then clear it so we can detect whether install re-sets it.
         // Safety: .take() removes provenance from tv before install. If install
         // fails, tv is discarded via ?, so the removed value is never observed.
-        // If this function is ever refactored to recover from install errors,
-        // locked_provenance must be restored to tv before retrying.
-        let platform_key = self.get_platform_key();
-        let locked_provenance = tv
+        let expected_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
@@ -146,10 +165,22 @@ impl Backend for VfoxBackend {
             let provenance = verified_attestation_to_provenance(att);
             let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
             pi.provenance = Some(provenance);
+        } else if let Some(ref expected) = expected_provenance
+            && result.checksum_verified
+        {
+            // Attestation didn't run or produced no result, but the plugin's checksums
+            // verified integrity. Restore expected provenance so the enforce check passes.
+            // When the plugin has no checksums, we leave got=None so the enforce check
+            // catches the missing attestation as a potential downgrade.
+            let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+            pi.provenance = Some(expected.clone());
         }
 
-        // Enforce lockfile provenance — prevent downgrade attacks
-        if let Some(ref expected) = locked_provenance {
+        // Enforce lockfile provenance — prevent downgrade attacks.
+        // If a plugin removed its attestation config, got is None and this triggers.
+        // If attestation type changed, the discriminant mismatch triggers.
+        // If verification was skipped, expected was restored above so this passes.
+        if let Some(ref expected) = expected_provenance {
             let got = tv
                 .lock_platforms
                 .get(&platform_key)
@@ -186,9 +217,12 @@ impl Backend for VfoxBackend {
             .await?
             .iter()
             .find(|(k, _)| k.to_uppercase() == "PATH")
-            .map(|(_, v)| v.to_string())
-            .unwrap_or("bin".to_string());
-        Ok(env::split_paths(&path).collect())
+            .map(|(_, v)| v.to_string());
+        if let Some(path) = path {
+            Ok(env::split_paths(&path).collect())
+        } else {
+            Ok(vec![tv.install_path().join("bin")])
+        }
     }
 
     async fn exec_env(
@@ -359,7 +393,10 @@ impl VfoxBackend {
         cache
             .get_or_try_init_async(async || {
                 self.ensure_plugin_installed(config).await?;
-                let (vfox, _log_rx) = self.plugin.vfox();
+                let (mut vfox, _log_rx) = self.plugin.vfox();
+                if let Ok(dep_env) = self.dependency_env(config).await {
+                    vfox.cmd_env = Some(dep_env.into_iter().collect());
+                }
 
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
@@ -369,18 +406,7 @@ impl VfoxBackend {
                         tool_name,
                         &tv.version,
                         tv.install_path(),
-                        opts.opts
-                            .iter()
-                            .map(|(k, v)| {
-                                (
-                                    k.clone(),
-                                    match v {
-                                        toml::Value::String(s) => s.clone(),
-                                        _ => v.to_string(),
-                                    },
-                                )
-                            })
-                            .collect(),
+                        opts.opts.clone(),
                     )
                     .await
                     .wrap_err("Backend exec env method failed")?

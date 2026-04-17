@@ -1,0 +1,192 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: gitlab.com/graphviz/graphviz
+    type: http
+    link: https://gitlab.com/graphviz/graphviz
+    description: Graph visualization software
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 13.1.2")
+        no_asset: true
+      - version_constraint: "true"
+        url: https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/{{.Version}}/Darwin_23.6.0_Graphviz-{{.Version}}-Darwin.zip
+        format: zip
+        files:
+          - name: acyclic
+            src: Graphviz-{{.Version}}-Darwin/bin/acyclic
+          - name: bcomps
+            src: Graphviz-{{.Version}}-Darwin/bin/bcomps
+          - name: ccomps
+            src: Graphviz-{{.Version}}-Darwin/bin/ccomps
+          - name: circo
+            src: Graphviz-{{.Version}}-Darwin/bin/circo
+          - name: cluster
+            src: Graphviz-{{.Version}}-Darwin/bin/cluster
+          - name: diffimg
+            src: Graphviz-{{.Version}}-Darwin/bin/diffimg
+          - name: dijkstra
+            src: Graphviz-{{.Version}}-Darwin/bin/dijkstra
+          - name: dot
+            src: Graphviz-{{.Version}}-Darwin/bin/dot
+          - name: dot2gxl
+            src: Graphviz-{{.Version}}-Darwin/bin/dot2gxl
+          - name: dot_builtins
+            src: Graphviz-{{.Version}}-Darwin/bin/dot_builtins
+          - name: dot_sandbox
+            src: Graphviz-{{.Version}}-Darwin/bin/dot_sandbox
+          - name: edgepaint
+            src: Graphviz-{{.Version}}-Darwin/bin/edgepaint
+          - name: fdp
+            src: Graphviz-{{.Version}}-Darwin/bin/fdp
+          - name: gc
+            src: Graphviz-{{.Version}}-Darwin/bin/gc
+          - name: gml2gv
+            src: Graphviz-{{.Version}}-Darwin/bin/gml2gv
+          - name: graphml2gv
+            src: Graphviz-{{.Version}}-Darwin/bin/graphml2gv
+          - name: gv2gml
+            src: Graphviz-{{.Version}}-Darwin/bin/gv2gml
+          - name: gv2gxl
+            src: Graphviz-{{.Version}}-Darwin/bin/gv2gxl
+          - name: gvcolor
+            src: Graphviz-{{.Version}}-Darwin/bin/gvcolor
+          - name: gvedit
+            src: Graphviz-{{.Version}}-Darwin/bin/gvedit
+          - name: gvgen
+            src: Graphviz-{{.Version}}-Darwin/bin/gvgen
+          - name: gvmap
+            src: Graphviz-{{.Version}}-Darwin/bin/gvmap
+          - name: gvmap.sh
+            src: Graphviz-{{.Version}}-Darwin/bin/gvmap.sh
+          - name: gvpack
+            src: Graphviz-{{.Version}}-Darwin/bin/gvpack
+          - name: gvpr
+            src: Graphviz-{{.Version}}-Darwin/bin/gvpr
+          - name: gxl2dot
+            src: Graphviz-{{.Version}}-Darwin/bin/gxl2dot
+          - name: gxl2gv
+            src: Graphviz-{{.Version}}-Darwin/bin/gxl2gv
+          - name: mingle
+            src: Graphviz-{{.Version}}-Darwin/bin/mingle
+          - name: mm2gv
+            src: Graphviz-{{.Version}}-Darwin/bin/mm2gv
+          - name: neato
+            src: Graphviz-{{.Version}}-Darwin/bin/neato
+          - name: nop
+            src: Graphviz-{{.Version}}-Darwin/bin/nop
+          - name: osage
+            src: Graphviz-{{.Version}}-Darwin/bin/osage
+          - name: patchwork
+            src: Graphviz-{{.Version}}-Darwin/bin/patchwork
+          - name: prune
+            src: Graphviz-{{.Version}}-Darwin/bin/prune
+          - name: sccmap
+            src: Graphviz-{{.Version}}-Darwin/bin/sccmap
+          - name: sfdp
+            src: Graphviz-{{.Version}}-Darwin/bin/sfdp
+          - name: tred
+            src: Graphviz-{{.Version}}-Darwin/bin/tred
+          - name: twopi
+            src: Graphviz-{{.Version}}-Darwin/bin/twopi
+          - name: unflatten
+            src: Graphviz-{{.Version}}-Darwin/bin/unflatten
+          - name: vimdot
+            src: Graphviz-{{.Version}}-Darwin/bin/vimdot
+        supported_envs:
+          - darwin/arm64
+          - windows/amd64
+        checksum:
+          type: http
+          url: https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/{{.Version}}/Darwin_23.6.0_Graphviz-{{.Version}}-Darwin.zip.sha256
+          algorithm: sha256
+          file_format: regexp
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{64}\b)
+        overrides:
+          - goos: windows
+            url: https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/{{.Version}}/windows_10_cmake_Release_Graphviz-{{.Version}}-win64.zip
+            format: zip
+            files:
+              - name: acyclic
+                src: Graphviz-{{.Version}}-win64/bin/acyclic
+              - name: bcomps
+                src: Graphviz-{{.Version}}-win64/bin/bcomps
+              - name: ccomps
+                src: Graphviz-{{.Version}}-win64/bin/ccomps
+              - name: circo
+                src: Graphviz-{{.Version}}-win64/bin/circo
+              - name: cluster
+                src: Graphviz-{{.Version}}-win64/bin/cluster
+              - name: diffimg
+                src: Graphviz-{{.Version}}-win64/bin/diffimg
+              - name: dijkstra
+                src: Graphviz-{{.Version}}-win64/bin/dijkstra
+              - name: dot
+                src: Graphviz-{{.Version}}-win64/bin/dot
+              - name: dot2gxl
+                src: Graphviz-{{.Version}}-win64/bin/dot2gxl
+              - name: dot_builtins
+                src: Graphviz-{{.Version}}-win64/bin/dot_builtins
+              - name: dot_sandbox
+                src: Graphviz-{{.Version}}-win64/bin/dot_sandbox
+              - name: edgepaint
+                src: Graphviz-{{.Version}}-win64/bin/edgepaint
+              - name: fdp
+                src: Graphviz-{{.Version}}-win64/bin/fdp
+              - name: gc
+                src: Graphviz-{{.Version}}-win64/bin/gc
+              - name: gml2gv
+                src: Graphviz-{{.Version}}-win64/bin/gml2gv
+              - name: graphml2gv
+                src: Graphviz-{{.Version}}-win64/bin/graphml2gv
+              - name: gv2gml
+                src: Graphviz-{{.Version}}-win64/bin/gv2gml
+              - name: gv2gxl
+                src: Graphviz-{{.Version}}-win64/bin/gv2gxl
+              - name: gvcolor
+                src: Graphviz-{{.Version}}-win64/bin/gvcolor
+              - name: gvgen
+                src: Graphviz-{{.Version}}-win64/bin/gvgen
+              - name: gvmap
+                src: Graphviz-{{.Version}}-win64/bin/gvmap
+              - name: gvmap.sh
+                src: Graphviz-{{.Version}}-win64/bin/gvmap.sh
+              - name: gvpack
+                src: Graphviz-{{.Version}}-win64/bin/gvpack
+              - name: gvpr
+                src: Graphviz-{{.Version}}-win64/bin/gvpr
+              - name: gxl2dot
+                src: Graphviz-{{.Version}}-win64/bin/gxl2dot
+              - name: gxl2gv
+                src: Graphviz-{{.Version}}-win64/bin/gxl2gv
+              - name: mingle
+                src: Graphviz-{{.Version}}-win64/bin/mingle
+              - name: mm2gv
+                src: Graphviz-{{.Version}}-win64/bin/mm2gv
+              - name: neato
+                src: Graphviz-{{.Version}}-win64/bin/neato
+              - name: nop
+                src: Graphviz-{{.Version}}-win64/bin/nop
+              - name: osage
+                src: Graphviz-{{.Version}}-win64/bin/osage
+              - name: patchwork
+                src: Graphviz-{{.Version}}-win64/bin/patchwork
+              - name: prune
+                src: Graphviz-{{.Version}}-win64/bin/prune
+              - name: sccmap
+                src: Graphviz-{{.Version}}-win64/bin/sccmap
+              - name: sfdp
+                src: Graphviz-{{.Version}}-win64/bin/sfdp
+              - name: tred
+                src: Graphviz-{{.Version}}-win64/bin/tred
+              - name: twopi
+                src: Graphviz-{{.Version}}-win64/bin/twopi
+              - name: unflatten
+                src: Graphviz-{{.Version}}-win64/bin/unflatten
+            checksum:
+              type: http
+              url: https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/{{.Version}}/windows_10_cmake_Release_Graphviz-{{.Version}}-win64.zip.sha256
+              algorithm: sha256
+              file_format: regexp
+              pattern:
+                checksum: ^(\b[A-Fa-f0-9]{64}\b)

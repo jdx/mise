@@ -45,6 +45,15 @@ pub async fn handle_shim() -> Result<()> {
         raw: false,
         no_prepare: true, // Skip prepare for shims to avoid performance impact
         fresh_env: false,
+        deny_all: false,
+        deny_read: false,
+        deny_write: false,
+        deny_net: false,
+        deny_env: false,
+        allow_read: vec![],
+        allow_write: vec![],
+        allow_net: vec![],
+        allow_env: vec![],
     };
     time!("shim exec");
     exec.run().await?;
@@ -79,14 +88,27 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
         }
     }
     // fallback for "system"
+    let mise_bin = fs::canonicalize(&*env::MISE_BIN).unwrap_or_else(|_| env::MISE_BIN.clone());
+    let user_shims = fs::canonicalize(*dirs::SHIMS).unwrap_or_default();
+    let sys_shims = {
+        let p = env::MISE_SYSTEM_DATA_DIR.join("shims");
+        if p.exists() {
+            fs::canonicalize(&p).unwrap_or(p)
+        } else {
+            PathBuf::new()
+        }
+    };
     for path in &*env::PATH {
-        if fs::canonicalize(path).unwrap_or_default()
-            == fs::canonicalize(*dirs::SHIMS).unwrap_or_default()
-        {
+        let canon_path = fs::canonicalize(path).unwrap_or_default();
+        if canon_path == user_shims || canon_path == sys_shims {
             continue;
         }
         let bin = path.join(bin_name);
         if bin.exists() {
+            // Skip if this binary is a mise shim (symlink pointing to the mise binary)
+            if fs::canonicalize(&bin).unwrap_or_default() == mise_bin {
+                continue;
+            }
             trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
             return Ok(bin);
         }
@@ -102,7 +124,7 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
         })
         .lock();
 
-    let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
+    let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
     let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
 
     #[cfg(windows)]
@@ -530,9 +552,7 @@ async fn list_tool_bins(
 }
 
 async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
-    if shim.exists() {
-        file::remove_file_async(shim).await?;
-    }
+    file::remove_file_async_if_exists(shim).await?;
     file::write_async(
         shim,
         formatdoc! {r#"

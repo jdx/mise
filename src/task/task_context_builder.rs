@@ -95,7 +95,8 @@ impl TaskContextBuilder {
                 task_dir.display()
             );
 
-            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+            let (config_paths, idiomatic_filenames) =
+                crate::config::load_config_hierarchy_from_dir(task_dir).await?;
             trace!(
                 "task {} found {} config files in hierarchy",
                 task.name,
@@ -103,7 +104,8 @@ impl TaskContextBuilder {
             );
 
             let task_config_files =
-                crate::config::load_config_files_from_paths(&config_paths).await?;
+                crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                    .await?;
 
             let task_ts = ToolsetBuilder::new()
                 .with_config_files(task_config_files)
@@ -170,10 +172,14 @@ impl TaskContextBuilder {
                 task_dir.display()
             );
 
-            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+            let (config_paths, idiomatic_filenames) =
+                crate::config::load_config_hierarchy_from_dir(task_dir).await?;
             trace!("Found {} config files in hierarchy", config_paths.len());
 
-            Some(crate::config::load_config_files_from_paths(&config_paths).await?)
+            Some(
+                crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                    .await?,
+            )
         } else {
             None
         };
@@ -220,7 +226,11 @@ impl TaskContextBuilder {
         let config_path = canonicalize_path(task_cf.get_path());
 
         // Check cache first if task has no task-specific env directives or tools
-        if task.env.0.is_empty() && task.inherited_env.0.is_empty() && task.tools.is_empty() {
+        if task.env.0.is_empty()
+            && task.inherited_env.0.is_empty()
+            && task.overlay_env.is_empty()
+            && task.tools.is_empty()
+        {
             let cache = self
                 .env_resolution_cache
                 .read()
@@ -269,7 +279,11 @@ impl TaskContextBuilder {
         config.add_redactions(task_redact_keys, &env);
 
         // Cache the result if no task-specific env directives or tools
-        if task.env.0.is_empty() && task.inherited_env.0.is_empty() && task.tools.is_empty() {
+        if task.env.0.is_empty()
+            && task.inherited_env.0.is_empty()
+            && task.overlay_env.is_empty()
+            && task.tools.is_empty()
+        {
             let mut cache = self
                 .env_resolution_cache
                 .write()
@@ -368,13 +382,19 @@ impl TaskContextBuilder {
 
     /// Build env directives from task-specific env (including inherited env)
     fn build_task_env_directives(&self, task: &Task) -> Vec<(EnvDirective, PathBuf)> {
-        // Include inherited_env first (so task's own env can override it)
-        task.inherited_env
+        // Include inherited_env first (so task's own env can override it).
+        // Overlay entries come last so a TOML `[tasks.<name>]` block's env
+        // overrides the file task's on key collision, using the overlay's
+        // own config path for path-based directives.
+        let mut directives: Vec<(EnvDirective, PathBuf)> = task
+            .inherited_env
             .0
             .iter()
             .chain(task.env.0.iter())
             .map(|directive| (directive.clone(), task.config_source.clone()))
-            .collect()
+            .collect();
+        directives.extend(task.overlay_env.iter().cloned());
+        directives
     }
 
     /// Resolve env directives using EnvResults

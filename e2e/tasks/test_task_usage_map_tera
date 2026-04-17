@@ -207,3 +207,91 @@ dirname=/path/to
 basename=file.txt
 extname=txt
 file_stem=file"
+
+# Count flag renders as integer (e.g. -vvv -> 3)
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-count]
+description = "Test count flag renders as integer"
+usage = '''
+flag "-v --verbose" count=#true
+'''
+run = '''
+echo "verbosity={{ usage.verbose }}"
+'''
+EOF
+
+assert "mise run usage-tera-count" "verbosity=0"
+assert "mise run usage-tera-count -v" "verbosity=1"
+assert "mise run usage-tera-count -vvv" "verbosity=3"
+
+# Negate flag (--no-color sets to false, default is true)
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-negate]
+description = "Test negate flag"
+usage = '''
+flag "--color" negate="--no-color" default=#true
+'''
+run = '''
+echo "color={{ usage.color }}"
+'''
+EOF
+
+assert "mise run usage-tera-negate" "color=true"
+assert "mise run usage-tera-negate --color" "color=true"
+assert "mise run usage-tera-negate --no-color" "color=false"
+
+# Boolean flag defaults to false when not provided (unprovided flag in template)
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-bool-default]
+description = "Test boolean flag defaults to false"
+usage = '''
+flag "-f --force"
+'''
+run = '''
+{% if usage.force %}
+echo "forced"
+{% else %}
+echo "not forced"
+{% endif %}
+'''
+EOF
+
+assert "mise run usage-tera-bool-default" "not forced"
+assert "mise run usage-tera-bool-default --force" "forced"
+
+# Optional arg defaults to empty string when not provided
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-opt-arg]
+description = "Test optional arg defaults to empty"
+usage = '''
+arg "[name]"
+'''
+run = '''
+{% if usage.name %}
+echo "hello {{ usage.name }}"
+{% else %}
+echo "hello world"
+{% endif %}
+'''
+EOF
+
+assert "mise run usage-tera-opt-arg" "hello world"
+assert "mise run usage-tera-opt-arg -- Alice" "hello Alice"
+
+# Arg choices restrict allowed values
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-arg-choices]
+description = "Test arg choices"
+usage = '''
+arg "<shell>" {
+    choices "bash" "zsh" "fish"
+}
+'''
+run = '''
+echo "shell={{ usage.shell }}"
+'''
+EOF
+
+assert "mise run usage-tera-arg-choices bash" "shell=bash"
+assert "mise run usage-tera-arg-choices zsh" "shell=zsh"
+assert_fail "mise run usage-tera-arg-choices powershell"

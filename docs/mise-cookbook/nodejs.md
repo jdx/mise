@@ -16,10 +16,10 @@ This will install the latest version of Node.js and create a `mise.toml` file wi
 node = "latest"
 ```
 
-If you want to install Node.JS globally instead (for example, node v24), you can use the following command:
+If you want to install Node.JS globally instead (for example, node v26), you can use the following command:
 
 ```shell
-mise use -g node@24
+mise use -g node@26
 ```
 
 ## Add node modules binaries to the PATH
@@ -110,7 +110,7 @@ This example uses `pnpm` as the package manager. This will skip installing depen
 
 ```toml [mise.toml]
 [tools]
-node = '22'
+node = '24'
 
 [hooks]
 # Enabling corepack will install the `pnpm` package manager specified in your package.json

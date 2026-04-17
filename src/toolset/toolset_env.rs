@@ -23,7 +23,9 @@ impl Toolset {
     }
 
     /// Like full_env but skips `tools=true` env directives (load_post_env).
-    /// Used for preinstall hooks where tool-dependent env vars aren't available yet.
+    /// Used for preinstall hooks where tool-dependent env vars aren't available yet,
+    /// and for dependency_env where resolving tools=true modules on a partial toolset
+    /// would trigger spurious errors from modules expecting the full PATH.
     pub async fn full_env_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         env.extend(self.env_with_path_without_tools(config).await?);
@@ -32,7 +34,8 @@ impl Toolset {
 
     /// Like env_with_path but skips `tools=true` env directives.
     /// Used during tool installation where tool-dependent env vars
-    /// may reference tools that aren't installed yet.
+    /// may reference tools that aren't installed yet, and in
+    /// dependency_env to avoid triggering module hooks on a partial PATH.
     pub async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let (mut env, add_paths) = self.env(config).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
@@ -89,7 +92,7 @@ impl Toolset {
     pub async fn env_with_path_and_split(
         &self,
         config: &Arc<Config>,
-    ) -> Result<(EnvMap, Vec<PathBuf>, Vec<PathBuf>)> {
+    ) -> Result<(EnvMap, Vec<PathBuf>, Vec<PathBuf>, Vec<PathBuf>)> {
         // Try to load from cache if enabled
         if CachedEnv::is_enabled()
             && let Some(cached) = self.try_load_env_cache_full(config)?
@@ -102,7 +105,12 @@ impl Toolset {
                 path_env.add(p.clone());
             }
             env.insert(PATH_KEY.to_string(), path_env.to_string());
-            return Ok((env, cached.user_paths, cached.tool_paths));
+            return Ok((
+                env,
+                cached.user_paths,
+                cached.tool_paths,
+                cached.watch_files,
+            ));
         }
 
         // Compute fresh
@@ -127,7 +135,7 @@ impl Toolset {
             debug!("env_cache: failed to save: {}", e);
         }
 
-        Ok((env, user_paths, tool_paths))
+        Ok((env, user_paths, tool_paths, env_results.watch_files))
     }
 
     /// Try to load environment from cache (returns full CachedEnv)
@@ -180,7 +188,10 @@ impl Toolset {
         // Add mise.lock files to watch_files
         for p in config.config_files.keys() {
             if let Some(parent) = p.parent() {
-                watch_files.push(parent.join("mise.lock"));
+                let lockfile = parent.join("mise.lock");
+                if lockfile.exists() {
+                    watch_files.push(lockfile);
+                }
             }
         }
 
@@ -220,6 +231,19 @@ impl Toolset {
             .map(|p| (p.clone(), get_file_mtime(p).unwrap_or(0)))
             .collect();
 
+        // Treat sibling mise.lock files as config inputs for cache invalidation
+        // to ensure creation, deletion, and modification of lock files forces
+        // a fresh env/watch_files computation.
+        let config_lockfiles: Vec<(PathBuf, u64)> = config
+            .config_files
+            .keys()
+            .filter_map(|p| {
+                let lockfile = p.parent()?.join("mise.lock");
+                let mtime = get_file_mtime(&lockfile)?;
+                Some((lockfile, mtime))
+            })
+            .collect();
+
         // Collect tool versions
         let tool_versions: Vec<(String, String)> = self
             .list_current_versions()
@@ -236,7 +260,7 @@ impl Toolset {
             .unwrap_or_default();
 
         Ok(CachedEnv::compute_cache_key(
-            &config_files,
+            &[config_files, config_lockfiles].concat(),
             &tool_versions,
             &settings_hash,
             &base_path,
@@ -329,6 +353,16 @@ impl Toolset {
         ctx.insert("env", &tera_env);
         ctx.insert("tools", &self.build_tools_tera_map(config));
         let mut env_results = self.load_post_env(config, ctx, &tera_env).await?;
+
+        // Include watch_files from tools=false plugins so the env cache tracks all
+        // plugin watch_files, not just tools=true ones. env_results_cached()
+        // returns Some here because self.env(config) above always initialises
+        // config.env via config.env_results().
+        if let Some(non_tool_env) = config.env_results_cached() {
+            env_results
+                .watch_files
+                .extend(non_tool_env.watch_files.clone());
+        }
 
         // Store add_paths separately to maintain consistent PATH ordering
         env_results.tool_add_paths = add_paths;

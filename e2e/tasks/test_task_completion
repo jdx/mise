@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tools]
+"usage" = { version = "latest", os = ["linux", "macos"] }
+
+[tasks.build]
+run = 'echo build'
+EOF
+
+mise usage >./mise.usage.kdl
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise tasks run build -- -c ''" "mise.toml
+mise.usage.kdl"

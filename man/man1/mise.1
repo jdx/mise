@@ -20,16 +20,11 @@ Set the environment for loading `mise.<ENV>.toml`
 \fB\-f, \-\-force\fR
 Force the operation
 .TP
-\fB\-i, \-\-interleave\fR
-Set the log output verbosity
-.TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 How many jobs to run in parallel [default: 8]
 .TP
 \fB\-n, \-\-dry\-run\fR
 Dry run, don't actually do anything
-.TP
-\fB\-p, \-\-prefix\fR
 .TP
 \fB\-P, \-\-profile\fR \fI<PROFILE>\fR
 Set the profile (environment)
@@ -471,6 +466,18 @@ Validate tasks for common errors and issues
 \fBtest\-tool\fR
 Test a tool installs and executes
 .TP
+\fBtoken\fR
+Display git provider tokens mise will use
+.TP
+\fBtoken forgejo\fR
+Forgejo token
+.TP
+\fBtoken github\fR
+GitHub token
+.TP
+\fBtoken gitlab\fR
+GitLab token
+.TP
 \fBtool\fR
 Gets information about a tool
 .TP
@@ -902,6 +909,35 @@ Command string to execute
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 [default: 4]
+.TP
+\fB\-\-allow\-env\fR \fI<VAR>\fR
+[experimental] Allow specific env var through (implies \-\-deny\-env for everything else)
+Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
+.TP
+\fB\-\-allow\-net\fR \fI<HOST>\fR
+[experimental] Allow network to specific host (implies \-\-deny\-net for everything else)
+macOS only in v1; on Linux falls back to allowing all network
+.TP
+\fB\-\-allow\-read\fR \fI<PATH>\fR
+[experimental] Allow reads from specific path (implies \-\-deny\-read for everything else)
+.TP
+\fB\-\-allow\-write\fR \fI<PATH>\fR
+[experimental] Allow writes to specific path (implies \-\-deny\-write for everything else)
+.TP
+\fB\-\-deny\-all\fR
+[experimental] Block reads, writes, network, and env vars
+.TP
+\fB\-\-deny\-env\fR
+[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+.TP
+\fB\-\-deny\-net\fR
+[experimental] Block all network access
+.TP
+\fB\-\-deny\-read\fR
+[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+.TP
+\fB\-\-deny\-write\fR
+[experimental] Block all filesystem writes
 .TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
@@ -1351,6 +1387,10 @@ Operates on the lockfile in the current config root. Use TOOL arguments to targe
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-g, \-\-global\fR
+Include global config lockfile (~/.config/mise/mise.lock)
+By default, only project\-level configs are locked
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
@@ -1833,11 +1873,6 @@ Change to this directory before executing the command
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
 .TP
-\fB\-i, \-\-interleave\fR
-Print directly to stdout/stderr instead of by line
-Defaults to true if \-\-jobs == 1
-Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-.TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
 [default: 4]
@@ -1856,11 +1891,6 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
-.TP
-\fB\-p, \-\-prefix\fR
-Print stdout/stderr by line, prefixed with the task's label
-Defaults to true if \-\-jobs > 1
-Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
 .TP
 \fB\-q, \-\-quiet\fR
 Don't show extra output
@@ -1883,6 +1913,34 @@ Don't show any output except for errors
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 .TP
+\fB\-\-allow\-env\fR \fI<VAR>\fR
+[experimental] Allow specific env var through (implies \-\-deny\-env for everything else)
+Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
+.TP
+\fB\-\-allow\-net\fR \fI<HOST>\fR
+[experimental] Allow network to specific host (implies \-\-deny\-net for everything else)
+.TP
+\fB\-\-allow\-read\fR \fI<PATH>\fR
+[experimental] Allow reads from specific path (implies \-\-deny\-read for everything else)
+.TP
+\fB\-\-allow\-write\fR \fI<PATH>\fR
+[experimental] Allow writes to specific path (implies \-\-deny\-write for everything else)
+.TP
+\fB\-\-deny\-all\fR
+[experimental] Block reads, writes, network, and env vars
+.TP
+\fB\-\-deny\-env\fR
+[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+.TP
+\fB\-\-deny\-net\fR
+[experimental] Block all network access
+.TP
+\fB\-\-deny\-read\fR
+[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+.TP
+\fB\-\-deny\-write\fR
+[experimental] Block all filesystem writes
+.TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
 .TP
@@ -1899,6 +1957,12 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
+.TP
+\fB\-\-skip\-tools\fR
+Skip installing tools before running tasks
+
+Can also be set persistently with the `task.run_auto_install` setting
+or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
 .TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Timeout for the task to complete
@@ -2564,11 +2628,6 @@ Change to this directory before executing the command
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
 .TP
-\fB\-i, \-\-interleave\fR
-Print directly to stdout/stderr instead of by line
-Defaults to true if \-\-jobs == 1
-Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-.TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
 [default: 4]
@@ -2587,11 +2646,6 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
-.TP
-\fB\-p, \-\-prefix\fR
-Print stdout/stderr by line, prefixed with the task's label
-Defaults to true if \-\-jobs > 1
-Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
 .TP
 \fB\-q, \-\-quiet\fR
 Don't show extra output
@@ -2614,6 +2668,34 @@ Don't show any output except for errors
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 .TP
+\fB\-\-allow\-env\fR \fI<VAR>\fR
+[experimental] Allow specific env var through (implies \-\-deny\-env for everything else)
+Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
+.TP
+\fB\-\-allow\-net\fR \fI<HOST>\fR
+[experimental] Allow network to specific host (implies \-\-deny\-net for everything else)
+.TP
+\fB\-\-allow\-read\fR \fI<PATH>\fR
+[experimental] Allow reads from specific path (implies \-\-deny\-read for everything else)
+.TP
+\fB\-\-allow\-write\fR \fI<PATH>\fR
+[experimental] Allow writes to specific path (implies \-\-deny\-write for everything else)
+.TP
+\fB\-\-deny\-all\fR
+[experimental] Block reads, writes, network, and env vars
+.TP
+\fB\-\-deny\-env\fR
+[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+.TP
+\fB\-\-deny\-net\fR
+[experimental] Block all network access
+.TP
+\fB\-\-deny\-read\fR
+[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+.TP
+\fB\-\-deny\-write\fR
+[experimental] Block all filesystem writes
+.TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
 .TP
@@ -2630,6 +2712,12 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
+.TP
+\fB\-\-skip\-tools\fR
+Skip installing tools before running tasks
+
+Can also be set persistently with the `task.run_auto_install` setting
+or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
 .TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Timeout for the task to complete
@@ -2702,6 +2790,60 @@ Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 .TP
 \fB<TOOLS>\fR
 Tool(s) to test
+.SH "MISE TOKEN FORGEJO"
+Forgejo token
+.PP
+\fBUsage:\fR mise token forgejo [OPTIONS] [<HOST>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-unmask\fR
+Show the full unmasked token
+\fBArguments:\fR
+.PP
+.TP
+\fB<HOST>\fR
+Forgejo hostname
+.RS
+\fIDefault: \fRcodeberg.org
+.RE
+.SH "MISE TOKEN GITHUB"
+GitHub token
+.PP
+\fBUsage:\fR mise token github [OPTIONS] [<HOST>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-unmask\fR
+Show the full unmasked token
+\fBArguments:\fR
+.PP
+.TP
+\fB<HOST>\fR
+GitHub hostname
+.RS
+\fIDefault: \fRgithub.com
+.RE
+.SH "MISE TOKEN GITLAB"
+GitLab token
+.PP
+\fBUsage:\fR mise token gitlab [OPTIONS] [<HOST>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-unmask\fR
+Show the full unmasked token
+\fBArguments:\fR
+.PP
+.TP
+\fB<HOST>\fR
+GitLab hostname
+.RS
+\fIDefault: \fRgitlab.com
+.RE
 .SH "MISE TOOL"
 Gets information about a tool
 .PP

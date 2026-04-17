@@ -74,6 +74,8 @@ ignore = [
   { id = "RUSTSEC-2024-0370", reason = "proc-macro-error dependency from sigstore crate - no safe upgrade available" },
   { id = "RUSTSEC-2023-0071", reason = "rsa crate Marvin attack vulnerability from sigstore crate - no safe upgrade available" },
   { id = "RUSTSEC-2025-0119", reason = "number_prefix crate is unmaintained - used by indicatif/self_update, no safe upgrade available" },
+  { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101.7 URI name constraints - transitive via aws-smithy-http-client/rustls 0.21, no safe upgrade until aws-sdk bumps rustls" },
+  { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101.7 wildcard name constraints - transitive via aws-smithy-http-client/rustls 0.21, no safe upgrade until aws-sdk bumps rustls" },
   #"RUSTSEC-0000-0000",
   #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
   #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
@@ -104,7 +106,6 @@ allow = [
   "ISC",
   "MIT",
   "MPL-2.0",
-  "OpenSSL",
   "Unicode-3.0",
   "Zlib",
 ]
@@ -124,21 +125,6 @@ exceptions = [
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the
 # licensing information
-[[licenses.clarify]]
-# The package spec the clarification applies to
-crate = "ring"
-# The SPDX expression for the license requirements of the crate
-expression = "MIT AND ISC AND OpenSSL"
-# One or more files in the crate's source used as the "source of truth" for
-# the license expression. If the contents match, the clarification will be used
-# when running the license check, otherwise the clarification will be ignored
-# and the crate will be checked normally, which may produce warnings or errors
-# depending on the rest of your configuration
-license-files = [
-  # Each entry is a crate relative path, and the (opaque) hash of its contents
-  { path = "LICENSE", hash = 0xbd0eed23 },
-]
-
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
 # published to private registries.

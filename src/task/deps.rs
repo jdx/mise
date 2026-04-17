@@ -1,5 +1,7 @@
+use crate::config::Settings;
 use crate::config::env_directive::EnvDirective;
-use crate::task::Task;
+use crate::task::task_fetcher::TaskFetcher;
+use crate::task::{Task, dep_has_usage_ref, parse_usage_values_from_task};
 use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
 use petgraph::Direction;
@@ -19,6 +21,8 @@ pub struct Deps {
     sent: HashSet<TaskKey>, // tasks that have already started so should not run again
     removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinitve loop
     executed: HashSet<TaskKey>, // tasks that actually began executing (not just scheduled)
+    ran: HashSet<TaskKey>, // tasks that actually ran their commands (not skipped due to fresh sources)
+    dep_edges: HashMap<TaskKey, HashSet<TaskKey>>, // maps each task to its direct dependency task keys
     post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>, // maps each post-dep to its parent tasks
     tx: mpsc::UnboundedSender<Option<Task>>,
     // not clone, notify waiters via tx None
@@ -49,6 +53,7 @@ impl Deps {
         let mut stack = vec![];
         let mut seen = HashSet::new();
         let mut post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
+        let mut dep_edges: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
 
         let mut add_idx = |task: &Task, graph: &mut DiGraph<Task, ()>| {
             *indexes
@@ -63,16 +68,50 @@ impl Deps {
             add_idx(t, &mut graph);
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
-        while let Some(a) = stack.pop() {
+        let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
+        let fetcher = TaskFetcher::new(no_cache);
+        while let Some(mut a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop
                 continue;
             }
+            // Fetch remote task files so file-based tasks have local paths
+            // before we try to parse their usage specs or execute them.
+            if a.file
+                .as_ref()
+                .is_some_and(|f| TaskFetcher::is_remote_source(&f.to_string_lossy()))
+            {
+                let mut tasks_to_fetch = vec![a];
+                fetcher.fetch_tasks(&mut tasks_to_fetch).await?;
+                a = tasks_to_fetch.into_iter().next().unwrap();
+            }
+            // Re-render dependency templates with usage values (including defaults)
+            // so {{usage.*}} resolves.
+            let has_usage_deps = |raw: &Option<Vec<_>>| {
+                raw.as_ref()
+                    .is_some_and(|r| r.iter().any(dep_has_usage_ref))
+            };
+            if has_usage_deps(&a.depends_raw)
+                || has_usage_deps(&a.depends_post_raw)
+                || has_usage_deps(&a.wait_for_raw)
+            {
+                let usage_values = parse_usage_values_from_task(config, &a).await?;
+                if !usage_values.is_empty() {
+                    a.render_depends_with_usage(config, &usage_values).await?;
+                }
+            }
             let a_idx = add_idx(&a, &mut graph);
+            // Update the graph node with the fetched version of the task
+            // (add_idx may have returned an existing index with an unfetched task)
+            graph[a_idx] = a.clone();
             let (pre, post) = a.resolve_depends(config, &all_tasks_to_run).await?;
             for b in pre {
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(a_idx, b_idx, ());
+                dep_edges
+                    .entry(task_key(&a))
+                    .or_default()
+                    .insert(task_key(&b));
                 stack.push(b.clone());
             }
             for b in post {
@@ -90,12 +129,15 @@ impl Deps {
         let sent = HashSet::new();
         let removed = HashSet::new();
         let executed = HashSet::new();
+        let ran = HashSet::new();
         Ok(Self {
             graph,
             tx,
             sent,
             removed,
             executed,
+            ran,
+            dep_edges,
             post_dep_parents,
         })
     }
@@ -134,10 +176,11 @@ impl Deps {
         for task in leaves {
             let key = task_key(&task);
 
-            if self.sent.insert(key) {
+            if self.sent.insert(key.clone()) {
                 trace!("Scheduling task {0}", task.name);
                 if let Err(e) = self.tx.send(Some(task)) {
                     trace!("Error sending task: {e:?}");
+                    self.sent.remove(&key);
                 }
             }
         }
@@ -192,6 +235,20 @@ impl Deps {
     /// graph leaf but then skipped because an earlier task failed.
     pub fn mark_executed(&mut self, task: &Task) {
         self.executed.insert(task_key(task));
+    }
+
+    /// Mark a task as having actually run its commands (not skipped due to fresh sources).
+    /// Used to invalidate dependent tasks' source freshness checks.
+    pub fn mark_ran(&mut self, task: &Task) {
+        self.ran.insert(task_key(task));
+    }
+
+    /// Check if any direct dependency of the given task actually ran (not skipped).
+    pub fn any_dep_ran(&self, task: &Task) -> bool {
+        let key = task_key(task);
+        self.dep_edges
+            .get(&key)
+            .is_some_and(|deps| deps.iter().any(|dep_key| self.ran.contains(dep_key)))
     }
 
     /// Remove multiple tasks from the graph in a batch, emitting leaves only once at the end.

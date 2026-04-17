@@ -16,6 +16,7 @@ curl https://mise.run | sh
 ```
 
 By default, mise installs to `~/.local/bin`, but it can go anywhere.
+
 Verify the installation:
 
 ```shell
@@ -94,23 +95,23 @@ If `mise` isn't on `PATH` yet, use `~/.local/bin/mise` instead.
 ```sh
 mise exec python@3 -- python
 # this will download and install Python if it is not already installed
-# Python 3.13.2
+# Python 3.15.0
 # >>> ...
 ```
 
-or run node 24:
+or run node 26:
 
 ```sh
-mise exec node@24 -- node -v
-# v24.x.x
+mise exec node@26 -- node -v
+# v26.x.x
 ```
 
 To install a tool permanently, use [`mise u|use`](/cli/use.html):
 
 ```shell
-mise use --global node@24 # install node 24 and set it as the global default
+mise use --global node@26 # install node 26 and set it as the global default
 mise exec -- node my-script.js
-# run my-script.js with node 24...
+# run my-script.js with node 26...
 ```
 
 [`mise r|run`](/cli/run.html) lets you run [tasks](/tasks/) or scripts with the full mise context (tools + env vars) loaded.
@@ -210,17 +211,28 @@ Restart your shell session after modifying your rc file. Run [`mise dr|doctor`](
 With mise activated, tools are available directly on `PATH`:
 
 ```sh
-mise use --global node@24
+mise use --global node@26
 node -v
-# v24.x.x
+# v26.x.x
 ```
 
-When you ran `mise use --global node@24`, mise updated your global config:
+When you ran `mise use --global node@26`, mise updated your global config:
 
 ```toml [~/.config/mise/config.toml]
 [tools]
-node = "24"
+node = "26"
 ```
+
+### Shell Feature Compatibility {#shell-feature-compatibility}
+
+Not all shells support every mise feature:
+
+| Feature                         | Bash | Zsh | Fish | Nushell | Elvish | Xonsh | PowerShell |
+| ------------------------------- | ---- | --- | ---- | ------- | ------ | ----- | ---------- |
+| `mise activate`                 | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+| `mise shell`                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+| Shell aliases (`[shell_alias]`) | Yes  | Yes | Yes  | No      | No     | Yes   | No         |
+| `chpwd` hook                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
 
 ## 4. Use tools from backends (npm, pipx, core, aqua, github) {#tool-backends}
 
@@ -294,7 +306,46 @@ mise use --global github:BurntSushi/ripgrep
 rg --version
 ```
 
+Each `mise use` command above updates your config file. For example, after running all three globally, your `~/.config/mise/config.toml` would contain:
+
+```toml [~/.config/mise/config.toml]
+[tools]
+"npm:@anthropic-ai/claude-code" = "latest"
+"pipx:black" = "latest"
+"github:BurntSushi/ripgrep" = "latest"
+```
+
+You can also edit `mise.toml` directly instead of using `mise use` — the effect is the same. Run `mise install` after editing to install the tools.
+
 See [Backends](/dev-tools/backends/) for more ecosystems and details.
+
+## Trusting config files {#trust}
+
+When you or a teammate adds a `mise.toml` to a project, mise will prompt you to trust it before it runs any env directives or hooks:
+
+```
+mise ~/my-project/mise.toml is not trusted. Trust it? [y/n]
+```
+
+This is a security measure — config files can execute arbitrary code via `[env]` directives, hooks, and tasks. To trust a file, run:
+
+```sh
+mise trust
+```
+
+This only needs to be done once per file. See [`mise trust`](/cli/trust) for more details.
+
+To disable trust prompts entirely, trust the root path:
+
+```sh
+mise settings trusted_config_paths=["/"]
+```
+
+Or set the environment variable `MISE_TRUSTED_CONFIG_PATHS=/`.
+
+::: tip
+`mise use` automatically trusts the file it creates, so you'll only see this prompt when pulling a config someone else wrote or when editing `mise.toml` by hand.
+:::
 
 ## 5. Setting environment variables {#environment-variables}
 
@@ -344,5 +395,5 @@ See [autocompletion](/installing-mise.html#autocompletion) to learn how to set u
 ### GitHub API rate limiting {#github-api-rate-limiting}
 
 ::: warning
-Many tools in mise require the GitHub API. Unauthenticated requests are often rate limited — if you see 4xx errors, set `MISE_GITHUB_TOKEN` or `GITHUB_TOKEN` to a [personal access token](https://github.com/settings/tokens/new?description=MISE_GITHUB_TOKEN) (no scopes required).
+Many tools in mise require the GitHub API. Unauthenticated requests are often rate limited — if you see 4xx errors, see [GitHub Tokens](/dev-tools/github-tokens.html) for how to configure authentication.
 :::

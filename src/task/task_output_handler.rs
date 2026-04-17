@@ -8,6 +8,8 @@ use indexmap::IndexMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+type TaskPrMap = Arc<Mutex<IndexMap<Task, Arc<Box<dyn SingleReport>>>>>;
+
 /// A single line of output, tagged by stream.
 pub enum KeepOrderLine {
     Stdout(String, String), // (prefix, line)
@@ -172,8 +174,6 @@ fn print_stderr(prefix: &str, line: &str) {
 
 /// Configuration for OutputHandler
 pub struct OutputHandlerConfig {
-    pub prefix: bool,
-    pub interleave: bool,
     pub output: Option<TaskOutput>,
     pub silent: bool,
     pub quiet: bool,
@@ -185,12 +185,10 @@ pub struct OutputHandlerConfig {
 /// Handles task output routing, formatting, and display
 pub struct OutputHandler {
     pub keep_order_state: Arc<Mutex<KeepOrderState>>,
-    pub task_prs: IndexMap<Task, Arc<Box<dyn SingleReport>>>,
+    pub task_prs: TaskPrMap,
     pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
 
     // Configuration from CLI args
-    prefix: bool,
-    interleave: bool,
     output: Option<TaskOutput>,
     silent: bool,
     quiet: bool,
@@ -205,8 +203,6 @@ impl Clone for OutputHandler {
             keep_order_state: self.keep_order_state.clone(),
             task_prs: self.task_prs.clone(),
             timed_outputs: self.timed_outputs.clone(),
-            prefix: self.prefix,
-            interleave: self.interleave,
             output: self.output,
             silent: self.silent,
             quiet: self.quiet,
@@ -218,13 +214,26 @@ impl Clone for OutputHandler {
 }
 
 impl OutputHandler {
+    /// Get or lazily create a progress reporter for a task in Replacing mode.
+    pub fn get_or_init_task_pr(&self, task: &Task) -> Arc<Box<dyn SingleReport>> {
+        let mut prs = self.task_prs.lock().unwrap();
+        if let Some(pr) = prs.get(task) {
+            pr.clone()
+        } else {
+            let pr = MultiProgressReport::get().add(&task.estyled_prefix());
+            let pr = Arc::new(pr);
+            prs.insert(task.clone(), pr.clone());
+            pr
+        }
+    }
+}
+
+impl OutputHandler {
     pub fn new(config: OutputHandlerConfig) -> Self {
         Self {
             keep_order_state: Arc::new(Mutex::new(KeepOrderState::new())),
-            task_prs: IndexMap::new(),
+            task_prs: Arc::new(Mutex::new(IndexMap::new())),
             timed_outputs: Arc::new(Mutex::new(IndexMap::new())),
-            prefix: config.prefix,
-            interleave: config.interleave,
             output: config.output,
             silent: config.silent,
             quiet: config.quiet,
@@ -244,8 +253,7 @@ impl OutputHandler {
                 }
             }
             TaskOutput::Replacing => {
-                let pr = MultiProgressReport::get().add(&task.estyled_prefix());
-                self.task_prs.insert(task.clone(), Arc::new(pr));
+                self.get_or_init_task_pr(task);
             }
             _ => {}
         }
@@ -278,12 +286,7 @@ impl OutputHandler {
             return TaskOutput::Quiet;
         }
 
-        // CLI flags (--prefix, --interleave) override config settings
-        if self.prefix {
-            TaskOutput::Prefix
-        } else if self.interleave {
-            TaskOutput::Interleave
-        } else if let Some(output) = Settings::get().task.output {
+        if let Some(output) = Settings::get().task.output {
             // Silent/quiet from config override raw (output suppression takes precedence)
             // Other modes (prefix, etc.) allow raw to take precedence for stdin/stdout
             if output.is_silent() || output.is_quiet() {
@@ -313,7 +316,7 @@ impl OutputHandler {
                 );
             }
             TaskOutput::Replacing => {
-                let pr = self.task_prs.get(task).unwrap().clone();
+                let pr = self.get_or_init_task_pr(task);
                 pr.set_message(format!("{prefix} {line}"));
             }
             _ => {

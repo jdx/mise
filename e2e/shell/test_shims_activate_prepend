@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# Test that `mise activate --shims` always prepends shims to the front of PATH,
+# even when shims is already present (accepting a duplicate entry).
+
+SHIMS_DIR="$MISE_DATA_DIR/shims"
+mkdir -p "$SHIMS_DIR"
+
+MISE_BIN=$(command -v mise)
+CUSTOM_PATH="/some/other/bin:$SHIMS_DIR:/usr/bin"
+
+# Shims already in PATH: should be emitted as a prepend with shims first
+assert_contains "env PATH='$CUSTOM_PATH' $MISE_BIN activate bash --shims" "export PATH=\"$SHIMS_DIR:"
+
+# Shims not in PATH: should also be emitted as a prepend with shims first
+assert_contains "env PATH='/some/other/bin:/usr/bin' $MISE_BIN activate bash --shims" "export PATH=\"$SHIMS_DIR:"

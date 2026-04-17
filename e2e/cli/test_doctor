@@ -5,6 +5,14 @@ mise use dummy@latest
 eval "$(mise activate bash)" && _mise_hook
 assert "PATH="" $(which mise) doctor --json"
 
+# Test PATH ordering warning when non-mise paths precede mise tool paths
+assert_not_contains "mise doctor" "mise tool paths are not first in PATH"
+export PATH="/tmp/fake-system-bin:$PATH"
+assert_contains "mise doctor" "mise tool paths are not first in PATH"
+assert_contains "mise doctor" "/tmp/fake-system-bin"
+# Restore PATH for remaining tests
+export PATH="${PATH#/tmp/fake-system-bin:}"
+
 mise p add uv
 mise use uv
 assert_contains "mise doctor" "asdf:uv@"
@@ -13,3 +21,15 @@ assert_contains "mise doctor -J" "dummy"
 assert_contains "mise doctor -J" "self_update_available"
 assert_contains "mise doctor -J" "aqua"
 assert_contains "mise doctor" "aqua"
+
+# env_files section is present in both text and JSON output
+assert_contains "mise doctor" "env_files"
+assert_contains "mise doctor -J" "env_files"
+
+# when no env files are configured, text output shows (none)
+assert_contains "mise doctor" "(none)"
+
+# when an env file is configured, it appears in doctor output
+echo "DOCTOR_VAR=1" >.doctor-test-env
+assert_contains "MISE_ENV_FILE=.doctor-test-env mise doctor" ".doctor-test-env"
+assert_contains "MISE_ENV_FILE=.doctor-test-env mise doctor -J" ".doctor-test-env"

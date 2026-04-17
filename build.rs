@@ -307,7 +307,7 @@ fn codegen_settings() {
     let dest_path = Path::new(&out_dir).join("settings.rs");
     let mut lines = vec![
         r#"#[derive(Config, Default, Debug, Clone, Serialize)]
-#[config(partial_attr(derive(Clone, Serialize, Default)))]
+#[config(layer_attr(derive(Clone, Serialize, Default)))]
 pub struct Settings {"#
             .to_string(),
     ];
@@ -401,8 +401,8 @@ pub struct Settings {"#
         lines.push(format!(
             r#"
 #[derive(Config, Default, Debug, Clone, Serialize)]
-#[config(partial_attr(derive(Clone, Serialize, Default)))]
-#[config(partial_attr(serde(deny_unknown_fields)))]
+#[config(layer_attr(derive(Clone, Serialize, Default)))]
+#[config(layer_attr(serde(deny_unknown_fields)))]
 pub struct Settings{name} {{"#,
             name = child.to_upper_camel_case()
         ));

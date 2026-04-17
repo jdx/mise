@@ -3,7 +3,7 @@ packages:
   - type: github_release
     repo_owner: adhocteam
     repo_name: ssm
-    description: AWS SSM Paramater Store CLI
+    description: AWS SSM Parameter Store CLI
     version_constraint: "false"
     version_overrides:
       - version_constraint: Version == "v0.3.0"

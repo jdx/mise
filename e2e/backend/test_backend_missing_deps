@@ -69,11 +69,11 @@ test_npm() {
 
 	# Test with bun mode enabled but npm still missing
 	echo "Testing npm backend with bun mode enabled but npm missing..."
-	export MISE_NPM_BUN=true
+	export MISE_NPM_PACKAGE_MANAGER=bun
 	test_backend_warning "npm (bun mode)" "mise ls-remote npm:test-package" "npm may be required but was not found"
 	output=$(mise ls-remote npm:test-package 2>&1 || true)
 	test_error_message "npm (bun mode) shows npm is required for queries" "$output" "npm is required for querying package information"
-	unset MISE_NPM_BUN
+	unset MISE_NPM_PACKAGE_MANAGER
 }
 
 # Test cargo backend

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -eu -o pipefail
+
+# This plugin requires dummy to be installed first.
+# It checks that a completed dummy installation exists on disk,
+# simulating a real runtime dependency (e.g., pipx:ruff needing a custom python).
+#
+# ASDF_INSTALL_PATH is like .../installs/needs-dummy/1.0.0
+# We go up to .../installs/ and check for a completed dummy install.
+INSTALLS_DIR="$(dirname "$(dirname "$ASDF_INSTALL_PATH")")"
+
+found_dummy=0
+for d in "$INSTALLS_DIR"/dummy/*/bin/dummy; do
+    if [ -x "$d" ] 2>/dev/null; then
+        found_dummy=1
+        break
+    fi
+done
+
+if [ "$found_dummy" -eq 0 ]; then
+    echo "needs-dummy: ERROR dummy is not installed, cannot install" >&2
+    exit 1
+fi
+
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cat <<EOF >"$ASDF_INSTALL_PATH/bin/needs-dummy"
+#!/usr/bin/env bash
+echo "needs-dummy v${ASDF_INSTALL_VERSION}"
+EOF
+chmod +x "$ASDF_INSTALL_PATH/bin/needs-dummy"

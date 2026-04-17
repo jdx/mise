@@ -3,11 +3,13 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::file::{display_path, is_executable};
+use crate::sandbox::SandboxConfig;
 use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
 use crate::toolset::env_cache::CachedEnv;
@@ -27,7 +29,7 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use xx::file;
 
 /// Global lock for interactive task exclusivity.
@@ -58,6 +60,8 @@ pub struct TaskExecutorConfig {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    /// CLI-level sandbox overrides (merged with task-level sandbox config)
+    pub sandbox: crate::sandbox::SandboxConfig,
 }
 
 /// Executes tasks with proper context, environment, and output handling
@@ -75,6 +79,7 @@ pub struct TaskExecutor {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub sandbox: crate::sandbox::SandboxConfig,
 }
 
 impl TaskExecutor {
@@ -95,6 +100,7 @@ impl TaskExecutor {
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
+            sandbox: config.sandbox,
         }
     }
 
@@ -123,6 +129,42 @@ impl TaskExecutor {
         self.output_handler.raw(task)
     }
 
+    /// Build a SandboxConfig for a task by merging task-level config with CLI overrides.
+    fn build_sandbox_for_task(&self, task: &Task) -> SandboxConfig {
+        let mut config = SandboxConfig {
+            deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
+            deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
+            deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
+            deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
+            allow_read: task
+                .allow_read
+                .iter()
+                .chain(self.sandbox.allow_read.iter())
+                .cloned()
+                .collect(),
+            allow_write: task
+                .allow_write
+                .iter()
+                .chain(self.sandbox.allow_write.iter())
+                .cloned()
+                .collect(),
+            allow_net: task
+                .allow_net
+                .iter()
+                .chain(self.sandbox.allow_net.iter())
+                .cloned()
+                .collect(),
+            allow_env: task
+                .allow_env
+                .iter()
+                .chain(self.sandbox.allow_env.iter())
+                .cloned()
+                .collect(),
+        };
+        config.resolve_paths();
+        config
+    }
+
     pub fn task_timings(&self) -> bool {
         let output_mode = self.output_handler.output(None);
         self.timings
@@ -133,31 +175,38 @@ impl TaskExecutor {
             )
     }
 
+    /// Run a task, returning true if the task actually executed (not skipped).
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_task_sched(
         &self,
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: HashSet<TaskKey>,
-    ) -> Result<()> {
+        dep_ran: bool,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
+    ) -> Result<bool> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
         if Settings::get().task.skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
             }
-            return Ok(());
+            return Ok(false);
         }
-        if !self.force && sources_are_fresh(task, config).await? {
+        // If any dependency actually ran, skip the source freshness check
+        // so that downstream tasks are invalidated by upstream changes
+        if !self.force && !dep_ran && sources_are_fresh(task, config).await? {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
-            return Ok(());
+            return Ok(false);
         }
 
         let mut tools = self.tool.clone();
         for (k, v) in &task.tools {
-            tools.push(format!("{k}@{v}").parse()?);
+            tools.push(v.to_tool_spec(k).parse()?);
         }
         let ts_build_start = std::time::Instant::now();
 
@@ -287,6 +336,8 @@ impl TaskExecutor {
                 sched_tx,
                 confirm_guard,
                 &completed_tasks,
+                semaphore,
+                permit,
             )
             .await?;
             trace!(
@@ -309,7 +360,7 @@ impl TaskExecutor {
 
         save_checksum(task, config).await?;
 
-        Ok(())
+        Ok(true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -323,10 +374,28 @@ impl TaskExecutor {
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         existing_guard: Option<RuntimeLockGuard<'static>>,
         completed_tasks: &HashSet<TaskKey>,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
+
+        let needs_tera = task.run().iter().any(RunEntry::has_tera_template);
+        let mut tera_state = if needs_tera {
+            let usage_values = crate::task::parse_usage_values_from_task(config, task).await?;
+            let config_root = task.config_root.clone().unwrap_or_default();
+            let tera = crate::tera::get_tera(Some(&config_root));
+            let mut tera_ctx = task.tera_ctx(config).await?;
+            if !usage_values.is_empty() {
+                tera_ctx.insert("usage", &usage_values);
+            }
+            tera_ctx.insert("env", env);
+            Some((tera, tera_ctx))
+        } else {
+            None
+        };
+
         // Use an existing guard (e.g. from confirmation) or acquire a new one.
         // The lock is held across consecutive script entries for exclusivity
         // and temporarily dropped around inject_and_wait to avoid deadlocking.
@@ -334,7 +403,16 @@ impl TaskExecutor {
             Some(g) => Some(g),
             None => Some(acquire_runtime_lock(task.interactive).await),
         };
-        for entry in task.run() {
+        for raw_entry in task.run() {
+            let rendered;
+            let entry = if let Some((ref mut tera, ref tera_ctx)) = tera_state
+                && raw_entry.has_tera_template()
+            {
+                rendered = raw_entry.render(tera, tera_ctx)?;
+                &rendered
+            } else {
+                raw_entry
+            };
             match entry {
                 RunEntry::Script(_) => {
                     if let Some((script, args)) = script_iter.next() {
@@ -344,17 +422,45 @@ impl TaskExecutor {
                         self.exec_script(&script, &args, task, env, prefix).await?;
                     }
                 }
-                RunEntry::SingleTask { task: spec } => {
+                RunEntry::SingleTask {
+                    task: spec,
+                    args: entry_args,
+                    env: entry_env,
+                } => {
                     let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    let override_args = if entry_args.is_empty() {
+                        None
+                    } else {
+                        Some(entry_args.clone())
+                    };
+                    let override_env: Vec<(String, String)> = entry_env
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    let override_env_ref = if override_env.is_empty() {
+                        None
+                    } else {
+                        Some(override_env.as_slice())
+                    };
                     guard = None; // drop lock before waiting on sub-tasks
+                    // Release the semaphore permit before waiting on sub-tasks to
+                    // avoid deadlock when MISE_JOBS=1 (the sub-task needs a permit
+                    // but we're holding the only one).
+                    let had_permit = permit.is_some();
+                    *permit = None;
                     self.inject_and_wait(
                         config,
                         &[resolved_spec],
                         task_env,
+                        override_args.as_deref(),
+                        override_env_ref,
                         sched_tx.clone(),
                         completed_tasks,
                     )
                     .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
                 }
                 RunEntry::TaskGroup { tasks } => {
                     let resolved_tasks: Vec<String> = tasks
@@ -362,25 +468,35 @@ impl TaskExecutor {
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
                     guard = None; // drop lock before waiting on sub-tasks
+                    let had_permit = permit.is_some();
+                    *permit = None;
                     self.inject_and_wait(
                         config,
                         &resolved_tasks,
                         task_env,
+                        None,
+                        None,
                         sched_tx.clone(),
                         completed_tasks,
                     )
                     .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
                 }
             }
         }
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn inject_and_wait(
         &self,
         config: &Arc<Config>,
         specs: &[String],
         task_env: &[(String, String)],
+        override_args: Option<&[String]>,
+        override_env: Option<&[(String, String)]>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: &HashSet<TaskKey>,
     ) -> Result<()> {
@@ -410,7 +526,32 @@ impl TaskExecutor {
             ensure!(!matches.is_empty(), "task not found: {}", name);
             for t in matches {
                 let mut t = (*t).clone();
-                t.args = args.clone();
+                t.args = override_args
+                    .map(|a| a.to_vec())
+                    .unwrap_or_else(|| args.clone());
+                // Apply entry-level env via with_dependency_env (high priority,
+                // consistent with depends/depends_post) so it overrides the
+                // sub-task's own declared env.
+                if let Some(env) = override_env {
+                    let env_directives: Vec<EnvDirective> = env
+                        .iter()
+                        .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                        .collect();
+                    t = t.with_dependency_env(&env_directives);
+                    if let Some(config_root) = &t.config_root {
+                        let env_map: IndexMap<String, String> = env.iter().cloned().collect();
+                        t.outputs.re_render_with_env(
+                            &t.raw_outputs.clone(),
+                            &env_map,
+                            config_root,
+                        )?;
+                    } else {
+                        trace!(
+                            "re_render_with_env skipped: task {} has no config_root",
+                            t.name
+                        );
+                    }
+                }
                 if self.skip_deps {
                     t.depends.clear();
                     t.depends_post.clear();
@@ -713,11 +854,19 @@ impl TaskExecutor {
         let program = program.to_executable();
         let redactions = config.redactions();
         let raw = self.raw(Some(task));
+        let sandbox = self.build_sandbox_for_task(task);
+        let env = if sandbox.is_active() {
+            Settings::get().ensure_experimental("sandbox")?;
+            &sandbox.filter_env(env)
+        } else {
+            env
+        };
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
-            .raw(raw);
+            .raw(raw)
+            .with_sandbox(sandbox);
         if raw && !redactions.is_empty() {
             if task.interactive && !task.raw && !Settings::get().raw {
                 hint!(
@@ -798,7 +947,7 @@ impl TaskExecutor {
                 }
                 // Show progress indicator except when both streams are fully suppressed
                 if !task.silent.suppresses_both() {
-                    let pr = self.output_handler.task_prs.get(task).unwrap().clone();
+                    let pr = self.output_handler.get_or_init_task_pr(task);
                     cmd = cmd.with_pr_arc(pr);
                 }
             }
@@ -874,6 +1023,8 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
+        // Apply sandbox async (DNS resolution for macOS) before blocking execute
+        cmd.apply_sandbox().await?;
         // cmd.execute() is blocking (calls cp.wait()), so use block_in_place
         // to avoid starving the tokio runtime while holding the TASK_RUNTIME_LOCK guard.
         tokio::task::block_in_place(|| cmd.execute())?;
@@ -900,13 +1051,23 @@ impl TaskExecutor {
         false
     }
 
+    fn parse_confirm_default(default: &str) -> Result<bool> {
+        match default.trim().to_ascii_lowercase().as_str() {
+            "yes" | "y" | "true" => Ok(true),
+            "no" | "n" | "false" => Ok(false),
+            _ => Err(eyre!(
+                "invalid task confirm default: {default:?}, expected one of yes/no/y/n/true/false"
+            )),
+        }
+    }
+
     async fn check_confirmation(
         &self,
         config: &Arc<Config>,
         task: &Task,
         env: &BTreeMap<String, String>,
     ) -> Result<()> {
-        if let Some(confirm_template) = &task.confirm
+        if let Some(confirm) = &task.confirm
             && !Settings::get().yes
         {
             let config_root = task.config_root.clone().unwrap_or_default();
@@ -922,8 +1083,12 @@ impl TaskExecutor {
             }
             tera_ctx.insert("usage", &usage_ctx);
 
-            let message = tera.render_str(confirm_template, &tera_ctx)?;
-            if !crate::ui::confirm(&message).unwrap_or(false) {
+            let message = tera.render_str(confirm.message(), &tera_ctx)?;
+            let default_yes = match confirm.default_value() {
+                Some(default) => Self::parse_confirm_default(default)?,
+                None => true, // keep backwards compatible default of yes if not specified
+            };
+            if !crate::ui::prompt::confirm_with_default(&message, default_yes).unwrap_or(false) {
                 return Err(eyre!("aborted by user"));
             }
         }
@@ -941,7 +1106,13 @@ impl TaskExecutor {
         let (spec, _) = task
             .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
             .await?;
-        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
+        // raw_args tasks (and `-- --help`/`-- -h` ad-hoc invocations) must
+        // skip the usage parser so it can't intercept --help.
+        if !task.should_bypass_usage_parser()
+            && (!spec.cmd.args.is_empty()
+                || !spec.cmd.flags.is_empty()
+                || !spec.cmd.subcommands.is_empty())
+        {
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
             // Pass env vars to Parser so it can resolve env= defaults in usage specs
@@ -955,8 +1126,17 @@ impl TaskExecutor {
                 trace!("Adding key {} value {} in env", k, v);
                 env.insert(k, v);
             }
+            // always export $usage_cmd when spec has subcommands so
+            // shell scripts with `set -u` don't fail when none is chosen
+            if !spec.cmd.subcommands.is_empty() {
+                env.entry("usage_cmd".to_string()).or_default();
+            }
+            if let Some(subcmd) = subcommand_name_from_parse(&po.cmds) {
+                trace!("Adding key usage_cmd value {} in env", subcmd);
+                env.insert("usage_cmd".to_string(), subcmd);
+            }
         } else {
-            trace!("Usage spec has no args or flags");
+            trace!("Usage spec has no args, flags, or subcommands");
         }
 
         Ok(())

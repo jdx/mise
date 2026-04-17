@@ -93,12 +93,14 @@ pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
     fs::remove_file(path).wrap_err_with(|| format!("failed rm: {}", display_path(path)))
 }
 
-pub async fn remove_file_async<P: AsRef<Path>>(path: P) -> Result<()> {
+pub async fn remove_file_async_if_exists<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("rm {}", display_path(path));
-    tokio::fs::remove_file(path)
-        .await
-        .wrap_err_with(|| format!("failed rm: {}", display_path(path)))
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).wrap_err_with(|| format!("failed rm: {}", display_path(path))),
+    }
 }
 
 pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -132,6 +134,11 @@ pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
     })
 }
 
+/// Renames `from` to `to`.
+///
+/// Warning: this is the raw `rename(2)`/`fs::rename` behavior. It is atomic on a
+/// single filesystem, but it will fail if `from` and `to` are on different
+/// mounts. If you need a cross-device-safe move, use [`move_file`] instead.
 pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
@@ -143,6 +150,38 @@ pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
             display_path(to)
         )
     })
+}
+
+/// Moves a path, falling back to copy+remove when source and destination are on different filesystems.
+///
+/// This preserves the normal `rename` behavior when possible, but avoids cross-device failures
+/// (`ErrorKind::CrossesDevices`) when `from` and `to` live on separate mounts (for example, when
+/// downloads are cached on one volume and installs are written to another).
+pub fn move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+
+    match fs::rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
+            if from.is_dir() {
+                create_dir_all(to)?;
+                copy_dir_all(from, to)?;
+                remove_all(from)?;
+            } else {
+                copy(from, to)?;
+                remove_file(from)?;
+            }
+            Ok(())
+        }
+        Err(err) => Err(err).wrap_err_with(|| {
+            format!(
+                "failed move: {} -> {}",
+                display_path(from),
+                display_path(to)
+            )
+        }),
+    }
 }
 
 pub fn copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
@@ -654,6 +693,37 @@ pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
 /// will include mise bin paths or other paths added by mise
 pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &env::PATH_NON_PRISTINE)
+}
+
+/// Build a PATH value with mise shims filtered out, suitable for passing to
+/// subprocesses via `.env("PATH", ...)`. Prevents infinite recursion when a
+/// subprocess (e.g. `gh auth token`, `git credential fill`) resolves to a
+/// mise shim that re-enters mise.
+///
+/// Uses the current process's PATH (`PATH_NON_PRISTINE`). For stripping
+/// shims from an arbitrary PATH string (e.g. from `PRISTINE_ENV`), use
+/// `strip_shims_from_path` instead.
+pub fn path_env_without_shims() -> std::ffi::OsString {
+    let shim_dir = &*dirs::SHIMS;
+    let filtered: Vec<_> = env::PATH_NON_PRISTINE
+        .iter()
+        .filter(|p| p.as_path() != *shim_dir)
+        .cloned()
+        .collect();
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::env::var_os(&*env::PATH_KEY).unwrap_or_default())
+}
+
+/// Strip mise shims from an arbitrary PATH string. Use this when the
+/// subprocess receives a custom env map (e.g. `PRISTINE_ENV`) rather
+/// than inheriting the current process's PATH.
+pub fn strip_shims_from_path(path_val: &str) -> String {
+    let shim_dir = &*dirs::SHIMS;
+    let filtered = env::split_paths(path_val).filter(|p| p.as_path() != *shim_dir);
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// returns the first executable in PATH, excluding the mise shim directory
@@ -1566,5 +1636,75 @@ mod tests {
         assert!(expected_path.is_file());
         let content = std::fs::read_to_string(&expected_path).unwrap();
         assert_eq!(content, "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_remove_file_async_if_exists_when_file_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        tokio::fs::write(&path, "content").await.unwrap();
+        remove_file_async_if_exists(&path).await.unwrap();
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_remove_file_async_if_exists_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent");
+        // Should not error when file does not exist.
+        remove_file_async_if_exists(&path).await.unwrap();
+    }
+
+    #[cfg(all(unix, target_os = "linux"))]
+    #[test]
+    fn test_move_file_falls_back_to_copy_across_filesystems() {
+        use std::{fs, os::unix::fs::MetadataExt};
+        use tempfile::tempdir_in;
+
+        let source_root = std::env::current_dir().unwrap();
+        let source_dir = tempdir_in(&source_root).unwrap();
+        let source_dev = source_dir.path().metadata().unwrap().dev();
+
+        let target_dir = tempdir_in("/tmp").unwrap();
+        if target_dir.path().metadata().unwrap().dev() == source_dev {
+            // This host only has one filesystem for tempdirs, so skip if we can't reproduce EXDEV.
+            return;
+        }
+
+        let src = source_dir.path().join("bun");
+        let dst = target_dir.path().join("bun");
+        fs::write(&src, b"hello").unwrap();
+
+        move_file(&src, &dst).unwrap();
+
+        assert!(!src.exists());
+        assert_eq!(fs::read(&dst).unwrap(), b"hello");
+    }
+
+    #[cfg(all(unix, target_os = "linux"))]
+    #[test]
+    fn test_move_dir_falls_back_to_copy_across_filesystems() {
+        use std::{fs, os::unix::fs::MetadataExt};
+        use tempfile::tempdir_in;
+
+        let source_root = std::env::current_dir().unwrap();
+        let source_dir = tempdir_in(&source_root).unwrap();
+        let source_dev = source_dir.path().metadata().unwrap().dev();
+
+        let target_dir = tempdir_in("/tmp").unwrap();
+        if target_dir.path().metadata().unwrap().dev() == source_dev {
+            // This host only has one filesystem for tempdirs, so skip if we can't reproduce EXDEV.
+            return;
+        }
+
+        let src = source_dir.path().join("bun-tree");
+        let dst = target_dir.path().join("bun-tree");
+        fs::create_dir_all(src.join("nested")).unwrap();
+        fs::write(src.join("nested/bun"), b"hello").unwrap();
+
+        move_file(&src, &dst).unwrap();
+
+        assert!(!src.exists());
+        assert_eq!(fs::read(dst.join("nested/bun")).unwrap(), b"hello");
     }
 }

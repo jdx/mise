@@ -151,7 +151,7 @@ sudo pacman -S mise
 Build from source with Cargo:
 
 ```sh
-cargo install mise
+cargo install --locked mise
 ```
 
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):

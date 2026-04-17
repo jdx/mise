@@ -16,8 +16,8 @@ use crate::plugins::PluginType;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::show_python_install_hint;
 use crate::toolset::install_options::InstallOptions;
-use crate::toolset::tool_deps::ToolDeps;
-use crate::toolset::tool_request::ToolRequest;
+use crate::toolset::tool_deps::{ToolDeps, tool_key};
+use crate::toolset::tool_request::{ToolRequest, effective_before_date};
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::ToolVersion;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -296,7 +296,7 @@ impl Toolset {
         let request_order: HashMap<String, usize> = versions
             .iter()
             .enumerate()
-            .map(|(i, tr)| (format!("{}@{}", tr.ba().full(), tr.version()), i))
+            .map(|(i, tr)| (tool_key(tr), i))
             .collect();
 
         // Build dependency graph
@@ -437,7 +437,7 @@ impl Toolset {
 
         // Sort installed versions by original request order to preserve user's intended ordering
         installed.sort_by_key(|tv| {
-            let key = format!("{}@{}", tv.ba().full(), tv.request.version());
+            let key = tool_key(&tv.request);
             request_order.get(&key).copied().unwrap_or(usize::MAX)
         });
 
@@ -452,8 +452,11 @@ impl Toolset {
         opts: &Arc<InstallOptions>,
     ) -> Result<ToolVersion> {
         let mpr = MultiProgressReport::get();
+        let before_date = effective_before_date(tr, &opts.resolve_options)?;
+        let mut resolve_options = opts.resolve_options.clone();
+        resolve_options.before_date = before_date;
 
-        let mut tv = tr.resolve(config, &opts.resolve_options).await?;
+        let mut tv = tr.resolve(config, &resolve_options).await?;
         if let Some(dir) = &opts.install_dir {
             let tool_dir_name = tv.ba().tool_dir_name();
             tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));
@@ -467,6 +470,7 @@ impl Toolset {
             force: opts.force,
             dry_run: opts.dry_run,
             locked: opts.locked,
+            before_date,
         };
 
         backend.install_version(ctx, tv).await

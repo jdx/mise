@@ -11,7 +11,7 @@ use itertools::Itertools;
 use tera::Context;
 
 use crate::cli::args::BackendArg;
-use crate::config::config_file::ConfigFile;
+use crate::config::config_file::{ConfigFile, trust_check};
 use crate::file;
 use crate::file::display_path;
 use crate::tera::{BASE_CONTEXT, get_tera};
@@ -60,7 +60,12 @@ impl ToolVersions {
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
         let dir = path.parent();
-        let s = get_tera(dir).render_str(s, &cf.context)?;
+        let s = if s.contains("{{") || s.contains("{%") || s.contains("{#") {
+            trust_check(&path)?;
+            get_tera(dir).render_str(s, &cf.context)?
+        } else {
+            s.to_string()
+        };
         for line in s.lines() {
             if !line.trim_start().starts_with('#') {
                 break;

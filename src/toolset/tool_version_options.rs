@@ -4,11 +4,13 @@ use indexmap::IndexMap;
 /// be persisted in the manifest or included in `full_with_opts()`.
 // install_env is a named field on ToolVersionOptions (serde puts it in self.install_env),
 // but parse_tool_options() can still place it in opts, so we filter it here as well.
-pub const EPHEMERAL_OPT_KEYS: &[&str] = &["postinstall", "install_env"];
+pub const EPHEMERAL_OPT_KEYS: &[&str] =
+    &["postinstall", "install_env", "depends", "install_before"];
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
     pub os: Option<Vec<String>>,
+    pub depends: Option<Vec<String>>,
     pub install_env: IndexMap<String, String>,
     #[serde(flatten)]
     pub opts: IndexMap<String, toml::Value>,
@@ -22,6 +24,7 @@ impl Eq for ToolVersionOptions {}
 impl std::hash::Hash for ToolVersionOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.os.hash(state);
+        self.depends.hash(state);
 
         // Hash install_env in sorted order for deterministic hashing
         let mut install_env_sorted: Vec<_> = self.install_env.iter().collect();
@@ -60,7 +63,9 @@ fn hash_toml_value<H: std::hash::Hasher>(v: &toml::Value, state: &mut H) {
 
 impl ToolVersionOptions {
     pub fn is_empty(&self) -> bool {
-        self.install_env.is_empty() && self.opts.is_empty()
+        self.depends.as_ref().is_none_or(|d| d.is_empty())
+            && self.install_env.is_empty()
+            && self.opts.is_empty()
     }
 
     /// Get a string value for a key. Returns the str for String values,
@@ -190,6 +195,42 @@ pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
     parse_tool_options_manual(s)
 }
 
+/// Serialize tool options to the bracketed `key=value,key2=value2` form used by
+/// task tool specs and backend args.
+///
+/// Complex values that cannot be round-tripped through that syntax (arrays and
+/// tables) are omitted entirely, matching `BackendArg::full_with_opts()`.
+pub fn serialize_tool_options<'a, I>(opts: I) -> Option<String>
+where
+    I: IntoIterator<Item = (&'a String, &'a toml::Value)>,
+{
+    let serialized = opts
+        .into_iter()
+        .filter_map(|(key, value)| serialize_tool_option(key, value))
+        .collect::<Vec<_>>();
+
+    (!serialized.is_empty()).then(|| serialized.join(","))
+}
+
+fn serialize_tool_option(key: &str, value: &toml::Value) -> Option<String> {
+    match value {
+        toml::Value::Table(_) | toml::Value::Array(_) => None,
+        // Strings that contain delimiters or quotes must be TOML-quoted so they
+        // round-trip through both the TOML parser and the legacy manual parser.
+        // Brackets also need quoting because `split_bracketed_opts()` uses a
+        // regex to peel off the outer `[...]` payload from backend args.
+        toml::Value::String(s) if string_requires_tool_option_quotes(s) => {
+            Some(format!("{key}={}", toml::Value::String(s.clone())))
+        }
+        toml::Value::String(s) => Some(format!("{key}={s}")),
+        _ => Some(format!("{key}={value}")),
+    }
+}
+
+fn string_requires_tool_option_quotes(s: &str) -> bool {
+    s.contains(',') || s.contains('"') || s.contains('\'') || s.contains('[') || s.contains(']')
+}
+
 /// Try parsing an options string as a TOML inline table.
 /// Returns `Some(opts)` if the string is valid TOML, `None` otherwise.
 fn try_parse_as_toml(s: &str) -> Option<ToolVersionOptions> {
@@ -222,11 +263,11 @@ fn try_parse_as_toml(s: &str) -> Option<ToolVersionOptions> {
 fn parse_tool_options_manual(s: &str) -> ToolVersionOptions {
     let mut tvo = ToolVersionOptions::default();
     let mut current_key: Option<String> = None;
-    for opt in s.split(',') {
+    for opt in split_tool_option_segments(s) {
         if let Some((k, v)) = opt.split_once('=') {
             if !k.trim().is_empty() {
                 tvo.opts
-                    .insert(k.trim().to_string(), toml::Value::String(v.to_string()));
+                    .insert(k.trim().to_string(), parse_tool_option_value(v));
                 current_key = Some(k.trim().to_string());
             }
         } else if !opt.is_empty() {
@@ -236,11 +277,57 @@ fn parse_tool_options_manual(s: &str) -> ToolVersionOptions {
                 && let toml::Value::String(s) = existing_value
             {
                 s.push(',');
-                s.push_str(opt);
+                s.push_str(&opt);
             }
         }
     }
     tvo
+}
+
+fn split_tool_option_segments(s: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut in_double_quotes = false;
+    let mut in_single_quotes = false;
+    let mut escaped = false;
+
+    for ch in s.chars() {
+        match ch {
+            '"' if !escaped && !in_single_quotes => in_double_quotes = !in_double_quotes,
+            '\'' if !in_double_quotes => in_single_quotes = !in_single_quotes,
+            ',' if !in_double_quotes && !in_single_quotes => {
+                segments.push(current);
+                current = String::new();
+                escaped = false;
+                continue;
+            }
+            _ => {}
+        }
+
+        current.push(ch);
+        escaped = in_double_quotes && ch == '\\' && !escaped;
+    }
+
+    segments.push(current);
+    segments
+}
+
+fn parse_tool_option_value(raw: &str) -> toml::Value {
+    let trimmed = raw.trim();
+
+    if ((trimmed.starts_with('"') && trimmed.ends_with('"'))
+        || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
+        && trimmed.len() >= 2
+    {
+        let toml_str = format!("_x_ = {trimmed}");
+        if let Ok(value) = toml::from_str::<toml::Value>(&toml_str)
+            && let Some(parsed) = value.get("_x_")
+        {
+            return parsed.clone();
+        }
+    }
+
+    toml::Value::String(raw.to_string())
 }
 
 #[cfg(test)]
@@ -327,6 +414,19 @@ mod tests {
                 ..Default::default()
             },
         );
+        t(
+            r#"query="first,second=value",bin_path=bin"#,
+            ToolVersionOptions {
+                opts: [
+                    ("query".to_string(), s("first,second=value")),
+                    ("bin_path".to_string(), s("bin")),
+                ]
+                .iter()
+                .cloned()
+                .collect(),
+                ..Default::default()
+            },
+        );
     }
 
     #[test]
@@ -362,6 +462,93 @@ mod tests {
         let opts = parse_tool_options(input);
         assert_eq!(opts.get("bin_path"), Some("bin"));
         assert_eq!(opts.get("strip_components"), Some("1"));
+    }
+
+    #[test]
+    fn test_serialize_tool_options_quotes_comma_strings() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "query".to_string(),
+            toml::Value::String("first,second=value".to_string()),
+        );
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin".to_string()),
+        );
+
+        assert_eq!(
+            serialize_tool_options(opts.iter()),
+            Some(r#"query="first,second=value",bin_path=bin"#.to_string())
+        );
+        assert_eq!(
+            parse_tool_options(serialize_tool_options(opts.iter()).unwrap().as_str()).get("query"),
+            Some("first,second=value")
+        );
+    }
+
+    #[test]
+    fn test_serialize_tool_options_quotes_strings_with_quotes_or_brackets() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "pattern".to_string(),
+            toml::Value::String(r#"a"b"#.to_string()),
+        );
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin[debug]".to_string()),
+        );
+
+        let serialized = serialize_tool_options(opts.iter()).unwrap();
+        assert_eq!(
+            serialized,
+            r#"pattern='a"b',bin_path="bin[debug]""#.to_string()
+        );
+
+        let reparsed = parse_tool_options(&serialized);
+        assert_eq!(reparsed.get("pattern"), Some(r#"a"b"#));
+        assert_eq!(reparsed.get("bin_path"), Some("bin[debug]"));
+    }
+
+    #[test]
+    fn test_serialize_tool_options_preserves_single_quote_wrapped_strings() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "pattern".to_string(),
+            toml::Value::String("'hi'".to_string()),
+        );
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin".to_string()),
+        );
+
+        let serialized = serialize_tool_options(opts.iter()).unwrap();
+        let reparsed = parse_tool_options(&serialized);
+
+        assert_eq!(reparsed.get("pattern"), Some("'hi'"));
+        assert_eq!(reparsed.get("bin_path"), Some("bin"));
+    }
+
+    #[test]
+    fn test_parse_tool_options_manual_supports_single_quoted_literals() {
+        let reparsed = parse_tool_options(r#"pattern='a"b',bin_path=bin"#);
+
+        assert_eq!(reparsed.get("pattern"), Some(r#"a"b"#));
+        assert_eq!(reparsed.get("bin_path"), Some("bin"));
+    }
+
+    #[test]
+    fn test_serialize_tool_options_skips_complex_values_and_empty_output() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "targets".to_string(),
+            toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
+        );
+        opts.insert(
+            "platforms".to_string(),
+            toml::Value::Table(toml::map::Map::new()),
+        );
+
+        assert_eq!(serialize_tool_options(opts.iter()), None);
     }
 
     #[test]
@@ -579,5 +766,36 @@ mod tests {
 
         let keys: Vec<_> = tvo.opts.keys().collect();
         assert_eq!(keys, vec!["zebra", "alpha", "beta"]);
+    }
+
+    #[test]
+    fn test_depends_field() {
+        let tvo = ToolVersionOptions {
+            depends: Some(vec!["python".to_string(), "node".to_string()]),
+            ..Default::default()
+        };
+        assert_eq!(
+            tvo.depends,
+            Some(vec!["python".to_string(), "node".to_string()])
+        );
+        assert!(!tvo.is_empty());
+    }
+
+    #[test]
+    fn test_depends_none_is_empty() {
+        let tvo = ToolVersionOptions {
+            depends: None,
+            ..Default::default()
+        };
+        assert!(tvo.is_empty());
+    }
+
+    #[test]
+    fn test_depends_empty_vec_is_empty() {
+        let tvo = ToolVersionOptions {
+            depends: Some(vec![]),
+            ..Default::default()
+        };
+        assert!(tvo.is_empty());
     }
 }

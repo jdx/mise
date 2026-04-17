@@ -13,12 +13,10 @@ flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" var=#tr
     arg <ENV>
 }
 flag "-f --force" help="Force the operation" hide=#true
-flag "-i --interleave" help="Set the log output verbosity" hide=#true
 flag "-j --jobs" help="How many jobs to run in parallel [default: 8]" global=#true {
     arg <JOBS>
 }
 flag "-n --dry-run" help="Dry run, don't actually do anything" hide=#true
-flag "-p --prefix" hide=#true
 flag "-P --profile" help="Set the profile (environment)" var=#true hide=#true global=#true {
     arg <PROFILE>
 }
@@ -271,6 +269,23 @@ cmd exec help="Execute a command with tool(s) set" {
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'" var=#true {
+        arg <VAR>
+    }
+    flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)\nmacOS only in v1; on Linux falls back to allowing all network" var=#true {
+        arg <HOST>
+    }
+    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
+    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="[experimental] Block all network access"
+    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-prepare help="Skip automatic dependency preparation"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
@@ -415,6 +430,14 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
         arg <OUTPUT> help="Output file path for the tool stub"
     }
 }
+cmd github hide=#true subcommand_required=#true help="GitHub related commands" {
+    cmd token hide=#true help="Display the GitHub token mise will use for a given host" {
+        long_help "Display the GitHub token mise will use for a given host\n\nShows which token source mise would use, useful for debugging\nauthentication issues. The token is masked by default."
+        after_long_help "Examples:\n\n    $ mise github token\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise github token --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise github token github.mycompany.com\n    github.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="GitHub hostname" required=#false default=github.com
+    }
+}
 cmd global hide=#true help="Sets/gets the global tool version(s)" {
     long_help "Sets/gets the global tool version(s)\n\nDisplays the contents of global config after writing.\nThe file is `$HOME/.config/mise/config.toml` by default. It can be changed with `$MISE_GLOBAL_CONFIG_FILE`.\nIf `$MISE_GLOBAL_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `mise.toml`.\nOtherwise, it will be parsed as a `.tool-versions` file.\n\nUse MISE_ASDF_COMPAT=1 to default the global config to ~/.tool-versions\n\nUse `mise local` to set a tool version locally in the current directory."
     after_long_help "Examples:\n    # set the current version of node to 20.x\n    # will use a fuzzy version (e.g.: 20) in .tool-versions file\n    $ mise global --fuzzy node@20\n\n    # set the current version of node to 20.x\n    # will use a precise version (e.g.: 20.0.0) in .tool-versions file\n    $ mise global --pin node@20\n\n    # show the current version of node in ~/.tool-versions\n    $ mise global node\n    20.0.0\n"
@@ -527,7 +550,8 @@ cmd local hide=#true help="Sets/gets tool version in local .tool-versions or mis
 }
 cmd lock help="Update lockfile checksums and URLs for all specified platforms" {
     long_help "Update lockfile checksums and URLs for all specified platforms\n\nUpdates checksums and download URLs for all platforms already specified in the lockfile.\nIf no lockfile exists, shows what would be created based on the current configuration.\nThis allows you to refresh lockfile data for platforms other than the one you're currently on.\nOperates on the lockfile in the current config root. Use TOOL arguments to target specific tools."
-    after_long_help "Examples:\n\n    $ mise lock                       # update lockfile for all common platforms\n    $ mise lock node python           # update only node and python\n    $ mise lock --platform linux-x64  # update only linux-x64 platform\n    $ mise lock --dry-run             # show what would be updated\n    $ mise lock --local               # update mise.local.lock for local configs\n"
+    after_long_help "Examples:\n\n    $ mise lock                       # update lockfile for all common platforms\n    $ mise lock node python           # update only node and python\n    $ mise lock --platform linux-x64  # update only linux-x64 platform\n    $ mise lock --dry-run             # show what would be updated\n    $ mise lock --local               # update mise.local.lock for local configs\n    $ mise lock --global              # include global config lockfile\n"
+    flag "-g --global" help="Include global config lockfile (~/.config/mise/mise.lock)\nBy default, only project-level configs are locked"
     flag "-j --jobs" help="Number of jobs to run in parallel" {
         arg <JOBS>
     }
@@ -658,7 +682,7 @@ cmd plugins help="Manage plugins" {
 cmd prepare help="[experimental] Ensure project dependencies are ready" {
     alias prep
     long_help "[experimental] Ensure project dependencies are ready\n\nRuns all applicable prepare steps for the current project.\nThis checks if dependency lockfiles are newer than installed outputs\n(e.g., package-lock.json vs node_modules/) and runs install commands\nif needed.\n\nProviders with `auto = true` are automatically invoked before `mise x` and `mise run`\nunless skipped with the --no-prepare flag."
-    after_long_help "Examples:\n\n    $ mise prepare              # Run all applicable prepare steps\n    $ mise prepare npm          # Run only npm prepare\n    $ mise prepare npm --explain # Show why npm is fresh or stale\n    $ mise prepare --dry-run    # Show what would run without executing\n    $ mise prepare --force      # Force run even if outputs are fresh\n    $ mise prepare --list       # List available prepare providers\n    $ mise prepare --skip npm   # Skip npm prepare\n\nConfiguration:\n\n    Configure prepare providers in mise.toml:\n\n    ```toml\n    # Built-in npm provider (auto-detects lockfile)\n    [prepare.npm]\n    auto = true              # Auto-run before mise x/run\n\n    # Custom provider\n    [prepare.codegen]\n    auto = true\n    sources = [\"schema/*.graphql\"]\n    outputs = [\"src/generated/\"]\n    run = \"npm run codegen\"\n\n    [prepare]\n    disable = [\"npm\"]        # Disable specific providers at runtime\n    ```\n"
+    after_long_help "Examples:\n\n    $ mise prepare              # Run all applicable prepare steps\n    $ mise prepare npm          # Run only npm prepare\n    $ mise prepare npm --explain # Show why npm is fresh or stale\n    $ mise prepare --dry-run    # Show what would run without executing\n    $ mise prepare --force      # Force run even if outputs are fresh\n    $ mise prepare --list       # List available prepare providers\n    $ mise prepare --skip npm   # Skip npm prepare\n\nConfiguration:\n\n```toml\n# Built-in npm provider (auto-detects lockfile)\n[prepare.npm]\nauto = true              # Auto-run before mise x/run\n\n# Custom provider\n[prepare.codegen]\nauto = true\nsources = [\"schema/*.graphql\"]\noutputs = [\"src/generated/\"]\nrun = \"npm run codegen\"\n\n[prepare]\ndisable = [\"npm\"]        # Disable specific providers at runtime\n```\n"
     flag --explain help="Show why a provider is fresh or stale (requires a provider argument)"
     flag "-f --force" help="Force run all prepare steps even if outputs are fresh"
     flag "-n --dry-run" help="Only check if prepare is needed, don't run commands"
@@ -710,7 +734,6 @@ cmd run restart_token=::: help="Run task(s)" {
         arg <CD>
     }
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
-    flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task.output` config or `MISE_TASK_OUTPUT` env var" hide=#true
     flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
         arg <JOBS>
     }
@@ -719,7 +742,6 @@ cmd run restart_token=::: help="Run task(s)" {
         long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
         arg <OUTPUT>
     }
-    flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the task's label\nDefaults to true if --jobs > 1\nConfigure with `task.output` config or `MISE_TASK_OUTPUT` env var" hide=#true
     flag "-q --quiet" help="Don't show extra output"
     flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
     flag "-s --shell" help="Shell to use to run toml tasks" {
@@ -730,6 +752,23 @@ cmd run restart_token=::: help="Run task(s)" {
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
         arg <TOOL@VERSION>
     }
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'" var=#true {
+        arg <VAR>
+    }
+    flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+        arg <HOST>
+    }
+    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
+    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="[experimental] Block all network access"
+    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use cache on remote tasks"
     flag --no-prepare help="Skip automatic dependency preparation"
@@ -737,6 +776,9 @@ cmd run restart_token=::: help="Run task(s)" {
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
     flag --skip-deps help="Run only the specified tasks skipping all dependencies"
+    flag --skip-tools help="Skip installing tools before running tasks" {
+        long_help "Skip installing tools before running tasks\n\nCan also be set persistently with the `task.run_auto_install` setting\nor `MISE_TASK_RUN_AUTO_INSTALL=false` env var"
+    }
     flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
         arg <TIMEOUT>
     }
@@ -1023,7 +1065,6 @@ cmd tasks help="Manage tasks" {
             arg <CD>
         }
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
-        flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task.output` config or `MISE_TASK_OUTPUT` env var" hide=#true
         flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
             arg <JOBS>
         }
@@ -1032,7 +1073,6 @@ cmd tasks help="Manage tasks" {
             long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
             arg <OUTPUT>
         }
-        flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the task's label\nDefaults to true if --jobs > 1\nConfigure with `task.output` config or `MISE_TASK_OUTPUT` env var" hide=#true
         flag "-q --quiet" help="Don't show extra output"
         flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
         flag "-s --shell" help="Shell to use to run toml tasks" {
@@ -1043,6 +1083,23 @@ cmd tasks help="Manage tasks" {
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
             arg <TOOL@VERSION>
         }
+        flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'" var=#true {
+            arg <VAR>
+        }
+        flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+            arg <HOST>
+        }
+        flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+            arg <PATH>
+        }
+        flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+            arg <PATH>
+        }
+        flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
+        flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+        flag --deny-net help="[experimental] Block all network access"
+        flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
+        flag --deny-write help="[experimental] Block all filesystem writes"
         flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use cache on remote tasks"
         flag --no-prepare help="Skip automatic dependency preparation"
@@ -1050,6 +1107,9 @@ cmd tasks help="Manage tasks" {
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }
         flag --skip-deps help="Run only the specified tasks skipping all dependencies"
+        flag --skip-tools help="Skip installing tools before running tasks" {
+            long_help "Skip installing tools before running tasks\n\nCan also be set persistently with the `task.run_auto_install` setting\nor `MISE_TASK_RUN_AUTO_INSTALL=false` env var"
+        }
         flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
             arg <TIMEOUT>
         }
@@ -1078,6 +1138,23 @@ cmd test-tool help="Test a tool installs and executes" {
     flag --include-non-defined help="Also test tools not defined in registry/, guessing how to test it"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOLS]…" help="Tool(s) to test" required=#false var=#true
+}
+cmd token subcommand_required=#true help="Display git provider tokens mise will use" {
+    cmd forgejo help="Forgejo token" {
+        after_long_help "Examples:\n\n    $ mise token forgejo\n    codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)\n\n    $ mise token forgejo --unmask\n    codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)\n\n    $ mise token forgejo forgejo.mycompany.com\n    forgejo.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="Forgejo hostname" required=#false default=codeberg.org
+    }
+    cmd github help="GitHub token" {
+        after_long_help "Examples:\n\n    $ mise token github\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise token github --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise token github github.mycompany.com\n    github.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="GitHub hostname" required=#false default=github.com
+    }
+    cmd gitlab help="GitLab token" {
+        after_long_help "Examples:\n\n    $ mise token gitlab\n    gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)\n\n    $ mise token gitlab --unmask\n    gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)\n\n    $ mise token gitlab gitlab.mycompany.com\n    gitlab.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="GitLab hostname" required=#false default=gitlab.com
+    }
 }
 cmd tool help="Gets information about a tool" {
     after_long_help "Examples:\n\n    $ mise tool node\n    Backend:            core\n    Installed Versions: 20.0.0 22.0.0\n    Active Version:     20.0.0\n    Requested Version:  20\n    Config Source:      ~/.config/mise/mise.toml\n    Tool Options:       [none]\n"

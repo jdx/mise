@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use jiff::Timestamp;
+
 use crate::ui::progress_report::SingleReport;
 use crate::{config::Config, toolset::Toolset};
 
@@ -11,4 +13,5 @@ pub struct InstallContext {
     pub dry_run: bool,
     /// require lockfile URLs to be present; fail if not
     pub locked: bool,
+    pub before_date: Option<Timestamp>,
 }

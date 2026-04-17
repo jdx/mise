@@ -1,6 +1,7 @@
 mod path;
 
 use crate::{exit, plugins::PluginEnum};
+use std::collections::HashSet;
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::backend_type::BackendType;
@@ -119,6 +120,7 @@ impl Doctor {
         self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
         self.analyze_backend_mismatches();
+        self.check_path_ordering(ts, &config).await;
         data.insert(
             "paths".into(),
             self.paths(ts)
@@ -133,6 +135,16 @@ impl Doctor {
                 .config_files
                 .keys()
                 .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+        );
+        data.insert(
+            "env_files".into(),
+            config
+                .env_results()
+                .await?
+                .env_files
+                .iter()
+                .map(|f| f.to_string_lossy().to_string())
                 .collect(),
         );
         data.insert(
@@ -285,6 +297,7 @@ impl Doctor {
     }
     async fn analyze_config(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
         info::section("config_files", render_config_files(config))?;
+        info::section("env_files", render_env_files(config).await?)?;
         if IGNORED_CONFIG_FILES.is_empty() {
             println!();
             info::inline_section("ignored_config_files", "(none)")?;
@@ -331,6 +344,7 @@ impl Doctor {
                 self.analyze_shims(config, &ts).await;
                 self.analyze_toolset(&ts).await?;
                 self.analyze_paths(&ts).await?;
+                self.check_path_ordering(&ts, config).await;
             }
             Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
         }
@@ -371,7 +385,7 @@ impl Doctor {
     }
 
     async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) {
-        let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
+        let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
 
         if let Ok((missing, extra)) = shims::get_shim_diffs(config, mise_bin, toolset).await {
             let cmd = style::nyellow("mise reshim");
@@ -474,6 +488,77 @@ impl Doctor {
         info::section("path", paths)?;
         Ok(())
     }
+
+    /// Check that mise tool paths appear before system paths in the current PATH.
+    /// This detects cases where shell configuration (e.g. brew, system profile) has
+    /// inserted entries before mise's paths, causing system tools to shadow mise-managed ones.
+    async fn check_path_ordering(&mut self, ts: &Toolset, config: &Arc<Config>) {
+        if !env::is_activated() {
+            return;
+        }
+
+        // Get all mise-managed paths (tool installs, env._.path, UV venv, MISE_ADD_PATH, etc.)
+        let mise_paths = match ts.final_env(config).await {
+            Ok((_env, env_results)) => match ts.list_final_paths(config, env_results).await {
+                Ok(paths) => paths,
+                Err(_) => return,
+            },
+            Err(_) => return,
+        };
+        if mise_paths.is_empty() {
+            return;
+        }
+
+        let current_path = &*env::PATH_NON_PRISTINE;
+        if current_path.is_empty() {
+            return;
+        }
+
+        let resolve = |p: &PathBuf| p.canonicalize().unwrap_or_else(|_| p.clone());
+
+        // Resolve all mise-managed paths for comparison
+        let mise_paths_resolved: HashSet<PathBuf> = mise_paths.iter().map(resolve).collect();
+
+        // Also exclude the mise binary's own directory
+        let mise_bin_parent = env::MISE_BIN.parent().and_then(|p| p.canonicalize().ok());
+
+        // Find the index of the first mise-managed path in the current PATH
+        // Note: mise_bin_parent is intentionally excluded here — it's a directory like
+        // /opt/homebrew/bin that happens to contain the mise binary, not a mise tool path.
+        // Including it would mask the exact PATH ordering issue we're trying to detect.
+        let first_mise_idx = current_path
+            .iter()
+            .position(|p| mise_paths_resolved.contains(&resolve(p)));
+
+        let Some(first_mise_idx) = first_mise_idx else {
+            // No mise paths found in current PATH at all — this is already
+            // covered by the activation check
+            return;
+        };
+
+        if first_mise_idx == 0 {
+            return;
+        }
+
+        // Everything before first_mise_idx is by definition not a mise-managed path.
+        // Filter out the mise binary's own directory (e.g. /opt/homebrew/bin) since
+        // that's not a problematic entry — it's just where mise itself is installed.
+        let paths_display = current_path[..first_mise_idx]
+            .iter()
+            .filter(|p| mise_bin_parent.as_ref().is_none_or(|bp| bp != &resolve(p)))
+            .map(display_path)
+            .join("\n  ");
+
+        if paths_display.is_empty() {
+            return;
+        }
+        self.warnings.push(formatdoc!(
+            r#"mise tool paths are not first in PATH. These paths take precedence:
+              {paths_display}
+            This may cause system-installed tools to be used instead of mise-managed versions.
+            Ensure `mise activate` runs after other PATH modifications in your shell rc file."#
+        ));
+    }
 }
 
 fn shims_on_path() -> bool {
@@ -530,12 +615,20 @@ fn render_config_files(config: &Config) -> String {
         .join("\n")
 }
 
-fn render_backends() -> String {
-    let mut s = vec![];
-    for b in BackendType::iter().filter(|b| b != &BackendType::Unknown) {
-        s.push(format!("{b}"));
+async fn render_env_files(config: &Arc<Config>) -> eyre::Result<String> {
+    let env_files = &config.env_results().await?.env_files;
+    if env_files.is_empty() {
+        Ok("(none)".to_string())
+    } else {
+        Ok(env_files.iter().map(display_path).join("\n"))
     }
-    s.join("\n")
+}
+
+fn render_backends() -> String {
+    BackendType::iter()
+        .filter(|b| b != &BackendType::Unknown)
+        .map(|b| b.to_string())
+        .join("\n")
 }
 
 fn render_plugins() -> String {

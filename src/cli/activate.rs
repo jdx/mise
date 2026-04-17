@@ -75,7 +75,19 @@ impl Activate {
 
         let mise_bin = if cfg!(target_os = "linux") {
             // linux dereferences symlinks, so use argv0 instead
-            PathBuf::from(&*env::ARGV0)
+            let argv0 = PathBuf::from(&*env::ARGV0);
+            let path = if argv0.is_absolute() {
+                argv0
+            } else {
+                which::which(&*env::ARGV0).unwrap_or_else(|_| env::MISE_BIN.clone())
+            };
+            if path.is_absolute() {
+                path
+            } else {
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(path))
+                    .unwrap_or_else(|_| env::MISE_BIN.clone())
+            }
         } else {
             env::MISE_BIN.clone()
         };
@@ -153,9 +165,9 @@ impl Activate {
         }
     }
 
-    /// Used by activate_shims. For shells with native path dedup (fish), skips
-    /// the is_dir_in_path check and uses MovePrependEnv to reorder entries on
-    /// re-source. For other shells, falls back to prepend_path to avoid PATH growth.
+    /// Used by activate_shims. Always prepends the path to the front, even if
+    /// already present (accepting a duplicate entry). For shells with native path
+    /// dedup (fish), uses MovePrependEnv to reorder without duplicating.
     fn shims_prepend_path(&self, shell: &dyn Shell, p: &Path) -> Option<ActivatePrelude> {
         if !is_dir_not_in_nix(p) || p.is_relative() {
             return None;
@@ -166,7 +178,10 @@ impl Activate {
                 p.to_string_lossy().to_string(),
             ))
         } else {
-            self.prepend_path(p)
+            Some(ActivatePrelude::PrependEnv(
+                PATH_KEY.to_string(),
+                p.to_string_lossy().to_string(),
+            ))
         }
     }
 }

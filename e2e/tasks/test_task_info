@@ -35,7 +35,7 @@ assert_json "mise tasks info lint --json" "$(
   "depends_post": [],
   "wait_for": [],
   "env": [],
-  "dir": null,
+  "dir": "$(pwd)",
   "hide": false,
   "raw": false,
   "interactive": false,

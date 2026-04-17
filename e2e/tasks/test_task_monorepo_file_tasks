@@ -47,11 +47,11 @@ print("backend api tests")
 EOF
 chmod +x projects/backend/mise-tasks/test-api.py
 
-cat <<'EOF' >projects/backend/mise-tasks/migrate.rb
-#!/usr/bin/env ruby
-puts "backend migrations"
+cat <<'EOF' >projects/backend/mise-tasks/migrate.sh
+#!/usr/bin/env bash
+echo "backend migrations"
 EOF
-chmod +x projects/backend/mise-tasks/migrate.rb
+chmod +x projects/backend/mise-tasks/migrate.sh
 
 # Verify file tasks are discovered with --all
 # Note: Tasks are displayed WITHOUT extensions in listings (display_name strips them)
@@ -70,7 +70,7 @@ assert_contains "mise run '//projects/backend:migrate'" "backend migrations"
 assert_contains "mise run '//projects/frontend:test-e2e.js'" "frontend e2e tests"
 assert_contains "mise run '//projects/frontend:lint.sh'" "frontend linting"
 assert_contains "mise run '//projects/backend:test-api.py'" "backend api tests"
-assert_contains "mise run '//projects/backend:migrate.rb'" "backend migrations"
+assert_contains "mise run '//projects/backend:migrate.sh'" "backend migrations"
 
 # Test wildcard patterns with file tasks
 assert_contains "mise run '//projects/frontend:test*'" "frontend e2e tests"

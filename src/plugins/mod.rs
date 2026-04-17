@@ -216,7 +216,7 @@ pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
+        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
     )
         .unwrap()
 });
@@ -425,5 +425,32 @@ mod tests {
             PluginSource::Git { .. } => {}
             _ => panic!("Expected a git plugin"),
         }
+    }
+
+    #[test]
+    fn test_version_regex_filters_prerelease() {
+        // Standard pre-release patterns
+        assert!(VERSION_REGEX.is_match("1.0.0-alpha"));
+        assert!(VERSION_REGEX.is_match("1.0.0-beta"));
+        assert!(VERSION_REGEX.is_match("1.0.0-rc1"));
+        assert!(VERSION_REGEX.is_match("1.0.0.rc1"));
+        assert!(VERSION_REGEX.is_match("1.0.0-dev"));
+        assert!(VERSION_REGEX.is_match("1.0.0-pre1"));
+        assert!(VERSION_REGEX.is_match("1.0.0.pre1"));
+
+        // PEP 440 dot-separated dev versions (GitHub discussion #8784)
+        assert!(
+            VERSION_REGEX.is_match("2026.3.3.dev0"),
+            "PEP 440 .dev suffix should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("2026.3.3.162408.dev0"),
+            "PEP 440 .dev suffix with build number should be filtered"
+        );
+
+        // Stable versions should NOT match
+        assert!(!VERSION_REGEX.is_match("1.0.0"));
+        assert!(!VERSION_REGEX.is_match("2026.3.3"));
+        assert!(!VERSION_REGEX.is_match("22.6.0"));
     }
 }

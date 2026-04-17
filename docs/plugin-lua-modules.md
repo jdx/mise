@@ -82,6 +82,34 @@ if err ~= nil then
 end
 ```
 
+### Non-Raising Variants (`try_*`)
+
+The standard `http.get`, `http.head`, and `http.download_file` methods raise a Lua error on transport failures (timeouts, DNS errors, connection refused, etc.). Since `pcall()` cannot catch errors from async functions in this environment, non-raising variants are provided:
+
+```lua
+local http = require("http")
+
+-- try_get: returns (resp, nil) on success, (nil, err_string) on failure
+local resp, err = http.try_get({
+    url = "https://primary.example.com/index"
+})
+if err ~= nil then
+    -- fallback to another source
+    resp, err = http.try_get({ url = "https://fallback.example.com/index" })
+end
+
+-- try_head: same return convention as try_get
+local resp, err = http.try_head({ url = "https://example.com/file.tar.gz" })
+
+-- try_download_file: returns (true, nil) on success, (nil, err_string) on failure
+local ok, err = http.try_download_file({
+    url = "https://example.com/archive.tar.gz"
+}, "/path/to/download.tar.gz")
+if err ~= nil then
+    error("Download failed: " .. err)
+end
+```
+
 ### Response Object
 
 HTTP responses contain the following fields:

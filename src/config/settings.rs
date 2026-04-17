@@ -2,10 +2,11 @@ use crate::cli::Cli;
 use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::duration;
 use crate::file::FindUp;
+use crate::platform::Platform;
 use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
-use confique::{Config, Partial};
+use confique::{Config, Layer};
 use eyre::{Result, bail};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
@@ -196,7 +197,7 @@ impl serde::Serialize for PythonUvVenvAuto {
     }
 }
 
-pub type SettingsPartial = <Settings as Config>::Partial;
+pub type SettingsPartial = <Settings as Config>::Layer;
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
@@ -407,44 +408,26 @@ impl Settings {
             self.not_found_auto_install = false;
             self.task.run_auto_install = false;
         }
-        if let Some(false) = self.asdf {
-            self.disable_backends.push("asdf".to_string());
+        if let Some(go_default_packages_file) = &self.go_default_packages_file {
+            self.go.default_packages_file = go_default_packages_file.clone();
         }
-        if let Some(false) = self.vfox {
-            self.disable_backends.push("vfox".to_string());
+        if let Some(go_download_mirror) = &self.go_download_mirror {
+            self.go.download_mirror = go_download_mirror.clone();
         }
-        if let Some(disable_default_shorthands) = self.disable_default_shorthands {
-            self.disable_default_registry = disable_default_shorthands;
+        if let Some(go_repo) = &self.go_repo {
+            self.go.repo = go_repo.clone();
         }
-        if let Some(cargo_binstall) = self.cargo_binstall {
-            self.cargo.binstall = cargo_binstall;
+        if let Some(go_set_gobin) = self.go_set_gobin {
+            self.go.set_gobin = Some(go_set_gobin);
         }
-        if let Some(pipx_uvx) = self.pipx_uvx {
-            self.pipx.uvx = Some(pipx_uvx);
+        if let Some(go_set_gopath) = self.go_set_gopath {
+            self.go.set_gopath = go_set_gopath;
         }
-        if let Some(python_compile) = self.python_compile {
-            self.python.compile = Some(python_compile);
+        if let Some(go_set_goroot) = self.go_set_goroot {
+            self.go.set_goroot = go_set_goroot;
         }
-        if let Some(python_default_packages_file) = &self.python_default_packages_file {
-            self.python.default_packages_file = Some(python_default_packages_file.clone());
-        }
-        if let Some(python_patch_url) = &self.python_patch_url {
-            self.python.patch_url = Some(python_patch_url.clone());
-        }
-        if let Some(python_patches_directory) = &self.python_patches_directory {
-            self.python.patches_directory = Some(python_patches_directory.clone());
-        }
-        if let Some(python_precompiled_arch) = &self.python_precompiled_arch {
-            self.python.precompiled_arch = Some(python_precompiled_arch.clone());
-        }
-        if let Some(python_precompiled_os) = &self.python_precompiled_os {
-            self.python.precompiled_os = Some(python_precompiled_os.clone());
-        }
-        if let Some(python_pyenv_repo) = &self.python_pyenv_repo {
-            self.python.pyenv_repo = python_pyenv_repo.clone();
-        }
-        if let Some(python_venv_stdlib) = self.python_venv_stdlib {
-            self.python.venv_stdlib = python_venv_stdlib;
+        if let Some(go_skip_checksum) = self.go_skip_checksum {
+            self.go.skip_checksum = go_skip_checksum;
         }
         if self.npm.bun {
             self.npm.package_manager = NpmPackageManager::Bun;
@@ -478,8 +461,11 @@ impl Settings {
         if cli.yes {
             s.yes = Some(true);
         }
-        if cli.quiet {
+        if cli.quiet || cli.silent {
             s.quiet = Some(true);
+        }
+        if cli.silent {
+            s.silent = Some(true);
         }
         if cli.trace {
             s.log_level = Some("trace".to_string());
@@ -535,6 +521,21 @@ impl Settings {
 
     pub fn lockfile_enabled(&self) -> bool {
         self.lockfile.unwrap_or(true)
+    }
+
+    /// Returns configured lockfile platforms parsed into Platform structs, or None for defaults.
+    /// Errors on invalid platform strings (same validation as `mise lock --platform`).
+    pub fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>> {
+        match &self.lockfile_platforms {
+            Some(platforms) if !platforms.is_empty() => {
+                Ok(Some(Platform::parse_multiple(platforms)?))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    pub fn force_provenance_verify(&self) -> bool {
+        self.locked_verify_provenance || self.paranoid
     }
 
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {
@@ -877,6 +878,18 @@ pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, s
     serde_json::from_str(input)
 }
 
+/// Parse a path list from an environment variable using the OS-native path
+/// separator (`:` on Unix, `;` on Windows). This correctly handles Windows
+/// absolute paths whose drive letters contain `:` (e.g. `C:\foo`).
+fn list_by_os_path_separator<C>(input: &str) -> Result<C, std::convert::Infallible>
+where
+    C: FromIterator<PathBuf>,
+{
+    Ok(std::env::split_paths(input)
+        .filter(|p| !p.as_os_str().is_empty())
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1068,5 +1081,55 @@ mod tests {
         assert!(node.configure_cmd(path).contains("--verbose"));
         assert!(node.make_cmd().starts_with("gmake -j4 -s"));
         assert_eq!(node.make_install_cmd(), "gmake install --no-strip");
+    }
+
+    #[test]
+    fn test_list_by_os_path_separator_empty() {
+        let result: Result<Vec<PathBuf>, _> = list_by_os_path_separator("");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_list_by_os_path_separator_single() {
+        #[cfg(not(windows))]
+        let (input, expected) = ("/foo/bar", PathBuf::from("/foo/bar"));
+        #[cfg(windows)]
+        let (input, expected) = (r"C:\foo\bar", PathBuf::from(r"C:\foo\bar"));
+        let result: Vec<PathBuf> = list_by_os_path_separator(input).unwrap();
+        assert_eq!(result, vec![expected]);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_list_by_os_path_separator_multiple_unix() {
+        let result: Vec<PathBuf> = list_by_os_path_separator("/foo:/bar").unwrap();
+        assert_eq!(result, vec![PathBuf::from("/foo"), PathBuf::from("/bar")]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_list_by_os_path_separator_multiple_windows() {
+        let result: Vec<PathBuf> = list_by_os_path_separator(r"C:\foo;D:\bar").unwrap();
+        assert_eq!(
+            result,
+            vec![PathBuf::from(r"C:\foo"), PathBuf::from(r"D:\bar")]
+        );
+    }
+
+    #[test]
+    fn test_list_by_os_path_separator_as_btreeset() {
+        // Verify the function works with BTreeSet as the collection type,
+        // matching the field types used in Settings (e.g. trusted_config_paths).
+        #[cfg(not(windows))]
+        let (input, a, b) = ("/foo:/bar", PathBuf::from("/foo"), PathBuf::from("/bar"));
+        #[cfg(windows)]
+        let (input, a, b) = (
+            r"C:\foo;D:\bar",
+            PathBuf::from(r"C:\foo"),
+            PathBuf::from(r"D:\bar"),
+        );
+        let result: BTreeSet<PathBuf> = list_by_os_path_separator(input).unwrap();
+        assert_eq!(result, [a, b].into_iter().collect());
     }
 }

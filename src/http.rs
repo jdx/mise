@@ -91,7 +91,7 @@ impl Client {
 
     pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let url = url.into_url().unwrap();
-        let headers = github_headers(&url);
+        let headers = host_auth_headers(&url);
         self.get_async_with_headers(url, &headers).await
     }
 
@@ -111,7 +111,7 @@ impl Client {
 
     pub async fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let url = url.into_url().unwrap();
-        let headers = github_headers(&url);
+        let headers = host_auth_headers(&url);
         self.head_async_with_headers(url, &headers).await
     }
 
@@ -140,7 +140,7 @@ impl Client {
     ) -> Result<String> {
         let mut url = url.into_url().unwrap();
         // Merge GitHub headers with any extra headers provided
-        let mut headers = github_headers(&url);
+        let mut headers = host_auth_headers(&url);
         headers.extend(extra_headers.clone());
         let resp = self.get_async_with_headers(url.clone(), &headers).await?;
         let text = resp.text().await?;
@@ -292,7 +292,7 @@ impl Client {
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let url = url.into_url()?;
-        let headers = github_headers(&url);
+        let headers = host_auth_headers(&url);
         self.download_file_with_headers(url, path, &headers, pr)
             .await
     }
@@ -433,21 +433,30 @@ pub fn error_code(e: &Report) -> Option<u16> {
     }
 }
 
-fn github_headers(url: &Url) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    if url.host_str() == Some("api.github.com")
-        && let Some(token) = &*env::GITHUB_TOKEN
-    {
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
-        );
-        headers.insert(
-            "x-github-api-version",
-            HeaderValue::from_static("2022-11-28"),
-        );
+fn host_auth_headers(url: &Url) -> HeaderMap {
+    let Some(host) = url.host_str() else {
+        return HeaderMap::new();
+    };
+
+    let is_github = host == "api.github.com"
+        || host == "github.com"
+        || host.ends_with(".githubusercontent.com")
+        || crate::github::is_gh_host(host);
+    if is_github {
+        return crate::github::get_headers(url.as_str());
     }
-    headers
+
+    let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
+    if is_gitlab {
+        return crate::gitlab::get_headers(url.as_str());
+    }
+
+    let is_forgejo = host == "codeberg.org" || crate::forgejo::is_forgejo_host(host);
+    if is_forgejo {
+        return crate::forgejo::get_headers(url.as_str());
+    }
+
+    HeaderMap::new()
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
@@ -564,7 +573,7 @@ fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = std::time::Dur
 #[cfg(test)]
 mod tests {
     use super::*;
-    use confique::Partial;
+    use confique::Layer;
     use indexmap::IndexMap;
     use url::Url;
 

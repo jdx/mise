@@ -11,7 +11,7 @@ use crate::duration;
 use crate::env;
 use crate::file::display_path;
 use crate::prepare::{PrepareEngine, PrepareOptions};
-use crate::task::has_any_args_defined;
+use crate::task::has_any_usage_spec;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
@@ -82,18 +82,6 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub force: bool,
 
-    /// Print directly to stdout/stderr instead of by line
-    /// Defaults to true if --jobs == 1
-    /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-    #[clap(
-        long,
-        short,
-        verbatim_doc_comment,
-        hide = true,
-        overrides_with = "prefix"
-    )]
-    pub interleave: bool,
-
     /// Number of tasks to run in parallel
     /// [default: 4]
     /// Configure with `jobs` config or `MISE_JOBS` env var
@@ -115,18 +103,6 @@ pub struct Run {
     /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
     #[clap(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
-
-    /// Print stdout/stderr by line, prefixed with the task's label
-    /// Defaults to true if --jobs > 1
-    /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-    #[clap(
-        long,
-        short,
-        verbatim_doc_comment,
-        hide = true,
-        overrides_with = "interleave"
-    )]
-    pub prefix: bool,
 
     /// Don't show extra output
     #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
@@ -158,6 +134,43 @@ pub struct Run {
     #[clap(skip)]
     pub is_linear: bool,
 
+    /// [experimental] Allow specific env var through (implies --deny-env for everything else)
+    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
+    #[clap(long, value_name = "VAR", verbatim_doc_comment)]
+    pub allow_env: Vec<String>,
+
+    /// [experimental] Allow network to specific host (implies --deny-net for everything else)
+    #[clap(long, value_name = "HOST", verbatim_doc_comment)]
+    pub allow_net: Vec<String>,
+
+    /// [experimental] Allow reads from specific path (implies --deny-read for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_read: Vec<std::path::PathBuf>,
+
+    /// [experimental] Allow writes to specific path (implies --deny-write for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_write: Vec<std::path::PathBuf>,
+
+    /// [experimental] Block reads, writes, network, and env vars
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_all: bool,
+
+    /// [experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_env: bool,
+
+    /// [experimental] Block all network access
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_net: bool,
+
+    /// [experimental] Block filesystem reads (system libs and tool dirs still accessible)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_read: bool,
+
+    /// [experimental] Block all filesystem writes
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_write: bool,
+
     /// Bypass the environment cache and recompute the environment
     #[clap(long)]
     pub fresh_env: bool,
@@ -179,6 +192,13 @@ pub struct Run {
     /// Run only the specified tasks skipping all dependencies
     #[clap(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
     pub skip_deps: bool,
+
+    /// Skip installing tools before running tasks
+    ///
+    /// Can also be set persistently with the `task.run_auto_install` setting
+    /// or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
+    #[clap(long, verbatim_doc_comment)]
+    pub skip_tools: bool,
 
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
@@ -218,6 +238,7 @@ impl Run {
 
         // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);
+        self.args_last = unescape_task_args(&self.args_last);
 
         // Temporarily unset cache key to force fresh env computation
         if self.fresh_env {
@@ -247,17 +268,22 @@ impl Run {
             let task_list = get_task_lists(&config, &args, false, false).await?;
 
             if let Some(task) = task_list.first() {
-                // Get usage spec to check if task has defined args/flags
-                let spec = task.parse_usage_spec_for_display(&config).await?;
+                // raw_args tasks act as proxies for tools that handle their
+                // own --help — fall through to normal execution so the flag
+                // reaches the underlying command instead of mise.
+                if !task.raw_args {
+                    // Get usage spec to check if task has defined args/flags
+                    let spec = task.parse_usage_spec_for_display(&config).await?;
 
-                if has_any_args_defined(&spec) {
-                    // Task has usage args/flags defined, render help using usage library
-                    println!("{}", usage::docs::cli::render_help(&spec, &spec.cmd, true));
-                } else {
-                    // Task has no usage defined, show basic task info
-                    display_task_help(task)?;
+                    if has_any_usage_spec(&spec) {
+                        // Task has usage spec defined, render help using usage library
+                        println!("{}", usage::docs::cli::render_help(&spec, &spec.cmd, true));
+                    } else {
+                        // Task has no usage defined, show basic task info
+                        display_task_help(task)?;
+                    }
+                    return Ok(());
                 }
-                return Ok(());
             } else {
                 // No task found, show run command help
                 self.get_clap_command().print_long_help()?;
@@ -280,7 +306,9 @@ impl Run {
                 || !Settings::get().auto_install,
             ..Default::default()
         };
-        let _ = ts.install_missing_versions(&mut config, &opts).await?;
+        if !self.skip_tools {
+            let _ = ts.install_missing_versions(&mut config, &opts).await?;
+        }
 
         if !self.skip_deps {
             self.skip_deps = Settings::get().task.skip_depends;
@@ -297,10 +325,37 @@ impl Run {
 
         let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
 
-        // Args after -- go directly to tasks (no prefix)
+        // Args after -- go directly to tasks (no prefix). They are also
+        // recorded on `trailing_args` so the task renderer can detect
+        // `-- --help` / `-- -h` and bypass the usage parser for them.
         if !self.args_last.is_empty() {
             for task in &mut task_list {
                 task.args.extend(self.args_last.clone());
+                task.trailing_args = self.args_last.clone();
+            }
+        }
+
+        // Fetch remote task files before parsing usage specs, so that
+        // file-based remote tasks have their files resolved to local cache.
+        let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
+        fetcher.fetch_tasks(&mut task_list).await?;
+
+        // Re-render dependency templates with parent task's usage arg/flag values.
+        // This enables patterns like: depends = ["child {{usage.app}}"]
+        for task in &mut task_list {
+            let has_usage_deps = |raw: &Option<Vec<_>>| {
+                raw.as_ref()
+                    .is_some_and(|r| r.iter().any(crate::task::dep_has_usage_ref))
+            };
+            if has_usage_deps(&task.depends_raw)
+                || has_usage_deps(&task.depends_post_raw)
+                || has_usage_deps(&task.wait_for_raw)
+            {
+                let usage_values = crate::task::parse_usage_values_from_task(&config, task).await?;
+                if !usage_values.is_empty() {
+                    task.render_depends_with_usage(&config, &usage_values)
+                        .await?;
+                }
             }
         }
         time!("run get_task_lists");
@@ -372,7 +427,9 @@ impl Run {
         self.output = Some(self.output(None));
 
         // Step 3: Install tools needed by tasks
-        self.install_task_tools(&mut config, &tasks).await?;
+        if !self.skip_tools {
+            self.install_task_tools(&mut config, &tasks).await?;
+        }
 
         // Step 4: Create TaskExecutor after tool installation
         self.setup_executor()?;
@@ -486,12 +543,32 @@ impl Run {
         // always sees the parent in `executed` — avoiding a race where a
         // concurrent task fails between spawn and first poll.
         deps_for_remove.lock().await.mark_executed(&task);
+        let semaphore = ctx.semaphore.clone();
         ctx.jset.lock().await.spawn(async move {
-            let _permit = permit_opt;
-            let completed = deps_for_remove.lock().await.handled_task_keys();
+            let mut permit = permit_opt;
+            let (completed, dep_ran) = {
+                let deps = deps_for_remove.lock().await;
+                (deps.handled_task_keys(), deps.any_dep_ran(&task))
+            };
             let result = this
-                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone(), completed)
+                .run_task_sched(
+                    &task,
+                    &ctx.config,
+                    ctx.sched_tx.clone(),
+                    completed,
+                    dep_ran,
+                    semaphore,
+                    &mut permit,
+                )
                 .await;
+            // If the task actually ran (not skipped) and has sources defined,
+            // mark it so dependents' source freshness checks are invalidated.
+            // Tasks without sources always run and should not trigger invalidation.
+            if let Ok(true) = &result
+                && !task.sources.is_empty()
+            {
+                deps_for_remove.lock().await.mark_ran(&task);
+            }
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);
                 if !this.is_stopping() && status.is_none() {
@@ -517,7 +594,7 @@ impl Run {
             deps_for_remove.lock().await.remove(&task);
             trace!("deps removed: {} {}", task.name, task.args.join(" "));
             in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            result
+            result.map(|_| ())
         });
 
         Ok(())
@@ -542,8 +619,6 @@ impl Run {
     fn setup_output_and_validate(&mut self, tasks: &Deps) -> Result<()> {
         // Initialize OutputHandler AFTER is_linear is determined
         let output_config = crate::task::task_output_handler::OutputHandlerConfig {
-            prefix: self.prefix,
-            interleave: self.interleave,
             output: self.output,
             silent: self.silent,
             quiet: self.quiet,
@@ -598,6 +673,16 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
+            sandbox: crate::sandbox::SandboxConfig {
+                deny_read: self.deny_all || self.deny_read,
+                deny_write: self.deny_all || self.deny_write,
+                deny_net: self.deny_all || self.deny_net,
+                deny_env: self.deny_all || self.deny_env,
+                allow_read: self.allow_read.clone(),
+                allow_write: self.allow_write.clone(),
+                allow_net: self.allow_net.clone(),
+                allow_env: self.allow_env.clone(),
+            },
         };
         self.executor = Some(crate::task::task_executor::TaskExecutor::new(
             self.context_builder.clone(),
@@ -643,17 +728,29 @@ impl Run {
             .unwrap_or(false)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_task_sched(
         &self,
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: std::collections::HashSet<crate::task::TaskKey>,
-    ) -> Result<()> {
+        dep_ran: bool,
+        semaphore: Arc<tokio::sync::Semaphore>,
+        permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
+    ) -> Result<bool> {
         self.executor
             .as_ref()
             .expect("executor must be initialized before running tasks")
-            .run_task_sched(task, config, sched_tx, completed_tasks)
+            .run_task_sched(
+                task,
+                config,
+                sched_tx,
+                completed_tasks,
+                dep_ran,
+                semaphore,
+                permit,
+            )
             .await
     }
 

@@ -128,6 +128,14 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  github: {
+    hide: true,
+    subcommands: {
+      token: {
+        hide: true,
+      },
+    },
+  },
   global: {
     hide: true,
   },
@@ -302,6 +310,20 @@ export const commands: { [key: string]: Command } = {
   },
   "test-tool": {
     hide: false,
+  },
+  token: {
+    hide: false,
+    subcommands: {
+      forgejo: {
+        hide: false,
+      },
+      github: {
+        hide: false,
+      },
+      gitlab: {
+        hide: false,
+      },
+    },
   },
   tool: {
     hide: false,

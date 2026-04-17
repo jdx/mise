@@ -147,18 +147,6 @@ env = "MISE_ARCH"
 optional = true
 type = "String"
 
-[asdf]
-deprecated = "Use disable_backends instead."
-description = "use asdf as a default plugin backend"
-docs = """
-Use asdf as a default plugin backend. This means running something like `mise use cmake` will
-default to using an asdf plugin for cmake.
-"""
-env = "MISE_ASDF"
-hide = true
-optional = true
-type = "Bool"
-
 [asdf_compat]
 deprecated = "no longer supported"
 description = "set to true to ensure .tool-versions will be compatible with asdf"
@@ -236,13 +224,6 @@ env = "MISE_CARGO_REGISTRY_NAME"
 optional = true
 type = "String"
 
-[cargo_binstall]
-deprecated = "Use cargo.binstall instead."
-description = "Use cargo-binstall instead of cargo install if available"
-hide = true
-optional = true
-type = "Bool"
-
 [cd]
 description = "Path to change to after launching mise"
 env = "MISE_CD"
@@ -268,9 +249,12 @@ This follows the same semantics as Git's `GIT_CEILING_DIRECTORIES`.
 This is an early-init setting: it must be set in `.miserc.toml`, environment
 variables, or CLI flags. Setting it in `mise.toml` will have no effect because
 config file discovery has already occurred by the time `mise.toml` is read.
+
+Paths are separated by the OS path separator when using the environment variable
+(`:` on Unix, `;` on Windows).
 """
 env = "MISE_CEILING_PATHS"
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rc = true
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
@@ -352,18 +336,6 @@ type = "ListString"
 [disable_default_registry]
 description = "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`."
 env = "MISE_DISABLE_DEFAULT_REGISTRY"
-type = "Bool"
-
-[disable_default_shorthands]
-deprecated = "Replaced with `disable_default_registry`"
-description = "Disables built-in shorthands to asdf/vfox plugins"
-docs = """
-Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
-installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/asdf-node.git`
-"""
-env = "MISE_DISABLE_DEFAULT_SHORTHANDS"
-hide = true
-optional = true
 type = "Bool"
 
 [disable_hints]
@@ -611,6 +583,92 @@ description = "Timeout in seconds for HTTP requests to fetch new tool versions i
 env = "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT"
 type = "Duration"
 
+[forgejo.credential_command]
+default = ""
+description = "Shell command to run to obtain a Forgejo token for mise."
+docs = """
+When set, mise executes this command via `sh -c` and reads the token
+from stdout. The hostname is passed as `$1`, making the command
+host-aware for Forgejo Enterprise environments. This replaces the
+`git credential fill` fallback and does not require
+`forgejo.use_git_credentials` to be enabled.
+
+The command should print a single token to stdout. Trailing whitespace
+is trimmed. Results are cached per host per session.
+
+Example: `op read "op://Private/Forgejo Token/credential"`
+"""
+env = "MISE_FORGEJO_CREDENTIAL_COMMAND"
+type = "String"
+
+[forgejo.fj_cli_tokens]
+default = true
+description = "Read Forgejo tokens from the fj CLI config."
+docs = """
+When enabled, mise will read tokens from the fj CLI keys file
+(`~/.local/share/forgejo-cli/keys.json` on Linux,
+`~/Library/Application Support/Cyborus.forgejo-cli/keys.json` on macOS).
+This is used as a fallback when no `FORGEJO_TOKEN` or `MISE_FORGEJO_TOKEN`
+environment variable is set.
+
+Set to `false` to disable this behavior.
+"""
+env = "MISE_FORGEJO_FJ_CLI_TOKENS"
+type = "Bool"
+
+[forgejo.use_git_credentials]
+default = false
+description = "Use git credential helpers to obtain Forgejo tokens."
+docs = """
+When enabled, mise will run `git credential fill` to obtain Forgejo tokens
+using the credential helpers configured in your `.gitconfig`.
+
+This covers tokens stored in system keyrings (macOS Keychain, Windows
+Credential Manager), and any other git credential helper.
+
+Used as a last resort — after environment variables, `forgejo_tokens.toml`,
+and fj CLI tokens are checked. Results are cached per host for the
+duration of the session.
+
+Set to `true` to enable this behavior.
+"""
+env = "MISE_FORGEJO_USE_GIT_CREDENTIALS"
+type = "Bool"
+
+[github.credential_command]
+default = ""
+description = "Shell command to run to obtain a GitHub token for mise."
+docs = """
+When set, mise executes this command via `sh -c` and reads the token
+from stdout. The hostname is passed as `$1`, making the command
+host-aware for GitHub Enterprise environments. This replaces the
+`git credential fill` fallback and does not require
+`github.use_git_credentials` to be enabled.
+
+The command should print a single token to stdout. Trailing whitespace
+is trimmed. Results are cached per host per session.
+
+Example: `op read "op://Private/GitHub Token/credential"`
+"""
+env = "MISE_GITHUB_CREDENTIAL_COMMAND"
+type = "String"
+
+[github.gh_cli_tokens]
+default = true
+description = "Read GitHub tokens from the gh CLI's hosts.yml config."
+docs = """
+When enabled, mise will read OAuth tokens from the gh CLI config file
+(`~/.config/gh/hosts.yml` or `$GH_CONFIG_DIR/hosts.yml`) as a fallback
+when no `GITHUB_TOKEN` or `MISE_GITHUB_TOKEN` environment variable is set.
+
+This supports multiple GitHub Enterprise instances since the gh CLI stores
+per-host tokens.
+
+Set to `false` to disable this behavior.
+"""
+env = "MISE_GITHUB_GH_CLI_TOKENS"
+type = "Bool"
+
 [github.github_attestations]
 default = true
 description = "Enable GitHub Artifact Attestations verification for github backend tools."
@@ -633,6 +691,25 @@ using SLSA provenance attestations.
 env = "MISE_GITHUB_SLSA"
 type = "Bool"
 
+[github.use_git_credentials]
+default = false
+description = "Use git credential helpers to obtain GitHub tokens."
+docs = """
+When enabled, mise will run `git credential fill` to obtain GitHub tokens
+using the credential helpers configured in your `.gitconfig`.
+
+This covers tokens stored in system keyrings (macOS Keychain, Windows
+Credential Manager), and any other git credential helper.
+
+Used as a last resort — after environment variables, `github_tokens.toml`,
+and gh CLI tokens are checked. Results are cached per host for the
+duration of the session.
+
+Set to `true` to enable this behavior.
+"""
+env = "MISE_GITHUB_USE_GIT_CREDENTIALS"
+type = "Bool"
+
 [github_attestations]
 default = true
 description = "Enable GitHub Artifact Attestations verification for supported tools."
@@ -642,6 +719,56 @@ When enabled, mise will verify the authenticity and integrity of downloaded tool
 using GitHub's artifact attestation system for tools that support it (e.g., Ruby precompiled binaries).
 """
 env = "MISE_GITHUB_ATTESTATIONS"
+type = "Bool"
+
+[gitlab.credential_command]
+default = ""
+description = "Shell command to run to obtain a GitLab token for mise."
+docs = """
+When set, mise executes this command via `sh -c` and reads the token
+from stdout. The hostname is passed as `$1`, making the command
+host-aware for GitLab self-managed environments. This replaces the
+`git credential fill` fallback and does not require
+`gitlab.use_git_credentials` to be enabled.
+
+The command should print a single token to stdout. Trailing whitespace
+is trimmed. Results are cached per host per session.
+
+Example: `op read "op://Private/GitLab Token/credential"`
+"""
+env = "MISE_GITLAB_CREDENTIAL_COMMAND"
+type = "String"
+
+[gitlab.glab_cli_tokens]
+default = true
+description = "Read GitLab tokens from the glab CLI config."
+docs = """
+When enabled, mise will read tokens from the glab CLI config file
+(`~/.config/glab-cli/config.yml` or `$GLAB_CONFIG_DIR/config.yml`) as a fallback
+when no `GITLAB_TOKEN` or `MISE_GITLAB_TOKEN` environment variable is set.
+
+Set to `false` to disable this behavior.
+"""
+env = "MISE_GITLAB_GLAB_CLI_TOKENS"
+type = "Bool"
+
+[gitlab.use_git_credentials]
+default = false
+description = "Use git credential helpers to obtain GitLab tokens."
+docs = """
+When enabled, mise will run `git credential fill` to obtain GitLab tokens
+using the credential helpers configured in your `.gitconfig`.
+
+This covers tokens stored in system keyrings (macOS Keychain, Windows
+Credential Manager), and any other git credential helper.
+
+Used as a last resort — after environment variables, `gitlab_tokens.toml`,
+and glab CLI tokens are checked. Results are cached per host for the
+duration of the session.
+
+Set to `true` to enable this behavior.
+"""
+env = "MISE_GITLAB_USE_GIT_CREDENTIALS"
 type = "Bool"
 
 [gix]
@@ -667,25 +794,25 @@ env = "MISE_GLOBAL_CONFIG_ROOT"
 optional = true
 type = "Path"
 
-[go_default_packages_file]
+[go.default_packages_file]
 default = "~/.default-go-packages"
-description = "Path to a file containing default go packages to install when installing go"
+description = "Path to a file containing default go packages to install when installing go."
 env = "MISE_GO_DEFAULT_PACKAGES_FILE"
 type = "Path"
 
-[go_download_mirror]
+[go.download_mirror]
 default = "https://dl.google.com/go"
 description = "Mirror to download go sdk tarballs from."
 env = "MISE_GO_DOWNLOAD_MIRROR"
 type = "String"
 
-[go_repo]
+[go.repo]
 default = "https://github.com/golang/go"
 description = "URL to fetch go from."
 env = "MISE_GO_REPO"
 type = "Url"
 
-[go_set_gobin]
+[go.set_gobin]
 description = "Changes where `go install` installs binaries to."
 docs = """
 Defaults to `~/.local/share/mise/installs/go/.../bin`.
@@ -696,21 +823,70 @@ env = "MISE_GO_SET_GOBIN"
 optional = true
 type = "Bool"
 
-[go_set_gopath]
+[go.set_gopath]
 deprecated = "Use env._go.set_goroot instead."
 description = "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages."
 env = "MISE_GO_SET_GOPATH"
 type = "Bool"
 
-[go_set_goroot]
+[go.set_goroot]
 default = true
 description = "Sets GOROOT=~/.local/share/mise/installs/go/.../."
 env = "MISE_GO_SET_GOROOT"
 type = "Bool"
 
-[go_skip_checksum]
+[go.skip_checksum]
 description = "Set to true to skip checksum verification when downloading go sdk tarballs."
 env = "MISE_GO_SKIP_CHECKSUM"
+type = "Bool"
+
+[go_default_packages_file]
+deprecated = "Use go.default_packages_file instead."
+description = "Path to a file containing default go packages to install when installing go."
+hide = true
+optional = true
+type = "Path"
+
+[go_download_mirror]
+deprecated = "Use go.download_mirror instead."
+description = "Mirror to download go sdk tarballs from."
+hide = true
+optional = true
+type = "String"
+
+[go_repo]
+deprecated = "Use go.repo instead."
+description = "URL to fetch go from."
+hide = true
+optional = true
+type = "Url"
+
+[go_set_gobin]
+deprecated = "Use go.set_gobin instead."
+description = "Changes where `go install` installs binaries to."
+hide = true
+optional = true
+type = "Bool"
+
+[go_set_gopath]
+deprecated = "Use go.set_gopath instead."
+description = "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages."
+hide = true
+optional = true
+type = "Bool"
+
+[go_set_goroot]
+deprecated = "Use go.set_goroot instead."
+description = "Sets GOROOT=~/.local/share/mise/installs/go/.../."
+hide = true
+optional = true
+type = "Bool"
+
+[go_skip_checksum]
+deprecated = "Use go.skip_checksum instead."
+description = "Set to true to skip checksum verification when downloading go sdk tarballs."
+hide = true
+optional = true
 type = "Bool"
 
 [gpg_verify]
@@ -823,32 +999,51 @@ This is a list of config paths that mise will ignore.
 This is an early-init setting: it must be set in `.miserc.toml`, environment
 variables, or CLI flags. Setting it in `mise.toml` will have no effect because
 config file discovery has already occurred by the time `mise.toml` is read.
+
+Paths are separated by the OS path separator when using the environment variable
+(`:` on Unix, `;` on Windows).
 """
 env = "MISE_IGNORED_CONFIG_PATHS"
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rc = true
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
 [install_before]
-description = "Only install versions released before this date"
+description = "Minimum release age / supply chain protection — only install versions released before this date"
 docs = """
-Filter tool versions by release date. Supports:
+Filter tool versions by release date to limit supply chain risk. Similar to Renovate's
+[minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/),
+this ensures newly published versions are ignored until they've been available for a
+configurable amount of time — giving the community time to discover compromised releases.
 
+Supports:
+
+- Relative durations: `7d` (7 days ago), `90d` (90 days ago), `6m` (6 months ago), `1y` (1 year ago)
 - Absolute dates: `2024-06-01`, `2024-06-01T12:00:00Z`
-- Relative durations: `90d` (90 days ago), `1y` (1 year ago), `6m` (6 months ago)
 
-This is useful for reproducible builds or security purposes where you want to ensure
-you're only installing versions that existed before a certain point in time.
+Example:
+
+```toml
+[settings]
+install_before = "7d"  # only install versions released more than 7 days ago
+```
 
 Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
 Versions without timestamps are included by default.
 
-**Behavior**: This filter only applies when resolving fuzzy version requests like `node@20` or `latest`.
-Explicitly pinned versions like `node@22.5.0` are not filtered, allowing you to selectively
-use newer versions for specific tools while keeping others behind the cutoff date.
+**Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
+like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
+allowing you to selectively use newer versions for specific tools while keeping others behind the
+cutoff date.
 
-Can be overridden with the `--before` CLI flag.
+Can be overridden with the `--before` CLI flag or per-tool with the `install_before` tool option.
+
+```toml
+[tools.trivy]
+version = "latest"
+install_before = "7d"  # override for this tool only
+```
 """
 env = "MISE_INSTALL_BEFORE"
 optional = true
@@ -924,6 +1119,25 @@ Equivalent to passing `--locked` to `mise install`.
 env = "MISE_LOCKED"
 type = "Bool"
 
+[locked_verify_provenance]
+default = false
+description = "Re-verify provenance at install time even when the lockfile already has provenance."
+docs = """
+When enabled, `mise install` will re-verify provenance (SLSA, cosign, minisign,
+GitHub artifact attestations) at install time even when the lockfile already
+contains both a checksum and a provenance entry.
+
+By default, when a lockfile has a checksum and provenance type recorded,
+`mise install` trusts the lockfile and skips re-verification to avoid redundant
+API calls (e.g., to GitHub). Enabling this setting forces re-verification every
+time, which provides stronger security guarantees at the cost of additional
+network requests.
+
+This is automatically enabled when `paranoid` is set to `true`.
+"""
+env = "MISE_LOCKED_VERIFY_PROVENANCE"
+type = "Bool"
+
 [lockfile]
 description = "Create and read lockfiles for tool versions."
 docs = """
@@ -957,6 +1171,34 @@ When unset (the default), lockfiles are enabled (same as `true`) but there is no
 env = "MISE_LOCKFILE"
 optional = true
 type = "Bool"
+
+[lockfile_platforms]
+description = "Platforms to target in lockfile operations."
+docs = """
+Restricts which platforms are included when auto-locking (triggered by `mise install`/`mise use`)
+or when running `mise lock` without `--platform`. By default (unset), mise targets all common
+platforms (linux-x64, linux-x64-musl, linux-arm64, linux-arm64-musl, macos-x64, macos-arm64,
+windows-x64) plus the current platform.
+
+Setting this avoids resolving checksums/URLs for platforms you don't need, keeping lockfiles
+smaller and `mise install`/`mise use` faster.
+
+Does NOT override explicit `mise lock --platform` flags.
+
+```toml
+[settings]
+lockfile_platforms = ["macos-arm64", "linux-x64"]
+```
+
+The current platform is always included in addition to any configured platforms.
+
+Platform format: `os-arch` or `os-arch-qualifier` (e.g., `linux-x64`, `linux-x64-musl`, `macos-arm64`).
+"""
+env = "MISE_LOCKFILE_PLATFORMS"
+optional = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
 
 [log_level]
 default = "info"
@@ -1146,6 +1388,7 @@ This also runs in shims if the terminal is interactive.
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
 type = "Bool"
 
+
 [npm.bun]
 deprecated = "Use npm.package_manager instead."
 description = "Use bun instead of npm if bun is installed and on PATH."
@@ -1280,12 +1523,6 @@ env = "MISE_PIPX_UVX"
 optional = true
 type = "Bool"
 
-[pipx_uvx]
-description = "Use uvx instead of pipx if uv is installed and on PATH."
-hide = true
-optional = true
-type = "Bool"
-
 [plugin_autoupdate_last_check_duration]
 default = "7d"
 description = "How long to wait before updating plugins automatically (note this isn't currently implemented)."
@@ -1330,6 +1567,18 @@ env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE"
 optional = true
 type = "Path"
 
+[python.github_attestations]
+description = "Enable GitHub Artifact Attestations verification for precompiled Python binaries."
+docs = """
+Override the global `github_attestations` setting for Python precompiled binaries.
+When enabled, mise will verify the authenticity of precompiled Python binaries from astral-sh/python-build-standalone.
+
+Defaults to the global `github_attestations` setting if not specified.
+"""
+env = "MISE_PYTHON_GITHUB_ATTESTATIONS"
+optional = true
+type = "Bool"
+
 [python.patch_url]
 description = "URL to fetch python patches from to pass to python-build."
 env = "MISE_PYTHON_PATCH_URL"
@@ -1343,8 +1592,11 @@ optional = true
 type = "Path"
 
 [python.precompiled_arch]
-default_docs = '"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"'
+default_docs = '"x86_64_v3" | "aarch64"'
 description = "Specify the architecture to use for precompiled binaries."
+docs = """
+Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this to "x86_64" for the most compatible binaries. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
+"""
 env = "MISE_PYTHON_PRECOMPILED_ARCH"
 optional = true
 type = "String"
@@ -1362,11 +1614,8 @@ optional = true
 type = "String"
 
 [python.precompiled_os]
-default_docs = '"x86_64_v3" | "aarch64"'
+default_docs = '"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"'
 description = "Specify the OS to use for precompiled binaries."
-docs = """
-Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this to "x86_64" for the most compatible binaries. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
-"""
 env = "MISE_PYTHON_PRECOMPILED_OS"
 optional = true
 type = "String"
@@ -1415,62 +1664,6 @@ type = "ListString"
 [python.venv_stdlib]
 description = "Prefer to use venv from Python's standard library."
 env = "MISE_VENV_STDLIB"
-type = "Bool"
-
-[python_compile]
-deprecated = "Use python.compile instead."
-description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
-hide = true
-optional = true
-type = "Bool"
-
-[python_default_packages_file]
-deprecated = "Use python.default_packages_file instead."
-description = "Path to a file containing default python packages to install when installing python."
-hide = true
-optional = true
-type = "Path"
-
-[python_patch_url]
-deprecated = "Use python.patch_url instead."
-description = "URL to fetch python patches from."
-hide = true
-optional = true
-type = "String"
-
-[python_patches_directory]
-deprecated = "Use python.patch_url instead."
-description = "Directory to fetch python patches from."
-hide = true
-optional = true
-type = "Path"
-
-[python_precompiled_arch]
-deprecated = "Use python.precompiled_arch instead."
-description = "Specify the architecture to use for precompiled binaries."
-hide = true
-optional = true
-type = "String"
-
-[python_precompiled_os]
-deprecated = "Use python.precompiled_os instead."
-description = "Specify the OS to use for precompiled binaries."
-hide = true
-optional = true
-type = "String"
-
-[python_pyenv_repo]
-deprecated = "Use python.pyenv_repo instead."
-description = "URL to fetch pyenv from for compiling python."
-hide = true
-optional = true
-type = "String"
-
-[python_venv_stdlib]
-deprecated = "Use python.venv_stdlib instead."
-description = "Prefer to use venv from Python's standard library."
-hide = true
-optional = true
 type = "Bool"
 
 [quiet]
@@ -1622,11 +1815,12 @@ This is useful for shared environments like Docker containers or bastion hosts w
 base set of tools is pre-installed in a shared location, and users can install additional
 tools in their own directory.
 
-Paths are colon-separated when using the environment variable.
+Paths are separated by the OS path separator when using the environment variable
+(`:` on Unix, `;` on Windows).
 """
 env = "MISE_SHARED_INSTALL_DIRS"
 optional = true
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
@@ -1761,8 +1955,14 @@ type = "Path"
 [task.disable_paths]
 default = []
 description = "Paths that mise will not look for tasks in."
+docs = """
+Paths that mise will not look for tasks in.
+
+Paths are separated by the OS path separator when using the environment variable
+(`:` on Unix, `;` on Windows).
+"""
 env = "MISE_TASK_DISABLE_PATHS"
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
@@ -1895,7 +2095,14 @@ env = "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS"
 type = "Bool"
 
 [task.timeout]
-description = "Default timeout for tasks. Can be overridden by individual tasks."
+description = "Default timeout for tasks."
+docs = """
+Sets a global default timeout for all tasks. Individual tasks can also specify their own `timeout`.
+
+When both a global timeout and a per-task timeout are set, the **shorter** of the two always wins—a
+per-task timeout cannot extend beyond the global timeout. The `--timeout` CLI flag overrides this
+global setting.
+"""
 env = "MISE_TASK_TIMEOUT"
 optional = true
 type = "Duration"
@@ -2020,9 +2227,13 @@ type = "Bool"
 
 [trusted_config_paths]
 default = []
-description = "This is a list of config paths that mise will automatically mark as trusted."
+description = """This is a list of config paths that mise will automatically mark as \
+trusted. Any config files under these paths will be trusted without prompting. \
+Set to `["/"]` to trust all config files, effectively disabling the trust mechanism. \
+Paths are separated by the OS path separator when using the environment variable \
+(`:` on Unix, `;` on Windows)."""
 env = "MISE_TRUSTED_CONFIG_PATHS"
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
@@ -2096,18 +2307,6 @@ type = "Bool"
 [verbose]
 description = "Shows more verbose output such as installation logs when installing tools."
 env = "MISE_VERBOSE"
-type = "Bool"
-
-[vfox]
-deprecated = "Use disable_backends instead."
-description = "Use vfox as a default plugin backend instead of asdf."
-docs = """
-Use vfox as a default plugin backend. This means running something like `mise use cmake` will
-default to using a vfox plugin for cmake.
-"""
-env = "MISE_VFOX"
-hide = true
-optional = true
 type = "Bool"
 
 [windows_default_file_shell_args]

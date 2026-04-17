@@ -17,7 +17,7 @@
   },
   "author": "@jdx",
   "resolutions": {
-    "esbuild": "0.21.5"
+    "esbuild": "0.28.0"
   },
   "devDependencies": {
     "@fig/eslint-config-autocomplete": "^2.0.0",
@@ -35,6 +35,6 @@
     "vitepress": "1.6.4",
     "vitepress-plugin-group-icons": "^1.6.5",
     "vitepress-plugin-mermaid": "2.0.17",
-    "vitepress-plugin-tabs": "^0.7.3"
+    "vitepress-plugin-tabs": "^0.8.0"
   }
 }

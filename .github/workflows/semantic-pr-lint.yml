@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: amannn/action-semantic-pull-request@e32d7e603df1aa1ba07e981f2a23455dee596825 # v5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MISE_PR_COMMENT_TOKEN }}
         with:
           types: |
             fix
@@ -30,3 +30,4 @@ jobs:
             build
             registry
             revert
+            security

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Test rename_exe with archives containing multiple executables
+# Regression test for https://github.com/jdx/mise/discussions/8632
+# rename_exe should rename the binary matching tool_name, not the first one found
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+	echo "Skipping Linux-specific test on non-Linux OS"
+	exit 0
+fi
+
+export MISE_EXPERIMENTAL=1
+export MISE_GPG_VERIFY=false
+
+cat <<EOF >mise.toml
+[tools."github:thought-machine/please"]
+version = "17.28.0"
+rename_exe = "plz"
+filter_bins = "plz"
+EOF
+
+mise install
+
+assert "mise x -- plz --version" "Please version 17.28.0"

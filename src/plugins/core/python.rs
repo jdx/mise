@@ -10,11 +10,11 @@ use crate::file::{TarFormat, TarOptions, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
-use crate::{dirs, file, plugins, sysconfig};
+use crate::{dirs, env, file, plugins, sysconfig};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
@@ -27,6 +27,9 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 use versions::Versioning;
 use xx::regex;
+
+const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_PYTHON_GITHUB_ATTESTATIONS=false\n\
+    or add `python.github_attestations = false` under [settings] in mise.toml";
 
 #[derive(Debug)]
 pub struct PythonPlugin {
@@ -203,6 +206,7 @@ impl PythonPlugin {
                 let versions = raw
                     .lines()
                     .filter(|v| v.contains(&platform))
+                    .filter(|v| filter_freethreaded(v, &flavor))
                     .flat_map(|v| {
                         // cpython-3.9.5+20210525 or cpython-3.9.5rc3+20210525
                         regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
@@ -227,56 +231,66 @@ impl PythonPlugin {
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
-        tv: &ToolVersion,
+        tv: &mut ToolVersion,
     ) -> eyre::Result<()> {
-        let precompiled_versions = self.fetch_precompiled_remote_versions().await?;
-        let precompile_info = precompiled_versions
-            .iter()
-            .rev()
-            .find(|(v, _, _)| &tv.version == v);
-        let (tag, filename) = match precompile_info {
-            Some((_, tag, filename)) => (tag, filename),
-            None => {
-                if cfg!(windows) || Settings::get().python.compile == Some(false) {
-                    if !cfg!(windows) {
-                        hint!(
-                            "python_compile",
-                            "To compile python from source, run",
-                            "mise settings python.compile=1"
+        let platform_key = self.get_platform_key();
+        let url = if let Some(url) = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.url.clone())
+        {
+            debug!("using lockfile URL for platform {platform_key}: {url}");
+            url
+        } else {
+            let precompiled_versions = self.fetch_precompiled_remote_versions().await?;
+            let precompile_info = precompiled_versions
+                .iter()
+                .rev()
+                .find(|(v, _, _)| &tv.version == v);
+            let (tag, filename) = match precompile_info {
+                Some((_, tag, filename)) => (tag, filename),
+                None => {
+                    if cfg!(windows) || Settings::get().python.compile == Some(false) {
+                        if !cfg!(windows) {
+                            hint!(
+                                "python_compile",
+                                "To compile python from source, run",
+                                "mise settings python.compile=1"
+                            );
+                        }
+                        let platform = python_precompiled_platform();
+                        bail!("no precompiled python found for {tv} on {platform}");
+                    }
+                    let available = precompiled_versions.iter().map(|(v, _, _)| v).collect_vec();
+                    if available.is_empty() {
+                        debug!("no precompiled python found for {}", tv.version);
+                    } else {
+                        warn!(
+                            "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile false`",
+                            tv.version
                         );
                     }
-                    let platform = python_precompiled_platform();
-                    bail!("no precompiled python found for {tv} on {platform}");
-                }
-                let available = precompiled_versions.iter().map(|(v, _, _)| v).collect_vec();
-                if available.is_empty() {
-                    debug!("no precompiled python found for {}", tv.version);
-                } else {
-                    warn!(
-                        "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile false`",
-                        tv.version
+                    trace!(
+                        "available precompiled versions: {}",
+                        available.into_iter().join(", ")
                     );
+                    return self.install_compiled(ctx, tv).await;
                 }
-                trace!(
-                    "available precompiled versions: {}",
-                    available.into_iter().join(", ")
+            };
+
+            if cfg!(unix) {
+                hint!(
+                    "python_precompiled",
+                    "installing precompiled python from astral-sh/python-build-standalone\n\
+                    if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
+                    "mise settings python.compile=1"
                 );
-                return self.install_compiled(ctx, tv).await;
             }
+
+            format!(
+                "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/{filename}"
+            )
         };
-
-        if cfg!(unix) {
-            hint!(
-                "python_precompiled",
-                "installing precompiled python from astral-sh/python-build-standalone\n\
-                if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
-                "mise settings python.compile=1"
-            );
-        }
-
-        let url = format!(
-            "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/{filename}"
-        );
         let filename = url.split('/').next_back().unwrap();
         let install = tv.install_path();
         let download = tv.download_path();
@@ -285,6 +299,50 @@ impl PythonPlugin {
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
             .await?;
+
+        // Record the URL in lock_platforms so verify_checksum can find it
+        tv.lock_platforms
+            .entry(platform_key.clone())
+            .or_default()
+            .url = Some(url.to_string());
+
+        self.verify_checksum(ctx, tv, &tarball_path)?;
+
+        // Check lockfile provenance expectation before verification
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
+
+        // Verify GitHub artifact attestations for precompiled binaries
+        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
+        let verified = self
+            .verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
+            .await?;
+
+        // Record provenance only if verification actually succeeded (not skipped)
+        if verified {
+            let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+            pi.provenance = Some(ProvenanceType::GithubAttestations);
+        }
+
+        // Enforce lockfile provenance
+        if let Some(ref expected) = locked_provenance {
+            let got = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_ref());
+            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
+                let got_str = got
+                    .map(|g| g.to_string())
+                    .unwrap_or_else(|| "no verification".to_string());
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
 
         file::remove_all(&install)?;
         file::untar(
@@ -496,6 +554,7 @@ impl PythonPlugin {
         let result = raw
             .lines()
             .filter(|v| v.contains(&platform))
+            .filter(|v| filter_freethreaded(v, &flavor))
             .flat_map(|v| {
                 regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
                     .captures(v)
@@ -532,6 +591,68 @@ impl PythonPlugin {
             })
             .map(|(_, tag, filename)| (tag, filename));
         Ok(result)
+    }
+
+    fn github_attestations_enabled() -> bool {
+        let settings = Settings::get();
+        settings
+            .python
+            .github_attestations
+            .unwrap_or(settings.github_attestations)
+    }
+
+    fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
+        // Provenance only applies to precompiled binaries, not compiled-from-source.
+        // On Windows, precompiled is always used regardless of compile setting.
+        let uses_precompiled = cfg!(windows) || Settings::get().python.compile != Some(true);
+        if !uses_precompiled || !Self::github_attestations_enabled() {
+            return None;
+        }
+        Some(ProvenanceType::GithubAttestations)
+    }
+
+    async fn verify_github_artifact_attestations(
+        &self,
+        ctx: &InstallContext,
+        tarball_path: &std::path::Path,
+        version: &str,
+    ) -> Result<bool> {
+        if !Self::github_attestations_enabled() {
+            debug!("GitHub artifact attestations verification disabled for Python");
+            return Ok(false);
+        }
+
+        ctx.pr
+            .set_message("verify GitHub artifact attestations".to_string());
+
+        match sigstore_verification::verify_github_attestation(
+            tarball_path,
+            "astral-sh",
+            "python-build-standalone",
+            env::GITHUB_TOKEN.as_deref(),
+            None, // Accept any workflow from repo
+        )
+        .await
+        {
+            Ok(true) => {
+                ctx.pr
+                    .set_message("✓ GitHub artifact attestations verified".to_string());
+                debug!(
+                    "GitHub artifact attestations verified successfully for python@{}",
+                    version
+                );
+                Ok(true)
+            }
+            Ok(false) => Err(eyre!(
+                "GitHub artifact attestations verification failed for python@{version}\n{ATTESTATION_HELP}"
+            )),
+            Err(sigstore_verification::AttestationError::NoAttestations) => Err(eyre!(
+                "No GitHub artifact attestations found for python@{version}\n{ATTESTATION_HELP}"
+            )),
+            Err(e) => Err(eyre!(
+                "GitHub artifact attestations verification failed for python@{version}: {e}\n{ATTESTATION_HELP}"
+            )),
+        }
     }
 }
 
@@ -586,9 +707,29 @@ impl Backend for PythonPlugin {
         ])
     }
 
-    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        let mut features = vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }];
+
+        if self.detect_precompiled_provenance().is_some() {
+            features.push(SecurityFeature::GithubAttestations {
+                signer_workflow: None,
+            });
+        }
+
+        features
+    }
+
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
         if cfg!(windows) || Settings::get().python.compile != Some(true) {
-            self.install_precompiled(ctx, &tv).await?;
+            self.install_precompiled(ctx, &mut tv).await?;
         } else {
             self.install_compiled(ctx, &tv).await?;
         }
@@ -711,12 +852,13 @@ impl Backend for PythonPlugin {
         );
         let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
 
+        // Detect provenance for precompiled binaries
+        let provenance = self.detect_precompiled_provenance();
+
         Ok(PlatformInfo {
             url: Some(url),
             checksum,
-            size: None,
-            url_api: None,
-            conda_deps: None,
+            provenance,
             ..Default::default()
         })
     }
@@ -754,14 +896,19 @@ fn python_arch(settings: &Settings) -> &str {
     if let Some(arch) = &settings.python.precompiled_arch {
         return arch.as_str();
     }
-    let arch = match settings.arch() {
+    let arch = settings.arch();
+    resolve_python_arch(std::env::consts::OS, arch)
+}
+
+fn resolve_python_arch<'a>(os: &str, arch: &'a str) -> &'a str {
+    let arch = match arch {
         "x64" => "x86_64",
         "arm64" => "aarch64",
         other => other,
     };
-    if cfg!(windows) {
+    if os == "windows" && arch != "aarch64" {
         "x86_64"
-    } else if cfg!(linux) && arch == "x86_64" {
+    } else if os == "linux" && arch == "x86_64" {
         if cfg!(target_feature = "avx512f") {
             "x86_64_v4"
         } else if cfg!(target_feature = "avx2") {
@@ -811,4 +958,43 @@ fn ensure_not_windows() -> eyre::Result<()> {
         );
     }
     Ok(())
+}
+
+fn filter_freethreaded(v: &str, flavor: &Option<String>) -> bool {
+    flavor.as_ref().is_some_and(|f| f.contains("freethreaded")) || !v.contains("freethreaded")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_python_arch_windows_x64() {
+        assert_eq!(resolve_python_arch("windows", "x64"), "x86_64");
+        assert_eq!(resolve_python_arch("windows", "x86_64"), "x86_64");
+    }
+
+    #[test]
+    fn test_resolve_python_arch_windows_arm64() {
+        assert_eq!(resolve_python_arch("windows", "arm64"), "aarch64");
+        assert_eq!(resolve_python_arch("windows", "aarch64"), "aarch64");
+    }
+
+    #[test]
+    fn test_resolve_python_arch_linux_x64() {
+        // Exact variant depends on CPU features at compile time,
+        // but it should always start with "x86_64"
+        assert!(resolve_python_arch("linux", "x64").starts_with("x86_64"));
+    }
+
+    #[test]
+    fn test_resolve_python_arch_linux_arm64() {
+        assert_eq!(resolve_python_arch("linux", "arm64"), "aarch64");
+    }
+
+    #[test]
+    fn test_resolve_python_arch_macos() {
+        assert_eq!(resolve_python_arch("macos", "arm64"), "aarch64");
+        assert_eq!(resolve_python_arch("macos", "x64"), "x86_64");
+    }
 }

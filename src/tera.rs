@@ -17,6 +17,7 @@ use crate::cache::CacheManagerBuilder;
 use crate::cmd::cmd;
 use crate::config::Settings;
 use crate::env_diff::EnvMap;
+use crate::file::strip_shims_from_path;
 use crate::{dirs, duration, env, hash};
 
 /// Global tracker for files accessed during tera template rendering.
@@ -382,6 +383,14 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     tera
 });
 
+/// Returns a Tera instance for use during early initialization (miserc loading).
+/// This is a plain clone of the global `TERA` static. `exec` and `read_file` are absent
+/// because they are only registered in [`get_tera`], not in `TERA` itself — so they
+/// cannot accidentally become available here if `TERA` changes in the future.
+pub fn get_miserc_tera() -> Tera {
+    TERA.clone()
+}
+
 pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
@@ -421,7 +430,16 @@ pub fn tera_exec(
                     .skip(1)
                     .chain(once(command))
                     .collect::<Vec<&String>>();
-                let mut cmd: duct::Expression = cmd(&shell[0], args).full_env(&env);
+                // Strip mise shims from PATH to prevent infinite recursion
+                // when the command (e.g. `gh auth token`) is a mise-managed
+                // tool. Without this, the shim re-enters mise, which may
+                // evaluate the same template again indefinitely.
+                let mut env_no_shims = env.clone();
+                if let Some(path_val) = env_no_shims.get(&*env::PATH_KEY).cloned() {
+                    env_no_shims
+                        .insert(env::PATH_KEY.to_string(), strip_shims_from_path(&path_val));
+                }
+                let mut cmd: duct::Expression = cmd(&shell[0], args).full_env(&env_no_shims);
                 if let Some(dir) = &dir {
                     cmd = cmd.dir(dir);
                 }

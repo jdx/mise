@@ -12,16 +12,18 @@ use jiff::Timestamp;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
+use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::tera::get_tera;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
     ResolveOptions, ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version,
@@ -949,7 +951,7 @@ pub trait Backend: Debug + Send + Sync {
     /// every backend needing to implement `package.json` support. For other files, it
     /// delegates to `_parse_idiomatic_file`.
     async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
-        if path.file_name().is_some_and(|f| f == "package.json") {
+        if crate::config::config_file::idiomatic_version::package_json::is_package_json(path) {
             return crate::config::config_file::idiomatic_version::package_json::parse(
                 path,
                 self.id(),
@@ -1145,16 +1147,32 @@ pub trait Backend: Debug + Send + Sync {
             path_env.add(p);
         }
 
-        CmdLineRunner::new(&*env::SHELL)
+        // Render tera template variables (e.g. {{tools.ripgrep.path}})
+        let tera_ctx = ctx.ts.tera_ctx(&ctx.config).await?;
+        let dir = tv.request.source().path().and_then(|p| p.parent());
+        let mut tera = get_tera(dir);
+        let rendered_script = tera.render_str(script, tera_ctx)?;
+
+        let mut runner = CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env("MISE_TOOL_VERSION", tv.version.clone())
             .with_pr(ctx.pr.as_ref())
             .arg(env::SHELL_COMMAND_FLAG)
-            .arg(script)
-            .envs(env_vars)
-            .execute()?;
+            .arg(&rendered_script)
+            .envs(env_vars);
+
+        // Set MISE_CONFIG_ROOT and MISE_PROJECT_ROOT from the tool's source config file
+        if let Some(source_path) = tv.request.source().path() {
+            let root = config_root::config_root(source_path);
+            let root = root.to_string_lossy().to_string();
+            runner = runner
+                .env("MISE_CONFIG_ROOT", &root)
+                .env("MISE_PROJECT_ROOT", &root);
+        }
+
+        runner.execute()?;
         Ok(())
     }
 
@@ -1210,7 +1228,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<Vec<PathBuf>> {
         match tv.request {
             ToolRequest::System { .. } => Ok(vec![]),
-            _ => Ok(vec![tv.install_path().join("bin")]),
+            _ => Ok(vec![tv.runtime_path().join("bin")]),
         }
     }
 
@@ -1335,12 +1353,15 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Check if a required dependency is available and show a warning if not.
-    /// This provides a consistent warning message format across all backends.
-    /// Changed to warning instead of error to avoid CI failures on Windows.
+    /// `provided_by` lists tool names that are known to provide the `program` binary
+    /// (e.g., "npm" is provided by &["node"]). If any of these tools are configured
+    /// in the toolset (even if not yet installed), the warning is suppressed since
+    /// mise will install them as dependencies first.
     async fn warn_if_dependency_missing(
         &self,
         config: &Arc<Config>,
         program: &str,
+        provided_by: &[&str],
         install_instructions: &str,
     ) {
         let found = if self.dependency_which(config, program).await.is_some() {
@@ -1365,6 +1386,17 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         if !found {
+            // Check if a tool that provides this program is configured in the toolset
+            // (even if not yet installed). If so, mise will install it as a dependency
+            // before this tool needs it, so the warning is spurious.
+            if let Ok(ts) = self.dependency_toolset(config).await
+                && ts
+                    .versions
+                    .keys()
+                    .any(|ba| provided_by.contains(&ba.short.as_str()))
+            {
+                return;
+            }
             warn!(
                 "{} may be required but was not found.\n\n{}",
                 program, install_instructions
@@ -1373,10 +1405,14 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
+        // Use full_env_without_tools to avoid triggering `tools = true` env module
+        // hooks (e.g., MiseEnv Lua hooks). Those modules may depend on tools that
+        // are not in the dependency toolset, causing "command not found" errors.
+        // The dependency env only needs tool bin paths on PATH, not module outputs.
         let mut env = self
             .dependency_toolset(config)
             .await?
-            .full_env(config)
+            .full_env_without_tools(config)
             .await?;
 
         // Remove mise shims from PATH to prevent infinite shim recursion when a
@@ -1704,6 +1740,31 @@ pub fn http_install_operation_count(
         count += 1;
     }
     count
+}
+
+/// Check that the provenance type recorded in the lockfile is still enabled in settings.
+/// `is_disabled` receives the provenance type and returns `Ok(true)` when the corresponding
+/// setting is off, or `Err` for provenance types unexpected in the calling backend.
+pub fn ensure_provenance_setting_enabled(
+    tv: &ToolVersion,
+    platform_key: &str,
+    is_disabled: impl FnOnce(&ProvenanceType) -> Result<bool>,
+) -> Result<()> {
+    let provenance = tv
+        .lock_platforms
+        .get(platform_key)
+        .and_then(|pi| pi.provenance.as_ref());
+    let Some(provenance) = provenance else {
+        return Ok(());
+    };
+    if is_disabled(provenance)? {
+        return Err(eyre!(
+            "Lockfile requires {provenance} provenance for {tv} but the corresponding \
+             verification setting is disabled. This may indicate a downgrade attack. \
+             Enable the setting or update the lockfile."
+        ));
+    }
+    Ok(())
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {

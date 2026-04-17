@@ -185,7 +185,7 @@ URL:            https://mise.jdx.dev
 Source0:        https://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
 Source1:        mise-vendor-%{version}.tar.gz
 
-BuildRequires:  rust >= 1.85
+BuildRequires:  rust >= 1.88
 BuildRequires:  cargo
 BuildRequires:  gcc
 BuildRequires:  git

@@ -27,5 +27,7 @@ assert_contains "mise run --cd subdir deploy --help 2>&1 || true" "Usage:"
 assert_contains "mise run --cd subdir deploy --help 2>&1 || true" "<env>"
 assert_not_contains "mise run --cd subdir deploy --help 2>&1 || true" "Deploying"
 
-# Note: For tasks WITH usage specs (arg() calls), the usage library itself
-# intercepts --help even after --, so mise run deploy -- --help also shows help
+# `-- --help` bypasses the usage parser even for tasks with usage specs,
+# so --help is forwarded to the underlying script.
+# See https://github.com/jdx/mise/discussions/5460
+assert_contains "mise run --cd subdir deploy -- --help 2>&1 || true" "Deploying  --help"

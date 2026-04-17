@@ -6,11 +6,13 @@ use std::{
 };
 
 use eyre::{Result, bail};
+use jiff::Timestamp;
 use versions::{Chunk, Version};
 use xx::file;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
+use crate::config::settings::Settings;
 use crate::env;
 use crate::lockfile::LockfileTool;
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -350,17 +352,63 @@ impl ToolRequest {
         config: &Arc<Config>,
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
-        ToolVersion::resolve(config, self.clone(), opts).await
+        let mut opts = opts.clone();
+        opts.before_date = effective_before_date(self, &opts)?;
+        ToolVersion::resolve(config, self.clone(), &opts).await
     }
 
     pub fn is_os_supported(&self) -> bool {
-        if let Some(os) = self.os()
-            && !os.contains(&crate::cli::version::OS)
-        {
-            return false;
+        if let Some(os_list) = self.os() {
+            let current_os = &crate::cli::version::OS;
+            let current_arch = &crate::cli::version::ARCH;
+            let matched = os_list.iter().any(|entry| {
+                if let Some((os, arch)) = entry.split_once('/') {
+                    normalize_os(os) == current_os.as_str()
+                        && normalize_arch(arch) == current_arch.as_str()
+                } else {
+                    normalize_os(entry) == current_os.as_str()
+                }
+            });
+            if !matched {
+                return false;
+            }
         }
         self.ba().is_os_supported()
     }
+}
+
+/// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
+fn normalize_os(os: &str) -> &str {
+    match os {
+        "darwin" | "macos" => "macos",
+        "windows" | "win" => "windows",
+        other => other,
+    }
+}
+
+/// Normalize architecture name aliases to the canonical form used by `cli::version::ARCH`.
+fn normalize_arch(arch: &str) -> &str {
+    match arch {
+        "x86_64" | "amd64" | "x64" => "x64",
+        "aarch64" | "arm64" => "arm64",
+        other => other,
+    }
+}
+
+pub fn effective_before_date(
+    request: &ToolRequest,
+    opts: &ResolveOptions,
+) -> Result<Option<Timestamp>> {
+    if let Some(before_date) = opts.before_date {
+        return Ok(Some(before_date));
+    }
+    if let Some(before) = request.options().get("install_before") {
+        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
+    }
+    if let Some(before) = &Settings::get().install_before {
+        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
+    }
+    Ok(None)
 }
 
 /// subtracts sub from orig and removes suffix
@@ -403,9 +451,81 @@ impl Display for ToolRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::version_sub;
+    use super::{ToolRequest, effective_before_date, version_sub};
+    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::config::settings::{Settings, SettingsPartial};
+    use crate::toolset::{ResolveOptions, ToolSource, parse_tool_options};
+    use confique::Layer;
     use pretty_assertions::assert_str_eq;
+    use std::sync::Arc;
     use test_log::test;
+
+    fn make_request(opts: Option<&str>) -> ToolRequest {
+        let backend = Arc::new(BackendArg::new_raw(
+            "core:dummy".to_string(),
+            Some("core:dummy".to_string()),
+            "dummy".to_string(),
+            opts.map(parse_tool_options),
+            BackendResolution::new(true),
+        ));
+        ToolRequest::Version {
+            backend: backend.clone(),
+            version: "latest".to_string(),
+            options: backend.opts(),
+            source: ToolSource::Argument,
+        }
+    }
+
+    #[test]
+    fn test_effective_before_date_prefers_cli() {
+        Settings::reset(None);
+        let request = make_request(Some("install_before='7d'"));
+        let cli_before = "2024-01-02T03:04:05Z".parse().unwrap();
+        let opts = ResolveOptions {
+            before_date: Some(cli_before),
+            ..Default::default()
+        };
+        assert_eq!(
+            effective_before_date(&request, &opts).unwrap(),
+            Some(cli_before)
+        );
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_prefers_tool_option() {
+        Settings::reset(None);
+        let request = make_request(Some("install_before='2024-01-02'"));
+        let opts = ResolveOptions::default();
+        assert_eq!(
+            effective_before_date(&request, &opts).unwrap(),
+            Some(crate::duration::parse_into_timestamp("2024-01-02").unwrap())
+        );
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_falls_back_to_global_setting() {
+        let mut partial = SettingsPartial::empty();
+        partial.install_before = Some("2024-01-03".to_string());
+        Settings::reset(Some(partial));
+        let request = make_request(None);
+        let opts = ResolveOptions::default();
+        assert_eq!(
+            effective_before_date(&request, &opts).unwrap(),
+            Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap())
+        );
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_none_when_unset() {
+        Settings::reset(None);
+        let request = make_request(None);
+        let opts = ResolveOptions::default();
+        assert_eq!(effective_before_date(&request, &opts).unwrap(), None);
+        Settings::reset(None);
+    }
 
     #[test]
     fn test_version_sub() {
@@ -423,5 +543,27 @@ mod tests {
         assert_str_eq!(version_sub("0.1.0", "1"), "0");
         assert_str_eq!(version_sub("1.2.3", "0.2.4"), "0");
         assert_str_eq!(version_sub("1.3.3", "0.2.4"), "1.0");
+    }
+
+    #[test]
+    fn test_normalize_os() {
+        use super::normalize_os;
+        assert_eq!(normalize_os("macos"), "macos");
+        assert_eq!(normalize_os("darwin"), "macos");
+        assert_eq!(normalize_os("linux"), "linux");
+        assert_eq!(normalize_os("windows"), "windows");
+        assert_eq!(normalize_os("win"), "windows");
+        assert_eq!(normalize_os("freebsd"), "freebsd");
+    }
+
+    #[test]
+    fn test_normalize_arch() {
+        use super::normalize_arch;
+        assert_eq!(normalize_arch("arm64"), "arm64");
+        assert_eq!(normalize_arch("aarch64"), "arm64");
+        assert_eq!(normalize_arch("x64"), "x64");
+        assert_eq!(normalize_arch("x86_64"), "x64");
+        assert_eq!(normalize_arch("amd64"), "x64");
+        assert_eq!(normalize_arch("riscv64"), "riscv64");
     }
 }

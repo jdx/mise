@@ -11,14 +11,43 @@ The code for this is inside the mise repository at [`./src/plugins/core/node.rs`
 
 ## Usage
 
-The following installs the latest version of node-20.x and makes it the global
+The following installs the latest version of node-26.x and makes it the global
 default:
 
 ```sh
-mise use -g node@20
+mise use -g node@26
 ```
 
 See the [Node.JS Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
+
+## Pinning npm version
+
+By default, Node.js ships with a bundled version of npm. If you need a specific npm version
+(e.g. to keep your entire team on the same version and avoid `package-lock.json` conflicts),
+you can pin it alongside Node in your `mise.toml`:
+
+```toml [mise.toml]
+[tools]
+node = "26"
+npm = "11"
+```
+
+To pin both to exact versions:
+
+```sh
+mise use --pin node@lts npm@latest
+```
+
+This resolves aliases like `lts` and `latest` to exact version numbers in `mise.toml`, e.g.:
+
+```toml [mise.toml]
+[tools]
+node = "26.1.0"
+npm = "11.12.1"
+```
+
+The pinned npm version takes precedence over the one bundled with Node, so `npm --version` will
+always return the version specified in `mise.toml`.
 
 ## `.nvmrc` and `.node-version` support
 

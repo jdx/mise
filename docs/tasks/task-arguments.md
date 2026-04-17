@@ -8,6 +8,8 @@ Task arguments allow you to pass parameters to tasks, making them more flexible 
 
 The **usage field** is the recommended approach for defining task arguments. It provides a clean, declarative syntax that works with both TOML tasks and file tasks.
 
+See [Complete Usage Specification Reference](#complete-usage-specification-reference) for more details.
+
 #### Quick Example
 
 ```mise-toml [mise.toml]
@@ -68,6 +70,11 @@ used with Tera's `for` loops and filters like `length`. The `usage` map is
 `flag()`) described later on this page—you should not mix the two approaches in
 the same task.
 
+<span v-pre>`{{usage.*}}`</span> templates can also be used in `depends`, `depends_post`, and
+`wait_for` to forward arguments to dependency tasks. See
+[Passing parent task arguments to dependencies](/tasks/task-configuration#passing-parent-task-arguments-to-dependencies)
+for details.
+
 **Help output example:**
 
 ```shellsession
@@ -84,6 +91,35 @@ Options:
       --region <region>  AWS region [env: AWS_REGION] [default: us-east-1]
   -h, --help            Print help
 ```
+
+### 2. File Task Headers {#file-task-headers}
+
+For file tasks, you can define arguments directly in the file using special `#MISE` or `#USAGE` comment syntax:
+
+```bash [.mise/tasks/deploy]
+#!/usr/bin/env bash
+#MISE description "Deploy application"
+#USAGE arg "<environment>" help="Deployment environment" {
+#USAGE   choices "dev" "staging" "prod"
+#USAGE }
+#USAGE flag "--dry-run" help="Preview changes without deploying"
+#USAGE flag "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
+
+ENVIRONMENT="${usage_environment?}"
+REGION="${usage_region?}"
+DRY_RUN="${usage_dry_run:-false}"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo "DRY RUN: Would deploy to $ENVIRONMENT in $REGION"
+else
+  echo "Deploying to $ENVIRONMENT in $REGION..."
+  ./scripts/deploy.sh "$ENVIRONMENT" "$REGION"
+fi
+```
+
+::: tip Syntax Options
+Use `#MISE` (uppercase, recommended) or `#USAGE` for defining arguments in file tasks. `# [MISE]` or `# [USAGE]` are also accepted as workarounds for formatters.
+:::
 
 ## Complete Usage Specification Reference
 
@@ -397,35 +433,6 @@ else
 fi
 '''
 ```
-
-### 2. File Task Headers {#file-task-headers}
-
-For file tasks, you can define arguments directly in the file using special `#MISE` or `#USAGE` comment syntax:
-
-```bash [.mise/tasks/deploy]
-#!/usr/bin/env bash
-#MISE description "Deploy application"
-#USAGE arg "<environment>" help="Deployment environment" {
-#USAGE   choices "dev" "staging" "prod"
-#USAGE }
-#USAGE flag "--dry-run" help="Preview changes without deploying"
-#USAGE flag "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
-
-ENVIRONMENT="${usage_environment?}"
-REGION="${usage_region?}"
-DRY_RUN="${usage_dry_run:-false}"
-
-if [[ "$DRY_RUN" == "true" ]]; then
-  echo "DRY RUN: Would deploy to $ENVIRONMENT in $REGION"
-else
-  echo "Deploying to $ENVIRONMENT in $REGION..."
-  ./scripts/deploy.sh "$ENVIRONMENT" "$REGION"
-fi
-```
-
-::: tip Syntax Options
-Use `#MISE` (uppercase, recommended) or `#USAGE` for defining arguments in file tasks. `# [MISE]` or `# [USAGE]` are also accepted as workarounds for formatters.
-:::
 
 ## Bash Variable Expansion for Usage Variables {#bash-variable-expansion}
 

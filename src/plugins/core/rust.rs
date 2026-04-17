@@ -222,7 +222,19 @@ impl Backend for RustPlugin {
             for (k, v) in self.exec_env(config, ts, tv).await? {
                 cmd = cmd.env(k, v);
             }
-            let out = cmd.read()?;
+            // rustup check returns exit code 100 when updates are available
+            // This is not an error, so we use unchecked() and check status manually
+            let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
+            let exit_code = result.status.code().unwrap_or(-1);
+            if exit_code != 0 && exit_code != 100 {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                eyre::bail!(
+                    "command [\"rustup\", \"check\"] exited with code {}. stderr: {}",
+                    exit_code,
+                    stderr.trim()
+                );
+            }
+            let out = String::from_utf8_lossy(&result.stdout);
             for line in out.lines() {
                 if line.starts_with(&self.target_triple(tv))
                     && let Some(_cap) = v_re.captures(line)
@@ -359,21 +371,35 @@ fn rustup_path() -> PathBuf {
 }
 
 fn rustup_home() -> PathBuf {
-    Settings::get()
+    let path = Settings::get()
         .rust
         .rustup_home
         .clone()
         .or(env::var_path("RUSTUP_HOME"))
-        .unwrap_or(dirs::HOME.join(".rustup"))
+        .unwrap_or(dirs::HOME.join(".rustup"));
+    if path.is_relative() {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(&path))
+            .unwrap_or(path)
+    } else {
+        path
+    }
 }
 
 fn cargo_home() -> PathBuf {
-    Settings::get()
+    let path = Settings::get()
         .rust
         .cargo_home
         .clone()
         .or(env::var_path("CARGO_HOME"))
-        .unwrap_or(dirs::HOME.join(".cargo"))
+        .unwrap_or(dirs::HOME.join(".cargo"));
+    if path.is_relative() {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(&path))
+            .unwrap_or(path)
+    } else {
+        path
+    }
 }
 
 fn cargo_bin() -> PathBuf {

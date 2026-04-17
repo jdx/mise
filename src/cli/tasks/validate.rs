@@ -547,30 +547,31 @@ impl TasksValidate {
                         });
                     }
                 }
-                crate::task::RunEntry::SingleTask { task: task_name } => {
-                    // Check if referenced task exists (by name, display_name, or alias)
-                    if !Self::task_exists(all_tasks, task_name) {
+                crate::task::RunEntry::SingleTask {
+                    task: task_name, ..
+                } => {
+                    // Strip inline arguments before checking existence, matching runtime behavior
+                    let (name, _) = crate::task::task_list::split_task_spec(task_name);
+                    if !Self::task_exists(all_tasks, name) {
                         issues.push(ValidationIssue {
                             task: task.name.clone(),
                             severity: Severity::Error,
                             category: "missing-task-reference".to_string(),
-                            message: format!(
-                                "Task '{}' referenced in run entry not found",
-                                task_name
-                            ),
+                            message: format!("Task '{}' referenced in run entry not found", name),
                             details: None,
                         });
                     }
                 }
                 crate::task::RunEntry::TaskGroup { tasks } => {
-                    // Check if all tasks in group exist (by name, display_name, or alias)
+                    // Strip inline arguments before checking existence, matching runtime behavior
                     for task_name in tasks {
-                        if !Self::task_exists(all_tasks, task_name) {
+                        let (name, _) = crate::task::task_list::split_task_spec(task_name);
+                        if !Self::task_exists(all_tasks, name) {
                             issues.push(ValidationIssue {
                                 task: task.name.clone(),
                                 severity: Severity::Error,
                                 category: "missing-task-reference".to_string(),
-                                message: format!("Task '{}' in task group not found", task_name),
+                                message: format!("Task '{}' in task group not found", name),
                                 details: Some("Referenced in parallel task group".to_string()),
                             });
                         }

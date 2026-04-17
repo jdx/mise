@@ -22,6 +22,92 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 "gitlab:gitlab-org/gitlab-runner" = { version = "latest", asset_pattern = "gitlab-runner-linux-x64" }
 ```
 
+## Authentication
+
+For private repositories or higher API limits, mise supports several GitLab token sources.
+
+### Token priority
+
+mise checks these sources in order and uses the first token found:
+
+1. `MISE_GITLAB_ENTERPRISE_TOKEN` (for non-`gitlab.com` hosts)
+2. `MISE_GITLAB_TOKEN`
+3. `GITLAB_TOKEN`
+4. `credential_command` (if set)
+5. `gitlab_tokens.toml` (per host)
+6. glab CLI config (`config.yml`, if enabled)
+7. `git credential fill` (if `gitlab.use_git_credentials=true`)
+
+### Environment variables
+
+```sh
+export MISE_GITLAB_TOKEN="glpat-xxxxxxxx"
+```
+
+For self-hosted GitLab instances:
+
+```sh
+export MISE_GITLAB_ENTERPRISE_TOKEN="glpat-yyyyyyyy"
+```
+
+### Token file (`gitlab_tokens.toml`)
+
+```toml
+# ~/.config/mise/gitlab_tokens.toml
+[tokens."gitlab.com"]
+token = "glpat-xxxxxxxx"
+
+[tokens."gitlab.mycompany.com"]
+token = "glpat-yyyyyyyy"
+```
+
+### `credential_command`
+
+You can provide a shell command that prints a token to stdout:
+
+```toml
+[settings.gitlab]
+credential_command = "op read 'op://Private/GitLab Token/credential'"
+```
+
+The target hostname is passed as `$1` to the command.
+
+### glab CLI integration
+
+mise can read tokens from [glab](https://gitlab.com/gitlab-org/cli) config as a fallback. It checks:
+
+1. `$GLAB_CONFIG_DIR/config.yml`
+2. `$XDG_CONFIG_HOME/glab-cli/config.yml` (defaults to `~/.config/glab-cli/config.yml`)
+3. `~/Library/Application Support/glab-cli/config.yml` (macOS)
+
+Disable this fallback with:
+
+```toml
+[settings.gitlab]
+glab_cli_tokens = false
+```
+
+### `git credential fill` fallback
+
+As a last resort, mise can query git credential helpers:
+
+```toml
+[settings.gitlab]
+use_git_credentials = true
+```
+
+This uses `git credential fill` and supports credentials stored by helpers such as macOS Keychain.
+
+### Debugging token resolution
+
+Use `mise token gitlab` to see which token mise would use for a given host:
+
+```sh
+mise token gitlab
+mise token gitlab --unmask
+mise token gitlab gitlab.mycompany.com
+```
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `gitlab` backend—these
@@ -191,7 +277,9 @@ Use `rename_exe` for archives where the binary inside has a different name than 
 
 ### `bin_path`
 
+::: v-pre
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with variables like `{{ version }}`, `{{ os }}`, `{{ arch }}`, and arch aliases (`{{ darwin_os }}`, `{{ amd64_arch }}`, `{{ x86_64_arch }}`, `{{ gnu_arch }}`):
+:::
 
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
@@ -257,4 +345,5 @@ export MISE_GITLAB_ENTERPRISE_TOKEN="your-token"
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
+
 <Settings child="gitlab" :level="3" />

@@ -54,22 +54,22 @@ ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 RUN curl https://mise.run | sh
 
 # Pre-install tools to the system-wide shared directory
-RUN mise install --system node@22 python@3.13
+RUN mise install --system node@26 python@3.15
 ```
 
 Users in the container will see these tools automatically:
 
 ```shell
 $ mise ls
-node    22.0.0 (system)
-python  3.13.0 (system)
+node    26.0.0 (system)
+python  3.15.0 (system)
 ```
 
 Users can install additional versions in their own directory — those take priority over
 system versions. To customize the system directory, set `MISE_SYSTEM_DATA_DIR`.
 
 You can also configure additional shared directories with `MISE_SHARED_INSTALL_DIRS`
-(colon-separated paths) or the `shared_install_dirs` setting.
+(paths separated by `:` on Unix and `;` on Windows) or the `shared_install_dirs` setting.
 
 ### Devcontainers with home directory mounts
 
@@ -83,12 +83,28 @@ this path is outside `~` and survives home directory mounts:
 ```Dockerfile [Dockerfile]
 FROM debian:13-slim
 # ... install mise ...
-RUN mise install --system node@22 python@3.13
+RUN mise install --system node@26 python@3.15
 ```
 
 When the container starts with `~` mounted, users still see the system tools automatically.
 Any tools they install normally go to `~/.local/share/mise/installs` (on the mount) and
 take priority over system versions.
+
+## Overriding libc detection with MISE_LIBC
+
+In minimal Docker images (scratch, busybox, distroless) where no dynamic linker
+files exist, mise may not detect whether the system uses musl or glibc. Set `MISE_LIBC`
+to force the detection:
+
+```Dockerfile
+ENV MISE_LIBC=musl
+RUN mise install
+```
+
+Valid values are `musl` and `gnu` (case-insensitive). Invalid values are silently
+ignored and mise falls back to runtime detection. When the mise binary is compiled
+for musl (the default for Linux releases), it will also fall back to musl
+automatically when no linker is detected.
 
 ## Task to run mise in a Docker container
 

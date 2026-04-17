@@ -284,24 +284,7 @@ impl Config {
     }
     pub async fn env_with_sources(self: &Arc<Self>) -> eyre::Result<&EnvWithSources> {
         self.env_with_sources
-            .get_or_try_init(async || {
-                let mut env = self.env_results().await?.env.clone();
-                for env_file in Settings::get().env_files() {
-                    match dotenvy::from_path_iter(&env_file) {
-                        Ok(iter) => {
-                            for item in iter {
-                                let (k, v) = item.unwrap_or_else(|err| {
-                                    warn!("env_file: {err}");
-                                    Default::default()
-                                });
-                                env.insert(k, (v, env_file.clone()));
-                            }
-                        }
-                        Err(err) => trace!("env_file: {err}"),
-                    }
-                }
-                Ok(env)
-            })
+            .get_or_try_init(async || Ok(self.env_results().await?.env.clone()))
             .await
     }
     pub async fn env_results(self: &Arc<Self>) -> Result<&EnvResults> {
@@ -351,17 +334,34 @@ impl Config {
         backend_arg: &Arc<BackendArg>,
     ) -> Result<Option<ToolVersionOptions>> {
         let trs = self.get_tool_request_set().await?;
-        // Try matching by resolved full name first for aliased tools.
+        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
+        // Also try matching by resolved full name for aliased tools.
         // e.g., ba.short="treesize" resolves to full="gitlab:FBibonne/treesize"
         // while the config entry has short="gitlab-f-bibonne-treesize" with api_url set.
-        // We check the resolved name first because the direct short match might find
-        // a CLI-created tool request without options.
         let full = backend_arg.full();
         let resolved_ba = BackendArg::new(full, None);
-        let tool_request = trs
-            .iter()
-            .find(|tr| tr.0.short == resolved_ba.short)
-            .or_else(|| trs.iter().find(|tr| tr.0.short == backend_arg.short));
+        let resolved_match = trs.iter().find(|tr| tr.0.short == resolved_ba.short);
+
+        let has_opts = |tr: &(&Arc<BackendArg>, &Vec<crate::toolset::ToolRequest>, _)| -> bool {
+            tr.1.first()
+                .is_some_and(|req| !req.options().opts.is_empty())
+        };
+        // Prefer whichever match has options set. When both have options,
+        // prefer the short (alias-specific) match since it's more specific.
+        // Fall back to the resolved match for cases where a CLI-created
+        // request without options shadows the config entry (treesize case).
+        let tool_request = match (short_match, resolved_match) {
+            (Some(s), Some(r)) => {
+                if has_opts(&s) {
+                    Some(s)
+                } else {
+                    Some(r)
+                }
+            }
+            (Some(s), None) => Some(s),
+            (None, Some(r)) => Some(r),
+            (None, None) => None,
+        };
         Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
     }
 
@@ -388,7 +388,7 @@ impl Config {
             .get(plugin_name)
             .map(|full| registry::full_to_url(&full[0]))
             .or_else(|| {
-                if plugin_name.starts_with("https://") || plugin_name.split('/').count() == 2 {
+                if registry::url_like(plugin_name) || plugin_name.split('/').count() == 2 {
                     Some(registry::full_to_url(plugin_name))
                 } else {
                     None
@@ -676,7 +676,7 @@ impl Config {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(
+        let mut env_results = EnvResults::resolve(
             self,
             self.tera_ctx.clone(),
             &env::PRISTINE_ENV,
@@ -688,6 +688,26 @@ impl Config {
             },
         )
         .await?;
+        for env_file in Settings::get().env_files() {
+            if env_results.env_files.contains(&env_file) {
+                continue;
+            }
+            debug!("env_file: {}", display_path(&env_file));
+            match dotenvy::from_path_iter(&env_file) {
+                Ok(iter) => {
+                    env_results.env_files.push(env_file.clone());
+                    for item in iter {
+                        match item {
+                            Ok((k, v)) => {
+                                env_results.env.insert(k, (v, env_file.clone()));
+                            }
+                            Err(err) => warn!("env_file: {err}"),
+                        }
+                    }
+                }
+                Err(err) => trace!("env_file: {err}"),
+            }
+        }
         let redact_keys = self
             .redaction_keys()
             .into_iter()
@@ -794,7 +814,16 @@ impl Config {
             .map(|(p, cf)| {
                 let mut watch_files: Vec<WatchFilePattern> = vec![p.as_path().into()];
                 if let Some(parent) = p.parent() {
-                    watch_files.push(parent.join("mise.lock").into());
+                    let lockfile = parent.join("mise.lock");
+
+                    // Only watch lockfiles that currently exist to prevent missing optional
+                    // mise.lock files from keeping hook-env from stabilizing. If one is created
+                    // later, should_exit_early_fast() will notice the parent directory mtime
+                    // change, force a slow-path run, and this watch set will then include the new
+                    // lockfile on that recomputation.
+                    if lockfile.exists() {
+                        watch_files.push(lockfile.into());
+                    }
                 }
                 watch_files.extend(cf.watch_files()?.iter().map(|wf| WatchFilePattern {
                     root: cf.project_root().map(|pr| pr.to_path_buf()),
@@ -807,6 +836,7 @@ impl Config {
             .flatten()
             .chain(env_results.env_files.iter().map(|p| p.as_path().into()))
             .chain(env_results.env_scripts.iter().map(|p| p.as_path().into()))
+            .chain(env_results.watch_files.iter().map(|p| p.as_path().into()))
             .chain(
                 Settings::get()
                     .env_files()
@@ -848,6 +878,7 @@ impl Config {
 }
 
 fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
+    // Highest precedence config files are returned first.
     let mut configs: Vec<&'a Arc<dyn ConfigFile>> = DEFAULT_CONFIG_FILENAMES
         .iter()
         .rev()
@@ -1069,7 +1100,7 @@ fn all_dirs_from(start_dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Returns true if a path is a .tool-versions file (lower priority for writes)
-fn is_tool_versions_file(p: &Path) -> bool {
+pub(crate) fn is_tool_versions_file(p: &Path) -> bool {
     p.file_name()
         .is_some_and(|f| f.to_string_lossy().ends_with(".tool-versions"))
 }
@@ -1151,13 +1182,22 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
 
 /// Load config hierarchy from a specific directory (for monorepo tasks)
 /// This loads all config files from start_dir up through parent directories,
-/// including MISE_ENV-specific configs
-pub fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> {
+/// including MISE_ENV-specific configs and idiomatic version files.
+/// Returns (paths, idiomatic_filenames) so callers can pass the map to
+/// load_config_files_from_paths without a redundant second computation.
+pub async fn load_config_hierarchy_from_dir(
+    start_dir: &Path,
+) -> Result<(Vec<PathBuf>, BTreeMap<String, Vec<String>>)> {
     if Settings::no_config() {
-        return Ok(vec![]);
+        return Ok((vec![], BTreeMap::new()));
     }
 
-    let config_filenames = DEFAULT_CONFIG_FILENAMES.iter().cloned().collect_vec();
+    let idiomatic_files = load_idiomatic_filenames().await;
+    let config_filenames: Vec<String> = idiomatic_files
+        .keys()
+        .cloned()
+        .chain(DEFAULT_CONFIG_FILENAMES.iter().cloned())
+        .collect();
 
     // Get all directories from start_dir up to root/ceiling
     let dirs = all_dirs_from(start_dir)?;
@@ -1195,7 +1235,7 @@ pub fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> 
         })
         .collect();
 
-    Ok(paths)
+    Ok((paths, idiomatic_files))
 }
 
 pub fn is_global_config(path: &Path) -> bool {
@@ -1432,16 +1472,20 @@ async fn load_all_config_files(
 }
 
 /// Load config files from a list of paths (for monorepo task config contexts)
-pub async fn load_config_files_from_paths(config_paths: &[PathBuf]) -> Result<ConfigMap> {
+/// Accepts a pre-computed idiomatic filenames map to avoid redundant computation
+/// when called after load_config_hierarchy_from_dir.
+pub async fn load_config_files_from_paths(
+    config_paths: &[PathBuf],
+    idiomatic_filenames: &BTreeMap<String, Vec<String>>,
+) -> Result<ConfigMap> {
     backend::load_tools().await?;
-    let idiomatic_filenames = load_idiomatic_filenames().await;
     let mut config_map = ConfigMap::default();
 
     for f in config_paths.iter().unique() {
         if f.is_dir() {
             continue;
         }
-        let cf = match parse_config_file(f, &idiomatic_filenames).await {
+        let cf = match parse_config_file(f, idiomatic_filenames).await {
             Ok(cfg) => cfg,
             Err(err) => {
                 return Err(err.wrap_err(format!(
@@ -1663,6 +1707,11 @@ fn default_task_includes() -> Vec<String> {
     ]
 }
 
+fn is_global_task_include_path(path: &Path) -> bool {
+    path.starts_with(dirs::CONFIG.join("tasks"))
+        || path.starts_with(dirs::SYSTEM_CONFIG.join("tasks"))
+}
+
 #[async_backtrace::framed]
 pub async fn rebuild_shims_and_runtime_symlinks(
     config: &Arc<Config>,
@@ -1685,9 +1734,9 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     });
     if !new_versions.is_empty() {
         measure!("auto-locking platforms", {
-            if let Err(e) = lockfile::auto_lock_new_versions(config, new_versions).await {
-                warn!("failed to auto-lock platforms for new versions: {e}");
-            }
+            lockfile::auto_lock_new_versions(config, new_versions)
+                .await
+                .wrap_err("failed to auto-lock platforms for new versions")?;
         });
     }
 
@@ -1839,7 +1888,10 @@ async fn load_local_tasks_with_context(
                         let includes = task_includes_for_dir(&subdir, &config.config_files);
                         for include in includes {
                             let mut subdir_tasks =
-                                load_tasks_includes(&config, &include, &subdir).await?;
+                                load_tasks_includes(&config, &include, &subdir, &None).await?;
+                            if is_global_task_include_path(&include) {
+                                mark_tasks_as_global(&mut subdir_tasks);
+                            }
                             prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
                             for task in subdir_tasks {
                                 task_map.insert(task.name.clone(), task);
@@ -2136,9 +2188,29 @@ async fn load_config_and_file_tasks(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let config_root = cf.config_root();
-    let tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
+    let config_tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
     let file_tasks = load_file_tasks(config, cf.clone(), &config_root).await?;
-    Ok(tasks.into_iter().chain(file_tasks).collect())
+    Ok(merge_file_and_config_tasks(file_tasks, config_tasks))
+}
+
+/// Combine file tasks (auto-discovered executable scripts and included TOML
+/// files) with inline `[tasks.*]` blocks from the same config file.
+///
+/// When a name appears in both: the file task stays as the base and the TOML
+/// block is overlaid via [`Task::merge_toml_overlay`]. Otherwise both are kept.
+fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
+    let mut by_name: IndexMap<String, Task> = IndexMap::new();
+    for t in file_tasks {
+        by_name.insert(t.name.clone(), t);
+    }
+    for t in config_tasks {
+        if let Some(existing) = by_name.get_mut(&t.name) {
+            existing.merge_toml_overlay(t);
+        } else {
+            by_name.insert(t.name.clone(), t);
+        }
+    }
+    by_name.into_values().collect()
 }
 
 async fn load_config_tasks(
@@ -2175,9 +2247,10 @@ async fn load_tasks_includes(
     config: &Arc<Config>,
     root: &Path,
     config_root: &Path,
+    task_config_dir: &Option<String>,
 ) -> Result<Vec<Task>> {
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
-        load_task_file(config, root, config_root).await
+        load_task_file(config, root, config_root, task_config_dir).await
     } else if root.is_dir() {
         let files = WalkDir::new(root)
             .follow_links(true)
@@ -2204,7 +2277,15 @@ async fn load_tasks_includes(
             let root = root.clone();
             let config_root = config_root.clone();
             let config = config.clone();
-            tasks.push(Task::from_path(&config, &path, &root, &config_root).await?);
+            let mut task = Task::from_path(&config, &path, &root, &config_root).await?;
+            if task.dir.is_none()
+                && let Some(ref dir) = *task_config_dir
+            {
+                let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
+                let tera_ctx = task.tera_ctx(&config).await?;
+                task.dir = Some(tera.render_str(dir, &tera_ctx)?);
+            }
+            tasks.push(task);
         }
         Ok(tasks)
     } else {
@@ -2282,6 +2363,7 @@ async fn load_file_tasks(
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
     let cf_root = cf.config_root();
+    let task_config_dir = cf.task_config().dir.clone();
 
     for include in includes {
         let paths = if include.starts_with("git::") {
@@ -2290,7 +2372,12 @@ async fn load_file_tasks(
             expand_task_include(&cf_root, &include)
         };
         for path in paths {
-            tasks.extend(load_tasks_includes(config, &path, &config_root).await?);
+            let mut loaded =
+                load_tasks_includes(config, &path, &config_root, &task_config_dir).await?;
+            if is_global_task_include_path(&path) {
+                mark_tasks_as_global(&mut loaded);
+            }
+            tasks.extend(loaded);
         }
     }
     Ok(tasks)
@@ -2299,11 +2386,10 @@ async fn load_file_tasks(
 pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
     let configs = configs_at_root(dir, config_files);
 
-    // Find the first config that has explicit task_config.includes
+    // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
     let (includes, resolve_dir) = configs
         .iter()
-        .rev()
         .find_map(|cf| {
             cf.task_config().includes.clone().map(|includes| {
                 // Resolve relative paths from the config root, not the config file's directory
@@ -2338,7 +2424,6 @@ pub async fn load_tasks_in_dir(
 
     let git_includes: Vec<String> = configs
         .iter()
-        .rev()
         .find_map(|cf| cf.task_config().includes.clone())
         .unwrap_or_default()
         .into_iter()
@@ -2351,19 +2436,26 @@ pub async fn load_tasks_in_dir(
         config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates).await?);
     }
 
+    // Find task_config.dir from the highest-precedence config that defines it
+    let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
+
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
-        file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
+        let mut loaded = load_tasks_includes(config, &p, dir, &task_config_dir).await?;
+        if is_global_task_include_path(&p) {
+            mark_tasks_as_global(&mut loaded);
+        }
+        file_tasks.extend(loaded);
     }
 
     for include in git_includes {
         let resolved = resolve_git_url_to_path(&include).await?;
-        file_tasks.extend(load_tasks_includes(config, &resolved, dir).await?);
+        let loaded = load_tasks_includes(config, &resolved, dir, &task_config_dir).await?;
+        file_tasks.extend(loaded);
     }
 
-    let mut tasks = file_tasks
+    let mut tasks = merge_file_and_config_tasks(file_tasks, config_tasks)
         .into_iter()
-        .chain(config_tasks)
         .sorted_by_cached_key(|t| t.name.clone())
         .collect::<Vec<_>>();
     let all_tasks = tasks
@@ -2381,6 +2473,7 @@ async fn load_task_file(
     config: &Arc<Config>,
     path: &Path,
     config_root: &Path,
+    task_config_dir: &Option<String>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
     let mut tasks = toml::from_str::<Tasks>(&raw)
@@ -2390,6 +2483,9 @@ async fn load_task_file(
         task.name = name.clone();
         task.config_source = path.to_path_buf();
         task.config_root = Some(config_root.to_path_buf());
+        if task.dir.is_none() {
+            task.dir = task_config_dir.clone();
+        }
     }
     let mut out = vec![];
     for (_, mut task) in tasks {
@@ -2400,6 +2496,10 @@ async fn load_task_file(
         out.push(task);
     }
     Ok(out)
+}
+
+fn mark_tasks_as_global(tasks: &mut [Task]) {
+    tasks.iter_mut().for_each(|task| task.global = true);
 }
 
 #[cfg(test)]
@@ -2452,6 +2552,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_repo_url_ssh() -> Result<()> {
+        let config = Config::reset().await?;
+        let urls = [
+            "ssh://git@gitlab.dev/mobile/asdf-gitique.git",
+            "git@github.com:user/repo.git",
+            "git://example.com/repo.git",
+            "http://example.com/repo.git",
+            "https://example.com/repo.git",
+        ];
+
+        for url in urls {
+            assert!(
+                config.get_repo_url(url).is_some(),
+                "URL should be considered valid: {url}"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_load_task_file_supports_per_task_vars() -> Result<()> {
         let config = Config::reset().await?;
         let temp_dir = TempDir::new()?;
@@ -2466,7 +2586,7 @@ vars = { target = "linux" }
 "#,
         )?;
 
-        let tasks = load_task_file(&config, &tasks_toml, temp_dir.path()).await?;
+        let tasks = load_task_file(&config, &tasks_toml, temp_dir.path(), &None).await?;
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "build");
         assert_eq!(tasks[0].description, "linux");

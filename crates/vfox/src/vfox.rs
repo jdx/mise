@@ -32,6 +32,8 @@ pub struct InstallResult {
     pub sha256: Option<String>,
     /// The type of attestation that was successfully verified (if any)
     pub verified_attestation: Option<VerifiedAttestation>,
+    /// Whether a checksum (sha256/sha512) was verified during install
+    pub checksum_verified: bool,
 }
 
 #[derive(Debug)]
@@ -41,6 +43,16 @@ pub struct Vfox {
     pub plugin_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub download_dir: PathBuf,
+    /// When true, skip attestation verification during install if the plugin also provides
+    /// a sha256/sha512 checksum (so checksum integrity still applies). If the plugin has
+    /// no checksums, attestation always runs regardless of this flag.
+    /// Set by the caller when the lockfile already has a provenance entry from a prior install.
+    pub skip_verification: bool,
+    /// Optional environment to set on plugins before executing backend hooks.
+    /// When set, `plugin.set_cmd_env()` is called so Lua `cmd.exec()` uses this env
+    /// instead of inheriting the process environment. This allows dependency tools'
+    /// bin paths to be on PATH during version resolution and installation.
+    pub cmd_env: Option<IndexMap<String, String>>,
     log_tx: Option<mpsc::Sender<String>>,
 }
 
@@ -66,7 +78,7 @@ impl Vfox {
     }
 
     pub async fn list_available_versions(&self, sdk: &str) -> Result<Vec<AvailableVersion>> {
-        let sdk = self.get_sdk(sdk)?;
+        let sdk = self.get_sdk_with_env(sdk)?;
         sdk.available_async().await
     }
 
@@ -110,6 +122,14 @@ impl Vfox {
 
     pub fn get_sdk(&self, name: &str) -> Result<Plugin> {
         Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))
+    }
+
+    fn get_sdk_with_env(&self, name: &str) -> Result<Plugin> {
+        let plugin = self.get_sdk(name)?;
+        if let Some(env) = &self.cmd_env {
+            plugin.set_cmd_env(env)?;
+        }
+        Ok(plugin)
     }
 
     pub fn install_plugin(&self, sdk: &str) -> Result<Plugin> {
@@ -163,15 +183,19 @@ impl Vfox {
         install_dir: ID,
     ) -> Result<InstallResult> {
         self.install_plugin(sdk)?;
-        let sdk = self.get_sdk(sdk)?;
+        let sdk = self.get_sdk_with_env(sdk)?;
         let pre_install = sdk.pre_install(version).await?;
         let install_dir = install_dir.as_ref();
         trace!("{pre_install:?}");
         let mut verified_attestation = None;
+        let mut checksum_verified = false;
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
             let file = self.download(&url?, &sdk, version).await?;
             verified_attestation = self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
+            // Note: sha1/md5 intentionally excluded — they are unimplemented! and
+            // not considered strong enough to satisfy the checksum_verified semantic.
+            checksum_verified = pre_install.sha256.is_some() || pre_install.sha512.is_some();
         }
 
         if sdk.get_metadata()?.hooks.contains("post_install") {
@@ -183,10 +207,10 @@ impl Vfox {
             })
             .await?;
         }
-
         Ok(InstallResult {
             sha256: pre_install.sha256,
             verified_attestation,
+            checksum_verified,
         })
     }
 
@@ -203,7 +227,7 @@ impl Vfox {
         os: &str,
         arch: &str,
     ) -> Result<PreInstall> {
-        let sdk = self.get_sdk(sdk)?;
+        let sdk = self.get_sdk_with_env(sdk)?;
         sdk.pre_install_for_platform(version, os, arch).await
     }
 
@@ -237,7 +261,7 @@ impl Vfox {
         options: T,
     ) -> Result<Vec<EnvKey>> {
         debug!("Getting env keys for {sdk} version {version}");
-        let sdk = self.get_sdk(sdk)?;
+        let sdk = self.get_sdk_with_env(sdk)?;
         let sdk_info = sdk.sdk_info(
             version.to_string(),
             self.install_dir.join(&sdk.name).join(version),
@@ -263,6 +287,13 @@ impl Vfox {
         if !plugin.get_metadata()?.hooks.contains("mise_env") {
             return Ok(MiseEnvResult::default());
         }
+        if log::log_enabled!(log::Level::Trace) {
+            if let Some(path) = env.get("PATH") {
+                trace!("[vfox:{sdk}] mise_env PATH: {path}");
+            } else {
+                trace!("[vfox:{sdk}] mise_env: no PATH in env");
+            }
+        }
         plugin.set_cmd_env(env)?;
         let ctx = MiseEnvContext {
             args: vec![],
@@ -271,10 +302,16 @@ impl Vfox {
         plugin.mise_env(ctx).await
     }
 
-    pub async fn backend_list_versions(&self, sdk: &str, tool: &str) -> Result<Vec<String>> {
-        let plugin = self.get_sdk(sdk)?;
+    pub async fn backend_list_versions(
+        &self,
+        sdk: &str,
+        tool: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<Vec<String>> {
+        let plugin = self.get_sdk_with_env(sdk)?;
         let ctx = BackendListVersionsContext {
             tool: tool.to_string(),
+            options,
         };
         plugin.backend_list_versions(ctx).await.map(|r| r.versions)
     }
@@ -286,9 +323,9 @@ impl Vfox {
         version: &str,
         install_path: PathBuf,
         download_path: PathBuf,
-        options: IndexMap<String, String>,
+        options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
-        let plugin = self.get_sdk(sdk)?;
+        let plugin = self.get_sdk_with_env(sdk)?;
         let ctx = BackendInstallContext {
             tool: tool.to_string(),
             version: version.to_string(),
@@ -306,9 +343,9 @@ impl Vfox {
         tool: &str,
         version: &str,
         install_path: PathBuf,
-        options: IndexMap<String, String>,
+        options: IndexMap<String, toml::Value>,
     ) -> Result<Vec<EnvKey>> {
-        let plugin = self.get_sdk(sdk)?;
+        let plugin = self.get_sdk_with_env(sdk)?;
         let ctx = BackendExecEnvContext {
             tool: tool.to_string(),
             version: version.to_string(),
@@ -384,7 +421,12 @@ impl Vfox {
             unimplemented!("md5")
         }
         let mut verified: Option<VerifiedAttestation> = None;
-        if let Some(attestation) = &pre_install.attestation {
+        // Only skip attestation verification when the plugin provides a checksum
+        // (sha256/sha512) — otherwise there would be no integrity check at all.
+        let has_checksum = pre_install.sha256.is_some() || pre_install.sha512.is_some();
+        if let Some(attestation) = &pre_install.attestation
+            && !(self.skip_verification && has_checksum)
+        {
             self.log_emit(format!("Verify {file:?} attestation"));
             if let Some(owner) = &attestation.github_owner
                 && let Some(repo) = &attestation.github_repo
@@ -531,6 +573,8 @@ impl Default for Vfox {
             cache_dir: home().join(".version-fox/cache"),
             download_dir: home().join(".version-fox/downloads"),
             install_dir: home().join(".version-fox/installs"),
+            skip_verification: false,
+            cmd_env: None,
             log_tx: None,
         }
     }
@@ -555,6 +599,8 @@ mod tests {
                 cache_dir: PathBuf::from("test/cache"),
                 download_dir: PathBuf::from("test/downloads"),
                 install_dir: PathBuf::from("test/installs"),
+                skip_verification: false,
+                cmd_env: None,
                 log_tx: None,
             }
         }
@@ -655,5 +701,34 @@ mod tests {
         let metadata = vfox.metadata("dummy").await.unwrap();
         let out = format!("{metadata:?}");
         assert_snapshot!(out);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_backend_list_versions_with_cmd_env() {
+        let mut vfox = Vfox::test();
+        let mut env = IndexMap::new();
+        env.insert("MY_TEST_VAR".to_string(), "hello".to_string());
+        env.insert(
+            "PATH".to_string(),
+            std::env::var("PATH").unwrap_or_default(),
+        );
+        vfox.cmd_env = Some(env);
+
+        let versions = vfox
+            .backend_list_versions("dummy-backend", "test-tool", IndexMap::new())
+            .await
+            .unwrap();
+        assert_eq!(versions, vec!["hello".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_backend_list_versions_without_cmd_env() {
+        let vfox = Vfox::test();
+        let versions = vfox
+            .backend_list_versions("dummy-backend", "test-tool", IndexMap::new())
+            .await
+            .unwrap();
+        assert_eq!(versions, vec!["fallback".to_string()]);
     }
 }

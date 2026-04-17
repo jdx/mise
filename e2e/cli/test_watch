@@ -26,8 +26,12 @@ test_mise_watch() {
 # Test with original mise
 test_mise_watch "mise"
 
-# Test when mise is not in PATH
+# Test when mise is not in PATH by temporarily removing its directory from PATH
 original_mise="$(which mise)"
-mkdir -p ./bin && mv "$original_mise" ./bin/mise
+mise_dir="$(dirname "$original_mise")"
+mkdir -p ./bin && cp "$original_mise" ./bin/mise
+OLD_PATH="$PATH"
+PATH="$(echo "$PATH" | tr ':' '\n' | grep -v "^${mise_dir}$" | tr '\n' ':')"
+PATH="${PATH%:}" # remove trailing colon
 test_mise_watch "./bin/mise"
-mv ./bin/mise "$original_mise"
+PATH="$OLD_PATH"

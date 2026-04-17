@@ -48,7 +48,7 @@ impl TaskFetcher {
     }
 
     /// Check if a source path is a remote task file (git or http/https)
-    fn is_remote_source(source: &str) -> bool {
+    pub fn is_remote_source(source: &str) -> bool {
         source.starts_with("git::")
             || source.starts_with("http://")
             || source.starts_with("https://")

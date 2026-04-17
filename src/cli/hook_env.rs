@@ -72,7 +72,16 @@ impl HookEnv {
             config.watch_files().await?
         };
 
-        if !self.force && hook_env::should_exit_early(watch_files.clone(), self.reason) {
+        // For the slow-path check, include watch_files from the previous session to detect
+        // changes to files from tools=true plugins (not yet available via config.watch_files()).
+        // We use a separate variable to ensure deleted watch_files don't persist indefinitely.
+        let slow_path_watch_files: BTreeSet<WatchFilePattern> = watch_files
+            .iter()
+            .cloned()
+            .chain(PREV_SESSION.watch_files.iter().map(|p| p.as_path().into()))
+            .collect();
+
+        if !self.force && hook_env::should_exit_early(slow_path_watch_files, self.reason) {
             trace!("should_exit_early true");
             return Ok(());
         }
@@ -81,7 +90,8 @@ impl HookEnv {
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;
 
         // Use env_with_path_and_split which handles caching internally
-        let (mut mise_env, user_paths, tool_paths) = ts.env_with_path_and_split(&config).await?;
+        let (mut mise_env, user_paths, tool_paths, env_watch_files) =
+            ts.env_with_path_and_split(&config).await?;
         mise_env.remove(&*PATH_KEY);
 
         // Create config_paths from user_paths for display_status and build_session
@@ -115,6 +125,16 @@ impl HookEnv {
             .shell_aliases
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+
+        // Include env watch_files in the session for the next prompt's fast-path check.
+        // On cache miss, env_watch_files contains only plugin-returned watch_files.
+        // On cache hit, it contains the full CachedEnv.watch_files set (config files,
+        // env_files, env_scripts, mise.lock files, and plugin watch_files). The BTreeSet
+        // deduplicates any overlap with the config-level watch_files above.
+        let watch_files: BTreeSet<WatchFilePattern> = watch_files
+            .into_iter()
+            .chain(env_watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
         patches.extend(self.build_path_operations(&user_paths, &tool_paths, &__MISE_DIFF.path)?);
@@ -405,20 +425,34 @@ impl HookEnv {
         installs: &[PathBuf],
         to_remove: &[PathBuf],
     ) -> Result<Option<EnvDiffOperation>> {
-        let mut diff = DirenvDiff::parse(input)?;
+        let mut diff = DirenvDiff::parse(input)
+            .inspect_err(|err| debug!("Failed to parse diff, error: '{:?}'", err))?;
         if diff.new_path().is_empty() {
             return Ok(None);
         }
         for path in to_remove {
-            diff.remove_path_from_old_and_new(path)?;
+            diff.remove_path_from_old_and_new(path).inspect_err(|err| {
+                debug!(
+                    "Failed to remove path from diff: '{:?}' path: '{}'",
+                    err,
+                    path.display()
+                )
+            })?;
         }
         for install in installs {
-            diff.add_path_to_old_and_new(install)?;
+            diff.add_path_to_old_and_new(install).inspect_err(|err| {
+                debug!(
+                    "Failed to add path to diff: '{:?}' path: '{}'",
+                    err,
+                    install.display()
+                )
+            })?;
         }
 
         Ok(Some(EnvDiffOperation::Change(
             "DIRENV_DIFF".into(),
-            diff.dump()?,
+            diff.dump()
+                .inspect_err(|err| debug!("Failed to dump diff: '{:?}'", err))?,
         )))
     }
 

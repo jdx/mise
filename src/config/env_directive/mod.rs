@@ -274,18 +274,7 @@ impl EnvResults {
             .iter()
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
             .collect::<IndexMap<_, _>>();
-        let mut r = Self {
-            env: Default::default(),
-            vars: Default::default(),
-            env_remove: BTreeSet::new(),
-            env_files: Vec::new(),
-            env_paths: Vec::new(),
-            env_scripts: Vec::new(),
-            redactions: Vec::new(),
-            tool_add_paths: Vec::new(),
-            watch_files: Vec::new(),
-            has_uncacheable: false,
-        };
+        let mut r = Self::default();
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
             match p.strip_prefix("~/") {
@@ -552,7 +541,33 @@ impl EnvResults {
                         }
                         env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
                     }
+                    if log::log_enabled!(log::Level::Trace) {
+                        if let Some(path) = env_map.get(&*env::PATH_KEY) {
+                            trace!("module {name}: PATH={path}");
+                        } else {
+                            trace!("module {name}: no PATH in env_map");
+                        }
+                    }
+                    let env_before: IndexMap<String, (String, PathBuf)> = r.env.clone();
                     Self::module(&mut r, config, source, name, &value, redact, env_map).await?;
+                    // Merge entries that this module call added or changed into
+                    // the local `env` so they are visible in the Tera context
+                    // for subsequent directives.  Keys unchanged in `r.env`
+                    // (same value before and after this call) are skipped, which
+                    // preserves any Val/File/Source override in `env` applied
+                    // after a prior module emitted the same value.  When a
+                    // module emits a *different* value the merge writes it
+                    // through — "later directive wins", consistent with all
+                    // other directive pairs.
+                    for (k, (v, src)) in &r.env {
+                        let added_or_changed = match env_before.get(k) {
+                            Some((old_v, _)) => old_v != v,
+                            None => true,
+                        };
+                        if added_or_changed {
+                            env.insert(k.clone(), (v.clone(), Some(src.clone())));
+                        }
+                    }
                 }
             };
         }
@@ -745,9 +760,6 @@ impl Debug for EnvResults {
         }
         if !self.env_remove.is_empty() {
             ds.field("env_remove", &self.env_remove);
-        }
-        if !self.env_files.is_empty() {
-            ds.field("env_files", &self.env_files);
         }
         if !self.env_paths.is_empty() {
             ds.field("env_paths", &self.env_paths);
