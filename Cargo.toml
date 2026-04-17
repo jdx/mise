@@ -141,14 +141,14 @@ rattler_solve = { version = "5", default-features = false, features = [
 rattler_package_streaming = { version = "0.24", default-features = false }
 rattler_virtual_packages = { version = "2", default-features = false }
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "gzip",
   "zstd",
   "charset",
   "http2",
   "socks",
-  "macos-system-configuration",
+  "system-proxy",
 ] }
 rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
 rmcp-macros = "0.17"
@@ -257,7 +257,7 @@ native-tls = [
 ]
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
-  "reqwest/rustls-tls",
+  "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
   "sigstore-verification/rustls",
@@ -267,7 +267,7 @@ rustls = [
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
-  "reqwest/rustls-tls-native-roots",
+  "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
   "sigstore-verification/rustls-native-roots",

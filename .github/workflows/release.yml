@@ -56,7 +56,7 @@ jobs:
           tool: cross
       - name: cache crates
         id: cache-crates
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
@@ -96,14 +96,14 @@ jobs:
           - name: macos-arm64
             target: aarch64-apple-darwin
     steps:
-      - uses: apple-actions/import-codesign-certs@95e84a1a18f2bdbc5c6ab9b7f4429372e4b13a8b # v5
+      - uses: apple-actions/import-codesign-certs@fe74d46e82474f87e1ba79832ad28a4013d0e33a # v6
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: cache crates
         id: cache-crates
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
@@ -203,10 +203,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:22e52da1bc93f073473b57cd8b9f64f50713060dad84e485c7163560a5f8f89e
+    container: ghcr.io/jdx/mise:rpm@sha256:c1992f9943b470ba45c28d6f3d6271f00a8886e8b2c5cf08af2cc412e436d64f
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
+      - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -227,11 +227,11 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
-    container: ghcr.io/jdx/mise:deb@sha256:e019cb91f79ab45050fba88bb69a77c576e58ff43f481faed0974896695cede8
+    container: ghcr.io/jdx/mise:deb@sha256:523d826b4f32a0f4eb254313b668e69fda8e49ebf29df4beaa36c888cf1322c0
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
+      - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -313,7 +313,7 @@ jobs:
         run: |
           echo "Skipping release steps for PR from non-release branch"
           echo "All release operations will be skipped"
-      - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
+      - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
@@ -321,7 +321,7 @@ jobs:
           git_commit_gpgsign: true
       - name: cache zipsign
         id: cache-zipsign
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.cargo/bin/zipsign
           key: cargo-zipsign
