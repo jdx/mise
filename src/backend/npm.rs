@@ -7,7 +7,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings};
-use crate::duration::process_now;
+use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
@@ -304,7 +304,7 @@ impl NPMBackend {
         package_manager: NpmPackageManager,
         before_date: Timestamp,
     ) -> Vec<OsString> {
-        let seconds = Self::elapsed_seconds_ceil(before_date, process_now());
+        let seconds = elapsed_seconds_ceil(before_date, process_now());
         match package_manager {
             NpmPackageManager::Npm => {
                 // Sub-day windows always emit --before because --min-release-age
@@ -350,15 +350,6 @@ impl NPMBackend {
     fn build_pnpm_release_age_args(seconds: u64) -> Vec<OsString> {
         let minutes = seconds.div_ceil(60);
         vec![format!("--config.minimumReleaseAge={minutes}").into()]
-    }
-
-    fn elapsed_seconds_ceil(before_date: Timestamp, now: Timestamp) -> u64 {
-        if before_date >= now {
-            return 0;
-        }
-        let nanos = now.as_nanosecond() - before_date.as_nanosecond();
-        u64::try_from((nanos + 999_999_999) / 1_000_000_000)
-            .expect("elapsed timestamp delta must fit into u64")
     }
 
     /// Returns true if the npm major.minor.patch version is >= 11.10.0,

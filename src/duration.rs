@@ -8,6 +8,19 @@ pub const HOURLY: Duration = Duration::from_secs(60 * 60);
 pub const DAILY: Duration = Duration::from_secs(60 * 60 * 24);
 pub const WEEKLY: Duration = Duration::from_secs(60 * 60 * 24 * 7);
 
+/// Returns the number of whole seconds from `from` to `to`, rounded up.
+///
+/// Returns 0 when `from >= to` so callers don't have to guard against the
+/// degenerate "cutoff is already in the future" case.
+pub fn elapsed_seconds_ceil(from: Timestamp, to: Timestamp) -> u64 {
+    if from >= to {
+        return 0;
+    }
+    let nanos = to.as_nanosecond() - from.as_nanosecond();
+    u64::try_from((nanos + 999_999_999) / 1_000_000_000)
+        .expect("elapsed timestamp delta must fit into u64")
+}
+
 /// Returns a stable "now" timestamp for the lifetime of the process.
 ///
 /// This is used for resolving relative durations (e.g. `install_before = "3d"`)
@@ -121,5 +134,36 @@ mod tests {
     #[test]
     fn test_parse_into_timestamp_rejects_garbage() {
         assert!(parse_into_timestamp("not a date").is_err());
+    }
+
+    #[test]
+    fn test_elapsed_seconds_ceil_exact_boundary() {
+        let a: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let b: Timestamp = "2024-01-01T00:00:01Z".parse().unwrap();
+        assert_eq!(elapsed_seconds_ceil(a, b), 1);
+    }
+
+    #[test]
+    fn test_elapsed_seconds_ceil_rounds_up_subsecond() {
+        let a: Timestamp = "2024-01-01T00:00:00.000000001Z".parse().unwrap();
+        let b: Timestamp = "2024-01-01T00:00:01Z".parse().unwrap();
+        assert_eq!(elapsed_seconds_ceil(a, b), 1);
+    }
+
+    #[test]
+    fn test_elapsed_seconds_ceil_rounds_up_fractional_second() {
+        // 1.1 s -> 2 s
+        let a: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let b: Timestamp = "2024-01-01T00:00:01.100Z".parse().unwrap();
+        assert_eq!(elapsed_seconds_ceil(a, b), 2);
+    }
+
+    #[test]
+    fn test_elapsed_seconds_ceil_zero_when_not_elapsed() {
+        // from == to and from > to both clamp to 0
+        let t: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        assert_eq!(elapsed_seconds_ceil(t, t), 0);
+        let later: Timestamp = "2024-01-02T00:00:00Z".parse().unwrap();
+        assert_eq!(elapsed_seconds_ceil(later, t), 0);
     }
 }
