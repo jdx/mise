@@ -247,6 +247,7 @@ impl Backend for PIPXBackend {
                 ctx.pr.as_ref(),
             )
             .await?;
+            cmd = cmd.args(Self::pip_uploaded_prior_to_args(ctx.before_date));
             if let Some(args) = tv.request.options().get("pipx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -294,6 +295,16 @@ impl PIPXBackend {
     fn uv_exclude_newer_args(before_date: Option<Timestamp>) -> Vec<OsString> {
         match before_date {
             Some(before_date) => vec!["--exclude-newer".into(), before_date.to_string().into()],
+            None => vec![],
+        }
+    }
+
+    fn pip_uploaded_prior_to_args(before_date: Option<Timestamp>) -> Vec<OsString> {
+        match before_date {
+            Some(before_date) => vec![
+                "--pip-args".into(),
+                format!("--uploaded-prior-to {before_date}").into(),
+            ],
             None => vec![],
         }
     }
@@ -429,10 +440,11 @@ impl PIPXBackend {
             cmd = cmd.arg(arg);
         }
         cmd.with_pr(pr)
-            .env("PIPX_HOME", tv.install_path())
-            .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
             .env("PIP_INDEX_URL", Self::get_index_url()?)
             .envs(ts.env_with_path_without_tools(config).await?)
+            .env("PIPX_HOME", tv.install_path())
+            .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
+            .env("PIPX_SHARED_LIBS", tv.install_path().join("shared"))
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
             .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
@@ -675,6 +687,28 @@ mod tests {
     fn test_uv_exclude_newer_args_without_cutoff() {
         assert_eq!(
             PIPXBackend::uv_exclude_newer_args(None),
+            Vec::<OsString>::new()
+        );
+    }
+
+    #[test]
+    fn test_pip_uploaded_prior_to_args_with_cutoff() {
+        let before_date = "2024-01-02T03:04:05Z".parse().unwrap();
+        let args = PIPXBackend::pip_uploaded_prior_to_args(Some(before_date));
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("--pip-args"),
+                OsString::from("--uploaded-prior-to 2024-01-02T03:04:05Z"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_pip_uploaded_prior_to_args_without_cutoff() {
+        assert_eq!(
+            PIPXBackend::pip_uploaded_prior_to_args(None),
             Vec::<OsString>::new()
         );
     }

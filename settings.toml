@@ -1038,8 +1038,7 @@ allowing you to selectively use newer versions for specific tools while keeping 
 cutoff date.
 
 Some package-manager backends also forward the cutoff to transitive dependency resolution during
-install. This includes `npm:` tools and `pipx:` tools installed through uv. The `pipx` fallback path
-does not receive a transitive release-age cutoff.
+install. This includes `npm:` and `pipx:` tools.
 
 Can be overridden with the `--before` CLI flag or per-tool with the `install_before` tool option.
 

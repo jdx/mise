@@ -180,8 +180,8 @@ install_before = "7d"  # only install versions released more than 7 days ago
 
 Supports relative durations (`7d`, `6m`, `1y`) and absolute dates (`2024-06-01`). For most backends, this only affects fuzzy version resolution (e.g., `node@20` or `latest`) — explicitly pinned versions like `node@22.5.0` bypass the filter.
 
-For `npm:` tools and `pipx:` tools installed through uv, the same cutoff is also forwarded to
-transitive dependency resolution during install. Refer to the
+For `npm:` and `pipx:` tools, the same cutoff is also forwarded to transitive dependency resolution
+during install. Refer to the
 [npm backend docs](/dev-tools/backends/npm.html) and [pipx backend docs](/dev-tools/backends/pipx.html)
 for package-manager support details.
 
