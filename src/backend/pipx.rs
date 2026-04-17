@@ -303,7 +303,7 @@ impl PIPXBackend {
         match before_date {
             Some(before_date) => vec![
                 "--pip-args".into(),
-                format!("--uploaded-prior-to {before_date}").into(),
+                format!("--uploaded-prior-to={before_date}").into(),
             ],
             None => vec![],
         }
@@ -700,7 +700,7 @@ mod tests {
             args,
             vec![
                 OsString::from("--pip-args"),
-                OsString::from("--uploaded-prior-to 2024-01-02T03:04:05Z"),
+                OsString::from("--uploaded-prior-to=2024-01-02T03:04:05Z"),
             ]
         );
     }
