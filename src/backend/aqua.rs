@@ -590,7 +590,8 @@ impl Backend for AquaBackend {
             );
         }
         let mut v = tag.unwrap_or_else(|| tv.version.clone());
-        let v_prefixed = (tag_is_none && !tv.version.starts_with('v')).then(|| format!("v{v}"));
+        let mut v_prefixed =
+            (tag_is_none && !tv.version.starts_with('v')).then(|| format!("v{v}"));
         let versions = match &v_prefixed {
             Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
             None => vec![v.as_str()],
@@ -607,6 +608,13 @@ impl Backend for AquaBackend {
             && !v.starts_with(prefix)
         {
             v = format!("{prefix}{v}");
+            v_prefixed = v_prefixed.map(|vp| {
+                if vp.starts_with(prefix) {
+                    vp
+                } else {
+                    format!("{prefix}{vp}")
+                }
+            });
         }
 
         // Check if this platform is supported
@@ -623,20 +631,32 @@ impl Backend for AquaBackend {
         // Get URL and checksum for the target platform
         let (url, checksum) = match pkg.r#type {
             AquaPackageType::GithubRelease => {
-                // For GitHub releases, we need to find the asset for the target platform
-                let asset_strs = pkg.asset_strs(&v, target_os, target_arch)?;
-                match self.github_release_asset(&pkg, &v, asset_strs).await {
-                    Ok((url, digest)) => (Some(url), digest),
-                    Err(e) => {
-                        debug!(
-                            "Failed to get GitHub release asset for {} on {}: {}",
-                            self.id,
-                            target.to_key(),
-                            e
-                        );
-                        (None, None)
+                // Try v-prefixed version first (most aqua packages use v-prefixed tags),
+                // then fall back to the non-prefixed version.
+                let candidates: Vec<&str> = match &v_prefixed {
+                    Some(vp) => vec![vp.as_str(), v.as_str()],
+                    None => vec![v.as_str()],
+                };
+                let mut result = (None, None);
+                for candidate in &candidates {
+                    let asset_strs = pkg.asset_strs(candidate, target_os, target_arch)?;
+                    match self.github_release_asset(&pkg, candidate, asset_strs).await {
+                        Ok((url, digest)) => {
+                            v = candidate.to_string();
+                            result = (Some(url), digest);
+                            break;
+                        }
+                        Err(e) => {
+                            debug!(
+                                "Failed to get GitHub release asset for {} on {}: {}",
+                                self.id,
+                                target.to_key(),
+                                e
+                            );
+                        }
                     }
                 }
+                result
             }
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
                 (Some(self.github_archive_url(&pkg, &v)), None)
@@ -2050,5 +2070,53 @@ pub fn arch() -> &'static str {
         "arm64"
     } else {
         &ARCH
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    fn build_lock_candidates(
+        version: &str,
+        tag: Option<&str>,
+        version_prefix: Option<&str>,
+    ) -> (String, Vec<String>) {
+        let tag_is_none = tag.is_none();
+        let mut v = tag.unwrap_or(version).to_string();
+        let mut v_prefixed =
+            (tag_is_none && !version.starts_with('v')).then(|| format!("v{v}"));
+
+        if let Some(prefix) = version_prefix
+            && !v.starts_with(prefix)
+        {
+            v = format!("{prefix}{v}");
+            v_prefixed = v_prefixed.map(|vp| {
+                if vp.starts_with(prefix) {
+                    vp
+                } else {
+                    format!("{prefix}{vp}")
+                }
+            });
+        }
+
+        let candidates = match &v_prefixed {
+            Some(vp) => vec![vp.clone(), v.clone()],
+            None => vec![v.clone()],
+        };
+        (v, candidates)
+    }
+
+    // When tag lookup fails (e.g. rate limit), we try both v-prefixed and bare versions.
+    #[test]
+    fn test_lock_candidates_no_tag() {
+        let (v, candidates) = build_lock_candidates("10.20.0", None, None);
+        assert_eq!(v, "10.20.0");
+        assert_eq!(candidates, vec!["v10.20.0", "10.20.0"]);
+    }
+
+    #[test]
+    fn test_lock_candidates_no_tag_with_version_prefix() {
+        let (v, candidates) = build_lock_candidates("1.7.1", None, Some("jq-"));
+        assert_eq!(v, "jq-1.7.1");
+        assert_eq!(candidates, vec!["jq-v1.7.1", "jq-1.7.1"]);
     }
 }
