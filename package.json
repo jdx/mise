@@ -23,7 +23,7 @@
     "@fig/eslint-config-autocomplete": "^2.0.0",
     "@tsconfig/node24": "^24.0.0",
     "@types/markdown-it": "^14.1.2",
-    "@types/node": "^22.18.12",
+    "@types/node": "^25.0.0",
     "@withfig/autocomplete-tools": "^2.11.0",
     "@withfig/autocomplete-types": "^1.31.0",
     "eslint": "^8.57.1",
