@@ -11,11 +11,11 @@ The code for this is inside the mise repository at [`./src/plugins/core/node.rs`
 
 ## Usage
 
-The following installs the latest version of node-20.x and makes it the global
+The following installs the latest version of node-26.x and makes it the global
 default:
 
 ```sh
-mise use -g node@20
+mise use -g node@26
 ```
 
 See the [Node.JS Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
@@ -28,7 +28,7 @@ you can pin it alongside Node in your `mise.toml`:
 
 ```toml [mise.toml]
 [tools]
-node = "24"
+node = "26"
 npm = "11"
 ```
 
@@ -42,7 +42,7 @@ This resolves aliases like `lts` and `latest` to exact version numbers in `mise.
 
 ```toml [mise.toml]
 [tools]
-node = "24.14.1"
+node = "26.1.0"
 npm = "11.12.1"
 ```
 

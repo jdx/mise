@@ -83,7 +83,7 @@ impl Backend for GoBackend {
     async fn install_version_(
         &self,
         ctx: &InstallContext,
-        mut tv: ToolVersion,
+        tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         // Check if go is available
         self.warn_if_dependency_missing(
@@ -96,18 +96,7 @@ impl Backend for GoBackend {
         )
         .await;
 
-        // Some modules have no tagged versions but resolve via @latest pseudo-version.
-        let mut install_version = tv.version.clone();
-        if tv.request.version() == "latest"
-            && tv.version != "latest"
-            && self
-                .fetch_go_module_versions(&ctx.config, &self.tool_name())
-                .await?
-                .is_some_and(|v| v.is_empty())
-        {
-            install_version = "latest".to_string();
-            tv.version = "latest".to_string();
-        }
+        let install_version = tv.version.clone();
 
         let opts = self.ba.opts();
 

@@ -95,23 +95,23 @@ If `mise` isn't on `PATH` yet, use `~/.local/bin/mise` instead.
 ```sh
 mise exec python@3 -- python
 # this will download and install Python if it is not already installed
-# Python 3.13.2
+# Python 3.15.0
 # >>> ...
 ```
 
-or run node 24:
+or run node 26:
 
 ```sh
-mise exec node@24 -- node -v
-# v24.x.x
+mise exec node@26 -- node -v
+# v26.x.x
 ```
 
 To install a tool permanently, use [`mise u|use`](/cli/use.html):
 
 ```shell
-mise use --global node@24 # install node 24 and set it as the global default
+mise use --global node@26 # install node 26 and set it as the global default
 mise exec -- node my-script.js
-# run my-script.js with node 24...
+# run my-script.js with node 26...
 ```
 
 [`mise r|run`](/cli/run.html) lets you run [tasks](/tasks/) or scripts with the full mise context (tools + env vars) loaded.
@@ -211,16 +211,16 @@ Restart your shell session after modifying your rc file. Run [`mise dr|doctor`](
 With mise activated, tools are available directly on `PATH`:
 
 ```sh
-mise use --global node@24
+mise use --global node@26
 node -v
-# v24.x.x
+# v26.x.x
 ```
 
-When you ran `mise use --global node@24`, mise updated your global config:
+When you ran `mise use --global node@26`, mise updated your global config:
 
 ```toml [~/.config/mise/config.toml]
 [tools]
-node = "24"
+node = "26"
 ```
 
 ### Shell Feature Compatibility {#shell-feature-compatibility}

@@ -9,7 +9,6 @@ use crate::backend::static_helpers::{
 };
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
-use crate::env;
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -478,7 +477,7 @@ impl UnifiedGitBackend {
                 match sigstore_verification::sources::github::GitHubSource::new(
                     owner,
                     repo_name,
-                    env::GITHUB_TOKEN.as_deref(),
+                    github::resolve_token_for_api_url(api_url).as_deref(),
                 ) {
                     Ok(source) => {
                         use sigstore_verification::AttestationSource;
@@ -576,7 +575,7 @@ impl UnifiedGitBackend {
                     &artifact_path,
                     owner,
                     repo_name,
-                    env::GITHUB_TOKEN.as_deref(),
+                    github::resolve_token_for_api_url(api_url).as_deref(),
                     None,
                 )
                 .await
@@ -1564,12 +1563,13 @@ impl UnifiedGitBackend {
             )));
         }
         let (owner, repo_name) = (parts[0], parts[1]);
+        let api_url = self.get_api_url(&tv.request.options());
 
         match sigstore_verification::verify_github_attestation(
             file_path,
             owner,
             repo_name,
-            env::GITHUB_TOKEN.as_deref(),
+            github::resolve_token_for_api_url(&api_url).as_deref(),
             None, // We don't know the expected workflow
         )
         .await

@@ -31,7 +31,7 @@ assert "mise x go:github.com/go-task/task/v3/cmd/task@3.34.1 -- task --version" 
 # See https://github.com/jdx/mise/discussions/6737
 assert "mise x go:github.com/jdx/go-example@e16a340 -- go-example" "hello world"
 
-# Deep sub-module returns no versions from `go list -versions`, so we must keep @latest.
+# Deep sub-module with no tagged versions; proxy resolves a pseudo-version via @latest.
 assert_contains "mise x go:github.com/go-kratos/kratos/cmd/kratos/v2@latest -- bash -c 'kratos --help 2>&1'" "Kratos: An elegant toolkit for Go microservices."
 
 assert_contains "mise x go:github.com/golang-migrate/migrate/v4/cmd/migrate[tags=postgres]@4.18.2 -- bash -c 'migrate --help 2>&1'" "postgres"

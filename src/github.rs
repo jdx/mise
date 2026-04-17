@@ -449,6 +449,17 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     None
 }
 
+/// Resolve the GitHub token from a full API base URL (e.g., "https://api.github.com").
+/// Extracts the hostname and delegates to [`resolve_token`].
+pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
+    let parsed = url::Url::parse(api_url).ok();
+    let host = parsed
+        .as_ref()
+        .and_then(|u| u.host_str())
+        .unwrap_or("api.github.com");
+    resolve_token(host).map(|(t, _)| t)
+}
+
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
     let url = url.into_url().unwrap();

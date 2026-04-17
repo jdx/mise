@@ -13,9 +13,9 @@ The following demo shows:
 `mise exec <tool> -- <command>` allows you to run any tools with mise
 
 ```shell
-mise exec node@24 -- node -v
-# mise node@24.x.x ✓ installed
-# v24.x.x
+mise exec node@26 -- node -v
+# mise node@26.x.x ✓ installed
+# v26.x.x
 ```
 
 node is only available in the mise environment, not globally
@@ -53,7 +53,7 @@ node -v
 
 ```shell
 which node
-# /root/.local/share/mise/installs/node/22.14.0/bin/node
+# /root/.local/share/mise/installs/node/lts/bin/node
 ```
 
 Note that we get back the path to the real node here, not a shim.
@@ -96,28 +96,28 @@ mise ls
 
 ---
 
-Let's enter a project directory where we will set up node@23
+Let's enter a project directory where we will set up node@26
 
 ```shell
 cd myproj
-mise use node@23 pnpm@10
-# mise node@23.10.0 ✓ installed
+mise use node@26 pnpm@10
+# mise node@26.x.x ✓ installed
 # mise pnpm@10.7.0 ✓ installed
 ```
 
 ```shell
 node -v
-# v23.10.0
+# v26.x.x
 pnpm -v
 # 10.7.0
 ```
 
-As expected, `node -v` is now v23.x
+As expected, `node -v` is now v26.x
 
 ```shell
 cat mise.toml
 # [tools]
-# node = "23"
+# node = "26"
 # pnpm = "10"
 ```
 
