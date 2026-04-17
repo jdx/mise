@@ -148,7 +148,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "charset",
   "http2",
   "socks",
-  "macos-system-configuration",
+  "system-proxy",
 ] }
 rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
 rmcp-macros = "0.17"
@@ -257,7 +257,7 @@ native-tls = [
 ]
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
-  "reqwest/rustls-tls",
+  "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
   "sigstore-verification/rustls",
@@ -267,7 +267,7 @@ rustls = [
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
-  "reqwest/rustls-tls-native-roots",
+  "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
   "sigstore-verification/rustls-native-roots",
