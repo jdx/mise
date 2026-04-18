@@ -20,9 +20,10 @@ struct Logger {
 }
 
 /// Root crate names of third-party dependencies that emit very noisy debug
-/// logs (often per HTTP/2 frame, per socket read, etc.) and would otherwise
-/// overwhelm `-v` output. These are suppressed at Debug level unless
-/// `MISE_LOG_VERBOSE_DEPS=1` is set. Trace level always lets them through.
+/// and trace logs (often per HTTP/2 frame, per socket read, etc.) and would
+/// otherwise overwhelm `-v`/`-vv` output. Debug and Trace records from these
+/// crates are dropped entirely unless `MISE_LOG_VERBOSE_DEPS=1` is set.
+/// Info/Warn/Error still pass through — those are rare and worth seeing.
 static NOISY_DEP_TARGETS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "h2",
@@ -54,24 +55,19 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &Record) {
-        let term_level = *self.term_level.lock().unwrap();
-        let mut will_log_file = record.level() <= self.file_level && self.log_file.is_some();
-        let mut will_log_term = record.level() <= term_level;
-
-        // Suppress Debug-level spam from noisy third-party crates (e.g. h2
-        // logging every received DATA frame). Trace still passes through, as
-        // does any level when MISE_LOG_VERBOSE_DEPS=1.
-        if record.level() == Level::Debug
+        // Drop Debug/Trace spam from noisy third-party crates (e.g. h2 logging
+        // every received DATA frame) regardless of terminal/file level. Opt
+        // back in with MISE_LOG_VERBOSE_DEPS=1.
+        if matches!(record.level(), Level::Debug | Level::Trace)
             && !*env::MISE_LOG_VERBOSE_DEPS
             && is_noisy_dep_target(record.target())
         {
-            if self.file_level < LevelFilter::Trace {
-                will_log_file = false;
-            }
-            if term_level < LevelFilter::Trace {
-                will_log_term = false;
-            }
+            return;
         }
+
+        let term_level = *self.term_level.lock().unwrap();
+        let will_log_file = record.level() <= self.file_level && self.log_file.is_some();
+        let will_log_term = record.level() <= term_level;
 
         if !will_log_file && !will_log_term {
             return;
