@@ -31,7 +31,7 @@
     "markdown-it": "^14.1.0",
     "toml": "^4.0.0",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.0",
     "vitepress": "1.6.4",
     "vitepress-plugin-group-icons": "^1.6.5",
     "vitepress-plugin-mermaid": "2.0.17",
