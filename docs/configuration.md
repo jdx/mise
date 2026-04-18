@@ -321,8 +321,8 @@ python = ['3.10', '3.11']
 # for example, .nvmrc in the case of node's nvm
 idiomatic_version_file_enable_tools = ['node']
 
-# configure `mise install` to always keep the downloaded archive
-always_keep_download = false        # deleted after install by default
+# keep downloaded archive/source files for debugging
+always_keep_download = false        # deleted after install; not a cache
 always_keep_install = false         # deleted on failure by default
 
 # configure how frequently (in minutes) to fetch updated plugin repository changes
