@@ -12,7 +12,7 @@ use crate::uv;
 use itertools::Itertools;
 
 // Cache Toolset::list_paths results across identical toolsets within a process.
-// Keyed by project_root plus sorted list of backend@version pairs currently installed.
+// Keyed by project_root plus sorted list of backend@requested=version pairs currently installed.
 pub(super) static LIST_PATHS_CACHE: Lazy<DashMap<String, Vec<PathBuf>>> = Lazy::new(DashMap::new);
 
 impl Toolset {
@@ -26,7 +26,7 @@ impl Toolset {
 
         let installed_strs: Vec<String> = installed
             .iter()
-            .map(|(p, tv)| format!("{}@{}", p.id(), tv.version))
+            .map(|(p, tv)| format!("{}@{}={}", p.id(), tv.request.version(), tv.version))
             .sorted()
             .collect();
         key_parts.extend(installed_strs);

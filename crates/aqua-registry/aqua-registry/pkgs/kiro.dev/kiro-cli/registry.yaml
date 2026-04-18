@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    name: kiro.dev/kiro-cli
+    description: Kiro CLI is an agentic coding tool that lives in your terminal
+    link: https://kiro.dev/docs/cli/installation/
+    url: https://prod.download.cli.kiro.dev/stable/{{.Version}}/kirocli-{{.Arch}}-linux-musl.zip
+    format: zip
+    files:
+      - name: kiro-cli
+        src: kirocli/bin/kiro-cli
+      - name: kiro-cli-chat
+        src: kirocli/bin/kiro-cli-chat
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+    overrides:
+      - goos: darwin
+        url: https://prod.download.cli.kiro.dev/stable/{{.Version}}/Kiro%20CLI.dmg
+        format: dmg
+        files:
+          - name: kiro-cli
+            src: Kiro CLI.app/Contents/MacOS/kiro-cli
+    supported_envs:
+      - linux
+      - darwin

@@ -93,6 +93,27 @@ linux-x64 = { asset_pattern = "gh_*_linux_x64.tar.gz" }
 macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.tar.gz" }
 ```
 
+### Multiple Assets from the Same Release
+
+The GitHub backend installs one release asset for each tool. If a repository publishes
+multiple binaries as separate assets in the same release, define one tool alias per
+binary and point each alias at the same `github:owner/repo` backend. Then configure
+each aliased tool with its own `asset_pattern`.
+
+```toml
+[tool_alias]
+tool-a = "github:owner/repo"
+tool-b = "github:owner/repo"
+
+[tools.tool-a]
+version = "latest"
+asset_pattern = "tool-a-*"
+
+[tools.tool-b]
+version = "latest"
+asset_pattern = "tool-b-*"
+```
+
 ### `checksum`
 
 Verify the downloaded file with a checksum:
