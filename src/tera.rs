@@ -518,11 +518,11 @@ pub fn tera_exec(
                     }
                     let cache = cacheman.build();
                     match cache.get_or_try_init(|| {
+                    match cache.get_or_try_init(|| {
                         let output = cmd
-                            .reader()
-                            .stdout_capture(true)
-                            .stderr_capture(true)
-                            .output()?;
+                            .stdout_capture()
+                            .stderr_capture()
+                            .run()?;
                         let stdout = String::from_utf8_lossy(&output.stdout);
                         if stdout.len() > EXEC_OUTPUT_MAX_BYTES {
                             return Err(format!(
