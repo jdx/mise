@@ -1,5 +1,96 @@
 # Changelog
 
+## [2026.4.17](https://github.com/jdx/mise/compare/v2026.4.16..v2026.4.17) - 2026-04-18
+
+### 🐛 Bug Fixes
+
+- **(backend)** respect install_before in latest lookup by @risu729 in [#9193](https://github.com/jdx/mise/pull/9193)
+- **(backend)** route explicit latest through stable lookup by @risu729 in [#9228](https://github.com/jdx/mise/pull/9228)
+- **(backends)** deprecate b shorthand by @risu729 in [#9234](https://github.com/jdx/mise/pull/9234)
+- **(config)** warn for deprecated env keys by @risu729 in [#9205](https://github.com/jdx/mise/pull/9205)
+- **(config)** treat enable_tools empty as disable-all by @risu729 in [#9108](https://github.com/jdx/mise/pull/9108)
+- **(github)** avoid auth on release asset downloads by @risu729 in [#9060](https://github.com/jdx/mise/pull/9060)
+- **(gitlab)** warn when glab OAuth2 token is expired by @stanhu in [#9195](https://github.com/jdx/mise/pull/9195)
+- **(npm)** honor install_before without day drift by @risu729 in [#9157](https://github.com/jdx/mise/pull/9157)
+- **(npm)** warn on old bun and pnpm for install_before by @risu729 in [#9232](https://github.com/jdx/mise/pull/9232)
+- **(pipx)** honor install_before for uv and pipx installs by @risu729 in [#9190](https://github.com/jdx/mise/pull/9190)
+- **(registry)** allow shfmt on Windows by @zeitlinger in [#9191](https://github.com/jdx/mise/pull/9191)
+
+### 🚜 Refactor
+
+- **(backend)** remove unused rolling release helper by @risu729 in [#9175](https://github.com/jdx/mise/pull/9175)
+- **(backend)** use file util for removals by @risu729 in [#9206](https://github.com/jdx/mise/pull/9206)
+
+### 📚 Documentation
+
+- **(config)** clarify always_keep_download behavior by @risu729 in [#9235](https://github.com/jdx/mise/pull/9235)
+- **(configuration)** add rust to idiomatic version files by @jjt in [#9233](https://github.com/jdx/mise/pull/9233)
+- **(contributing)** expand contribution guide introduction by @marianwolf in [#9208](https://github.com/jdx/mise/pull/9208)
+- **(github)** document multiple release assets workaround by @risu729 in [#9236](https://github.com/jdx/mise/pull/9236)
+
+### 📦️ Dependency Updates
+
+- update actions/setup-node action to v6 by @renovate[bot] in [#9183](https://github.com/jdx/mise/pull/9183)
+- update dependency @types/node to v25 by @renovate[bot] in [#9187](https://github.com/jdx/mise/pull/9187)
+- update crazy-max/ghaction-import-gpg action to v7 by @renovate[bot] in [#9186](https://github.com/jdx/mise/pull/9186)
+- update actions/cache action to v5 by @renovate[bot] in [#9181](https://github.com/jdx/mise/pull/9181)
+- update amannn/action-semantic-pull-request action to v6 by @renovate[bot] in [#9184](https://github.com/jdx/mise/pull/9184)
+- update apple-actions/import-codesign-certs action to v6 by @renovate[bot] in [#9185](https://github.com/jdx/mise/pull/9185)
+- update dependency eslint to v10 by @renovate[bot] in [#9200](https://github.com/jdx/mise/pull/9200)
+- update dependency toml to v4 by @renovate[bot] in [#9201](https://github.com/jdx/mise/pull/9201)
+- update rust crate reqwest to 0.13 by @renovate[bot] in [#9171](https://github.com/jdx/mise/pull/9171)
+- update ghcr.io/jdx/mise:deb docker digest to 523d826 by @renovate[bot] in [#9198](https://github.com/jdx/mise/pull/9198)
+- update ghcr.io/jdx/mise:alpine docker digest to 05617e0 by @renovate[bot] in [#9196](https://github.com/jdx/mise/pull/9196)
+- update ghcr.io/jdx/mise:rpm docker digest to c1992f9 by @renovate[bot] in [#9199](https://github.com/jdx/mise/pull/9199)
+- update ghcr.io/jdx/mise:copr docker digest to 90db6cd by @renovate[bot] in [#9197](https://github.com/jdx/mise/pull/9197)
+- update taiki-e/install-action digest to 58e8625 by @renovate[bot] in [#9209](https://github.com/jdx/mise/pull/9209)
+- update fedora docker tag to v45 by @renovate[bot] in [#9213](https://github.com/jdx/mise/pull/9213)
+- update docker/setup-buildx-action action to v4 by @renovate[bot] in [#9212](https://github.com/jdx/mise/pull/9212)
+- update docker/metadata-action action to v6 by @renovate[bot] in [#9211](https://github.com/jdx/mise/pull/9211)
+- update docker/login-action action to v4 by @renovate[bot] in [#9210](https://github.com/jdx/mise/pull/9210)
+- update dependency typescript to v6 by @renovate[bot] in [#9202](https://github.com/jdx/mise/pull/9202)
+- update docker/build-push-action action to v7 by @renovate[bot] in [#9203](https://github.com/jdx/mise/pull/9203)
+- update github artifact actions (major) by @renovate[bot] in [#9215](https://github.com/jdx/mise/pull/9215)
+- update rust crate duct to v1 by @renovate[bot] in [#9220](https://github.com/jdx/mise/pull/9220)
+- update rust crate demand to v2 by @renovate[bot] in [#9219](https://github.com/jdx/mise/pull/9219)
+- update rust crate clx to v2 by @renovate[bot] in [#9218](https://github.com/jdx/mise/pull/9218)
+- update nick-fields/retry action to v4 by @renovate[bot] in [#9217](https://github.com/jdx/mise/pull/9217)
+- update jdx/mise-action action to v4 by @renovate[bot] in [#9216](https://github.com/jdx/mise/pull/9216)
+- update rust crate self_update to 0.44 by @renovate[bot] in [#9174](https://github.com/jdx/mise/pull/9174)
+- migrate eslint config to flat format for v10 compat by @jdx in [#9222](https://github.com/jdx/mise/pull/9222)
+- update actions/checkout action to v6 by @renovate[bot] in [#9182](https://github.com/jdx/mise/pull/9182)
+- update rust crate toml to v1 by @renovate[bot] in [#9225](https://github.com/jdx/mise/pull/9225)
+- update rust crate versions to v7 by @renovate[bot] in [#9226](https://github.com/jdx/mise/pull/9226)
+- update rust crate which to v8 by @renovate[bot] in [#9227](https://github.com/jdx/mise/pull/9227)
+- update rust crate rmcp to v1 by @renovate[bot] in [#9221](https://github.com/jdx/mise/pull/9221)
+
+### 📦 Registry
+
+- add sheldon by @3w36zj6 in [#9104](https://github.com/jdx/mise/pull/9104)
+- add pocketbase by @ranfdev in [#9123](https://github.com/jdx/mise/pull/9123)
+- add worktrunk ([aqua:max-sixty/worktrunk, cargo:worktrunk](https://github.com/max-sixty/worktrunk, cargo:worktrunk))#1 by @edouardr in [#8796](https://github.com/jdx/mise/pull/8796)
+- add dependency-check ([aqua:dependency-check/DependencyCheck](https://github.com/dependency-check/DependencyCheck)) by @kapitoshka438 in [#9204](https://github.com/jdx/mise/pull/9204)
+- add janet by @ranfdev in [#9241](https://github.com/jdx/mise/pull/9241)
+
+### New Contributors
+
+- @ranfdev made their first contribution in [#9241](https://github.com/jdx/mise/pull/9241)
+- @jjt made their first contribution in [#9233](https://github.com/jdx/mise/pull/9233)
+- @marianwolf made their first contribution in [#9208](https://github.com/jdx/mise/pull/9208)
+- @edouardr made their first contribution in [#8796](https://github.com/jdx/mise/pull/8796)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`LargeModGames/spotatui`](https://github.com/LargeModGames/spotatui)
+- [`android-sms-gateway/cli`](https://github.com/android-sms-gateway/cli)
+- [`velero-io/velero`](https://github.com/velero-io/velero)
+
+#### Updated Packages (1)
+
+- [`skim-rs/skim`](https://github.com/skim-rs/skim)
+
 ## [2026.4.16](https://github.com/jdx/mise/compare/v2026.4.15..v2026.4.16) - 2026-04-17
 
 ### 🚀 Features
