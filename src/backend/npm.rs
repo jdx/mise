@@ -9,8 +9,9 @@ use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings};
 use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
+use crate::semver::{semver_is_at_least, semver_is_older_than, semver_triplet};
 use crate::timeout;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, Toolset};
 use async_trait::async_trait;
 use jiff::Timestamp;
 use serde_json::Value;
@@ -24,6 +25,9 @@ use tokio::sync::Mutex as TokioMutex;
 /// of elapsed time between when mise resolved the cutoff and when it invoked
 /// the package manager.
 const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
+const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
+const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
+const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 
 #[derive(Debug)]
 pub struct NPMBackend {
@@ -170,6 +174,8 @@ impl Backend for NPMBackend {
         let package_manager = Settings::get().npm.package_manager;
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
+                self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
+                    .await;
                 self.build_transitive_release_age_args(&ctx.config, package_manager, before_date)
                     .await
             }
@@ -327,22 +333,77 @@ impl NPMBackend {
         vec![format!("--config.minimumReleaseAge={minutes}").into()]
     }
 
-    /// Returns true if the npm major.minor.patch version is >= 11.10.0,
-    /// which is when the --min-release-age flag was added (npm/cli#8965).
-    fn npm_version_supports_min_release_age(version: &str) -> bool {
-        let trimmed = version.trim().trim_start_matches('v');
-        let mut parts = trimmed.split(['.', '-', '+']);
-        let major: u64 = match parts.next().and_then(|p| p.parse().ok()) {
-            Some(v) => v,
-            None => return false,
+    async fn warn_if_package_manager_may_not_support_release_age(
+        &self,
+        ctx: &InstallContext,
+        package_manager: NpmPackageManager,
+    ) {
+        let Some((tool, required_version, flag)) =
+            Self::release_age_package_manager_requirement(package_manager)
+        else {
+            return;
         };
-        let minor: u64 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-        // 11.10.0+ — only major+minor matter for the gate
-        match major.cmp(&11) {
-            std::cmp::Ordering::Greater => true,
-            std::cmp::Ordering::Less => false,
-            std::cmp::Ordering::Equal => minor >= 10,
+
+        let version = match Self::toolset_package_manager_version(&ctx.ts, tool) {
+            Some(version) => Some(version),
+            None => match self.dependency_toolset(&ctx.config).await {
+                Ok(ts) => Self::toolset_package_manager_version(&ts, tool),
+                Err(_) => None,
+            },
+        };
+
+        let Some(version) = version else {
+            return;
+        };
+
+        if semver_is_older_than(&version, required_version).unwrap_or(false) {
+            warn!(
+                "install_before is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/npm.html",
+                self.tool_name(),
+                tool,
+                version,
+                tool,
+                required_version,
+                flag
+            );
         }
+    }
+
+    fn release_age_package_manager_requirement(
+        package_manager: NpmPackageManager,
+    ) -> Option<(&'static str, &'static str, &'static str)> {
+        match package_manager {
+            NpmPackageManager::Npm => None,
+            NpmPackageManager::Bun => {
+                Some(("bun", BUN_MIN_RELEASE_AGE_VERSION, "--minimum-release-age"))
+            }
+            NpmPackageManager::Pnpm => Some((
+                "pnpm",
+                PNPM_MIN_RELEASE_AGE_VERSION,
+                "--config.minimumReleaseAge",
+            )),
+        }
+    }
+
+    fn toolset_package_manager_version(ts: &Toolset, tool: &str) -> Option<String> {
+        let tvl = ts
+            .versions
+            .iter()
+            .find(|(ba, _)| ba.short == tool)
+            .map(|(_, tvl)| tvl)?;
+
+        if let Some(tv) = tvl
+            .versions
+            .iter()
+            .find(|tv| semver_triplet(&tv.version).is_some())
+        {
+            return Some(tv.version.clone());
+        }
+
+        tvl.requests
+            .iter()
+            .map(|tr| tr.version())
+            .find(|version| semver_triplet(version).is_some())
     }
 
     /// Detect whether the locally installed npm supports --min-release-age.
@@ -363,7 +424,8 @@ impl NPMBackend {
                         "npm version detection: found npm {} in ToolSet, skipping subprocess",
                         tv.version
                     );
-                    return Self::npm_version_supports_min_release_age(&tv.version);
+                    return semver_is_at_least(&tv.version, NPM_MIN_RELEASE_AGE_VERSION)
+                        .unwrap_or(false);
                 }
             }
         }
@@ -391,7 +453,7 @@ impl NPMBackend {
                 return false;
             }
         };
-        Self::npm_version_supports_min_release_age(&output)
+        semver_is_at_least(&output, NPM_MIN_RELEASE_AGE_VERSION).unwrap_or(false)
     }
 
     /// Check dependencies for version checking (always needs npm)
@@ -456,7 +518,9 @@ impl NPMBackend {
 mod tests {
     use super::*;
     use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionList, ToolVersionOptions};
     use pretty_assertions::assert_eq;
+    use std::sync::Arc;
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
@@ -467,6 +531,25 @@ mod tests {
             BackendResolution::new(true),
         );
         NPMBackend::from_arg(ba)
+    }
+
+    fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
+        Arc::new(BackendArg::new_raw(
+            tool.to_string(),
+            None,
+            tool.to_string(),
+            None,
+            BackendResolution::new(true),
+        ))
+    }
+
+    fn create_test_tool_request(ba: Arc<BackendArg>, version: &str) -> ToolRequest {
+        ToolRequest::Version {
+            backend: ba,
+            version: version.to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        }
     }
 
     #[test]
@@ -565,26 +648,85 @@ mod tests {
     }
 
     #[test]
-    fn test_npm_version_supports_min_release_age() {
-        // 11.10.0 is the cutoff where --min-release-age was added
-        assert!(NPMBackend::npm_version_supports_min_release_age("11.10.0"));
-        assert!(NPMBackend::npm_version_supports_min_release_age("11.10.1"));
-        assert!(NPMBackend::npm_version_supports_min_release_age("11.11.0"));
-        assert!(NPMBackend::npm_version_supports_min_release_age("12.0.0"));
-        // Tolerate `v` prefix and trailing whitespace from `npm --version`
-        assert!(NPMBackend::npm_version_supports_min_release_age("v11.10.0"));
-        assert!(NPMBackend::npm_version_supports_min_release_age(
-            "11.10.0\n"
-        ));
-        // Pre-release still satisfies the gate (no known 11.10.0 pre-releases exist)
-        assert!(NPMBackend::npm_version_supports_min_release_age(
-            "11.10.0-pre.1"
-        ));
+    fn test_release_age_package_manager_requirements() {
+        assert_eq!(
+            NPMBackend::release_age_package_manager_requirement(NpmPackageManager::Npm),
+            None
+        );
+        assert_eq!(
+            NPMBackend::release_age_package_manager_requirement(NpmPackageManager::Bun),
+            Some(("bun", BUN_MIN_RELEASE_AGE_VERSION, "--minimum-release-age"))
+        );
+        assert_eq!(
+            NPMBackend::release_age_package_manager_requirement(NpmPackageManager::Pnpm),
+            Some((
+                "pnpm",
+                PNPM_MIN_RELEASE_AGE_VERSION,
+                "--config.minimumReleaseAge"
+            ))
+        );
+    }
 
-        assert!(!NPMBackend::npm_version_supports_min_release_age("11.9.9"));
-        assert!(!NPMBackend::npm_version_supports_min_release_age("11.0.0"));
-        assert!(!NPMBackend::npm_version_supports_min_release_age("10.99.0"));
-        assert!(!NPMBackend::npm_version_supports_min_release_age(""));
-        assert!(!NPMBackend::npm_version_supports_min_release_age("garbage"));
+    #[test]
+    fn test_npm_min_release_age_version_requirement() {
+        assert_eq!(NPM_MIN_RELEASE_AGE_VERSION, "11.10.0");
+        assert_eq!(
+            crate::semver::semver_is_at_least("11.10.0", NPM_MIN_RELEASE_AGE_VERSION),
+            Some(true)
+        );
+        assert_eq!(
+            crate::semver::semver_is_at_least("11.9.9", NPM_MIN_RELEASE_AGE_VERSION),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn test_toolset_package_manager_version_prefers_resolved_version() {
+        let ba = create_test_backend_arg("bun");
+        let request = create_test_tool_request(ba.clone(), "1.2.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request.clone());
+        tvl.versions
+            .push(ToolVersion::new(request, "1.3.0".to_string()));
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            NPMBackend::toolset_package_manager_version(&ts, "bun"),
+            Some("1.3.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_toolset_package_manager_version_uses_exact_request() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "10.15.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            NPMBackend::toolset_package_manager_version(&ts, "pnpm"),
+            Some("10.15.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_toolset_package_manager_version_ignores_unresolved_request() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "10");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            NPMBackend::toolset_package_manager_version(&ts, "pnpm"),
+            None
+        );
     }
 }
