@@ -12,6 +12,7 @@ use eyre::{Report, Result, bail, eyre};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
@@ -563,8 +564,9 @@ impl Lockfile {
             .parent()
             .ok_or_else(|| eyre!("lockfile path has no parent: {}", display_path(&target)))?;
         let mut tmp = tempfile::NamedTempFile::with_prefix_in(".mise.lock.", parent)?;
-        std::io::Write::write_all(tmp.as_file_mut(), content.as_bytes())?;
-        tmp.persist(&target).map_err(|e| e.error)?;
+        tmp.as_file_mut().write_all(content.as_bytes())?;
+        apply_lockfile_permissions(&tmp, &target)?;
+        persist_lockfile_tmp(tmp, &target)?;
 
         invalidate_caches();
         Ok(())
@@ -1570,6 +1572,54 @@ fn handle_lockfile_read_error(err: Report, lockfile_path: &Path) -> Lockfile {
     Lockfile::default()
 }
 
+#[cfg(unix)]
+fn apply_lockfile_permissions(tmp: &tempfile::NamedTempFile, target: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    match fs::metadata(target) {
+        Ok(metadata) => {
+            let mode = metadata.permissions().mode();
+            tmp.as_file()
+                .set_permissions(fs::Permissions::from_mode(mode))?;
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err.into()),
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn apply_lockfile_permissions(_tmp: &tempfile::NamedTempFile, _target: &Path) -> Result<()> {
+    Ok(())
+}
+
+fn persist_lockfile_tmp(mut tmp: tempfile::NamedTempFile, target: &Path) -> Result<()> {
+    const RETRIES: u32 = 20;
+
+    for attempt in 0..=RETRIES {
+        match tmp.persist(target) {
+            Ok(_) => return Ok(()),
+            Err(err) if should_retry_lockfile_persist(&err.error) && attempt < RETRIES => {
+                tmp = err.file;
+                std::thread::sleep(std::time::Duration::from_millis(5 * u64::from(attempt + 1)));
+            }
+            Err(err) => return Err(err.error.into()),
+        }
+    }
+
+    unreachable!("lockfile persist retry loop should always return");
+}
+
+#[cfg(windows)]
+fn should_retry_lockfile_persist(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+#[cfg(not(windows))]
+fn should_retry_lockfile_persist(_err: &std::io::Error) -> bool {
+    false
+}
+
 impl TryFrom<toml::Value> for LockfileTool {
     type Error = Report;
     fn try_from(value: toml::Value) -> Result<Self> {
@@ -1914,6 +1964,22 @@ backend = "core:python"
             leftovers.is_empty(),
             "unexpected temp files left behind: {leftovers:?}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_save_preserves_existing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("mise.lock");
+        std::fs::write(&path, "").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o664)).unwrap();
+
+        Lockfile::default().save(&path).unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o664);
     }
 
     #[test]
