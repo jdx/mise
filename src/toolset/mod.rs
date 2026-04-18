@@ -33,7 +33,9 @@ pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
-pub use tool_version_options::{EPHEMERAL_OPT_KEYS, ToolVersionOptions, parse_tool_options};
+pub use tool_version_options::{
+    EPHEMERAL_OPT_KEYS, ToolVersionOptions, parse_tool_options, serialize_tool_options,
+};
 
 mod builder;
 pub mod env_cache;
@@ -558,12 +560,11 @@ impl Toolset {
     }
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
+        let settings = Settings::get();
+        let enable_tools = settings.enable_tools();
+        let disable_tools = settings.disable_tools();
         !ba.is_os_supported()
-            || !tool_enabled(
-                &Settings::get().enable_tools(),
-                &Settings::get().disable_tools(),
-                &ba.short.to_string(),
-            )
+            || !tool_enabled(enable_tools.as_ref(), &disable_tools, &ba.short.to_string())
     }
 }
 

@@ -1,0 +1,2 @@
+backends = ["github:endevco/aube"]
+description = "A fast Node.js package manager"

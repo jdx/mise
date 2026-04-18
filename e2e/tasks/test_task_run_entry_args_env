@@ -50,3 +50,27 @@ EOF
 
 assert_contains "mise run all" "step1"
 assert_contains "mise run all" "FOO=bar"
+
+# Test run entry with usage tera template in args
+cat <<'EOF' >mise.toml
+[tasks.greet]
+run = 'echo hello'
+
+[tasks.all]
+usage = 'arg <name>'
+run = [{ task = "greet", args = ["{{usage.name}}"] }]
+EOF
+
+assert_contains "mise run all -- world" "hello world"
+
+# Test run entry with usage tera template in env
+cat <<'EOF' >mise.toml
+[tasks.show-env]
+run = 'echo "APP=$APP"'
+
+[tasks.all]
+usage = 'arg "app_name"'
+run = [{ task = "show-env", env = { APP = "{{usage.app_name}}" } }]
+EOF
+
+assert_contains "mise run all -- myapp" "APP=myapp"

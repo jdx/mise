@@ -321,8 +321,8 @@ python = ['3.10', '3.11']
 # for example, .nvmrc in the case of node's nvm
 idiomatic_version_file_enable_tools = ['node']
 
-# configure `mise install` to always keep the downloaded archive
-always_keep_download = false        # deleted after install by default
+# keep downloaded archive/source files for debugging
+always_keep_download = false        # deleted after install; not a cache
 always_keep_install = false         # deleted on failure by default
 
 # configure how frequently (in minutes) to fetch updated plugin repository changes
@@ -432,9 +432,11 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | npm        | `package.json`                            |
 | opentofu   | `.opentofu-version`                       |
 | packer     | `.packer-version`                         |
+| perl       | `.perl-version`                           |
 | pnpm       | `package.json`                            |
 | python     | `.python-version`, `.python-versions`     |
 | ruby       | `.ruby-version`, `Gemfile`                |
+| rust       | `rust-toolchain.toml`                     |
 | terraform  | `.terraform-version`, `main.tf`           |
 | terragrunt | `.terragrunt-version`                     |
 | terramate  | `.terramate-version`                      |
@@ -535,7 +537,8 @@ of what is set in `mise.toml`/`.tool-versions`.
 ### `MISE_TRUSTED_CONFIG_PATHS`
 
 This is a list of paths that mise will automatically mark as
-trusted. They can be separated with `:`.
+trusted. They are separated according to platform conventions for the PATH
+environment variable: `:` on Unix and `;` on Windows.
 
 ### `MISE_CEILING_PATHS`
 

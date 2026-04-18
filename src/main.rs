@@ -170,14 +170,13 @@ fn show_github_rate_limit_err(err: &Report) {
     let msg = format!("{err:?}");
     if msg.contains("HTTP status client error (403 Forbidden) for url (https://api.github.com") {
         warn!(
-            "GitHub API returned a 403 Forbidden error. This likely means you have exceeded the rate limit."
+            "GitHub API returned a 403 Forbidden error. This is most commonly caused by exceeding the rate limit, though other causes (e.g. insufficient token permissions) are possible."
         );
-        if env::GITHUB_TOKEN.is_none() {
+        if github::resolve_token("github.com").is_none() {
             warn!(indoc!(
-                r#"GITHUB_TOKEN is not set. This means mise is making unauthenticated requests to GitHub which have a lower rate limit.
-                   To increase the rate limit, set the GITHUB_TOKEN environment variable to a GitHub personal access token.
-                   Create a token at https://github.com/settings/tokens and set it as GITHUB_TOKEN in your environment.
-                   You do not need to give this token any scopes."#
+                r#"No GitHub token was found, so mise is making unauthenticated requests to GitHub which have a much lower rate limit.
+                   Create a token at https://github.com/settings/tokens (no scopes required) and set it as GITHUB_TOKEN in your environment.
+                   See https://mise.jdx.dev/dev-tools/github-tokens.html for all supported token sources (env vars, gh CLI, credential_command, etc.)."#
             ));
         }
     }

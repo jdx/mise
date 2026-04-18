@@ -5,23 +5,100 @@ packages:
     repo_owner: jreleaser
     repo_name: jreleaser
     description: Release projects quickly and easily with JReleaser
-    rosetta2: true
-    replacements:
-      amd64: x86_64
-      darwin: osx
-      linux: linux_musl
-      arm64: aarch64
-    asset: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}.zip
     files:
       - name: jreleaser
-        src: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}/bin/jreleaser
+        src: "{{.AssetWithoutExt}}/bin/jreleaser"
       - name: java
-        src: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}/bin/java
+        src: "{{.AssetWithoutExt}}/bin/java"
       - name: keytool
-        src: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}/bin/keytool
+        src: "{{.AssetWithoutExt}}/bin/keytool"
       - name: rmiregistry
-        src: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}/bin/rmiregistry
-    checksum:
-      type: github_release
-      asset: checksums_sha256.txt
-      algorithm: sha256
+        src: "{{.AssetWithoutExt}}/bin/rmiregistry"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.3.0"
+        asset: jreleaser-standalone-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: windows
+            files:
+              - name: jreleaser
+                src: "{{.AssetWithoutExt}}/bin/jreleaser.bat"
+              - name: java
+                src: "{{.AssetWithoutExt}}/bin/java"
+              - name: keytool
+                src: "{{.AssetWithoutExt}}/bin/keytool"
+              - name: rmiregistry
+                src: "{{.AssetWithoutExt}}/bin/rmiregistry"
+        replacements:
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.5.0")
+        asset: jreleaser-standalone-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: windows
+            files:
+              - name: jreleaser
+                src: "{{.AssetWithoutExt}}/bin/jreleaser.bat"
+              - name: java
+                src: "{{.AssetWithoutExt}}/bin/java"
+              - name: keytool
+                src: "{{.AssetWithoutExt}}/bin/keytool"
+              - name: rmiregistry
+                src: "{{.AssetWithoutExt}}/bin/rmiregistry"
+        replacements:
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: checksums_sha256.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.8.0")
+        asset: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            files:
+              - name: jreleaser
+                src: "{{.AssetWithoutExt}}/bin/jreleaser.bat"
+              - name: java
+                src: "{{.AssetWithoutExt}}/bin/java"
+              - name: keytool
+                src: "{{.AssetWithoutExt}}/bin/keytool"
+              - name: rmiregistry
+                src: "{{.AssetWithoutExt}}/bin/rmiregistry"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: checksums_sha256.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: checksums_sha256.txt
+          algorithm: sha256

@@ -14,7 +14,7 @@ use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
-use crate::file::{display_path, remove_all, remove_all_with_warning};
+use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -36,8 +36,7 @@ use crate::{
 use crate::{dirs, env, file, hash, lock_file, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
-use console::style;
-use eyre::{Result, WrapErr, bail, eyre};
+use eyre::{Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use platform_target::PlatformTarget;
@@ -183,15 +182,18 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
             .flat_map(|ist| arg_to_backend(ist.clone().into())),
     );
     time!("load_tools install_state");
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
     tools.retain(|backend| {
         tool_enabled(
-            &Settings::get().enable_tools(),
-            &Settings::get().disable_tools(),
+            enable_tools.as_ref(),
+            &disable_tools,
             &backend.id().to_string(),
         )
     });
     tools.retain(|backend| {
-        !Settings::get()
+        !settings
             .disable_backends
             .contains(&backend.get_type().to_string())
     });
@@ -478,9 +480,12 @@ pub trait Backend: Debug + Send + Sync {
     /// Results are cached. Backends can override `_list_remote_versions_with_info`
     /// to provide timestamp information.
     ///
-    /// This method first tries the versions host (mise-versions.jdx.dev) which provides
-    /// version info with created_at timestamps. If that fails, it falls back to the
-    /// backend's `_list_remote_versions_with_info` implementation.
+    /// For backends that query canonical, always-fresh sources (npm, pipx, cargo,
+    /// gem, go, and http/s3 with `version_list_url`), the versions host cache is
+    /// skipped and the upstream is queried directly. For all other backends this
+    /// method first tries the versions host (mise-versions.jdx.dev) which provides
+    /// version info with created_at timestamps, and falls back to the backend's
+    /// `_list_remote_versions_with_info` implementation on failure.
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
@@ -490,8 +495,44 @@ pub trait Backend: Debug + Send + Sync {
         let ba = self.ba().clone();
         let id = self.id();
 
+        // Only a subset of backends benefit from the versions host cache —
+        // those whose upstream listing is rate-limited (github API) or not
+        // otherwise available. Package-registry backends (npm, pipx, cargo,
+        // gem, go, conda, dotnet, spm) and http/s3 with an explicit
+        // version_list_url already have canonical, always-fresh sources, so
+        // the cache would only add latency and staleness risk. Note: this
+        // asymmetrically overrides `settings.use_versions_host = true` — the
+        // setting can still disable the host globally, but cannot re-enable
+        // it for backends that are not on this allowlist.
+        let backend_type = self.get_type();
+        let has_version_list_url = matches!(backend_type, BackendType::Http | BackendType::S3)
+            && (ba.opts().contains_key("version_list_url")
+                || config
+                    .get_tool_opts(&ba)
+                    .await?
+                    .is_some_and(|o| o.contains_key("version_list_url")));
+        let versions_host_applies = match backend_type {
+            BackendType::Github
+            | BackendType::Gitlab
+            | BackendType::Forgejo
+            | BackendType::Aqua
+            | BackendType::Ubi
+            | BackendType::Core
+            | BackendType::Asdf
+            | BackendType::Vfox
+            | BackendType::VfoxBackend(_) => true,
+            BackendType::Http | BackendType::S3 => !has_version_list_url,
+            _ => false,
+        };
+
         // Check if this is an external plugin with a custom remote - skip versions host if so
-        let use_versions_host = if let Some(plugin) = self.plugin()
+        let use_versions_host = if !versions_host_applies {
+            trace!(
+                "Skipping versions host for {} because {} backend has a direct source",
+                ba.short, backend_type
+            );
+            false
+        } else if let Some(plugin) = self.plugin()
             && let Ok(Some(remote_url)) = plugin.get_remote_url()
         {
             // Check if remote matches the registry default
@@ -588,8 +629,13 @@ pub trait Backend: Debug + Send + Sync {
     /// Return `VersionInfo` with `created_at: None` if timestamps are not available.
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>>;
 
+    /// Backend-specific fast path for the absolute latest stable version.
+    ///
+    /// Do not call this from CLI/toolset code. Use `latest_version` instead so
+    /// `install_before` / `--before` cutoffs are resolved before this fast path
+    /// is used.
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        self.latest_version(config, Some("latest".into())).await
+        self.latest_version_for_query(config, "latest", None).await
     }
     fn list_installed_versions(&self) -> Vec<String> {
         install_state::list_versions(&self.ba().short)
@@ -747,63 +793,55 @@ pub trait Backend: Debug + Send + Sync {
         Ok(self.fuzzy_match_filter(versions, query))
     }
 
-    async fn latest_version(
+    async fn latest_version_for_query(
         &self,
         config: &Arc<Config>,
-        query: Option<String>,
+        query: &str,
+        before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
-        match query {
-            Some(query) => {
-                let mut matches = self.list_versions_matching(config, &query).await?;
-                if matches.is_empty() && query == "latest" {
-                    matches = self.list_remote_versions(config).await?;
+        let mut matches = self
+            .list_versions_matching_with_opts(config, query, before_date)
+            .await?;
+        if matches.is_empty() && query == "latest" {
+            // Fall back to all versions if no match
+            matches = match before_date {
+                Some(before) => {
+                    let versions_with_info = self.list_remote_versions_with_info(config).await?;
+                    VersionInfo::filter_by_date(versions_with_info, before)
+                        .into_iter()
+                        .map(|v| v.version)
+                        .collect()
                 }
-                Ok(find_match_in_list(&matches, &query))
-            }
-            None => self.latest_stable_version(config).await,
+                None => self.list_remote_versions(config).await?,
+            };
         }
+        Ok(find_match_in_list(&matches, query))
     }
 
     /// Get the latest version, optionally filtered by release date.
-    /// Use this when you have a `before_date` from ResolveOptions.
-    async fn latest_version_with_opts(
+    ///
+    /// `latest_stable_version` may use backend-specific fast paths (dist tags,
+    /// latest release endpoints, plugin scripts). Those fast paths return the
+    /// absolute latest stable version, so only use them when no install-before
+    /// cutoff is active.
+    async fn latest_version(
         &self,
         config: &Arc<Config>,
         query: Option<String>,
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
-        match query {
+        let before_date = effective_latest_before_date(self, config, before_date).await?;
+        match query.as_deref() {
+            Some("latest") | None => match before_date {
+                Some(before) => {
+                    self.latest_version_for_query(config, "latest", Some(before))
+                        .await
+                }
+                None => self.latest_stable_version(config).await,
+            },
             Some(query) => {
-                let mut matches = self
-                    .list_versions_matching_with_opts(config, &query, before_date)
-                    .await?;
-                if matches.is_empty() && query == "latest" {
-                    // Fall back to all versions if no match
-                    matches = match before_date {
-                        Some(before) => {
-                            let versions_with_info =
-                                self.list_remote_versions_with_info(config).await?;
-                            VersionInfo::filter_by_date(versions_with_info, before)
-                                .into_iter()
-                                .map(|v| v.version)
-                                .collect()
-                        }
-                        None => self.list_remote_versions(config).await?,
-                    };
-                }
-                Ok(find_match_in_list(&matches, &query))
-            }
-            None => {
-                // For stable version, apply date filter if provided
-                match before_date {
-                    Some(before) => {
-                        let matches = self
-                            .list_versions_matching_with_opts(config, "latest", Some(before))
-                            .await?;
-                        Ok(find_match_in_list(&matches, "latest"))
-                    }
-                    None => self.latest_stable_version(config).await,
-                }
+                self.latest_version_for_query(config, query, before_date)
+                    .await
             }
         }
     }
@@ -830,16 +868,6 @@ pub trait Backend: Debug + Send + Sync {
                 }
             }
         }
-    }
-
-    /// Check if a version is a rolling release (like "nightly") that should
-    /// always be considered potentially outdated for `mise up` purposes
-    async fn is_version_rolling(&self, config: &Arc<Config>, version: &str) -> bool {
-        let versions = match self.list_remote_versions_with_info(config).await {
-            Ok(v) => v,
-            Err(_) => return false,
-        };
-        versions.iter().any(|v| v.version == version && v.rolling)
     }
 
     /// Get version info for a specific version (including checksum for rolling releases)
@@ -916,9 +944,9 @@ pub trait Backend: Debug + Send + Sync {
         Ok(())
     }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
-        rmdir(&self.ba().installs_path, pr)?;
-        rmdir(&self.ba().cache_path, pr)?;
-        rmdir(&self.ba().downloads_path, pr)?;
+        remove_all_with_progress(&self.ba().installs_path, pr)?;
+        remove_all_with_progress(&self.ba().cache_path, pr)?;
+        remove_all_with_progress(&self.ba().downloads_path, pr)?;
         Ok(())
     }
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
@@ -1197,14 +1225,13 @@ pub trait Backend: Debug + Send + Sync {
             self.uninstall_version_impl(config, pr, tv).await?;
         }
         let rmdir = |dir: &Path| {
-            if !dir.exists() {
-                return Ok(());
-            }
-            pr.set_message(format!("remove {}", display_path(dir)));
             if dryrun {
+                if dir.exists() {
+                    pr.set_message(format!("remove {}", display_path(dir)));
+                }
                 return Ok(());
             }
-            remove_all_with_warning(dir)
+            remove_all_with_progress(dir, pr)
         };
         rmdir(&tv.install_path())?;
         if !Settings::get().always_keep_download {
@@ -1228,7 +1255,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<Vec<PathBuf>> {
         match tv.request {
             ToolRequest::System { .. } => Ok(vec![]),
-            _ => Ok(vec![tv.install_path().join("bin")]),
+            _ => Ok(vec![tv.runtime_path().join("bin")]),
         }
     }
 
@@ -1718,6 +1745,157 @@ pub trait Backend: Debug + Send + Sync {
     }
 }
 
+async fn effective_latest_before_date<B: Backend + ?Sized>(
+    backend: &B,
+    config: &Arc<Config>,
+    before_date: Option<Timestamp>,
+) -> eyre::Result<Option<Timestamp>> {
+    if before_date.is_some() {
+        return Ok(before_date);
+    }
+    if let Some(before) = backend.ba().opts().get("install_before") {
+        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
+    }
+    if let Some(before) = config
+        .get_tool_opts(backend.ba())
+        .await?
+        .and_then(|opts| opts.get("install_before").map(str::to_string))
+    {
+        return Ok(Some(crate::duration::parse_into_timestamp(&before)?));
+    }
+    if let Some(before) = &Settings::get().install_before {
+        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
+    }
+    Ok(None)
+}
+
+#[cfg(test)]
+mod latest_version_tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug)]
+    struct LatestBackend {
+        ba: Arc<BackendArg>,
+        stable_calls: AtomicUsize,
+        list_calls: AtomicUsize,
+    }
+
+    impl LatestBackend {
+        fn new(name: &str) -> Self {
+            Self {
+                ba: Arc::new(name.into()),
+                stable_calls: AtomicUsize::new(0),
+                list_calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn stable_calls(&self) -> usize {
+            self.stable_calls.load(Ordering::SeqCst)
+        }
+
+        fn list_calls(&self) -> usize {
+            self.list_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl Backend for LatestBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn list_remote_versions_with_info(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            self._list_remote_versions(_config).await
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            self.list_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: Some("2024-01-01".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "2.0.0".to_string(),
+                    created_at: Some("2025-01-01".to_string()),
+                    ..Default::default()
+                },
+            ])
+        }
+
+        async fn latest_stable_version(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Option<String>> {
+            self.stable_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Some("9.9.9".to_string()))
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            _tv: ToolVersion,
+        ) -> Result<ToolVersion> {
+            unreachable!()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_explicit_latest_uses_latest_stable_version() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-latest-stable");
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), None)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("9.9.9")
+        );
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+
+        assert_eq!(
+            backend
+                .latest_version(&config, None, None)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("9.9.9")
+        );
+        assert_eq!(backend.stable_calls(), 2);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_date_filtered_latest_bypasses_latest_stable_version() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-latest-before-date");
+        let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 1);
+    }
+}
+
 /// Helper function for calculating install operation count in HTTP/S3-style backends.
 /// Used by HttpBackend and S3Backend to avoid code duplication.
 pub fn http_install_operation_count(
@@ -1772,19 +1950,6 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
     }
-}
-
-fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
-    if !dir.exists() {
-        return Ok(());
-    }
-    pr.set_message(format!("remove {}", &dir.to_string_lossy()));
-    remove_all(dir).wrap_err_with(|| {
-        format!(
-            "Failed to remove directory {}",
-            style(&dir.to_string_lossy()).cyan().for_stderr()
-        )
-    })
 }
 
 pub fn unalias_backend(backend: &str) -> &str {

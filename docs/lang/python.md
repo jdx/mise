@@ -11,21 +11,21 @@ at [`./src/plugins/core/python.rs`](https://github.com/jdx/mise/blob/main/src/pl
 
 ## Usage
 
-The following installs the latest version of python-3.11.x and makes it the global
+The following installs the latest version of python-3.15.x and makes it the global
 default:
 
 ```sh
-mise use -g python@3.11
+mise use -g python@3.15
 ```
 
 You can also use multiple versions of python at the same time:
 
 ```sh
-$ mise use -g python@3.10 python@3.11
+$ mise use -g python@3.14 python@3.15
 $ python -V
-3.10.0
-$ python3.11 -V
-3.11.0
+3.14.0
+$ python3.15 -V
+3.15.0
 ```
 
 You can also install a specific python flavour. To get the latest version from a flavour just use the
@@ -64,14 +64,14 @@ Use `_.python.venv` in the `[env]` section of `mise.toml`:
 
 ```toml
 [tools]
-python = "3.11" # [optional] will be used for the venv
+python = "3.15" # [optional] will be used for the venv
 
 [env]
 _.python.venv = ".venv" # relative to this file's directory
 _.python.venv = "/root/.venv" # can be absolute
 _.python.venv = "{{env.HOME}}/.cache/venv/myproj" # can use templates
 _.python.venv = { path = ".venv", create = true } # create the venv if it doesn't exist
-_.python.venv = { path = ".venv", create = true, python = "3.10" } # use a specific python version
+_.python.venv = { path = ".venv", create = true, python = "3.15" } # use a specific python version
 _.python.venv = {
   path = ".venv", create = true,
   python_create_args = ["--without-pip"], # pass args to python -m venv
@@ -125,7 +125,7 @@ install path instead:
 
 ```toml
 [tools]
-python = "3.12"
+python = "3.15"
 
 [env]
 UV_PYTHON = { value = "{{ tools.python.path }}", tools = true }
