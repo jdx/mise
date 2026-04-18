@@ -2400,18 +2400,6 @@ checksum = "8c98b077c7463d01d22dde8a24378ddf1ca7263dc687cffbed38819ea6c21131"
 
 [[package]]
 name = "duct"
-version = "0.13.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4ab5718d1224b63252cd0c6f74f6480f9ffeb117438a2e0f5cf6d9a4798929c"
-dependencies = [
- "libc",
- "once_cell",
- "os_pipe",
- "shared_child",
-]
-
-[[package]]
-name = "duct"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e66e9c0c03d094e1a0ba1be130b849034aa80c3a2ab8ee94316bc809f3fa684"
@@ -5765,7 +5753,7 @@ dependencies = [
  "demand",
  "digest 0.11.2",
  "dotenvy",
- "duct 0.13.7",
+ "duct",
  "exec",
  "expr-lang",
  "eyre",
@@ -11392,7 +11380,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d61141ccbc979c1421bc450f1a800196abc073e0deccb0adcb100c96238b33e2"
 dependencies = [
  "bzip2 0.6.1",
- "duct 1.1.1",
+ "duct",
  "filetime",
  "flate2",
  "globwalk",
