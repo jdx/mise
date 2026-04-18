@@ -453,8 +453,8 @@ fn uses_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) -> bool 
 fn warn_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) {
     if uses_deprecated_backends_alias(cmd, args) {
         deprecated_at!(
-            "2026.4.16",
-            "2027.4.16",
+            "2026.4.0",
+            "2027.4.0",
             "cli.backends.b",
             "`mise b` is deprecated. Use `mise backends` instead."
         );

@@ -17,7 +17,7 @@ pub struct Backends {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Deprecation:</underline></bold>
 
-The `mise b` alias is deprecated and will be removed in mise 2027.4.16.
+The `mise b` alias is deprecated and will be removed in mise 2027.4.0.
 Use `mise backends` instead.
 "#
 );

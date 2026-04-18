@@ -12,5 +12,5 @@ Manage backends
 
 Deprecation:
 
-The `mise b` alias is deprecated and will be removed in mise 2027.4.16.
+The `mise b` alias is deprecated and will be removed in mise 2027.4.0.
 Use `mise backends` instead.
