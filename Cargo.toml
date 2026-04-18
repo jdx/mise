@@ -90,7 +90,7 @@ confique = { version = "0.4", default-features = false }
 console = "0.16"
 contracts = "0.6"
 dashmap = "6"
-demand = "1"
+demand = "2"
 digest = "0.11.0"
 dotenvy = "0.15"
 duct = "1.0"
