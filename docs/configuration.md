@@ -436,6 +436,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | pnpm       | `package.json`                            |
 | python     | `.python-version`, `.python-versions`     |
 | ruby       | `.ruby-version`, `Gemfile`                |
+| rust       | `rust-toolchain.toml`                     |
 | terraform  | `.terraform-version`, `main.tf`           |
 | terragrunt | `.terragrunt-version`                     |
 | terramate  | `.terramate-version`                      |
