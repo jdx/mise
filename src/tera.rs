@@ -542,11 +542,9 @@ pub fn tera_exec(
                     }
                 } else {
                     let output = cmd
-                        .reader()
-                        .stdout_capture(true)
-                        .stderr_capture(true)
-                        .output()?;
-                    let stdout = String::from_utf8_lossy(&output.stdout);
+                        .stdout_capture()
+                        .stderr_capture()
+                        .run()?;
                     if stdout.len() > EXEC_OUTPUT_MAX_BYTES {
                         return Err(format!(
                             "exec output exceeds maximum size of {} bytes",
