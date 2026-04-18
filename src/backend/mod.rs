@@ -588,8 +588,13 @@ pub trait Backend: Debug + Send + Sync {
     /// Return `VersionInfo` with `created_at: None` if timestamps are not available.
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>>;
 
+    /// Backend-specific fast path for the absolute latest stable version.
+    ///
+    /// Do not call this from CLI/toolset code. Use `latest_version` instead so
+    /// `install_before` / `--before` cutoffs are resolved before this fast path
+    /// is used.
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        self.latest_version(config, Some("latest".into())).await
+        self.latest_version_for_query(config, "latest", None).await
     }
     fn list_installed_versions(&self) -> Vec<String> {
         install_state::list_versions(&self.ba().short)
@@ -747,60 +752,55 @@ pub trait Backend: Debug + Send + Sync {
         Ok(self.fuzzy_match_filter(versions, query))
     }
 
-    async fn latest_version(
+    async fn latest_version_for_query(
         &self,
         config: &Arc<Config>,
-        query: Option<String>,
+        query: &str,
+        before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
-        match query {
-            Some(query) => {
-                let mut matches = self.list_versions_matching(config, &query).await?;
-                if matches.is_empty() && query == "latest" {
-                    matches = self.list_remote_versions(config).await?;
+        let mut matches = self
+            .list_versions_matching_with_opts(config, query, before_date)
+            .await?;
+        if matches.is_empty() && query == "latest" {
+            // Fall back to all versions if no match
+            matches = match before_date {
+                Some(before) => {
+                    let versions_with_info = self.list_remote_versions_with_info(config).await?;
+                    VersionInfo::filter_by_date(versions_with_info, before)
+                        .into_iter()
+                        .map(|v| v.version)
+                        .collect()
                 }
-                Ok(find_match_in_list(&matches, &query))
-            }
-            None => self.latest_stable_version(config).await,
+                None => self.list_remote_versions(config).await?,
+            };
         }
+        Ok(find_match_in_list(&matches, query))
     }
 
     /// Get the latest version, optionally filtered by release date.
-    /// Use this when you have a `before_date` from ResolveOptions.
-    async fn latest_version_with_opts(
+    ///
+    /// `latest_stable_version` may use backend-specific fast paths (dist tags,
+    /// latest release endpoints, plugin scripts). Those fast paths return the
+    /// absolute latest stable version, so only use them when no install-before
+    /// cutoff is active.
+    async fn latest_version(
         &self,
         config: &Arc<Config>,
         query: Option<String>,
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
+        let before_date = effective_latest_before_date(self, config, before_date).await?;
         match query {
             Some(query) => {
-                let mut matches = self
-                    .list_versions_matching_with_opts(config, &query, before_date)
-                    .await?;
-                if matches.is_empty() && query == "latest" {
-                    // Fall back to all versions if no match
-                    matches = match before_date {
-                        Some(before) => {
-                            let versions_with_info =
-                                self.list_remote_versions_with_info(config).await?;
-                            VersionInfo::filter_by_date(versions_with_info, before)
-                                .into_iter()
-                                .map(|v| v.version)
-                                .collect()
-                        }
-                        None => self.list_remote_versions(config).await?,
-                    };
-                }
-                Ok(find_match_in_list(&matches, &query))
+                self.latest_version_for_query(config, &query, before_date)
+                    .await
             }
             None => {
                 // For stable version, apply date filter if provided
                 match before_date {
                     Some(before) => {
-                        let matches = self
-                            .list_versions_matching_with_opts(config, "latest", Some(before))
-                            .await?;
-                        Ok(find_match_in_list(&matches, "latest"))
+                        self.latest_version_for_query(config, "latest", Some(before))
+                            .await
                     }
                     None => self.latest_stable_version(config).await,
                 }
@@ -1706,6 +1706,30 @@ pub trait Backend: Debug + Send + Sync {
             ..Default::default()
         })
     }
+}
+
+async fn effective_latest_before_date<B: Backend + ?Sized>(
+    backend: &B,
+    config: &Arc<Config>,
+    before_date: Option<Timestamp>,
+) -> eyre::Result<Option<Timestamp>> {
+    if before_date.is_some() {
+        return Ok(before_date);
+    }
+    if let Some(before) = backend.ba().opts().get("install_before") {
+        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
+    }
+    if let Some(before) = config
+        .get_tool_opts(backend.ba())
+        .await?
+        .and_then(|opts| opts.get("install_before").map(str::to_string))
+    {
+        return Ok(Some(crate::duration::parse_into_timestamp(&before)?));
+    }
+    if let Some(before) = &Settings::get().install_before {
+        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
+    }
+    Ok(None)
 }
 
 /// Helper function for calculating install operation count in HTTP/S3-style backends.

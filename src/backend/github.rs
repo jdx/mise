@@ -259,7 +259,7 @@ impl Backend for UnifiedGitBackend {
 
         let latest_tag = if self.is_gitlab() {
             // GitLab doesn't have a "latest" endpoint
-            return self.latest_version(config, Some("latest".into())).await;
+            return self.latest_version_for_query(config, "latest", None).await;
         } else if self.is_forgejo() {
             match forgejo::get_release_for_url(&api_url, &repo, "latest").await {
                 Ok(r) => Some(r.tag_name),
@@ -284,7 +284,7 @@ impl Backend for UnifiedGitBackend {
 
         match latest_version {
             Some(version) => Ok(Some(version)),
-            None => self.latest_version(config, Some("latest".into())).await,
+            None => self.latest_version_for_query(config, "latest", None).await,
         }
     }
 

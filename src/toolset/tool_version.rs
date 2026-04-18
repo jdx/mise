@@ -323,7 +323,7 @@ impl ToolVersion {
             }
             if !is_offline
                 && let Some(v) = backend
-                    .latest_version_with_opts(config, None, opts.before_date)
+                    .latest_version(config, None, opts.before_date)
                     .await?
             {
                 return build(v);
@@ -413,7 +413,7 @@ impl ToolVersion {
         let backend = request.backend()?;
         let v = match v {
             "latest" => backend
-                .latest_version_with_opts(config, None, opts.before_date)
+                .latest_version(config, None, opts.before_date)
                 .await?
                 .ok_or_else(|| {
                     let msg = if opts.before_date.is_some() {
