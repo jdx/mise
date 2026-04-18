@@ -3161,7 +3161,7 @@
       ]
     },
     "env_file": {
-      "description": "dotenv file(s) to load",
+      "description": "dotenv file(s) to load. Deprecated; use env._.file instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
       "oneOf": [
         {
@@ -3178,7 +3178,7 @@
       ]
     },
     "dotenv": {
-      "description": "dotenv file(s) to load",
+      "description": "dotenv file(s) to load. Deprecated; use env._.file instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
       "oneOf": [
         {
@@ -3195,7 +3195,7 @@
       ]
     },
     "env_path": {
-      "description": "PATH entries to add",
+      "description": "PATH entries to add. Deprecated; use env._.path instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
       "oneOf": [
         {
