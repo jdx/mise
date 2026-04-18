@@ -56,7 +56,7 @@ jobs:
           shared-key: build
           save-if: false
       - run: cargo build --all-features
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise
           path: target/debug/mise
@@ -155,7 +155,7 @@ jobs:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
       - name: Set pooled token for Docker
         run: echo "POOL_TOKEN=${{ steps.token.outputs.token }}" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise
           path: target/debug
