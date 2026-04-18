@@ -13,7 +13,7 @@ use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
-use crate::toolset::{ToolVersion, ToolVersionOptions};
+use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use crate::{
     aqua::aqua_registry_wrapper::{
@@ -32,7 +32,7 @@ use regex::Regex;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -493,10 +493,13 @@ impl Backend for AquaBackend {
             });
         }
 
+        let request_options = tv.request.options();
+        let cache_key = Self::lockfile_options(&request_options);
         let cache: CacheManager<Vec<PathBuf>> =
             CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
                 .with_fresh_file(install_path.clone())
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                .with_cache_key(format!("{cache_key:?}"))
                 .build();
 
         let paths = cache
@@ -504,7 +507,7 @@ impl Backend for AquaBackend {
                 let pkg = AQUA_REGISTRY
                     .package_with_version(&self.id, &[&tv.version])
                     .await?;
-                let pkg = Self::apply_var_options(pkg, tv.request.options());
+                let pkg = Self::apply_var_options(pkg, &request_options)?;
 
                 let srcs = self.srcs(&pkg, tv)?;
                 let paths = if srcs.is_empty() {
@@ -526,6 +529,14 @@ impl Backend for AquaBackend {
             .map(|p| p.mount(&install_path))
             .collect();
         Ok(paths)
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        Self::lockfile_options(&request.options())
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
@@ -599,10 +610,9 @@ impl Backend for AquaBackend {
         // Using package_with_version() here would apply overrides for the current host
         // platform first, which can leak host-specific overrides into cross-platform lock.
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        let pkg = Self::apply_var_options(
-            pkg.with_version(&versions, target_os, target_arch),
-            tv.request.options(),
-        );
+        let opts = tv.request.options();
+        let pkg =
+            Self::apply_var_options(pkg.with_version(&versions, target_os, target_arch), &opts)?;
 
         // Apply version prefix if present
         if let Some(prefix) = &pkg.version_prefix
@@ -733,23 +743,60 @@ impl AquaBackend {
         let pkg = AQUA_REGISTRY
             .package_with_version(&self.id, versions)
             .await?;
-        Ok(Self::apply_var_options(pkg, tv.request.options()))
+        Self::apply_var_options(pkg, &tv.request.options())
     }
 
-    fn apply_var_options(pkg: AquaPackage, opts: ToolVersionOptions) -> AquaPackage {
+    fn apply_var_options(pkg: AquaPackage, opts: &ToolVersionOptions) -> Result<AquaPackage> {
         if pkg.vars.is_empty() {
-            return pkg;
+            return Ok(pkg);
         }
         let var_values: HashMap<String, String> = pkg
             .vars
             .iter()
             .filter_map(|var| {
                 opts.get_nested_string(&format!("vars.{}", var.name))
-                    .or_else(|| opts.get(&var.name).map(|s| s.to_string()))
+                    .or_else(|| opts.get_string(&var.name))
                     .map(|value| (var.name.clone(), value))
             })
             .collect();
-        pkg.with_var_values(&var_values)
+        pkg.with_var_values(var_values)
+    }
+
+    fn lockfile_options(opts: &ToolVersionOptions) -> BTreeMap<String, String> {
+        let mut result = BTreeMap::new();
+        for (key, value) in opts.iter() {
+            if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
+                continue;
+            }
+            if key == "vars" {
+                if let toml::Value::Table(table) = value {
+                    Self::insert_table_lockfile_options(&mut result, key, table);
+                }
+            } else if let Some(value) = toml_value_to_string(value) {
+                result.insert(key.clone(), value);
+            }
+        }
+        result
+    }
+
+    fn insert_table_lockfile_options(
+        result: &mut BTreeMap<String, String>,
+        prefix: &str,
+        table: &toml::Table,
+    ) {
+        for (key, value) in table {
+            let key = format!("{prefix}.{key}");
+            match value {
+                toml::Value::Table(table) => {
+                    Self::insert_table_lockfile_options(result, &key, table)
+                }
+                value => {
+                    if let Some(value) = toml_value_to_string(value) {
+                        result.insert(key, value);
+                    }
+                }
+            }
+        }
     }
 
     /// Detect provenance type from aqua registry package config.
@@ -1948,6 +1995,97 @@ impl AquaBackend {
             .unique_by(|(src, _)| src.to_path_buf())
             .collect();
         Ok(files)
+    }
+}
+
+fn toml_value_to_string(value: &toml::Value) -> Option<String> {
+    match value {
+        toml::Value::String(s) => Some(s.clone()),
+        toml::Value::Integer(i) => Some(i.to_string()),
+        toml::Value::Boolean(b) => Some(b.to_string()),
+        toml::Value::Float(f) => Some(f.to_string()),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aqua_registry::AquaVar;
+
+    fn aqua_var(name: &str, required: bool) -> AquaVar {
+        AquaVar {
+            name: name.to_string(),
+            default: None,
+            required,
+        }
+    }
+
+    #[test]
+    fn test_apply_var_options_prefers_nested_vars() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
+        pkg.vars = vec![aqua_var("channel", true)];
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+        let mut vars = toml::Table::new();
+        vars.insert(
+            "channel".to_string(),
+            toml::Value::String("beta".to_string()),
+        );
+        opts.opts
+            .insert("vars".to_string(), toml::Value::Table(vars));
+
+        let pkg = AquaBackend::apply_var_options(pkg, &opts).unwrap();
+
+        assert_eq!(
+            pkg.asset("1.0.0", "linux", "amd64").unwrap(),
+            "tool-beta-1.0.0.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_apply_var_options_errors_for_missing_required_var() {
+        let mut pkg = AquaPackage::default();
+        pkg.vars = vec![aqua_var("go_version", true)];
+        let err = AquaBackend::apply_var_options(pkg, &ToolVersionOptions::default()).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("required aqua var not set: go_version"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_lockfile_options_include_aqua_vars() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+        opts.opts.insert(
+            "symlink_bins".to_string(),
+            toml::Value::String("true".to_string()),
+        );
+        opts.opts.insert(
+            "postinstall".to_string(),
+            toml::Value::String("echo ok".to_string()),
+        );
+        let mut vars = toml::Table::new();
+        vars.insert("go_version".to_string(), toml::Value::String("1.24".into()));
+        opts.opts
+            .insert("vars".to_string(), toml::Value::Table(vars));
+
+        let lock_opts = AquaBackend::lockfile_options(&opts);
+
+        assert_eq!(lock_opts.get("channel"), Some(&"stable".to_string()));
+        assert_eq!(lock_opts.get("vars.go_version"), Some(&"1.24".to_string()));
+        assert!(!lock_opts.contains_key("symlink_bins"));
+        assert!(!lock_opts.contains_key("postinstall"));
     }
 }
 

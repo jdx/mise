@@ -55,6 +55,9 @@ Set them via tool options using either top-level keys or a nested `vars` table:
 "aqua:scenarigo/scenarigo" = { version = "0.21.0", vars = { go_version = "1.24" } }
 ```
 
+Vars with defaults are filled automatically. Vars marked as required in the aqua registry must be set
+unless the registry also provides a default.
+
 ### `symlink_bins`
 
 Some tools bundle extra executables that you may not want exposed on PATH. For example, `aws-cli` bundles

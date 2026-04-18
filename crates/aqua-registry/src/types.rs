@@ -72,7 +72,7 @@ struct AquaOverride {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct AquaVar {
     pub name: String,
-    pub default: Option<String>,
+    pub default: Option<serde_yaml::Value>,
     #[serde(default)]
     pub required: bool,
 }
@@ -249,9 +249,10 @@ impl AquaPackage {
     }
 
     /// Apply user-provided variable values used by aqua `vars` templates.
-    pub fn with_var_values(mut self, var_values: &HashMap<String, String>) -> AquaPackage {
-        self.var_values = var_values.clone();
-        self
+    pub fn with_var_values(mut self, var_values: HashMap<String, String>) -> Result<AquaPackage> {
+        self.var_values = var_values;
+        self.validate_vars()?;
+        Ok(self)
     }
 
     fn version_override(&self, versions: &[&str]) -> &AquaPackage {
@@ -428,25 +429,33 @@ impl AquaPackage {
     }
 
     fn vars_ctx(&self) -> Result<HashMap<String, String>> {
+        self.validate_vars()?;
         let mut ctx = HashMap::new();
         for var in &self.vars {
-            let value = self
-                .var_values
-                .get(&var.name)
-                .cloned()
-                .or_else(|| self.var_values.get(&format!("vars.{}", var.name)).cloned())
-                .or_else(|| var.default.clone());
-            match value {
-                Some(value) => {
-                    ctx.insert(format!("Vars.{}", var.name), value);
-                }
-                None if var.required => {
-                    return Err(eyre!("required aqua var not set: {}", var.name));
-                }
-                None => {}
+            if let Some(value) = self.var_value(var)? {
+                ctx.insert(format!("Vars.{}", var.name), value);
             }
         }
         Ok(ctx)
+    }
+
+    fn validate_vars(&self) -> Result<()> {
+        for var in &self.vars {
+            if var.name.is_empty() {
+                return Err(eyre!("aqua var name is empty"));
+            }
+            if var.required && self.var_value(var)?.is_none() {
+                return Err(eyre!("required aqua var not set: {}", var.name));
+            }
+        }
+        Ok(())
+    }
+
+    fn var_value(&self, var: &AquaVar) -> Result<Option<String>> {
+        if let Some(value) = self.var_values.get(&var.name) {
+            return Ok(Some(value.clone()));
+        }
+        var.default.as_ref().map(yaml_value_to_string).transpose()
     }
 
     /// Set up version filter expression if configured
@@ -513,6 +522,16 @@ impl AquaPackage {
         let mut ctx = Context::default();
         ctx.insert("Version", v);
         ctx
+    }
+}
+
+fn yaml_value_to_string(value: &serde_yaml::Value) -> Result<String> {
+    match value {
+        serde_yaml::Value::String(s) => Ok(s.clone()),
+        serde_yaml::Value::Number(n) => Ok(n.to_string()),
+        serde_yaml::Value::Bool(b) => Ok(b.to_string()),
+        serde_yaml::Value::Null => Ok(String::new()),
+        _ => Err(eyre!("aqua var default must be a scalar value")),
     }
 }
 
@@ -950,6 +969,10 @@ impl AquaGithubArtifactAttestations {
 mod tests {
     use super::*;
 
+    fn default_str(value: &str) -> Option<serde_yaml::Value> {
+        Some(serde_yaml::Value::String(value.to_string()))
+    }
+
     #[test]
     fn test_aqua_file_src_gradle() {
         // Test the gradle package src template: {{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle
@@ -1083,7 +1106,7 @@ mod tests {
             asset: "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string(),
             vars: vec![AquaVar {
                 name: "channel".to_string(),
-                default: Some("stable".to_string()),
+                default: default_str("stable"),
                 required: false,
             }],
             ..Default::default()
@@ -1100,14 +1123,30 @@ mod tests {
             asset: "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string(),
             vars: vec![AquaVar {
                 name: "channel".to_string(),
-                default: Some("stable".to_string()),
+                default: default_str("stable"),
                 required: false,
             }],
             ..Default::default()
         }
-        .with_var_values(&var_values);
+        .with_var_values(var_values)
+        .unwrap();
         let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
         assert_eq!(asset, "tool-beta-1.0.0.tar.gz");
+    }
+
+    #[test]
+    fn test_vars_default_scalar_value() {
+        let pkg = AquaPackage {
+            asset: "tool-go{{.Vars.go_version}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "go_version".to_string(),
+                default: Some(serde_yaml::from_str("1.24").unwrap()),
+                required: false,
+            }],
+            ..Default::default()
+        };
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(asset, "tool-go1.24-1.0.0.tar.gz");
     }
 
     #[test]
@@ -1125,6 +1164,41 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("required aqua var not set: channel"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_vars_required_missing_with_var_values() {
+        let pkg = AquaPackage {
+            vars: vec![AquaVar {
+                name: "go_version".to_string(),
+                default: None,
+                required: true,
+            }],
+            ..Default::default()
+        };
+        let err = pkg.with_var_values(HashMap::new()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("required aqua var not set: go_version"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_vars_empty_name() {
+        let pkg = AquaPackage {
+            vars: vec![AquaVar {
+                name: String::new(),
+                default: None,
+                required: false,
+            }],
+            ..Default::default()
+        };
+        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
+        assert!(
+            err.to_string().contains("aqua var name is empty"),
             "unexpected error: {err}"
         );
     }
