@@ -2240,7 +2240,7 @@ pub fn arch() -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
+mod lock_candidate_tests {
     fn build_lock_candidates(
         version: &str,
         tag: Option<&str>,

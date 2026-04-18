@@ -44,20 +44,6 @@ to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
 
 ## Tool Options
 
-### `vars`
-
-Some aqua registry entries define template variables (for example `{{.Vars.channel}}`).
-Set them via tool options using either top-level keys or a nested `vars` table:
-
-```toml
-[tools]
-"aqua:flutter/flutter" = { version = "3.32.8", channel = "stable" }
-"aqua:scenarigo/scenarigo" = { version = "0.21.0", vars = { go_version = "1.24" } }
-```
-
-Vars with defaults are filled automatically. Vars marked as required in the aqua registry must be set
-unless the registry also provides a default.
-
 ### `symlink_bins`
 
 Some tools bundle extra executables that you may not want exposed on PATH. For example, `aws-cli` bundles
@@ -77,6 +63,20 @@ When enabled:
 - Otherwise, mise falls back to exposing the inferred primary binary for the package
 - A `.mise-bins` subdirectory is created with symlinks to the exposed binaries
 - Bundled dependencies and other extra executables, such as Python in `aws-cli`, are not added to PATH
+
+### `vars`
+
+Some aqua registry entries define template variables (for example <span v-pre>`{{.Vars.channel}}`</span>).
+Set them via tool options using either top-level keys or a nested `vars` table:
+
+```toml
+[tools]
+"aqua:flutter/flutter" = { version = "3.32.8", channel = "stable" }
+"aqua:scenarigo/scenarigo" = { version = "0.21.0", vars = { go_version = "1.24" } }
+```
+
+Vars with defaults are filled automatically. Vars marked as required in the aqua registry must be set
+unless the registry also provides a default.
 
 ## Settings
 
