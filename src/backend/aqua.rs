@@ -590,8 +590,7 @@ impl Backend for AquaBackend {
             );
         }
         let mut v = tag.unwrap_or_else(|| tv.version.clone());
-        let mut v_prefixed =
-            (tag_is_none && !tv.version.starts_with('v')).then(|| format!("v{v}"));
+        let mut v_prefixed = (tag_is_none && !tv.version.starts_with('v')).then(|| format!("v{v}"));
         let versions = match &v_prefixed {
             Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
             None => vec![v.as_str()],
@@ -2082,8 +2081,7 @@ mod tests {
     ) -> (String, Vec<String>) {
         let tag_is_none = tag.is_none();
         let mut v = tag.unwrap_or(version).to_string();
-        let mut v_prefixed =
-            (tag_is_none && !version.starts_with('v')).then(|| format!("v{v}"));
+        let mut v_prefixed = (tag_is_none && !version.starts_with('v')).then(|| format!("v{v}"));
 
         if let Some(prefix) = version_prefix
             && !v.starts_with(prefix)
