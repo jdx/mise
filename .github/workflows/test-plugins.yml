@@ -37,7 +37,7 @@ jobs:
           shared-key: build
           save-if: false
       - run: scripts/build-tarball.sh x86_64-unknown-linux-gnu
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: |
@@ -100,7 +100,7 @@ jobs:
     steps:
       - name: apt-get
         run: sudo apt-get update; sudo apt-get install zsh fish direnv re2c libcurl4-openssl-dev libgd-dev libonig-dev autoconf bison build-essential curl gettext git libgd-dev libcurl4-openssl-dev libedit-dev libicu-dev libjpeg-dev libmysqlclient-dev libonig-dev libpng-dev libpq-dev libreadline-dev libsqlite3-dev libssl-dev libxml2-dev libzip-dev openssl pkg-config re2c zlib1g-dev
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
@@ -178,7 +178,7 @@ jobs:
     steps:
       - name: Install zsh/fish/direnv
         run: sudo apt-get update; sudo apt-get install zsh fish direnv
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
