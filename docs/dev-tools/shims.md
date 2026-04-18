@@ -28,10 +28,11 @@ echo $PATH
 If using [`mise activate`](/cli/activate.html), `mise` will automatically add the required tools to `PATH`.
 
 ```sh
-PATH="$HOME/.local/share/mise/installs/python/3.13.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+PATH="$HOME/.local/share/mise/installs/python/3.15.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 ```
 
 In this example, the python `bin` directory was added at the beginning of the `PATH`, making it available in the current shell session.
+When a fuzzy version like `python = "3.15"` or `node = "26"` is active, this path may use the requested-version symlink, such as `~/.local/share/mise/installs/python/3.15/bin`, instead of the fully resolved patch version.
 
 While the `PATH` design of `mise` works great in most cases, there are some situations where `shims` are preferable. This is the case when you are not using an interactive shell (for example, when using `mise` in an IDE or a script).
 

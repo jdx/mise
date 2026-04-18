@@ -26,6 +26,11 @@ struct DevEngine {
     version: Option<String>,
 }
 
+pub fn is_package_json(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|file_name| file_name == "package.json")
+}
+
 /// Deserialize a field that may be a single object or an array (take the first element).
 /// The npm devEngines spec allows both forms.
 fn deserialize_one_or_first<'de, D>(
@@ -62,8 +67,8 @@ impl PackageJsonData {
             .and_then(|de| de.runtime.as_ref())
             .filter(|r| r.name.as_deref() == Some(tool_name))
             .and_then(|r| r.version.as_deref())
-            .map(simplify_semver)
             .filter(|v| !v.is_empty())
+            .map(str::to_string)
     }
 
     /// Extract a package manager version for the given tool name.
@@ -75,8 +80,8 @@ impl PackageJsonData {
             .and_then(|de| de.package_manager.as_ref())
             .filter(|pm| pm.name.as_deref() == Some(tool_name))
             .and_then(|pm| pm.version.as_deref())
-            .map(simplify_semver)
             .filter(|v| !v.is_empty())
+            .map(str::to_string)
             .or_else(|| {
                 // Fall back to packageManager field (e.g. "pnpm@9.1.0+sha256.abc")
                 let pm_field = self.package_manager.as_deref()?;
@@ -91,71 +96,6 @@ impl PackageJsonData {
                 }
                 Some(version.to_string())
             })
-    }
-}
-
-/// Simplify a semver range to a mise-compatible version prefix.
-///
-/// Strips range operators (>=, ^, ~) and trailing `.0` components to produce
-/// a prefix that mise can match against. For exact versions, returns as-is.
-/// Upper-bound operators (`<`, `<=`) are ignored since they don't indicate
-/// a version to install.
-///
-/// # TODO
-/// This doesn't handle all edge cases correctly. For example, `^20.0.1` should not
-/// match `20.0.0`, but our simplified approach strips it to `20` which would match.
-/// Full semver range support may be added in the future.
-fn simplify_semver(input: &str) -> String {
-    let input = input.trim();
-    if input == "*" || input == "x" {
-        return "latest".to_string();
-    }
-
-    // Upper-bound operators don't indicate a version to install
-    if input.starts_with('<') || input.starts_with("<=") {
-        return String::new();
-    }
-
-    // Strip leading range operators
-    let version = input
-        .trim_start_matches(">=")
-        .trim_start_matches('>')
-        .trim_start_matches('^')
-        .trim_start_matches('~')
-        .trim_start_matches('=')
-        .trim();
-
-    if version.is_empty() {
-        return "latest".to_string();
-    }
-
-    // Replace wildcard segments (x, *) with truncation
-    // e.g. "18.x" -> "18", "18.2.*" -> "18.2"
-    let parts: Vec<&str> = version
-        .split('.')
-        .take_while(|p| *p != "x" && *p != "*")
-        .collect();
-    if parts.is_empty() {
-        return "latest".to_string();
-    }
-    if parts.len() < version.split('.').count() {
-        // Had wildcard segments, return truncated prefix
-        return parts.join(".");
-    }
-
-    let had_operator = version != input;
-
-    // Only strip trailing .0 components when a range operator was present,
-    // since ranges imply prefix matching. Exact versions are kept as-is.
-    if had_operator {
-        let trimmed: Vec<&str> = match parts.as_slice() {
-            [major, "0", "0"] => vec![major],
-            [major, minor, "0"] => vec![major, minor],
-            _ => parts,
-        };
-        trimmed.join(".")
-    } else {
-        version.to_string()
     }
 }
 
@@ -182,22 +122,6 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
-
-    #[test]
-    fn test_simplify_semver() {
-        assert_eq!(simplify_semver(">=18.0.0"), "18");
-        assert_eq!(simplify_semver("^20.0.0"), "20");
-        assert_eq!(simplify_semver("~18.2.0"), "18.2");
-        assert_eq!(simplify_semver("9.1.0"), "9.1.0");
-        assert_eq!(simplify_semver("9.1.2"), "9.1.2");
-        assert_eq!(simplify_semver("18"), "18");
-        assert_eq!(simplify_semver("*"), "latest");
-        assert_eq!(simplify_semver("x"), "latest");
-        assert_eq!(simplify_semver(">= 18.0.0"), "18");
-        assert_eq!(simplify_semver("^18.2.0"), "18.2");
-        assert_eq!(simplify_semver("~18.0.0"), "18");
-        assert_eq!(simplify_semver("=18.0.0"), "18");
-    }
 
     #[test]
     fn test_parse_package_json() {
@@ -241,20 +165,6 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_semver_upper_bound() {
-        assert_eq!(simplify_semver("<18.0.0"), "");
-        assert_eq!(simplify_semver("<=18.0.0"), "");
-    }
-
-    #[test]
-    fn test_simplify_semver_wildcards() {
-        assert_eq!(simplify_semver("18.x"), "18");
-        assert_eq!(simplify_semver("18.*"), "18");
-        assert_eq!(simplify_semver("18.2.x"), "18.2");
-        assert_eq!(simplify_semver("18.2.*"), "18.2");
-    }
-
-    #[test]
     fn test_runtime_version() {
         let pkg: PackageJsonData = serde_json::from_str(
             r#"{
@@ -267,8 +177,43 @@ mod tests {
             }"#,
         )
         .unwrap();
-        assert_eq!(pkg.runtime_version("node"), Some("20".to_string()));
+        assert_eq!(pkg.runtime_version("node"), Some(">=20.0.0".to_string()));
         assert_eq!(pkg.runtime_version("bun"), None);
+    }
+
+    #[test]
+    fn test_runtime_version_lower_bound_range() {
+        let pkg: PackageJsonData = serde_json::from_str(
+            r#"{
+                "devEngines": {
+                    "runtime": {
+                        "name": "node",
+                        "version": ">=25.6.1"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(pkg.runtime_version("node"), Some(">=25.6.1".to_string()));
+    }
+
+    #[test]
+    fn test_runtime_version_compound_range() {
+        let pkg: PackageJsonData = serde_json::from_str(
+            r#"{
+                "devEngines": {
+                    "runtime": {
+                        "name": "node",
+                        "version": ">=20 <21 || >=22"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            pkg.runtime_version("node"),
+            Some(">=20 <21 || >=22".to_string())
+        );
     }
 
     #[test]
@@ -284,7 +229,7 @@ mod tests {
             }"#,
         )
         .unwrap();
-        assert_eq!(pkg.runtime_version("bun"), Some("1".to_string()));
+        assert_eq!(pkg.runtime_version("bun"), Some("^1.0.0".to_string()));
         assert_eq!(pkg.runtime_version("node"), None);
     }
 
@@ -301,7 +246,7 @@ mod tests {
             }"#,
         )
         .unwrap();
-        assert_eq!(pkg.runtime_version("node"), Some("22".to_string()));
+        assert_eq!(pkg.runtime_version("node"), Some(">=22.0.0".to_string()));
     }
 
     #[test]
@@ -332,8 +277,30 @@ mod tests {
             }"#,
         )
         .unwrap();
-        assert_eq!(pkg.package_manager_version("pnpm"), Some("9".to_string()));
+        assert_eq!(
+            pkg.package_manager_version("pnpm"),
+            Some(">=9.0.0".to_string())
+        );
         assert_eq!(pkg.package_manager_version("yarn"), None);
+    }
+
+    #[test]
+    fn test_package_manager_version_dev_engines_lower_bound_range() {
+        let pkg: PackageJsonData = serde_json::from_str(
+            r#"{
+                "devEngines": {
+                    "packageManager": {
+                        "name": "yarn",
+                        "version": ">=4.12.0"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            pkg.package_manager_version("yarn"),
+            Some(">=4.12.0".to_string())
+        );
     }
 
     #[test]
@@ -379,7 +346,10 @@ mod tests {
             }"#,
         )
         .unwrap();
-        assert_eq!(pkg.package_manager_version("pnpm"), Some("10".to_string()));
+        assert_eq!(
+            pkg.package_manager_version("pnpm"),
+            Some("^10.0.0".to_string())
+        );
     }
 
     #[test]

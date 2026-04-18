@@ -1,2 +1,4 @@
 backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
 description = "self-contained, portable perl binaries"
+detect = [".perl-version"]
+idiomatic_files = [".perl-version"]

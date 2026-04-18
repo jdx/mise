@@ -440,7 +440,7 @@ fn host_auth_headers(url: &Url) -> HeaderMap {
 
     let is_github = host == "api.github.com"
         || host == "github.com"
-        || host.ends_with(".githubusercontent.com")
+        || crate::github::is_githubusercontent_auth_host(host)
         || crate::github::is_gh_host(host);
     if is_github {
         return crate::github::get_headers(url.as_str());

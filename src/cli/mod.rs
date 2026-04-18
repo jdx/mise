@@ -241,7 +241,6 @@ pub enum Commands {
     Reshim(reshim::Reshim),
     Run(Box<run::Run>),
     Search(search::Search),
-    #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
     Set(set::Set),
     Settings(settings::Settings),
@@ -311,7 +310,6 @@ impl Commands {
             Self::Reshim(cmd) => cmd.run().await,
             Self::Run(cmd) => (*cmd).run().await,
             Self::Search(cmd) => cmd.run().await,
-            #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run().await,
             Self::Set(cmd) => cmd.run().await,
             Self::Settings(cmd) => cmd.run().await,
@@ -390,21 +388,105 @@ fn get_all_run_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
 /// Prefix used to escape flags that should be passed to tasks, not mise
 const TASK_ARG_ESCAPE_PREFIX: &str = "\x00MISE_TASK_ARG\x00";
 
+fn escape_args_after_separator(args: &[String], separator_idx: usize) -> Vec<String> {
+    let mut result = args[..=separator_idx].to_vec();
+    for arg in &args[separator_idx + 1..] {
+        if arg.starts_with('-') && arg != "-" {
+            result.push(format!("{}{}", TASK_ARG_ESCAPE_PREFIX, arg));
+        } else {
+            result.push(arg.clone());
+        }
+    }
+    result
+}
+
+fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usize> {
+    let (flags_with_values, _) = get_global_flags(cmd);
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+
+        if arg == "--" {
+            return None;
+        }
+
+        if !arg.starts_with('-') {
+            return Some(i);
+        }
+
+        let flag_takes_value = if arg.starts_with("--") {
+            if arg.contains('=') {
+                false
+            } else {
+                let flag_name = arg.split('=').next().unwrap();
+                flags_with_values.iter().any(|f| f == flag_name)
+            }
+        } else if arg.len() >= 2 {
+            let flag_name = &arg[..2];
+            flags_with_values.iter().any(|f| f == flag_name)
+        } else {
+            false
+        };
+
+        if flag_takes_value && i + 1 < args.len() {
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
+fn is_known_subcommand(cmd: &clap::Command, arg: &str) -> bool {
+    cmd.get_subcommands()
+        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
+        .any(|name| name == arg)
+}
+
+fn uses_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) -> bool {
+    matches!(
+        first_non_global_arg_idx(cmd, args).and_then(|idx| args.get(idx)),
+        Some(arg) if arg == "b"
+    )
+}
+
+fn warn_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) {
+    if uses_deprecated_backends_alias(cmd, args) {
+        deprecated_at!(
+            "2026.4.0",
+            "2027.4.0",
+            "cli.backends.b",
+            "`mise b` is deprecated. Use `mise backends` instead."
+        );
+    }
+}
+
 /// Escape flags after task names so clap doesn't parse them as mise flags.
 /// This preserves ::: separators for multi-task handling while preventing
 /// clap from consuming flags like --jobs that appear after task names.
 fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
-    // If there's already a '--' separator, let clap handle everything normally
-    if args.contains(&"--".to_string()) {
-        return args.to_vec();
-    }
-
-    // Find "run" position
-    let run_pos = args.iter().position(|a| a == "run");
+    // Find the mise `run` subcommand position. Do not scan past `--`; values
+    // after that boundary belong to another command or a task.
+    let first_idx = first_non_global_arg_idx(cmd, args);
+    let run_pos = first_idx.filter(|&pos| args[pos] == "run");
     let run_pos = match run_pos {
         Some(pos) => pos,
-        None => return args.to_vec(), // Not a run command
+        None => {
+            if let (Some(task_idx), Some(separator_idx)) =
+                (first_idx, args.iter().position(|a| a == "--"))
+            {
+                if is_known_subcommand(cmd, &args[task_idx]) || separator_idx <= task_idx {
+                    return args.to_vec();
+                }
+                return escape_args_after_separator(args, separator_idx);
+            }
+            return args.to_vec();
+        }
     };
+
+    if let Some(separator_idx) = args[run_pos + 1..].iter().position(|a| a == "--") {
+        return escape_args_after_separator(args, run_pos + 1 + separator_idx);
+    }
 
     let (flags_with_values, _) = get_all_run_flags(cmd);
 
@@ -491,66 +573,19 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
         return args.to_vec();
     }
 
-    // If there's already a '--' separator, let clap handle everything normally
-    // (user explicitly separated task args)
+    // If there's already a '--' separator, let clap handle the naked task path.
+    // escape_task_args will still protect task-side flags after the separator.
     if args.contains(&"--".to_string()) {
         return args.to_vec();
     }
 
-    let (flags_with_values, _) = get_global_flags(cmd);
-
     // Skip global flags to find the first non-flag argument (subcommand or task)
-    let mut i = 1;
-    while i < args.len() {
-        let arg = &args[i];
-
-        if !arg.starts_with('-') {
-            // Found first non-flag argument
-            break;
-        }
-
-        // Check if this flag takes a value
-        let flag_takes_value = if arg.starts_with("--") {
-            if arg.contains('=') {
-                // --flag=value format, doesn't consume next arg
-                i += 1;
-                continue;
-            } else {
-                let flag_name = arg.split('=').next().unwrap();
-                flags_with_values.iter().any(|f| f == flag_name)
-            }
-        } else {
-            // Short form: check if it's in flags_with_values list
-            if arg.len() >= 2 {
-                let flag_name = &arg[..2]; // Get -X part
-                flags_with_values.iter().any(|f| f == flag_name)
-            } else {
-                false
-            }
-        };
-
-        if flag_takes_value && i + 1 < args.len() {
-            // Skip both the flag and its value
-            i += 2;
-        } else {
-            // Skip just the flag
-            i += 1;
-        }
-    }
-
-    // No non-flag argument found
-    if i >= args.len() {
+    let Some(i) = first_non_global_arg_idx(cmd, args) else {
         return args.to_vec();
-    }
-
-    // Extract all known subcommand names and aliases from the clap Command
-    let known_subcommands: Vec<_> = cmd
-        .get_subcommands()
-        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
-        .collect();
+    };
 
     // Check if the first non-flag argument is a known subcommand
-    if known_subcommands.contains(&args[i].as_str()) {
+    if is_known_subcommand(cmd, &args[i]) {
         return args.to_vec();
     }
 
@@ -605,6 +640,7 @@ impl Cli {
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
+        warn_deprecated_backends_alias(&cmd, args);
         measure!("migrate", { migrate::run().await });
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
@@ -787,5 +823,123 @@ mod tests {
                 clap_sort::assert_sorted(subcmd);
             }
         }
+    }
+
+    #[test]
+    fn test_escape_task_args_preserves_task_separator_tail() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "run".to_string(),
+            "atask".to_string(),
+            "-q".to_string(),
+            "--".to_string(),
+            "--".to_string(),
+            "--help".to_string(),
+        ];
+
+        let escaped = escape_task_args(&cmd, &args);
+        let separator_idx = escaped.iter().position(|arg| arg == "--").unwrap();
+        assert_eq!(escaped[..=separator_idx], args[..=separator_idx]);
+        assert!(escaped[separator_idx + 1].starts_with(TASK_ARG_ESCAPE_PREFIX));
+        assert!(escaped[separator_idx + 2].starts_with(TASK_ARG_ESCAPE_PREFIX));
+        assert_eq!(
+            unescape_task_args(&escaped[separator_idx + 1..]),
+            vec!["--".to_string(), "--help".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_escape_task_args_preserves_naked_task_separator_tail() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "atask".to_string(),
+            "-q".to_string(),
+            "--".to_string(),
+            "--help".to_string(),
+        ];
+
+        assert_eq!(preprocess_args_for_naked_run(&cmd, &args), args);
+        let escaped = escape_task_args(&cmd, &args);
+        let separator_idx = escaped.iter().position(|arg| arg == "--").unwrap();
+        assert_eq!(escaped[..=separator_idx], args[..=separator_idx]);
+        assert!(escaped[separator_idx + 1].starts_with(TASK_ARG_ESCAPE_PREFIX));
+        assert_eq!(
+            unescape_task_args(&escaped[separator_idx + 1..]),
+            vec!["--help".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_escape_task_args_leaves_subcommand_separator_tail_alone() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "exec".to_string(),
+            "--".to_string(),
+            "sh".to_string(),
+            "--flag".to_string(),
+        ];
+
+        assert_eq!(escape_task_args(&cmd, &args), args);
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias() {
+        let cmd = Cli::command();
+        let args = vec!["mise".to_string(), "b".to_string()];
+
+        assert!(uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias_after_global_flag() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "--cd".to_string(),
+            "project".to_string(),
+            "b".to_string(),
+        ];
+
+        assert!(uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias_ignores_global_flag_value() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "--cd".to_string(),
+            "b".to_string(),
+            "backends".to_string(),
+        ];
+
+        assert!(!uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias_ignores_task_arg() {
+        let cmd = Cli::command();
+        let args = vec!["mise".to_string(), "run".to_string(), "b".to_string()];
+
+        assert!(!uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_escape_task_args_ignores_run_after_subcommand_separator() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "exec".to_string(),
+            "--".to_string(),
+            "npm".to_string(),
+            "run".to_string(),
+            "test".to_string(),
+            "--help".to_string(),
+        ];
+
+        assert_eq!(escape_task_args(&cmd, &args), args);
     }
 }

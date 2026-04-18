@@ -160,9 +160,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 fn filter_enabled(short: &str) -> bool {
-    tool_enabled(
-        &Settings::get().enable_tools,
-        &Settings::get().disable_tools,
-        &short.to_string(),
-    )
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    tool_enabled(enable_tools.as_ref(), &disable_tools, &short.to_string())
 }

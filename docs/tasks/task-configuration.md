@@ -267,7 +267,7 @@ run = "echo my internal task"
 
 ### `confirm`
 
-- **Type**: `string`
+- **Type**: `string` | `{ message: string, default: string }`
 
 A message to show before running the task. This is useful for tasks that are destructive or take a long
 time to run. The user will be prompted to confirm before the task's own `run` command executes.
@@ -278,7 +278,7 @@ time to run. The user will be prompted to confirm before the task's own `run` co
 
 ```mise-toml
 [tasks.release]
-confirm = "Are you sure you want to cut a release?"
+confirm = { message = "Are you sure you want to cut a release?", default = "no" }
 description = 'Cut a new release'
 file = 'scripts/release.sh'
 ```
@@ -307,6 +307,34 @@ this that no other tasks are running at the same time.
 
 In the future we could have a property like `single = true` or something that prevents multiple tasks
 from running at the same time. If that sounds useful, search/file a ticket.
+
+### `raw_args`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+When `true`, mise does not parse arguments to the task at all — every argument
+is passed through verbatim to the underlying command, including `--help`/`-h`.
+Use this for tasks that act as a thin proxy for a tool which already has its
+own argument parser (e.g. `next build`, Django `manage.py`, Python scripts
+using `argparse`):
+
+```toml
+[tasks.manage]
+raw_args = true
+run = 'python manage.py'
+```
+
+```sh
+mise run manage --help          # forwarded to manage.py, not intercepted by mise
+mise run manage migrate --fake  # all flags reach manage.py unchanged
+```
+
+Without `raw_args`, mise intercepts `--help` and prints its own task help. As
+an ad-hoc alternative for individual invocations, you can also use
+`mise run task -- --help` — the `--` separator now bypasses mise's usage
+parser specifically for `--help`/`-h`. Arguments after that separator belong
+to the task, so `mise run task -- -- --help` forwards `-- --help` to the task.
 
 ### `interactive`
 

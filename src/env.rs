@@ -244,14 +244,14 @@ pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> = Lazy::new(|| {
 pub static MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: Lazy<Option<IndexSet<String>>> =
     Lazy::new(|| match var("MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES") {
         Ok(v) if v == "none" => Some([].into()),
-        Ok(v) => Some(v.split(':').map(|s| s.to_string()).collect()),
+        Ok(v) => Some(split_colon_list(&v)),
         Err(_) => {
             miserc::get_override_tool_versions_filenames().map(|v| v.iter().cloned().collect())
         }
     });
 pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
     Lazy::new(|| match var("MISE_OVERRIDE_CONFIG_FILENAMES") {
-        Ok(v) => v.split(':').map(|s| s.to_string()).collect(),
+        Ok(v) => split_colon_list(&v),
         Err(_) => miserc::get_override_config_filenames()
             .map(|v| v.iter().cloned().collect())
             .unwrap_or_default(),
@@ -264,12 +264,10 @@ pub static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
 pub static MISE_SYSTEM_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_SYSTEM_CONFIG_FILE"));
 pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
-    var("MISE_IGNORED_CONFIG_PATHS")
-        .ok()
+    var_os("MISE_IGNORED_CONFIG_PATHS")
         .map(|v| {
-            v.split(':')
-                .filter(|p| !p.is_empty())
-                .map(PathBuf::from)
+            split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
                 .map(replace_path)
                 .collect()
         })
@@ -280,8 +278,7 @@ pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         .unwrap_or_default()
 });
 pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
-    var("MISE_CEILING_PATHS")
-        .ok()
+    var_os("MISE_CEILING_PATHS")
         .map(|v| {
             split_paths(&v)
                 .filter(|p| !p.as_os_str().is_empty())
@@ -738,6 +735,18 @@ fn linux_glibc_version() -> Option<(u32, u32)> {
     None
 }
 
+/// Split a colon-separated string into a set, filtering empty segments.
+/// Empty segments arise from empty strings, leading/trailing colons, or
+/// consecutive colons — all of which should be ignored rather than
+/// injected as empty paths into config discovery.
+fn split_colon_list(value: &str) -> IndexSet<String> {
+    value
+        .split(':')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
 fn filename(path: &str) -> &str {
     path.rsplit_once(path::MAIN_SEPARATOR_STR)
         .map(|(_, file)| file)
@@ -832,6 +841,24 @@ mod tests {
             PathBuf::from("/foo/bar")
         );
         remove_var("MISE_TEST_PATH");
+    }
+
+    #[test]
+    fn test_split_colon_list() {
+        let cases: Vec<(&str, Vec<&str>)> = vec![
+            ("", vec![]),    // empty string — was causing panic
+            (":", vec![]),   // colon only
+            (":::", vec![]), // multiple colons
+            ("mise.toml", vec!["mise.toml"]),
+            ("a:b", vec!["a", "b"]),
+            (":a:b:", vec!["a", "b"]), // leading/trailing colons
+            ("a::b", vec!["a", "b"]),  // consecutive colons
+        ];
+        for (input, expected) in cases {
+            let result = split_colon_list(input);
+            let expected: IndexSet<String> = expected.into_iter().map(|s| s.to_string()).collect();
+            assert_eq!(result, expected, "input: {input:?}");
+        }
     }
 
     #[test]

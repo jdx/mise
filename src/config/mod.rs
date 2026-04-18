@@ -2192,9 +2192,29 @@ async fn load_config_and_file_tasks(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let config_root = cf.config_root();
-    let tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
+    let config_tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
     let file_tasks = load_file_tasks(config, cf.clone(), &config_root).await?;
-    Ok(tasks.into_iter().chain(file_tasks).collect())
+    Ok(merge_file_and_config_tasks(file_tasks, config_tasks))
+}
+
+/// Combine file tasks (auto-discovered executable scripts and included TOML
+/// files) with inline `[tasks.*]` blocks from the same config file.
+///
+/// When a name appears in both: the file task stays as the base and the TOML
+/// block is overlaid via [`Task::merge_toml_overlay`]. Otherwise both are kept.
+fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
+    let mut by_name: IndexMap<String, Task> = IndexMap::new();
+    for t in file_tasks {
+        by_name.insert(t.name.clone(), t);
+    }
+    for t in config_tasks {
+        if let Some(existing) = by_name.get_mut(&t.name) {
+            existing.merge_toml_overlay(t);
+        } else {
+            by_name.insert(t.name.clone(), t);
+        }
+    }
+    by_name.into_values().collect()
 }
 
 async fn load_config_tasks(
@@ -2479,9 +2499,8 @@ pub async fn load_tasks_in_dir(
         file_tasks.extend(loaded);
     }
 
-    let mut tasks = file_tasks
+    let mut tasks = merge_file_and_config_tasks(file_tasks, config_tasks)
         .into_iter()
-        .chain(config_tasks)
         .sorted_by_cached_key(|t| t.name.clone())
         .collect::<Vec<_>>();
     let all_tasks = tasks

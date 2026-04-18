@@ -7,15 +7,27 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings};
+use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
+use crate::semver::{semver_is_at_least, semver_is_older_than, semver_triplet};
 use crate::timeout;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, Toolset};
 use async_trait::async_trait;
 use jiff::Timestamp;
 use serde_json::Value;
 use std::ffi::OsString;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
+
+/// Tolerance applied when converting an absolute `before_date` back to a
+/// relative duration for CLI flags. This ensures that a user-supplied
+/// `install_before = "3d"` never gets rounded up to `4d` due to small amounts
+/// of elapsed time between when mise resolved the cutoff and when it invoked
+/// the package manager.
+const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
+const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
+const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
+const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 
 #[derive(Debug)]
 pub struct NPMBackend {
@@ -129,6 +141,7 @@ impl Backend for NPMBackend {
         // TODO: Add bun support for getting latest version without npm
         // See TODO in _list_remote_versions for details
         self.ensure_npm_for_version_check(config).await;
+
         let cache = self.latest_version_cache.lock().await;
         let this = self;
         timeout::run_with_timeout_async(
@@ -145,7 +158,7 @@ impl Backend for NPMBackend {
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
                             Value::String(ref s) => Ok(Some(s.clone())),
-                            _ => this.latest_version(config, Some("latest".into())).await,
+                            _ => this.latest_version_for_query(config, "latest", None).await,
                         }
                     })
                     .await
@@ -158,15 +171,18 @@ impl Backend for NPMBackend {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         self.check_install_deps(&ctx.config).await;
-        match Settings::get().npm.package_manager {
+        let package_manager = Settings::get().npm.package_manager;
+        let install_before_args = match ctx.before_date {
+            Some(before_date) => {
+                self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
+                    .await;
+                self.build_transitive_release_age_args(&ctx.config, package_manager, before_date)
+                    .await
+            }
+            None => Vec::new(),
+        };
+        match package_manager {
             NpmPackageManager::Bun => {
-                let install_before_args = ctx.before_date.map_or_else(Vec::new, |before_date| {
-                    Self::build_transitive_release_age_args(
-                        NpmPackageManager::Bun,
-                        before_date,
-                        Timestamp::now(),
-                    )
-                });
                 CmdLineRunner::new("bun")
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -194,13 +210,6 @@ impl Backend for NPMBackend {
             NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
-                let install_before_args = ctx.before_date.map_or_else(Vec::new, |before_date| {
-                    Self::build_transitive_release_age_args(
-                        NpmPackageManager::Pnpm,
-                        before_date,
-                        Timestamp::now(),
-                    )
-                });
                 CmdLineRunner::new("pnpm")
                     .arg("add")
                     .arg("--global")
@@ -225,13 +234,6 @@ impl Backend for NPMBackend {
                     .execute()?;
             }
             _ => {
-                let install_before_args = ctx.before_date.map_or_else(Vec::new, |before_date| {
-                    Self::build_transitive_release_age_args(
-                        NpmPackageManager::Npm,
-                        before_date,
-                        Timestamp::now(),
-                    )
-                });
                 CmdLineRunner::new(NPM_PROGRAM)
                     .arg("install")
                     .arg("-g")
@@ -281,32 +283,177 @@ impl NPMBackend {
         }
     }
 
-    fn build_transitive_release_age_args(
+    async fn build_transitive_release_age_args(
+        &self,
+        config: &Arc<Config>,
         package_manager: NpmPackageManager,
         before_date: Timestamp,
-        now: Timestamp,
     ) -> Vec<OsString> {
+        let seconds = elapsed_seconds_ceil(before_date, process_now());
         match package_manager {
-            NpmPackageManager::Npm => vec!["--before".into(), before_date.to_string().into()],
-            NpmPackageManager::Bun => {
-                let seconds = Self::elapsed_seconds_ceil(before_date, now);
-                vec!["--minimum-release-age".into(), seconds.to_string().into()]
+            NpmPackageManager::Npm => {
+                // Sub-day windows always emit --before because --min-release-age
+                // is day-granular — which is also the fallback for older npm.
+                // Short-circuiting here lets us skip the `npm --version` probe
+                // entirely when the cutoff is <24h.
+                let supports_min_release_age =
+                    seconds >= 86400 && self.npm_supports_min_release_age_flag(config).await;
+                Self::build_npm_release_age_args(before_date, seconds, supports_min_release_age)
             }
-            NpmPackageManager::Pnpm => {
-                let seconds = Self::elapsed_seconds_ceil(before_date, now);
-                let minutes = seconds.div_ceil(60);
-                vec![format!("--config.minimumReleaseAge={minutes}").into()]
-            }
+            NpmPackageManager::Bun => Self::build_bun_release_age_args(seconds),
+            NpmPackageManager::Pnpm => Self::build_pnpm_release_age_args(seconds),
         }
     }
 
-    fn elapsed_seconds_ceil(before_date: Timestamp, now: Timestamp) -> u64 {
-        if before_date >= now {
-            return 0;
+    fn build_npm_release_age_args(
+        before_date: Timestamp,
+        seconds: u64,
+        supports_min_release_age: bool,
+    ) -> Vec<OsString> {
+        // Both older npm (no --min-release-age) and sub-day windows
+        // (--min-release-age is day-granular) fall back to --before.
+        if !supports_min_release_age || seconds < 86400 {
+            return vec!["--before".into(), before_date.to_string().into()];
         }
-        let nanos = now.as_nanosecond() - before_date.as_nanosecond();
-        u64::try_from((nanos + 999_999_999) / 1_000_000_000)
-            .expect("elapsed timestamp delta must fit into u64")
+        // Apply the drift tolerance only for the day-based conversion;
+        // bun/pnpm emit the cutoff in finer units so drift is harmless there.
+        let days = seconds
+            .saturating_sub(BEFORE_DATE_TOLERANCE_SECS)
+            .div_ceil(86400)
+            .max(1);
+        vec![format!("--min-release-age={days}").into()]
+    }
+
+    fn build_bun_release_age_args(seconds: u64) -> Vec<OsString> {
+        vec!["--minimum-release-age".into(), seconds.to_string().into()]
+    }
+
+    fn build_pnpm_release_age_args(seconds: u64) -> Vec<OsString> {
+        let minutes = seconds.div_ceil(60);
+        vec![format!("--config.minimumReleaseAge={minutes}").into()]
+    }
+
+    async fn warn_if_package_manager_may_not_support_release_age(
+        &self,
+        ctx: &InstallContext,
+        package_manager: NpmPackageManager,
+    ) {
+        let Some((tool, required_version, flag)) =
+            Self::release_age_package_manager_requirement(package_manager)
+        else {
+            return;
+        };
+
+        let version = match Self::toolset_package_manager_version(&ctx.ts, tool) {
+            Some(version) => Some(version),
+            None => match self.dependency_toolset(&ctx.config).await {
+                Ok(ts) => Self::toolset_package_manager_version(&ts, tool),
+                Err(_) => None,
+            },
+        };
+
+        let Some(version) = version else {
+            return;
+        };
+
+        if semver_is_older_than(&version, required_version).unwrap_or(false) {
+            warn!(
+                "install_before is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/npm.html",
+                self.tool_name(),
+                tool,
+                version,
+                tool,
+                required_version,
+                flag
+            );
+        }
+    }
+
+    fn release_age_package_manager_requirement(
+        package_manager: NpmPackageManager,
+    ) -> Option<(&'static str, &'static str, &'static str)> {
+        match package_manager {
+            NpmPackageManager::Npm => None,
+            NpmPackageManager::Bun => {
+                Some(("bun", BUN_MIN_RELEASE_AGE_VERSION, "--minimum-release-age"))
+            }
+            NpmPackageManager::Pnpm => Some((
+                "pnpm",
+                PNPM_MIN_RELEASE_AGE_VERSION,
+                "--config.minimumReleaseAge",
+            )),
+        }
+    }
+
+    fn toolset_package_manager_version(ts: &Toolset, tool: &str) -> Option<String> {
+        let tvl = ts
+            .versions
+            .iter()
+            .find(|(ba, _)| ba.short == tool)
+            .map(|(_, tvl)| tvl)?;
+
+        if let Some(tv) = tvl
+            .versions
+            .iter()
+            .find(|tv| semver_triplet(&tv.version).is_some())
+        {
+            return Some(tv.version.clone());
+        }
+
+        tvl.requests
+            .iter()
+            .map(|tr| tr.version())
+            .find(|version| semver_triplet(version).is_some())
+    }
+
+    /// Detect whether the locally installed npm supports --min-release-age.
+    /// When npm is explicitly managed by mise, the version is read from the
+    /// dependency ToolSet without spawning a subprocess. Otherwise falls back
+    /// to `npm --version`. Returns false on any failure so callers
+    /// transparently fall back to the older --before flag.
+    async fn npm_supports_min_release_age_flag(&self, config: &Arc<Config>) -> bool {
+        // When npm is explicitly managed by mise (e.g. `mise use npm@11.10.0`),
+        // pull the resolved version from the dependency ToolSet and skip the
+        // subprocess entirely.
+        if let Ok(ts) = self.dependency_toolset(config).await {
+            for (ba, tvl) in &ts.versions {
+                if ba.short == "npm"
+                    && let Some(tv) = tvl.versions.first()
+                {
+                    debug!(
+                        "npm version detection: found npm {} in ToolSet, skipping subprocess",
+                        tv.version
+                    );
+                    return semver_is_at_least(&tv.version, NPM_MIN_RELEASE_AGE_VERSION)
+                        .unwrap_or(false);
+                }
+            }
+        }
+
+        // Fallback for node-bundled npm: run `npm --version`
+        let env = match self.dependency_env(config).await {
+            Ok(env) => env,
+            Err(e) => {
+                debug!(
+                    "npm version detection: dependency_env failed, using --before fallback: {e:#}"
+                );
+                return false;
+            }
+        };
+        let output = match cmd!(NPM_PROGRAM, "--version")
+            .full_env(env)
+            .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+            .read()
+        {
+            Ok(s) => s,
+            Err(e) => {
+                debug!(
+                    "npm version detection: `npm --version` failed, using --before fallback: {e:#}"
+                );
+                return false;
+            }
+        };
+        semver_is_at_least(&output, NPM_MIN_RELEASE_AGE_VERSION).unwrap_or(false)
     }
 
     /// Check dependencies for version checking (always needs npm)
@@ -371,7 +518,9 @@ impl NPMBackend {
 mod tests {
     use super::*;
     use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionList, ToolVersionOptions};
     use pretty_assertions::assert_eq;
+    use std::sync::Arc;
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
@@ -382,6 +531,25 @@ mod tests {
             BackendResolution::new(true),
         );
         NPMBackend::from_arg(ba)
+    }
+
+    fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
+        Arc::new(BackendArg::new_raw(
+            tool.to_string(),
+            None,
+            tool.to_string(),
+            None,
+            BackendResolution::new(true),
+        ))
+    }
+
+    fn create_test_tool_request(ba: Arc<BackendArg>, version: &str) -> ToolRequest {
+        ToolRequest::Version {
+            backend: ba,
+            version: version.to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        }
     }
 
     #[test]
@@ -405,11 +573,9 @@ mod tests {
     }
 
     #[test]
-    fn test_build_transitive_release_age_args_for_npm() {
+    fn test_build_npm_release_age_args_legacy() {
         let before_date: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
-        let now: Timestamp = "2024-01-03T03:04:05Z".parse().unwrap();
-        let args =
-            NPMBackend::build_transitive_release_age_args(NpmPackageManager::Npm, before_date, now);
+        let args = NPMBackend::build_npm_release_age_args(before_date, 86400, false);
         assert_eq!(
             args,
             vec![
@@ -420,11 +586,55 @@ mod tests {
     }
 
     #[test]
-    fn test_build_transitive_release_age_args_for_bun() {
-        let before_date: Timestamp = "2024-01-02T03:04:04.100Z".parse().unwrap();
-        let now: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
-        let args =
-            NPMBackend::build_transitive_release_age_args(NpmPackageManager::Bun, before_date, now);
+    fn test_build_npm_release_age_args_sub_day_uses_before() {
+        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let args = NPMBackend::build_npm_release_age_args(before_date, 1, true);
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("--before"),
+                OsString::from("2024-01-01T00:00:00Z")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_npm_release_age_args_full_days() {
+        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let args = NPMBackend::build_npm_release_age_args(before_date, 86400 * 3, true);
+        assert_eq!(args, vec![OsString::from("--min-release-age=3")]);
+    }
+
+    #[test]
+    fn test_build_npm_release_age_args_tolerates_drift() {
+        // Regression test for #9156: "3d" re-converted after ~30s of drift
+        // must not round up to 4 days.
+        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let args = NPMBackend::build_npm_release_age_args(before_date, 86400 * 3 + 30, true);
+        assert_eq!(args, vec![OsString::from("--min-release-age=3")]);
+    }
+
+    #[test]
+    fn test_build_npm_release_age_args_past_tolerance_rounds_up() {
+        // Drift larger than BEFORE_DATE_TOLERANCE_SECS still rounds up so
+        // cutoffs remain at least as strict as requested.
+        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let args = NPMBackend::build_npm_release_age_args(before_date, 86400 * 3 + 120, true);
+        assert_eq!(args, vec![OsString::from("--min-release-age=4")]);
+    }
+
+    #[test]
+    fn test_build_npm_release_age_args_one_day_boundary() {
+        // Small drift at the 1-day boundary must stay at --min-release-age=1
+        // instead of falling through to --before.
+        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let args = NPMBackend::build_npm_release_age_args(before_date, 86400 + 5, true);
+        assert_eq!(args, vec![OsString::from("--min-release-age=1")]);
+    }
+
+    #[test]
+    fn test_build_bun_release_age_args() {
+        let args = NPMBackend::build_bun_release_age_args(1);
         assert_eq!(
             args,
             vec![OsString::from("--minimum-release-age"), OsString::from("1")]
@@ -432,14 +642,91 @@ mod tests {
     }
 
     #[test]
-    fn test_build_transitive_release_age_args_for_pnpm() {
-        let before_date: Timestamp = "2024-01-02T03:03:05.100Z".parse().unwrap();
-        let now: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
-        let args = NPMBackend::build_transitive_release_age_args(
-            NpmPackageManager::Pnpm,
-            before_date,
-            now,
-        );
+    fn test_build_pnpm_release_age_args_rounds_up_to_minutes() {
+        let args = NPMBackend::build_pnpm_release_age_args(1);
         assert_eq!(args, vec![OsString::from("--config.minimumReleaseAge=1")]);
+    }
+
+    #[test]
+    fn test_release_age_package_manager_requirements() {
+        assert_eq!(
+            NPMBackend::release_age_package_manager_requirement(NpmPackageManager::Npm),
+            None
+        );
+        assert_eq!(
+            NPMBackend::release_age_package_manager_requirement(NpmPackageManager::Bun),
+            Some(("bun", BUN_MIN_RELEASE_AGE_VERSION, "--minimum-release-age"))
+        );
+        assert_eq!(
+            NPMBackend::release_age_package_manager_requirement(NpmPackageManager::Pnpm),
+            Some((
+                "pnpm",
+                PNPM_MIN_RELEASE_AGE_VERSION,
+                "--config.minimumReleaseAge"
+            ))
+        );
+    }
+
+    #[test]
+    fn test_npm_min_release_age_version_requirement() {
+        assert_eq!(NPM_MIN_RELEASE_AGE_VERSION, "11.10.0");
+        assert_eq!(
+            crate::semver::semver_is_at_least("11.10.0", NPM_MIN_RELEASE_AGE_VERSION),
+            Some(true)
+        );
+        assert_eq!(
+            crate::semver::semver_is_at_least("11.9.9", NPM_MIN_RELEASE_AGE_VERSION),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn test_toolset_package_manager_version_prefers_resolved_version() {
+        let ba = create_test_backend_arg("bun");
+        let request = create_test_tool_request(ba.clone(), "1.2.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request.clone());
+        tvl.versions
+            .push(ToolVersion::new(request, "1.3.0".to_string()));
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            NPMBackend::toolset_package_manager_version(&ts, "bun"),
+            Some("1.3.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_toolset_package_manager_version_uses_exact_request() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "10.15.0");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            NPMBackend::toolset_package_manager_version(&ts, "pnpm"),
+            Some("10.15.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_toolset_package_manager_version_ignores_unresolved_request() {
+        let ba = create_test_backend_arg("pnpm");
+        let request = create_test_tool_request(ba.clone(), "10");
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+
+        let mut ts = Toolset::default();
+        ts.versions.insert(ba, tvl);
+
+        assert_eq!(
+            NPMBackend::toolset_package_manager_version(&ts, "pnpm"),
+            None
+        );
     }
 }

@@ -191,8 +191,28 @@ ripgrep = { version = "latest", os = ["linux", "macos"] }
 The `os` field accepts an array of operating system identifiers:
 
 - `"linux"` - All Linux distributions
-- `"macos"` - macOS (Darwin)
-- `"windows"` - Windows
+- `"macos"` - macOS (Darwin). `"darwin"` is also accepted as an alias.
+- `"windows"` - Windows. `"win"` is also accepted as an alias.
+
+### OS/Architecture Combinations
+
+You can also restrict tools to specific OS and architecture combinations using the `os/arch` syntax:
+
+```toml
+[tools]
+# Only install on macOS ARM64 and all Linux (skips macOS x86_64)
+hk = { version = "latest", os = ["linux", "macos/arm64"] }
+
+# Only install on Linux x86_64
+mytool = { version = "latest", os = ["linux/x64"] }
+```
+
+Supported architecture identifiers:
+
+- `"arm64"` (or `"aarch64"`)
+- `"x64"` (or `"x86_64"` or `"amd64"`)
+
+When an entry contains `/`, both the OS and architecture must match. When an entry is just an OS name, it matches any architecture on that OS.
 
 If a tool specifies an `os` restriction and the current operating system is not in the list, mise will skip installing and using that tool.
 
@@ -264,28 +284,28 @@ For some users, `mise use` might be the only command you need to learn. It will 
 
 ```shell
 > cd my-project
-> mise use node@24
+> mise use node@26
 # download node, verify signature...
-mise node@24.x.x ✓ installed
-mise ~/my-project/mise.toml tools: node@24.x.x # mise.toml created/updated
+mise node@26.x.x ✓ installed
+mise ~/my-project/mise.toml tools: node@26.x.x # mise.toml created/updated
 
 > which node
-~/.local/share/installs/node/24.x.x/bin/node
+~/.local/share/mise/installs/node/26/bin/node
 ```
 
-`mise use node@24` will install the latest version of node-24 and create/update the
+`mise use node@26` will install the latest version of node-26 and create/update the
 `mise.toml`
 config file in the local directory. The resulting file looks like this:
 
 ```toml [mise.toml]
 [tools]
-node = "24"
+node = "26"
 ```
 
 Anytime you're in that directory, that version of `node` will be used.
 
-`mise use -g node@24` will do the same but update the [global config](/configuration.html#global-config-config-mise-config-toml) (`~/.config/mise/config.toml`) so
-unless there is a config file in the local directory hierarchy, node-24 will be the default version
+`mise use -g node@26` will do the same but update the [global config](/configuration.html#global-config-config-mise-config-toml) (`~/.config/mise/config.toml`) so
+unless there is a config file in the local directory hierarchy, node-26 will be the default version
 for
 the user.
 

@@ -123,8 +123,12 @@ cmd "asdf" hide=true help="[internal] simulates asdf for plugins that call \"asd
     arg "[ARGS]..." help="all arguments" var=true
 }
 cmd "backends" help="Manage backends" {
-    alias "b"
-    alias "backend" "backend-list" hide=true
+    alias "b" "backend" "backend-list" hide=true
+    after_long_help r"Deprecation:
+
+The `mise b` alias is deprecated and will be removed in mise 2027.4.0.
+Use `mise backends` instead.
+"
     cmd "ls" help="List built-in backends" {
         alias "list"
         after_long_help r"Examples:

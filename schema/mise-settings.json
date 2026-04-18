@@ -119,6 +119,7 @@
             "bool_string",
             "list_by_comma",
             "list_by_colon",
+            "list_by_os_path_separator",
             "set_by_comma",
             "parse_url_replacements"
           ],

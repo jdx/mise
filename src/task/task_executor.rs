@@ -206,7 +206,7 @@ impl TaskExecutor {
 
         let mut tools = self.tool.clone();
         for (k, v) in &task.tools {
-            tools.push(format!("{k}@{v}").parse()?);
+            tools.push(v.to_tool_spec(k).parse()?);
         }
         let ts_build_start = std::time::Instant::now();
 
@@ -380,6 +380,22 @@ impl TaskExecutor {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
+
+        let needs_tera = task.run().iter().any(RunEntry::has_tera_template);
+        let mut tera_state = if needs_tera {
+            let usage_values = crate::task::parse_usage_values_from_task(config, task).await?;
+            let config_root = task.config_root.clone().unwrap_or_default();
+            let tera = crate::tera::get_tera(Some(&config_root));
+            let mut tera_ctx = task.tera_ctx(config).await?;
+            if !usage_values.is_empty() {
+                tera_ctx.insert("usage", &usage_values);
+            }
+            tera_ctx.insert("env", env);
+            Some((tera, tera_ctx))
+        } else {
+            None
+        };
+
         // Use an existing guard (e.g. from confirmation) or acquire a new one.
         // The lock is held across consecutive script entries for exclusivity
         // and temporarily dropped around inject_and_wait to avoid deadlocking.
@@ -387,7 +403,16 @@ impl TaskExecutor {
             Some(g) => Some(g),
             None => Some(acquire_runtime_lock(task.interactive).await),
         };
-        for entry in task.run() {
+        for raw_entry in task.run() {
+            let rendered;
+            let entry = if let Some((ref mut tera, ref tera_ctx)) = tera_state
+                && raw_entry.has_tera_template()
+            {
+                rendered = raw_entry.render(tera, tera_ctx)?;
+                &rendered
+            } else {
+                raw_entry
+            };
             match entry {
                 RunEntry::Script(_) => {
                     if let Some((script, args)) = script_iter.next() {
@@ -1026,13 +1051,23 @@ impl TaskExecutor {
         false
     }
 
+    fn parse_confirm_default(default: &str) -> Result<bool> {
+        match default.trim().to_ascii_lowercase().as_str() {
+            "yes" | "y" | "true" => Ok(true),
+            "no" | "n" | "false" => Ok(false),
+            _ => Err(eyre!(
+                "invalid task confirm default: {default:?}, expected one of yes/no/y/n/true/false"
+            )),
+        }
+    }
+
     async fn check_confirmation(
         &self,
         config: &Arc<Config>,
         task: &Task,
         env: &BTreeMap<String, String>,
     ) -> Result<()> {
-        if let Some(confirm_template) = &task.confirm
+        if let Some(confirm) = &task.confirm
             && !Settings::get().yes
         {
             let config_root = task.config_root.clone().unwrap_or_default();
@@ -1048,8 +1083,12 @@ impl TaskExecutor {
             }
             tera_ctx.insert("usage", &usage_ctx);
 
-            let message = tera.render_str(confirm_template, &tera_ctx)?;
-            if !crate::ui::confirm(&message).unwrap_or(false) {
+            let message = tera.render_str(confirm.message(), &tera_ctx)?;
+            let default_yes = match confirm.default_value() {
+                Some(default) => Self::parse_confirm_default(default)?,
+                None => true, // keep backwards compatible default of yes if not specified
+            };
+            if !crate::ui::prompt::confirm_with_default(&message, default_yes).unwrap_or(false) {
                 return Err(eyre!("aborted by user"));
             }
         }
@@ -1067,9 +1106,12 @@ impl TaskExecutor {
         let (spec, _) = task
             .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
             .await?;
-        if !spec.cmd.args.is_empty()
-            || !spec.cmd.flags.is_empty()
-            || !spec.cmd.subcommands.is_empty()
+        // raw_args tasks (and `-- --help`/`-- -h` ad-hoc invocations) must
+        // skip the usage parser so it can't intercept --help.
+        if !task.should_bypass_usage_parser()
+            && (!spec.cmd.args.is_empty()
+                || !spec.cmd.flags.is_empty()
+                || !spec.cmd.subcommands.is_empty())
         {
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
