@@ -566,6 +566,14 @@ to store the logs but not have them litter your display.
 
 Display HTTP requests/responses in the logs.
 
+### `MISE_LOG_VERBOSE_DEPS=1`
+
+By default, `mise -v` (debug level) suppresses debug logs from noisy
+third-party crates (`h2`, `hyper`, `reqwest`, `rustls`, etc.) that emit a line
+per HTTP/2 frame or socket read. Set this to `1` to let those logs through at
+debug level — or use `-vv`/`MISE_LOG_LEVEL=trace`, which always includes
+them.
+
 ### `MISE_QUIET=1`
 
 Equivalent to `MISE_LOG_LEVEL=warn`.

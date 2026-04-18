@@ -18,6 +18,28 @@ struct Logger {
     log_file: Option<Mutex<File>>,
 }
 
+/// Third-party crate targets that emit very noisy debug logs (often per HTTP/2
+/// frame, per socket read, etc.) and would otherwise overwhelm `-v` output.
+/// These are suppressed at Debug level unless `MISE_LOG_VERBOSE_DEPS=1` is set.
+/// Trace level always lets them through.
+const NOISY_DEP_TARGETS: &[&str] = &[
+    "h2",
+    "hyper",
+    "hyper_util",
+    "mio",
+    "reqwest",
+    "rustls",
+    "tokio_util",
+    "tower",
+    "want",
+];
+
+fn is_noisy_dep_target(target: &str) -> bool {
+    NOISY_DEP_TARGETS
+        .iter()
+        .any(|t| target == *t || target.starts_with(&format!("{t}::")))
+}
+
 impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= *self.level.lock().unwrap()
@@ -25,8 +47,23 @@ impl log::Log for Logger {
 
     fn log(&self, record: &Record) {
         let term_level = *self.term_level.lock().unwrap();
-        let will_log_file = record.level() <= self.file_level && self.log_file.is_some();
-        let will_log_term = record.level() <= term_level;
+        let mut will_log_file = record.level() <= self.file_level && self.log_file.is_some();
+        let mut will_log_term = record.level() <= term_level;
+
+        // Suppress Debug-level spam from noisy third-party crates (e.g. h2
+        // logging every received DATA frame). Trace still passes through, as
+        // does any level when MISE_LOG_VERBOSE_DEPS=1.
+        if record.level() == Level::Debug
+            && !*env::MISE_LOG_VERBOSE_DEPS
+            && is_noisy_dep_target(record.target())
+        {
+            if self.file_level < LevelFilter::Trace {
+                will_log_file = false;
+            }
+            if term_level < LevelFilter::Trace {
+                will_log_term = false;
+            }
+        }
 
         if !will_log_file && !will_log_term {
             return;
