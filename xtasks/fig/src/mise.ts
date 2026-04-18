@@ -1561,6 +1561,14 @@ const completionSpec: Fig.Spec = {
           description: "Show latest installed instead of available version",
           isRepeatable: false,
         },
+        {
+          name: "--before",
+          description: "Only consider versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
+          },
+        },
       ],
       args: {
         name: "tool@version",
