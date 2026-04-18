@@ -552,12 +552,19 @@ impl Lockfile {
         } else {
             path.to_path_buf()
         };
-        // Use atomic write: write to temp file, then rename
-        // This prevents partial writes from corrupting the lockfile
-        // Write temp file alongside the real target (guarantees same-filesystem rename)
-        let temp_path = target.with_extension("lock.tmp");
-        file::write(&temp_path, &content)?;
-        fs::rename(&temp_path, target)?;
+        // Use atomic write: write to a uniquely-named temp file, then persist.
+        // - Prevents partial writes from corrupting the lockfile.
+        // - Unique temp name prevents races when multiple mise processes update
+        //   the same lockfile concurrently (e.g. parallel linters each triggering
+        //   `install_missing_bin`). A fixed `mise.lock.tmp` collided here and the
+        //   loser of the rename race got ENOENT.
+        // Write alongside the real target so the rename stays on the same filesystem.
+        let parent = target
+            .parent()
+            .ok_or_else(|| eyre!("lockfile path has no parent: {}", display_path(&target)))?;
+        let mut tmp = tempfile::NamedTempFile::with_prefix_in(".mise.lock.", parent)?;
+        std::io::Write::write_all(tmp.as_file_mut(), content.as_bytes())?;
+        tmp.persist(&target).map_err(|e| e.error)?;
 
         invalidate_caches();
         Ok(())
@@ -1869,6 +1876,44 @@ backend = "core:python"
 
         // Clean up
         let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    #[test]
+    fn test_concurrent_save_no_enoent() {
+        // Regression: two concurrent save() calls used to share a fixed
+        // `mise.lock.tmp` path, so the loser of the rename race got
+        // "No such file or directory". Each save must now use a unique
+        // temp file so concurrent writers never trip over each other.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = Arc::new(temp_dir.path().join("concurrent.lock"));
+        // Pre-create the file so this mirrors the real update path, where
+        // save() only runs on lockfiles that already exist.
+        std::fs::write(&*path, "").unwrap();
+
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..20 {
+                        Lockfile::default().save(&*path).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+
+        // Any leftover temp files would indicate persist() never ran.
+        let leftovers: Vec<_> = std::fs::read_dir(temp_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != std::ffi::OsStr::new("concurrent.lock"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "unexpected temp files left behind: {leftovers:?}"
+        );
     }
 
     #[test]
