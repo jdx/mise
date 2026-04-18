@@ -10,6 +10,7 @@
         "@types/node": "^25.0.0",
         "@withfig/autocomplete-tools": "^2.11.0",
         "@withfig/autocomplete-types": "^1.31.0",
+        "@withfig/eslint-plugin-fig-linter": "^1.4.1",
         "eslint": "^10.0.0",
         "eslint-plugin-compat": "^7.0.1",
         "js-toml": "^1.0.2",
@@ -420,6 +421,8 @@
     "@withfig/autocomplete-tools": ["@withfig/autocomplete-tools@2.11.0", "", { "dependencies": { "@esbuild-plugins/node-modules-polyfill": "^0.2.2", "@fig/autocomplete-helpers": "^2.0.0", "@fig/autocomplete-merge": "^1.4.0", "@types/semver": "^7.5.8", "chalk": "^5.4.1", "chokidar": "^4.0.1", "commander": "^13.0.0", "create-completion-spec": "^1.1.9", "esbuild": "^0.24.2", "fast-glob": "^3.3.2", "module-from-string": "^3.3.1", "prettier": "^3.3.3", "semver": "^7.6.3", "typescript": "^5.5.4" }, "bin": { "autocomplete-tools": "build/bin.js" } }, "sha512-2OzgRGfYnPmahMQAj4XmF/9H5fELUcMOvLnEO1GS6xdRe0QicEjKR0EQU3RHRei4/ST+GK0cfmnE/sAd1W60bw=="],
 
     "@withfig/autocomplete-types": ["@withfig/autocomplete-types@1.31.0", "", {}, "sha512-TSZDo5jvEaeIHqmHY6Wkd3gBqVbxcHQVdkF6N1J8CXRBuQZpjUVci15/HPNYe0nKLvsomBWIRsTP3m1zr9pv3A=="],
+
+    "@withfig/eslint-plugin-fig-linter": ["@withfig/eslint-plugin-fig-linter@1.4.1", "", {}, "sha512-kzPzug7K45U4IztBm4IeeGLPrP9WR3mzdCFFk9V3gQf/35s1IB+nLPAxGP1oZmFCXHBOyjIp0SrfbJ6Bo0g9qQ=="],
 
     "acorn": ["acorn@8.16.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw=="],
 
