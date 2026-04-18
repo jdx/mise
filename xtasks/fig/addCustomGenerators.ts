@@ -4,6 +4,8 @@ import * as path from "path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const figLintDisable =
+  "/* eslint-disable @withfig/fig-linter/conventional-descriptions */";
 
 type GeneratorIdentifier = {
   identifier: string;
@@ -202,7 +204,7 @@ const main = async (fileName: string, outFile?: string) => {
 
     fsAsync.writeFile(
       outFile ?? `${fileName.replace(".ts", "")}.out.ts`,
-      generatorFileContents + "\n" + output
+      generatorFileContents + "\n" + figLintDisable + "\n" + output
     );
   } catch (e) {
     console.error(e);

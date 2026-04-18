@@ -1,5 +1,4 @@
 // If not being published, these need to manually downloaded from https://github.com/withfig/autocomplete/tree/master/src
-/* eslint-disable @withfig/fig-linter/conventional-descriptions */
 import { createNpmSearchHandler } from "./npm";
 import { searchGenerator as createCargoSearchGenerator } from "./cargo";
 
@@ -520,6 +519,7 @@ const completionGeneratorTemplate = (
     },
   };
 };
+/* eslint-disable @withfig/fig-linter/conventional-descriptions */
 const completionSpec: Fig.Spec = {
   name: "mise",
   subcommands: [
