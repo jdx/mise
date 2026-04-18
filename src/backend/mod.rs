@@ -792,20 +792,17 @@ pub trait Backend: Debug + Send + Sync {
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
         let before_date = effective_latest_before_date(self, config, before_date).await?;
-        match query {
-            Some(query) => {
-                self.latest_version_for_query(config, &query, before_date)
-                    .await
-            }
-            None => {
-                // For stable version, apply date filter if provided
-                match before_date {
-                    Some(before) => {
-                        self.latest_version_for_query(config, "latest", Some(before))
-                            .await
-                    }
-                    None => self.latest_stable_version(config).await,
+        match query.as_deref() {
+            Some("latest") | None => match before_date {
+                Some(before) => {
+                    self.latest_version_for_query(config, "latest", Some(before))
+                        .await
                 }
+                None => self.latest_stable_version(config).await,
+            },
+            Some(query) => {
+                self.latest_version_for_query(config, query, before_date)
+                    .await
             }
         }
     }
@@ -1731,6 +1728,133 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
         return Ok(Some(crate::duration::parse_into_timestamp(before)?));
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod latest_version_tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug)]
+    struct LatestBackend {
+        ba: Arc<BackendArg>,
+        stable_calls: AtomicUsize,
+        list_calls: AtomicUsize,
+    }
+
+    impl LatestBackend {
+        fn new(name: &str) -> Self {
+            Self {
+                ba: Arc::new(name.into()),
+                stable_calls: AtomicUsize::new(0),
+                list_calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn stable_calls(&self) -> usize {
+            self.stable_calls.load(Ordering::SeqCst)
+        }
+
+        fn list_calls(&self) -> usize {
+            self.list_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl Backend for LatestBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn list_remote_versions_with_info(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            self._list_remote_versions(_config).await
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            self.list_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: Some("2024-01-01".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "2.0.0".to_string(),
+                    created_at: Some("2025-01-01".to_string()),
+                    ..Default::default()
+                },
+            ])
+        }
+
+        async fn latest_stable_version(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Option<String>> {
+            self.stable_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Some("9.9.9".to_string()))
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            _tv: ToolVersion,
+        ) -> Result<ToolVersion> {
+            unreachable!()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_explicit_latest_uses_latest_stable_version() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-latest-stable");
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), None)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("9.9.9")
+        );
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+
+        assert_eq!(
+            backend
+                .latest_version(&config, None, None)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("9.9.9")
+        );
+        assert_eq!(backend.stable_calls(), 2);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_date_filtered_latest_bypasses_latest_stable_version() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-latest-before-date");
+        let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 1);
+    }
 }
 
 /// Helper function for calculating install operation count in HTTP/S3-style backends.
