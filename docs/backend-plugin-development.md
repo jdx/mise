@@ -18,10 +18,11 @@ Backend plugins extend the standard vfox plugin system with enhanced backend met
 
 Backend plugins are generally a git repository but can also be a directory (via `mise link`).
 
-Backend plugins are implemented in Lua (version 5.1 at the moment). They use three main backend methods implemented as individual files:
+Backend plugins are implemented in Lua (version 5.1 at the moment). They use three required backend methods and one optional batch install method implemented as individual files:
 
 - `hooks/backend_list_versions.lua` - Lists available versions for a tool
 - `hooks/backend_install.lua` - Installs a specific version of a tool
+- `hooks/backend_batch_install.lua` - Optionally installs multiple tools from the same backend in one invocation
 - `hooks/backend_exec_env.lua` - Sets up environment variables for a tool
 
 ## Backend Methods
@@ -66,6 +67,56 @@ function PLUGIN:BackendInstall(ctx)
     return {}
 end
 ```
+
+### BackendBatchInstall
+
+Optionally installs multiple tools from the same backend in one invocation:
+
+```lua
+function PLUGIN:BackendBatchInstall(ctx)
+    local results = {}
+
+    for _, tool in ipairs(ctx.tools) do
+        -- tool.id
+        -- tool.tool
+        -- tool.version
+        -- tool.install_path
+        -- tool.download_path
+        -- tool.options
+
+        -- Your install logic here
+        results[tool.id] = {version = tool.version}
+    end
+
+    return results
+end
+```
+
+`BackendBatchInstall` is optional.
+
+When present, mise may call it when multiple ready tools belong to the same backend plugin in the same install wave. When absent, mise falls back to individual `BackendInstall` calls.
+
+Batch results must be keyed by `tool.id`, not by tool name. This keeps results unambiguous when the same tool name appears multiple times with different versions or options.
+
+Per-tool failures can be returned in the response:
+
+```lua
+return {
+    [tool.id] = {error = "failed to install"}
+}
+```
+
+Successful tools should return a result entry, typically with the resolved version:
+
+```lua
+return {
+    [tool.id] = {version = tool.version}
+}
+```
+
+The `version` field is informational. Mise still finalizes the install using the tool version and
+install path it resolved before invoking `BackendBatchInstall`, so plugins should not use this field
+to redirect the install to a different version or location.
 
 ### BackendExecEnv
 
@@ -124,6 +175,7 @@ my-backend-plugin/
 ├── hooks/
 │   ├── backend_list_versions.lua   # BackendListVersions hook
 │   ├── backend_install.lua         # BackendInstall hook
+│   ├── backend_batch_install.lua   # Optional BackendBatchInstall hook
 │   └── backend_exec_env.lua        # BackendExecEnv hook
 └── Injection.lua                   # Runtime injection (auto-generated)
 ```
@@ -219,6 +271,24 @@ mise use vfox-npm:prettier@latest
 # Execute the tool
 mise exec -- prettier --help
 ```
+
+## BackendBatchInstall Context
+
+When `BackendBatchInstall` is used, `ctx.tools` contains one entry per tool in the batch:
+
+- `id` - Stable request id for the install item. Use this as the key in the returned results table.
+- `tool` - Tool name inside the backend plugin.
+- `version` - Requested or resolved version.
+- `install_path` - Final install directory for the tool.
+- `download_path` - Download/work directory for the tool.
+- `options` - Tool options from mise config.
+
+## Plugin Guidelines
+
+- Implement `BackendBatchInstall` only when one backend invocation can actually do less work than multiple `BackendInstall` calls.
+- Always return results keyed by `id`, not by `tool`.
+- Return per-tool errors when possible so unrelated tools in the same batch can still succeed.
+- Keep `BackendInstall` working even if you add `BackendBatchInstall`, since mise still uses it as the fallback path.
 
 > **Tip**: This naming flexibility could potentially be used to have a very complex plugin backend that would behave differently based on what it was named. For example, you could install the same plugin with different names to configure different behaviors or access different tool registries.
 

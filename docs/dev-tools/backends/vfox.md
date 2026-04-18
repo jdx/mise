@@ -11,7 +11,7 @@ Vfox is the recommended plugin system for mise. It provides cross-platform suppo
 - **Cross-platform** — plugins work on Windows, macOS, and Linux without platform-specific code
 - **Built-in modules** — HTTP, JSON, HTML parsing, archive extraction, semver comparison, and logging are all available out of the box, no external dependencies needed
 - **Security** — [tool plugins](../../tool-plugin-development.md) support attestation verification (GitHub artifact attestations, cosign signatures, SLSA provenance) for downloaded artifacts. When a tool plugin's `PreInstall` hook returns an `attestation` table, mise verifies it during install and records the result in `mise.lock`, protecting against downgrade attacks on subsequent installs. Backend plugins do not currently support attestation
-- **Modern architecture** — structured hooks with typed contexts, backend plugins for multi-tool management, rolling version checksums, and lock file support
+- **Modern architecture** — structured hooks with typed contexts, backend plugins for multi-tool management, optional batch install hooks, rolling version checksums, and lock file support
 
 The code for this is inside the mise repository at [`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
 
@@ -77,6 +77,8 @@ In addition to the standard vfox plugins, mise supports modern plugins that can 
 - Package managers (npm, pip, etc.)
 - Custom tool families
 
+Backend plugins can also optionally implement `BackendBatchInstall` to install multiple ready tools from the same plugin in a single backend invocation. This is primarily a plugin-author feature; end-user CLI usage does not change.
+
 ### Example: Plugin Usage
 
 ```bash
@@ -101,4 +103,5 @@ For more information, see:
 
 - [Using Plugins](../../plugin-usage.md) - End-user guide
 - [Plugin Development](../../tool-plugin-development.md) - Developer guide
+- [Backend Plugin Development](../../backend-plugin-development.md) - Backend hook reference
 - [Plugin Template](https://github.com/jdx/mise-tool-plugin-template) - Quick start template for creating plugins
