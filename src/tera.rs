@@ -400,6 +400,55 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
     tera
 }
 
+const EXEC_OUTPUT_MAX_BYTES: usize = 1024 * 1024;
+
+const SENSITIVE_ENV_KEYS: &[&str] = &[
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "GITHUB_TOKEN",
+    "GITEA_TOKEN",
+    "GITLAB_TOKEN",
+    "HOMEBREW_GITHUB_TOKEN",
+    "MISE_CACHE_KEY",
+    "NETRC",
+    "NPM_CONFIG_TOKEN",
+    "NPM_TOKEN",
+    "PIP_INDEX_TOKEN",
+    "PYPI_TOKEN",
+    "SECRET",
+    "SOPS_AGE_KEY",
+    "SSH_AUTH_SOCK",
+    "SSH_PRIVATE_KEY",
+    "TOKEN",
+];
+
+const BLOCKED_COMMANDS: &[&str] = &[
+    "curl",
+    "wget",
+    "nc",
+    "netcat",
+];
+
+fn sanitize_env_for_exec(env: &EnvMap) -> EnvMap {
+    let mut sanitized = env.clone();
+    for key in SENSITIVE_ENV_KEYS {
+        sanitized.remove(*key);
+    }
+    sanitized
+}
+
+fn is_command_blocked(command: &str) -> bool {
+    let cmd_lower = command.to_lowercase();
+    for blocked in BLOCKED_COMMANDS {
+        if cmd_lower.starts_with(blocked) || cmd_lower.contains(&format!(" {}", blocked))
+            || cmd_lower.contains(&format!("/{}", blocked))
+        {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn tera_exec(
     dir: Option<PathBuf>,
     env: EnvMap,
@@ -422,10 +471,17 @@ pub fn tera_exec(
         };
         match args.get("command") {
             Some(Value::String(command)) => {
+                if is_command_blocked(command) {
+                    return Err(format!(
+                        "exec command '{}' is blocked for security reasons",
+                        command
+                    )
+                    .into());
+                }
                 let shell = Settings::get()
                     .default_inline_shell()
                     .map_err(|e| tera::Error::msg(e.to_string()))?;
-                let args = shell
+                let shell_args = shell
                     .iter()
                     .skip(1)
                     .chain(once(command))
@@ -434,12 +490,12 @@ pub fn tera_exec(
                 // when the command (e.g. `gh auth token`) is a mise-managed
                 // tool. Without this, the shim re-enters mise, which may
                 // evaluate the same template again indefinitely.
-                let mut env_no_shims = env.clone();
-                if let Some(path_val) = env_no_shims.get(&*env::PATH_KEY).cloned() {
-                    env_no_shims
+                let mut sanitized_env = sanitize_env_for_exec(&env);
+                if let Some(path_val) = sanitized_env.get(&*env::PATH_KEY).cloned() {
+                    sanitized_env
                         .insert(env::PATH_KEY.to_string(), strip_shims_from_path(&path_val));
                 }
-                let mut cmd: duct::Expression = cmd(&shell[0], args).full_env(&env_no_shims);
+                let mut cmd: duct::Expression = cmd(&shell[0], shell_args).full_env(&sanitized_env);
                 if let Some(dir) = &dir {
                     cmd = cmd.dir(dir);
                 }
@@ -461,12 +517,48 @@ pub fn tera_exec(
                         cacheman = cacheman.with_fresh_duration(Some(cache_duration));
                     }
                     let cache = cacheman.build();
-                    match cache.get_or_try_init(|| Ok(cmd.read()?)) {
+                    match cache.get_or_try_init(|| {
+                        let output = cmd
+                            .reader()
+                            .stdout_capture(true)
+                            .stderr_capture(true)
+                            .output()?;
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        if stdout.len() > EXEC_OUTPUT_MAX_BYTES {
+                            return Err(format!(
+                                "exec output exceeds maximum size of {} bytes",
+                                EXEC_OUTPUT_MAX_BYTES
+                            )
+                            .into());
+                        }
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        if !output.status.success() {
+                            return Err(format!("exec command failed: {}", stderr).into());
+                        }
+                        Ok(stdout.to_string())
+                    }) {
                         Ok(result) => result.clone(),
-                        Err(e) => return Err(format!("exec command: {e}").into()),
+                        Err(e) => return Err(format!("exec command: {}", e).into()),
                     }
                 } else {
-                    cmd.read()?
+                    let output = cmd
+                        .reader()
+                        .stdout_capture(true)
+                        .stderr_capture(true)
+                        .output()?;
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if stdout.len() > EXEC_OUTPUT_MAX_BYTES {
+                        return Err(format!(
+                            "exec output exceeds maximum size of {} bytes",
+                            EXEC_OUTPUT_MAX_BYTES
+                        )
+                        .into());
+                    }
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    if !output.status.success() {
+                        return Err(format!("exec command failed: {}", stderr).into());
+                    }
+                    Ok(stdout.to_string())
                 };
                 Ok(Value::String(result))
             }
@@ -481,13 +573,40 @@ pub fn tera_read_file(
     move |args: &HashMap<String, Value>| -> tera::Result<Value> {
         match args.get("path") {
             Some(Value::String(path_str)) => {
-                let path = if let Some(ref base_dir) = dir {
-                    // Resolve relative to config directory
-                    base_dir.join(path_str)
+                let base_dir = dir.clone();
+                let path = if let Some(ref base_dir) = base_dir {
+                    let resolved = base_dir.join(path_str);
+                    let resolved = match resolved.canonicalize() {
+                        Ok(p) => p,
+                        Err(_) => {
+                            return Err(format!(
+                                "read_file path '{}' must be a readable file",
+                                path_str
+                            )
+                            .into());
+                        }
+                    };
+                    let base_dir_canonical = base_dir.canonicalize().unwrap_or_else(|_| base_dir.clone());
+                    if !resolved.starts_with(&base_dir_canonical) {
+                        return Err(format!(
+                            "read_file path '{}' is outside the allowed directory",
+                            path_str
+                        )
+                        .into());
+                    }
+                    resolved
                 } else {
                     // Use path as-is if no directory context
                     PathBuf::from(path_str)
                 };
+
+                if !path.is_file() {
+                    return Err(format!(
+                        "read_file path '{}' is not a file",
+                        path.display()
+                    )
+                    .into());
+                }
 
                 track_tera_file(&path);
                 match std::fs::read_to_string(&path) {
