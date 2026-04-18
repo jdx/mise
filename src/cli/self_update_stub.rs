@@ -4,9 +4,31 @@ use std::path::PathBuf;
 
 use crate::env;
 
-pub struct SelfUpdate {}
+#[derive(Debug, Default, clap::Args)]
+pub struct SelfUpdate {
+    /// Update to a specific version
+    version: Option<String>,
+
+    /// Update even if already up to date
+    #[clap(long, short)]
+    force: bool,
+
+    /// Skip confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+
+    /// Disable auto-updating plugins
+    #[clap(long)]
+    no_plugins: bool,
+}
 
 impl SelfUpdate {
+    pub async fn run(self) -> crate::Result<()> {
+        if let Some(instructions) = upgrade_instructions_text() {
+            warn!("{}", instructions);
+        }
+        eyre::bail!("mise's self-update feature has been disabled at build time, cannot update");
+    }
     pub fn is_available() -> bool {
         false
     }

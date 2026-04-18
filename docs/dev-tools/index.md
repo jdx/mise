@@ -284,28 +284,28 @@ For some users, `mise use` might be the only command you need to learn. It will 
 
 ```shell
 > cd my-project
-> mise use node@24
+> mise use node@26
 # download node, verify signature...
-mise node@24.x.x ✓ installed
-mise ~/my-project/mise.toml tools: node@24.x.x # mise.toml created/updated
+mise node@26.x.x ✓ installed
+mise ~/my-project/mise.toml tools: node@26.x.x # mise.toml created/updated
 
 > which node
-~/.local/share/installs/node/24.x.x/bin/node
+~/.local/share/mise/installs/node/26/bin/node
 ```
 
-`mise use node@24` will install the latest version of node-24 and create/update the
+`mise use node@26` will install the latest version of node-26 and create/update the
 `mise.toml`
 config file in the local directory. The resulting file looks like this:
 
 ```toml [mise.toml]
 [tools]
-node = "24"
+node = "26"
 ```
 
 Anytime you're in that directory, that version of `node` will be used.
 
-`mise use -g node@24` will do the same but update the [global config](/configuration.html#global-config-config-mise-config-toml) (`~/.config/mise/config.toml`) so
-unless there is a config file in the local directory hierarchy, node-24 will be the default version
+`mise use -g node@26` will do the same but update the [global config](/configuration.html#global-config-config-mise-config-toml) (`~/.config/mise/config.toml`) so
+unless there is a config file in the local directory hierarchy, node-26 will be the default version
 for
 the user.
 

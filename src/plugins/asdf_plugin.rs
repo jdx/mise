@@ -1,6 +1,6 @@
 use crate::config::{Config, Settings};
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::{display_path, remove_all};
+use crate::file::{display_path, remove_all_with_progress};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::plugins::{Plugin, PluginSource, Script, ScriptManager};
@@ -335,20 +335,7 @@ impl Plugin for AsdfPlugin {
         self.exec_hook(pr, "pre-plugin-remove")?;
         pr.set_message("uninstall".into());
 
-        let rmdir = |dir: &Path| {
-            if !dir.exists() {
-                return Ok(());
-            }
-            pr.set_message(format!("remove {}", display_path(dir)));
-            remove_all(dir).wrap_err_with(|| {
-                format!(
-                    "Failed to remove directory {}",
-                    style(display_path(dir)).cyan().for_stderr()
-                )
-            })
-        };
-
-        rmdir(&self.plugin_path)?;
+        remove_all_with_progress(&self.plugin_path, pr)?;
 
         Ok(())
     }

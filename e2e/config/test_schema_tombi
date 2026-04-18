@@ -8,6 +8,7 @@
 mise use -g tombi
 
 SCHEMA_PATH="$ROOT/schema/mise.json"
+TASK_SCHEMA_PATH="$ROOT/schema/mise-task.json"
 TOMBI="mise x tombi -- tombi"
 
 # Set up tombi config pointing to local schema
@@ -20,7 +21,11 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise.toml", "mise-age.toml"]
+include = ["mise.toml", "mise-age.toml", "mise-os.toml"]
+
+[[schemas]]
+path = "file://$TASK_SCHEMA_PATH"
+include = ["mise-task-os.toml"]
 EOF
 
 # Create a mise.toml exercising task properties that were previously broken
@@ -58,10 +63,29 @@ SECRET_SIMPLE = { age = "AGE-SECRET", tools = true }
 SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", tools = true, redact = true } }
 TOML
 
+cat >"$HOME/workdir/mise-os.toml" <<'TOML'
+[tools]
+node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"] }
+go = { version = "latest", os = "linux/x64" }
+
+[tasks.build.tools]
+rust = { version = "latest", os = ["linux/x64", "macos/arm64"] }
+TOML
+
+cat >"$HOME/workdir/mise-task-os.toml" <<'TOML'
+[build]
+run = "echo ok"
+
+[build.tools]
+node = { version = "latest", os = ["linux/x64", "macos/arm64"] }
+TOML
+
 # tombi lint should succeed with no errors (warnings about table order are ok)
 cd "$HOME/workdir"
 assert_succeed "$TOMBI lint --offline --no-cache --quiet mise.toml"
 assert_succeed "$TOMBI lint --offline --no-cache --quiet mise-age.toml"
+assert_succeed "$TOMBI lint --offline --no-cache --quiet mise-os.toml"
+assert_succeed "$TOMBI lint --offline --no-cache --quiet mise-task-os.toml"
 
 # Verify that invalid properties on tasks are rejected
 cat >"$HOME/workdir/mise-bad.toml" <<'TOML'
@@ -80,7 +104,11 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-tmpl.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-tmpl.toml", "mise-bad-os.toml"]
+
+[[schemas]]
+path = "file://$TASK_SCHEMA_PATH"
+include = ["mise-bad-task-os.toml"]
 EOF
 
 assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad.toml"
@@ -101,3 +129,20 @@ quiet = true
 TOML
 
 assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad-tmpl.toml"
+
+cat >"$HOME/workdir/mise-bad-os.toml" <<'TOML'
+[tools]
+node = { version = "latest", os = true }
+TOML
+
+assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad-os.toml"
+
+cat >"$HOME/workdir/mise-bad-task-os.toml" <<'TOML'
+[build]
+run = "echo ok"
+
+[build.tools]
+node = { version = "latest", os = true }
+TOML
+
+assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad-task-os.toml"

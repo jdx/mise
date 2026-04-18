@@ -33,7 +33,9 @@ pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
-pub use tool_version_options::{EPHEMERAL_OPT_KEYS, ToolVersionOptions, parse_tool_options};
+pub use tool_version_options::{
+    EPHEMERAL_OPT_KEYS, ToolVersionOptions, parse_tool_options, serialize_tool_options,
+};
 
 mod builder;
 pub mod env_cache;

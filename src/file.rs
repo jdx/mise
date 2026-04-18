@@ -134,6 +134,15 @@ pub fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
     })
 }
 
+pub fn remove_all_with_progress<P: AsRef<Path>>(path: P, pr: &dyn SingleReport) -> Result<()> {
+    let path = path.as_ref();
+    if !path.exists() {
+        return Ok(());
+    }
+    pr.set_message(format!("remove {}", display_path(path)));
+    remove_all_with_warning(path)
+}
+
 /// Renames `from` to `to`.
 ///
 /// Warning: this is the raw `rename(2)`/`fs::rename` behavior. It is atomic on a
