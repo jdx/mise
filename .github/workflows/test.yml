@@ -181,7 +181,7 @@ jobs:
       - name: Pull e2e Docker image
         run: docker pull ghcr.io/jdx/mise:e2e
       - name: Test in Docker
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         env:
           MISE_E2E_DOCKER: "1"
           TEST_TRANCHE: ${{matrix.tranche}}
@@ -206,7 +206,7 @@ jobs:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: cargo test
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
@@ -229,7 +229,7 @@ jobs:
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - uses: ./.github/actions/mise-tools
       - name: e2e
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
