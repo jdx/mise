@@ -209,6 +209,7 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
   "archive-tar",
   "compression-flate2",
   "signatures",
+  "reqwest",
   "rustls",
 ] }
 
@@ -221,6 +222,7 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
   "archive-zip",
   "compression-zip-deflate",
   "signatures",
+  "reqwest",
   "rustls",
 ] }
 zipsign-api = "0.2"
