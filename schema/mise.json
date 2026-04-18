@@ -515,7 +515,7 @@
           "type": "boolean"
         },
         "always_keep_download": {
-          "description": "should mise keep downloaded files after installation",
+          "description": "keep downloaded files after installation for debugging",
           "type": "boolean"
         },
         "always_keep_install": {
@@ -724,8 +724,7 @@
           }
         },
         "enable_tools": {
-          "default": [],
-          "description": "Tools defined in mise.toml that should be used - all other tools are ignored",
+          "description": "Tools defined in mise.toml that should be used; unset enables all tools and empty disables all tools",
           "type": "array",
           "items": {
             "type": "string"

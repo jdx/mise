@@ -654,7 +654,7 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
-      name: ["backends", "b"],
+      name: "backends",
       description: "Manage backends",
       subcommands: [
         {

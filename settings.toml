@@ -72,7 +72,15 @@ env = "MISE_ALL_COMPILE"
 type = "Bool"
 
 [always_keep_download]
-description = "should mise keep downloaded files after installation"
+description = "keep downloaded files after installation for debugging"
+docs = """
+Keeps downloaded archive/source files under `~/.local/share/mise/downloads` after install/uninstall so you can inspect them
+while debugging backend/plugin install behavior.
+
+This is not a supported download cache. Some backends may skip a download when the expected file already exists, but that
+behavior is backend-specific and not guaranteed. Cache `~/.local/share/mise/installs` instead if you want to avoid
+reinstalling tools in CI or offline workflows.
+"""
 env = "MISE_ALWAYS_KEEP_DOWNLOAD"
 type = "Bool"
 
@@ -419,9 +427,16 @@ env = "MISE_DOTNET_REGISTRY_URL"
 type = "Url"
 
 [enable_tools]
-default = []
-description = "Tools defined in mise.toml that should be used - all other tools are ignored"
+description = "Tools defined in mise.toml that should be used; unset enables all tools and empty disables all tools"
+docs = """
+When unset, all tools are enabled unless they appear in
+[`disable_tools`](/configuration/settings.html#disable_tools).
+
+When explicitly set, this is the complete allowlist and `disable_tools` is not
+applied. Setting this to `[]` or `MISE_ENABLE_TOOLS=` disables all tools.
+"""
 env = "MISE_ENABLE_TOOLS"
+optional = true
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"

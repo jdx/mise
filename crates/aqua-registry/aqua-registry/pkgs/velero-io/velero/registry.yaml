@@ -1,8 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
   - type: github_release
-    repo_owner: vmware-tanzu
+    repo_owner: velero-io
     repo_name: velero
+    aliases:
+      - name: vmware-tanzu/velero
     description: Backup and migrate Kubernetes applications and their persistent volumes
     version_constraint: "false"
     version_overrides:

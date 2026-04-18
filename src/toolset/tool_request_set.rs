@@ -137,7 +137,7 @@ pub struct ToolRequestSetBuilder {
     /// tools which will be disabled
     disable_tools: BTreeSet<BackendArg>,
     /// tools which will be enabled
-    enable_tools: BTreeSet<BackendArg>,
+    enable_tools: Option<BTreeSet<BackendArg>>,
 }
 
 impl ToolRequestSetBuilder {
@@ -145,7 +145,9 @@ impl ToolRequestSetBuilder {
         let settings = Settings::get();
         Self {
             disable_tools: settings.disable_tools().iter().map(|s| s.into()).collect(),
-            enable_tools: settings.enable_tools().iter().map(|s| s.into()).collect(),
+            enable_tools: settings
+                .enable_tools()
+                .map(|tools| tools.iter().map(|s| s.into()).collect()),
             ..Default::default()
         }
     }
@@ -187,7 +189,7 @@ impl ToolRequestSetBuilder {
         backend_type == BackendType::Unknown
             || (cfg!(windows) && backend_type == BackendType::Asdf)
             || !ba.is_os_supported()
-            || !tool_enabled(&self.enable_tools, &self.disable_tools, ba)
+            || !tool_enabled(self.enable_tools.as_ref(), &self.disable_tools, ba)
     }
 
     async fn load_config_files(
