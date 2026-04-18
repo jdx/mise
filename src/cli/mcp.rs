@@ -3,15 +3,12 @@ use crate::config::Config;
 use clap::Parser;
 use rmcp::{
     RoleServer, ServiceExt,
-    handler::server::{
-        ServerHandler,
-        tool::{Parameters, ToolRouter},
-    },
+    handler::server::{ServerHandler, tool::ToolRouter, wrapper::Parameters},
     model::{
-        AnnotateAble, CallToolRequestParam, CallToolResult, Content, ErrorCode, ErrorData,
-        Implementation, ListResourcesResult, ListToolsResult, PaginatedRequestParam,
-        ProtocolVersion, RawResource, ReadResourceRequestParam, ReadResourceResult,
-        ResourceContents, ServerCapabilities, ServerInfo,
+        AnnotateAble, CallToolRequestParams, CallToolResult, Content, ErrorCode, ErrorData,
+        ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion, RawResource,
+        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
+        ServerInfo,
     },
     schemars::JsonSchema,
     service::RequestContext,
@@ -173,20 +170,18 @@ impl MiseServer {
 
 impl ServerHandler for MiseServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2025_03_26,
-            capabilities: ServerCapabilities::builder()
-                .enable_resources()
-                .enable_tools()
-                .build(),
-            server_info: Implementation::from_build_env(),
-            instructions: Some("Mise MCP server provides access to tools, tasks, environment variables, and configuration".to_string()),
-        }
+        let capabilities = ServerCapabilities::builder()
+            .enable_resources()
+            .enable_tools()
+            .build();
+        ServerInfo::new(capabilities)
+            .with_protocol_version(ProtocolVersion::V_2025_03_26)
+            .with_instructions("Mise MCP server provides access to tools, tasks, environment variables, and configuration")
     }
 
     async fn list_resources(
         &self,
-        _pagination: Option<PaginatedRequestParam>,
+        _pagination: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListResourcesResult, ErrorData> {
         let resources = vec![
@@ -196,15 +191,12 @@ impl ServerHandler for MiseServer {
             RawResource::new("mise://config", "Configuration".to_string()).no_annotation(),
         ];
 
-        Ok(ListResourcesResult {
-            resources,
-            next_cursor: None,
-        })
+        Ok(ListResourcesResult::with_all_items(resources))
     }
 
     async fn read_resource(
         &self,
-        params: ReadResourceRequestParam,
+        params: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<ReadResourceResult, ErrorData> {
         // Parse URI to extract query parameters
@@ -296,9 +288,10 @@ impl ServerHandler for MiseServer {
                     uri: params.uri.clone(),
                     mime_type: Some("application/json".to_string()),
                     text,
+                    meta: None,
                 }];
 
-                Ok(ReadResourceResult { contents })
+                Ok(ReadResourceResult::new(contents))
             }
             ("mise", Some("tasks")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
@@ -343,9 +336,10 @@ impl ServerHandler for MiseServer {
                     uri: params.uri.clone(),
                     mime_type: Some("application/json".to_string()),
                     text,
+                    meta: None,
                 }];
 
-                Ok(ReadResourceResult { contents })
+                Ok(ReadResourceResult::new(contents))
             }
             ("mise", Some("env")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
@@ -370,9 +364,10 @@ impl ServerHandler for MiseServer {
                     uri: params.uri.clone(),
                     mime_type: Some("application/json".to_string()),
                     text,
+                    meta: None,
                 }];
 
-                Ok(ReadResourceResult { contents })
+                Ok(ReadResourceResult::new(contents))
             }
             ("mise", Some("config")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
@@ -391,9 +386,10 @@ impl ServerHandler for MiseServer {
                     uri: params.uri.clone(),
                     mime_type: Some("application/json".to_string()),
                     text,
+                    meta: None,
                 }];
 
-                Ok(ReadResourceResult { contents })
+                Ok(ReadResourceResult::new(contents))
             }
             _ => Err(ErrorData {
                 code: ErrorCode::RESOURCE_NOT_FOUND,
@@ -405,18 +401,15 @@ impl ServerHandler for MiseServer {
 
     async fn list_tools(
         &self,
-        _pagination: Option<PaginatedRequestParam>,
+        _pagination: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult {
-            tools: self.tool_router.list_all(),
-            next_cursor: None,
-        })
+        Ok(ListToolsResult::with_all_items(self.tool_router.list_all()))
     }
 
     async fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
         let tool_call_context =
