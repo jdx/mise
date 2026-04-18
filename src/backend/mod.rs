@@ -492,8 +492,29 @@ pub trait Backend: Debug + Send + Sync {
         let ba = self.ba().clone();
         let id = self.id();
 
+        // Some backends fetch versions from canonical, always-fresh sources
+        // (package registries, or http/s3 with an explicit version_list_url).
+        // For these, the versions host only adds latency and staleness risk,
+        // so skip it and query the source directly.
+        let backend_type = self.get_type();
+        let has_direct_source = matches!(
+            backend_type,
+            BackendType::Npm
+                | BackendType::Pipx
+                | BackendType::Cargo
+                | BackendType::Gem
+                | BackendType::Go
+        ) || (matches!(backend_type, BackendType::Http | BackendType::S3)
+            && ba.opts().contains_key("version_list_url"));
+
         // Check if this is an external plugin with a custom remote - skip versions host if so
-        let use_versions_host = if let Some(plugin) = self.plugin()
+        let use_versions_host = if has_direct_source {
+            trace!(
+                "Skipping versions host for {} because {} backend has a direct source",
+                ba.short, backend_type
+            );
+            false
+        } else if let Some(plugin) = self.plugin()
             && let Ok(Some(remote_url)) = plugin.get_remote_url()
         {
             // Check if remote matches the registry default
