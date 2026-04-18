@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+PLUGIN_DIR="$PWD/test-batch-backend-plugin-fail"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOF'
+PLUGIN = {
+  name = "batch-backend-test-fail",
+  version = "0.1.0",
+  description = "test backend plugin with partial batch failure",
+  author = "mise e2e"
+}
+EOF
+
+cat >"$PLUGIN_DIR/hooks/backend_list_versions.lua" <<'EOF'
+function PLUGIN:BackendListVersions(ctx)
+    return { versions = { "1.0.0" } }
+end
+EOF
+
+cat >"$PLUGIN_DIR/hooks/backend_install.lua" <<'EOF'
+function PLUGIN:BackendInstall(ctx)
+    error("BackendInstall should not be called when BackendBatchInstall is available")
+end
+EOF
+
+cat >"$PLUGIN_DIR/hooks/backend_batch_install.lua" <<'EOF'
+function PLUGIN:BackendBatchInstall(ctx)
+    local cmd = require("cmd")
+    local file = require("file")
+
+    local results = {}
+    for _, tool in ipairs(ctx.tools) do
+        if tool.tool == "tool-fail" then
+            results[tool.id] = { error = "intentional batch failure for tool-fail" }
+        else
+            cmd.exec("mkdir -p \"" .. file.join_path(tool.install_path, "bin") .. "\"")
+            local bin = file.join_path(tool.install_path, "bin", tool.tool)
+            cmd.exec("printf '#!/bin/sh\necho tool-ok\n' > \"" .. bin .. "\"")
+            cmd.exec("chmod +x \"" .. bin .. "\"")
+            cmd.exec("printf 'batched-ok' > \"" .. file.join_path(tool.install_path, "batch-proof") .. "\"")
+            results[tool.id] = { version = tool.version }
+        end
+    end
+
+    return results
+end
+EOF
+
+cat >"$PLUGIN_DIR/hooks/backend_exec_env.lua" <<'EOF'
+function PLUGIN:BackendExecEnv(ctx)
+    local file = require("file")
+    return {
+        env_vars = {
+            { key = "PATH", value = file.join_path(ctx.install_path, "bin") }
+        }
+    }
+end
+EOF
+
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" commit -q -m "init"
+
+cat >mise.toml <<EOF
+[tools]
+"batchfail:tool-ok" = "1.0.0"
+"batchfail:tool-fail" = "1.0.0"
+
+[plugins]
+"vfox-backend:batchfail" = "file://$PLUGIN_DIR"
+EOF
+
+assert_fail "mise install 2>&1" "intentional batch failure for tool-fail"
+assert "mise current batchfail:tool-ok" "1.0.0"
+assert_not_contains "find \"$MISE_DATA_DIR/installs\" -maxdepth 3 -type f -name batch-proof 2>/dev/null || true" "tool-fail"
+assert "test -f \"$(mise where batchfail:tool-ok)/batch-proof\" && cat \"$(mise where batchfail:tool-ok)/batch-proof\"" "batched-ok"
+assert "mise exec batchfail:tool-ok@1.0.0 -- tool-ok" "tool-ok"

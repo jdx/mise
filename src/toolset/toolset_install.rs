@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use eyre::Result;
@@ -7,6 +8,7 @@ use itertools::Itertools;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
+use crate::backend::{ABackend, BatchInstallOutcome, BatchInstallRequest};
 use crate::config::Config;
 use crate::config::settings::Settings;
 use crate::errors::Error;
@@ -22,6 +24,113 @@ use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::ToolVersion;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, hooks};
+
+#[derive(Clone)]
+struct BackendBatchGroupKey {
+    backend: ABackend,
+    supports_batch: bool,
+    key: String,
+}
+
+impl BackendBatchGroupKey {
+    fn new(backend: &ABackend, supports_batch: bool) -> Self {
+        let key = backend.batch_group_id();
+        Self {
+            backend: backend.clone(),
+            supports_batch,
+            key,
+        }
+    }
+}
+
+impl PartialEq for BackendBatchGroupKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key && self.supports_batch == other.supports_batch
+    }
+}
+
+impl Eq for BackendBatchGroupKey {}
+
+impl Hash for BackendBatchGroupKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
+        self.supports_batch.hash(state);
+    }
+}
+
+enum InstallDispatchGroup {
+    Single {
+        backend: ABackend,
+        request: Box<BatchInstallRequest>,
+    },
+    Batch {
+        backend: ABackend,
+        requests: Vec<BatchInstallRequest>,
+    },
+    Failed {
+        tool_request: Box<ToolRequest>,
+        error: eyre::Error,
+    },
+}
+
+impl InstallDispatchGroup {
+    fn single(backend: ABackend, request: BatchInstallRequest) -> Self {
+        Self::Single {
+            backend,
+            request: Box::new(request),
+        }
+    }
+
+    fn batch(backend: ABackend, requests: Vec<BatchInstallRequest>) -> Self {
+        Self::Batch { backend, requests }
+    }
+
+    fn single_failed(tool_request: ToolRequest, error: eyre::Error) -> Self {
+        Self::Failed {
+            tool_request: Box::new(tool_request),
+            error,
+        }
+    }
+
+    fn requests(&self) -> Vec<ToolRequest> {
+        match self {
+            Self::Single { request, .. } => vec![request.tool_request.clone()],
+            Self::Batch { requests, .. } => {
+                requests.iter().map(|r| r.tool_request.clone()).collect()
+            }
+            Self::Failed { tool_request, .. } => vec![(**tool_request).clone()],
+        }
+    }
+
+    async fn install(self) -> Vec<(ToolRequest, Result<ToolVersion>)> {
+        match self {
+            Self::Single { backend, request } => {
+                vec![(
+                    request.tool_request,
+                    backend
+                        .install_version(request.install_context, request.tool_version)
+                        .await,
+                )]
+            }
+            Self::Batch { backend, requests } => backend
+                .install_versions_batch(requests)
+                .await
+                .into_iter()
+                .map(
+                    |BatchInstallOutcome {
+                         tool_request,
+                         result,
+                         ..
+                     }| (tool_request, result),
+                )
+                .collect(),
+            Self::Failed {
+                tool_request,
+                error,
+            } => vec![(*tool_request, Err(error))],
+        }
+    }
+}
 
 impl Toolset {
     #[async_backtrace::framed]
@@ -325,10 +434,13 @@ impl Toolset {
 
         let mut installed = vec![];
         let mut failed = vec![];
-        let mut jset: JoinSet<(ToolRequest, Result<ToolVersion>)> = JoinSet::new();
+        let mut jset: JoinSet<Vec<(ToolRequest, Result<ToolVersion>)>> = JoinSet::new();
         // Track in-flight tools to recover from task panics
-        let mut in_flight: HashMap<tokio::task::Id, ToolRequest> = HashMap::new();
+        let mut in_flight: HashMap<tokio::task::Id, Vec<ToolRequest>> = HashMap::new();
+        let mut pending_ready = VecDeque::new();
+        let mut pending_groups = VecDeque::new();
 
+        let mut done_emitting = false;
         loop {
             tokio::select! {
                 // Use `biased` to ensure completed installations are handled before starting new ones.
@@ -340,22 +452,29 @@ impl Toolset {
                 Some(result) = jset.join_next() => {
                     let mpr = MultiProgressReport::get();
                     match result {
-                        Ok((tr, Ok(tv))) => {
-                            mpr.footer_inc(1);
-                            installed.push(tv);
-                            tool_deps.lock().await.complete_success(&tr);
-                        }
-                        Ok((tr, Err(e))) => {
-                            mpr.footer_inc(1);
-                            failed.push((tr.clone(), e));
-                            tool_deps.lock().await.complete_failure(&tr);
+                        Ok(results) => {
+                            for (tr, result) in results {
+                                mpr.footer_inc(1);
+                                match result {
+                                    Ok(tv) => {
+                                        installed.push(tv);
+                                        tool_deps.lock().await.complete_success(&tr);
+                                    }
+                                    Err(e) => {
+                                        failed.push((tr.clone(), e));
+                                        tool_deps.lock().await.complete_failure(&tr);
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             // Task panicked - try to recover the tool request from in_flight tracking
-                            mpr.footer_inc(1);
-                            if let Some(tr) = in_flight.remove(&e.id()) {
-                                failed.push((tr.clone(), eyre::eyre!("Installation task panicked: {e:#}")));
-                                tool_deps.lock().await.complete_failure(&tr);
+                            if let Some(trs) = in_flight.remove(&e.id()) {
+                                for tr in trs {
+                                    mpr.footer_inc(1);
+                                    failed.push((tr.clone(), eyre::eyre!("Installation task panicked: {e:#}")));
+                                    tool_deps.lock().await.complete_failure(&tr);
+                                }
                             } else {
                                 warn!("Task panicked but tool request not found: {e:#}");
                             }
@@ -367,38 +486,54 @@ impl Toolset {
                 Some(maybe_tr) = rx.recv() => {
                     match maybe_tr {
                         Some(tr) => {
-                            // Spawn installation task
-                            let permit = match semaphore.clone().acquire_owned().await {
-                                Ok(p) => p,
-                                Err(e) => {
-                                    // Mark as failed and notify tool_deps so dependents are blocked
-                                    MultiProgressReport::get().footer_inc(1);
-                                    failed.push((tr.clone(), eyre::eyre!("Failed to acquire semaphore: {}", e)));
-                                    tool_deps.lock().await.complete_failure(&tr);
-                                    continue;
-                                }
-                            };
-
-                            let config = config.clone();
-                            let ts = ts.clone();
-                            let opts = opts.clone();
-                            let tr_clone = tr.clone();
-
-                            let handle = jset.spawn(async move {
-                                let _permit = permit;
-                                let result = Self::install_single_tool(&config, &ts, &tr, &opts).await;
-                                (tr, result)
-                            });
-                            in_flight.insert(handle.id(), tr_clone);
+                            pending_ready.push_back(tr);
                         }
                         None => {
-                            // All tools have been emitted, wait for remaining tasks
-                            break;
+                            done_emitting = true;
                         }
                     }
                 }
 
                 else => break,
+            }
+
+            if !pending_ready.is_empty() {
+                let ready_wave =
+                    Self::drain_ready_wave(&mut rx, &mut pending_ready, &mut done_emitting);
+                pending_groups
+                    .extend(Self::build_backend_groups(config, &ts, &opts, ready_wave).await);
+            }
+
+            while let Some(group) = pending_groups.pop_front() {
+                let permit = match semaphore.clone().try_acquire_owned() {
+                    Ok(p) => p,
+                    Err(tokio::sync::TryAcquireError::NoPermits) => {
+                        pending_groups.push_front(group);
+                        break;
+                    }
+                    Err(tokio::sync::TryAcquireError::Closed) => {
+                        for tr in group.requests() {
+                            MultiProgressReport::get().footer_inc(1);
+                            failed.push((
+                                tr.clone(),
+                                eyre::eyre!("Failed to acquire semaphore: semaphore closed"),
+                            ));
+                            tool_deps.lock().await.complete_failure(&tr);
+                        }
+                        continue;
+                    }
+                };
+
+                let requests = group.requests();
+                let handle = jset.spawn(async move {
+                    let _permit = permit;
+                    group.install().await
+                });
+                in_flight.insert(handle.id(), requests);
+            }
+
+            if done_emitting && pending_ready.is_empty() && pending_groups.is_empty() {
+                break;
             }
         }
 
@@ -406,21 +541,31 @@ impl Toolset {
         while let Some(result) = jset.join_next().await {
             let mpr = MultiProgressReport::get();
             match result {
-                Ok((tr, Ok(tv))) => {
-                    mpr.footer_inc(1);
-                    installed.push(tv);
-                    tool_deps.lock().await.complete_success(&tr);
-                }
-                Ok((tr, Err(e))) => {
-                    mpr.footer_inc(1);
-                    failed.push((tr.clone(), e));
-                    tool_deps.lock().await.complete_failure(&tr);
+                Ok(results) => {
+                    for (tr, result) in results {
+                        mpr.footer_inc(1);
+                        match result {
+                            Ok(tv) => {
+                                installed.push(tv);
+                                tool_deps.lock().await.complete_success(&tr);
+                            }
+                            Err(e) => {
+                                failed.push((tr.clone(), e));
+                                tool_deps.lock().await.complete_failure(&tr);
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
-                    mpr.footer_inc(1);
-                    if let Some(tr) = in_flight.remove(&e.id()) {
-                        failed.push((tr.clone(), eyre::eyre!("Installation task panicked: {e:#}")));
-                        tool_deps.lock().await.complete_failure(&tr);
+                    if let Some(trs) = in_flight.remove(&e.id()) {
+                        for tr in trs {
+                            mpr.footer_inc(1);
+                            failed.push((
+                                tr.clone(),
+                                eyre::eyre!("Installation task panicked: {e:#}"),
+                            ));
+                            tool_deps.lock().await.complete_failure(&tr);
+                        }
                     } else {
                         warn!("Task panicked but tool request not found: {e:#}");
                     }
@@ -444,13 +589,67 @@ impl Toolset {
         (installed, failed)
     }
 
-    /// Install a single tool
-    async fn install_single_tool(
+    fn drain_ready_wave(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<Option<ToolRequest>>,
+        pending_ready: &mut VecDeque<ToolRequest>,
+        done_emitting: &mut bool,
+    ) -> Vec<ToolRequest> {
+        loop {
+            match rx.try_recv() {
+                Ok(Some(tr)) => pending_ready.push_back(tr),
+                Ok(None) => {
+                    *done_emitting = true;
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+        pending_ready.drain(..).collect()
+    }
+
+    async fn build_backend_groups(
+        config: &Arc<Config>,
+        ts: &Arc<Toolset>,
+        opts: &Arc<InstallOptions>,
+        ready_wave: Vec<ToolRequest>,
+    ) -> Vec<InstallDispatchGroup> {
+        let mut fallback = Vec::new();
+        let mut grouped: HashMap<BackendBatchGroupKey, Vec<(ABackend, BatchInstallRequest)>> =
+            HashMap::new();
+
+        for tr in ready_wave {
+            match Self::resolve_install_request(config, ts, &tr, opts).await {
+                Ok((backend, req)) => {
+                    let supports_batch = backend.supports_batch_install_request(&req).await;
+                    let key = BackendBatchGroupKey::new(&backend, supports_batch);
+                    grouped.entry(key).or_default().push((backend, req));
+                }
+                Err(err) => {
+                    fallback.push(InstallDispatchGroup::single_failed(tr, err));
+                }
+            }
+        }
+
+        for (key, mut entries) in grouped {
+            if key.supports_batch && Self::batch_group_entries_are_safe(&entries) {
+                let batch_reqs = entries.into_iter().map(|(_, req)| req).collect();
+                fallback.push(InstallDispatchGroup::batch(key.backend, batch_reqs));
+            } else {
+                for (backend, req) in entries.drain(..) {
+                    fallback.push(InstallDispatchGroup::single(backend, req));
+                }
+            }
+        }
+
+        fallback
+    }
+
+    async fn resolve_install_request(
         config: &Arc<Config>,
         ts: &Arc<Toolset>,
         tr: &ToolRequest,
         opts: &Arc<InstallOptions>,
-    ) -> Result<ToolVersion> {
+    ) -> Result<(ABackend, BatchInstallRequest)> {
         let mpr = MultiProgressReport::get();
         let before_date = effective_before_date(Some(tr), &opts.resolve_options)?;
         let mut resolve_options = opts.resolve_options.clone();
@@ -462,6 +661,7 @@ impl Toolset {
             tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));
         }
         let backend = tr.backend()?;
+        let request_id = Self::batch_request_id(&tv);
 
         let ctx = InstallContext {
             config: config.clone(),
@@ -473,7 +673,33 @@ impl Toolset {
             before_date,
         };
 
-        backend.install_version(ctx, tv).await
+        Ok((
+            backend,
+            BatchInstallRequest {
+                request_id,
+                tool_request: tr.clone(),
+                tool_version: tv,
+                install_context: ctx,
+            },
+        ))
+    }
+
+    fn batch_request_id(tv: &ToolVersion) -> String {
+        format!(
+            "{}@{}#{}",
+            tool_key(&tv.request),
+            tv.version,
+            tv.install_path().display()
+        )
+    }
+
+    fn batch_group_entries_are_safe(entries: &[(ABackend, BatchInstallRequest)]) -> bool {
+        let mut request_ids = HashSet::new();
+        let mut install_paths = HashSet::new();
+        entries.iter().all(|(_, req)| {
+            request_ids.insert(req.request_id.clone())
+                && install_paths.insert(req.tool_version.install_path())
+        })
     }
 
     pub async fn install_missing_bin(
@@ -588,5 +814,56 @@ impl Toolset {
         } else {
             (PluginType::Asdf, key)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::install_context::InstallContext;
+    use crate::toolset::{ToolSource, ToolVersionOptions};
+    use crate::ui::progress_report::QuietReport;
+
+    fn make_request(short: &str, version: &str) -> ToolRequest {
+        ToolRequest::Version {
+            backend: Arc::new(crate::cli::args::BackendArg::from(short)),
+            version: version.to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        }
+    }
+
+    #[tokio::test]
+    async fn batch_group_is_safe_rejects_duplicate_install_paths() {
+        let config = Config::get().await.unwrap();
+        let ts = Arc::new(Toolset::default());
+        let install_path = std::env::temp_dir().join("mise-batch-group-is-safe");
+
+        let entry = |tr: ToolRequest| {
+            let mut tv = ToolVersion::new(tr.clone(), "3.1.0".to_string());
+            tv.install_path = Some(install_path.clone());
+            let backend = tr.backend().unwrap();
+            let req = BatchInstallRequest {
+                request_id: format!("{}-dup", tr.ba().short),
+                tool_request: tr,
+                tool_version: tv,
+                install_context: InstallContext {
+                    config: config.clone(),
+                    ts: ts.clone(),
+                    pr: Box::new(QuietReport::new()),
+                    force: false,
+                    dry_run: false,
+                    locked: false,
+                    before_date: None,
+                },
+            };
+            (backend, req)
+        };
+
+        let req1 = entry(make_request("tiny", "3.1.0"));
+        let req2 = entry(make_request("tiny", "3.1.0"));
+
+        assert!(!Toolset::batch_group_entries_are_safe(&[req1, req2]));
     }
 }

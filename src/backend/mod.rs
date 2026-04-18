@@ -71,6 +71,27 @@ pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
+#[derive(Debug)]
+pub struct BatchInstallRequest {
+    pub request_id: String,
+    pub tool_request: ToolRequest,
+    pub tool_version: ToolVersion,
+    pub install_context: InstallContext,
+}
+
+#[derive(Debug)]
+pub struct BatchInstallOutcome {
+    pub request_id: String,
+    pub tool_request: ToolRequest,
+    pub result: eyre::Result<ToolVersion>,
+}
+
+pub struct PreparedInstall {
+    pub(crate) tv: ToolVersion,
+    pub(crate) was_installed: bool,
+    pub(crate) lock: Option<fslock::LockFile>,
+}
+
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
 pub struct GitHubReleaseInfo {
@@ -367,6 +388,9 @@ mod tests {
 pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
         &self.ba().short
+    }
+    fn batch_group_id(&self) -> String {
+        self.id().to_string()
     }
     fn tool_name(&self) -> String {
         self.ba().tool_name()
@@ -1007,6 +1031,32 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
 
+    fn supports_batch_install(&self) -> bool {
+        false
+    }
+
+    async fn supports_batch_install_request(&self, _req: &BatchInstallRequest) -> bool {
+        self.supports_batch_install()
+    }
+
+    async fn install_versions_batch(
+        &self,
+        reqs: Vec<BatchInstallRequest>,
+    ) -> Vec<BatchInstallOutcome> {
+        let mut outcomes = Vec::with_capacity(reqs.len());
+        for req in reqs {
+            let result = self
+                .install_version(req.install_context, req.tool_version)
+                .await;
+            outcomes.push(BatchInstallOutcome {
+                request_id: req.request_id,
+                tool_request: req.tool_request,
+                result,
+            });
+        }
+        outcomes
+    }
+
     async fn install_version(
         &self,
         ctx: InstallContext,
@@ -1066,10 +1116,33 @@ pub trait Backend: Debug + Send + Sync {
             tv.install_path = Some(tv.ba().installs_path.join(tv.tv_pathname()));
         }
 
+        let prepared = self.prepare_install(&ctx, tv).await?;
+        if prepared.was_installed {
+            return Ok(prepared.tv);
+        }
+
+        let old_tv = prepared.tv.clone();
+        let tv = match self.install_version_(&ctx, prepared.tv).await {
+            Ok(tv) => tv,
+            Err(e) => {
+                self.cleanup_install_dirs_on_error(&old_tv);
+                // Pass through the error - it will be wrapped at a higher level
+                return Err(e);
+            }
+        };
+
+        self.finalize_install(&ctx, tv).await
+    }
+
+    async fn prepare_install(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<PreparedInstall> {
         let will_uninstall = ctx.force && self.is_version_installed(&ctx.config, &tv, true);
 
         // Query backend for operation count and set up progress tracking
-        let install_ops = self.install_operation_count(&tv, &ctx).await;
+        let install_ops = self.install_operation_count(&tv, ctx).await;
         let total_ops = if will_uninstall {
             install_ops + 1
         } else {
@@ -1082,7 +1155,11 @@ pub trait Backend: Debug + Send + Sync {
                 .await?;
             ctx.pr.next_operation();
         } else if self.is_version_installed(&ctx.config, &tv, true) {
-            return Ok(tv);
+            return Ok(PreparedInstall {
+                tv,
+                was_installed: true,
+                lock: None,
+            });
         }
 
         // Track the installation asynchronously (fire-and-forget)
@@ -1090,25 +1167,31 @@ pub trait Backend: Debug + Send + Sync {
         versions_host::track_install(tv.short(), &tv.ba().full(), &tv.version);
 
         ctx.pr.set_message("install".into());
-        let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
+        let lock = lock_file::get(&tv.install_path(), ctx.force)?;
 
         // Double-checked (locking) that it wasn't installed while we were waiting for the lock
         if self.is_version_installed(&ctx.config, &tv, true) && !ctx.force {
-            return Ok(tv);
+            return Ok(PreparedInstall {
+                tv,
+                was_installed: true,
+                lock,
+            });
         }
 
         self.create_install_dirs(&tv)?;
 
-        let old_tv = tv.clone();
-        let tv = match self.install_version_(&ctx, tv).await {
-            Ok(tv) => tv,
-            Err(e) => {
-                self.cleanup_install_dirs_on_error(&old_tv);
-                // Pass through the error - it will be wrapped at a higher level
-                return Err(e);
-            }
-        };
+        Ok(PreparedInstall {
+            tv,
+            was_installed: false,
+            lock,
+        })
+    }
 
+    async fn finalize_install(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         let install_path = tv.install_path();
         if install_path.starts_with(*dirs::INSTALLS) {
             install_state::write_backend_meta(self.ba())?;
@@ -1144,7 +1227,7 @@ pub trait Backend: Debug + Send + Sync {
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
                 .finish_with_message("running custom postinstall hook".to_string());
-            self.run_postinstall_hook(&ctx, &tv, script).await?;
+            self.run_postinstall_hook(ctx, &tv, script).await?;
         }
         ctx.pr.finish_with_message("installed".to_string());
         Ok(tv)

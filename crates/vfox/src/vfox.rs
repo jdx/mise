@@ -10,6 +10,9 @@ use xx::file;
 
 use crate::error::Result;
 use crate::hooks::available::AvailableVersion;
+use crate::hooks::backend_batch_install::{
+    BackendBatchInstallContext, BackendBatchInstallItem, BackendBatchInstallResponse,
+};
 use crate::hooks::backend_exec_env::BackendExecEnvContext;
 use crate::hooks::backend_install::BackendInstallContext;
 use crate::hooks::backend_list_versions::BackendListVersionsContext;
@@ -346,6 +349,16 @@ impl Vfox {
         };
         plugin.backend_install(ctx).await?;
         Ok(())
+    }
+
+    pub async fn backend_batch_install(
+        &self,
+        sdk: &str,
+        tools: Vec<BackendBatchInstallItem>,
+    ) -> Result<BackendBatchInstallResponse> {
+        let plugin = self.get_sdk_with_env(sdk)?;
+        let ctx = BackendBatchInstallContext { tools };
+        plugin.backend_batch_install(ctx).await
     }
 
     pub async fn backend_exec_env(

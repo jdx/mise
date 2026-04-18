@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+PLUGIN_DIR="$PWD/test-batch-backend-plugin"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOF'
+PLUGIN = {
+  name = "batch-backend-test",
+  version = "0.1.0",
+  description = "test backend plugin with batch install hook",
+  author = "mise e2e"
+}
+EOF
+
+cat >"$PLUGIN_DIR/hooks/backend_list_versions.lua" <<'EOF'
+function PLUGIN:BackendListVersions(ctx)
+    return { versions = { "1.0.0" } }
+end
+EOF
+
+cat >"$PLUGIN_DIR/hooks/backend_install.lua" <<'EOF'
+function PLUGIN:BackendInstall(ctx)
+    error("BackendInstall should not be called when BackendBatchInstall is available")
+end
+EOF
+
+cat >"$PLUGIN_DIR/hooks/backend_batch_install.lua" <<'EOF'
+function PLUGIN:BackendBatchInstall(ctx)
+    local cmd = require("cmd")
+    local file = require("file")
+
+    if #ctx.tools < 2 then
+        error("expected batched install to include both configured tools, got " .. tostring(#ctx.tools))
+    end
+
+    local seen = {}
+
+    local results = {}
+    for _, tool in ipairs(ctx.tools) do
+        seen[tool.tool] = true
+        cmd.exec("mkdir -p \"" .. file.join_path(tool.install_path, "bin") .. "\"")
+        local bin = file.join_path(tool.install_path, "bin", tool.tool)
+        cmd.exec("printf '#!/bin/sh\necho " .. tool.tool .. "\n' > \"" .. bin .. "\"")
+        cmd.exec("chmod +x \"" .. bin .. "\"")
+        cmd.exec("printf 'batched' > \"" .. file.join_path(tool.install_path, "batch-proof") .. "\"")
+        results[tool.id] = { version = tool.version }
+    end
+
+    if not (seen["tool-a"] and seen["tool-b"]) then
+        error("expected batched install to include tool-a and tool-b")
+    end
+
+    return results
+end
+EOF
+
+cat >"$PLUGIN_DIR/hooks/backend_exec_env.lua" <<'EOF'
+function PLUGIN:BackendExecEnv(ctx)
+    local file = require("file")
+    return {
+        env_vars = {
+            { key = "PATH", value = file.join_path(ctx.install_path, "bin") }
+        }
+    }
+end
+EOF
+
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" commit -q -m "init"
+
+cat >mise.toml <<EOF
+[tools]
+"batchy:tool-a" = "1.0.0"
+"batchy:tool-b" = "1.0.0"
+
+[plugins]
+"vfox-backend:batchy" = "file://$PLUGIN_DIR"
+EOF
+
+mise install
+
+assert "mise current batchy:tool-a" "1.0.0"
+assert "mise current batchy:tool-b" "1.0.0"
+assert "test -f \"$(mise where batchy:tool-a)/batch-proof\" && cat \"$(mise where batchy:tool-a)/batch-proof\"" "batched"
+assert "test -f \"$(mise where batchy:tool-b)/batch-proof\" && cat \"$(mise where batchy:tool-b)/batch-proof\"" "batched"
+assert "mise exec batchy:tool-a@1.0.0 -- tool-a" "tool-a"
+assert "mise exec batchy:tool-b@1.0.0 -- tool-b" "tool-b"

@@ -5,6 +5,7 @@ use jiff::Timestamp;
 use crate::ui::progress_report::SingleReport;
 use crate::{config::Config, toolset::Toolset};
 
+#[derive(Debug)]
 pub struct InstallContext {
     pub config: Arc<Config>,
     pub ts: Arc<Toolset>,

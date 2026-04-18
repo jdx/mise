@@ -13,6 +13,7 @@ use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::{BatchInstallOutcome, BatchInstallRequest};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
@@ -24,6 +25,47 @@ use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::toolset::{ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use vfox::BackendBatchInstallItem;
+
+enum BatchPreparedInstall {
+    Ready(Box<ReadyBatchInstall>),
+    Outcome(Box<BatchInstallOutcome>),
+}
+
+struct ReadyBatchInstall {
+    request: BatchInstallRequest,
+    original_tv: ToolVersion,
+    _lock: Option<fslock::LockFile>,
+}
+
+impl BatchPreparedInstall {
+    fn ready(request: BatchInstallRequest, prepared: crate::backend::PreparedInstall) -> Self {
+        Self::Ready(Box::new(ReadyBatchInstall {
+            original_tv: prepared.tv.clone(),
+            request: BatchInstallRequest {
+                tool_version: prepared.tv,
+                ..request
+            },
+            _lock: prepared.lock,
+        }))
+    }
+
+    fn already_installed(request: BatchInstallRequest, tv: ToolVersion) -> Self {
+        Self::Outcome(Box::new(BatchInstallOutcome {
+            request_id: request.request_id,
+            tool_request: request.tool_request,
+            result: Ok(tv),
+        }))
+    }
+
+    fn failed(request: BatchInstallRequest, err: eyre::Error) -> Self {
+        Self::Outcome(Box::new(BatchInstallOutcome {
+            request_id: request.request_id,
+            tool_request: request.tool_request,
+            result: Err(err),
+        }))
+    }
+}
 
 #[derive(Debug)]
 pub struct VfoxBackend {
@@ -34,6 +76,7 @@ pub struct VfoxBackend {
     pathname: String,
     tool_name: Option<String>,
     metadata_deps: OnceLock<Vec<String>>,
+    batch_support: OnceLock<bool>,
 }
 
 #[async_trait]
@@ -227,6 +270,185 @@ impl Backend for VfoxBackend {
         Ok(tv)
     }
 
+    fn supports_batch_install(&self) -> bool {
+        self.is_backend_plugin()
+    }
+
+    fn batch_group_id(&self) -> String {
+        self.pathname.clone()
+    }
+
+    async fn supports_batch_install_request(&self, _req: &BatchInstallRequest) -> bool {
+        self.supports_backend_batch_install().await.unwrap_or(false)
+    }
+
+    async fn install_versions_batch(
+        &self,
+        reqs: Vec<BatchInstallRequest>,
+    ) -> Vec<BatchInstallOutcome> {
+        if !self.is_backend_plugin() || reqs.is_empty() {
+            return self.install_versions_batch_fallback(reqs).await;
+        }
+
+        if let Err(err) = Settings::get().ensure_experimental("custom backends") {
+            return reqs
+                .into_iter()
+                .map(|req| BatchInstallOutcome {
+                    request_id: req.request_id,
+                    tool_request: req.tool_request,
+                    result: Err(eyre!("{err:#}")),
+                })
+                .collect();
+        }
+
+        let dry_run = reqs[0].install_context.dry_run;
+        let locked = reqs[0].install_context.locked;
+
+        // If a mixed batch ever slips through, preserve per-request semantics by falling back
+        // to the single-install path instead of assuming all requests share the first request's flags.
+        if reqs.iter().any(|req| {
+            req.install_context.dry_run != dry_run || req.install_context.locked != locked
+        }) {
+            return self.install_versions_batch_fallback(reqs).await;
+        }
+
+        // Locked mode is already enforced by the single-install path,
+        // including lockfile feature checks and per-platform URL validation.
+        // Dry-run is already handled correctly by the single-install path,
+        // which avoids creating dirs, taking locks, or invoking backend hooks.
+        if dry_run || locked {
+            return self.install_versions_batch_fallback(reqs).await;
+        }
+
+        let mut prepared = Vec::with_capacity(reqs.len());
+        for req in reqs {
+            let BatchInstallRequest {
+                request_id,
+                tool_request,
+                mut tool_version,
+                install_context,
+            } = req;
+
+            // If --force and the install path resolved to a shared dir (but wasn't explicitly
+            // set via --system/--shared), redirect to primary dir to avoid modifying shared installs.
+            if install_context.force
+                && tool_version.install_path.is_none()
+                && env::install_path_category(&tool_version.install_path())
+                    != env::InstallPathCategory::Local
+            {
+                tool_version.install_path = Some(
+                    tool_version
+                        .ba()
+                        .installs_path
+                        .join(tool_version.tv_pathname()),
+                );
+            }
+
+            let req = BatchInstallRequest {
+                request_id,
+                tool_request,
+                tool_version: tool_version.clone(),
+                install_context,
+            };
+            match self
+                .prepare_install(&req.install_context, tool_version)
+                .await
+            {
+                Ok(prepared_install) if prepared_install.was_installed => {
+                    prepared.push(BatchPreparedInstall::already_installed(
+                        req,
+                        prepared_install.tv,
+                    ));
+                }
+                Ok(prepared_install) => {
+                    prepared.push(BatchPreparedInstall::ready(req, prepared_install));
+                }
+                Err(err) => {
+                    prepared.push(BatchPreparedInstall::failed(req, err));
+                }
+            }
+        }
+
+        let (ready, mut outcomes) = Self::split_prepared_batch(prepared);
+        if ready.is_empty() {
+            return outcomes;
+        }
+
+        let config = ready[0].request.install_context.config.clone();
+        if let Err(err) = self.ensure_plugin_installed(&config).await {
+            outcomes.extend(ready.into_iter().map(|prepared| {
+                self.cleanup_install_dirs_on_error(&prepared.original_tv);
+                BatchInstallOutcome {
+                    request_id: prepared.request.request_id,
+                    tool_request: prepared.request.tool_request,
+                    result: Err(eyre!("Failed to ensure plugin installed: {err:#}")),
+                }
+            }));
+            return outcomes;
+        }
+
+        let (mut vfox, log_rx) = self.plugin.vfox();
+        thread::spawn(|| {
+            for line in log_rx {
+                info!("{}", line);
+            }
+        });
+        if let Ok(dep_env) = self.dependency_env(&config).await {
+            vfox.cmd_env = Some(dep_env.into_iter().collect());
+        }
+
+        let payload = ready
+            .iter()
+            .map(|prepared| Self::to_backend_batch_item(&prepared.request))
+            .collect::<Vec<_>>();
+
+        let response = match vfox.backend_batch_install(&self.pathname, payload).await {
+            Ok(response) => response,
+            Err(err) => {
+                outcomes.extend(ready.into_iter().map(|prepared| {
+                    self.cleanup_install_dirs_on_error(&prepared.original_tv);
+                    BatchInstallOutcome {
+                        request_id: prepared.request.request_id,
+                        tool_request: prepared.request.tool_request,
+                        result: Err(eyre!("Backend batch install method failed: {err:#}")),
+                    }
+                }));
+                return outcomes;
+            }
+        };
+
+        for prepared in ready {
+            let req = prepared.request;
+            let result = match response.results.get(&req.request_id) {
+                Some(result) if result.error.is_some() => {
+                    self.cleanup_install_dirs_on_error(&prepared.original_tv);
+                    let err = result
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "backend batch install failed".to_string());
+                    Err(eyre!(err))
+                }
+                Some(_result) => {
+                    self.finalize_install(&req.install_context, req.tool_version)
+                        .await
+                }
+                None => {
+                    self.cleanup_install_dirs_on_error(&prepared.original_tv);
+                    Err(eyre!(
+                        "backend batch install response missing result for {}",
+                        req.request_id
+                    ))
+                }
+            };
+            outcomes.push(BatchInstallOutcome {
+                request_id: req.request_id,
+                tool_request: req.tool_request,
+                result,
+            });
+        }
+        outcomes
+    }
+
     async fn list_bin_paths(
         &self,
         config: &Arc<Config>,
@@ -352,6 +574,66 @@ impl VfoxBackend {
             .ok_or_else(|| eyre::eyre!("VfoxBackend requires a tool name (plugin:tool format)"))
     }
 
+    async fn supports_backend_batch_install(&self) -> eyre::Result<bool> {
+        if let Some(supported) = self.batch_support.get() {
+            return Ok(*supported);
+        }
+        let (vfox, _log_rx) = self.plugin.vfox();
+        let metadata = vfox.metadata(&self.pathname).await?;
+        let supported = metadata.hooks.contains("backend_batch_install");
+        let _ = self.batch_support.set(supported);
+        Ok(supported)
+    }
+
+    async fn install_versions_batch_fallback(
+        &self,
+        reqs: Vec<BatchInstallRequest>,
+    ) -> Vec<BatchInstallOutcome> {
+        let mut outcomes = Vec::with_capacity(reqs.len());
+        for req in reqs {
+            let result = self
+                .install_version(req.install_context, req.tool_version)
+                .await;
+            outcomes.push(BatchInstallOutcome {
+                request_id: req.request_id,
+                tool_request: req.tool_request,
+                result,
+            });
+        }
+        outcomes
+    }
+
+    fn to_backend_batch_item(req: &BatchInstallRequest) -> BackendBatchInstallItem {
+        BackendBatchInstallItem {
+            id: req.request_id.clone(),
+            tool: req
+                .tool_request
+                .ba()
+                .short
+                .split_once(':')
+                .map(|(_, tool)| tool.to_string())
+                .unwrap_or_else(|| req.tool_request.ba().short.clone()),
+            version: req.tool_version.version.clone(),
+            install_path: req.tool_version.install_path(),
+            download_path: req.tool_version.download_path(),
+            options: req.tool_request.options().opts.clone(),
+        }
+    }
+
+    fn split_prepared_batch(
+        prepared: Vec<BatchPreparedInstall>,
+    ) -> (Vec<ReadyBatchInstall>, Vec<BatchInstallOutcome>) {
+        let mut ready = Vec::new();
+        let mut outcomes = Vec::new();
+        for item in prepared {
+            match item {
+                BatchPreparedInstall::Ready(item) => ready.push(*item),
+                BatchPreparedInstall::Outcome(outcome) => outcomes.push(*outcome),
+            }
+        }
+        (ready, outcomes)
+    }
+
     pub fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
         let pathname = match &backend_plugin_name {
             Some(plugin_name) => plugin_name.clone(),
@@ -381,6 +663,7 @@ impl VfoxBackend {
             pathname,
             tool_name,
             metadata_deps: OnceLock::new(),
+            batch_support: OnceLock::new(),
         }
     }
 
