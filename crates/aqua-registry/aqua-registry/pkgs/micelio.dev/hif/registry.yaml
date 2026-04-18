@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: micelio.dev/hif
+    type: http
+    description: hif - the Micelio command-line client. A forge-first version-control system for the agent era
+    link: https://micelio.dev
+    url: https://releases.micelio.dev/hif/{{.Version}}/hif-{{.OS}}-{{.Arch}}.{{.Format}}
+    replacements:
+      amd64: x64
+    format: tar.gz
+    supported_envs:
+      - darwin
+      - linux
+    checksum:
+      type: http
+      url: https://releases.micelio.dev/hif/{{.Version}}/SHA256SUMS
+      algorithm: sha256

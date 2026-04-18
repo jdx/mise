@@ -269,7 +269,7 @@ impl Backend for AsdfBackend {
         timeout::run_with_timeout_async(
             || async {
                 if !self.plugin.has_latest_stable_script() {
-                    return self.latest_version(config, Some("latest".into())).await;
+                    return self.latest_version_for_query(config, "latest", None).await;
                 }
                 self.latest_stable_cache
                     .get_or_try_init(|| self.plugin.fetch_latest_stable())
@@ -391,6 +391,7 @@ impl Backend for AsdfBackend {
     }
 
     async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        let runtime_path = tv.runtime_path();
         Ok(self
             .cache
             .list_bin_paths(config, self, tv, async || {
@@ -398,7 +399,7 @@ impl Backend for AsdfBackend {
             })
             .await?
             .into_iter()
-            .map(|path| tv.install_path().join(path))
+            .map(|path| runtime_path.join(path))
             .collect())
     }
 

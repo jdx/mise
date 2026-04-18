@@ -452,7 +452,7 @@ impl Toolset {
         opts: &Arc<InstallOptions>,
     ) -> Result<ToolVersion> {
         let mpr = MultiProgressReport::get();
-        let before_date = effective_before_date(tr, &opts.resolve_options)?;
+        let before_date = effective_before_date(Some(tr), &opts.resolve_options)?;
         let mut resolve_options = opts.resolve_options.clone();
         resolve_options.before_date = before_date;
 

@@ -8,7 +8,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.4.11"
+version = "2026.4.16"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -90,10 +90,10 @@ confique = { version = "0.4", default-features = false }
 console = "0.16"
 contracts = "0.6"
 dashmap = "6"
-demand = "1"
+demand = "2"
 digest = "0.11.0"
 dotenvy = "0.15"
-duct = "0.13"
+duct = "1.0"
 homedir = "0.3"
 expr-lang = "1"
 eyre = "0.6"
@@ -111,7 +111,7 @@ hex = "0.4"
 humansize = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
-clx = "1"
+clx = "2"
 indoc = "2"
 itertools = "0.14"
 jiff = "0.2"
@@ -141,17 +141,16 @@ rattler_solve = { version = "5", default-features = false, features = [
 rattler_package_streaming = { version = "0.24", default-features = false }
 rattler_virtual_packages = { version = "2", default-features = false }
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "gzip",
   "zstd",
   "charset",
   "http2",
   "socks",
-  "macos-system-configuration",
+  "system-proxy",
 ] }
-rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
-rmcp-macros = "0.3"
+rmcp = { version = "1.0", features = ["server", "transport-io", "schemars"] }
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [
   "aes-gcm",
@@ -172,9 +171,9 @@ chacha20poly1305 = "0.10"
 shell-escape = "0.1"
 shell-words = "1"
 shellexpand = "3"
-signal-hook = "0.3"
+signal-hook = "0.4"
 siphasher = "1"
-strum = { version = "0.27", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
 sys-info = "0.9"
 tabled = { version = "0.20", features = ["ansi"] }
 taplo = "0.14"
@@ -185,18 +184,18 @@ terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-retry = "0.3"
-toml = { version = "0.9", features = ["parse", "preserve_order"] }
-toml_edit = { version = "0.24", features = ["parse"] }
+toml = { version = "1.0", features = ["parse", "preserve_order"] }
+toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.9", default-features = false }
 url = "2"
 urlencoding = "2"
 usage-lib = { version = "3", features = ["clap", "docs"] }
-versions = { version = "6", features = ["serde"] }
+versions = { version = "7", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
 mise-interactive-config = { path = "crates/mise-interactive-config", version = "2026.1.12" }
 walkdir = "2"
-which = "7"
+which = "8"
 xx = { version = "2.5", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "8", default-features = false, features = ["deflate"] }
@@ -205,10 +204,11 @@ zstd = "0.13"
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.31", features = ["signal", "term", "user"] }
-self_update = { version = "0.42", optional = true, default-features = false, features = [
+self_update = { version = "0.44", optional = true, default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
+  "reqwest",
   "rustls",
 ] }
 
@@ -217,13 +217,14 @@ landlock = "0.4"
 seccompiler = "0.5"
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.42", optional = true, default-features = false, features = [
+self_update = { version = "0.44", optional = true, default-features = false, features = [
   "archive-zip",
   "compression-zip-deflate",
   "signatures",
+  "reqwest",
   "rustls",
 ] }
-zipsign-api = "0.1"
+zipsign-api = "0.2"
 sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 
@@ -231,13 +232,13 @@ winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 built = { version = "0.8", features = ["chrono"] }
 cfg_aliases = "0.2"
 heck = "0.5"
-toml = "0.9"
+toml = "1.0"
 indexmap = "2"
 serde_yaml = "0.9"
 
 [dev-dependencies]
 clap-sort = "1"
-ctor = "0.9"
+ctor = "0.10"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 pretty_assertions = "1"
@@ -257,7 +258,7 @@ native-tls = [
 ]
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
-  "reqwest/rustls-tls",
+  "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
   "sigstore-verification/rustls",
@@ -267,7 +268,7 @@ rustls = [
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
-  "reqwest/rustls-tls-native-roots",
+  "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
   "sigstore-verification/rustls-native-roots",
@@ -290,7 +291,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "rmcp-macros"]
+ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl"]
 
 [package.metadata.release]
 pre-release-replacements = [

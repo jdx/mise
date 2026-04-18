@@ -1,4 +1,6 @@
-use crate::file::{display_path, remove_all};
+use crate::config::{Config, Settings};
+use crate::errors::Error::PluginNotInstalled;
+use crate::file::remove_all_with_progress;
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::plugins::warn_if_env_plugin_shadows_registry;
@@ -6,13 +8,14 @@ use crate::plugins::{Plugin, PluginSource};
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{config::Config, dirs, file, registry};
+use crate::ui::prompt;
+use crate::{dirs, file, lock_file, registry};
 use async_trait::async_trait;
 use console::style;
 use contracts::requires;
-use eyre::{Context, eyre};
+use eyre::{Context, bail, eyre};
 use indexmap::{IndexMap, indexmap};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use url::Url;
 use vfox::Vfox;
@@ -202,7 +205,7 @@ impl Plugin for VfoxPlugin {
         &self,
         config: &Arc<Config>,
         mpr: &MultiProgressReport,
-        _force: bool,
+        force: bool,
         dry_run: bool,
     ) -> Result<()> {
         // Skip installation for embedded plugins
@@ -210,15 +213,41 @@ impl Plugin for VfoxPlugin {
             return Ok(());
         }
 
-        if !self.plugin_path.exists() {
-            let url = self.get_repo_url(config)?;
-            trace!("Cloning vfox plugin: {url}");
-            let pr = mpr.add_with_options(&format!("clone vfox plugin {url}"), dry_run);
-            if !dry_run {
-                self.repo()
-                    .clone(url.as_str(), CloneOptions::default().pr(pr.as_ref()))?;
-                warn_if_env_plugin_shadows_registry(&self.name, &self.plugin_path);
+        let settings = Settings::try_get()?;
+        if !force {
+            if self.is_installed() {
+                return Ok(());
             }
+            if !settings.yes && self.repo_url.lock().unwrap().is_none() {
+                let url = self.get_repo_url(config)?;
+                let url_string = url.to_string();
+                if !registry::is_trusted_plugin(self.name(), &url_string) {
+                    warn!(
+                        "⚠️ {} is a community-developed plugin – {}",
+                        style(&self.name).blue(),
+                        style(&url_string.trim_end_matches(".git")).yellow()
+                    );
+                    if settings.paranoid {
+                        bail!(
+                            "Paranoid mode is enabled, refusing to install community-developed plugin"
+                        );
+                    }
+                    if !prompt::confirm_with_all(format!(
+                        "Would you like to install {}?",
+                        self.name
+                    ))? {
+                        Err(PluginNotInstalled(self.name.clone()))?
+                    }
+                }
+            }
+        }
+
+        let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
+        let pr = mpr.add_with_options(&prefix, dry_run);
+        if !dry_run {
+            let _lock = lock_file::get(&self.plugin_path, force)?;
+            self.install(config, pr.as_ref()).await?;
+            warn_if_env_plugin_shadows_registry(&self.name, &self.plugin_path);
         }
         Ok(())
     }
@@ -276,20 +305,7 @@ impl Plugin for VfoxPlugin {
         }
         pr.set_message("uninstall".into());
 
-        let rmdir = |dir: &Path| {
-            if !dir.exists() {
-                return Ok(());
-            }
-            pr.set_message(format!("remove {}", display_path(dir)));
-            remove_all(dir).wrap_err_with(|| {
-                format!(
-                    "Failed to remove directory {}",
-                    style(display_path(dir)).cyan().for_stderr()
-                )
-            })
-        };
-
-        rmdir(&self.plugin_path)?;
+        remove_all_with_progress(&self.plugin_path, pr)?;
 
         Ok(())
     }
