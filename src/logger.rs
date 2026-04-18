@@ -35,9 +35,13 @@ const NOISY_DEP_TARGETS: &[&str] = &[
 ];
 
 fn is_noisy_dep_target(target: &str) -> bool {
-    NOISY_DEP_TARGETS
-        .iter()
-        .any(|t| target == *t || target.starts_with(&format!("{t}::")))
+    // Allocation-free: check for exact match or a "<target>::" prefix by
+    // looking at the byte just past the candidate. Since `starts_with(t)`
+    // already matched, a following `:` byte can only be the first `:` of the
+    // `::` module-path separator used by `log` targets.
+    NOISY_DEP_TARGETS.iter().any(|t| {
+        target == *t || (target.starts_with(t) && target.as_bytes().get(t.len()) == Some(&b':'))
+    })
 }
 
 impl log::Log for Logger {
