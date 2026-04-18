@@ -195,6 +195,16 @@ Please note the following discussion categories, which match how issues are ofte
 
 We're grateful for Cloudflare's support through [Project Alexandria](https://www.cloudflare.com/lp/project-alexandria/).
 
+## Star history
+
+<a href="https://star-history.com/#jdx/mise&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jdx/mise&type=date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=jdx/mise&type=date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=jdx/mise&type=date" width="100%" />
+ </picture>
+</a>
+
 ## Contributors
 
 [![Contributors](https://contrib.rocks/image?repo=jdx/mise)](https://github.com/jdx/mise/graphs/contributors)
