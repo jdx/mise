@@ -209,6 +209,12 @@ impl Display for RegistryTool {
     }
 }
 
+/// Returns true when `name` passes the configured tool filter.
+///
+/// `None` means no allowlist is configured, so `disable_tools` excludes
+/// individual tools. `Some(empty)` is an explicit empty allowlist and disables
+/// every tool. When an allowlist is configured, it is authoritative and
+/// `disable_tools` is not applied.
 pub fn tool_enabled<T: Ord>(
     enable_tools: Option<&BTreeSet<T>>,
     disable_tools: &BTreeSet<T>,
@@ -224,9 +230,8 @@ pub fn tool_enabled<T: Ord>(
 mod tests {
     use crate::config::Config;
 
-    #[tokio::test]
-    async fn test_tool_disabled() {
-        let _config = Config::get().await.unwrap();
+    #[test]
+    fn test_tool_disabled() {
         use super::*;
         let name = "cargo";
 
@@ -242,6 +247,11 @@ mod tests {
             &name
         ));
         assert!(!tool_enabled(None, &BTreeSet::from(["cargo"]), &name));
+        assert!(tool_enabled(
+            Some(&BTreeSet::from(["cargo"])),
+            &BTreeSet::from(["cargo"]),
+            &name
+        ));
     }
 
     #[tokio::test]
