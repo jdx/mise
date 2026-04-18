@@ -1,9 +1,10 @@
 use crate::config::{Config, Settings};
 use clx::progress;
 use eyre::Result;
+use std::collections::HashSet;
 use std::fs::{File, OpenOptions, create_dir_all};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::{io::Write, sync::OnceLock};
 
@@ -18,30 +19,33 @@ struct Logger {
     log_file: Option<Mutex<File>>,
 }
 
-/// Third-party crate targets that emit very noisy debug logs (often per HTTP/2
-/// frame, per socket read, etc.) and would otherwise overwhelm `-v` output.
-/// These are suppressed at Debug level unless `MISE_LOG_VERBOSE_DEPS=1` is set.
-/// Trace level always lets them through.
-const NOISY_DEP_TARGETS: &[&str] = &[
-    "h2",
-    "hyper",
-    "hyper_util",
-    "mio",
-    "reqwest",
-    "rustls",
-    "tokio_util",
-    "tower",
-    "want",
-];
+/// Root crate names of third-party dependencies that emit very noisy debug
+/// logs (often per HTTP/2 frame, per socket read, etc.) and would otherwise
+/// overwhelm `-v` output. These are suppressed at Debug level unless
+/// `MISE_LOG_VERBOSE_DEPS=1` is set. Trace level always lets them through.
+static NOISY_DEP_TARGETS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    [
+        "h2",
+        "hyper",
+        "hyper_util",
+        "mio",
+        "reqwest",
+        "rustls",
+        "tokio_util",
+        "tower",
+        "want",
+    ]
+    .into_iter()
+    .collect()
+});
 
 fn is_noisy_dep_target(target: &str) -> bool {
-    // Allocation-free: check for exact match or a "<target>::" prefix by
-    // looking at the byte just past the candidate. Since `starts_with(t)`
-    // already matched, a following `:` byte can only be the first `:` of the
-    // `::` module-path separator used by `log` targets.
-    NOISY_DEP_TARGETS.iter().any(|t| {
-        target == *t || (target.starts_with(t) && target.as_bytes().get(t.len()) == Some(&b':'))
-    })
+    // `log` targets default to the module path (e.g. "h2::proto::streams").
+    // Match on the crate-root segment so we don't accidentally match an
+    // unrelated crate whose name happens to start with one of ours
+    // (e.g. "h2extra") — zero allocation: just splits the input slice.
+    let root = target.split_once("::").map_or(target, |(r, _)| r);
+    NOISY_DEP_TARGETS.contains(root)
 }
 
 impl log::Log for Logger {
