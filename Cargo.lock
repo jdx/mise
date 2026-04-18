@@ -2584,12 +2584,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_home"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
-
-[[package]]
 name = "env_logger"
 version = "0.11.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5548,7 +5542,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a86cc925d4053d0526ae7f5bc765dbd0d7a5d1a63d43974f4966cb349ca63295"
 dependencies = [
  "cc",
- "which 8.0.2",
+ "which",
 ]
 
 [[package]]
@@ -5860,7 +5854,7 @@ dependencies = [
  "versions 6.3.2",
  "vfox",
  "walkdir",
- "which 7.0.3",
+ "which",
  "winapi",
  "xx",
  "xz2",
@@ -7454,7 +7448,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "unicode-normalization",
- "which 8.0.2",
+ "which",
  "windows 0.61.3",
  "windows-registry",
 ]
@@ -9057,7 +9051,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sigstore-protobuf-specs-derive",
- "which 8.0.2",
+ "which",
 ]
 
 [[package]]
@@ -10091,7 +10085,7 @@ dependencies = [
  "thiserror 2.0.18",
  "url",
  "walkdir",
- "which 8.0.2",
+ "which",
  "xz2",
  "zip 3.0.0",
  "zstd",
@@ -10654,18 +10648,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22cfaf3c063993ff62e73cb4311efde4db1efb31ab78a3e5c457939ad5cc0bed"
 dependencies = [
  "rustls-pki-types",
-]
-
-[[package]]
-name = "which"
-version = "7.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24d643ce3fd3e5b54854602a080f34fb10ab75e0b813ee32d00ca2b44fa74762"
-dependencies = [
- "either",
- "env_home",
- "rustix 1.1.4",
- "winsafe",
 ]
 
 [[package]]
@@ -11247,12 +11229,6 @@ checksum = "09dac053f1cd375980747450bfc7250c264eaae0583872e845c0c7cd578872b5"
 dependencies = [
  "memchr",
 ]
-
-[[package]]
-name = "winsafe"
-version = "0.0.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
 
 [[package]]
 name = "winver"

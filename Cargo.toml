@@ -196,7 +196,7 @@ vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
 mise-interactive-config = { path = "crates/mise-interactive-config", version = "2026.1.12" }
 walkdir = "2"
-which = "7"
+which = "8"
 xx = { version = "2.5", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "8", default-features = false, features = ["deflate"] }
