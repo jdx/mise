@@ -205,10 +205,11 @@ zstd = "0.13"
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.31", features = ["signal", "term", "user"] }
-self_update = { version = "0.42", optional = true, default-features = false, features = [
+self_update = { version = "0.44", optional = true, default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
+  "reqwest",
   "rustls",
 ] }
 
@@ -217,10 +218,11 @@ landlock = "0.4"
 seccompiler = "0.5"
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.42", optional = true, default-features = false, features = [
+self_update = { version = "0.44", optional = true, default-features = false, features = [
   "archive-zip",
   "compression-zip-deflate",
   "signatures",
+  "reqwest",
   "rustls",
 ] }
 zipsign-api = "0.2"
