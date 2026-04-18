@@ -480,9 +480,12 @@ pub trait Backend: Debug + Send + Sync {
     /// Results are cached. Backends can override `_list_remote_versions_with_info`
     /// to provide timestamp information.
     ///
-    /// This method first tries the versions host (mise-versions.jdx.dev) which provides
-    /// version info with created_at timestamps. If that fails, it falls back to the
-    /// backend's `_list_remote_versions_with_info` implementation.
+    /// For backends that query canonical, always-fresh sources (npm, pipx, cargo,
+    /// gem, go, and http/s3 with `version_list_url`), the versions host cache is
+    /// skipped and the upstream is queried directly. For all other backends this
+    /// method first tries the versions host (mise-versions.jdx.dev) which provides
+    /// version info with created_at timestamps, and falls back to the backend's
+    /// `_list_remote_versions_with_info` implementation on failure.
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
@@ -492,23 +495,38 @@ pub trait Backend: Debug + Send + Sync {
         let ba = self.ba().clone();
         let id = self.id();
 
-        // Some backends fetch versions from canonical, always-fresh sources
-        // (package registries, or http/s3 with an explicit version_list_url).
-        // For these, the versions host only adds latency and staleness risk,
-        // so skip it and query the source directly.
+        // Only a subset of backends benefit from the versions host cache —
+        // those whose upstream listing is rate-limited (github API) or not
+        // otherwise available. Package-registry backends (npm, pipx, cargo,
+        // gem, go, conda, dotnet, spm) and http/s3 with an explicit
+        // version_list_url already have canonical, always-fresh sources, so
+        // the cache would only add latency and staleness risk. Note: this
+        // asymmetrically overrides `settings.use_versions_host = true` — the
+        // setting can still disable the host globally, but cannot re-enable
+        // it for backends that are not on this allowlist.
         let backend_type = self.get_type();
-        let has_direct_source = matches!(
-            backend_type,
-            BackendType::Npm
-                | BackendType::Pipx
-                | BackendType::Cargo
-                | BackendType::Gem
-                | BackendType::Go
-        ) || (matches!(backend_type, BackendType::Http | BackendType::S3)
-            && ba.opts().contains_key("version_list_url"));
+        let has_version_list_url = matches!(backend_type, BackendType::Http | BackendType::S3)
+            && (ba.opts().contains_key("version_list_url")
+                || config
+                    .get_tool_opts(&ba)
+                    .await?
+                    .is_some_and(|o| o.contains_key("version_list_url")));
+        let versions_host_applies = match backend_type {
+            BackendType::Github
+            | BackendType::Gitlab
+            | BackendType::Forgejo
+            | BackendType::Aqua
+            | BackendType::Ubi
+            | BackendType::Core
+            | BackendType::Asdf
+            | BackendType::Vfox
+            | BackendType::VfoxBackend(_) => true,
+            BackendType::Http | BackendType::S3 => !has_version_list_url,
+            _ => false,
+        };
 
         // Check if this is an external plugin with a custom remote - skip versions host if so
-        let use_versions_host = if has_direct_source {
+        let use_versions_host = if !versions_host_applies {
             trace!(
                 "Skipping versions host for {} because {} backend has a direct source",
                 ba.short, backend_type
