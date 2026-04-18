@@ -14,7 +14,7 @@ use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
-use crate::file::{display_path, remove_all, remove_all_with_warning};
+use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -36,8 +36,7 @@ use crate::{
 use crate::{dirs, env, file, hash, lock_file, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
-use console::style;
-use eyre::{Result, WrapErr, bail, eyre};
+use eyre::{Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use platform_target::PlatformTarget;
@@ -906,9 +905,9 @@ pub trait Backend: Debug + Send + Sync {
         Ok(())
     }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
-        rmdir(&self.ba().installs_path, pr)?;
-        rmdir(&self.ba().cache_path, pr)?;
-        rmdir(&self.ba().downloads_path, pr)?;
+        remove_all_with_progress(&self.ba().installs_path, pr)?;
+        remove_all_with_progress(&self.ba().cache_path, pr)?;
+        remove_all_with_progress(&self.ba().downloads_path, pr)?;
         Ok(())
     }
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
@@ -1187,14 +1186,13 @@ pub trait Backend: Debug + Send + Sync {
             self.uninstall_version_impl(config, pr, tv).await?;
         }
         let rmdir = |dir: &Path| {
-            if !dir.exists() {
-                return Ok(());
-            }
-            pr.set_message(format!("remove {}", display_path(dir)));
             if dryrun {
+                if dir.exists() {
+                    pr.set_message(format!("remove {}", display_path(dir)));
+                }
                 return Ok(());
             }
-            remove_all_with_warning(dir)
+            remove_all_with_progress(dir, pr)
         };
         rmdir(&tv.install_path())?;
         if !Settings::get().always_keep_download {
@@ -1786,19 +1784,6 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
     }
-}
-
-fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
-    if !dir.exists() {
-        return Ok(());
-    }
-    pr.set_message(format!("remove {}", &dir.to_string_lossy()));
-    remove_all(dir).wrap_err_with(|| {
-        format!(
-            "Failed to remove directory {}",
-            style(&dir.to_string_lossy()).cyan().for_stderr()
-        )
-    })
 }
 
 pub fn unalias_backend(backend: &str) -> &str {
