@@ -150,7 +150,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "socks",
   "system-proxy",
 ] }
-rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
+rmcp = { version = "0.17", features = ["server", "transport-io", "schemars"] }
 rmcp-macros = "0.17"
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [
