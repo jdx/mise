@@ -5804,7 +5804,7 @@ dependencies = [
  "regex",
  "reqwest 0.13.2",
  "rmcp",
- "rmcp-macros 0.17.0",
+ "rmcp-macros 1.5.0",
  "rmp-serde",
  "rops",
  "seccompiler",
@@ -7968,9 +7968,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "0.17.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abad6f5f46e220e3bda2fc90fd1ad64c1c2a2bd716d52c845eb5c9c64cda7542"
+checksum = "48fdc01c81097b0aed18633e676e269fefa3a78ec1df56b4fe597c1241b92025"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
