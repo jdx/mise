@@ -443,6 +443,24 @@ fn is_known_subcommand(cmd: &clap::Command, arg: &str) -> bool {
         .any(|name| name == arg)
 }
 
+fn uses_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) -> bool {
+    matches!(
+        first_non_global_arg_idx(cmd, args).and_then(|idx| args.get(idx)),
+        Some(arg) if arg == "b"
+    )
+}
+
+fn warn_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) {
+    if uses_deprecated_backends_alias(cmd, args) {
+        deprecated_at!(
+            "2026.4.16",
+            "2027.4.16",
+            "cli.backends.b",
+            "`mise b` is deprecated. Use `mise backends` instead."
+        );
+    }
+}
+
 /// Escape flags after task names so clap doesn't parse them as mise flags.
 /// This preserves ::: separators for multi-task handling while preventing
 /// clap from consuming flags like --jobs that appear after task names.
@@ -622,6 +640,7 @@ impl Cli {
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
+        warn_deprecated_backends_alias(&cmd, args);
         measure!("migrate", { migrate::run().await });
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
@@ -864,6 +883,48 @@ mod tests {
         ];
 
         assert_eq!(escape_task_args(&cmd, &args), args);
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias() {
+        let cmd = Cli::command();
+        let args = vec!["mise".to_string(), "b".to_string()];
+
+        assert!(uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias_after_global_flag() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "--cd".to_string(),
+            "project".to_string(),
+            "b".to_string(),
+        ];
+
+        assert!(uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias_ignores_global_flag_value() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "--cd".to_string(),
+            "b".to_string(),
+            "backends".to_string(),
+        ];
+
+        assert!(!uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias_ignores_task_arg() {
+        let cmd = Cli::command();
+        let args = vec!["mise".to_string(), "run".to_string(), "b".to_string()];
+
+        assert!(!uses_deprecated_backends_alias(&cmd, &args));
     }
 
     #[test]

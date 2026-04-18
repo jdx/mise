@@ -122,8 +122,8 @@ cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf
     arg "[ARGS]…" help="all arguments" required=#false double_dash=automatic var=#true
 }
 cmd backends help="Manage backends" {
-    alias b
-    alias backend backend-list hide=#true
+    alias b backend backend-list hide=#true
+    after_long_help "Deprecation:\n\nThe `mise b` alias is deprecated and will be removed in mise 2027.4.16.\nUse `mise backends` instead.\n"
     cmd ls help="List built-in backends" {
         alias list
         after_long_help "Examples:\n\n    $ mise backends ls\n    aqua\n    asdf\n    cargo\n    core\n    dotnet\n    gem\n    go\n    npm\n    pipx\n    spm\n    ubi\n    vfox\n"

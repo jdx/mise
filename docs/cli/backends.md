@@ -2,7 +2,6 @@
 # `mise backends`
 
 - **Usage**: `mise backends <SUBCOMMAND>`
-- **Aliases**: `b`
 - **Source code**: [`src/cli/backends/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/backends/mod.rs)
 
 Manage backends
@@ -10,3 +9,8 @@ Manage backends
 ## Subcommands
 
 - [`mise backends ls`](/cli/backends/ls.md)
+
+Deprecation:
+
+The `mise b` alias is deprecated and will be removed in mise 2027.4.16.
+Use `mise backends` instead.
