@@ -1044,7 +1044,7 @@ Example:
 install_before = "7d"  # only install versions released more than 7 days ago
 ```
 
-Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
+Only affects backends that provide release timestamps (aqua, cargo, conda, npm, pipx, and some core plugins).
 Versions without timestamps are included by default.
 
 **Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
@@ -1053,7 +1053,7 @@ allowing you to selectively use newer versions for specific tools while keeping 
 cutoff date.
 
 Some package-manager backends also forward the cutoff to transitive dependency resolution during
-install. This includes `npm:` and `pipx:` tools.
+install. This includes `npm:`, `pipx:`, and `conda:` tools.
 
 Can be overridden with the `--before` CLI flag or per-tool with the `install_before` tool option.
 

@@ -12,7 +12,7 @@ use crate::toolset::ToolVersion;
 use crate::{backend::Backend, dirs, parallel};
 use crate::{file, hash};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use eyre::Result;
 use itertools::Itertools;
 use jiff::Timestamp;
@@ -95,40 +95,48 @@ impl CondaBackend {
             .unwrap_or_default()
     }
 
+    fn timestamp_to_chrono(timestamp: Timestamp) -> Result<DateTime<Utc>> {
+        DateTime::parse_from_rfc3339(&timestamp.to_string())
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| {
+                eyre::eyre!(
+                    "failed to convert install_before timestamp for conda solve: {}",
+                    e
+                )
+            })
+    }
+
     fn solver_exclude_newer(before_date: Option<Timestamp>) -> Result<Option<ExcludeNewer>> {
         before_date
-            .map(|before_date| {
-                DateTime::parse_from_rfc3339(&before_date.to_string())
-                    .map(|dt| ExcludeNewer::from(dt.with_timezone(&Utc)))
-                    .map_err(|e| {
-                        eyre::eyre!(
-                            "failed to convert install_before timestamp for conda solve: {}",
-                            e
-                        )
-                    })
-            })
+            .map(|before_date| Self::timestamp_to_chrono(before_date).map(ExcludeNewer::from))
             .transpose()
     }
 
-    fn build_solver_task(
-        flat_records: &[RepoDataRecord],
-        specs: Vec<MatchSpec>,
-        virtual_packages: Vec<GenericVirtualPackage>,
-        before_date: Option<Timestamp>,
-    ) -> Result<SolverTask<[&[RepoDataRecord]; 1]>> {
-        Ok(SolverTask {
-            available_packages: [flat_records],
-            specs,
-            virtual_packages,
-            locked_packages: vec![],
-            pinned_packages: vec![],
-            constraints: vec![],
-            timeout: None,
-            channel_priority: ChannelPriority::Strict,
-            exclude_newer: Self::solver_exclude_newer(before_date)?,
-            strategy: SolveStrategy::Highest,
-            dependency_overrides: vec![],
-        })
+    fn version_infos_from_records<'a>(
+        records: impl IntoIterator<Item = &'a RepoDataRecord>,
+    ) -> Vec<VersionInfo> {
+        let mut versions: BTreeMap<String, Option<DateTime<Utc>>> = BTreeMap::new();
+        for record in records {
+            let version = record.package_record.version.to_string();
+            let created_at = record.package_record.timestamp.map(|ts| ts.into_datetime());
+            let current_created_at = versions.entry(version).or_default();
+            if let Some(created_at) = created_at {
+                match current_created_at {
+                    Some(existing) if *existing <= created_at => {}
+                    _ => *current_created_at = Some(created_at),
+                }
+            }
+        }
+
+        versions
+            .into_iter()
+            .map(|(version, created_at)| VersionInfo {
+                version,
+                created_at: created_at.map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true)),
+                ..Default::default()
+            })
+            .sorted_by_cached_key(|v| Versioning::new(&v.version))
+            .collect()
     }
 
     /// Flatten gateway RepoData into owned records for the solver, deduplicating
@@ -162,12 +170,19 @@ impl CondaBackend {
         let flat_records = Self::flatten_repodata(&repodata);
         let virtual_packages = Self::detect_virtual_packages(platform);
 
-        let task = Self::build_solver_task(
-            flat_records.as_slice(),
+        let task = SolverTask {
+            available_packages: [flat_records.as_slice()],
             specs,
             virtual_packages,
-            before_date,
-        )?;
+            locked_packages: vec![],
+            pinned_packages: vec![],
+            constraints: vec![],
+            timeout: None,
+            channel_priority: ChannelPriority::Strict,
+            exclude_newer: Self::solver_exclude_newer(before_date)?,
+            strategy: SolveStrategy::Highest,
+            dependency_overrides: vec![],
+        };
 
         let mut solver = ResolvoSolver;
         let result = solver
@@ -642,24 +657,9 @@ impl Backend for CondaBackend {
             .await
             .map_err(|e| eyre::eyre!("failed to list versions for '{}': {}", tool_name, e))?;
 
-        // Collect unique versions across all repodata results
-        let mut version_set: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for data in &repodata {
-            for record in data {
-                version_set.insert(record.package_record.version.to_string());
-            }
-        }
-
-        let versions = version_set
-            .into_iter()
-            .map(|version| VersionInfo {
-                version,
-                ..Default::default()
-            })
-            .sorted_by_cached_key(|v| Versioning::new(&v.version))
-            .collect();
-
-        Ok(versions)
+        Ok(Self::version_infos_from_records(
+            repodata.iter().flat_map(|data| data.iter()),
+        ))
     }
 
     /// Override to bypass the shared remote_versions cache since conda's
@@ -779,39 +779,76 @@ impl Backend for CondaBackend {
 mod tests {
     use super::CondaBackend;
     use chrono::{DateTime, Utc};
+    use itertools::Itertools;
     use jiff::Timestamp;
     use pretty_assertions::assert_eq;
-    use rattler_conda_types::{MatchSpec, ParseStrictness};
+    use rattler_conda_types::utils::TimestampMs;
+    use rattler_conda_types::{PackageName, RepoDataRecord};
     use rattler_solve::ExcludeNewer;
+    use serde_json::json;
 
     #[test]
     fn test_solver_exclude_newer_from_before_date() {
         let before_date: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
-        let exclude_newer = CondaBackend::solver_exclude_newer(Some(before_date)).unwrap();
+        let exclude_newer = CondaBackend::solver_exclude_newer(Some(before_date))
+            .unwrap()
+            .unwrap();
         let expected = DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z")
             .unwrap()
             .with_timezone(&Utc);
-        assert_eq!(exclude_newer, Some(ExcludeNewer::from(expected)));
+        assert_eq!(exclude_newer, ExcludeNewer::from(expected));
+
+        let package: PackageName = "python".parse().unwrap();
+        let at_cutoff = TimestampMs::from_datetime_millis(expected);
+        let after_cutoff = TimestampMs::from_datetime_millis(
+            DateTime::parse_from_rfc3339("2024-01-02T03:04:06Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        );
+        assert!(!exclude_newer.is_excluded(&package, None, Some(&at_cutoff)));
+        assert!(exclude_newer.is_excluded(&package, None, Some(&after_cutoff)));
     }
 
     #[test]
-    fn test_build_solver_task_wires_exclude_newer() {
-        let spec =
-            MatchSpec::from_str("python", ParseStrictness::Lenient).expect("valid conda spec");
-        let before_date: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
-        let task =
-            CondaBackend::build_solver_task(&[], vec![spec], vec![], Some(before_date)).unwrap();
-        let expected = DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        assert_eq!(task.exclude_newer, Some(ExcludeNewer::from(expected)));
+    fn test_solver_exclude_newer_without_before_date() {
+        assert_eq!(CondaBackend::solver_exclude_newer(None).unwrap(), None);
     }
 
     #[test]
-    fn test_build_solver_task_without_before_date() {
-        let spec =
-            MatchSpec::from_str("python", ParseStrictness::Lenient).expect("valid conda spec");
-        let task = CondaBackend::build_solver_task(&[], vec![spec], vec![], None).unwrap();
-        assert_eq!(task.exclude_newer, None);
+    fn test_version_infos_from_records_uses_earliest_timestamp() {
+        let records = [
+            test_record("1.0.0", Some(1_704_164_646_000)),
+            test_record("2.0.0", None),
+            test_record("1.0.0", Some(1_704_164_645_000)),
+        ];
+
+        let versions = CondaBackend::version_infos_from_records(records.iter());
+
+        assert_eq!(
+            versions
+                .iter()
+                .map(|v| (&v.version, v.created_at.as_deref()))
+                .collect_vec(),
+            vec![
+                (&"1.0.0".to_string(), Some("2024-01-02T03:04:05.000Z")),
+                (&"2.0.0".to_string(), None),
+            ]
+        );
+    }
+
+    fn test_record(version: &str, timestamp: Option<i64>) -> RepoDataRecord {
+        let file_name = format!("ruff-{version}-h123_0.conda");
+        serde_json::from_value(json!({
+            "name": "ruff",
+            "version": version,
+            "build": "h123_0",
+            "build_number": 0,
+            "subdir": "linux-64",
+            "timestamp": timestamp,
+            "fn": file_name,
+            "url": format!("https://conda.anaconda.org/conda-forge/linux-64/{file_name}"),
+            "channel": "conda-forge"
+        }))
+        .unwrap()
     }
 }

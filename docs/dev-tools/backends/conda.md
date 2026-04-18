@@ -13,6 +13,10 @@ The code for this is inside the mise repository at [`./src/backend/conda.rs`](ht
 None. Unlike other conda tools, this backend does not require conda, mamba, or micromamba
 to be installed. It downloads and extracts packages directly from anaconda.org.
 
+When [`install_before`](/configuration/settings.html#install_before) is set, mise forwards
+the cutoff to the rattler conda solver during install. Packages uploaded after that cutoff
+are excluded from the requested package and dependency solve.
+
 ## Usage
 
 The following installs the latest version of [ruff](https://anaconda.org/conda-forge/ruff)
@@ -97,6 +101,6 @@ Override the conda channel for a specific package:
 
 ## Limitations
 
-- Only installs single packages, not full conda environments with dependencies
+- Installs one requested package plus its solved runtime dependencies, not full conda environments
 - Best suited for standalone CLI tools that don't require complex dependency trees
-- Does not manage Python environments or package dependencies like full conda/mamba
+- Does not manage environment files or general-purpose Python project dependencies like full conda/mamba
