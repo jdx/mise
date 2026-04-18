@@ -49,7 +49,7 @@ jobs:
           - name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Install cross
         uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2
         with:
@@ -100,7 +100,7 @@ jobs:
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: cache crates
         id: cache-crates
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
@@ -142,7 +142,7 @@ jobs:
           - arch: x64
             target: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - run: rustup target add ${{matrix.target}}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
@@ -168,7 +168,7 @@ jobs:
       matrix:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Install zsh/fish/direnv/fd
         run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find liblzma-dev libbz2-dev
       - name: Install fd-find
@@ -205,7 +205,7 @@ jobs:
     timeout-minutes: 10
     container: ghcr.io/jdx/mise:rpm@sha256:c1992f9943b470ba45c28d6f3d6271f00a8886e8b2c5cf08af2cc412e436d64f
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
@@ -230,7 +230,7 @@ jobs:
     container: ghcr.io/jdx/mise:deb@sha256:523d826b4f32a0f4eb254313b668e69fda8e49ebf29df4beaa36c888cf1322c0
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
@@ -287,7 +287,7 @@ jobs:
             echo "  deb: ${{ needs.deb.result }}"
             exit 1
           fi
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
       - name: Check for existing release
