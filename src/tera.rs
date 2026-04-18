@@ -558,7 +558,7 @@ pub fn tera_exec(
                     if !output.status.success() {
                         return Err(format!("exec command failed: {}", stderr).into());
                     }
-                    Ok(stdout.to_string())
+                    stdout.to_string()
                 };
                 Ok(Value::String(result))
             }
