@@ -62,7 +62,7 @@ jobs:
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
       - name: build-tarball ${{matrix.target}}
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
           timeout_minutes: 45
           max_attempts: 3
@@ -111,7 +111,7 @@ jobs:
       - name: Setup Rust target
         run: rustup target add ${{matrix.target}}
       - name: build-tarball ${{matrix.target}}
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
           timeout_minutes: 90
           max_attempts: 3
@@ -189,7 +189,7 @@ jobs:
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
       - name: Run e2e tests
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         env:
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
