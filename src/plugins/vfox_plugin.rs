@@ -117,6 +117,7 @@ impl VfoxPlugin {
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
+        vfox.github_token = crate::github::resolve_token("github.com").map(|(token, _)| token);
         let rx = vfox.log_subscribe();
         (vfox, rx)
     }
