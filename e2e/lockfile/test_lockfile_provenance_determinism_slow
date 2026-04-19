@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+echo "=== Testing provenance URLs are resolved for all platforms ==="
+# sops has SLSA provenance configured in the aqua registry
+cat <<EOF >mise.toml
+[tools]
+sops = "3.12.1"
+EOF
+
+# Lock for current platform + a cross-platform target
+# The cross-platform entry should also get the expanded provenance.slsa form with URL
+if [[ $PLATFORM == "macos-arm64" ]]; then
+	CROSS_PLATFORM="linux-x64"
+else
+	CROSS_PLATFORM="macos-arm64"
+fi
+
+mise lock --platform "$PLATFORM,$CROSS_PLATFORM"
+assert "test -f mise.lock"
+
+# Both platform entries should have expanded provenance.slsa form (with url),
+# NOT the short form "provenance = 'slsa'"
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\".provenance.slsa"
+assert_contains "cat mise.lock" "\"platforms.$CROSS_PLATFORM\".provenance.slsa"
+# The expanded form includes a url field
+assert_contains "cat mise.lock" 'url = "https://'
+
+# No short-form provenance should appear
+assert_not_contains "cat mise.lock" 'provenance = "slsa"'
+
+echo "=== Testing lockfile is deterministic across runs ==="
+cp mise.lock mise.lock.first
+
+mise lock --platform "$PLATFORM,$CROSS_PLATFORM"
+
+# Second run should produce identical output
+assert "diff mise.lock mise.lock.first"
+
+echo "mise lockfile provenance determinism tests passed!"

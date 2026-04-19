@@ -1,7 +1,7 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Settings;
 use crate::tokens;
-use crate::{dirs, duration, env};
+use crate::{dirs, env};
 use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
@@ -92,7 +92,7 @@ async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-tags.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     TAGS_CACHE.read().await
@@ -105,7 +105,7 @@ async fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<Git
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-releases.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASES_CACHE.read().await
@@ -118,7 +118,7 @@ async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<Gith
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASE_CACHE.read().await
@@ -369,13 +369,26 @@ impl fmt::Display for TokenSource {
 }
 
 /// Normalize a URL hostname to the canonical host used for token lookups.
-/// Maps "api.github.com" and "*.githubusercontent.com" to "github.com".
+/// Maps "api.github.com" and supported "*.githubusercontent.com" hosts to "github.com".
 fn canonical_host(host: Option<&str>) -> Option<&str> {
     match host {
         Some("api.github.com") => Some("github.com"),
-        Some(h) if h.ends_with(".githubusercontent.com") => Some("github.com"),
+        Some(h) if is_githubusercontent_auth_host(h) => Some("github.com"),
         other => other,
     }
+}
+
+pub fn is_githubusercontent_auth_host(host: &str) -> bool {
+    host.ends_with(".githubusercontent.com") && !is_github_release_asset_host(host)
+}
+
+fn is_github_release_asset_host(host: &str) -> bool {
+    matches!(
+        host,
+        "objects.githubusercontent.com"
+            | "objects-origin.githubusercontent.com"
+            | "release-assets.githubusercontent.com"
+    )
 }
 
 /// Resolve the GitHub token for the given hostname, returning the token and its source.
@@ -390,10 +403,13 @@ fn canonical_host(host: Option<&str>) -> Option<&str> {
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
 
-    let is_ghcom = host == "github.com"
-        || host == "api.github.com"
-        || host.ends_with(".githubusercontent.com");
-    let lookup_host = if host == "api.github.com" || host.ends_with(".githubusercontent.com") {
+    if is_github_release_asset_host(host) {
+        return None;
+    }
+
+    let is_ghcom =
+        host == "github.com" || host == "api.github.com" || is_githubusercontent_auth_host(host);
+    let lookup_host = if host == "api.github.com" || is_githubusercontent_auth_host(host) {
         "github.com"
     } else {
         host
@@ -447,6 +463,17 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     None
+}
+
+/// Resolve the GitHub token from a full API base URL (e.g., "https://api.github.com").
+/// Extracts the hostname and delegates to [`resolve_token`].
+pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
+    let parsed = url::Url::parse(api_url).ok();
+    let host = parsed
+        .as_ref()
+        .and_then(|u| u.host_str())
+        .unwrap_or("api.github.com");
+    resolve_token(host).map(|(t, _)| t)
 }
 
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
@@ -568,6 +595,39 @@ struct GhHostEntry {
 mod tests {
     use super::*;
 
+    static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_github_token<F, R>(test_fn: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let orig_mise = std::env::var("MISE_GITHUB_TOKEN").ok();
+        let orig_api = std::env::var("GITHUB_API_TOKEN").ok();
+        let orig_gh = std::env::var("GITHUB_TOKEN").ok();
+
+        env::remove_var("MISE_GITHUB_TOKEN");
+        env::remove_var("GITHUB_API_TOKEN");
+        env::set_var("GITHUB_TOKEN", "ghp_test");
+
+        let result = test_fn();
+
+        match orig_mise {
+            Some(v) => env::set_var("MISE_GITHUB_TOKEN", v),
+            None => env::remove_var("MISE_GITHUB_TOKEN"),
+        }
+        match orig_api {
+            Some(v) => env::set_var("GITHUB_API_TOKEN", v),
+            None => env::remove_var("GITHUB_API_TOKEN"),
+        }
+        match orig_gh {
+            Some(v) => env::set_var("GITHUB_TOKEN", v),
+            None => env::remove_var("GITHUB_TOKEN"),
+        }
+
+        result
+    }
+
     #[test]
     fn test_parse_github_tokens() {
         let toml = r#"
@@ -602,6 +662,41 @@ something_else = "value"
 "#;
         let result = parse_github_tokens(toml).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_githubusercontent_auth_hosts_exclude_release_assets() {
+        assert!(is_githubusercontent_auth_host("raw.githubusercontent.com"));
+        assert!(!is_githubusercontent_auth_host(
+            "objects.githubusercontent.com"
+        ));
+        assert!(!is_githubusercontent_auth_host(
+            "objects-origin.githubusercontent.com"
+        ));
+        assert!(!is_githubusercontent_auth_host(
+            "release-assets.githubusercontent.com"
+        ));
+    }
+
+    #[test]
+    fn test_release_asset_hosts_do_not_use_github_token() {
+        with_github_token(|| {
+            for host in [
+                "objects.githubusercontent.com",
+                "objects-origin.githubusercontent.com",
+                "release-assets.githubusercontent.com",
+            ] {
+                let headers =
+                    get_headers(format!("https://{host}/github-production-release-asset"));
+                assert!(
+                    !headers.contains_key(reqwest::header::AUTHORIZATION),
+                    "{host} should not use GitHub auth"
+                );
+            }
+
+            let headers = get_headers("https://raw.githubusercontent.com/owner/repo/main/file.txt");
+            assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
+        });
     }
 
     fn make_release(tag: &str) -> GithubRelease {

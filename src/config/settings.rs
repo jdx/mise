@@ -6,7 +6,7 @@ use crate::platform::Platform;
 use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
-use confique::{Config, Partial};
+use confique::{Config, Layer};
 use eyre::{Result, bail};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
@@ -197,7 +197,7 @@ impl serde::Serialize for PythonUvVenvAuto {
     }
 }
 
-pub type SettingsPartial = <Settings as Config>::Partial;
+pub type SettingsPartial = <Settings as Config>::Layer;
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
@@ -638,17 +638,11 @@ impl Settings {
     }
 
     pub fn disable_tools(&self) -> BTreeSet<String> {
-        self.disable_tools
-            .iter()
-            .map(|t| t.trim().to_string())
-            .collect()
+        normalize_tool_names(&self.disable_tools)
     }
 
-    pub fn enable_tools(&self) -> BTreeSet<String> {
-        self.enable_tools
-            .iter()
-            .map(|t| t.trim().to_string())
-            .collect()
+    pub fn enable_tools(&self) -> Option<BTreeSet<String>> {
+        self.enable_tools.as_ref().map(normalize_tool_names)
     }
 
     pub fn partial_as_dict(partial: &SettingsPartial) -> eyre::Result<toml::Table> {
@@ -872,10 +866,31 @@ where
         .map(|set| set.into_iter().collect())
 }
 
+fn normalize_tool_names(tools: &BTreeSet<String>) -> BTreeSet<String> {
+    tools
+        .iter()
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 /// Parse URL replacements from JSON string format
 /// Expected format: {"source_domain": "replacement_domain", ...}
 pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, serde_json::Error> {
     serde_json::from_str(input)
+}
+
+/// Parse a path list from an environment variable using the OS-native path
+/// separator (`:` on Unix, `;` on Windows). This correctly handles Windows
+/// absolute paths whose drive letters contain `:` (e.g. `C:\foo`).
+fn list_by_os_path_separator<C>(input: &str) -> Result<C, std::convert::Infallible>
+where
+    C: FromIterator<PathBuf>,
+{
+    Ok(std::env::split_paths(input)
+        .filter(|p| !p.as_os_str().is_empty())
+        .collect())
 }
 
 #[cfg(test)]
@@ -949,6 +964,18 @@ mod tests {
         let expected: BTreeSet<String> =
             ["foo".to_string(), "bar".to_string()].into_iter().collect();
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_normalize_tool_names() {
+        let tools = BTreeSet::from([
+            " node ".to_string(),
+            "  ".to_string(),
+            "ruby".to_string(),
+            "".to_string(),
+        ]);
+        let expected = BTreeSet::from(["node".to_string(), "ruby".to_string()]);
+        assert_eq!(normalize_tool_names(&tools), expected);
     }
 
     #[test]
@@ -1069,5 +1096,55 @@ mod tests {
         assert!(node.configure_cmd(path).contains("--verbose"));
         assert!(node.make_cmd().starts_with("gmake -j4 -s"));
         assert_eq!(node.make_install_cmd(), "gmake install --no-strip");
+    }
+
+    #[test]
+    fn test_list_by_os_path_separator_empty() {
+        let result: Result<Vec<PathBuf>, _> = list_by_os_path_separator("");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_list_by_os_path_separator_single() {
+        #[cfg(not(windows))]
+        let (input, expected) = ("/foo/bar", PathBuf::from("/foo/bar"));
+        #[cfg(windows)]
+        let (input, expected) = (r"C:\foo\bar", PathBuf::from(r"C:\foo\bar"));
+        let result: Vec<PathBuf> = list_by_os_path_separator(input).unwrap();
+        assert_eq!(result, vec![expected]);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_list_by_os_path_separator_multiple_unix() {
+        let result: Vec<PathBuf> = list_by_os_path_separator("/foo:/bar").unwrap();
+        assert_eq!(result, vec![PathBuf::from("/foo"), PathBuf::from("/bar")]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_list_by_os_path_separator_multiple_windows() {
+        let result: Vec<PathBuf> = list_by_os_path_separator(r"C:\foo;D:\bar").unwrap();
+        assert_eq!(
+            result,
+            vec![PathBuf::from(r"C:\foo"), PathBuf::from(r"D:\bar")]
+        );
+    }
+
+    #[test]
+    fn test_list_by_os_path_separator_as_btreeset() {
+        // Verify the function works with BTreeSet as the collection type,
+        // matching the field types used in Settings (e.g. trusted_config_paths).
+        #[cfg(not(windows))]
+        let (input, a, b) = ("/foo:/bar", PathBuf::from("/foo"), PathBuf::from("/bar"));
+        #[cfg(windows)]
+        let (input, a, b) = (
+            r"C:\foo;D:\bar",
+            PathBuf::from(r"C:\foo"),
+            PathBuf::from(r"D:\bar"),
+        );
+        let result: BTreeSet<PathBuf> = list_by_os_path_separator(input).unwrap();
+        assert_eq!(result, [a, b].into_iter().collect());
     }
 }

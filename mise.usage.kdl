@@ -122,8 +122,8 @@ cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf
     arg "[ARGS]…" help="all arguments" required=#false double_dash=automatic var=#true
 }
 cmd backends help="Manage backends" {
-    alias b
-    alias backend backend-list hide=#true
+    alias b backend backend-list hide=#true
+    after_long_help "Deprecation:\n\nThe `mise b` alias is deprecated and will be removed in mise 2027.4.0.\nUse `mise backends` instead.\n"
     cmd ls help="List built-in backends" {
         alias list
         after_long_help "Examples:\n\n    $ mise backends ls\n    aqua\n    asdf\n    cargo\n    core\n    dotnet\n    gem\n    go\n    npm\n    pipx\n    spm\n    ubi\n    vfox\n"
@@ -522,8 +522,12 @@ cmd install-into help="Install a tool version to a specific path" {
 }
 cmd latest help="Gets the latest available version for a plugin" {
     long_help "Gets the latest available version for a plugin\n\nSupports prefixes such as `node@20` to get the latest version of node 20."
-    after_long_help "Examples:\n\n    $ mise latest node@20  # get the latest version of node 20\n    20.0.0\n\n    $ mise latest node     # get the latest stable version of node\n    20.0.0\n"
+    after_long_help "Examples:\n\n    $ mise latest node@20  # get the latest version of node 20\n    20.0.0\n\n    $ mise latest node     # get the latest stable version of node\n    20.0.0\n\n    $ mise latest node --before 2024-01-01  # latest stable node released before 2024-01-01\n"
     flag "-i --installed" help="Show latest installed instead of available version"
+    flag --before help="Only consider versions released before this date" {
+        long_help "Only consider versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\".\nOverrides per-tool `install_before` options and the global `install_before` setting."
+        arg <BEFORE>
+    }
     arg <TOOL@VERSION> help="Tool to get the latest version of"
     arg "[ASDF_VERSION]" help="The version prefix to use when querying the latest version same as the first argument after the \"@\" used for asdf compatibility" required=#false hide=#true
 }

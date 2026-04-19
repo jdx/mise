@@ -1,5 +1,5 @@
 // If not being published, these need to manually downloaded from https://github.com/withfig/autocomplete/tree/master/src
-/* eslint-disable @withfig/fig-linter/conventional-descriptions */
+
 import { createNpmSearchHandler } from "./npm";
 import { searchGenerator as createCargoSearchGenerator } from "./cargo";
 
@@ -654,7 +654,7 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
-      name: ["backends", "b"],
+      name: "backends",
       description: "Manage backends",
       subcommands: [
         {
@@ -1560,6 +1560,14 @@ const completionSpec: Fig.Spec = {
           name: ["-i", "--installed"],
           description: "Show latest installed instead of available version",
           isRepeatable: false,
+        },
+        {
+          name: "--before",
+          description: "Only consider versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
+          },
         },
       ],
       args: {

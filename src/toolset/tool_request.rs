@@ -353,28 +353,72 @@ impl ToolRequest {
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
         let mut opts = opts.clone();
-        opts.before_date = effective_before_date(self, &opts)?;
+        opts.before_date = effective_before_date(Some(self), &opts)?;
         ToolVersion::resolve(config, self.clone(), &opts).await
     }
 
     pub fn is_os_supported(&self) -> bool {
-        if let Some(os) = self.os()
-            && !os.contains(&crate::cli::version::OS)
-        {
-            return false;
+        if let Some(os_list) = self.os() {
+            let current_os = &crate::cli::version::OS;
+            let current_arch = &crate::cli::version::ARCH;
+            let matched = os_list.iter().any(|entry| {
+                if let Some((os, arch)) = entry.split_once('/') {
+                    normalize_os(os) == current_os.as_str()
+                        && normalize_arch(arch) == current_arch.as_str()
+                } else {
+                    normalize_os(entry) == current_os.as_str()
+                }
+            });
+            if !matched {
+                return false;
+            }
         }
         self.ba().is_os_supported()
     }
 }
 
+/// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
+fn normalize_os(os: &str) -> &str {
+    match os {
+        "darwin" | "macos" => "macos",
+        "windows" | "win" => "windows",
+        other => other,
+    }
+}
+
+/// Normalize architecture name aliases to the canonical form used by `cli::version::ARCH`.
+fn normalize_arch(arch: &str) -> &str {
+    match arch {
+        "x86_64" | "amd64" | "x64" => "x64",
+        "aarch64" | "arm64" => "arm64",
+        other => other,
+    }
+}
+
+/// Resolve the effective `install_before` cutoff to an absolute [`Timestamp`]
+/// in one canonical place.
+///
+/// Precedence (highest to lowest):
+/// 1. `opts.before_date` — typically the pre-resolved `--before` CLI flag.
+/// 2. The per-tool `install_before` option on `request`.
+/// 3. The global `install_before` setting.
+///
+/// All string-based durations (e.g. `"3d"`) are resolved against
+/// [`crate::duration::process_now`] so that every call within a single mise
+/// invocation produces the same absolute timestamp. Downstream code can then
+/// use this timestamp both to resolve which version to install *and* to build
+/// the corresponding package-manager CLI flag (e.g. `--min-release-age`)
+/// without the two drifting apart.
 pub fn effective_before_date(
-    request: &ToolRequest,
+    request: Option<&ToolRequest>,
     opts: &ResolveOptions,
 ) -> Result<Option<Timestamp>> {
     if let Some(before_date) = opts.before_date {
         return Ok(Some(before_date));
     }
-    if let Some(before) = request.options().get("install_before") {
+    if let Some(request) = request
+        && let Some(before) = request.options().get("install_before")
+    {
         return Ok(Some(crate::duration::parse_into_timestamp(before)?));
     }
     if let Some(before) = &Settings::get().install_before {
@@ -427,7 +471,7 @@ mod tests {
     use crate::cli::args::{BackendArg, BackendResolution};
     use crate::config::settings::{Settings, SettingsPartial};
     use crate::toolset::{ResolveOptions, ToolSource, parse_tool_options};
-    use confique::Partial;
+    use confique::Layer;
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;
     use test_log::test;
@@ -458,7 +502,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            effective_before_date(&request, &opts).unwrap(),
+            effective_before_date(Some(&request), &opts).unwrap(),
             Some(cli_before)
         );
         Settings::reset(None);
@@ -470,7 +514,7 @@ mod tests {
         let request = make_request(Some("install_before='2024-01-02'"));
         let opts = ResolveOptions::default();
         assert_eq!(
-            effective_before_date(&request, &opts).unwrap(),
+            effective_before_date(Some(&request), &opts).unwrap(),
             Some(crate::duration::parse_into_timestamp("2024-01-02").unwrap())
         );
         Settings::reset(None);
@@ -484,7 +528,7 @@ mod tests {
         let request = make_request(None);
         let opts = ResolveOptions::default();
         assert_eq!(
-            effective_before_date(&request, &opts).unwrap(),
+            effective_before_date(Some(&request), &opts).unwrap(),
             Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap())
         );
         Settings::reset(None);
@@ -495,7 +539,36 @@ mod tests {
         Settings::reset(None);
         let request = make_request(None);
         let opts = ResolveOptions::default();
-        assert_eq!(effective_before_date(&request, &opts).unwrap(), None);
+        assert_eq!(effective_before_date(Some(&request), &opts).unwrap(), None);
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_handles_missing_request() {
+        let mut partial = SettingsPartial::empty();
+        partial.install_before = Some("2024-01-03".to_string());
+        Settings::reset(Some(partial));
+        let opts = ResolveOptions::default();
+        assert_eq!(
+            effective_before_date(None, &opts).unwrap(),
+            Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap())
+        );
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_stable_within_process() {
+        // Covers the invariant behind #9156: relative durations resolve
+        // identically across calls within one invocation.
+        Settings::reset(None);
+        let mut partial = SettingsPartial::empty();
+        partial.install_before = Some("3d".to_string());
+        Settings::reset(Some(partial));
+        let request = make_request(None);
+        let opts = ResolveOptions::default();
+        let a = effective_before_date(Some(&request), &opts).unwrap();
+        let b = effective_before_date(Some(&request), &opts).unwrap();
+        assert_eq!(a, b);
         Settings::reset(None);
     }
 
@@ -515,5 +588,27 @@ mod tests {
         assert_str_eq!(version_sub("0.1.0", "1"), "0");
         assert_str_eq!(version_sub("1.2.3", "0.2.4"), "0");
         assert_str_eq!(version_sub("1.3.3", "0.2.4"), "1.0");
+    }
+
+    #[test]
+    fn test_normalize_os() {
+        use super::normalize_os;
+        assert_eq!(normalize_os("macos"), "macos");
+        assert_eq!(normalize_os("darwin"), "macos");
+        assert_eq!(normalize_os("linux"), "linux");
+        assert_eq!(normalize_os("windows"), "windows");
+        assert_eq!(normalize_os("win"), "windows");
+        assert_eq!(normalize_os("freebsd"), "freebsd");
+    }
+
+    #[test]
+    fn test_normalize_arch() {
+        use super::normalize_arch;
+        assert_eq!(normalize_arch("arm64"), "arm64");
+        assert_eq!(normalize_arch("aarch64"), "arm64");
+        assert_eq!(normalize_arch("x64"), "x64");
+        assert_eq!(normalize_arch("x86_64"), "x64");
+        assert_eq!(normalize_arch("amd64"), "x64");
+        assert_eq!(normalize_arch("riscv64"), "riscv64");
     }
 }

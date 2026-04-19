@@ -1,9 +1,9 @@
-# Ubi Backend
+# Ubi Backend <Badge type="danger" text="deprecated" />
 
 ::: warning
 The ubi backend is **deprecated**. Please use the [github backend](/dev-tools/backends/github) instead.
 
-To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files.
+The github backend offers several advantages over ubi including provenance verification, download progress reports, and fewer dependencies. To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files.
 :::
 
 You may install GitHub Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend. ubi is directly compiled into

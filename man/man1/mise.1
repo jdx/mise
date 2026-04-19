@@ -132,9 +132,6 @@ Clears an alias for a backend/plugin
 .TP
 \fBbackends\fR
 Manage backends
-.RS
-\fIAliases: \fRb
-.RE
 .TP
 \fBbackends ls\fR
 List built\-in backends
@@ -1346,6 +1343,12 @@ Supports prefixes such as `node@20` to get the latest version of node 20.
 .TP
 \fB\-i, \-\-installed\fR
 Show latest installed instead of available version
+.TP
+\fB\-\-before\fR \fI<BEFORE>\fR
+Only consider versions released before this date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
+Overrides per\-tool `install_before` options and the global `install_before` setting.
 \fBArguments:\fR
 .PP
 .TP

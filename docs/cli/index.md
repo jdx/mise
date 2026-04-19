@@ -117,7 +117,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise edit [-n --dry-run] [-t --tool-versions <TOOL_VERSIONS>] [PATH]`](/cli/edit.md)
 - [`mise install [FLAGS] [TOOL@VERSION]…`](/cli/install.md)
 - [`mise install-into <TOOL@VERSION> <PATH>`](/cli/install-into.md)
-- [`mise latest [-i --installed] <TOOL@VERSION>`](/cli/latest.md)
+- [`mise latest [-i --installed] [--before <BEFORE>] <TOOL@VERSION>`](/cli/latest.md)
 - [`mise link [-f --force] <TOOL@VERSION> <PATH>`](/cli/link.md)
 - [`mise lock [FLAGS] [TOOL]…`](/cli/lock.md)
 - [`mise ls [FLAGS] [INSTALLED_TOOL]…`](/cli/ls.md)

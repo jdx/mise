@@ -40,6 +40,26 @@
         }
       ]
     },
+    "os_filter_item": {
+      "description": "operating system or os/arch pair to install on",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
+      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
+    },
+    "os_filter": {
+      "description": "operating system filters to install on",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/os_filter_item"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/os_filter_item"
+          }
+        }
+      ]
+    },
     "env_directive": {
       "type": "object",
       "properties": {
@@ -495,7 +515,7 @@
           "type": "boolean"
         },
         "always_keep_download": {
-          "description": "should mise keep downloaded files after installation",
+          "description": "keep downloaded files after installation for debugging",
           "type": "boolean"
         },
         "always_keep_install": {
@@ -704,8 +724,7 @@
           }
         },
         "enable_tools": {
-          "default": [],
-          "description": "Tools defined in mise.toml that should be used - all other tools are ignored",
+          "description": "Tools defined in mise.toml that should be used; unset enables all tools and empty disables all tools",
           "type": "array",
           "items": {
             "type": "string"
@@ -1636,7 +1655,7 @@
         },
         "trusted_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism.",
+          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable (`:` on Unix, `;` on Windows).",
           "type": "array",
           "items": {
             "type": "string"
@@ -1799,8 +1818,29 @@
               ]
             },
             "confirm": {
-              "description": "confirmation message before running this task",
-              "type": "string"
+              "oneOf": [
+                {
+                  "description": "confirmation message before running this task",
+                  "type": "string"
+                },
+                {
+                  "description": "confirmation message before running this task with default value",
+                  "properties": {
+                    "message": {
+                      "description": "confirmation message before running this task",
+                      "type": "string"
+                    },
+                    "default": {
+                      "description": "default value for confirmation (yes/no/true/false)",
+                      "enum": ["yes", "no", "y", "n", "true", "false"],
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message", "default"],
+                  "additionalProperties": false,
+                  "type": "object"
+                }
+              ]
             },
             "depends": {
               "oneOf": [
@@ -1877,20 +1917,7 @@
                         "type": "string"
                       },
                       "os": {
-                        "oneOf": [
-                          {
-                            "description": "operating system to install on",
-                            "type": "array"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "string"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "boolean"
-                          }
-                        ]
+                        "$ref": "#/$defs/os_filter"
                       }
                     },
                     "required": ["version"],
@@ -1966,6 +1993,11 @@
             "raw": {
               "default": false,
               "description": "directly connect task to stdin/stdout/stderr",
+              "type": "boolean"
+            },
+            "raw_args": {
+              "default": false,
+              "description": "skip mise's argument parsing for this task — all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
               "type": "boolean"
             },
             "run": {
@@ -2188,20 +2220,7 @@
               "type": "string"
             },
             "os": {
-              "oneOf": [
-                {
-                  "description": "operating system to install on",
-                  "type": "array"
-                },
-                {
-                  "description": "option to pass to tool",
-                  "type": "string"
-                },
-                {
-                  "description": "option to pass to tool",
-                  "type": "boolean"
-                }
-              ]
+              "$ref": "#/$defs/os_filter"
             },
             "install_env": {
               "type": "object",
@@ -2460,8 +2479,29 @@
           ]
         },
         "confirm": {
-          "description": "confirmation message before running this task",
-          "type": "string"
+          "oneOf": [
+            {
+              "description": "confirmation message before running this task",
+              "type": "string"
+            },
+            {
+              "description": "confirmation message before running this task with default value",
+              "properties": {
+                "message": {
+                  "description": "confirmation message before running this task",
+                  "type": "string"
+                },
+                "default": {
+                  "description": "default value for confirmation (yes/no/true/false)",
+                  "enum": ["yes", "no", "y", "n", "true", "false"],
+                  "type": "string"
+                }
+              },
+              "required": ["message", "default"],
+              "additionalProperties": false,
+              "type": "object"
+            }
+          ]
         },
         "depends": {
           "oneOf": [
@@ -2538,20 +2578,7 @@
                     "type": "string"
                   },
                   "os": {
-                    "oneOf": [
-                      {
-                        "description": "operating system to install on",
-                        "type": "array"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "string"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "boolean"
-                      }
-                    ]
+                    "$ref": "#/$defs/os_filter"
                   }
                 },
                 "required": ["version"],
@@ -2627,6 +2654,11 @@
         "raw": {
           "default": false,
           "description": "directly connect task to stdin/stdout/stderr",
+          "type": "boolean"
+        },
+        "raw_args": {
+          "default": false,
+          "description": "skip mise's argument parsing for this task — all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
           "type": "boolean"
         },
         "run": {
@@ -2763,8 +2795,29 @@
           ]
         },
         "confirm": {
-          "description": "confirmation message before running this task",
-          "type": "string"
+          "oneOf": [
+            {
+              "description": "confirmation message before running this task",
+              "type": "string"
+            },
+            {
+              "description": "confirmation message before running this task with default value",
+              "properties": {
+                "message": {
+                  "description": "confirmation message before running this task",
+                  "type": "string"
+                },
+                "default": {
+                  "description": "default value for confirmation (yes/no/true/false)",
+                  "enum": ["yes", "no", "y", "n", "true", "false"],
+                  "type": "string"
+                }
+              },
+              "required": ["message", "default"],
+              "additionalProperties": false,
+              "type": "object"
+            }
+          ]
         },
         "depends": {
           "oneOf": [
@@ -2841,20 +2894,7 @@
                     "type": "string"
                   },
                   "os": {
-                    "oneOf": [
-                      {
-                        "description": "operating system to install on",
-                        "type": "array"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "string"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "boolean"
-                      }
-                    ]
+                    "$ref": "#/$defs/os_filter"
                   }
                 },
                 "required": ["version"],
@@ -2930,6 +2970,11 @@
         "raw": {
           "default": false,
           "description": "directly connect task to stdin/stdout/stderr",
+          "type": "boolean"
+        },
+        "raw_args": {
+          "default": false,
+          "description": "skip mise's argument parsing for this task — all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
           "type": "boolean"
         },
         "run": {
@@ -3115,7 +3160,7 @@
       ]
     },
     "env_file": {
-      "description": "dotenv file(s) to load",
+      "description": "dotenv file(s) to load. Deprecated; use env._.file instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
       "oneOf": [
         {
@@ -3132,7 +3177,7 @@
       ]
     },
     "dotenv": {
-      "description": "dotenv file(s) to load",
+      "description": "dotenv file(s) to load. Deprecated; use env._.file instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
       "oneOf": [
         {
@@ -3149,7 +3194,7 @@
       ]
     },
     "env_path": {
-      "description": "PATH entries to add",
+      "description": "PATH entries to add. Deprecated; use env._.path instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
       "oneOf": [
         {

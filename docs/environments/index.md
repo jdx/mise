@@ -53,7 +53,7 @@ mise exec -- echo $MY_VAR
 You can of course combine them with [tools](/dev-tools/):
 
 ```sh
-mise use node@24
+mise use node@26
 mise set MY_VAR=123
 cat mise.toml
 # [tools]
@@ -81,7 +81,7 @@ If you are using [`shims`](/dev-tools/shims.html), the environment variables wil
 
 ```shell
 mise set NODE_ENV=production
-mise use node@24
+mise use node@26
 # using the absolute path for the example
 ~/.local/share/mise/shims/node --eval 'console.log(process.env.NODE_ENV)'
 ```
@@ -314,6 +314,11 @@ TOML table for the configuration of these directives.
 ### `env._.file`
 
 In `mise.toml`: `env._.file` can be used to specify a [dotenv](https://dotenv.org) file to load.
+
+::: warning
+Top-level `env_file`, `dotenv`, and `env_path` are deprecated. Use `env._.file` and
+`env._.path` instead. These keys will be removed in mise 2027.4.0.
+:::
 
 ```toml
 [env]

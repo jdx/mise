@@ -63,6 +63,12 @@ impl Backend for VfoxBackend {
         Ok(deps.iter().map(|s| s.as_str()).collect())
     }
 
+    fn supports_lockfile_url(&self) -> bool {
+        // TODO: expose a plugin hook (e.g. BackendLockInfo) so custom Lua backends
+        // can surface a download URL + checksum, and flip this back on for them.
+        !self.is_backend_plugin()
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let this = self;
         timeout::run_with_timeout_async(
@@ -231,9 +237,12 @@ impl Backend for VfoxBackend {
             .await?
             .iter()
             .find(|(k, _)| k.to_uppercase() == "PATH")
-            .map(|(_, v)| v.to_string())
-            .unwrap_or("bin".to_string());
-        Ok(env::split_paths(&path).collect())
+            .map(|(_, v)| v.to_string());
+        if let Some(path) = path {
+            Ok(env::split_paths(&path).collect())
+        } else {
+            Ok(vec![tv.install_path().join("bin")])
+        }
     }
 
     async fn exec_env(

@@ -12,6 +12,7 @@ use eyre::{Report, Result, bail, eyre};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
@@ -552,12 +553,20 @@ impl Lockfile {
         } else {
             path.to_path_buf()
         };
-        // Use atomic write: write to temp file, then rename
-        // This prevents partial writes from corrupting the lockfile
-        // Write temp file alongside the real target (guarantees same-filesystem rename)
-        let temp_path = target.with_extension("lock.tmp");
-        file::write(&temp_path, &content)?;
-        fs::rename(&temp_path, target)?;
+        // Use atomic write: write to a uniquely-named temp file, then persist.
+        // - Prevents partial writes from corrupting the lockfile.
+        // - Unique temp name prevents races when multiple mise processes update
+        //   the same lockfile concurrently (e.g. parallel linters each triggering
+        //   `install_missing_bin`). A fixed `mise.lock.tmp` collided here and the
+        //   loser of the rename race got ENOENT.
+        // Write alongside the real target so the rename stays on the same filesystem.
+        let parent = target
+            .parent()
+            .ok_or_else(|| eyre!("lockfile path has no parent: {}", display_path(&target)))?;
+        let mut tmp = tempfile::NamedTempFile::with_prefix_in(".mise.lock.", parent)?;
+        tmp.as_file_mut().write_all(content.as_bytes())?;
+        apply_lockfile_permissions(&tmp, &target)?;
+        persist_lockfile_tmp(tmp, &target)?;
 
         invalidate_caches();
         Ok(())
@@ -1563,6 +1572,54 @@ fn handle_lockfile_read_error(err: Report, lockfile_path: &Path) -> Lockfile {
     Lockfile::default()
 }
 
+#[cfg(unix)]
+fn apply_lockfile_permissions(tmp: &tempfile::NamedTempFile, target: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    match fs::metadata(target) {
+        Ok(metadata) => {
+            let mode = metadata.permissions().mode();
+            tmp.as_file()
+                .set_permissions(fs::Permissions::from_mode(mode))?;
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err.into()),
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn apply_lockfile_permissions(_tmp: &tempfile::NamedTempFile, _target: &Path) -> Result<()> {
+    Ok(())
+}
+
+fn persist_lockfile_tmp(mut tmp: tempfile::NamedTempFile, target: &Path) -> Result<()> {
+    const RETRIES: u32 = 20;
+
+    for attempt in 0..=RETRIES {
+        match tmp.persist(target) {
+            Ok(_) => return Ok(()),
+            Err(err) if should_retry_lockfile_persist(&err.error) && attempt < RETRIES => {
+                tmp = err.file;
+                std::thread::sleep(std::time::Duration::from_millis(5 * u64::from(attempt + 1)));
+            }
+            Err(err) => return Err(err.error.into()),
+        }
+    }
+
+    unreachable!("lockfile persist retry loop should always return");
+}
+
+#[cfg(windows)]
+fn should_retry_lockfile_persist(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+#[cfg(not(windows))]
+fn should_retry_lockfile_persist(_err: &std::io::Error) -> bool {
+    false
+}
+
 impl TryFrom<toml::Value> for LockfileTool {
     type Error = Report;
     fn try_from(value: toml::Value) -> Result<Self> {
@@ -1869,6 +1926,60 @@ backend = "core:python"
 
         // Clean up
         let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    #[test]
+    fn test_concurrent_save_no_enoent() {
+        // Regression: two concurrent save() calls used to share a fixed
+        // `mise.lock.tmp` path, so the loser of the rename race got
+        // "No such file or directory". Each save must now use a unique
+        // temp file so concurrent writers never trip over each other.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = Arc::new(temp_dir.path().join("concurrent.lock"));
+        // Pre-create the file so this mirrors the real update path, where
+        // save() only runs on lockfiles that already exist.
+        std::fs::write(&*path, "").unwrap();
+
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..20 {
+                        Lockfile::default().save(&*path).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+
+        // Any leftover temp files would indicate persist() never ran.
+        let leftovers: Vec<_> = std::fs::read_dir(temp_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != std::ffi::OsStr::new("concurrent.lock"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "unexpected temp files left behind: {leftovers:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_save_preserves_existing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("mise.lock");
+        std::fs::write(&path, "").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o664)).unwrap();
+
+        Lockfile::default().save(&path).unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o664);
     }
 
     #[test]
@@ -2475,5 +2586,95 @@ backend = "conda:jq"
             ..Default::default()
         };
         assert!(!info.is_empty());
+    }
+
+    #[test]
+    fn test_set_platform_info_all_platforms_get_slsa_url() {
+        // Regression guard: when all platforms have Slsa { url: Some(...) },
+        // the lockfile should serialize ALL entries with the expanded form.
+        let mut lockfile = Lockfile::default();
+        let platforms = vec!["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"];
+        for platform in &platforms {
+            lockfile.set_platform_info(
+                "sops",
+                "3.12.1",
+                Some("aqua:getsops/sops"),
+                &BTreeMap::new(),
+                platform,
+                PlatformInfo {
+                    checksum: Some("sha256:abc123".to_string()),
+                    url: Some(format!("https://example.com/sops-{platform}.tar.gz")),
+                    provenance: Some(ProvenanceType::Slsa {
+                        url: Some(format!("https://example.com/sops-{platform}.intoto.jsonl")),
+                    }),
+                    ..Default::default()
+                },
+            );
+        }
+        let temp_dir = std::env::temp_dir();
+        let test_lockfile = temp_dir.join("test_provenance_all_platforms.lock");
+        lockfile.save(&test_lockfile).unwrap();
+        let serialized = std::fs::read_to_string(&test_lockfile).unwrap();
+        let _ = std::fs::remove_file(&test_lockfile);
+        // ALL platform entries should have the expanded provenance.slsa form
+        for platform in &platforms {
+            assert!(
+                serialized.contains(&format!("\"platforms.{platform}\".provenance.slsa")),
+                "platform {platform} should have expanded provenance.slsa form, got:\n{serialized}"
+            );
+        }
+        // No short-form provenance should appear
+        assert!(
+            !serialized.contains("provenance = \"slsa\""),
+            "no short-form provenance should appear, got:\n{serialized}"
+        );
+    }
+
+    #[test]
+    fn test_set_platform_info_none_provenance_preserves_existing_url() {
+        // When new PlatformInfo has provenance=None, existing Slsa URL should be preserved
+        let mut lockfile = Lockfile::default();
+        // First: set platform info with Slsa URL
+        lockfile.set_platform_info(
+            "sops",
+            "3.12.1",
+            Some("aqua:getsops/sops"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:abc123".to_string()),
+                url: Some("https://example.com/sops.tar.gz".to_string()),
+                provenance: Some(ProvenanceType::Slsa {
+                    url: Some("https://example.com/sops.intoto.jsonl".to_string()),
+                }),
+                ..Default::default()
+            },
+        );
+        // Second: set same platform with provenance=None (simulates verification failure)
+        lockfile.set_platform_info(
+            "sops",
+            "3.12.1",
+            Some("aqua:getsops/sops"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:abc123".to_string()),
+                url: Some("https://example.com/sops.tar.gz".to_string()),
+                provenance: None,
+                ..Default::default()
+            },
+        );
+        // The existing Slsa URL should be preserved by merge
+        let tool = &lockfile.tools["sops"][0];
+        let info = &tool.platforms["linux-x64"];
+        match &info.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/sops.intoto.jsonl")
+                );
+            }
+            other => panic!("expected Slsa provenance with URL, got: {other:?}"),
+        }
     }
 }
