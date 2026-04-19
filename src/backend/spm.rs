@@ -270,9 +270,10 @@ fn parse_filter_bins(opts: &crate::toolset::ToolVersionOptions) -> Option<Vec<St
     if bins.is_empty() { None } else { Some(bins) }
 }
 
-/// Restricts `executables` to those listed in `filter_bins`, preserving order.
-/// Returns an error if any name in `filter_bins` does not match an available
-/// executable product.
+/// Restricts `executables` to those listed in `filter_bins`, preserving the
+/// original declaration order from `Package.swift` rather than the order in
+/// `filter_bins`. Returns an error if any name in `filter_bins` does not match
+/// an available executable product.
 fn filter_executables(
     opts: &crate::toolset::ToolVersionOptions,
     executables: Vec<String>,
