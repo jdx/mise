@@ -197,8 +197,12 @@ impl Backend for NPMBackend {
         match package_manager {
             NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
             NpmPackageManager::Aube => {
+                let aube_program = self
+                    .aube_path_for_install(&ctx.config, Some(&ctx.ts))
+                    .await
+                    .unwrap_or_else(|| AUBE_PROGRAM.into());
                 self.write_aube_npmrc(&tv.install_path(), ctx.before_date)?;
-                CmdLineRunner::new(AUBE_PROGRAM)
+                CmdLineRunner::new(aube_program)
                     .arg("add")
                     .arg("--global")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -586,12 +590,20 @@ impl NPMBackend {
     }
 
     async fn aube_is_installed(&self, config: &Arc<Config>, ts: Option<&Toolset>) -> bool {
+        self.aube_path_for_install(config, ts).await.is_some()
+    }
+
+    async fn aube_path_for_install(
+        &self,
+        config: &Arc<Config>,
+        ts: Option<&Toolset>,
+    ) -> Option<std::path::PathBuf> {
         if let Some(ts) = ts
-            && ts.which_bin(config, AUBE_PROGRAM).await.is_some()
+            && let Some(bin) = ts.which_bin(config, AUBE_PROGRAM).await
         {
-            return true;
+            return Some(bin);
         }
-        self.dependency_which(config, AUBE_PROGRAM).await.is_some()
+        self.dependency_which(config, AUBE_PROGRAM).await
     }
 
     fn write_aube_npmrc(&self, install_path: &Path, before_date: Option<Timestamp>) -> Result<()> {
