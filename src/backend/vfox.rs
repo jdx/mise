@@ -49,6 +49,10 @@ impl Backend for VfoxBackend {
         &self.ba
     }
 
+    fn supports_lockfile_url(&self) -> bool {
+        !self.is_backend_plugin()
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let this = self;
         timeout::run_with_timeout_async(
