@@ -5,7 +5,8 @@ on:
     paths:
       - ".github/actions/**"
       - ".github/workflows/docs.yml"
-      - "bun.lock"
+      - ".npmrc"
+      - "aube-lock.yaml"
       - "docs/**"
       - "mise.toml"
       - "package.json"
@@ -20,7 +21,8 @@ on:
     paths:
       - ".github/actions/**"
       - ".github/workflows/docs.yml"
-      - "bun.lock"
+      - ".npmrc"
+      - "aube-lock.yaml"
       - "docs/**"
       - "mise.toml"
       - "package.json"
@@ -50,9 +52,9 @@ jobs:
           fetch-depth: 0 # for lastUpdated
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
         with:
-          install_args: bun
+          install_args: aube
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: bun i
+      - run: mise x -- aube install
       - run: mise run docs:release
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
