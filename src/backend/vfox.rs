@@ -5,7 +5,7 @@ use heck::ToKebabCase;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use tokio::sync::RwLock;
 
@@ -33,6 +33,7 @@ pub struct VfoxBackend {
     exec_env_cache: RwLock<HashMap<String, CacheManager<EnvMap>>>,
     pathname: String,
     tool_name: Option<String>,
+    metadata_deps: OnceLock<Vec<String>>,
 }
 
 #[async_trait]
@@ -47,6 +48,19 @@ impl Backend for VfoxBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
+        let deps = self.metadata_deps.get_or_init(|| {
+            self.load_metadata_deps().unwrap_or_else(|e| {
+                warn!(
+                    "failed to load vfox plugin metadata deps for {}: {e}",
+                    self.pathname
+                );
+                vec![]
+            })
+        });
+        Ok(deps.iter().map(|s| s.as_str()).collect())
     }
 
     fn supports_lockfile_url(&self) -> bool {
@@ -366,7 +380,18 @@ impl VfoxBackend {
             ba: Arc::new(ba),
             pathname,
             tool_name,
+            metadata_deps: OnceLock::new(),
         }
+    }
+
+    fn load_metadata_deps(&self) -> eyre::Result<Vec<String>> {
+        let plugin_path = dirs::PLUGINS.join(&self.pathname);
+        if !plugin_path.exists() {
+            return Ok(vec![]);
+        }
+        let plugin = vfox::Plugin::from_dir(&plugin_path)?;
+        let metadata = plugin.get_metadata()?;
+        Ok(metadata.depends)
     }
 
     async fn _exec_env(
