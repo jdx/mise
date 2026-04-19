@@ -308,52 +308,21 @@ pub fn create_provider(
     project_root: &Path,
     config: Option<&crate::config::Config>,
 ) -> Result<Box<dyn DepsProvider>> {
-    use providers::*;
-
-    let provider_config = config
+    let (provider_root, provider_config) = config
         .and_then(|c| {
             c.config_files.values().find_map(|cf| {
                 cf.deps_config()
                     .and_then(|dc| dc.providers.get(ecosystem).cloned())
+                    .map(|provider_config| (cf.config_root(), provider_config))
             })
         })
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            (
+                project_root.to_path_buf(),
+                rule::DepsProviderConfig::default(),
+            )
+        });
 
-    match ecosystem {
-        "npm" => Ok(Box::new(NpmDepsProvider::new(
-            project_root,
-            provider_config,
-        ))),
-        "yarn" => Ok(Box::new(YarnDepsProvider::new(
-            project_root,
-            provider_config,
-        ))),
-        "pnpm" => Ok(Box::new(PnpmDepsProvider::new(
-            project_root,
-            provider_config,
-        ))),
-        "bun" => Ok(Box::new(BunDepsProvider::new(
-            project_root,
-            provider_config,
-        ))),
-        "go" => Ok(Box::new(GoDepsProvider::new(project_root, provider_config))),
-        "pip" => Ok(Box::new(PipDepsProvider::new(
-            project_root,
-            provider_config,
-        ))),
-        "poetry" => Ok(Box::new(PoetryDepsProvider::new(
-            project_root,
-            provider_config,
-        ))),
-        "uv" => Ok(Box::new(UvDepsProvider::new(project_root, provider_config))),
-        "bundler" => Ok(Box::new(BundlerDepsProvider::new(
-            project_root,
-            provider_config,
-        ))),
-        "composer" => Ok(Box::new(ComposerDepsProvider::new(
-            project_root,
-            provider_config,
-        ))),
-        _ => bail!("unknown deps provider '{ecosystem}'"),
-    }
+    DepsEngine::build_provider(ecosystem, &provider_root, provider_config)
+        .ok_or_else(|| eyre::eyre!("unknown deps provider '{ecosystem}'"))
 }

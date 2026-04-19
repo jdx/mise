@@ -15,7 +15,12 @@ mod remove;
 /// Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
 /// unless skipped with the --no-deps flag.
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "dep", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(
+    visible_alias = "dep",
+    alias = "prepare",
+    verbatim_doc_comment,
+    after_long_help = AFTER_LONG_HELP
+)]
 pub struct Deps {
     #[clap(subcommand)]
     command: Option<Commands>,

@@ -30,8 +30,9 @@ assert_contains "mise deps --list" "node_modules"
 # Test --dry-run shows what would run
 assert_contains "mise deps --dry-run 2>&1" "npm"
 
-# Test alias works
-assert_contains "mise deps --list" "npm"
+# Test visible and backwards-compatible hidden aliases work
+assert_contains "mise dep --list" "npm"
+assert_contains "mise prepare --list" "npm"
 
 # Test with custom prepare provider (no .rules. prefix)
 cat >mise.toml <<'EOF'

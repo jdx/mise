@@ -157,7 +157,7 @@ impl DepsEngine {
     }
 
     /// Build a provider from its ID, config root, and configuration
-    fn build_provider(
+    pub(super) fn build_provider(
         id: &str,
         config_root: &Path,
         provider_config: super::rule::DepsProviderConfig,
