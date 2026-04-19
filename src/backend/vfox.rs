@@ -50,6 +50,8 @@ impl Backend for VfoxBackend {
     }
 
     fn supports_lockfile_url(&self) -> bool {
+        // TODO: expose a plugin hook (e.g. BackendLockInfo) so custom Lua backends
+        // can surface a download URL + checksum, and flip this back on for them.
         !self.is_backend_plugin()
     }
 
