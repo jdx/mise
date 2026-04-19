@@ -31,21 +31,21 @@ description = "Build the project"
 [docs]
 description = 'Start the documentation development server'
 depends = ['docs:setup']
-run = "bun run docs:dev"
+run = "aube run docs:dev"
 
 ["docs:setup"]
 description = 'Install documentation dependencies'
-run = "bun i"
+run = "aube install"
 
 ["docs:build"]
 description = 'Build the documentation site'
 depends = ["docs:setup"]
-run = "bun run docs:build"
+run = "aube run docs:build"
 
 ["docs:preview"]
 description = 'Preview the documentation site'
 depends = ["docs:build"]
-run = "bun run docs:preview"
+run = "aube run docs:preview"
 
 ["docs:demos"]
 description = "Create recordings with vhs"

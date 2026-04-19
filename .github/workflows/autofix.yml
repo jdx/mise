@@ -36,7 +36,7 @@ jobs:
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- bun i
+      - run: mise x -- aube install
       - run: mise run render
       - run: mise run lint-fix
       - run: mise --cd crates/vfox run lint-fix

@@ -2,5 +2,5 @@ pre-commit:
   commands:
     build:
       glob: "*"
-      run: npm run docs:build
+      run: aube run docs:build
       interactive: true

@@ -21,7 +21,7 @@ jobs:
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- bun i
+      - run: mise x -- aube install
       - run: mise run render:fig
       - name: Create Autocomplete PR ## Create the autocomplete PR using this action
         uses: withfig/push-to-fig-autocomplete-action@fb320c27ec12b225b9446373aa30b7d9c0c1eae8 # v2

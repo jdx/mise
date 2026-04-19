@@ -30,6 +30,7 @@ export default withMermaid(
         { text: "Dev Tools", link: "/dev-tools/" },
         { text: "Environments", link: "/environments/" },
         { text: "Tasks", link: "/tasks/" },
+        { text: "Releases", link: "https://github.com/jdx/mise/releases" },
       ],
       sidebar: [
         {

@@ -7,6 +7,7 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 [tools]
 "actionlint" = "latest"
 age = "latest"
+aube = "latest"
 bun = "latest"
 cargo-binstall = "latest"
 communique = "latest"

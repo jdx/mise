@@ -9,6 +9,6 @@ export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
 echo "::endgroup::"
 echo "::group::mise install"
 mise install
-mise x -- bun i
+mise x -- aube install
 echo "::endgroup::"
 mise x -- ./e2e/run_all_tests
