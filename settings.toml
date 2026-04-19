@@ -1426,12 +1426,15 @@ hide = true
 type = "Bool"
 
 [npm.package_manager]
-default = "npm"
+default = "auto"
 description = "Package manager to use for installing npm packages."
 docs = """
-Package manager to use for installing npm packages.
+Package manager to use for installing npm packages. The default, `auto`, uses
+`aube` when it is installed and falls back to `npm`, similar to how the pipx
+backend uses `uv` when available. Set this to `npm`, `aube`, `bun`, or `pnpm`
+to force a specific package manager.
 """
-enum = ["npm", "bun", "pnpm"]
+enum = ["auto", "npm", "aube", "bun", "pnpm"]
 env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
 type = "String"

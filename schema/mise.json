@@ -1182,10 +1182,10 @@
               "deprecated": true
             },
             "package_manager": {
-              "default": "npm",
+              "default": "auto",
               "description": "Package manager to use for installing npm packages.",
               "type": "string",
-              "enum": ["npm", "bun", "pnpm"]
+              "enum": ["auto", "npm", "aube", "bun", "pnpm"]
             }
           }
         },
