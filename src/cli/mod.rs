@@ -34,6 +34,7 @@ mod hook_not_found;
 mod tool_alias;
 
 pub use hook_env::HookReason;
+mod deps;
 pub(crate) mod edit;
 mod implode;
 mod install;
@@ -47,7 +48,6 @@ mod ls_remote;
 mod mcp;
 mod outdated;
 mod plugins;
-mod prepare;
 mod prune;
 mod registry;
 #[cfg(debug_assertions)]
@@ -233,7 +233,7 @@ pub enum Commands {
     Mcp(mcp::Mcp),
     Outdated(outdated::Outdated),
     Plugins(plugins::Plugins),
-    Prepare(prepare::Prepare),
+    Deps(deps::Deps),
     Prune(prune::Prune),
     Registry(registry::Registry),
     #[cfg(debug_assertions)]
@@ -302,7 +302,7 @@ impl Commands {
             Self::Mcp(cmd) => cmd.run().await,
             Self::Outdated(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
-            Self::Prepare(cmd) => cmd.run().await,
+            Self::Deps(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
             Self::Registry(cmd) => cmd.run().await,
             #[cfg(debug_assertions)]
@@ -707,7 +707,7 @@ impl Cli {
                         timeout: None,
                         skip_deps: false,
                         skip_tools: false,
-                        no_prepare: false,
+                        no_deps: false,
                         fresh_env: false,
                         deny_all: false,
                         deny_read: false,

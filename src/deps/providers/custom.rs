@@ -3,19 +3,19 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 use glob::glob;
 
-use crate::prepare::rule::PrepareProviderConfig;
-use crate::prepare::{PrepareCommand, PrepareProvider};
+use crate::deps::rule::DepsProviderConfig;
+use crate::deps::{DepsCommand, DepsProvider};
 
 use super::ProviderBase;
 
-/// Prepare provider for user-defined custom rules from mise.toml [prepare.*]
+/// Deps provider for user-defined custom rules from mise.toml [deps.*]
 #[derive(Debug)]
-pub struct CustomPrepareProvider {
+pub struct CustomDepsProvider {
     base: ProviderBase,
 }
 
-impl CustomPrepareProvider {
-    pub fn new(id: String, config: PrepareProviderConfig, project_root: &Path) -> Self {
+impl CustomDepsProvider {
+    pub fn new(id: String, config: DepsProviderConfig, project_root: &Path) -> Self {
         Self {
             base: ProviderBase::new(id, project_root, config),
         }
@@ -52,7 +52,7 @@ impl CustomPrepareProvider {
     }
 }
 
-impl PrepareProvider for CustomPrepareProvider {
+impl DepsProvider for CustomDepsProvider {
     fn base(&self) -> &ProviderBase {
         &self.base
     }
@@ -65,15 +65,15 @@ impl PrepareProvider for CustomPrepareProvider {
         self.expand_globs(&self.base.config.outputs)
     }
 
-    fn prepare_command(&self) -> Result<PrepareCommand> {
+    fn install_command(&self) -> Result<DepsCommand> {
         let run = self
             .base
             .config
             .run
             .as_ref()
-            .ok_or_else(|| eyre::eyre!("prepare rule {} has no run command", self.base.id))?;
+            .ok_or_else(|| eyre::eyre!("deps rule {} has no run command", self.base.id))?;
 
-        PrepareCommand::from_string(run, &self.base.project_root, &self.base.config)
+        DepsCommand::from_string(run, &self.base.project_root, &self.base.config)
     }
 
     fn is_applicable(&self) -> bool {

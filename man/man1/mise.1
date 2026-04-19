@@ -331,11 +331,20 @@ Updates a plugin to the latest version
 \fIAliases: \fRup, upgrade
 .RE
 .TP
-\fBprepare\fR
-[experimental] Ensure project dependencies are ready
+\fBdeps\fR
+[experimental] Manage project dependencies
 .RS
-\fIAliases: \fRprep
+\fIAliases: \fRdep
 .RE
+.TP
+\fBdeps add\fR
+Add a dependency
+.TP
+\fBdeps install\fR
+Install all project dependencies
+.TP
+\fBdeps remove\fR
+Remove a dependency
 .TP
 \fBprune\fR
 Delete unused versions of tools
@@ -939,7 +948,7 @@ macOS only in v1; on Linux falls back to allowing all network
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
 .TP
-\fB\-\-no\-prepare\fR
+\fB\-\-no\-deps\fR
 Skip automatic dependency preparation
 .TP
 \fB\-\-raw\fR
@@ -1709,18 +1718,18 @@ Default: 4
 .TP
 \fB<PLUGIN>\fR
 Plugin(s) to update
-.SH "MISE PREPARE"
-[experimental] Ensure project dependencies are ready
+.SH "MISE DEPS"
+[experimental] Manage project dependencies
 
-Runs all applicable prepare steps for the current project.
+Runs all applicable dependency install steps for the current project.
 This checks if dependency lockfiles are newer than installed outputs
 (e.g., package\-lock.json vs node_modules/) and runs install commands
 if needed.
 
 Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
-unless skipped with the \-\-no\-prepare flag.
+unless skipped with the \-\-no\-deps flag.
 .PP
-\fBUsage:\fR mise prepare [OPTIONS] [<PROVIDER>]
+\fBUsage:\fR mise deps [OPTIONS] [<PROVIDER>] [COMMAND]
 .PP
 \fBOptions:\fR
 .PP
@@ -1729,24 +1738,88 @@ unless skipped with the \-\-no\-prepare flag.
 Show why a provider is fresh or stale (requires a provider argument)
 .TP
 \fB\-f, \-\-force\fR
-Force run all prepare steps even if outputs are fresh
+Force run all deps steps even if outputs are fresh
 .TP
 \fB\-n, \-\-dry\-run\fR
-Only check if prepare is needed, don't run commands
+Only check if deps install is needed, don't run commands
 .TP
 \fB\-\-list\fR
-Show what prepare steps are available
+Show what deps providers are available
 .TP
 \fB\-\-only\fR \fI<ONLY>\fR
-Run specific prepare rule(s) only
+Run specific deps rule(s) only
 .TP
 \fB\-\-skip\fR \fI<SKIP>\fR
-Skip specific prepare rule(s)
+Skip specific deps rule(s)
 \fBArguments:\fR
 .PP
 .TP
 \fB<PROVIDER>\fR
 Provider to operate on (runs only this provider, or use with \-\-explain)
+.SH "MISE DEPS ADD"
+Add a dependency
+
+Adds one or more packages to the project using the appropriate package manager.
+Package specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@types/react@19`.
+.PP
+\fBUsage:\fR mise deps add [OPTIONS] <PACKAGES> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-D, \-\-dev\fR
+Add as a development dependency
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGES>\fR
+Package(s) to add (e.g., npm:react, npm:@types/react@19)
+.SH "MISE DEPS INSTALL"
+Install all project dependencies
+
+Checks if dependency lockfiles are newer than installed outputs
+and runs install commands if needed.
+.PP
+\fBUsage:\fR mise deps install [OPTIONS] [<PROVIDER>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-explain\fR
+Show why a provider is fresh or stale (requires a provider argument)
+.TP
+\fB\-f, \-\-force\fR
+Force run all deps steps even if outputs are fresh
+.TP
+\fB\-n, \-\-dry\-run\fR
+Only check if deps install is needed, don't run commands
+.TP
+\fB\-\-list\fR
+Show what deps providers are available
+.TP
+\fB\-\-only\fR \fI<ONLY>\fR
+Run specific deps rule(s) only
+.TP
+\fB\-\-skip\fR \fI<SKIP>\fR
+Skip specific deps rule(s)
+\fBArguments:\fR
+.PP
+.TP
+\fB<PROVIDER>\fR
+Provider to operate on (runs only this provider, or use with \-\-explain)
+.SH "MISE DEPS REMOVE"
+Remove a dependency
+
+Removes one or more packages from the project using the appropriate package manager.
+Package specs use the format `ecosystem:package`, e.g., `npm:lodash`.
+.PP
+\fBUsage:\fR mise deps remove <PACKAGES> ...
+.PP
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGES>\fR
+Package(s) to remove (e.g., npm:lodash)
 .SH "MISE PRUNE"
 Delete unused versions of tools
 
@@ -1950,7 +2023,7 @@ Bypass the environment cache and recompute the environment
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks
 .TP
-\fB\-\-no\-prepare\fR
+\fB\-\-no\-deps\fR
 Skip automatic dependency preparation
 .TP
 \fB\-\-no\-timings\fR
@@ -2705,7 +2778,7 @@ Bypass the environment cache and recompute the environment
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks
 .TP
-\fB\-\-no\-prepare\fR
+\fB\-\-no\-deps\fR
 Skip automatic dependency preparation
 .TP
 \fB\-\-no\-timings\fR

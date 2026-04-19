@@ -68,7 +68,7 @@ export default withMermaid(
             { text: "Registry", link: "/registry" },
             { text: "GitHub Tokens", link: "/dev-tools/github-tokens" },
             { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
-            { text: "Prepare", link: "/dev-tools/prepare" },
+            { text: "Deps", link: "/dev-tools/deps" },
             {
               text: "Backend Architecture",
               link: "/dev-tools/backend_architecture",

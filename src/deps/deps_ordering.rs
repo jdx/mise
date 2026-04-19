@@ -3,16 +3,16 @@ use tokio::sync::mpsc;
 
 use crate::deps_graph::DepsGraph;
 
-/// Manages a dependency graph of prepare providers for execution scheduling.
-/// Thin wrapper around `DepsGraph<String, String>` with prepare-specific
+/// Manages a dependency graph of deps providers for execution scheduling.
+/// Thin wrapper around `DepsGraph<String, String>` with deps-specific
 /// validation and error messages.
 #[derive(Debug)]
-pub struct PrepareDeps {
+pub struct DepsOrdering {
     inner: DepsGraph<String, String>,
 }
 
-impl PrepareDeps {
-    /// Creates a new PrepareDeps from a list of (provider_id, depends) tuples.
+impl DepsOrdering {
+    /// Creates a new DepsOrdering from a list of (provider_id, depends) tuples.
     pub fn new(providers: &[(String, Vec<String>)]) -> Result<Self> {
         // Validate that all deps reference known providers before building the graph
         let known: std::collections::HashSet<&str> =
@@ -21,7 +21,7 @@ impl PrepareDeps {
             for dep in deps {
                 if !known.contains(dep.as_str()) {
                     bail!(
-                        "prepare provider '{}' depends on unknown provider '{}'",
+                        "deps provider '{}' depends on unknown provider '{}'",
                         id,
                         dep
                     );
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn test_empty_graph() {
-        let _deps = PrepareDeps::new(&[]).unwrap();
+        let _deps = DepsOrdering::new(&[]).unwrap();
     }
 
     #[test]
@@ -80,7 +80,7 @@ mod tests {
             ("pip".to_string(), vec![]),
             ("go".to_string(), vec![]),
         ];
-        let mut deps = PrepareDeps::new(&providers).unwrap();
+        let mut deps = DepsOrdering::new(&providers).unwrap();
         let mut rx = deps.subscribe();
 
         let mut emitted = vec![];
@@ -100,7 +100,7 @@ mod tests {
             ("b".to_string(), vec!["a".to_string()]),
             ("c".to_string(), vec!["b".to_string()]),
         ];
-        let mut deps = PrepareDeps::new(&providers).unwrap();
+        let mut deps = DepsOrdering::new(&providers).unwrap();
         let mut rx = deps.subscribe();
 
         let first = rx.try_recv().unwrap().unwrap();
@@ -128,7 +128,7 @@ mod tests {
             ("c".to_string(), vec!["b".to_string()]),
             ("d".to_string(), vec![]),
         ];
-        let mut deps = PrepareDeps::new(&providers).unwrap();
+        let mut deps = DepsOrdering::new(&providers).unwrap();
         let mut rx = deps.subscribe();
 
         let mut initial = vec![];
@@ -156,7 +156,7 @@ mod tests {
             ("b".to_string(), vec!["a".to_string()]),
             ("c".to_string(), vec![]),
         ];
-        let mut deps = PrepareDeps::new(&providers).unwrap();
+        let mut deps = DepsOrdering::new(&providers).unwrap();
 
         let blocked = deps.blocked_providers();
         assert!(blocked.contains(&"a".to_string()));
@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn test_unknown_dep_error() {
         let providers = vec![("a".to_string(), vec!["nonexistent".to_string()])];
-        let result = PrepareDeps::new(&providers);
+        let result = DepsOrdering::new(&providers);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unknown provider"));
     }
@@ -187,7 +187,7 @@ mod tests {
             ("c".to_string(), vec!["d".to_string()]),
             ("a".to_string(), vec!["b".to_string(), "c".to_string()]),
         ];
-        let mut deps = PrepareDeps::new(&providers).unwrap();
+        let mut deps = DepsOrdering::new(&providers).unwrap();
         let mut rx = deps.subscribe();
 
         let first = rx.try_recv().unwrap().unwrap();

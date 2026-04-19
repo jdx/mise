@@ -6,19 +6,19 @@ use eyre::Result;
 use crate::file;
 use crate::hash::file_hash_blake3;
 
-/// Persistent state for prepare freshness checking.
+/// Persistent state for deps freshness checking.
 ///
 /// Stores blake3 content hashes of source files keyed by provider ID.
-/// Persisted to `.mise/prepare-state.toml`.
+/// Persisted to `.mise/deps-state.toml`.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct PrepareState {
+pub struct DepsState {
     /// provider_id → (relative_path → blake3_hex)
     #[serde(default)]
     pub providers: BTreeMap<String, BTreeMap<String, String>>,
 }
 
-impl PrepareState {
-    /// Load state from `.mise/prepare-state.toml`, returning default if not found.
+impl DepsState {
+    /// Load state from `.mise/deps-state.toml`, returning default if not found.
     pub fn load(project_root: &Path) -> Self {
         let path = state_path(project_root);
         if !path.exists() {
@@ -39,7 +39,7 @@ impl PrepareState {
         }
     }
 
-    /// Save state to `.mise/prepare-state.toml`.
+    /// Save state to `.mise/deps-state.toml`.
     pub fn save(&self, project_root: &Path) -> Result<()> {
         let path = state_path(project_root);
         file::create_dir_all(path.parent().unwrap())?;
@@ -119,5 +119,5 @@ fn hash_dir_files(
 
 /// Path to the state file for a given project root.
 fn state_path(project_root: &Path) -> PathBuf {
-    project_root.join(".mise").join("prepare-state.toml")
+    project_root.join(".mise").join("deps-state.toml")
 }

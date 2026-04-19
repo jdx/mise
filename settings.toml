@@ -1929,15 +1929,15 @@ Disable tools with [`disable_tools`](#disable_tools).
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"
 
+[status.show_deps_stale]
+default = true
+description = "Show warning when deps providers have stale dependencies."
+env = "MISE_STATUS_SHOW_DEPS_STALE"
+type = "Bool"
+
 [status.show_env]
 description = "Show configured env vars when entering a directory with a mise.toml file."
 env = "MISE_STATUS_MESSAGE_SHOW_ENV"
-type = "Bool"
-
-[status.show_prepare_stale]
-default = true
-description = "Show warning when prepare providers have stale dependencies."
-env = "MISE_STATUS_SHOW_PREPARE_STALE"
 type = "Bool"
 
 [status.show_tools]

@@ -23,10 +23,10 @@ use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
+use crate::deps::DepsConfig;
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, HookDef, Hooks};
-use crate::prepare::PrepareConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::{Task, TaskTemplate};
@@ -115,7 +115,7 @@ pub struct MiseToml {
     #[serde(default)]
     watch_files: Vec<WatchFile>,
     #[serde(default)]
-    prepare: Option<PrepareConfig>,
+    deps: Option<DepsConfig>,
     #[serde(default)]
     vars: EnvList,
     #[serde(default)]
@@ -935,8 +935,8 @@ impl ConfigFile for MiseToml {
             .collect())
     }
 
-    fn prepare_config(&self) -> Option<PrepareConfig> {
-        self.prepare.clone()
+    fn deps_config(&self) -> Option<DepsConfig> {
+        self.deps.clone()
     }
 }
 
@@ -1011,7 +1011,7 @@ impl Clone for MiseToml {
             task_config: self.task_config.clone(),
             settings: self.settings.clone(),
             watch_files: self.watch_files.clone(),
-            prepare: self.prepare.clone(),
+            deps: self.deps.clone(),
             vars: self.vars.clone(),
             experimental_monorepo_root: self.experimental_monorepo_root,
             monorepo: self.monorepo.clone(),

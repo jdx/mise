@@ -8,16 +8,16 @@ use eyre::{Result, bail};
 use crate::config::{Config, Settings};
 use crate::env;
 
-pub use engine::{PrepareEngine, PrepareOptions, PrepareStepResult};
-pub use rule::PrepareConfig;
+pub use engine::{DepsEngine, DepsOptions, DepsStepResult};
+pub use rule::DepsConfig;
 
+pub(crate) mod deps_ordering;
 mod engine;
-pub(crate) mod prepare_deps;
 pub mod providers;
 mod rule;
 pub mod state;
 
-/// Result of a freshness check for a prepare provider
+/// Result of a freshness check for a deps provider
 #[derive(Debug, Clone)]
 pub enum FreshnessResult {
     /// Outputs are up to date with sources
@@ -53,9 +53,9 @@ impl FreshnessResult {
     }
 }
 
-/// A command to execute for preparation
+/// A command to execute for dependency management
 #[derive(Debug, Clone)]
-pub struct PrepareCommand {
+pub struct DepsCommand {
     /// The program to execute
     pub program: String,
     /// Arguments to pass to the program
@@ -68,18 +68,18 @@ pub struct PrepareCommand {
     pub description: String,
 }
 
-impl PrepareCommand {
-    /// Create a PrepareCommand from a run string like "npm install"
+impl DepsCommand {
+    /// Create a DepsCommand from a run string like "npm install"
     ///
     /// Wraps the command with `sh -c` (matching task execution behavior)
     /// so shell features like pipes, redirects, and `&&` work.
     pub fn from_string(
         run: &str,
         project_root: &Path,
-        config: &rule::PrepareProviderConfig,
+        config: &rule::DepsProviderConfig,
     ) -> Result<Self> {
         if run.trim().is_empty() {
-            bail!("prepare run command cannot be empty");
+            bail!("deps run command cannot be empty");
         }
 
         let shell = Settings::get().default_inline_shell()?;
@@ -107,8 +107,8 @@ impl PrepareCommand {
     }
 }
 
-/// Trait for prepare providers that can check and install dependencies
-pub trait PrepareProvider: Debug + Send + Sync {
+/// Trait for deps providers that can check and install dependencies
+pub trait DepsProvider: Debug + Send + Sync {
     /// Access the shared base (project root + config)
     fn base(&self) -> &providers::ProviderBase;
 
@@ -124,7 +124,7 @@ pub trait PrepareProvider: Debug + Send + Sync {
     fn outputs(&self) -> Vec<PathBuf>;
 
     /// The command to run when outputs are stale relative to sources
-    fn prepare_command(&self) -> Result<PrepareCommand>;
+    fn install_command(&self) -> Result<DepsCommand>;
 
     /// Whether this provider is applicable (e.g., lockfile exists)
     fn is_applicable(&self) -> bool;
@@ -134,7 +134,7 @@ pub trait PrepareProvider: Debug + Send + Sync {
         self.base().is_auto()
     }
 
-    /// Other prepare providers that must complete before this one runs
+    /// Other deps providers that must complete before this one runs
     fn depends(&self) -> Vec<String> {
         self.base().config.depends.clone()
     }
@@ -145,15 +145,28 @@ pub trait PrepareProvider: Debug + Send + Sync {
             match crate::duration::parse_duration(t) {
                 Ok(d) => Some(d),
                 Err(err) => {
-                    warn!("prepare: {}: invalid timeout {t:?}: {err}", self.id());
+                    warn!("deps: {}: invalid timeout {t:?}: {err}", self.id());
                     None
                 }
             }
         })
     }
+
+    /// Command to add one or more package dependencies
+    fn add_command(&self, _packages: &[&str], _dev: bool) -> Result<DepsCommand> {
+        bail!("provider '{}' does not support adding packages", self.id())
+    }
+
+    /// Command to remove one or more package dependencies
+    fn remove_command(&self, _packages: &[&str]) -> Result<DepsCommand> {
+        bail!(
+            "provider '{}' does not support removing packages",
+            self.id()
+        )
+    }
 }
 
-/// Warn if any auto-enabled prepare providers are stale
+/// Warn if any auto-enabled deps providers are stale
 pub fn notify_if_stale(config: &Arc<Config>) {
     // Skip in shims or quiet mode
     if *env::__MISE_SHIM || Settings::get().quiet {
@@ -161,11 +174,11 @@ pub fn notify_if_stale(config: &Arc<Config>) {
     }
 
     // Check if this feature is enabled
-    if !Settings::get().status.show_prepare_stale {
+    if !Settings::get().status.show_deps_stale {
         return;
     }
 
-    let Ok(engine) = PrepareEngine::new(config) else {
+    let Ok(engine) = DepsEngine::new(config) else {
         return;
     };
 
@@ -176,16 +189,16 @@ pub fn notify_if_stale(config: &Arc<Config>) {
             .map(|(id, reason)| format!("{id} ({reason})"))
             .collect();
         let summary = providers.join(", ");
-        warn!("prepare: {summary} — run `mise prep`");
+        warn!("deps: {summary} — run `mise deps`");
     }
 }
 
 /// Tracks directories created during this session that should be considered stale
-/// for prepare freshness checks (e.g., venvs auto-created before prepare runs)
+/// for deps freshness checks (e.g., venvs auto-created before deps runs)
 static STALE_OUTPUTS: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
-/// Mark a directory as freshly created (stale for prepare purposes)
+/// Mark a directory as freshly created (stale for deps purposes)
 pub fn mark_output_stale(path: PathBuf) {
     if let Ok(mut set) = STALE_OUTPUTS.lock() {
         set.insert(path);
@@ -200,92 +213,77 @@ pub fn is_output_stale(path: &PathBuf) -> bool {
         .unwrap_or(false)
 }
 
-/// Clear stale status for a path (after prepare runs successfully)
+/// Clear stale status for a path (after deps runs successfully)
 pub fn clear_output_stale(path: &PathBuf) {
     if let Ok(mut set) = STALE_OUTPUTS.lock() {
         set.remove(path);
     }
 }
 
-/// Detect which built-in prepare providers are applicable for a given directory
+/// Detect which built-in deps providers are applicable for a given directory
 ///
 /// This checks if the lockfiles/config files for each provider exist.
 pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
     use providers::*;
-    use rule::PrepareProviderConfig;
+    use rule::DepsProviderConfig;
 
-    let default_config = PrepareProviderConfig::default();
+    let default_config = DepsProviderConfig::default();
     let mut applicable = Vec::new();
 
     // Check each built-in provider
-    let checks: &[(&str, Box<dyn PrepareProvider>)] = &[
+    let checks: &[(&str, Box<dyn DepsProvider>)] = &[
         (
             "npm",
-            Box::new(NpmPrepareProvider::new(
-                project_root,
-                default_config.clone(),
-            )),
+            Box::new(NpmDepsProvider::new(project_root, default_config.clone())),
         ),
         (
             "yarn",
-            Box::new(YarnPrepareProvider::new(
-                project_root,
-                default_config.clone(),
-            )),
+            Box::new(YarnDepsProvider::new(project_root, default_config.clone())),
         ),
         (
             "pnpm",
-            Box::new(PnpmPrepareProvider::new(
-                project_root,
-                default_config.clone(),
-            )),
+            Box::new(PnpmDepsProvider::new(project_root, default_config.clone())),
         ),
         (
             "bun",
-            Box::new(BunPrepareProvider::new(
-                project_root,
-                default_config.clone(),
-            )),
+            Box::new(BunDepsProvider::new(project_root, default_config.clone())),
         ),
         (
             "go",
-            Box::new(GoPrepareProvider::new(project_root, default_config.clone())),
+            Box::new(GoDepsProvider::new(project_root, default_config.clone())),
         ),
         (
             "pip",
-            Box::new(PipPrepareProvider::new(
-                project_root,
-                default_config.clone(),
-            )),
+            Box::new(PipDepsProvider::new(project_root, default_config.clone())),
         ),
         (
             "poetry",
-            Box::new(PoetryPrepareProvider::new(
+            Box::new(PoetryDepsProvider::new(
                 project_root,
                 default_config.clone(),
             )),
         ),
         (
             "uv",
-            Box::new(UvPrepareProvider::new(project_root, default_config.clone())),
+            Box::new(UvDepsProvider::new(project_root, default_config.clone())),
         ),
         (
             "bundler",
-            Box::new(BundlerPrepareProvider::new(
+            Box::new(BundlerDepsProvider::new(
                 project_root,
                 default_config.clone(),
             )),
         ),
         (
             "composer",
-            Box::new(ComposerPrepareProvider::new(
+            Box::new(ComposerDepsProvider::new(
                 project_root,
                 default_config.clone(),
             )),
         ),
         (
             "git-submodule",
-            Box::new(GitSubmodulePrepareProvider::new(
+            Box::new(GitSubmoduleDepsProvider::new(
                 project_root,
                 default_config.clone(),
             )),
@@ -299,4 +297,32 @@ pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
     }
 
     applicable
+}
+
+/// Create a provider for add/remove operations.
+///
+/// If a `Config` is provided, looks up user-defined settings (env, dir, timeout)
+/// from the `[deps.<ecosystem>]` section. Falls back to defaults otherwise.
+pub fn create_provider(
+    ecosystem: &str,
+    project_root: &Path,
+    config: Option<&crate::config::Config>,
+) -> Result<Box<dyn DepsProvider>> {
+    let (provider_root, provider_config) = config
+        .and_then(|c| {
+            c.config_files.values().find_map(|cf| {
+                cf.deps_config()
+                    .and_then(|dc| dc.providers.get(ecosystem).cloned())
+                    .map(|provider_config| (cf.config_root(), provider_config))
+            })
+        })
+        .unwrap_or_else(|| {
+            (
+                project_root.to_path_buf(),
+                rule::DepsProviderConfig::default(),
+            )
+        });
+
+    DepsEngine::build_provider(ecosystem, &provider_root, provider_config)
+        .ok_or_else(|| eyre::eyre!("unknown deps provider '{ecosystem}'"))
 }

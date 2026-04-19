@@ -2,26 +2,26 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::prepare::rule::PrepareProviderConfig;
-use crate::prepare::{PrepareCommand, PrepareProvider};
+use crate::deps::rule::DepsProviderConfig;
+use crate::deps::{DepsCommand, DepsProvider};
 
 use super::ProviderBase;
 
-/// Prepare provider for Go (go.sum)
+/// Deps provider for Go (go.sum)
 #[derive(Debug)]
-pub struct GoPrepareProvider {
+pub struct GoDepsProvider {
     base: ProviderBase,
 }
 
-impl GoPrepareProvider {
-    pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
+impl GoDepsProvider {
+    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("go", project_root, config),
         }
     }
 }
 
-impl PrepareProvider for GoPrepareProvider {
+impl DepsProvider for GoDepsProvider {
     fn base(&self) -> &ProviderBase {
         &self.base
     }
@@ -43,9 +43,9 @@ impl PrepareProvider for GoPrepareProvider {
         }
     }
 
-    fn prepare_command(&self) -> Result<PrepareCommand> {
+    fn install_command(&self) -> Result<DepsCommand> {
         if let Some(run) = &self.base.config.run {
-            return PrepareCommand::from_string(run, &self.base.project_root, &self.base.config);
+            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
         }
 
         // Use `go mod vendor` if vendor/ exists, otherwise `go mod download`
@@ -62,7 +62,7 @@ impl PrepareProvider for GoPrepareProvider {
             )
         };
 
-        Ok(PrepareCommand {
+        Ok(DepsCommand {
             program: "go".to_string(),
             args,
             env: self.base.config.env.clone(),

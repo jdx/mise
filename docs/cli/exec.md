@@ -78,7 +78,7 @@ macOS only in v1; on Linux falls back to allowing all network
 
 Bypass the environment cache and recompute the environment
 
-### `--no-prepare`
+### `--no-deps`
 
 Skip automatic dependency preparation
 

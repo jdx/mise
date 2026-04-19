@@ -241,8 +241,8 @@ impl InteractiveConfig {
                     // Standard key=value flow for now
                     self.mode = Mode::NewKey(InlineEdit::new(""));
                 }
-                AddButtonKind::Prepare(_) => {
-                    // Standard key=value flow for prepare providers
+                AddButtonKind::Deps(_) => {
+                    // Standard key=value flow for deps providers
                     self.mode = Mode::NewKey(InlineEdit::new(""));
                 }
                 AddButtonKind::Setting(section_idx) => {
@@ -762,8 +762,8 @@ impl InteractiveConfig {
                 self.cursor.goto(&self.doc, &target);
                 self.mode = Mode::Edit(InlineEdit::new(""));
             }
-            Some(CursorTarget::AddButton(AddButtonKind::Prepare(section_idx))) => {
-                // Create prepare provider as inline table (e.g., npm = { disable = true })
+            Some(CursorTarget::AddButton(AddButtonKind::Deps(section_idx))) => {
+                // Create deps provider as inline table (e.g., npm = { disable = true })
                 self.doc.sections[section_idx]
                     .entries
                     .push(crate::document::Entry {

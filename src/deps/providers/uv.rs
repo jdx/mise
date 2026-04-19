@@ -2,26 +2,26 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::prepare::rule::PrepareProviderConfig;
-use crate::prepare::{PrepareCommand, PrepareProvider};
+use crate::deps::rule::DepsProviderConfig;
+use crate::deps::{DepsCommand, DepsProvider};
 
 use super::ProviderBase;
 
-/// Prepare provider for uv (uv.lock)
+/// Deps provider for uv (uv.lock)
 #[derive(Debug)]
-pub struct UvPrepareProvider {
+pub struct UvDepsProvider {
     base: ProviderBase,
 }
 
-impl UvPrepareProvider {
-    pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
+impl UvDepsProvider {
+    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("uv", project_root, config),
         }
     }
 }
 
-impl PrepareProvider for UvPrepareProvider {
+impl DepsProvider for UvDepsProvider {
     fn base(&self) -> &ProviderBase {
         &self.base
     }
@@ -35,12 +35,12 @@ impl PrepareProvider for UvPrepareProvider {
         vec![self.base.config_root().join(".venv")]
     }
 
-    fn prepare_command(&self) -> Result<PrepareCommand> {
+    fn install_command(&self) -> Result<DepsCommand> {
         if let Some(run) = &self.base.config.run {
-            return PrepareCommand::from_string(run, &self.base.project_root, &self.base.config);
+            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
         }
 
-        Ok(PrepareCommand {
+        Ok(DepsCommand {
             program: "uv".to_string(),
             args: vec!["sync".to_string()],
             env: self.base.config.env.clone(),
