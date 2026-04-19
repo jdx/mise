@@ -37,6 +37,25 @@
     "vitepress": "1.6.4",
     "vitepress-plugin-group-icons": "^1.6.5",
     "vitepress-plugin-mermaid": "2.0.17",
-    "vitepress-plugin-tabs": "^0.8.0"
+    "vitepress-plugin-tabs": "^0.8.0",
+    "vscode-jsonrpc": "^8.2.0",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "vscode-languageserver-types": "^3.17.5"
+  },
+  "pnpm": {
+    "supportedArchitectures": {
+      "os": [
+        "current",
+        "linux"
+      ],
+      "cpu": [
+        "current",
+        "x64"
+      ],
+      "libc": [
+        "current",
+        "glibc"
+      ]
+    }
   }
 }

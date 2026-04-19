@@ -1,6 +1,6 @@
 pre-commit:
   commands:
     build:
-      glob: "*"
-      run: aube run docs:build
+      glob: "{docs/**,package.json,aube-lock.yaml,.npmrc}"
+      run: mise run docs:build
       interactive: true

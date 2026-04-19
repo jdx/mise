@@ -1,4 +1,5 @@
 import { defineConfig } from "vitepress";
+import { fileURLToPath } from "node:url";
 import { Command, commands } from "./cli_commands";
 import {
   groupIconMdPlugin,
@@ -280,6 +281,34 @@ export default withMermaid(
     vite: {
       build: {
         target: "es2022",
+      },
+      resolve: {
+        alias: {
+          vue: fileURLToPath(
+            new URL("../../node_modules/vue", import.meta.url),
+          ),
+          "vitepress-plugin-mermaid/Mermaid.vue": fileURLToPath(
+            new URL(
+              "../../node_modules/vitepress-plugin-mermaid/dist/Mermaid.vue",
+              import.meta.url,
+            ),
+          ),
+          "vscode-jsonrpc": fileURLToPath(
+            new URL("../../node_modules/vscode-jsonrpc", import.meta.url),
+          ),
+          "vscode-languageserver-protocol": fileURLToPath(
+            new URL(
+              "../../node_modules/vscode-languageserver-protocol",
+              import.meta.url,
+            ),
+          ),
+          "vscode-languageserver-types": fileURLToPath(
+            new URL(
+              "../../node_modules/vscode-languageserver-types/lib/esm/main.js",
+              import.meta.url,
+            ),
+          ),
+        },
       },
       plugins: [
         groupIconVitePlugin({
