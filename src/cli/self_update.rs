@@ -57,7 +57,7 @@ pub fn append_self_update_instructions(mut message: String) -> String {
 ///
 /// Uses the GitHub Releases API to find the latest release and binary.
 /// By default, this will also update any installed plugins.
-/// Uses the `GITHUB_API_TOKEN` environment variable if set for higher rate limits.
+/// Uses mise's GitHub token resolution chain for authenticated requests.
 ///
 /// This command is not available if mise is installed via a package manager.
 #[derive(Debug, Default, clap::Args)]
@@ -115,8 +115,8 @@ impl SelfUpdate {
 
     fn do_update_blocking(&self) -> Result<Status> {
         let mut update = Update::configure();
-        if let Some(token) = &*env::GITHUB_TOKEN {
-            update.auth_token(token);
+        if let Some((token, _)) = crate::github::resolve_token("github.com") {
+            update.auth_token(&token);
         }
         #[cfg(windows)]
         let bin_path_in_archive = "mise/bin/mise.exe";
