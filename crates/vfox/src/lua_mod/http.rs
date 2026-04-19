@@ -1,5 +1,6 @@
 use mlua::{BorrowedStr, ExternalResult, Lua, MultiValue, Result, Table, Value};
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
+use url::Url;
 
 use crate::http::CLIENT;
 
@@ -61,12 +62,71 @@ fn into_headers(table: &Table) -> Result<HeaderMap> {
     Ok(map)
 }
 
+fn github_token(lua: &Lua) -> Option<String> {
+    if let Ok(token) = lua.named_registry_value::<String>("github_token")
+        && !token.trim().is_empty()
+    {
+        return Some(token);
+    }
+
+    [
+        "MISE_GITHUB_TOKEN",
+        "GITHUB_API_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+    ]
+    .into_iter()
+    .find_map(|key| {
+        std::env::var(key)
+            .ok()
+            .map(|token| token.trim().to_string())
+            .filter(|token| !token.is_empty())
+    })
+}
+
+fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMap {
+    if headers.contains_key(AUTHORIZATION) {
+        return headers;
+    }
+
+    let Ok(url) = Url::parse(url) else {
+        return headers;
+    };
+
+    let Some(host) = url.host_str() else {
+        return headers;
+    };
+
+    let is_github = host == "api.github.com"
+        || host == "github.com"
+        || (host.ends_with(".githubusercontent.com")
+            && !matches!(
+                host,
+                "objects.githubusercontent.com"
+                    | "objects-origin.githubusercontent.com"
+                    | "release-assets.githubusercontent.com"
+            ));
+
+    if is_github && let Some(token) = github_token(lua) {
+        if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
+            headers.insert(AUTHORIZATION, value);
+        }
+        headers.insert(
+            "x-github-api-version",
+            HeaderValue::from_static("2022-11-28"),
+        );
+    }
+
+    headers
+}
+
 async fn get(lua: &Lua, input: Table) -> Result<Table> {
     let url: String = input.get("url").into_lua_err()?;
     let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
+    let headers = add_default_headers(lua, &url, headers);
     let resp = CLIENT
         .get(&url)
         .headers(headers)
@@ -80,13 +140,14 @@ async fn get(lua: &Lua, input: Table) -> Result<Table> {
     Ok(t)
 }
 
-async fn download_file(_lua: &Lua, input: MultiValue) -> Result<()> {
+async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
     let t: &Table = input.iter().next().unwrap().as_table().unwrap();
     let url: String = t.get("url").into_lua_err()?;
     let headers = match t.get::<Option<Table>>("headers").into_lua_err()? {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
+    let headers = add_default_headers(lua, &url, headers);
     let path: String = input.iter().nth(1).unwrap().to_string()?;
     let resp = CLIENT
         .get(&url)
@@ -109,6 +170,7 @@ async fn head(lua: &Lua, input: Table) -> Result<Table> {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
+    let headers = add_default_headers(lua, &url, headers);
     let resp = CLIENT
         .head(&url)
         .headers(headers)
@@ -127,6 +189,7 @@ async fn try_get(lua: &Lua, input: Table) -> Result<MultiValue> {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
+    let headers = add_default_headers(lua, &url, headers);
     let resp = match CLIENT.get(&url).headers(headers).send().await {
         Ok(resp) => resp,
         Err(e) => {
@@ -157,6 +220,7 @@ async fn try_head(lua: &Lua, input: Table) -> Result<MultiValue> {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
+    let headers = add_default_headers(lua, &url, headers);
     let resp = match CLIENT.head(&url).headers(headers).send().await {
         Ok(resp) => resp,
         Err(e) => {
@@ -187,6 +251,7 @@ async fn try_download_file(_lua: &Lua, input: MultiValue) -> Result<MultiValue> 
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
+    let headers = add_default_headers(_lua, &url, headers);
     let path = match input.get(1).and_then(|v| v.to_string().ok()) {
         Some(p) => p,
         None => {
@@ -251,6 +316,38 @@ mod tests {
     use super::*;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct EnvGuard {
+        vars: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvGuard {
+        fn new(names: &[&'static str]) -> Self {
+            let vars = names
+                .iter()
+                .map(|name| (*name, std::env::var(name).ok()))
+                .collect();
+            Self { vars }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (name, value) in &self.vars {
+                match value {
+                    Some(value) => unsafe { std::env::set_var(name, value) },
+                    None => unsafe { std::env::remove_var(name) },
+                }
+            }
+        }
+    }
+
+    const GITHUB_TOKEN_VARS: &[&str] = &[
+        "MISE_GITHUB_TOKEN",
+        "GITHUB_API_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+    ];
 
     #[tokio::test]
     async fn test_get() {
@@ -322,6 +419,94 @@ mod tests {
         .exec_async()
         .await
         .unwrap();
+    }
+
+    #[test]
+    fn test_add_default_headers_adds_github_token() {
+        let _guard = EnvGuard::new(GITHUB_TOKEN_VARS);
+        for name in GITHUB_TOKEN_VARS {
+            unsafe { std::env::remove_var(name) };
+        }
+        unsafe { std::env::set_var("MISE_GITHUB_TOKEN", "ghp_test") };
+
+        let lua = Lua::new();
+        let headers = add_default_headers(
+            &lua,
+            "https://api.github.com/repos/neovim/neovim/releases",
+            HeaderMap::default(),
+        );
+
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer ghp_test")
+        );
+        assert_eq!(
+            headers
+                .get("x-github-api-version")
+                .and_then(|value| value.to_str().ok()),
+            Some("2022-11-28")
+        );
+    }
+
+    #[test]
+    fn test_add_default_headers_keeps_explicit_authorization() {
+        let _guard = EnvGuard::new(GITHUB_TOKEN_VARS);
+        unsafe { std::env::set_var("MISE_GITHUB_TOKEN", "ghp_default") };
+
+        let mut headers = HeaderMap::default();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer explicit"));
+
+        let lua = Lua::new();
+        let headers = add_default_headers(&lua, "https://api.github.com/repos/owner/repo", headers);
+
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer explicit")
+        );
+    }
+
+    #[test]
+    fn test_add_default_headers_skips_release_asset_hosts() {
+        let _guard = EnvGuard::new(GITHUB_TOKEN_VARS);
+        unsafe { std::env::set_var("MISE_GITHUB_TOKEN", "ghp_default") };
+
+        let lua = Lua::new();
+        let headers = add_default_headers(
+            &lua,
+            "https://release-assets.githubusercontent.com/github-production-release-asset/1/file",
+            HeaderMap::default(),
+        );
+
+        assert!(!headers.contains_key(AUTHORIZATION));
+    }
+
+    #[test]
+    fn test_add_default_headers_uses_registry_token() {
+        let _guard = EnvGuard::new(GITHUB_TOKEN_VARS);
+        for name in GITHUB_TOKEN_VARS {
+            unsafe { std::env::remove_var(name) };
+        }
+
+        let lua = Lua::new();
+        lua.set_named_registry_value("github_token", "ghp_registry")
+            .unwrap();
+
+        let headers = add_default_headers(
+            &lua,
+            "https://api.github.com/repos/neovim/neovim/releases",
+            HeaderMap::default(),
+        );
+
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer ghp_registry")
+        );
     }
 
     #[tokio::test]
