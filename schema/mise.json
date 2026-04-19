@@ -1462,13 +1462,13 @@
               "description": "Show a warning if tools are not installed when entering a directory with a mise.toml file.",
               "type": "string"
             },
-            "show_env": {
-              "description": "Show configured env vars when entering a directory with a mise.toml file.",
-              "type": "boolean"
-            },
             "show_deps_stale": {
               "default": true,
               "description": "Show warning when deps providers have stale dependencies.",
+              "type": "boolean"
+            },
+            "show_env": {
+              "description": "Show configured env vars when entering a directory with a mise.toml file.",
               "type": "boolean"
             },
             "show_tools": {
