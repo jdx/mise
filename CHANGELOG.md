@@ -1,5 +1,34 @@
 # Changelog
 
+## [2026.4.18](https://github.com/jdx/mise/compare/v2026.4.17..v2026.4.18) - 2026-04-19
+
+### 🚀 Features
+
+- **(latest)** add --before flag to mise latest by @risu729 in [#9168](https://github.com/jdx/mise/pull/9168)
+- **(npm)** add aube package manager support by @jdx in [#9256](https://github.com/jdx/mise/pull/9256)
+- **(spm)** add filter_bins option to restrict built executables by @jdx in [#9253](https://github.com/jdx/mise/pull/9253)
+- **(vfox)** support plugin-declared dependencies via metadata.lua by @ahemon in [#9051](https://github.com/jdx/mise/pull/9051)
+- rename `mise prepare` to `mise deps` and add package management by @jdx in [#9056](https://github.com/jdx/mise/pull/9056)
+
+### 🐛 Bug Fixes
+
+- **(backend)** skip versions host for direct-source backends by @jdx in [#9245](https://github.com/jdx/mise/pull/9245)
+- **(github)** route artifact attestation verification to custom api_url by @jdx in [#9254](https://github.com/jdx/mise/pull/9254)
+- **(lockfile)** use unique temp file for atomic save to avoid concurrent rename race by @jdx in [#9250](https://github.com/jdx/mise/pull/9250)
+- **(log)** drop noisy third-party debug/trace logs by @jdx in [#9248](https://github.com/jdx/mise/pull/9248)
+- **(progress)** disable animated clx output in ci by @jdx in [#9249](https://github.com/jdx/mise/pull/9249)
+- **(use)** honor --quiet and --silent flags by @jdx in [#9251](https://github.com/jdx/mise/pull/9251)
+- **(vfox)** opt backend plugins out of --locked URL check by @jdx in [#9252](https://github.com/jdx/mise/pull/9252)
+
+### 📦 Registry
+
+- add aqua backend for bitwarden-secrets-manager by @msuzoagu in [#9255](https://github.com/jdx/mise/pull/9255)
+
+### New Contributors
+
+- @ahemon made their first contribution in [#9051](https://github.com/jdx/mise/pull/9051)
+- @msuzoagu made their first contribution in [#9255](https://github.com/jdx/mise/pull/9255)
+
 ## [2026.4.17](https://github.com/jdx/mise/compare/v2026.4.16..v2026.4.17) - 2026-04-18
 
 ### 🐛 Bug Fixes
