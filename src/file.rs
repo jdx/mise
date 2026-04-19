@@ -522,6 +522,9 @@ pub fn is_executable(path: &Path) -> bool {
 
 #[cfg(windows)]
 pub fn is_executable(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
     if has_known_executable_extension(path) {
         return true;
     }
