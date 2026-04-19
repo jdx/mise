@@ -142,7 +142,7 @@ jobs:
           path: target/debug
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- bun i
+      - run: mise x -- aube install
       - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
       - run: cargo msrv verify
       - run: cargo machete --with-metadata

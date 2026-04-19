@@ -44,7 +44,7 @@ jobs:
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- bun i
+      - run: mise x -- aube install
       - run: mise run release-plz
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
