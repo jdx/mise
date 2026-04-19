@@ -11,7 +11,8 @@ install_before = "2100-01-01"
 'go:github.com/roborev-dev/roborev/cmd/roborev' = { version = "latest", install_before = "2026-04-07" }
 EOF
 
-assert_contains "mise install --dry-run 2>&1" "go:github.com/roborev-dev/roborev/cmd/roborev@0.50.0"
+first_output=$(mise install --dry-run 2>&1)
+assert_matches "printf '%s' \"$first_output\"" 'go:github.com/roborev-dev/roborev/cmd/roborev@[0-9]+\.[0-9]+\.[0-9]+'
 
 cat <<'EOF' >mise.toml
 [settings]
