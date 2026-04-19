@@ -302,9 +302,8 @@ impl Use {
             }
 
             if !messages.is_empty() {
-                miseprintln!(
-                    "{} would update {} ({})",
-                    style("mise").green(),
+                info!(
+                    "would update {} ({})",
                     style(&path).cyan().for_stderr(),
                     messages.join(", ")
                 );
@@ -315,17 +314,12 @@ impl Use {
         } else {
             if !versions.is_empty() {
                 let tools = versions.iter().map(|t| t.style()).join(", ");
-                miseprintln!(
-                    "{} {} tools: {tools}",
-                    style("mise").green(),
-                    style(&path).cyan().for_stderr(),
-                );
+                info!("{} tools: {tools}", style(&path).cyan().for_stderr());
             }
             if !remove.is_empty() {
                 let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
-                miseprintln!(
-                    "{} {} removed: {tools_to_remove}",
-                    style("mise").green(),
+                info!(
+                    "{} removed: {tools_to_remove}",
                     style(&path).cyan().for_stderr(),
                 );
             }
