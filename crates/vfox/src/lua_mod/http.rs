@@ -63,10 +63,11 @@ fn into_headers(table: &Table) -> Result<HeaderMap> {
 }
 
 fn github_token(lua: &Lua) -> Option<String> {
-    if let Ok(token) = lua.named_registry_value::<String>("github_token")
-        && !token.trim().is_empty()
-    {
-        return Some(token);
+    if let Ok(token) = lua.named_registry_value::<String>("github_token") {
+        let token = token.trim();
+        if !token.is_empty() {
+            return Some(token.to_string());
+        }
     }
 
     ["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"]
@@ -389,7 +390,7 @@ mod tests {
     #[test]
     fn test_add_default_headers_uses_registry_token() {
         let lua = Lua::new();
-        lua.set_named_registry_value("github_token", "ghp_registry")
+        lua.set_named_registry_value("github_token", " ghp_registry\n")
             .unwrap();
 
         let headers = add_default_headers(
