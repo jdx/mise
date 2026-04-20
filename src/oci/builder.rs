@@ -503,15 +503,18 @@ impl Builder {
 fn reject_unsupported_backends(
     versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
 ) -> Result<()> {
+    // Ask the actual backend instance rather than parsing the short name.
+    // `BackendType::guess` only matches literal "asdf" / "vfox" prefixes and
+    // misses third-party vfox plugins whose tools use a custom plugin name
+    // as the prefix (e.g. `my-plugin:tool`), even though they have the same
+    // out-of-tree write behavior we're guarding against.
     let bad: Vec<String> = versions
         .iter()
-        .filter_map(|(_, tv)| {
-            let bt = BackendType::guess(tv.ba().short.split(':').next().unwrap_or(""));
-            if matches!(bt, BackendType::Asdf | BackendType::Vfox) {
+        .filter_map(|(backend, tv)| match backend.get_type() {
+            BackendType::Asdf | BackendType::Vfox | BackendType::VfoxBackend(_) => {
                 Some(tv.ba().short.clone())
-            } else {
-                None
             }
+            _ => None,
         })
         .collect();
     if !bad.is_empty() {
