@@ -246,12 +246,11 @@ async fn fetch_token_if_needed(manifest_url: &str, repository: &str) -> Result<O
     if resp.status().is_success() {
         return Ok(None);
     }
-    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-        if let Some(www_auth) = resp.headers().get("www-authenticate") {
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED
+        && let Some(www_auth) = resp.headers().get("www-authenticate") {
             let www_auth = www_auth.to_str().unwrap_or("").to_string();
             return fetch_anonymous_token(&www_auth, repository).await;
         }
-    }
     Ok(None)
 }
 

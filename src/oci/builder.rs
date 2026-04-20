@@ -289,15 +289,14 @@ impl Builder {
         let mut working_dir: Option<String> = None;
         let mut user: Option<String> = None;
 
-        if let Some(base) = base_config_json {
-            if let Some(bc) = base.get("config") {
+        if let Some(base) = base_config_json
+            && let Some(bc) = base.get("config") {
                 if let Some(env) = bc.get("Env").and_then(|e| e.as_array()) {
                     for e in env {
-                        if let Some(s) = e.as_str() {
-                            if let Some((k, v)) = s.split_once('=') {
+                        if let Some(s) = e.as_str()
+                            && let Some((k, v)) = s.split_once('=') {
                                 env_pairs.insert(k.to_string(), v.to_string());
                             }
-                        }
                     }
                 }
                 if let Some(c) = bc.get("Cmd").and_then(|c| c.as_array()) {
@@ -314,18 +313,15 @@ impl Builder {
                             .collect(),
                     );
                 }
-                if let Some(wd) = bc.get("WorkingDir").and_then(|w| w.as_str()) {
-                    if !wd.is_empty() {
+                if let Some(wd) = bc.get("WorkingDir").and_then(|w| w.as_str())
+                    && !wd.is_empty() {
                         working_dir = Some(wd.to_string());
                     }
-                }
-                if let Some(u) = bc.get("User").and_then(|u| u.as_str()) {
-                    if !u.is_empty() {
+                if let Some(u) = bc.get("User").and_then(|u| u.as_str())
+                    && !u.is_empty() {
                         user = Some(u.to_string());
                     }
-                }
             }
-        }
 
         // Mise data/config dirs.
         env_pairs.insert("MISE_DATA_DIR".to_string(), mount_point.to_string());
@@ -450,7 +446,7 @@ fn reject_unsupported_backends(
     let bad: Vec<String> = versions
         .iter()
         .filter_map(|(_, tv)| {
-            let bt = BackendType::guess(&tv.ba().short.split(':').next().unwrap_or(""));
+            let bt = BackendType::guess(tv.ba().short.split(':').next().unwrap_or(""));
             if matches!(bt, BackendType::Asdf | BackendType::Vfox) {
                 Some(tv.ba().short.clone())
             } else {
@@ -524,7 +520,7 @@ fn days_to_ymd(days: i64) -> (i64, u32, u32) {
     // (Howard Hinnant, date.h).
     let z = days + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as i64;
+    let doe = (z - era * 146_097);
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
     let y = yoe + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
