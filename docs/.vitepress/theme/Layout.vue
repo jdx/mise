@@ -48,12 +48,17 @@
         </div>
       </div>
     </template>
+
+    <template #layout-bottom>
+      <EndevFooter />
+    </template>
   </DefaultTheme.Layout>
 </template>
 
 <script setup lang="ts">
 import DefaultTheme from "vitepress/theme";
 import { ref } from "vue";
+import EndevFooter from "./EndevFooter.vue";
 
 const copied = ref(false);
 
