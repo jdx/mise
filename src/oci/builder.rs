@@ -1,0 +1,555 @@
+//! Orchestrates building an OCI image from a resolved mise Toolset.
+//!
+//! Produces an OCI image layout with one layer per tool version so that
+//! bumping any single tool invalidates exactly one content-addressable blob.
+//! See the README in this module for the design.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use eyre::{Context, Result, bail};
+use indexmap::IndexMap;
+
+use crate::backend::backend_type::BackendType;
+use crate::config::{Config, Settings};
+use crate::file;
+use crate::oci::OciConfig;
+use crate::oci::layer::{self, LayerBlob};
+use crate::oci::layout::ImageLayout;
+use crate::oci::manifest::{self, Descriptor, ImageConfig, ImageManifest, Platform, RootFs};
+use crate::oci::registry;
+use crate::toolset::{ToolVersion, Toolset};
+
+/// Options passed to the builder from the CLI.
+#[derive(Debug, Clone)]
+pub struct BuildOptions {
+    /// Output directory for the OCI image layout.
+    pub out_dir: PathBuf,
+    /// Base image reference (overrides mise.toml and default setting).
+    pub from: Option<String>,
+    /// Tag to write into index.json (ref.name annotation).
+    pub tag: Option<String>,
+    /// Where mise tools get installed inside the image.
+    pub mount_point: Option<String>,
+    /// Embed the current mise binary at /usr/local/bin/mise.
+    pub include_mise: bool,
+}
+
+pub struct Builder {
+    pub cfg: Arc<Config>,
+    pub ts: Toolset,
+    pub oci: OciConfig,
+    pub opts: BuildOptions,
+}
+
+/// Output summary returned to the CLI.
+pub struct BuildOutput {
+    pub out_dir: PathBuf,
+    pub manifest_digest: String,
+    pub tool_layers: Vec<ToolLayerInfo>,
+}
+
+pub struct ToolLayerInfo {
+    pub short: String,
+    pub version: String,
+    pub digest: String,
+    pub size: u64,
+}
+
+impl Builder {
+    pub fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
+        Self { cfg, ts, oci, opts }
+    }
+
+    /// Build the image and write it to the output directory.
+    pub async fn build(self) -> Result<BuildOutput> {
+        let versions = self.ts.list_current_versions();
+        if versions.is_empty() {
+            warn!("mise oci build: no tools in the toolset — image will have only the base layer");
+        }
+        reject_unsupported_backends(&versions)?;
+
+        file::create_dir_all(&self.opts.out_dir)?;
+        let layout = ImageLayout::init(&self.opts.out_dir)?;
+
+        let mount_point = self
+            .opts
+            .mount_point
+            .clone()
+            .or_else(|| self.oci.mount_point.clone())
+            .unwrap_or_else(|| Settings::get().oci.default_mount_point.clone());
+        let mount_point = mount_point.trim_end_matches('/').to_string();
+        if mount_point.is_empty() {
+            bail!("oci mount_point must not be empty");
+        }
+
+        // --- 1. Base image (optional) ---
+        let from_ref = self
+            .opts
+            .from
+            .clone()
+            .or_else(|| self.oci.from.clone())
+            .or_else(|| {
+                let s = Settings::get().oci.default_from.clone();
+                if s.is_empty() { None } else { Some(s) }
+            })
+            .filter(|r| !r.is_empty() && r != "scratch");
+
+        let mut base_layers: Vec<Descriptor> = Vec::new();
+        let mut base_diff_ids: Vec<String> = Vec::new();
+        let mut base_config_json: Option<serde_json::Value> = None;
+        let mut platform: Option<Platform> = None;
+
+        if let Some(ref_) = &from_ref {
+            info!("pulling base image: {ref_}");
+            let desired = Some((
+                normalize_arch(std::env::consts::ARCH),
+                normalize_os(std::env::consts::OS),
+            ));
+            let pull = registry::pull_base_image(ref_, &layout, desired)
+                .await
+                .wrap_err_with(|| format!("pulling base image {ref_}"))?;
+            base_layers = pull
+                .layers
+                .iter()
+                .map(|l| Descriptor {
+                    media_type: manifest::media_type_to_oci(&l.media_type).to_string(),
+                    size: l.size,
+                    digest: l.digest.clone(),
+                    annotations: l.annotations.clone(),
+                    platform: l.platform.clone(),
+                })
+                .collect();
+            if let Some(diff_ids) = pull
+                .config_json
+                .get("rootfs")
+                .and_then(|r| r.get("diff_ids"))
+                .and_then(|d| d.as_array())
+            {
+                base_diff_ids = diff_ids
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+            }
+            platform = pull.platform;
+            base_config_json = Some(pull.config_json);
+        }
+
+        // --- 2. Per-tool layers ---
+        let mut tool_layers: Vec<(String, String, LayerBlob)> = Vec::new();
+        for (_, tv) in &versions {
+            let install_path = tv.install_path();
+            if !install_path.is_dir() {
+                bail!(
+                    "{} install path does not exist: {}. Run `mise install` first.",
+                    tv.style(),
+                    install_path.display()
+                );
+            }
+            let tv_prefix = tool_prefix(&mount_point, tv);
+            let blob = layer::build_layer_from_dir(&install_path, &tv_prefix)
+                .wrap_err_with(|| format!("building layer for {}", tv.style()))?;
+            tool_layers.push((tv.ba().short.clone(), tv.version.clone(), blob));
+        }
+
+        // --- 3. mise binary layer (optional) ---
+        let mut mise_layer: Option<LayerBlob> = None;
+        if self.opts.include_mise {
+            match std::env::current_exe() {
+                Ok(exe) => {
+                    let bytes = std::fs::read(&exe)
+                        .wrap_err_with(|| format!("reading mise binary at {}", exe.display()))?;
+                    let files = vec![("usr/local/bin/mise".to_string(), bytes, 0o755u32)];
+                    mise_layer = Some(layer::build_layer_from_files(&files)?);
+                }
+                Err(e) => {
+                    warn!("could not locate mise binary to embed in image: {e}");
+                }
+            }
+        }
+
+        // --- 4. Config layer: /etc/mise/config.toml ---
+        let config_layer = {
+            let config_toml = synthesize_embedded_config_toml(&versions, &mount_point);
+            let files = vec![(
+                "etc/mise/config.toml".to_string(),
+                config_toml.into_bytes(),
+                0o644u32,
+            )];
+            layer::build_layer_from_files(&files)?
+        };
+
+        // --- 5. Write all layer blobs into the layout ---
+        let mut tool_layer_infos = Vec::new();
+        let mut manifest_layers: Vec<Descriptor> = base_layers.clone();
+        let mut all_diff_ids: Vec<String> = base_diff_ids.clone();
+
+        if let Some(m) = &mise_layer {
+            layout.write_blob_with_digest(&m.digest, &m.bytes)?;
+            manifest_layers.push(Descriptor {
+                media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
+                size: m.size,
+                digest: m.digest.clone(),
+                annotations: Default::default(),
+                platform: None,
+            });
+            all_diff_ids.push(m.diff_id.clone());
+        }
+
+        for (short, version, blob) in &tool_layers {
+            layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
+            let mut annotations = IndexMap::new();
+            annotations.insert("dev.mise.tool.short".to_string(), short.clone());
+            annotations.insert("dev.mise.tool.version".to_string(), version.clone());
+            manifest_layers.push(Descriptor {
+                media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
+                size: blob.size,
+                digest: blob.digest.clone(),
+                annotations,
+                platform: None,
+            });
+            all_diff_ids.push(blob.diff_id.clone());
+            tool_layer_infos.push(ToolLayerInfo {
+                short: short.clone(),
+                version: version.clone(),
+                digest: blob.digest.clone(),
+                size: blob.size,
+            });
+        }
+
+        {
+            layout.write_blob_with_digest(&config_layer.digest, &config_layer.bytes)?;
+            manifest_layers.push(Descriptor {
+                media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
+                size: config_layer.size,
+                digest: config_layer.digest.clone(),
+                annotations: Default::default(),
+                platform: None,
+            });
+            all_diff_ids.push(config_layer.diff_id.clone());
+        }
+
+        // --- 6. Image config ---
+        let image_config = self
+            .build_image_config(
+                &versions,
+                &mount_point,
+                base_config_json.as_ref(),
+                all_diff_ids.clone(),
+                &platform,
+            )
+            .await;
+
+        let config_bytes = serde_json::to_vec(&image_config)?;
+        let (config_digest, config_size) = layout.write_blob(&config_bytes)?;
+
+        let config_descriptor = Descriptor {
+            media_type: manifest::MEDIA_TYPE_OCI_CONFIG.to_string(),
+            size: config_size,
+            digest: config_digest.clone(),
+            annotations: Default::default(),
+            platform: None,
+        };
+
+        // --- 7. Manifest ---
+        let image_manifest = ImageManifest {
+            schema_version: 2,
+            media_type: manifest::MEDIA_TYPE_OCI_MANIFEST.to_string(),
+            config: config_descriptor,
+            layers: manifest_layers,
+            annotations: Default::default(),
+        };
+        let (manifest_digest, manifest_size) = layout.write_manifest(&image_manifest)?;
+
+        // --- 8. index.json ---
+        let tag = self.opts.tag.clone().or_else(|| self.oci.tag.clone());
+        layout.write_index(&manifest_digest, manifest_size, platform, tag.as_deref())?;
+
+        Ok(BuildOutput {
+            out_dir: self.opts.out_dir.clone(),
+            manifest_digest,
+            tool_layers: tool_layer_infos,
+        })
+    }
+
+    async fn build_image_config(
+        &self,
+        versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
+        mount_point: &str,
+        base_config_json: Option<&serde_json::Value>,
+        diff_ids: Vec<String>,
+        platform: &Option<Platform>,
+    ) -> ImageConfig {
+        use crate::oci::manifest::Config as ImgConfig;
+
+        // Inherit from base config where possible.
+        let mut env_pairs: IndexMap<String, String> = IndexMap::new();
+        let mut cmd: Option<Vec<String>> = None;
+        let mut entrypoint: Option<Vec<String>> = None;
+        let mut working_dir: Option<String> = None;
+        let mut user: Option<String> = None;
+
+        if let Some(base) = base_config_json {
+            if let Some(bc) = base.get("config") {
+                if let Some(env) = bc.get("Env").and_then(|e| e.as_array()) {
+                    for e in env {
+                        if let Some(s) = e.as_str() {
+                            if let Some((k, v)) = s.split_once('=') {
+                                env_pairs.insert(k.to_string(), v.to_string());
+                            }
+                        }
+                    }
+                }
+                if let Some(c) = bc.get("Cmd").and_then(|c| c.as_array()) {
+                    cmd = Some(
+                        c.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect(),
+                    );
+                }
+                if let Some(e) = bc.get("Entrypoint").and_then(|e| e.as_array()) {
+                    entrypoint = Some(
+                        e.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect(),
+                    );
+                }
+                if let Some(wd) = bc.get("WorkingDir").and_then(|w| w.as_str()) {
+                    if !wd.is_empty() {
+                        working_dir = Some(wd.to_string());
+                    }
+                }
+                if let Some(u) = bc.get("User").and_then(|u| u.as_str()) {
+                    if !u.is_empty() {
+                        user = Some(u.to_string());
+                    }
+                }
+            }
+        }
+
+        // Mise data/config dirs.
+        env_pairs.insert("MISE_DATA_DIR".to_string(), mount_point.to_string());
+        env_pairs.insert("MISE_CONFIG_DIR".to_string(), "/etc/mise".to_string());
+
+        // User env from mise.toml (best-effort: use the already-merged config.env).
+        // NOTE: we don't re-resolve templates here — they were resolved at load time.
+        if let Ok(env) = self.cfg.env().await {
+            for (k, v) in env {
+                env_pairs.insert(k, v);
+            }
+        }
+
+        // Extra env from [oci].env section.
+        for (k, v) in &self.oci.env {
+            env_pairs.insert(k.clone(), v.clone());
+        }
+
+        // PATH: prepend each tool's bin paths, then /usr/local/bin/mise, then inherited PATH.
+        let mut path_entries: Vec<String> = Vec::new();
+        for (_, tv) in versions {
+            // Synthesize an in-image bin path: `<mount_point>/installs/<plugin>/<version>/bin`.
+            // This assumes the default layout (matches `list_bin_paths`'s default).
+            path_entries.push(format!(
+                "{}/installs/{}/{}/bin",
+                mount_point,
+                tv.ba().short.replace([':', '/'], "-"),
+                tv.version
+            ));
+        }
+        let inherited_path = env_pairs.get("PATH").cloned().unwrap_or_else(|| {
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string()
+        });
+        let final_path = if path_entries.is_empty() {
+            inherited_path
+        } else {
+            format!("{}:{}", path_entries.join(":"), inherited_path)
+        };
+        env_pairs.insert("PATH".to_string(), final_path);
+
+        // Apply CLI-level overrides from [oci].
+        if let Some(wd) = &self.oci.workdir {
+            working_dir = Some(wd.clone());
+        }
+        if let Some(ep) = &self.oci.entrypoint {
+            entrypoint = Some(ep.clone());
+        }
+        if let Some(c) = &self.oci.cmd {
+            cmd = Some(c.clone());
+        }
+        if let Some(u) = &self.oci.user {
+            user = Some(u.clone());
+        }
+        if working_dir.is_none() {
+            working_dir = Some("/workspace".to_string());
+        }
+
+        // Labels.
+        let mut labels: IndexMap<String, String> = IndexMap::new();
+        labels.insert(
+            "org.opencontainers.image.created".to_string(),
+            rfc3339_now(),
+        );
+        labels.insert(
+            "org.opencontainers.image.source".to_string(),
+            "mise oci build".to_string(),
+        );
+        labels.insert(
+            "dev.mise.version".to_string(),
+            crate::cli::version::VERSION_PLAIN.to_string(),
+        );
+        for (_, tv) in versions {
+            labels.insert(
+                format!("dev.mise.tools.{}", sanitize_label(&tv.ba().short)),
+                tv.version.clone(),
+            );
+        }
+        for (k, v) in &self.oci.labels {
+            labels.insert(k.clone(), v.clone());
+        }
+
+        let config = ImgConfig {
+            env: env_pairs.iter().map(|(k, v)| format!("{k}={v}")).collect(),
+            cmd,
+            entrypoint,
+            working_dir,
+            user,
+            labels,
+            exposed_ports: Default::default(),
+            volumes: Default::default(),
+            stop_signal: None,
+        };
+
+        let (arch, os) = if let Some(p) = platform {
+            (p.architecture.clone(), p.os.clone())
+        } else {
+            (
+                normalize_arch(std::env::consts::ARCH).to_string(),
+                normalize_os(std::env::consts::OS).to_string(),
+            )
+        };
+
+        ImageConfig {
+            created: Some(rfc3339_now()),
+            author: Some("mise".to_string()),
+            architecture: arch,
+            os,
+            variant: None,
+            config: Some(config),
+            rootfs: RootFs {
+                type_: "layers".to_string(),
+                diff_ids,
+            },
+            history: vec![],
+        }
+    }
+}
+
+fn reject_unsupported_backends(
+    versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
+) -> Result<()> {
+    let bad: Vec<String> = versions
+        .iter()
+        .filter_map(|(_, tv)| {
+            let bt = BackendType::guess(&tv.ba().short.split(':').next().unwrap_or(""));
+            if matches!(bt, BackendType::Asdf | BackendType::Vfox) {
+                Some(tv.ba().short.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    if !bad.is_empty() {
+        bail!(
+            "mise oci build does not support asdf/vfox plugins in v1 (their install scripts can \
+             write outside the per-version directory, breaking the one-layer-per-tool invariant). \
+             Affected tools: {}",
+            bad.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn tool_prefix(mount_point: &str, tv: &ToolVersion) -> String {
+    // Mirror `BackendArg::installs_path` / `tv_pathname()` layout so that
+    // mise inside the image finds the tool at the expected path.
+    let plugin_dir = tv.ba().short.replace([':', '/'], "-");
+    let version_dir = tv.version.replace([':', '/'], "-");
+    format!("{mount_point}/installs/{plugin_dir}/{version_dir}")
+        .trim_start_matches('/')
+        .to_string()
+}
+
+fn synthesize_embedded_config_toml(
+    versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
+    _mount_point: &str,
+) -> String {
+    let mut s = String::from("# Auto-generated by `mise oci build`. Do not edit.\n[tools]\n");
+    for (_, tv) in versions {
+        let short = &tv.ba().short;
+        let ver = &tv.version;
+        // Quote values to be safe against special chars.
+        s.push_str(&format!("\"{short}\" = \"{ver}\"\n"));
+    }
+    s
+}
+
+fn rfc3339_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    // Honor SOURCE_DATE_EPOCH for reproducible builds.
+    let secs = if let Ok(s) = std::env::var("SOURCE_DATE_EPOCH") {
+        s.parse::<u64>().unwrap_or(0)
+    } else {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    };
+    format_rfc3339_utc(secs)
+}
+
+fn format_rfc3339_utc(secs: u64) -> String {
+    // Minimal, dependency-free RFC3339 formatter. Good enough for image
+    // labels. Uses civil calendar math per POSIX.
+    let days = (secs / 86_400) as i64;
+    let time_of_day = secs % 86_400;
+    let h = time_of_day / 3600;
+    let m = (time_of_day / 60) % 60;
+    let s = time_of_day % 60;
+    let (y, mo, d) = days_to_ymd(days);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+fn days_to_ymd(days: i64) -> (i64, u32, u32) {
+    // Days since 1970-01-01 → (year, month, day). Civil-from-days algorithm
+    // (Howard Hinnant, date.h).
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as i64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+fn sanitize_label(s: &str) -> String {
+    s.replace([':', '/'], ".")
+}
+
+fn normalize_arch(a: &str) -> &str {
+    match a {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        other => other,
+    }
+}
+
+fn normalize_os(o: &str) -> &str {
+    match o {
+        "macos" => "linux",
+        other => other,
+    }
+}

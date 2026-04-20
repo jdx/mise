@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Tests `mise oci build` — per-tool layers, reproducibility, delta behavior.
+# Runs against a scratch base (no network) so it stays fast and offline.
+
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+EOF
+
+mise install >/dev/null 2>&1
+assert "mise current jq" "1.8.1"
+
+export SOURCE_DATE_EPOCH=1700000000
+
+# --- 1. Build to ./out-a ---
+assert_succeed "mise oci build -o ./out-a --from scratch"
+assert "test -f ./out-a/oci-layout && echo yes" "yes"
+assert "test -f ./out-a/index.json && echo yes" "yes"
+assert "ls ./out-a/blobs/sha256/ | wc -l | tr -d ' '" "5"
+
+# index.json points at a manifest of the correct media type
+assert_contains "cat ./out-a/index.json" '"application/vnd.oci.image.manifest.v1+json"'
+
+# --- 2. Reproducibility: build again, tool layer digest must match ---
+assert_succeed "mise oci build -o ./out-b --from scratch"
+layer_a="$(jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest' "./out-a/blobs/sha256/$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-a/index.json)")"
+layer_b="$(jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest' "./out-b/blobs/sha256/$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-b/index.json)")"
+assert "echo $layer_a" "$layer_b"
+
+# With SOURCE_DATE_EPOCH pinned the *entire* manifest should be identical too.
+mf_a="$(jq -r '.manifests[0].digest' ./out-a/index.json)"
+mf_b="$(jq -r '.manifests[0].digest' ./out-b/index.json)"
+assert "echo $mf_a" "$mf_b"
+
+# --- 3. Image config has expected PATH + labels ---
+config_digest="$(jq -r '.config.digest | ltrimstr("sha256:")' "./out-a/blobs/sha256/$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-a/index.json)")"
+assert_contains "jq -r '.config.Env | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "MISE_DATA_DIR=/mise"
+assert_contains "jq -r '.config.Env | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "/mise/installs/jq/1.8.1/bin"
+assert_contains "jq -r '.config.Labels | to_entries | map(.key) | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "dev.mise.tools.jq"
+
+# --- 4. Delta: bump version, only the tool layer digest changes ---
+cat >mise.toml <<EOF
+[tools]
+jq = "1.7.1"
+EOF
+mise install >/dev/null 2>&1
+assert_succeed "mise oci build -o ./out-c --from scratch"
+layer_c="$(jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest' "./out-c/blobs/sha256/$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-c/index.json)")"
+# different version → different tool layer digest
+assert_not "test \"$layer_a\" = \"$layer_c\" && echo same" "same"
+
+# --- 5. asdf/vfox backends are rejected ---
+cat >mise.toml <<EOF
+[tools]
+"asdf:some-plugin" = "1.0.0"
+EOF
+assert_fail "mise oci build --from scratch -o ./out-bad" "does not support asdf/vfox"

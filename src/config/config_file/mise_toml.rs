@@ -27,6 +27,7 @@ use crate::deps::DepsConfig;
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, HookDef, Hooks};
+use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::{Task, TaskTemplate};
@@ -116,6 +117,8 @@ pub struct MiseToml {
     watch_files: Vec<WatchFile>,
     #[serde(default)]
     deps: Option<DepsConfig>,
+    #[serde(default)]
+    oci: Option<OciConfig>,
     #[serde(default)]
     vars: EnvList,
     #[serde(default)]
@@ -938,6 +941,10 @@ impl ConfigFile for MiseToml {
     fn deps_config(&self) -> Option<DepsConfig> {
         self.deps.clone()
     }
+
+    fn oci_config(&self) -> Option<OciConfig> {
+        self.oci.clone()
+    }
 }
 
 /// Returns a [`toml_edit::Key`] from the given `key`.
@@ -1012,6 +1019,7 @@ impl Clone for MiseToml {
             settings: self.settings.clone(),
             watch_files: self.watch_files.clone(),
             deps: self.deps.clone(),
+            oci: self.oci.clone(),
             vars: self.vars.clone(),
             experimental_monorepo_root: self.experimental_monorepo_root,
             monorepo: self.monorepo.clone(),

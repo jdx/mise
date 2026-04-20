@@ -1189,6 +1189,22 @@
             }
           }
         },
+        "oci": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default_from": {
+              "default": "debian:bookworm-slim",
+              "description": "Default base image for `mise oci build` when [oci].from is not set.",
+              "type": "string"
+            },
+            "default_mount_point": {
+              "default": "/mise",
+              "description": "Path inside OCI images where mise tools are installed.",
+              "type": "string"
+            }
+          }
+        },
         "offline": {
           "description": "Disable all HTTP requests. Tools will only use locally cached data.",
           "type": "boolean"
@@ -3303,6 +3319,61 @@
         "$ref": "#/$defs/deps_provider"
       },
       "description": "configure deps providers"
+    },
+    "oci": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "configuration for `mise oci build`",
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Base image reference (overrides the oci.default_from setting)"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Default tag applied to the built image"
+        },
+        "workdir": {
+          "type": "string",
+          "description": "Working directory baked into the image config"
+        },
+        "entrypoint": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Entrypoint baked into the image config"
+        },
+        "cmd": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Cmd baked into the image config"
+        },
+        "user": {
+          "type": "string",
+          "description": "User baked into the image config"
+        },
+        "mount_point": {
+          "type": "string",
+          "description": "Override where mise installs go in the image (default /mise)"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Extra env vars baked into the image config"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels baked into the image config"
+        }
+      }
     },
     "settings": {
       "$ref": "#/$defs/settings",

@@ -1775,6 +1775,59 @@ const completionSpec: Fig.Spec = {
       description: "[experimental] Run Model Context Protocol (MCP) server",
     },
     {
+      name: "oci",
+      description: "Build OCI container images from a mise.toml",
+      subcommands: [
+        {
+          name: "build",
+          description: "Build an OCI image from the current mise.toml",
+          options: [
+            {
+              name: ["-o", "--output"],
+              description: "Output directory for the OCI image layout",
+              isRepeatable: false,
+              args: {
+                name: "output",
+              },
+            },
+            {
+              name: "--from",
+              description:
+                "Base image reference (overrides [oci].from and the oci.default_from setting)",
+              isRepeatable: false,
+              args: {
+                name: "from",
+              },
+            },
+            {
+              name: ["-t", "--tag"],
+              description:
+                "Tag to record in the image index (the org.opencontainers.image.ref.name annotation)",
+              isRepeatable: false,
+              args: {
+                name: "tag",
+              },
+            },
+            {
+              name: "--mount-point",
+              description:
+                "Where to place tool installs inside the image (default: /mise)",
+              isRepeatable: false,
+              args: {
+                name: "mount_point",
+              },
+            },
+            {
+              name: "--no-mise",
+              description:
+                "Do not embed the currently-running mise binary at /usr/local/bin/mise",
+              isRepeatable: false,
+            },
+          ],
+        },
+      ],
+    },
+    {
       name: "outdated",
       description: "Shows outdated tool versions",
       options: [

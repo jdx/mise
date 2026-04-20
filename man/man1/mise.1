@@ -286,6 +286,12 @@ List runtime versions available for install.
 \fBmcp\fR
 [experimental] Run Model Context Protocol (MCP) server
 .TP
+\fBoci\fR
+Build OCI container images from a mise.toml
+.TP
+\fBoci build\fR
+Build an OCI image from the current mise.toml
+.TP
 \fBoutdated\fR
 Shows outdated tool versions
 .TP
@@ -1505,6 +1511,37 @@ Tool to get versions for
 \fB<PREFIX>\fR
 The version prefix to use when querying the latest version
 same as the first argument after the "@"
+.SH "MISE OCI BUILD"
+Build an OCI image from the current mise.toml
+
+Each tool version becomes its own content\-addressable OCI layer. Bumping a
+tool version only invalidates that tool's layer — other tools, the base
+image, and config are reused unchanged. The output directory conforms to
+the OCI image\-layout spec and can be consumed by `skopeo`, `crane`, or
+`podman load`.
+.PP
+\fBUsage:\fR mise oci build [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-o, \-\-output\fR \fI<OUTPUT>\fR
+Output directory for the OCI image layout
+.RS
+\fIDefault: \fR./mise\-oci
+.RE
+.TP
+\fB\-\-from\fR \fI<FROM>\fR
+Base image reference (overrides [oci].from and the oci.default_from setting)
+.TP
+\fB\-t, \-\-tag\fR \fI<TAG>\fR
+Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
+.TP
+\fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
+Where to place tool installs inside the image (default: /mise)
+.TP
+\fB\-\-no\-mise\fR
+Do not embed the currently\-running mise binary at /usr/local/bin/mise
 .SH "MISE OUTDATED"
 Shows outdated tool versions
 

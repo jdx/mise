@@ -123,6 +123,8 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise ls [FLAGS] [INSTALLED_TOOL]…`](/cli/ls.md)
 - [`mise ls-remote [--all] [-J --json] [TOOL@VERSION] [PREFIX]`](/cli/ls-remote.md)
 - [`mise mcp`](/cli/mcp.md)
+- [`mise oci <SUBCOMMAND>`](/cli/oci.md)
+- [`mise oci build [FLAGS]`](/cli/oci/build.md)
 - [`mise outdated [FLAGS] [TOOL@VERSION]…`](/cli/outdated.md)
 - [`mise plugins [FLAGS] <SUBCOMMAND>`](/cli/plugins.md)
 - [`mise plugins install [FLAGS] [NEW_PLUGIN] [GIT_URL]`](/cli/plugins/install.md)

@@ -65,6 +65,7 @@ pub(crate) mod maplit;
 mod migrate;
 mod minisign;
 mod netrc;
+mod oci;
 pub(crate) mod parallel;
 mod path;
 mod path_env;
