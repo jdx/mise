@@ -25,12 +25,6 @@ if ! command -v pnpm >/dev/null 2>&1; then
 	assert_succeed "mise use pnpm@latest"
 fi
 
-# Ensure aube is available
-if ! command -v aube >/dev/null 2>&1; then
-	echo "aube not available in test environment, installing..."
-	assert_succeed "mise use aube@latest"
-fi
-
 # Test 1: Default behavior (npm) - checks npm.package_manager="npm" implicitly
 echo "Testing npm backend with default settings (npm)..."
 unset MISE_NPM_BUN
@@ -87,6 +81,13 @@ mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 # Test 4: npm.package_manager = "aube"
 echo "Testing npm.package_manager=aube..."
 export MISE_NPM_PACKAGE_MANAGER=aube
+
+# Ensure aube is available after the default package manager test, since
+# npm.package_manager=auto uses aube when it is already installed.
+if ! command -v aube >/dev/null 2>&1; then
+	echo "aube not available in test environment, installing..."
+	assert_succeed "mise use aube@latest"
+fi
 
 cat >.mise.toml <<EOF
 [tools]
