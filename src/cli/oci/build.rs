@@ -44,7 +44,7 @@ impl Build {
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
 
-        let oci = first_oci_config(&config).unwrap_or_default();
+        let oci = merged_oci_config(&config);
 
         let opts = BuildOptions {
             out_dir: self.output.clone(),
@@ -73,8 +73,18 @@ impl Build {
     }
 }
 
-fn first_oci_config(config: &crate::config::Config) -> Option<OciConfig> {
-    config.config_files.values().find_map(|cf| cf.oci_config())
+/// Merge `[oci]` sections across all loaded config files, with more specific
+/// (closer to the current directory) configs overriding less specific ones.
+///
+/// `config_files` iterates most-specific-first, so we `.rev()` to start from
+/// the least-specific and let each subsequent overlay win.
+fn merged_oci_config(config: &crate::config::Config) -> OciConfig {
+    config
+        .config_files
+        .values()
+        .rev()
+        .filter_map(|cf| cf.oci_config())
+        .fold(OciConfig::default(), |acc, cur| acc.overlay(cur))
 }
 
 fn short_digest(d: &str) -> String {

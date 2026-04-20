@@ -51,3 +51,43 @@ pub struct OciConfig {
     #[serde(default)]
     pub labels: IndexMap<String, String>,
 }
+
+impl OciConfig {
+    /// Overlay `other` onto `self`, field-by-field. Scalar fields in `other`
+    /// replace ones in `self` if set; map fields are merged with `other`'s
+    /// keys taking precedence.
+    ///
+    /// This lets users split the `[oci]` section across layered config files
+    /// (e.g. a global mise.toml sets `from`, a project mise.toml sets `tag`)
+    /// and get the union rather than one arbitrary winner.
+    pub fn overlay(mut self, other: Self) -> Self {
+        if other.from.is_some() {
+            self.from = other.from;
+        }
+        if other.tag.is_some() {
+            self.tag = other.tag;
+        }
+        if other.workdir.is_some() {
+            self.workdir = other.workdir;
+        }
+        if other.entrypoint.is_some() {
+            self.entrypoint = other.entrypoint;
+        }
+        if other.cmd.is_some() {
+            self.cmd = other.cmd;
+        }
+        if other.user.is_some() {
+            self.user = other.user;
+        }
+        if other.mount_point.is_some() {
+            self.mount_point = other.mount_point;
+        }
+        for (k, v) in other.env {
+            self.env.insert(k, v);
+        }
+        for (k, v) in other.labels {
+            self.labels.insert(k, v);
+        }
+        self
+    }
+}

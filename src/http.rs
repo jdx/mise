@@ -89,6 +89,18 @@ impl Client {
         Ok(resp.bytes().await?)
     }
 
+    pub async fn get_bytes_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        extra_headers: &HeaderMap,
+    ) -> Result<impl AsRef<[u8]>> {
+        let url = url.into_url().unwrap();
+        let mut headers = host_auth_headers(&url);
+        headers.extend(extra_headers.clone());
+        let resp = self.get_async_with_headers(url, &headers).await?;
+        Ok(resp.bytes().await?)
+    }
+
     pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let url = url.into_url().unwrap();
         let headers = host_auth_headers(&url);

@@ -344,17 +344,36 @@ impl Builder {
             env_pairs.insert(k.clone(), v.clone());
         }
 
-        // PATH: prepend each tool's bin paths, then /usr/local/bin/mise, then inherited PATH.
+        // PATH: prepend each tool's real bin paths (from `list_bin_paths`),
+        // rebased from the host install path to the in-image location. This
+        // handles backends that expose paths other than `<install>/bin`
+        // (e.g. sbin, libexec, or the install root itself). Falls back to
+        // `<install>/bin` if a backend returns nothing or paths outside its
+        // install dir.
         let mut path_entries: Vec<String> = Vec::new();
-        for (_, tv) in versions {
-            // Synthesize an in-image bin path: `<mount_point>/installs/<plugin>/<version>/bin`.
-            // This assumes the default layout (matches `list_bin_paths`'s default).
-            path_entries.push(format!(
-                "{}/installs/{}/{}/bin",
-                mount_point,
-                tv.ba().short.replace([':', '/'], "-"),
-                tv.version
-            ));
+        for (backend, tv) in versions {
+            let install_path = tv.install_path();
+            let in_image_tool_root = format!("/{}", tool_prefix(mount_point, tv));
+            let bin_paths = backend
+                .list_bin_paths(&self.cfg, tv)
+                .await
+                .unwrap_or_default();
+            let mut had_one = false;
+            for p in bin_paths {
+                if let Ok(rel) = p.strip_prefix(&install_path) {
+                    let rel = rel.to_string_lossy();
+                    let entry = if rel.is_empty() {
+                        in_image_tool_root.clone()
+                    } else {
+                        format!("{in_image_tool_root}/{rel}")
+                    };
+                    path_entries.push(entry);
+                    had_one = true;
+                }
+            }
+            if !had_one {
+                path_entries.push(format!("{in_image_tool_root}/bin"));
+            }
         }
         let inherited_path = env_pairs.get("PATH").cloned().unwrap_or_else(|| {
             "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string()
@@ -383,11 +402,15 @@ impl Builder {
             working_dir = Some("/workspace".to_string());
         }
 
+        // Capture the build timestamp once so the label and the image config
+        // `created` field can never disagree.
+        let created = rfc3339_now();
+
         // Labels.
         let mut labels: IndexMap<String, String> = IndexMap::new();
         labels.insert(
             "org.opencontainers.image.created".to_string(),
-            rfc3339_now(),
+            created.clone(),
         );
         labels.insert(
             "org.opencontainers.image.source".to_string(),
@@ -429,7 +452,7 @@ impl Builder {
         };
 
         ImageConfig {
-            created: Some(rfc3339_now()),
+            created: Some(created),
             author: Some("mise".to_string()),
             architecture: arch,
             os,

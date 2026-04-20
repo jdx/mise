@@ -51,9 +51,19 @@ impl ImageLayout {
         Ok((digest, bytes.len() as u64))
     }
 
-    /// Copy a blob into the layout by its known digest (no rehashing).
-    /// Used when streaming layers from a source registry.
+    /// Copy a blob into the layout by its known digest.
+    ///
+    /// We verify `sha256(bytes) == digest` before writing so that a corrupted
+    /// or tampered registry response surfaces here — with a clear "got X,
+    /// wanted Y" message — instead of much later as a confusing digest
+    /// mismatch from `skopeo inspect` or `podman load`.
     pub fn write_blob_with_digest(&self, digest: &str, bytes: &[u8]) -> Result<()> {
+        let mut h = Sha256::new();
+        h.update(bytes);
+        let actual = format!("sha256:{}", crate::oci::layer::hex_encode(&h.finalize()));
+        if actual != digest {
+            eyre::bail!("blob digest mismatch: got {actual}, expected {digest}");
+        }
         let path = self.blob_path(digest);
         if !path.exists() {
             file::write(&path, bytes)?;

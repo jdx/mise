@@ -35,7 +35,9 @@ assert "echo $mf_a" "$mf_b"
 # --- 3. Image config has expected PATH + labels ---
 config_digest="$(jq -r '.config.digest | ltrimstr("sha256:")' "./out-a/blobs/sha256/$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-a/index.json)")"
 assert_contains "jq -r '.config.Env | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "MISE_DATA_DIR=/mise"
-assert_contains "jq -r '.config.Env | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "/mise/installs/jq/1.8.1/bin"
+# PATH should contain the in-image install path of jq. Exact tail (/bin, /,
+# install root) depends on the backend's list_bin_paths.
+assert_contains "jq -r '.config.Env | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "/mise/installs/jq/1.8.1"
 assert_contains "jq -r '.config.Labels | to_entries | map(.key) | join(\"\n\")' ./out-a/blobs/sha256/$config_digest" "dev.mise.tools.jq"
 
 # --- 4. Delta: bump version, only the tool layer digest changes ---

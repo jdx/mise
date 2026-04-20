@@ -4,7 +4,7 @@
 //! auth (no login flow). Used by `mise oci build --from <ref>` to stream a
 //! base image's layers into the output layout byte-for-byte so digests match.
 
-use eyre::{Context, Result, bail};
+use eyre::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 
@@ -139,20 +139,8 @@ async fn get_bytes_with_token(url: &str, token: Option<&str>, accept: &[&str]) -
     if !accept.is_empty() {
         headers.insert("Accept", HeaderValue::from_str(&accept.join(", "))?);
     }
-    // Build a request and add headers manually since HTTP::get_bytes doesn't
-    // currently expose a headers variant.
-    let client = reqwest::Client::new();
-    let mut req = client.get(url);
-    for (k, v) in headers.iter() {
-        req = req.header(k, v);
-    }
-    let resp = req.send().await?;
-    let status = resp.status();
-    if !status.is_success() {
-        bail!("HTTP {} fetching {url}", status.as_u16());
-    }
-    let bytes = resp.bytes().await?;
-    Ok(bytes.to_vec())
+    let bytes = HTTP.get_bytes_with_headers(url, &headers).await?;
+    Ok(bytes.as_ref().to_vec())
 }
 
 /// The result of pulling a base image — the config blob and an ordered list
@@ -239,20 +227,20 @@ pub async fn pull_base_image(
     })
 }
 
+/// Fetch an anonymous bearer token for registries that require one. We skip
+/// the HEAD probe because the shared HTTP client errors on 401 (hiding the
+/// www-authenticate header); instead we just check the host and use the
+/// known-good anonymous realm. Private images and registries beyond this set
+/// are explicit follow-ups (see `--from` docs).
 async fn fetch_token_if_needed(manifest_url: &str, repository: &str) -> Result<Option<String>> {
-    // HEAD the manifest endpoint to discover if auth is required.
-    let client = reqwest::Client::new();
-    let resp = client.head(manifest_url).send().await?;
-    if resp.status().is_success() {
+    let realm = if manifest_url.contains("registry-1.docker.io") {
+        "Bearer realm=\"https://auth.docker.io/token\",service=\"registry.docker.io\""
+    } else if manifest_url.contains("ghcr.io") {
+        "Bearer realm=\"https://ghcr.io/token\",service=\"ghcr.io\""
+    } else {
         return Ok(None);
-    }
-    if resp.status() == reqwest::StatusCode::UNAUTHORIZED
-        && let Some(www_auth) = resp.headers().get("www-authenticate")
-    {
-        let www_auth = www_auth.to_str().unwrap_or("").to_string();
-        return fetch_anonymous_token(&www_auth, repository).await;
-    }
-    Ok(None)
+    };
+    fetch_anonymous_token(realm, repository).await
 }
 
 /// Given a manifest body (possibly an index with multiple architectures),
