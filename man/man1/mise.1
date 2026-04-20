@@ -1430,6 +1430,13 @@ Comma\-separated list of platforms to target
 e.g.: linux\-x64,macos\-arm64,windows\-x64
 If not specified, all platforms already in lockfile will be updated
 .TP
+\fB\-\-before\fR \fI<BEFORE>\fR
+Only lock versions released before this date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
+This only affects fuzzy version matches like "20" or "latest".
+Explicitly pinned versions like "22.5.0" are not filtered.
+.TP
 \fB\-\-local\fR
 Update mise.local.lock instead of mise.lock
 Use for tools defined in .local.toml configs
@@ -1528,6 +1535,11 @@ Requires \-\-json and \-\-no\-versions\-host.
 
 This prevents metadata consumers from accepting empty fallback results
 when a backend's metadata\-producing upstream request fails.
+.TP
+\fB\-\-before\fR \fI<BEFORE>\fR
+Only show versions released before this date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 \fBArguments:\fR
 .PP
 .TP

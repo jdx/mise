@@ -1636,6 +1636,14 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--before",
+          description: "Only lock versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
+          },
+        },
+        {
           name: "--local",
           description:
             "Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs",
@@ -1764,6 +1772,14 @@ const completionSpec: Fig.Spec = {
           name: "--strict-metadata",
           description: "Fail if release metadata fetches fail",
           isRepeatable: false,
+        },
+        {
+          name: "--before",
+          description: "Only show versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
+          },
         },
       ],
       args: [

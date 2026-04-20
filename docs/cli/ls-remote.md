@@ -49,6 +49,12 @@ Requires --json and --no-versions-host.
 This prevents metadata consumers from accepting empty fallback results
 when a backend's metadata-producing upstream request fails.
 
+### `--before <BEFORE>`
+
+Only show versions released before this date
+
+Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+
 Examples:
 
 ```
@@ -63,6 +69,9 @@ $ mise ls-remote node@20
 $ mise ls-remote node 20
 20.0.0
 20.1.0
+
+$ mise ls-remote node --before 2024-01-01
+20.0.0
 
 $ mise ls-remote github:cli/cli --json
 [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
