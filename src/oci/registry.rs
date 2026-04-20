@@ -28,10 +28,22 @@ impl Reference {
     ///   `debian:bookworm-slim` → docker.io/library/debian:bookworm-slim
     ///   `ghcr.io/foo/bar:tag` → ghcr.io/foo/bar:tag
     ///   `docker.io/library/node:20` → docker.io/library/node:20
+    ///   `ubuntu@sha256:…` → docker.io/library/ubuntu at that digest
+    ///
+    /// Digest references (`name@sha256:…`) are handled before tag parsing so
+    /// the `:` inside the digest isn't mistaken for a tag separator.
     pub fn parse(s: &str) -> Result<Self> {
-        let (name, tag) = match s.rsplit_once(':') {
-            Some((n, t)) if !t.contains('/') => (n, t),
-            _ => (s, "latest"),
+        // Split off `@sha256:...` (or any `@digest`) first — in the registry
+        // v2 URL scheme the full `sha256:hex` string takes the place of the
+        // tag for GET /v2/<name>/manifests/<reference>.
+        let (name, tag) = if let Some((n, digest)) = s.split_once('@') {
+            (n, digest.to_string())
+        } else {
+            let (n, t) = match s.rsplit_once(':') {
+                Some((n, t)) if !t.contains('/') => (n, t.to_string()),
+                _ => (s, "latest".to_string()),
+            };
+            (n, t)
         };
 
         // Heuristic: if the first path segment contains a '.' or ':' it's the
@@ -56,7 +68,7 @@ impl Reference {
         Ok(Self {
             registry,
             repository,
-            tag: tag.to_string(),
+            tag,
         })
     }
 
@@ -308,4 +320,50 @@ fn parse_single_manifest(body: serde_json::Value) -> Result<ImageManifest> {
     let manifest: ImageManifest = serde_json::from_value(body)
         .wrap_err("parsing OCI/Docker manifest; schema v1 manifests are not supported")?;
     Ok(manifest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_bare_name() {
+        let r = Reference::parse("debian").unwrap();
+        assert_eq!(r.registry, "docker.io");
+        assert_eq!(r.repository, "library/debian");
+        assert_eq!(r.tag, "latest");
+    }
+
+    #[test]
+    fn parses_tag() {
+        let r = Reference::parse("debian:bookworm-slim").unwrap();
+        assert_eq!(r.repository, "library/debian");
+        assert_eq!(r.tag, "bookworm-slim");
+    }
+
+    #[test]
+    fn parses_custom_registry() {
+        let r = Reference::parse("ghcr.io/jdx/mise:v1").unwrap();
+        assert_eq!(r.registry, "ghcr.io");
+        assert_eq!(r.repository, "jdx/mise");
+        assert_eq!(r.tag, "v1");
+    }
+
+    #[test]
+    fn parses_digest_reference() {
+        let digest = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let r = Reference::parse(&format!("ubuntu@{digest}")).unwrap();
+        assert_eq!(r.registry, "docker.io");
+        assert_eq!(r.repository, "library/ubuntu");
+        assert_eq!(r.tag, digest);
+    }
+
+    #[test]
+    fn parses_digest_reference_with_registry() {
+        let digest = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let r = Reference::parse(&format!("ghcr.io/foo/bar@{digest}")).unwrap();
+        assert_eq!(r.registry, "ghcr.io");
+        assert_eq!(r.repository, "foo/bar");
+        assert_eq!(r.tag, digest);
+    }
 }

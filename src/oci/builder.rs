@@ -338,22 +338,41 @@ impl Builder {
             }
         }
 
-        // Mise data/config dirs.
-        env_pairs.insert("MISE_DATA_DIR".to_string(), mount_point.to_string());
-        env_pairs.insert("MISE_CONFIG_DIR".to_string(), "/etc/mise".to_string());
-
         // User env from mise.toml (best-effort: use the already-merged config.env).
         // NOTE: we don't re-resolve templates here — they were resolved at load time.
-        if let Ok(env) = self.cfg.env().await {
+        //
+        // WARNING: values sourced from `.env` files or `_.file = "..."` can
+        // include secrets (DATABASE_URL, AWS_SECRET_ACCESS_KEY, etc.). Baking
+        // them into the image config makes them visible to anyone who does
+        // `skopeo inspect` / `docker inspect`. Surface that loudly so users
+        // aren't surprised.
+        if let Ok(env) = self.cfg.env().await
+            && !env.is_empty()
+        {
+            warn!(
+                "mise oci build: baking {} [env] var(s) into the image config. \
+                 These are visible via `docker inspect` / `skopeo inspect`; \
+                 if you have secrets in [env] or referenced .env files, move \
+                 them to runtime (e.g. `docker run -e` or secret mounts) and \
+                 use the [oci].env section for image-only vars.",
+                env.len()
+            );
             for (k, v) in env {
                 env_pairs.insert(k, v);
             }
         }
 
-        // Extra env from [oci].env section.
+        // Extra env from [oci].env section (explicit image-only vars).
         for (k, v) in &self.oci.env {
             env_pairs.insert(k.clone(), v.clone());
         }
+
+        // Mise data/config dirs — insert LAST so the user's [env] section
+        // can't accidentally shadow them (the embedded mise binary inside
+        // the container must see these in-image paths, not whatever was
+        // baked in from the host config).
+        env_pairs.insert("MISE_DATA_DIR".to_string(), mount_point.to_string());
+        env_pairs.insert("MISE_CONFIG_DIR".to_string(), "/etc/mise".to_string());
 
         // PATH: prepend each tool's real bin paths (from `list_bin_paths`),
         // rebased from the host install path to the in-image location. This
