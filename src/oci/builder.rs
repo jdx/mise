@@ -103,8 +103,8 @@ impl Builder {
         if let Some(ref_) = &from_ref {
             info!("pulling base image: {ref_}");
             let desired = Some((
-                normalize_arch(std::env::consts::ARCH),
-                normalize_os(std::env::consts::OS),
+                crate::oci::normalize_arch(std::env::consts::ARCH),
+                crate::oci::normalize_os(std::env::consts::OS),
             ));
             let pull = registry::pull_base_image(ref_, &layout, desired)
                 .await
@@ -457,8 +457,8 @@ impl Builder {
             (p.architecture.clone(), p.os.clone())
         } else {
             (
-                normalize_arch(std::env::consts::ARCH).to_string(),
-                normalize_os(std::env::consts::OS).to_string(),
+                crate::oci::normalize_arch(std::env::consts::ARCH).to_string(),
+                crate::oci::normalize_os(std::env::consts::OS).to_string(),
             )
         };
 
@@ -504,10 +504,15 @@ fn reject_unsupported_backends(
 }
 
 fn tool_prefix(mount_point: &str, tv: &ToolVersion) -> String {
-    // Mirror `BackendArg::installs_path` / `tv_pathname()` layout so that
-    // mise inside the image finds the tool at the expected path.
-    let plugin_dir = tv.ba().short.replace([':', '/'], "-");
-    let version_dir = tv.version.replace([':', '/'], "-");
+    // Use the canonical directory names that mise itself uses on the host
+    // (via `BackendArg::tool_dir_name` / `ToolVersion::tv_pathname`). A
+    // naive `short.replace([':', '/'], "-")` would diverge — the real
+    // path name goes through `to_kebab_case()` which also strips
+    // non-alphanumerics and splits camelCase boundaries. Mismatching
+    // would mean files land at a path mise can't resolve inside the
+    // container.
+    let plugin_dir = tv.ba().tool_dir_name();
+    let version_dir = tv.tv_pathname();
     format!("{mount_point}/installs/{plugin_dir}/{version_dir}")
         .trim_start_matches('/')
         .to_string()
@@ -577,19 +582,4 @@ fn days_to_ymd(days: i64) -> (i64, u32, u32) {
 
 fn sanitize_label(s: &str) -> String {
     s.replace([':', '/'], ".")
-}
-
-fn normalize_arch(a: &str) -> &str {
-    match a {
-        "x86_64" => "amd64",
-        "aarch64" => "arm64",
-        other => other,
-    }
-}
-
-fn normalize_os(o: &str) -> &str {
-    match o {
-        "macos" => "linux",
-        other => other,
-    }
 }

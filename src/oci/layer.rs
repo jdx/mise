@@ -294,17 +294,16 @@ fn finalize_layer(tar_bytes: Vec<u8>) -> Result<LayerBlob> {
         encoder.finish()?;
     }
 
-    // flate2 writes the current time into the gzip header by default. Overwrite
-    // bytes 4..8 of the gzip header with zeros to get deterministic output.
-    // (gzip header layout: [0x1f, 0x8b, CM, FLG, MTIME(4), XFL, OS])
-    if gz_bytes.len() >= 8 {
+    // flate2 writes the current time into the gzip header and host OS. To get
+    // deterministic output, zero out MTIME (bytes 4..8), XFL (byte 8), and
+    // normalize OS (byte 9) to 0xff ("unknown"). Gzip headers are always ≥10
+    // bytes (magic + CM + FLG + MTIME + XFL + OS), so a single guard covers
+    // all three writes.
+    // (gzip header layout: [0x1f, 0x8b, CM, FLG, MTIME(4), XFL, OS, ...])
+    if gz_bytes.len() >= 10 {
         gz_bytes[4..8].copy_from_slice(&[0, 0, 0, 0]);
-        // Also normalize OS byte (index 9) to 0xff ("unknown").
-        if gz_bytes.len() >= 10 {
-            gz_bytes[9] = 0xff;
-        }
-        // And XFL (index 8) — fixed compression level 6 always emits 0, but be explicit.
         gz_bytes[8] = 0;
+        gz_bytes[9] = 0xff;
     }
 
     let digest = {

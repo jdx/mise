@@ -17,6 +17,26 @@ use serde::{Deserialize, Serialize};
 
 pub use builder::{BuildOptions, Builder};
 
+/// Normalize a Rust-style arch name (`x86_64`, `aarch64`) to the OCI-spec
+/// value (`amd64`, `arm64`).
+pub fn normalize_arch(a: &str) -> &str {
+    match a {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        other => other,
+    }
+}
+
+/// Normalize a host OS name to the OCI-spec value. OCI images are
+/// linux-targeted in v1 (macOS builds still produce a linux image, since
+/// that's what runs in containers), so `macos` → `linux`.
+pub fn normalize_os(o: &str) -> &str {
+    match o {
+        "macos" => "linux",
+        other => other,
+    }
+}
+
 /// The `[oci]` section of a `mise.toml`. All fields optional.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

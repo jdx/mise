@@ -270,8 +270,8 @@ async fn resolve_manifest(
             .cloned()
             .unwrap_or_default();
         let (arch, os) = desired_platform.unwrap_or((std::env::consts::ARCH, std::env::consts::OS));
-        let arch = normalize_arch(arch);
-        let os = normalize_os(os);
+        let arch = crate::oci::normalize_arch(arch);
+        let os = crate::oci::normalize_os(os);
         let picked = manifests.iter().find(|m| {
             let a = m
                 .get("platform")
@@ -308,19 +308,4 @@ fn parse_single_manifest(body: serde_json::Value) -> Result<ImageManifest> {
     let manifest: ImageManifest = serde_json::from_value(body)
         .wrap_err("parsing OCI/Docker manifest; schema v1 manifests are not supported")?;
     Ok(manifest)
-}
-
-fn normalize_arch(a: &str) -> &str {
-    match a {
-        "x86_64" => "amd64",
-        "aarch64" => "arm64",
-        other => other,
-    }
-}
-
-fn normalize_os(o: &str) -> &str {
-    match o {
-        "macos" => "linux", // container images are linux; macOS builds still want linux base
-        other => other,
-    }
 }
