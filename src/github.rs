@@ -368,18 +368,13 @@ impl fmt::Display for TokenSource {
     }
 }
 
-/// Normalize a URL hostname to the canonical host used for token lookups.
-/// Maps "api.github.com" and supported "*.githubusercontent.com" hosts to "github.com".
-fn canonical_host(host: Option<&str>) -> Option<&str> {
+/// Map API hostnames to the hostnames where GitHub tokens are commonly stored.
+fn canonical_token_host(host: &str) -> &str {
     match host {
-        Some("api.github.com") => Some("github.com"),
-        Some(h) if is_githubusercontent_auth_host(h) => Some("github.com"),
+        "api.github.com" => "github.com",
+        h if is_ghe_com_api_host(h) => h.strip_prefix("api.").unwrap_or(h),
         other => other,
     }
-}
-
-pub fn is_githubusercontent_auth_host(host: &str) -> bool {
-    host.ends_with(".githubusercontent.com") && !is_github_release_asset_host(host)
 }
 
 fn is_github_release_asset_host(host: &str) -> bool {
@@ -389,6 +384,45 @@ fn is_github_release_asset_host(host: &str) -> bool {
             | "objects-origin.githubusercontent.com"
             | "release-assets.githubusercontent.com"
     )
+}
+
+fn is_ghe_com_api_host(host: &str) -> bool {
+    host.starts_with("api.") && host.ends_with(".ghe.com")
+}
+
+fn is_ghes_api_path(path: &str) -> bool {
+    path == API_PATH
+        || path
+            .strip_prefix(API_PATH)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+fn token_lookup_hosts(host: &str) -> Vec<&str> {
+    let canonical = canonical_token_host(host);
+    if canonical == host {
+        vec![host]
+    } else {
+        vec![canonical, host]
+    }
+}
+
+/// Returns true for GitHub REST API URLs.
+///
+/// Auth and API-version headers must be scoped to these URLs only. Browser URLs
+/// such as github.com release downloads and content/CDN URLs under
+/// githubusercontent.com are not REST API URLs and can reject or mishandle those
+/// headers.
+pub fn is_github_api_url(url: &url::Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+
+    host == "api.github.com"
+        || is_ghe_com_api_host(host)
+        || (host != "github.com"
+            && !host.ends_with(".githubusercontent.com")
+            && !host.ends_with(".ghe.com")
+            && is_ghes_api_path(url.path()))
 }
 
 /// Resolve the GitHub token for the given hostname, returning the token and its source.
@@ -407,13 +441,8 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         return None;
     }
 
-    let is_ghcom =
-        host == "github.com" || host == "api.github.com" || is_githubusercontent_auth_host(host);
-    let lookup_host = if host == "api.github.com" || is_githubusercontent_auth_host(host) {
-        "github.com"
-    } else {
-        host
-    };
+    let is_ghcom = host == "github.com" || host == "api.github.com";
+    let lookup_hosts = token_lookup_hosts(host);
 
     // 1. Enterprise token (non-github.com only)
     if !is_ghcom && let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_deref() {
@@ -436,30 +465,39 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
 
     // 3. credential_command
     let credential_command = &settings.github.credential_command;
-    if !credential_command.is_empty()
-        && let Some(token) =
-            tokens::get_credential_command_token("github", credential_command, lookup_host)
-    {
-        return Some((token, TokenSource::CredentialCommand));
+    if !credential_command.is_empty() {
+        for lookup_host in &lookup_hosts {
+            if let Some(token) =
+                tokens::get_credential_command_token("github", credential_command, lookup_host)
+            {
+                return Some((token, TokenSource::CredentialCommand));
+            }
+        }
     }
 
     // 4. github_tokens.toml
-    if let Some(token) = MISE_GITHUB_TOKENS.get(lookup_host) {
-        return Some((token.clone(), TokenSource::TokensFile));
+    for lookup_host in &lookup_hosts {
+        if let Some(token) = MISE_GITHUB_TOKENS.get(*lookup_host) {
+            return Some((token.clone(), TokenSource::TokensFile));
+        }
     }
 
     // 5. gh CLI hosts.yml
-    if settings.github.gh_cli_tokens
-        && let Some(token) = GH_HOSTS.get(lookup_host)
-    {
-        return Some((token.clone(), TokenSource::GhCli));
+    if settings.github.gh_cli_tokens {
+        for lookup_host in &lookup_hosts {
+            if let Some(token) = GH_HOSTS.get(*lookup_host) {
+                return Some((token.clone(), TokenSource::GhCli));
+            }
+        }
     }
 
     // 6. git credential fill
-    if settings.github.use_git_credentials
-        && let Some(token) = tokens::get_git_credential_token("github", lookup_host)
-    {
-        return Some((token, TokenSource::GitCredential));
+    if settings.github.use_git_credentials {
+        for lookup_host in &lookup_hosts {
+            if let Some(token) = tokens::get_git_credential_token("github", lookup_host) {
+                return Some((token, TokenSource::GitCredential));
+            }
+        }
     }
 
     None
@@ -480,10 +518,9 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
     let url = url.into_url().unwrap();
 
-    let host = url.host_str();
-    let lookup_host = canonical_host(host).unwrap_or("github.com");
-
-    if let Some((token, _source)) = resolve_token(lookup_host) {
+    if is_github_api_url(&url)
+        && let Some((token, _source)) = resolve_token(url.host_str().unwrap_or("github.com"))
+    {
         headers.insert(
             reqwest::header::AUTHORIZATION,
             HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
@@ -494,7 +531,7 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
         );
     }
 
-    if url.path().contains("/releases/assets/") {
+    if is_github_api_url(&url) && url.path().contains("/releases/assets/") {
         headers.insert(
             "accept",
             HeaderValue::from_static("application/octet-stream"),
@@ -502,13 +539,6 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     }
 
     headers
-}
-
-/// Returns true if the given hostname has a token available from a non-env-var source.
-/// Used by http.rs to decide whether to attach GitHub auth headers to requests.
-pub fn is_gh_host(host: &str) -> bool {
-    MISE_GITHUB_TOKENS.contains_key(host)
-        || (Settings::get().github.gh_cli_tokens && GH_HOSTS.contains_key(host))
 }
 
 // ── github_tokens.toml ──────────────────────────────────────────────
@@ -665,37 +695,62 @@ something_else = "value"
     }
 
     #[test]
-    fn test_githubusercontent_auth_hosts_exclude_release_assets() {
-        assert!(is_githubusercontent_auth_host("raw.githubusercontent.com"));
-        assert!(!is_githubusercontent_auth_host(
-            "objects.githubusercontent.com"
-        ));
-        assert!(!is_githubusercontent_auth_host(
-            "objects-origin.githubusercontent.com"
-        ));
-        assert!(!is_githubusercontent_auth_host(
-            "release-assets.githubusercontent.com"
-        ));
+    fn test_api_host_token_lookup_hosts() {
+        assert_eq!(
+            token_lookup_hosts("api.github.com"),
+            vec!["github.com", "api.github.com"]
+        );
+        assert_eq!(
+            token_lookup_hosts("api.octocorp.ghe.com"),
+            vec!["octocorp.ghe.com", "api.octocorp.ghe.com"]
+        );
+        assert_eq!(
+            token_lookup_hosts("github.example.com"),
+            vec!["github.example.com"]
+        );
     }
 
     #[test]
-    fn test_release_asset_hosts_do_not_use_github_token() {
+    fn test_only_github_api_urls_use_github_token() {
         with_github_token(|| {
-            for host in [
-                "objects.githubusercontent.com",
-                "objects-origin.githubusercontent.com",
-                "release-assets.githubusercontent.com",
+            for url in [
+                "https://github.com/api/v3/repos/owner/repo/releases",
+                "https://github.com/cuotos/ecs-exec-pf/releases/download/v0.3.0/ecs-exec-pf_0.3.0_Linux_x86_64.tar.gz",
+                "https://github.example.com/owner/repo/releases/download/v1.0.0/file.tar.gz",
+                "https://raw.githubusercontent.com/owner/repo/main/file.txt",
+                "https://objects.githubusercontent.com/github-production-release-asset",
+                "https://objects-origin.githubusercontent.com/github-production-release-asset",
+                "https://release-assets.githubusercontent.com/github-production-release-asset",
+                "https://octocorp.ghe.com/api/v3/repos/owner/repo/releases",
+                "https://octocorp.ghe.com/owner/repo/releases/download/v1.0.0/file.tar.gz",
             ] {
-                let headers =
-                    get_headers(format!("https://{host}/github-production-release-asset"));
+                let headers = get_headers(url);
                 assert!(
                     !headers.contains_key(reqwest::header::AUTHORIZATION),
-                    "{host} should not use GitHub auth"
+                    "{url} should not use GitHub auth"
+                );
+                assert!(
+                    !headers.contains_key("x-github-api-version"),
+                    "{url} should not use GitHub API version"
                 );
             }
 
-            let headers = get_headers("https://raw.githubusercontent.com/owner/repo/main/file.txt");
+            let headers = get_headers("https://api.github.com/repos/owner/repo/releases");
             assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
+            assert!(headers.contains_key("x-github-api-version"));
+
+            let headers = get_headers("https://api.github.com/repos/owner/repo/releases/assets/1");
+            assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
+            assert_eq!(headers.get("accept").unwrap(), "application/octet-stream");
+
+            let headers =
+                get_headers("https://github.example.com/api/v3/repos/owner/repo/releases");
+            assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
+            assert!(headers.contains_key("x-github-api-version"));
+
+            let headers = get_headers("https://api.octocorp.ghe.com/repos/owner/repo/releases");
+            assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
+            assert!(headers.contains_key("x-github-api-version"));
         });
     }
 
