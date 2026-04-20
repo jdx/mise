@@ -29,6 +29,10 @@
     <!-- Right column: install + action buttons -->
     <template #home-hero-info-after>
       <div class="hero-right">
+        <a class="hero-aube-banner" href="https://aube.en.dev/">
+          <span class="aube-kicker">New from en.dev by @jdx</span>
+          <span class="aube-message">Try aube, a fast Node.js package manager that uses your existing lockfile. Now in beta.</span>
+        </a>
         <div class="hero-install">
           <div class="install-label">Install</div>
           <div class="install-command" @click="copyInstall">
@@ -212,6 +216,68 @@ function copyInstall() {
 }
 
 /* ═══════════════════════════════════════════
+   AUBE PROMO — compact cross-project banner
+   ═══════════════════════════════════════════ */
+.hero-aube-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  color: var(--vp-c-text-1);
+  background:
+    linear-gradient(90deg, rgba(107, 127, 78, 0.12), rgba(139, 34, 82, 0.08)),
+    var(--vp-c-bg-soft);
+  border: 1px solid rgba(107, 127, 78, 0.35);
+  border-radius: 8px;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(26, 18, 16, 0.06);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.hero-aube-banner:hover {
+  border-color: var(--vp-c-brand-1);
+  box-shadow: 0 12px 32px rgba(139, 34, 82, 0.12);
+  transform: translateY(-1px);
+}
+
+.dark .hero-aube-banner {
+  background:
+    linear-gradient(90deg, rgba(143, 168, 110, 0.14), rgba(199, 91, 122, 0.1)),
+    var(--vp-c-bg-soft);
+  border-color: rgba(143, 168, 110, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+.aube-kicker {
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: 0.72rem;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.aube-kicker {
+  color: #6B7F4E;
+}
+
+.dark .aube-kicker {
+  color: #8FA86E;
+}
+
+.aube-message {
+  min-width: 0;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  color: var(--vp-c-text-2);
+}
+
+/* ═══════════════════════════════════════════
    INSTALL COMMAND — signature dish
    ═══════════════════════════════════════════ */
 .hero-install {
@@ -313,6 +379,15 @@ function copyInstall() {
 @media (max-width: 768px) {
   .hero-chef-logo .chef-logo {
     max-width: 280px;
+  }
+
+  .hero-aube-banner {
+    align-items: center;
+    text-align: center;
+  }
+
+  .aube-message {
+    font-size: 0.85rem;
   }
 
   .hero-glow-1 { width: 350px; height: 350px; }
