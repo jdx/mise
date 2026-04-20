@@ -28,11 +28,14 @@ pub fn normalize_arch(a: &str) -> &str {
 }
 
 /// Normalize a host OS name to the OCI-spec value. OCI images are
-/// linux-targeted in v1 (macOS builds still produce a linux image, since
-/// that's what runs in containers), so `macos` → `linux`.
+/// linux-targeted in v1, so any non-linux host (macos, windows) maps to
+/// `linux` — otherwise the platform lookup in a multi-arch index
+/// (e.g. `debian:bookworm-slim`) would fail with "no matching platform",
+/// and a scratch build would label its `ImageConfig.os` as a value that
+/// makes the image unrunnable as a Linux container.
 pub fn normalize_os(o: &str) -> &str {
     match o {
-        "macos" => "linux",
+        "macos" | "windows" => "linux",
         other => other,
     }
 }
