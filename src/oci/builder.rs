@@ -249,7 +249,7 @@ impl Builder {
                 all_diff_ids.clone(),
                 &platform,
             )
-            .await;
+            .await?;
 
         let config_bytes = serde_json::to_vec(&image_config)?;
         let (config_digest, config_size) = layout.write_blob(&config_bytes)?;
@@ -290,7 +290,7 @@ impl Builder {
         base_config_json: Option<&serde_json::Value>,
         diff_ids: Vec<String>,
         platform: &Option<Platform>,
-    ) -> ImageConfig {
+    ) -> Result<ImageConfig> {
         use crate::oci::manifest::Config as ImgConfig;
 
         // Inherit from base config where possible.
@@ -346,9 +346,12 @@ impl Builder {
         // them into the image config makes them visible to anyone who does
         // `skopeo inspect` / `docker inspect`. Surface that loudly so users
         // aren't surprised.
-        if let Ok(env) = self.cfg.env().await
-            && !env.is_empty()
-        {
+        let env = self
+            .cfg
+            .env()
+            .await
+            .wrap_err("resolving [env] for oci build (template error, missing file, etc.)")?;
+        if !env.is_empty() {
             warn!(
                 "mise oci build: baking {} [env] var(s) into the image config. \
                  These are visible via `docker inspect` / `skopeo inspect`; \
@@ -481,7 +484,7 @@ impl Builder {
             )
         };
 
-        ImageConfig {
+        Ok(ImageConfig {
             created: Some(created),
             author: Some("mise".to_string()),
             architecture: arch,
@@ -493,7 +496,7 @@ impl Builder {
                 diff_ids,
             },
             history: vec![],
-        }
+        })
     }
 }
 
