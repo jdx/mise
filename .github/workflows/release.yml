@@ -384,6 +384,16 @@ jobs:
             mise x -- git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
             echo "RELEASE_TITLE=$VERSION" >> "$GITHUB_ENV"
           fi
+          cat >> /tmp/release-notes.txt <<'EOF'
+
+          ---
+
+          ## 💚 Sponsor mise
+
+          mise is built by [@jdx](https://github.com/jdx) under [**en.dev**](https://en.dev) — an independent studio making developer tooling (mise, [aube](https://aube.en.dev/), and more). Development is funded by sponsors.
+
+          If mise saves you or your team time, please consider sponsoring at [en.dev](https://en.dev). Individual and company sponsorships keep mise fast, free, and independent.
+          EOF
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Create Draft GitHub Release
