@@ -235,6 +235,43 @@
   color: var(--vp-c-brand-1);
 }
 
+.EndevFooter {
+  align-items: center;
+  border-top: 1px solid var(--vp-c-divider);
+  color: var(--vp-c-text-2);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 14px;
+  gap: 8px;
+  justify-content: center;
+  line-height: 28px;
+  margin-top: auto;
+  padding: 22px 24px 26px;
+  text-align: center;
+}
+
+.EndevFooterLink {
+  align-items: center;
+  color: inherit;
+  display: inline-flex;
+  gap: 8px;
+  line-height: 28px;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.EndevFooterLink:hover {
+  color: var(--vp-c-brand-1);
+}
+
+.EndevFooterLogo {
+  border-radius: 8px;
+  display: inline-block;
+  height: 28px;
+  vertical-align: middle;
+  width: 28px;
+}
+
 /* Hide star count on mobile to save space */
 @media (max-width: 640px) {
   .VPSocialLinks .star-count {
