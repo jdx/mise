@@ -53,11 +53,17 @@ impl ImageLayout {
 
     /// Copy a blob into the layout by its known digest.
     ///
-    /// We verify `sha256(bytes) == digest` before writing so that a corrupted
-    /// or tampered registry response surfaces here — with a clear "got X,
-    /// wanted Y" message — instead of much later as a confusing digest
-    /// mismatch from `skopeo inspect` or `podman load`.
+    /// Two guards:
+    ///  1. The digest must be `sha256:` followed by 64 lowercase hex chars.
+    ///     This prevents path traversal (e.g. a malicious registry returning
+    ///     `sha256:../../etc/passwd` would otherwise let us write attacker-
+    ///     controlled bytes to an arbitrary filesystem path).
+    ///  2. We verify `sha256(bytes) == digest` before writing so corrupted
+    ///     or tampered content surfaces with a clear "got X, wanted Y"
+    ///     message instead of later as a confusing mismatch from skopeo /
+    ///     podman.
     pub fn write_blob_with_digest(&self, digest: &str, bytes: &[u8]) -> Result<()> {
+        validate_sha256_digest(digest)?;
         let mut h = Sha256::new();
         h.update(bytes);
         let actual = format!("sha256:{}", crate::oci::layer::hex_encode(&h.finalize()));
@@ -119,5 +125,42 @@ impl ImageLayout {
     pub fn write_manifest(&self, manifest: &ImageManifest) -> Result<(String, u64)> {
         let bytes = serde_json::to_vec(manifest)?;
         self.write_blob(&bytes)
+    }
+}
+
+/// Validate that `digest` is a well-formed `sha256:<64 lowercase hex>` string.
+/// Guards against path traversal from a malicious registry returning something
+/// like `sha256:../../etc/passwd` as a layer digest — without this check, that
+/// would be used directly as a filesystem path component.
+fn validate_sha256_digest(digest: &str) -> Result<()> {
+    let Some(hex) = digest.strip_prefix("sha256:") else {
+        eyre::bail!("invalid blob digest (expected sha256: prefix): {digest}");
+    };
+    if hex.len() != 64
+        || !hex
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+    {
+        eyre::bail!("invalid blob digest (expected 64 lowercase hex chars): {digest}");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_path_traversal() {
+        assert!(validate_sha256_digest("sha256:../../etc/passwd").is_err());
+        assert!(validate_sha256_digest("sha256:../foo").is_err());
+        assert!(validate_sha256_digest("../bad").is_err());
+        assert!(validate_sha256_digest("sha256:DEADBEEF").is_err());
+    }
+
+    #[test]
+    fn accepts_valid_digest() {
+        let d = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        assert!(validate_sha256_digest(d).is_ok());
     }
 }
