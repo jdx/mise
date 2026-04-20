@@ -15,7 +15,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
-use crate::install_before::resolve_before_date;
+use crate::install_before::resolve_before_date_for_backend;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -873,7 +873,7 @@ pub trait Backend: Debug + Send + Sync {
         query: Option<String>,
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
-        let before_date = effective_latest_before_date(self, config, before_date).await?;
+        let before_date = resolve_before_date_for_backend(config, self, before_date).await?;
         match query.as_deref() {
             Some("latest") | None => match before_date {
                 Some(before) => {
@@ -1795,27 +1795,6 @@ pub trait Backend: Debug + Send + Sync {
             ..Default::default()
         })
     }
-}
-
-async fn effective_latest_before_date<B: Backend + ?Sized>(
-    backend: &B,
-    config: &Arc<Config>,
-    before_date: Option<Timestamp>,
-) -> eyre::Result<Option<Timestamp>> {
-    if before_date.is_some() {
-        return Ok(before_date);
-    }
-
-    let backend_opts = backend.ba().opts();
-    if let Some(before) = backend_opts.get("install_before") {
-        return resolve_before_date(None, Some(before));
-    }
-
-    let config_install_before = config
-        .get_tool_opts(backend.ba())
-        .await?
-        .and_then(|opts| opts.get("install_before").map(str::to_string));
-    resolve_before_date(None, config_install_before.as_deref())
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ use xx::file;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::env;
+use crate::install_before::resolve_before_date;
 use crate::lockfile::LockfileTool;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
@@ -351,6 +352,13 @@ impl ToolRequest {
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
         ToolVersion::resolve(config, self.clone(), opts).await
+    }
+
+    pub fn resolve_options(&self, opts: &ResolveOptions) -> Result<ResolveOptions> {
+        let install_before = self.options().get("install_before").map(str::to_string);
+        let mut opts = opts.clone();
+        opts.before_date = resolve_before_date(opts.before_date, install_before.as_deref())?;
+        Ok(opts)
     }
 
     pub fn is_os_supported(&self) -> bool {
