@@ -240,11 +240,7 @@ export default withMermaid(
           insights: true,
         },
       },
-      footer: {
-        message:
-          'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and <a href="https://github.com/jdx/mise/graphs/contributors">friends</a>.',
-        copyright: `Copyright © ${new Date().getFullYear()} <a href="https://github.com/jdx">@jdx</a>`,
-      },
+      footer: false,
       carbonAds: {
         code: "CWYIPKQN",
         placement: "misejdxdev",
