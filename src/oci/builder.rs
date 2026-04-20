@@ -82,6 +82,13 @@ impl Builder {
         if mount_point.is_empty() {
             bail!("oci mount_point must not be empty");
         }
+        if !mount_point.starts_with('/') {
+            bail!(
+                "oci mount_point must be an absolute path (got {mount_point:?}); \
+                 a relative value makes MISE_DATA_DIR inside the container \
+                 depend on the working directory and mis-resolve tools."
+            );
+        }
 
         // --- 1. Base image (optional) ---
         let from_ref = self
@@ -365,6 +372,29 @@ impl Builder {
             }
         }
 
+        // Per-tool exec_env (JAVA_HOME, GOROOT, GEM_HOME, etc.). Paths in
+        // these values point at the host install dir; rebase them to the
+        // in-image location so they're valid inside the container.
+        for (backend, tv) in versions {
+            let host_install = tv.install_path();
+            let in_image_root = format!("/{}", tool_prefix(mount_point, tv));
+            match backend.exec_env(&self.cfg, &self.ts, tv).await {
+                Ok(tool_env) => {
+                    for (k, v) in tool_env {
+                        let rebased = rebase_path_value(&v, &host_install, &in_image_root);
+                        env_pairs.insert(k, rebased);
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "failed to resolve exec_env for {}: {e} — \
+                         any vars that tool needs (e.g. JAVA_HOME) will be missing",
+                        tv.style()
+                    );
+                }
+            }
+        }
+
         // Extra env from [oci].env section (explicit image-only vars).
         for (k, v) in &self.oci.env {
             env_pairs.insert(k.clone(), v.clone());
@@ -526,6 +556,18 @@ fn reject_unsupported_backends(
         );
     }
     Ok(())
+}
+
+/// Rewrite any occurrence of the host install path in an `exec_env` value to
+/// the corresponding in-image path. Handles both exact matches
+/// (`JAVA_HOME=<install>`) and colon-separated PATH-like values
+/// (`SOMETHING=<install>/foo:<install>/bar`).
+fn rebase_path_value(value: &str, host_prefix: &std::path::Path, in_image_prefix: &str) -> String {
+    let host: &str = &host_prefix.to_string_lossy();
+    if host.is_empty() || !value.contains(host) {
+        return value.to_string();
+    }
+    value.replace(host, in_image_prefix)
 }
 
 fn tool_prefix(mount_point: &str, tv: &ToolVersion) -> String {
