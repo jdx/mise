@@ -200,6 +200,15 @@ pub async fn pull_base_image(
     )
     .await?;
 
+    // Validate every registry-supplied digest up front — a malicious
+    // registry could otherwise return `sha256:../../etc/passwd` and have it
+    // slip through the `blob_path().exists()` cache-check below (which
+    // bypasses the digest verification inside `write_blob_with_digest`).
+    crate::oci::layout::validate_sha256_digest(&manifest.config.digest)?;
+    for layer in &manifest.layers {
+        crate::oci::layout::validate_sha256_digest(&layer.digest)?;
+    }
+
     // Download config blob and stream layer blobs into the layout.
     let config_url = format!(
         "{base_url}/v2/{}/blobs/{}",

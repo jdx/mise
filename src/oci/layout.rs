@@ -132,7 +132,7 @@ impl ImageLayout {
 /// Guards against path traversal from a malicious registry returning something
 /// like `sha256:../../etc/passwd` as a layer digest — without this check, that
 /// would be used directly as a filesystem path component.
-fn validate_sha256_digest(digest: &str) -> Result<()> {
+pub(crate) fn validate_sha256_digest(digest: &str) -> Result<()> {
     let Some(hex) = digest.strip_prefix("sha256:") else {
         eyre::bail!("invalid blob digest (expected sha256: prefix): {digest}");
     };
