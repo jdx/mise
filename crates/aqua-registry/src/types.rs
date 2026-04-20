@@ -531,7 +531,28 @@ fn yaml_value_to_string(value: &serde_yaml::Value) -> Result<String> {
         serde_yaml::Value::Number(n) => Ok(n.to_string()),
         serde_yaml::Value::Bool(b) => Ok(b.to_string()),
         serde_yaml::Value::Null => Ok(String::new()),
-        _ => Err(eyre!("aqua var default must be a scalar value")),
+        serde_yaml::Value::Sequence(seq) => Ok(format!(
+            "[{}]",
+            seq.iter()
+                .map(yaml_value_to_string)
+                .collect::<Result<Vec<_>>>()?
+                .join(" ")
+        )),
+        serde_yaml::Value::Mapping(map) => {
+            let mut pairs = map
+                .iter()
+                .map(|(key, value)| Ok((yaml_value_to_string(key)?, yaml_value_to_string(value)?)))
+                .collect::<Result<Vec<_>>>()?;
+            pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+            Ok(format!(
+                "map[{}]",
+                pairs
+                    .into_iter()
+                    .map(|(key, value)| format!("{key}:{value}"))
+                    .join(" ")
+            ))
+        }
+        serde_yaml::Value::Tagged(tagged) => yaml_value_to_string(&tagged.value),
     }
 }
 
@@ -1147,6 +1168,36 @@ mod tests {
         };
         let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
         assert_eq!(asset, "tool-go1.24-1.0.0.tar.gz");
+    }
+
+    #[test]
+    fn test_vars_default_structured_value() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.channels}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "channels".to_string(),
+                default: Some(serde_yaml::from_str("[stable, beta]").unwrap()),
+                required: true,
+            }],
+            ..Default::default()
+        };
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(asset, "tool-[stable beta]-1.0.0.tar.gz");
+    }
+
+    #[test]
+    fn test_vars_default_mapping_value() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.config}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "config".to_string(),
+                default: Some(serde_yaml::from_str("{channel: stable, flavor: beta}").unwrap()),
+                required: true,
+            }],
+            ..Default::default()
+        };
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(asset, "tool-map[channel:stable flavor:beta]-1.0.0.tar.gz");
     }
 
     #[test]

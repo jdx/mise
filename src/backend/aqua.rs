@@ -792,7 +792,12 @@ impl AquaBackend {
                     Self::insert_table_lockfile_options(&mut result, key, table);
                 }
             } else if let Some(value) = toml_value_to_string(value) {
-                result.insert(key.clone(), value);
+                let key = if key.starts_with("vars.") {
+                    key.clone()
+                } else {
+                    format!("vars.{key}")
+                };
+                result.entry(key).or_insert(value);
             }
         }
         result
@@ -2101,10 +2106,54 @@ mod tests {
 
         let lock_opts = AquaBackend::lockfile_options(&opts);
 
-        assert_eq!(lock_opts.get("channel"), Some(&"stable".to_string()));
+        assert_eq!(lock_opts.get("vars.channel"), Some(&"stable".to_string()));
         assert_eq!(lock_opts.get("vars.go_version"), Some(&"1.24".to_string()));
         assert!(!lock_opts.contains_key("symlink_bins"));
         assert!(!lock_opts.contains_key("postinstall"));
+    }
+
+    #[test]
+    fn test_lockfile_options_canonicalize_equivalent_aqua_vars() {
+        let mut top_level = ToolVersionOptions::default();
+        top_level.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
+        let mut nested = ToolVersionOptions::default();
+        let mut vars = toml::Table::new();
+        vars.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+        nested
+            .opts
+            .insert("vars".to_string(), toml::Value::Table(vars));
+
+        assert_eq!(
+            AquaBackend::lockfile_options(&top_level),
+            AquaBackend::lockfile_options(&nested)
+        );
+    }
+
+    #[test]
+    fn test_lockfile_options_nested_aqua_vars_take_precedence() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+        let mut vars = toml::Table::new();
+        vars.insert(
+            "channel".to_string(),
+            toml::Value::String("beta".to_string()),
+        );
+        opts.opts
+            .insert("vars".to_string(), toml::Value::Table(vars));
+
+        let lock_opts = AquaBackend::lockfile_options(&opts);
+
+        assert_eq!(lock_opts.get("vars.channel"), Some(&"beta".to_string()));
     }
 }
 
