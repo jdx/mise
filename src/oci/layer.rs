@@ -12,6 +12,7 @@
 //! caching story.
 
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
@@ -133,8 +134,7 @@ fn collect_sorted_entries(src_dir: &Path) -> Result<Vec<Entry>> {
             let target = std::fs::read_link(entry.path())?;
             (EntryKind::Symlink(target), 0o777u32, 0u64)
         } else {
-            let m = md.mode();
-            let is_exec = (m & 0o111) != 0;
+            let is_exec = file_is_executable(entry.path(), &md);
             let mode = if is_exec { 0o755 } else { 0o644 };
             (EntryKind::File, mode, md.len())
         };
@@ -174,10 +174,13 @@ fn build_layer_from_entries(entries: &[Entry], target_prefix: &str) -> Result<La
         }
 
         for e in entries {
+            // Tar entry paths must use forward slashes regardless of host;
+            // on Windows `rel` may contain `\` from `Path::to_string_lossy`.
+            let rel_str = e.rel.to_string_lossy().replace('\\', "/");
             let path_in_tar = if prefix.is_empty() {
-                e.rel.to_string_lossy().into_owned()
+                rel_str
             } else {
-                format!("{}/{}", prefix, e.rel.to_string_lossy())
+                format!("{prefix}/{rel_str}")
             };
 
             match &e.kind {
@@ -319,6 +322,33 @@ fn finalize_layer(tar_bytes: Vec<u8>) -> Result<LayerBlob> {
         size,
         bytes: gz_bytes,
     })
+}
+
+/// Cross-platform exec-bit detection for tar-header mode normalization.
+///
+/// On Unix we inspect the real mode bits. On Windows there's no exec bit on
+/// the filesystem, so we fall back to extension-based heuristics that match
+/// the host's usual notion of "executable" (PATHEXT-style). This matters
+/// only for symmetry — the resulting layer is consumed inside a Linux
+/// container, which uses the mode we set here, so OCI tools like aqua or
+/// ubi-style binaries get the exec bit they need.
+#[cfg(unix)]
+fn file_is_executable(_path: &Path, md: &std::fs::Metadata) -> bool {
+    (md.mode() & 0o111) != 0
+}
+
+#[cfg(not(unix))]
+fn file_is_executable(path: &Path, _md: &std::fs::Metadata) -> bool {
+    // Treat common Windows executable extensions as exec. For anything else,
+    // default to non-exec; users building linux OCI images on Windows can
+    // add `--exec-bit` in the future if this proves insufficient.
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref(),
+        Some("exe") | Some("bat") | Some("cmd") | Some("ps1") | Some("com"),
+    )
 }
 
 pub(crate) fn hex_encode(bytes: &[u8]) -> String {
