@@ -49,6 +49,7 @@ async fn list_versions(config: &Arc<Config>, args: &[String]) -> Result<()> {
             prerelease: false,
             no_versions_host: false,
             strict_metadata: false,
+            before: None,
         }
         .run()
         .await;

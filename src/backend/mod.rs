@@ -19,7 +19,7 @@ use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
 use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
-use crate::install_before::resolve_before_date;
+use crate::install_before::{resolve_before_date, resolve_before_date_for_backend};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -1350,7 +1350,7 @@ pub trait Backend: Debug + Send + Sync {
         before_date: Option<Timestamp>,
         refresh: bool,
     ) -> eyre::Result<Option<String>> {
-        let before_date = effective_latest_before_date(self, config, before_date).await?;
+        let before_date = resolve_before_date_for_backend(config, self, before_date).await?;
         let resolved_query = query.as_deref().unwrap_or("latest");
         let mut fallback_refresh = refresh;
         if resolved_query == "latest"

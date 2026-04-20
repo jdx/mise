@@ -3,14 +3,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::Config;
+use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
-use crate::toolset::Toolset;
+use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
 use eyre::{Result, bail};
+use jiff::Timestamp;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -51,6 +53,14 @@ pub struct Lock {
     #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
     pub platform: Vec<String>,
 
+    /// Only lock versions released before this date
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    /// This only affects fuzzy version matches like "20" or "latest".
+    /// Explicitly pinned versions like "22.5.0" are not filtered.
+    #[clap(long, verbatim_doc_comment)]
+    before: Option<String>,
+
     /// Update mise.local.lock instead of mise.lock
     /// Use for tools defined in .local.toml configs
     #[clap(long, verbatim_doc_comment)]
@@ -66,8 +76,15 @@ impl Lock {
             );
         }
         let config = Config::get().await?;
+        let before_date = self.get_before_date()?;
 
-        let ts = config.get_toolset().await?;
+        let ts = ToolsetBuilder::new()
+            .with_resolve_options(ResolveOptions {
+                before_date,
+                ..Default::default()
+            })
+            .build(&config)
+            .await?;
 
         let scoped_config_paths = self.config_paths_in_lock_scope(&config);
         let lockfile_targets = self.get_lockfile_targets(&config, &scoped_config_paths);
@@ -75,7 +92,7 @@ impl Lock {
         let mut all_provenance_errors: Vec<String> = Vec::new();
 
         for (lockfile_path, config_paths) in &lockfile_targets {
-            let tools = self.get_tools_to_lock(&config, ts, lockfile_path, config_paths);
+            let tools = self.get_tools_to_lock(&config, &ts, lockfile_path, config_paths);
 
             if tools.is_empty() {
                 // `tools` can be empty either because config has no tools, or because a filter excludes all.
@@ -219,6 +236,15 @@ impl Lock {
         }
 
         Ok(())
+    }
+
+    /// Get the before_date from the CLI --before flag only.
+    /// Per-tool and global setting fallbacks are handled during tool request resolution.
+    fn get_before_date(&self) -> Result<Option<Timestamp>> {
+        if let Some(before) = &self.before {
+            return Ok(Some(parse_into_timestamp(before)?));
+        }
+        Ok(None)
     }
 
     fn is_unfiltered_lock_run(&self) -> bool {
@@ -712,6 +738,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise lock node python</bold>           # update only node and python
     $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
     $ <bold>mise lock --dry-run</bold>             # show what would be updated
+    $ <bold>mise lock --before 2024-01-01</bold>   # lock latest/fuzzy versions released before 2024-01-01
     $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
     $ <bold>mise lock --global</bold>              # update only global config lockfiles
 "#
@@ -738,6 +765,7 @@ mod tests {
             platform: vec![],
             local: false,
             global: false,
+            before: None,
         }
     }
 

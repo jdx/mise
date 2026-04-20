@@ -40,6 +40,14 @@ Comma-separated list of platforms to target
 e.g.: linux-x64,macos-arm64,windows-x64
 If not specified, all platforms already in lockfile will be updated
 
+### `--before <BEFORE>`
+
+Only lock versions released before this date
+
+Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+This only affects fuzzy version matches like "20" or "latest".
+Explicitly pinned versions like "22.5.0" are not filtered.
+
 ### `--local`
 
 Update mise.local.lock instead of mise.lock
@@ -52,6 +60,7 @@ mise lock                       # update lockfile for all common platforms
 mise lock node python           # update only node and python
 mise lock --platform linux-x64  # update only linux-x64 platform
 mise lock --dry-run             # show what would be updated
+mise lock --before 2024-01-01   # lock latest/fuzzy versions released before 2024-01-01
 mise lock --local               # update mise.local.lock for local configs
 mise lock --global              # update only global config lockfiles
 ```
