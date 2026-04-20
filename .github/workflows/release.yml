@@ -386,8 +386,6 @@ jobs:
           fi
           cat >> /tmp/release-notes.txt <<'EOF'
 
-          ---
-
           ## 💚 Sponsor mise
 
           mise is built by [@jdx](https://github.com/jdx) under [**en.dev**](https://en.dev) — an independent studio making developer tooling (mise, [aube](https://aube.en.dev/), and more). Development is funded by sponsors.
