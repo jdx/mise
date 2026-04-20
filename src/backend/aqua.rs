@@ -2032,6 +2032,20 @@ fn toml_value_to_string(value: &toml::Value) -> Option<String> {
     }
 }
 
+/// Returns install-time-only option keys for the Aqua backend.
+///
+/// Aqua registry vars may be provided either as a nested `vars` table or as
+/// flat top-level keys whose names are declared by the registry package. The
+/// flat names are not statically knowable here, so `is_install_time_option_key`
+/// handles the precise filtering rule.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec!["vars".into()]
+}
+
+pub fn is_install_time_option_key(key: &str) -> bool {
+    key != "symlink_bins"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2154,6 +2168,14 @@ mod tests {
         let lock_opts = AquaBackend::lockfile_options(&opts);
 
         assert_eq!(lock_opts.get("vars.channel"), Some(&"beta".to_string()));
+    }
+
+    #[test]
+    fn test_aqua_install_time_options_include_flat_vars() {
+        assert!(is_install_time_option_key("channel"));
+        assert!(is_install_time_option_key("vars.channel"));
+        assert!(is_install_time_option_key("vars"));
+        assert!(!is_install_time_option_key("symlink_bins"));
     }
 }
 

@@ -772,18 +772,10 @@ impl ConfigFile for MiseToml {
                     // - Changing url/asset_pattern/checksum without reinstall issues
                     // - Preserving post-install options like bin_path for binary discovery
                     let mut ba_opts = ba.opts().clone();
-                    let install_time_keys =
-                        crate::backend::install_time_option_keys_for_type(&ba.backend_type());
-                    if !install_time_keys.is_empty() {
-                        ba_opts.opts.retain(|k, _| {
-                            // Keep option if it's NOT an install-time-only key
-                            // Also filter platform-specific variants (platforms.X.key)
-                            !install_time_keys.contains(k)
-                                && !install_time_keys.iter().any(|itk| {
-                                    k.starts_with("platforms.") && k.ends_with(&format!(".{itk}"))
-                                })
-                        });
-                    }
+                    let backend_type = ba.backend_type();
+                    ba_opts.opts.retain(|k, _| {
+                        !crate::backend::is_install_time_option_key_for_type(&backend_type, k)
+                    });
                     ba_opts.merge(&options.opts);
                     // Re-apply registry defaults for install-time keys not overridden by user.
                     // The filtering above strips both stale install-state cache AND registry
