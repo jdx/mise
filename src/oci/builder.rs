@@ -155,6 +155,17 @@ impl Builder {
         // --- 3. mise binary layer (optional) ---
         let mut mise_layer: Option<LayerBlob> = None;
         if self.opts.include_mise {
+            // OCI images are linux-targeted in v1 (we normalize `os` to
+            // "linux" above). Embedding a darwin/windows mise binary would
+            // pass the build but explode with `Exec format error` the first
+            // time anything inside the container invokes `mise`. Warn loudly.
+            if std::env::consts::OS != "linux" {
+                warn!(
+                    "embedding a {} mise binary in a linux OCI image — it will fail at runtime. \
+                     Run `mise oci build` on linux, or pass --no-mise to skip embedding.",
+                    std::env::consts::OS
+                );
+            }
             match std::env::current_exe() {
                 Ok(exe) => {
                     let bytes = std::fs::read(&exe)

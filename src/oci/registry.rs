@@ -237,6 +237,10 @@ async fn fetch_token_if_needed(manifest_url: &str, repository: &str) -> Result<O
         "Bearer realm=\"https://auth.docker.io/token\",service=\"registry.docker.io\""
     } else if manifest_url.contains("ghcr.io") {
         "Bearer realm=\"https://ghcr.io/token\",service=\"ghcr.io\""
+    } else if manifest_url.contains("quay.io") {
+        // quay.io publishes an anonymous token endpoint; many public repos
+        // require it even for unauthenticated pulls.
+        "Bearer realm=\"https://quay.io/v2/auth\",service=\"quay.io\""
     } else {
         return Ok(None);
     };
