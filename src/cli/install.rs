@@ -172,7 +172,7 @@ impl Install {
             if self.dry_run_code {
                 let has_work = versions.iter().any(|tv| {
                     if let Ok(backend) = tv.backend() {
-                        !backend.is_version_installed(&config, tv, true)
+                        !crate::backend::is_version_installed(backend.as_ref(), &config, tv, true)
                     } else {
                         true
                     }

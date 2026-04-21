@@ -950,7 +950,7 @@ async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
             if !enable_tools.contains(tool.id()) {
                 return vec![];
             }
-            match tool.idiomatic_filenames().await {
+            match backend::idiomatic_filenames(tool.as_ref()).await {
                 Ok(filenames) => filenames
                     .iter()
                     .map(|f| (f.to_string(), tool.id().to_string()))

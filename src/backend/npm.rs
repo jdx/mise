@@ -41,7 +41,7 @@ pub struct NPMBackend {
 const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
 
 #[async_trait]
-impl Backend for NPMBackend {
+impl crate::backend::BackendImpl for NPMBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Npm
     }
@@ -104,7 +104,7 @@ impl Backend for NPMBackend {
         self.ensure_npm_for_version_check(config).await;
         timeout::run_with_timeout_async(
             async || {
-                let env = self.dependency_env(config).await?;
+                let env = crate::backend::dependency_env(self, config).await?;
 
                 let raw = cmd!(
                     NPM_PROGRAM,
@@ -162,13 +162,18 @@ impl Backend for NPMBackend {
                         // bun is only used for actual package installation
                         let raw =
                             cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
-                                .full_env(this.dependency_env(config).await?)
+                                .full_env(crate::backend::dependency_env(this, config).await?)
                                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                                 .read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
                             Value::String(ref s) => Ok(Some(s.clone())),
-                            _ => this.latest_version_for_query(config, "latest", None).await,
+                            _ => {
+                                crate::backend::latest_version_for_query(
+                                    this, config, "latest", None,
+                                )
+                                .await
+                            }
                         }
                     })
                     .await
@@ -210,7 +215,7 @@ impl Backend for NPMBackend {
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
-                        self.dependency_toolset(&ctx.config)
+                        crate::backend::dependency_toolset(self, &ctx.config)
                             .await?
                             .list_paths(&ctx.config)
                             .await,
@@ -235,7 +240,7 @@ impl Backend for NPMBackend {
                     .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
-                        self.dependency_toolset(&ctx.config)
+                        crate::backend::dependency_toolset(self, &ctx.config)
                             .await?
                             .list_paths(&ctx.config)
                             .await,
@@ -259,7 +264,7 @@ impl Backend for NPMBackend {
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
-                        self.dependency_toolset(&ctx.config)
+                        crate::backend::dependency_toolset(self, &ctx.config)
                             .await?
                             .list_paths(&ctx.config)
                             .await,
@@ -282,7 +287,7 @@ impl Backend for NPMBackend {
                     .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
-                        self.dependency_toolset(&ctx.config)
+                        crate::backend::dependency_toolset(self, &ctx.config)
                             .await?
                             .list_paths(&ctx.config)
                             .await,
@@ -380,7 +385,7 @@ impl NPMBackend {
 
         let version = match Self::toolset_package_manager_version(&ctx.ts, tool) {
             Some(version) => Some(version),
-            None => match self.dependency_toolset(&ctx.config).await {
+            None => match crate::backend::dependency_toolset(self, &ctx.config).await {
                 Ok(ts) => Self::toolset_package_manager_version(&ts, tool),
                 Err(_) => None,
             },
@@ -451,7 +456,7 @@ impl NPMBackend {
         // When npm is explicitly managed by mise (e.g. `mise use npm@11.10.0`),
         // pull the resolved version from the dependency ToolSet and skip the
         // subprocess entirely.
-        if let Ok(ts) = self.dependency_toolset(config).await {
+        if let Ok(ts) = crate::backend::dependency_toolset(self, config).await {
             for (ba, tvl) in &ts.versions {
                 if ba.short == "npm"
                     && let Some(tv) = tvl.versions.first()
@@ -467,7 +472,7 @@ impl NPMBackend {
         }
 
         // Fallback for node-bundled npm: run `npm --version`
-        let env = match self.dependency_env(config).await {
+        let env = match crate::backend::dependency_env(self, config).await {
             Ok(env) => env,
             Err(e) => {
                 debug!(
@@ -496,7 +501,7 @@ impl NPMBackend {
     async fn ensure_npm_for_version_check(&self, config: &Arc<Config>) {
         // We always need npm for querying package versions
         // TODO: Once bun supports querying packages without package.json, this can be updated
-        self.warn_if_dependency_missing(
+        crate::backend::warn_if_dependency_missing(self,
             config,
             "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
             &["node", "npm"],
@@ -521,7 +526,8 @@ impl NPMBackend {
                 {
                     return;
                 }
-                self.warn_if_dependency_missing(
+                crate::backend::warn_if_dependency_missing(
+                    self,
                     config,
                     "aube",
                     &["aube"],
@@ -533,7 +539,8 @@ impl NPMBackend {
                 .await
             }
             NpmPackageManager::Bun => {
-                self.warn_if_dependency_missing(
+                crate::backend::warn_if_dependency_missing(
+                    self,
                     config,
                     "bun",
                     &["bun"],
@@ -545,7 +552,8 @@ impl NPMBackend {
                 .await
             }
             NpmPackageManager::Pnpm => {
-                self.warn_if_dependency_missing(
+                crate::backend::warn_if_dependency_missing(
+                    self,
                     config,
                     "pnpm",
                     &["pnpm"],
@@ -560,7 +568,8 @@ impl NPMBackend {
                 unreachable!("auto package manager should be resolved before dependency checks")
             }
             NpmPackageManager::Npm => {
-                self.warn_if_dependency_missing(
+                crate::backend::warn_if_dependency_missing(
+                    self,
                     config,
                     "npm",
                     &["node", "npm"],
@@ -603,7 +612,7 @@ impl NPMBackend {
         {
             return Some(bin);
         }
-        self.dependency_which(config, AUBE_PROGRAM).await
+        crate::backend::dependency_which(self, config, AUBE_PROGRAM).await
     }
 
     fn write_aube_npmrc(&self, install_path: &Path, before_date: Option<Timestamp>) -> Result<()> {

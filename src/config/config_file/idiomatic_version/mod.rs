@@ -32,7 +32,7 @@ impl IdiomaticVersionFile {
         let mut tools = ToolRequestSet::new();
 
         for plugin in plugins {
-            match plugin.parse_idiomatic_file(&path).await {
+            match crate::backend::parse_idiomatic_file(plugin.as_ref(), &path).await {
                 Ok(versions) => {
                     for v in versions {
                         let tr = ToolRequest::new(plugin.ba().clone(), &v, source.clone())?;
@@ -95,7 +95,7 @@ impl ConfigFile for IdiomaticVersionFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::{Backend, VersionInfo};
+    use crate::backend::VersionInfo;
     use crate::cli::args::{BackendArg, BackendResolution};
     use crate::config::Config;
     use crate::install_context::InstallContext;
@@ -128,7 +128,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl Backend for MockBackend {
+    impl crate::backend::BackendImpl for MockBackend {
         fn ba(&self) -> &Arc<BackendArg> {
             &self.ba
         }
@@ -145,7 +145,7 @@ mod tests {
             unimplemented!()
         }
 
-        async fn parse_idiomatic_file(&self, _path: &Path) -> Result<Vec<String>> {
+        async fn _parse_idiomatic_file(&self, _path: &Path) -> Result<Vec<String>> {
             if self.fail {
                 eyre::bail!("mock error");
             }

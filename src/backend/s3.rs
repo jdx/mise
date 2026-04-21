@@ -409,7 +409,7 @@ fn handle_s3_error<E: std::fmt::Debug>(err: E, bucket: &str, key: &str) -> eyre:
 }
 
 #[async_trait]
-impl Backend for S3Backend {
+impl crate::backend::BackendImpl for S3Backend {
     fn get_type(&self) -> BackendType {
         BackendType::S3
     }

@@ -223,7 +223,7 @@ impl NodePlugin {
         if settings.node.verify && platform_info.checksum.is_none() {
             platform_info.checksum = Some(self.get_checksum(ctx, local, version).await?);
         }
-        self.verify_checksum(ctx, tv, local)?;
+        crate::backend::verify_checksum(self, ctx, tv, local)?;
         Ok(())
     }
 
@@ -477,7 +477,7 @@ impl NodePlugin {
 }
 
 #[async_trait]
-impl Backend for NodePlugin {
+impl crate::backend::BackendImpl for NodePlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -708,7 +708,7 @@ impl Backend for NodePlugin {
         opts
     }
 
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,

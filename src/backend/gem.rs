@@ -1,4 +1,3 @@
-use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
@@ -26,7 +25,7 @@ pub struct GemBackend {
 }
 
 #[async_trait]
-impl Backend for GemBackend {
+impl crate::backend::BackendImpl for GemBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Gem
     }
@@ -63,7 +62,8 @@ impl Backend for GemBackend {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         // Check if gem is available
-        self.warn_if_dependency_missing(
+        crate::backend::warn_if_dependency_missing(
+            self,
             &ctx.config,
             "gem",
             &["ruby", "gem"],
@@ -80,7 +80,7 @@ impl Backend for GemBackend {
             .arg("--install-dir")
             .arg(tv.install_path().join("libexec"))
             .with_pr(ctx.pr.as_ref())
-            .envs(self.dependency_env(&ctx.config).await?)
+            .envs(crate::backend::dependency_env(self, &ctx.config).await?)
             .execute()?;
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable
@@ -115,7 +115,9 @@ impl GemBackend {
         const DEFAULT_SOURCE: &str = "https://rubygems.org/";
 
         // Get the mise-managed Ruby environment
-        let env = self.dependency_env(config).await.unwrap_or_default();
+        let env = crate::backend::dependency_env(self, config)
+            .await
+            .unwrap_or_default();
 
         // Try to initialize the source - only memoize on success
         match GEM_SOURCE

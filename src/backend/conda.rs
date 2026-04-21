@@ -580,7 +580,7 @@ impl CondaBackend {
 }
 
 #[async_trait]
-impl Backend for CondaBackend {
+impl crate::backend::BackendImpl for CondaBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Conda
     }
@@ -629,7 +629,7 @@ impl Backend for CondaBackend {
 
     /// Override to bypass the shared remote_versions cache since conda's
     /// channel option affects which versions are available.
-    async fn list_remote_versions_with_info(
+    async fn list_remote_versions_with_info_impl(
         &self,
         config: &Arc<Config>,
     ) -> Result<Vec<VersionInfo>> {
@@ -660,7 +660,7 @@ impl Backend for CondaBackend {
         Ok(tv)
     }
 
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,

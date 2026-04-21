@@ -475,7 +475,8 @@ impl Lock {
                             // For "latest" or prefix requests not yet matched, find the
                             // best installed version (handles overridden tools)
                             if request.version() == "latest" {
-                                let installed = backend.list_installed_versions();
+                                let installed =
+                                    crate::backend::list_installed_versions(backend.as_ref());
                                 if let Some(latest_version) = installed.iter().max_by(|a, b| {
                                     versions::Versioning::new(a).cmp(&versions::Versioning::new(b))
                                 }) {

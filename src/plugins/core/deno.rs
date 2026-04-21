@@ -90,7 +90,7 @@ impl DenoPlugin {
 }
 
 #[async_trait]
-impl Backend for DenoPlugin {
+impl crate::backend::BackendImpl for DenoPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -130,7 +130,7 @@ impl Backend for DenoPlugin {
     ) -> Result<ToolVersion> {
         let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
         ctx.pr.next_operation();
-        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        crate::backend::verify_checksum(self, ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
         self.install(&tv, ctx.pr.as_ref(), &tarball_path)?;
         self.verify(&tv, ctx.pr.as_ref())?;
@@ -188,7 +188,7 @@ impl Backend for DenoPlugin {
         )))
     }
 
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,

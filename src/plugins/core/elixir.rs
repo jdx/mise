@@ -11,7 +11,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, backend::VersionInfo, config::Config};
+use crate::{backend::VersionInfo, config::Config};
 use crate::{env, file, plugins};
 use async_trait::async_trait;
 use eyre::Result;
@@ -39,7 +39,7 @@ impl ElixirPlugin {
         ctx.pr.set_message("elixir --version".into());
         CmdLineRunner::new(self.elixir_bin(tv))
             .with_pr(ctx.pr.as_ref())
-            .envs(self.dependency_env(&ctx.config).await?)
+            .envs(crate::backend::dependency_env(self, &ctx.config).await?)
             .arg("--version")
             .execute()
     }
@@ -84,7 +84,7 @@ impl ElixirPlugin {
 }
 
 #[async_trait]
-impl Backend for ElixirPlugin {
+impl crate::backend::BackendImpl for ElixirPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -141,7 +141,7 @@ impl Backend for ElixirPlugin {
     ) -> Result<ToolVersion> {
         let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
         ctx.pr.next_operation();
-        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        crate::backend::verify_checksum(self, ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
         self.install(ctx, &tv, &tarball_path).await?;
         self.verify(ctx, &tv).await?;

@@ -317,20 +317,20 @@ impl ToolVersion {
 
         if v == "latest" {
             if !opts.latest_versions
-                && let Some(v) = backend.latest_installed_version(None)?
+                && let Some(v) = crate::backend::latest_installed_version(backend.as_ref(), None)?
             {
                 return build(v);
             }
             if !is_offline
-                && let Some(v) = backend
-                    .latest_version(config, None, opts.before_date)
-                    .await?
+                && let Some(v) =
+                    crate::backend::latest_version(backend.as_ref(), config, None, opts.before_date)
+                        .await?
             {
                 return build(v);
             }
         }
         if !opts.latest_versions {
-            let matches = backend.list_installed_versions_matching(&v);
+            let matches = crate::backend::list_installed_versions_matching(backend.as_ref(), &v);
             if matches.contains(&v) {
                 return build(v);
             }
@@ -345,7 +345,7 @@ impl ToolVersion {
         ) && crate::semver::is_npm_semver_range_query(&v)
         {
             if !opts.latest_versions {
-                let installed_versions = backend.list_installed_versions();
+                let installed_versions = crate::backend::list_installed_versions(backend.as_ref());
                 if let Some(matches) =
                     crate::semver::npm_semver_range_filter(&installed_versions, &v)
                     && let Some(v) = matches.last()
@@ -356,14 +356,17 @@ impl ToolVersion {
             if !is_offline {
                 let versions = match opts.before_date {
                     Some(before) => {
-                        let versions_with_info =
-                            backend.list_remote_versions_with_info(config).await?;
+                        let versions_with_info = crate::backend::list_remote_versions_with_info(
+                            backend.as_ref(),
+                            config,
+                        )
+                        .await?;
                         VersionInfo::filter_by_date(versions_with_info, before)
                             .into_iter()
                             .map(|v| v.version)
                             .collect()
                     }
-                    None => backend.list_remote_versions(config).await?,
+                    None => crate::backend::list_remote_versions(backend.as_ref(), config).await?,
                 };
                 if let Some(matches) = crate::semver::npm_semver_range_filter(&versions, &v)
                     && let Some(v) = matches.last()
@@ -384,16 +387,21 @@ impl ToolVersion {
             return build(v);
         }
         // First try with date filter (common case)
-        let matches = backend
-            .list_versions_matching_with_opts(config, &v, opts.before_date)
-            .await?;
+        let matches = crate::backend::list_versions_matching_with_opts(
+            backend.as_ref(),
+            config,
+            &v,
+            opts.before_date,
+        )
+        .await?;
         if matches.contains(&v) {
             return build(v);
         }
         // If date filter is active and exact version not found, check without filter.
         // Explicit pinned versions like "22.5.0" should not be filtered by date.
         if opts.before_date.is_some() {
-            let all_versions = backend.list_versions_matching(config, &v).await?;
+            let all_versions =
+                crate::backend::list_versions_matching(backend.as_ref(), config, &v).await?;
             if all_versions.contains(&v) {
                 // Exact match exists but was filtered by date - use it anyway
                 return build(v);
@@ -412,20 +420,21 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         let v = match v {
-            "latest" => backend
-                .latest_version(config, None, opts.before_date)
-                .await?
-                .ok_or_else(|| {
-                    let msg = if opts.before_date.is_some() {
-                        format!(
-                            "no versions found for {} matching date filter",
-                            backend.id()
-                        )
-                    } else {
-                        format!("no versions found for {}", backend.id())
-                    };
-                    eyre::eyre!(msg)
-                })?,
+            "latest" => {
+                crate::backend::latest_version(backend.as_ref(), config, None, opts.before_date)
+                    .await?
+                    .ok_or_else(|| {
+                        let msg = if opts.before_date.is_some() {
+                            format!(
+                                "no versions found for {} matching date filter",
+                                backend.id()
+                            )
+                        } else {
+                            format!("no versions found for {}", backend.id())
+                        };
+                        eyre::eyre!(msg)
+                    })?
+            }
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
@@ -440,13 +449,18 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         if !opts.latest_versions
-            && let Some(v) = backend.list_installed_versions_matching(prefix).last()
+            && let Some(v) =
+                crate::backend::list_installed_versions_matching(backend.as_ref(), prefix).last()
         {
             return Ok(Self::new(request, v.to_string()));
         }
-        let matches = backend
-            .list_versions_matching_with_opts(config, prefix, opts.before_date)
-            .await?;
+        let matches = crate::backend::list_versions_matching_with_opts(
+            backend.as_ref(),
+            config,
+            prefix,
+            opts.before_date,
+        )
+        .await?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,

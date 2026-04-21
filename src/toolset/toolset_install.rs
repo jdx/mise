@@ -473,7 +473,7 @@ impl Toolset {
             before_date,
         };
 
-        backend.install_version(ctx, tv).await
+        crate::backend::install_version(backend.as_ref(), ctx, tv).await
     }
 
     pub async fn install_missing_bin(
@@ -488,7 +488,7 @@ impl Toolset {
 
         // First check currently active installed versions
         for (p, tv) in self.list_current_installed_versions(config) {
-            if let Ok(Some(_bin)) = p.which(config, &tv, bin_name).await {
+            if let Ok(Some(_bin)) = crate::backend::which(p.as_ref(), config, &tv, bin_name).await {
                 plugins.insert(p);
             }
         }
@@ -510,7 +510,9 @@ impl Toolset {
                 .collect();
 
             for (_, tv) in backend_versions {
-                if let Ok(Some(_bin)) = backend.which(config, tv, bin_name).await {
+                if let Ok(Some(_bin)) =
+                    crate::backend::which(backend.as_ref(), config, tv, bin_name).await
+                {
                     plugins.insert(backend.clone());
                     break;
                 }

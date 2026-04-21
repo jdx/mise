@@ -9,7 +9,7 @@ use itertools::Itertools;
 use xx::regex;
 
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
+use crate::backend::{VersionInfo, normalize_idiomatic_contents};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -834,7 +834,7 @@ impl RubyPlugin {
 }
 
 #[async_trait]
-impl Backend for RubyPlugin {
+impl crate::backend::BackendImpl for RubyPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -1012,7 +1012,7 @@ impl Backend for RubyPlugin {
         opts
     }
 
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,

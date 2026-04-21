@@ -45,7 +45,10 @@ impl Where {
 
         let tv = tvr.resolve(&config, &Default::default()).await?;
 
-        if tv.backend()?.is_version_installed(&config, &tv, true) {
+        if {
+            let backend = tv.backend()?;
+            crate::backend::is_version_installed(backend.as_ref(), &config, &tv, true)
+        } {
             miseprintln!("{}", tv.install_path().to_string_lossy());
             Ok(())
         } else {

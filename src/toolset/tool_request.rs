@@ -213,7 +213,7 @@ impl ToolRequest {
     pub async fn is_installed(&self, config: &Arc<Config>) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
             match self.resolve(config, &Default::default()).await {
-                Ok(tv) => backend.is_version_installed(config, &tv, false),
+                Ok(tv) => backend::is_version_installed(backend.as_ref(), config, &tv, false),
                 Err(e) => {
                     debug!("ToolRequest.is_installed: {e:#}");
                     false
@@ -336,7 +336,7 @@ impl ToolRequest {
             return Ok(Some(lt.version));
         }
         if let Some(backend) = backend::get(self.ba()) {
-            let matches = backend.list_installed_versions_matching(v);
+            let matches = backend::list_installed_versions_matching(backend.as_ref(), v);
             if matches.iter().any(|m| m == v) {
                 return Ok(Some(v.to_string()));
             }

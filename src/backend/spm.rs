@@ -1,4 +1,3 @@
-use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
@@ -31,7 +30,7 @@ pub struct SPMBackend {
 }
 
 #[async_trait]
-impl Backend for SPMBackend {
+impl crate::backend::BackendImpl for SPMBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Spm
     }
@@ -84,7 +83,8 @@ impl Backend for SPMBackend {
         settings.ensure_experimental("spm backend")?;
 
         // Check if swift is available
-        self.warn_if_dependency_missing(
+        crate::backend::warn_if_dependency_missing(
+            self,
             &ctx.config,
             "swift",
             &["swift"],
@@ -96,7 +96,7 @@ impl Backend for SPMBackend {
         let provider = GitProvider::from_ba(&self.ba);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let revision = if tv.version == "latest" {
-            self.latest_version(&ctx.config, None, ctx.before_date)
+            crate::backend::latest_version(self, &ctx.config, None, ctx.before_date)
                 .await?
                 .ok_or_else(|| eyre::eyre!("No stable versions found"))?
         } else {
@@ -185,7 +185,7 @@ impl SPMBackend {
             "--cache-path",
             dirs::CACHE.join("spm"),
         )
-        .full_env(self.dependency_env(&ctx.config).await?)
+        .full_env(crate::backend::dependency_env(self, &ctx.config).await?)
         .read()?;
         let executables = serde_json::from_str::<PackageDescription>(&package_json)
             .wrap_err("Failed to parse package description")?
@@ -220,7 +220,7 @@ impl SPMBackend {
             .arg(dirs::CACHE.join("spm"))
             .with_pr(ctx.pr.as_ref())
             .prepend_path(
-                self.dependency_toolset(&ctx.config)
+                crate::backend::dependency_toolset(self, &ctx.config)
                     .await?
                     .list_paths(&ctx.config)
                     .await,
@@ -242,7 +242,7 @@ impl SPMBackend {
             dirs::CACHE.join("spm"),
             "--show-bin-path"
         )
-        .full_env(self.dependency_env(&ctx.config).await?)
+        .full_env(crate::backend::dependency_env(self, &ctx.config).await?)
         .read()?;
         Ok(PathBuf::from(bin_path.trim().to_string()).join(executable))
     }

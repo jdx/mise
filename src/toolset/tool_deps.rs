@@ -46,7 +46,7 @@ impl ToolDeps {
             let tr_key = tool_key(tr);
 
             if let Ok(backend) = tr.backend()
-                && let Ok(deps) = backend.get_all_dependencies(true)
+                && let Ok(deps) = crate::backend::get_all_dependencies(backend.as_ref(), true)
             {
                 for dep_ba in deps {
                     let dep_fulls = dep_ba.all_fulls();

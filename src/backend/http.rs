@@ -598,7 +598,7 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 #[async_trait]
-impl Backend for HttpBackend {
+impl crate::backend::BackendImpl for HttpBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Http
     }

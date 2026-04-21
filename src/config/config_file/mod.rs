@@ -544,7 +544,7 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
 async fn filename_is_idiomatic(file_name: String) -> Option<Vec<Arc<dyn Backend>>> {
     let mut backends = vec![];
     for b in backend::list() {
-        match b.idiomatic_filenames().await {
+        match backend::idiomatic_filenames(b.as_ref()).await {
             Ok(filenames) if filenames.contains(&file_name) => backends.push(b),
             Err(e) => debug!("idiomatic_filenames failed for {}: {:?}", b, e),
             _ => {}

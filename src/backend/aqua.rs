@@ -41,7 +41,7 @@ pub struct AquaBackend {
 }
 
 #[async_trait]
-impl Backend for AquaBackend {
+impl crate::backend::BackendImpl for AquaBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Aqua
     }
@@ -553,7 +553,7 @@ impl Backend for AquaBackend {
 
     /// Resolve platform-specific lock information for any target platform.
     /// This enables cross-platform lockfile generation without installation.
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
@@ -1420,7 +1420,7 @@ impl AquaBackend {
         }
 
         let tarball_path = tv.download_path().join(filename);
-        self.verify_checksum(ctx, tv, &tarball_path)?;
+        crate::backend::verify_checksum(self, ctx, tv, &tarball_path)?;
         Ok(())
     }
 

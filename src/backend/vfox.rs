@@ -37,7 +37,7 @@ pub struct VfoxBackend {
 }
 
 #[async_trait]
-impl Backend for VfoxBackend {
+impl crate::backend::BackendImpl for VfoxBackend {
     fn get_type(&self) -> BackendType {
         match self.plugin_enum {
             PluginEnum::VfoxBackend(_) => BackendType::VfoxBackend(self.plugin.name().to_string()),
@@ -75,7 +75,7 @@ impl Backend for VfoxBackend {
             || async {
                 let (mut vfox, _log_rx) = this.plugin.vfox();
                 this.ensure_plugin_installed(config).await?;
-                if let Ok(dep_env) = this.dependency_env(config).await {
+                if let Ok(dep_env) = crate::backend::dependency_env(this, config).await {
                     vfox.cmd_env = Some(dep_env.into_iter().collect());
                 }
 
@@ -134,7 +134,7 @@ impl Backend for VfoxBackend {
                 info!("{}", line);
             }
         });
-        if let Ok(dep_env) = self.dependency_env(&ctx.config).await {
+        if let Ok(dep_env) = crate::backend::dependency_env(self, &ctx.config).await {
             vfox.cmd_env = Some(dep_env.into_iter().collect());
         }
 
@@ -297,7 +297,7 @@ impl Backend for VfoxBackend {
         Ok(pre_install.url)
     }
 
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
@@ -425,7 +425,7 @@ impl VfoxBackend {
             .get_or_try_init_async(async || {
                 self.ensure_plugin_installed(config).await?;
                 let (mut vfox, _log_rx) = self.plugin.vfox();
-                if let Ok(dep_env) = self.dependency_env(config).await {
+                if let Ok(dep_env) = crate::backend::dependency_env(self, config).await {
                     vfox.cmd_env = Some(dep_env.into_iter().collect());
                 }
 

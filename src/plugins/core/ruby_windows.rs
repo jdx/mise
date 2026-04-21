@@ -147,7 +147,7 @@ impl RubyPlugin {
 }
 
 #[async_trait]
-impl Backend for RubyPlugin {
+impl crate::backend::BackendImpl for RubyPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -213,7 +213,7 @@ impl Backend for RubyPlugin {
             );
         }
         let tarball = self.download(&tv, ctx.pr.as_ref()).await?;
-        self.verify_checksum(ctx, &mut tv, &tarball)?;
+        crate::backend::verify_checksum(self, ctx, &mut tv, &tarball)?;
         self.install(ctx, &tv, &tarball).await?;
         self.verify(ctx, &tv).await?;
         self.install_rubygems_hook(&tv)?;
@@ -288,24 +288,21 @@ mod tests {
         let config = Config::get().await.unwrap();
         let plugin = RubyPlugin::new();
         assert!(
-            !plugin
-                .list_versions_matching(&config, "3")
+            !crate::backend::list_versions_matching(&plugin, &config, "3")
                 .await
                 .unwrap()
                 .is_empty(),
             "versions for 3 should not be empty"
         );
         assert!(
-            !plugin
-                .list_versions_matching(&config, "truffleruby-24")
+            !crate::backend::list_versions_matching(&plugin, &config, "truffleruby-24")
                 .await
                 .unwrap()
                 .is_empty(),
             "versions for truffleruby-24 should not be empty"
         );
         assert!(
-            !plugin
-                .list_versions_matching(&config, "truffleruby+graalvm-24")
+            !crate::backend::list_versions_matching(&plugin, &config, "truffleruby+graalvm-24")
                 .await
                 .unwrap()
                 .is_empty(),

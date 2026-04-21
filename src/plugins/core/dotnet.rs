@@ -51,7 +51,7 @@ impl DotnetPlugin {
 }
 
 #[async_trait]
-impl Backend for DotnetPlugin {
+impl crate::backend::BackendImpl for DotnetPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }

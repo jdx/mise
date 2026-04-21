@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::{path::PathBuf, sync::Arc};
 
-use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
@@ -220,7 +219,7 @@ impl ErlangPlugin {
             Some(ctx.pr.as_ref()),
         )
         .await?;
-        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        crate::backend::verify_checksum(self, ctx, &mut tv, &tarball_path)?;
         ctx.pr.set_message(format!("Extracting {tarball_name}"));
         file::untar(
             &tarball_path,
@@ -271,7 +270,7 @@ impl ErlangPlugin {
             Some(ctx.pr.as_ref()),
         )
         .await?;
-        self.verify_checksum(ctx, &mut tv, &zip_path)?;
+        crate::backend::verify_checksum(self, ctx, &mut tv, &zip_path)?;
         ctx.pr.set_message(format!("Extracting {}", zip_name));
         file::unzip(&zip_path, &tv.install_path(), &Default::default())?;
         Ok(Some(tv))
@@ -317,7 +316,7 @@ impl ErlangPlugin {
 }
 
 #[async_trait]
-impl Backend for ErlangPlugin {
+impl crate::backend::BackendImpl for ErlangPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }

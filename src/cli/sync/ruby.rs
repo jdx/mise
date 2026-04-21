@@ -53,7 +53,9 @@ impl SyncRuby {
                 continue;
             }
             let v = entry.trim_start_matches("ruby@");
-            if ruby.create_symlink(v, &brew_prefix.join(&entry))?.is_some() {
+            if crate::backend::create_symlink(ruby.as_ref(), v, &brew_prefix.join(&entry))?
+                .is_some()
+            {
                 miseprintln!("Synced ruby@{} from Homebrew", v);
             }
         }

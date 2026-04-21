@@ -4,9 +4,9 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::Config;
 use crate::config::Settings;
 use crate::http::HTTP_FETCH;
-use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
 
@@ -19,7 +19,7 @@ pub struct DotnetBackend {
 }
 
 #[async_trait]
-impl Backend for DotnetBackend {
+impl crate::backend::BackendImpl for DotnetBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Dotnet
     }
@@ -76,7 +76,8 @@ impl Backend for DotnetBackend {
         Settings::get().ensure_experimental("dotnet backend")?;
 
         // Check if dotnet is available
-        self.warn_if_dependency_missing(
+        crate::backend::warn_if_dependency_missing(
+            self,
             &ctx.config,
             "dotnet",
             &["dotnet"],
@@ -98,7 +99,7 @@ impl Backend for DotnetBackend {
         }
 
         cli.with_pr(ctx.pr.as_ref())
-            .envs(self.dependency_env(&ctx.config).await?)
+            .envs(crate::backend::dependency_env(self, &ctx.config).await?)
             .execute()?;
 
         Ok(tv)

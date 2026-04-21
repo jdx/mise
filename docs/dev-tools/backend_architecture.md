@@ -15,18 +15,22 @@ Think of backends as "adapters" that let mise work with different package manage
 
 ## The Backend Trait System
 
-All backends implement a common interface (called a "trait" in Rust), which means they all provide the same basic functionality:
+All backends implement a common hook interface (called a "trait" in Rust), while shared lifecycle operations live in `src/backend/mod.rs` as module functions:
 
 ```rust
-pub trait Backend {
-    async fn list_remote_versions(&self) -> Result<Vec<String>>;
-    async fn install_version(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()>;
-    async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()>;
+pub trait BackendImpl {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>>;
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
+    async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>>;
     // ... other methods
 }
+
+// Callers use shared operations such as:
+backend::list_remote_versions(backend, config).await?;
+backend::install_version(backend, ctx, tv).await?;
 ```
 
-This design allows mise to treat all backends uniformly while each backend handles the specifics of its installation method.
+This design allows mise to treat all backends uniformly while keeping orchestration logic in one place and each backend focused on the specifics of its installation method.
 
 ## Backend Types
 

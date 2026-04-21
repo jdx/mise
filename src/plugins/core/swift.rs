@@ -5,7 +5,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, backend::VersionInfo, config::Config};
+use crate::{backend::VersionInfo, config::Config};
 use crate::{file, github, gpg, plugins};
 use async_trait::async_trait;
 use eyre::Result;
@@ -200,7 +200,7 @@ mod tests {
 }
 
 #[async_trait]
-impl Backend for SwiftPlugin {
+impl crate::backend::BackendImpl for SwiftPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -257,7 +257,7 @@ impl Backend for SwiftPlugin {
         if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
             self.verify_gpg(ctx, &tv, &tarball_path).await?;
         }
-        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        crate::backend::verify_checksum(self, ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;
         self.symlink_bins(&tv)?;
         self.verify(ctx, &tv)?;

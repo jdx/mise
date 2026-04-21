@@ -1,4 +1,3 @@
-use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
@@ -29,7 +28,7 @@ pub struct GoBackend {
 }
 
 #[async_trait]
-impl Backend for GoBackend {
+impl crate::backend::BackendImpl for GoBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Go
     }
@@ -48,7 +47,8 @@ impl Backend for GoBackend {
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Check if go is available
-        self.warn_if_dependency_missing(
+        crate::backend::warn_if_dependency_missing(
+            self,
             config,
             "go",
             &["go"],
@@ -86,7 +86,8 @@ impl Backend for GoBackend {
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         // Check if go is available
-        self.warn_if_dependency_missing(
+        crate::backend::warn_if_dependency_missing(
+            self,
             &ctx.config,
             "go",
             &["go"],
@@ -109,7 +110,7 @@ impl Backend for GoBackend {
 
             cmd.arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(ctx.pr.as_ref())
-                .envs(self.dependency_env(&ctx.config).await?)
+                .envs(crate::backend::dependency_env(self, &ctx.config).await?)
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()
         };
@@ -271,7 +272,7 @@ impl GoBackend {
                     "-json",
                     mod_path
                 )
-                .full_env(self.dependency_env(config).await?)
+                .full_env(crate::backend::dependency_env(self, config).await?)
                 .read()
                 {
                     Ok(raw) => raw,
@@ -299,7 +300,7 @@ impl GoBackend {
         mod_path: &str,
         versions: &[String],
     ) -> Vec<VersionInfo> {
-        let env = match self.dependency_env(config).await {
+        let env = match crate::backend::dependency_env(self, config).await {
             Ok(env) => env,
             Err(_) => {
                 return versions

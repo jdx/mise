@@ -738,10 +738,10 @@ across different installation systems.
 
 1. **Create the backend module** in `src/backend/` (e.g., `my_backend.rs`)
 
-2. **Implement the Backend trait**:
+2. **Implement the backend hook trait**:
 
    ```rust
-   use crate::backend::{Backend, BackendType};
+   use crate::backend::{BackendImpl, BackendType, VersionInfo};
    use crate::install_context::InstallContext;
 
    #[derive(Debug)]
@@ -749,25 +749,30 @@ across different installation systems.
        // backend-specific fields
    }
 
-   impl Backend for MyBackend {
+   impl BackendImpl for MyBackend {
        fn get_type(&self) -> BackendType { BackendType::MyBackend }
 
-       async fn list_remote_versions(&self) -> Result<Vec<String>> {
+       async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
            // Implementation for listing available versions
        }
 
-       async fn install_version(&self, ctx: &InstallContext,
-                                 tv: &ToolVersion) -> Result<()> {
+       async fn install_version_(&self, ctx: &InstallContext,
+                                  tv: ToolVersion) -> Result<ToolVersion> {
            // Implementation for installing a specific version
        }
 
-       async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()> {
+       async fn uninstall_version_impl(&self, config: &Arc<Config>, pr: &dyn SingleReport,
+                                       tv: &ToolVersion) -> Result<()> {
            // Implementation for uninstalling a version
        }
 
        // ... other required methods
    }
    ```
+
+   CLI and toolset code should call shared operations such as
+   `backend::list_remote_versions`, `backend::install_version`, and
+   `backend::uninstall_version` instead of calling implementation hooks directly.
 
 3. **Register the backend** in `src/backend/mod.rs`:
 
