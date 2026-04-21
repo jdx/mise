@@ -455,7 +455,10 @@ impl AquaPackage {
         if let Some(value) = self.var_values.get(&var.name) {
             return Ok(Some(value.clone()));
         }
-        var.default.as_ref().map(yaml_value_to_string).transpose()
+        var.default
+            .as_ref()
+            .map(|value| yaml_var_to_string(&var.name, value))
+            .transpose()
     }
 
     /// Set up version filter expression if configured
@@ -525,34 +528,28 @@ impl AquaPackage {
     }
 }
 
-fn yaml_value_to_string(value: &serde_yaml::Value) -> Result<String> {
+fn yaml_var_to_string(name: &str, value: &serde_yaml::Value) -> Result<String> {
     match value {
         serde_yaml::Value::String(s) => Ok(s.clone()),
-        serde_yaml::Value::Number(n) => Ok(n.to_string()),
-        serde_yaml::Value::Bool(b) => Ok(b.to_string()),
         serde_yaml::Value::Null => Ok(String::new()),
-        serde_yaml::Value::Sequence(seq) => Ok(format!(
-            "[{}]",
-            seq.iter()
-                .map(yaml_value_to_string)
-                .collect::<Result<Vec<_>>>()?
-                .join(" ")
+        serde_yaml::Value::Tagged(tagged) => yaml_var_to_string(name, &tagged.value),
+        value => Err(eyre!(
+            "aqua var `{}` must be a string, got {}",
+            name,
+            yaml_value_kind(value)
         )),
-        serde_yaml::Value::Mapping(map) => {
-            let mut pairs = map
-                .iter()
-                .map(|(key, value)| Ok((yaml_value_to_string(key)?, yaml_value_to_string(value)?)))
-                .collect::<Result<Vec<_>>>()?;
-            pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
-            Ok(format!(
-                "map[{}]",
-                pairs
-                    .into_iter()
-                    .map(|(key, value)| format!("{key}:{value}"))
-                    .join(" ")
-            ))
-        }
-        serde_yaml::Value::Tagged(tagged) => yaml_value_to_string(&tagged.value),
+    }
+}
+
+fn yaml_value_kind(value: &serde_yaml::Value) -> &'static str {
+    match value {
+        serde_yaml::Value::String(_) => "string",
+        serde_yaml::Value::Number(_) => "number",
+        serde_yaml::Value::Bool(_) => "boolean",
+        serde_yaml::Value::Sequence(_) => "array",
+        serde_yaml::Value::Mapping(_) => "object",
+        serde_yaml::Value::Null => "null",
+        serde_yaml::Value::Tagged(tagged) => yaml_value_kind(&tagged.value),
     }
 }
 
@@ -1161,7 +1158,7 @@ mod tests {
             asset: "tool-go{{.Vars.go_version}}-{{.Version}}.tar.gz".to_string(),
             vars: vec![AquaVar {
                 name: "go_version".to_string(),
-                default: Some(serde_yaml::from_str("1.24").unwrap()),
+                default: Some(serde_yaml::from_str(r#""1.24""#).unwrap()),
                 required: false,
             }],
             ..Default::default()
@@ -1171,7 +1168,7 @@ mod tests {
     }
 
     #[test]
-    fn test_vars_default_structured_value() {
+    fn test_vars_default_array_errors() {
         let pkg = AquaPackage {
             asset: "tool-{{.Vars.channels}}-{{.Version}}.tar.gz".to_string(),
             vars: vec![AquaVar {
@@ -1181,12 +1178,16 @@ mod tests {
             }],
             ..Default::default()
         };
-        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
-        assert_eq!(asset, "tool-[stable beta]-1.0.0.tar.gz");
+        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("aqua var `channels` must be a string, got array"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
-    fn test_vars_default_mapping_value() {
+    fn test_vars_default_object_errors() {
         let pkg = AquaPackage {
             asset: "tool-{{.Vars.config}}-{{.Version}}.tar.gz".to_string(),
             vars: vec![AquaVar {
@@ -1196,8 +1197,12 @@ mod tests {
             }],
             ..Default::default()
         };
-        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
-        assert_eq!(asset, "tool-map[channel:stable flavor:beta]-1.0.0.tar.gz");
+        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("aqua var `config` must be a string, got object"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

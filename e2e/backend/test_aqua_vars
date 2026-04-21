@@ -68,3 +68,10 @@ EOF_MISE
 
 mise lock --platform "$MISE_PLATFORM"
 assert_succeed "cmp mise.lock nested-vars.lock"
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/vars-tool" = { version = "1.0.0", vars = { fixture_version = ["2.0.0"] } }
+EOF_MISE
+
+assert_fail "mise install --force aqua:example/vars-tool@1.0.0" 'aqua var `vars.fixture_version` must be a string, got array'

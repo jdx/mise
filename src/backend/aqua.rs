@@ -769,15 +769,12 @@ impl AquaBackend {
         if pkg.vars.is_empty() {
             return Ok(pkg);
         }
-        let var_values: HashMap<String, String> = pkg
-            .vars
-            .iter()
-            .filter_map(|var| {
-                opts.get_nested_string(&format!("vars.{}", var.name))
-                    .or_else(|| opts.get_string(&var.name))
-                    .map(|value| (var.name.clone(), value))
-            })
-            .collect();
+        let mut var_values = HashMap::new();
+        for var in &pkg.vars {
+            if let Some(value) = aqua_var_option(opts, &var.name)? {
+                var_values.insert(var.name.clone(), value);
+            }
+        }
         pkg.with_var_values(var_values)
     }
 
@@ -789,7 +786,7 @@ impl AquaBackend {
             }
             if key == "vars" {
                 if let toml::Value::Table(table) = value {
-                    Self::insert_table_lockfile_options(&mut result, key, table);
+                    Self::insert_vars_lockfile_options(&mut result, table);
                 }
             } else if let Some(value) = toml_value_to_string(value) {
                 let key = if key.starts_with("vars.") {
@@ -803,22 +800,10 @@ impl AquaBackend {
         result
     }
 
-    fn insert_table_lockfile_options(
-        result: &mut BTreeMap<String, String>,
-        prefix: &str,
-        table: &toml::Table,
-    ) {
+    fn insert_vars_lockfile_options(result: &mut BTreeMap<String, String>, table: &toml::Table) {
         for (key, value) in table {
-            let key = format!("{prefix}.{key}");
-            match value {
-                toml::Value::Table(table) => {
-                    Self::insert_table_lockfile_options(result, &key, table)
-                }
-                value => {
-                    if let Some(value) = toml_value_to_string(value) {
-                        result.insert(key, value);
-                    }
-                }
+            if let Some(value) = toml_value_to_string(value) {
+                result.insert(format!("vars.{key}"), value);
             }
         }
     }
@@ -2025,10 +2010,41 @@ impl AquaBackend {
 fn toml_value_to_string(value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::String(s) => Some(s.clone()),
-        toml::Value::Integer(i) => Some(i.to_string()),
-        toml::Value::Boolean(b) => Some(b.to_string()),
-        toml::Value::Float(f) => Some(f.to_string()),
         _ => None,
+    }
+}
+
+fn aqua_var_option(opts: &ToolVersionOptions, name: &str) -> Result<Option<String>> {
+    if let Some(toml::Value::Table(vars)) = opts.opts.get("vars")
+        && let Some(value) = vars.get(name)
+    {
+        return toml_string_var(&format!("vars.{name}"), value).map(Some);
+    }
+    opts.opts
+        .get(name)
+        .map(|value| toml_string_var(name, value).map(Some))
+        .unwrap_or(Ok(None))
+}
+
+fn toml_string_var(key: &str, value: &toml::Value) -> Result<String> {
+    match value {
+        toml::Value::String(s) => Ok(s.clone()),
+        value => bail!(
+            "aqua var `{}` must be a string, got {}",
+            key,
+            toml_value_kind(value)
+        ),
+    }
+}
+
+fn toml_value_kind(value: &toml::Value) -> &'static str {
+    match value {
+        toml::Value::String(_) => "string",
+        toml::Value::Integer(_) | toml::Value::Float(_) => "number",
+        toml::Value::Boolean(_) => "boolean",
+        toml::Value::Array(_) => "array",
+        toml::Value::Table(_) => "object",
+        toml::Value::Datetime(_) => "datetime",
     }
 }
 
@@ -2082,6 +2098,28 @@ mod tests {
         assert_eq!(
             pkg.asset("1.0.0", "linux", "amd64").unwrap(),
             "tool-beta-1.0.0.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_apply_var_options_errors_for_array_vars() {
+        let mut pkg = AquaPackage::default();
+        pkg.vars = vec![aqua_var("channels", true)];
+        let mut opts = ToolVersionOptions::default();
+        let mut vars = toml::Table::new();
+        vars.insert(
+            "channels".to_string(),
+            toml::Value::Array(vec![toml::Value::String("stable".to_string())]),
+        );
+        opts.opts
+            .insert("vars".to_string(), toml::Value::Table(vars));
+
+        let err = AquaBackend::apply_var_options(pkg, &opts).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("aqua var `vars.channels` must be a string, got array"),
+            "unexpected error: {err}"
         );
     }
 
