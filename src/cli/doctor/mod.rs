@@ -120,6 +120,7 @@ impl Doctor {
         self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
         self.analyze_backend_mismatches();
+        self.analyze_stale_latest_dirs();
         self.check_path_ordering(ts, &config).await;
         data.insert(
             "paths".into(),
@@ -237,6 +238,7 @@ impl Doctor {
 
         self.analyze_plugins();
         self.analyze_backend_mismatches();
+        self.analyze_stale_latest_dirs();
 
         let env_vars = mise_env_vars()
             .into_iter()
@@ -464,6 +466,22 @@ impl Doctor {
                     )
                 };
                 self.warnings.push(msg);
+            }
+        }
+    }
+
+    fn analyze_stale_latest_dirs(&mut self) {
+        for backend in backend::list() {
+            let latest = backend.ba().installs_path.join("latest");
+            if !latest.is_symlink() && latest.is_dir() {
+                let path = display_path(&latest);
+                self.warnings.push(formatdoc!(
+                    "tool '{}' has a stale `latest` install directory at {path}
+                    mise expects `latest` to be a runtime symlink to a concrete version.
+                    This can cause repeated upgrades like `latest -> <same version>`.
+                    Fix by removing the stale `latest` directory at {path}, then running `mise install`.",
+                    backend.ba(),
+                ));
             }
         }
     }
@@ -713,3 +731,114 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     [WARN] plugin node is not installed
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendArg;
+
+    struct LatestPathGuard {
+        tool_dir: PathBuf,
+    }
+
+    impl LatestPathGuard {
+        fn new(tool: &str) -> Self {
+            let tool_dir = dirs::INSTALLS.join(tool);
+            let _ = file::remove_all_with_warning(&tool_dir);
+            Self { tool_dir }
+        }
+    }
+
+    impl Drop for LatestPathGuard {
+        fn drop(&mut self) {
+            let _ = file::remove_all_with_warning(&self.tool_dir);
+        }
+    }
+
+    #[tokio::test]
+    async fn warns_on_stale_latest_directory() {
+        let _config = Config::get().await.unwrap();
+        let _guard = LatestPathGuard::new("node");
+        let latest = dirs::INSTALLS.join("node").join("latest");
+        file::create_dir_all(dirs::INSTALLS.join("node").join("24.0.0")).unwrap();
+        file::create_dir_all(&latest).unwrap();
+        install_state::reset();
+        backend::load_tools().await.unwrap();
+        backend::get(&BackendArg::from("node")).unwrap();
+
+        let mut doctor = Doctor {
+            subcommand: None,
+            errors: vec![],
+            warnings: vec![],
+            json: false,
+        };
+        doctor.analyze_stale_latest_dirs();
+
+        assert!(doctor.warnings.iter().any(|w| {
+            w.contains("tool 'node' has a stale `latest` install directory")
+                && w.contains("This can cause repeated upgrades like `latest -> <same version>`")
+                && w.contains("Fix by removing the stale `latest` directory at ")
+                && w.contains(&display_path(&latest))
+                && w.contains("then running `mise install`.")
+                && !w.contains("mise uninstall node@")
+        }));
+    }
+
+    #[tokio::test]
+    async fn warns_on_stale_latest_directory_without_local_concrete_version() {
+        let _config = Config::get().await.unwrap();
+        let _guard = LatestPathGuard::new("node");
+        let latest = dirs::INSTALLS.join("node").join("latest");
+        file::create_dir_all(&latest).unwrap();
+        install_state::reset();
+        backend::load_tools().await.unwrap();
+        backend::get(&BackendArg::from("node")).unwrap();
+
+        let mut doctor = Doctor {
+            subcommand: None,
+            errors: vec![],
+            warnings: vec![],
+            json: false,
+        };
+        doctor.analyze_stale_latest_dirs();
+
+        assert!(doctor.warnings.iter().any(|w| {
+            w.contains("tool 'node' has a stale `latest` install directory")
+                && w.contains("Fix by removing the stale `latest` directory at ")
+                && w.contains(&display_path(&latest))
+                && w.contains("then running `mise install`.")
+                && !w.contains("mise uninstall node@")
+        }));
+    }
+
+    #[tokio::test]
+    async fn does_not_warn_on_valid_runtime_symlink() {
+        let _config = Config::get().await.unwrap();
+        let _guard = LatestPathGuard::new("node");
+        let version = dirs::INSTALLS.join("node").join("24.0.0");
+        file::create_dir_all(&version).unwrap();
+        file::make_symlink_or_file(
+            &PathBuf::from(".").join("24.0.0"),
+            &dirs::INSTALLS.join("node").join("latest"),
+        )
+        .unwrap();
+        install_state::reset();
+        backend::load_tools().await.unwrap();
+        backend::get(&BackendArg::from("node")).unwrap();
+
+        let mut doctor = Doctor {
+            subcommand: None,
+            errors: vec![],
+            warnings: vec![],
+            json: false,
+        };
+        doctor.analyze_stale_latest_dirs();
+
+        assert!(
+            !doctor
+                .warnings
+                .iter()
+                .any(|w| w.contains("tool 'node' has a stale `latest` install directory"))
+        );
+    }
+}
