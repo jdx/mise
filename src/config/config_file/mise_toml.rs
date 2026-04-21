@@ -23,10 +23,10 @@ use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
+use crate::deps::DepsConfig;
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, HookDef, Hooks};
-use crate::prepare::PrepareConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::{Task, TaskTemplate};
@@ -37,6 +37,9 @@ use crate::{env, file};
 
 use super::diagnostic::toml_parse_error;
 use super::{ConfigFileType, min_version::MinVersionSpec};
+
+const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
+const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
 
 /// Convert a `toml::Value` to a `toml_edit::Value` for serialization.
 fn toml_value_to_edit(v: toml::Value) -> Value {
@@ -79,8 +82,10 @@ pub struct MiseToml {
     context: TeraContext,
     #[serde(skip)]
     path: PathBuf,
-    #[serde(default, alias = "dotenv", deserialize_with = "deserialize_arr")]
+    #[serde(default, deserialize_with = "deserialize_arr")]
     env_file: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    dotenv: Vec<String>,
     #[serde(default)]
     env: EnvList,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -110,7 +115,7 @@ pub struct MiseToml {
     #[serde(default)]
     watch_files: Vec<WatchFile>,
     #[serde(default)]
-    prepare: Option<PrepareConfig>,
+    deps: Option<DepsConfig>,
     #[serde(default)]
     vars: EnvList,
     #[serde(default)]
@@ -248,6 +253,36 @@ impl MiseToml {
                 Ok(body.parse()?)
             })
             .cloned()
+    }
+
+    fn warn_deprecated_env_keys(&self) {
+        if !self.env_file.is_empty() {
+            deprecated_at!(
+                LEGACY_ENV_KEYS_DEPRECATED_WARN_AT,
+                LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT,
+                "config.env_file",
+                "`env_file` in {} is deprecated. Use `env._.file` instead.",
+                display_path(&self.path)
+            );
+        }
+        if !self.dotenv.is_empty() {
+            deprecated_at!(
+                LEGACY_ENV_KEYS_DEPRECATED_WARN_AT,
+                LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT,
+                "config.dotenv",
+                "`dotenv` in {} is deprecated. Use `env._.file` instead.",
+                display_path(&self.path)
+            );
+        }
+        if !self.env_path.is_empty() {
+            deprecated_at!(
+                LEGACY_ENV_KEYS_DEPRECATED_WARN_AT,
+                LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT,
+                "config.env_path",
+                "`env_path` in {} is deprecated. Use `env._.path` instead.",
+                display_path(&self.path)
+            );
+        }
     }
 
     fn doc_mut(&self) -> eyre::Result<MutexGuard<'_, OnceCell<DocumentMut>>> {
@@ -518,6 +553,7 @@ impl ConfigFile for MiseToml {
     }
 
     fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
+        self.warn_deprecated_env_keys();
         let env_entries = self.env.0.iter().cloned();
         let path_entries = self
             .env_path
@@ -527,6 +563,7 @@ impl ConfigFile for MiseToml {
         let env_files = self
             .env_file
             .iter()
+            .chain(&self.dotenv)
             .map(|p| EnvDirective::File(p.clone(), Default::default()))
             .collect_vec();
         let all = path_entries
@@ -898,8 +935,8 @@ impl ConfigFile for MiseToml {
             .collect())
     }
 
-    fn prepare_config(&self) -> Option<PrepareConfig> {
-        self.prepare.clone()
+    fn deps_config(&self) -> Option<DepsConfig> {
+        self.deps.clone()
     }
 }
 
@@ -929,6 +966,9 @@ impl Debug for MiseToml {
         if !self.env_file.is_empty() {
             d.field("env_file", &self.env_file);
         }
+        if !self.dotenv.is_empty() {
+            d.field("dotenv", &self.dotenv);
+        }
         if let Ok(env) = self.env_entries()
             && !env.is_empty()
         {
@@ -955,6 +995,7 @@ impl Clone for MiseToml {
             context: self.context.clone(),
             path: self.path.clone(),
             env_file: self.env_file.clone(),
+            dotenv: self.dotenv.clone(),
             env: self.env.clone(),
             env_path: self.env_path.clone(),
             alias: self.alias.clone(),
@@ -970,7 +1011,7 @@ impl Clone for MiseToml {
             task_config: self.task_config.clone(),
             settings: self.settings.clone(),
             watch_files: self.watch_files.clone(),
-            prepare: self.prepare.clone(),
+            deps: self.deps.clone(),
             vars: self.vars.clone(),
             experimental_monorepo_root: self.experimental_monorepo_root,
             monorepo: self.monorepo.clone(),
@@ -2223,6 +2264,12 @@ mod tests {
             dotenv = ".env"
             [env]
             _.file = ".env2"
+        "#});
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"\n_.file = \".env2\"""#);
+
+        let env = parse_env(formatdoc! {r#"
+            env_file = ".env"
+            dotenv = ".env2"
             "#});
         assert_debug_snapshot!(env, @r#""_.file = \".env\"\n_.file = \".env2\"""#);
     }

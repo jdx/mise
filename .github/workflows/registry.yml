@@ -26,7 +26,7 @@ jobs:
     outputs:
       registry-changed: ${{ steps.check.outputs.registry-changed }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
       - id: check
@@ -50,13 +50,13 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: build
           save-if: false
       - run: cargo build --all-features
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise
           path: target/debug/mise
@@ -70,7 +70,7 @@ jobs:
       tools: ${{ steps.determine-tools.outputs.tools }}
       new_tools: ${{ steps.registry-diff.outputs.new_tools }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
       - id: workflow-check
@@ -111,7 +111,7 @@ jobs:
       github.event.pull_request.user.login != 'jdx' &&
       needs.list-changed-tools.outputs.new_tools != ''
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Check new tools have tests
         run: |
           missing_tests=""
@@ -147,7 +147,7 @@ jobs:
       matrix:
         tranche: ${{ fromJson(needs.list-changed-tools.outputs.tools == '' && '[0,1,2,3,4,5,6,7]' || '[0]') }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Fetch token from pool
         id: token
         uses: ./.github/actions/fetch-token
@@ -155,7 +155,7 @@ jobs:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
       - name: Set pooled token for Docker
         run: echo "POOL_TOKEN=${{ steps.token.outputs.token }}" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise
           path: target/debug

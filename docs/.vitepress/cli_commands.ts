@@ -62,6 +62,20 @@ export const commands: { [key: string]: Command } = {
   deactivate: {
     hide: false,
   },
+  deps: {
+    hide: false,
+    subcommands: {
+      add: {
+        hide: false,
+      },
+      install: {
+        hide: false,
+      },
+      remove: {
+        hide: false,
+      },
+    },
+  },
   direnv: {
     hide: true,
     subcommands: {
@@ -200,9 +214,6 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
     },
-  },
-  prepare: {
-    hide: false,
   },
   prune: {
     hide: false,

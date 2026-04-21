@@ -360,6 +360,9 @@ install_before = "7d"  # only resolve to versions released more than 7 days ago
 
 This pairs well with lockfiles — use `install_before` to avoid picking up brand-new releases, and lockfiles to pin the exact versions you've vetted.
 
+Some package-manager backends also forward this cutoff into transitive dependency resolution during
+install. This includes `npm:` and `pipx:` tools.
+
 ## See Also
 
 - [Configuration Settings](/configuration/settings) - All available settings

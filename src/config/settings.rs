@@ -93,7 +93,9 @@ pub enum SettingsStatusMissingTools {
 #[strum(serialize_all = "snake_case")]
 pub enum NpmPackageManager {
     #[default]
+    Auto,
     Npm,
+    Aube,
     Bun,
     Pnpm,
 }
@@ -638,17 +640,11 @@ impl Settings {
     }
 
     pub fn disable_tools(&self) -> BTreeSet<String> {
-        self.disable_tools
-            .iter()
-            .map(|t| t.trim().to_string())
-            .collect()
+        normalize_tool_names(&self.disable_tools)
     }
 
-    pub fn enable_tools(&self) -> BTreeSet<String> {
-        self.enable_tools
-            .iter()
-            .map(|t| t.trim().to_string())
-            .collect()
+    pub fn enable_tools(&self) -> Option<BTreeSet<String>> {
+        self.enable_tools.as_ref().map(normalize_tool_names)
     }
 
     pub fn partial_as_dict(partial: &SettingsPartial) -> eyre::Result<toml::Table> {
@@ -872,6 +868,15 @@ where
         .map(|set| set.into_iter().collect())
 }
 
+fn normalize_tool_names(tools: &BTreeSet<String>) -> BTreeSet<String> {
+    tools
+        .iter()
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 /// Parse URL replacements from JSON string format
 /// Expected format: {"source_domain": "replacement_domain", ...}
 pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, serde_json::Error> {
@@ -961,6 +966,18 @@ mod tests {
         let expected: BTreeSet<String> =
             ["foo".to_string(), "bar".to_string()].into_iter().collect();
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_normalize_tool_names() {
+        let tools = BTreeSet::from([
+            " node ".to_string(),
+            "  ".to_string(),
+            "ruby".to_string(),
+            "".to_string(),
+        ]);
+        let expected = BTreeSet::from(["node".to_string(), "ruby".to_string()]);
+        assert_eq!(normalize_tool_names(&tools), expected);
     }
 
     #[test]

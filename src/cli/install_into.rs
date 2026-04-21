@@ -1,7 +1,5 @@
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::config::settings::Settings;
-use crate::duration::parse_into_timestamp;
 use crate::install_context::InstallContext;
 use crate::toolset::tool_request::effective_before_date;
 use crate::toolset::{ResolveOptions, ToolsetBuilder};
@@ -29,14 +27,7 @@ pub struct InstallInto {
 impl InstallInto {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let before_date = match self.tool.tvr.as_ref() {
-            Some(tvr) => effective_before_date(tvr, &Default::default())?,
-            None => Settings::get()
-                .install_before
-                .as_deref()
-                .map(parse_into_timestamp)
-                .transpose()?,
-        };
+        let before_date = effective_before_date(self.tool.tvr.as_ref(), &Default::default())?;
         let ts = Arc::new(
             ToolsetBuilder::new()
                 .with_args(std::slice::from_ref(&self.tool))

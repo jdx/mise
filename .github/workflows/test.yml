@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: build
@@ -38,7 +38,7 @@ jobs:
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise-ubuntu-latest
           path: target/debug/mise
@@ -51,7 +51,7 @@ jobs:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: build
@@ -62,7 +62,7 @@ jobs:
           cargo build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - run: mise -v
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise-windows-latest
           path: |
@@ -78,7 +78,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
@@ -124,19 +124,19 @@ jobs:
     timeout-minutes: 15
     needs: [build-ubuntu]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
       - uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
-      - uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37 # v2
+      - uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2
         with:
           tool: cargo-deny,cargo-msrv,cargo-machete
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-ubuntu-latest
           path: target/debug
@@ -161,7 +161,7 @@ jobs:
       matrix:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
       - name: Fetch token from pool
@@ -172,7 +172,7 @@ jobs:
       - name: Set GITHUB_TOKEN from pool
         if: steps.token.outputs.token
         run: echo "GITHUB_TOKEN=${{ steps.token.outputs.token }}" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-ubuntu-latest
           path: target/debug
@@ -181,7 +181,7 @@ jobs:
       - name: Pull e2e Docker image
         run: docker pull ghcr.io/jdx/mise:e2e
       - name: Test in Docker
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         env:
           MISE_E2E_DOCKER: "1"
           TEST_TRANCHE: ${{matrix.tranche}}
@@ -200,13 +200,13 @@ jobs:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: cargo test
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
@@ -220,8 +220,8 @@ jobs:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-windows-latest
           path: target/debug
@@ -229,7 +229,7 @@ jobs:
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - uses: ./.github/actions/mise-tools
       - name: e2e
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30

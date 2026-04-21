@@ -355,6 +355,7 @@ pub static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| 
     )
 });
 pub static MISE_LOG_HTTP: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LOG_HTTP"));
+pub static MISE_LOG_VERBOSE_DEPS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LOG_VERBOSE_DEPS"));
 
 pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 

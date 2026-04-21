@@ -56,7 +56,7 @@ impl VersionProvider for MiseVersionProvider {
         let config = Config::get().await.ok()?;
 
         // Get the latest version
-        backend.latest_version(&config, None).await.ok()?
+        backend.latest_version(&config, None, None).await.ok()?
     }
 }
 
@@ -215,13 +215,13 @@ impl Edit {
             editor.add_tool(&tool.name, &version);
         }
 
-        // Auto-detect prepare providers if experimental is enabled
+        // Auto-detect deps providers if experimental is enabled
         if Settings::get().experimental {
-            pr.set_message("Detecting prepare providers...".into());
+            pr.set_message("Detecting deps providers...".into());
             let cwd = env::current_dir().unwrap_or_default();
-            let prepare_providers = crate::prepare::detect_applicable_providers(&cwd);
-            for provider in prepare_providers {
-                editor.add_prepare(&provider);
+            let deps_providers = crate::deps::detect_applicable_providers(&cwd);
+            for provider in deps_providers {
+                editor.add_deps(&provider);
             }
         }
 

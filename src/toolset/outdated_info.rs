@@ -59,9 +59,9 @@ impl OutdatedInfo {
         // prefix is something like "temurin-" or "corretto-"
         let (prefix, _) = split_version_prefix(&tv.request.version());
         let latest_result = if bump {
-            // Note: Backend's latest_version_with_opts takes individual parameters,
+            // Note: Backend's latest_version takes individual parameters,
             // not a ResolveOptions struct like ToolVersion's method
-            t.latest_version_with_opts(
+            t.latest_version(
                 config,
                 Some(prefix.clone()).filter(|s| !s.is_empty()),
                 opts.before_date,

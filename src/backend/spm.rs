@@ -96,7 +96,7 @@ impl Backend for SPMBackend {
         let provider = GitProvider::from_ba(&self.ba);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let revision = if tv.version == "latest" {
-            self.latest_stable_version(&ctx.config)
+            self.latest_version(&ctx.config, None, ctx.before_date)
                 .await?
                 .ok_or_else(|| eyre::eyre!("No stable versions found"))?
         } else {
@@ -108,6 +108,7 @@ impl Backend for SPMBackend {
         if executables.is_empty() {
             return Err(eyre::eyre!("No executables found in the package"));
         }
+        let executables = self.apply_filter_bins(&tv, executables)?;
         let bin_path = tv.install_path().join("bin");
         file::create_dir_all(&bin_path)?;
         for executable in executables {
@@ -156,6 +157,15 @@ impl SPMBackend {
         repo.update_submodules()?;
 
         Ok(repo.dir)
+    }
+
+    fn apply_filter_bins(
+        &self,
+        tv: &ToolVersion,
+        executables: Vec<String>,
+    ) -> eyre::Result<Vec<String>> {
+        let opts = tv.request.options();
+        filter_executables(&opts, executables)
     }
 
     async fn get_executable_names(
@@ -236,6 +246,57 @@ impl SPMBackend {
         .read()?;
         Ok(PathBuf::from(bin_path.trim().to_string()).join(executable))
     }
+}
+
+/// Parses the `filter_bins` tool option if set.
+///
+/// Accepts either a comma-separated string (`filter_bins = "foo,bar"`) or a
+/// TOML array (`filter_bins = ["foo", "bar"]`). Empty entries are ignored.
+fn parse_filter_bins(opts: &crate::toolset::ToolVersionOptions) -> Option<Vec<String>> {
+    let value = opts.opts.get("filter_bins")?;
+    let bins: Vec<String> = match value {
+        toml::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+            .filter(|s| !s.is_empty())
+            .collect(),
+        toml::Value::String(s) => s
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => return None,
+    };
+    if bins.is_empty() { None } else { Some(bins) }
+}
+
+/// Restricts `executables` to those listed in `filter_bins`, preserving the
+/// original declaration order from `Package.swift` rather than the order in
+/// `filter_bins`. Returns an error if any name in `filter_bins` does not match
+/// an available executable product.
+fn filter_executables(
+    opts: &crate::toolset::ToolVersionOptions,
+    executables: Vec<String>,
+) -> eyre::Result<Vec<String>> {
+    let Some(filter) = parse_filter_bins(opts) else {
+        return Ok(executables);
+    };
+    let missing: Vec<&str> = filter
+        .iter()
+        .filter(|b| !executables.contains(b))
+        .map(|s| s.as_str())
+        .collect();
+    if !missing.is_empty() {
+        return Err(eyre::eyre!(
+            "filter_bins references executable(s) not found in the package: {}. Available: {}",
+            missing.join(", "),
+            executables.join(", ")
+        ));
+    }
+    Ok(executables
+        .into_iter()
+        .filter(|e| filter.contains(e))
+        .collect())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -548,6 +609,82 @@ mod tests {
             "https://gitlab.acme.com/acme/someuser/SwiftTool.git"
         );
         assert_str_eq!(package_repo.shorthand, "acme/someuser/SwiftTool");
+    }
+
+    fn opts_with_filter_bins(value: toml::Value) -> ToolVersionOptions {
+        ToolVersionOptions {
+            opts: indexmap!["filter_bins".to_string() => value],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_parse_filter_bins() {
+        assert_eq!(parse_filter_bins(&ToolVersionOptions::default()), None);
+
+        assert_eq!(
+            parse_filter_bins(&opts_with_filter_bins(toml::Value::String(
+                "swiftly".to_string()
+            ))),
+            Some(vec!["swiftly".to_string()])
+        );
+
+        assert_eq!(
+            parse_filter_bins(&opts_with_filter_bins(toml::Value::String(
+                " foo , bar , ".to_string()
+            ))),
+            Some(vec!["foo".to_string(), "bar".to_string()])
+        );
+
+        assert_eq!(
+            parse_filter_bins(&opts_with_filter_bins(toml::Value::Array(vec![
+                toml::Value::String("foo".to_string()),
+                toml::Value::String(" bar".to_string()),
+                toml::Value::String("".to_string()),
+            ]))),
+            Some(vec!["foo".to_string(), "bar".to_string()])
+        );
+
+        assert_eq!(
+            parse_filter_bins(&opts_with_filter_bins(toml::Value::String(
+                " , ".to_string()
+            ))),
+            None,
+            "whitespace-only entries should yield None"
+        );
+    }
+
+    #[test]
+    fn test_filter_executables_passthrough_when_unset() {
+        let executables = vec!["a".to_string(), "b".to_string()];
+        let result =
+            filter_executables(&ToolVersionOptions::default(), executables.clone()).unwrap();
+        assert_eq!(result, executables);
+    }
+
+    #[test]
+    fn test_filter_executables_restricts_and_preserves_order() {
+        let executables = vec![
+            "swiftly".to_string(),
+            "test-swiftly".to_string(),
+            "helper".to_string(),
+        ];
+        let opts = opts_with_filter_bins(toml::Value::Array(vec![
+            toml::Value::String("helper".to_string()),
+            toml::Value::String("swiftly".to_string()),
+        ]));
+        let result = filter_executables(&opts, executables).unwrap();
+        assert_eq!(result, vec!["swiftly".to_string(), "helper".to_string()]);
+    }
+
+    #[test]
+    fn test_filter_executables_errors_on_missing_name() {
+        let executables = vec!["swiftly".to_string(), "test-swiftly".to_string()];
+        let opts = opts_with_filter_bins(toml::Value::String("does-not-exist".to_string()));
+        let err = filter_executables(&opts, executables).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("does-not-exist"), "got: {msg}");
+        assert!(msg.contains("swiftly"), "got: {msg}");
     }
 }
 

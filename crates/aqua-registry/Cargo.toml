@@ -1,6 +1,6 @@
 [package]
 name = "aqua-registry"
-version = "2026.4.6"
+version = "2026.4.7"
 edition = "2024"
 description = "Aqua registry backend for mise"
 authors = ["Jeff Dickey (@jdx)"]
@@ -37,7 +37,7 @@ strum = { version = "0.28", features = ["derive"] }
 
 # Template parsing and evaluation
 expr-lang = "1"
-versions = { version = "6", features = ["serde"] }
+versions = { version = "7", features = ["serde"] }
 heck = "0.5"
 
 # Async runtime

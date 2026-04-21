@@ -43,7 +43,7 @@ pub async fn handle_shim() -> Result<()> {
         command: Some(args),
         jobs: None,
         raw: false,
-        no_prepare: true, // Skip prepare for shims to avoid performance impact
+        no_deps: true, // Skip deps for shims to avoid performance impact
         fresh_env: false,
         deny_all: false,
         deny_read: false,

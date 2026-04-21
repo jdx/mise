@@ -122,8 +122,8 @@ cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf
     arg "[ARGS]…" help="all arguments" required=#false double_dash=automatic var=#true
 }
 cmd backends help="Manage backends" {
-    alias b
-    alias backend backend-list hide=#true
+    alias b backend backend-list hide=#true
+    after_long_help "Deprecation:\n\nThe `mise b` alias is deprecated and will be removed in mise 2027.4.0.\nUse `mise backends` instead.\n"
     cmd ls help="List built-in backends" {
         alias list
         after_long_help "Examples:\n\n    $ mise backends ls\n    aqua\n    asdf\n    cargo\n    core\n    dotnet\n    gem\n    go\n    npm\n    pipx\n    spm\n    ubi\n    vfox\n"
@@ -287,7 +287,7 @@ cmd exec help="Execute a command with tool(s) set" {
     flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
     flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
-    flag --no-prepare help="Skip automatic dependency preparation"
+    flag --no-deps help="Skip automatic dependency preparation"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOL@VERSION]…" help="Tool(s) to start e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Command string to execute (same as --command)" required=#false var=#true
@@ -522,8 +522,12 @@ cmd install-into help="Install a tool version to a specific path" {
 }
 cmd latest help="Gets the latest available version for a plugin" {
     long_help "Gets the latest available version for a plugin\n\nSupports prefixes such as `node@20` to get the latest version of node 20."
-    after_long_help "Examples:\n\n    $ mise latest node@20  # get the latest version of node 20\n    20.0.0\n\n    $ mise latest node     # get the latest stable version of node\n    20.0.0\n"
+    after_long_help "Examples:\n\n    $ mise latest node@20  # get the latest version of node 20\n    20.0.0\n\n    $ mise latest node     # get the latest stable version of node\n    20.0.0\n\n    $ mise latest node --before 2024-01-01  # latest stable node released before 2024-01-01\n"
     flag "-i --installed" help="Show latest installed instead of available version"
+    flag --before help="Only consider versions released before this date" {
+        long_help "Only consider versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\".\nOverrides per-tool `install_before` options and the global `install_before` setting."
+        arg <BEFORE>
+    }
     arg <TOOL@VERSION> help="Tool to get the latest version of"
     arg "[ASDF_VERSION]" help="The version prefix to use when querying the latest version same as the first argument after the \"@\" used for asdf compatibility" required=#false hide=#true
 }
@@ -679,21 +683,45 @@ cmd plugins help="Manage plugins" {
         arg "[PLUGIN]…" help="Plugin(s) to update" required=#false var=#true
     }
 }
-cmd prepare help="[experimental] Ensure project dependencies are ready" {
-    alias prep
-    long_help "[experimental] Ensure project dependencies are ready\n\nRuns all applicable prepare steps for the current project.\nThis checks if dependency lockfiles are newer than installed outputs\n(e.g., package-lock.json vs node_modules/) and runs install commands\nif needed.\n\nProviders with `auto = true` are automatically invoked before `mise x` and `mise run`\nunless skipped with the --no-prepare flag."
-    after_long_help "Examples:\n\n    $ mise prepare              # Run all applicable prepare steps\n    $ mise prepare npm          # Run only npm prepare\n    $ mise prepare npm --explain # Show why npm is fresh or stale\n    $ mise prepare --dry-run    # Show what would run without executing\n    $ mise prepare --force      # Force run even if outputs are fresh\n    $ mise prepare --list       # List available prepare providers\n    $ mise prepare --skip npm   # Skip npm prepare\n\nConfiguration:\n\n```toml\n# Built-in npm provider (auto-detects lockfile)\n[prepare.npm]\nauto = true              # Auto-run before mise x/run\n\n# Custom provider\n[prepare.codegen]\nauto = true\nsources = [\"schema/*.graphql\"]\noutputs = [\"src/generated/\"]\nrun = \"npm run codegen\"\n\n[prepare]\ndisable = [\"npm\"]        # Disable specific providers at runtime\n```\n"
+cmd deps help="[experimental] Manage project dependencies" {
+    alias dep
+    alias prepare hide=#true
+    long_help "[experimental] Manage project dependencies\n\nRuns all applicable dependency install steps for the current project.\nThis checks if dependency lockfiles are newer than installed outputs\n(e.g., package-lock.json vs node_modules/) and runs install commands\nif needed.\n\nProviders with `auto = true` are automatically invoked before `mise x` and `mise run`\nunless skipped with the --no-deps flag."
+    after_long_help "Examples:\n\n    $ mise deps                    # Install all project dependencies\n    $ mise deps install            # Same as bare `mise deps`\n    $ mise deps install --force    # Force reinstall even if fresh\n    $ mise deps install --dry-run  # Show what would run\n    $ mise deps add npm:react      # Add a dependency\n    $ mise deps add -D npm:vitest  # Add a dev dependency\n    $ mise deps remove npm:lodash  # Remove a dependency\n\nConfiguration:\n\n```toml\n# Built-in npm provider (auto-detects lockfile)\n[deps.npm]\nauto = true              # Auto-run before mise x/run\n\n# Custom provider\n[deps.codegen]\nauto = true\nsources = [\"schema/*.graphql\"]\noutputs = [\"src/generated/\"]\nrun = \"npm run codegen\"\n\n[deps]\ndisable = [\"npm\"]        # Disable specific providers at runtime\n```\n"
     flag --explain help="Show why a provider is fresh or stale (requires a provider argument)"
-    flag "-f --force" help="Force run all prepare steps even if outputs are fresh"
-    flag "-n --dry-run" help="Only check if prepare is needed, don't run commands"
-    flag --list help="Show what prepare steps are available"
-    flag --only help="Run specific prepare rule(s) only" var=#true {
+    flag "-f --force" help="Force run all deps steps even if outputs are fresh"
+    flag "-n --dry-run" help="Only check if deps install is needed, don't run commands"
+    flag --list help="Show what deps providers are available"
+    flag --only help="Run specific deps rule(s) only" var=#true {
         arg <ONLY>
     }
-    flag --skip help="Skip specific prepare rule(s)" var=#true {
+    flag --skip help="Skip specific deps rule(s)" var=#true {
         arg <SKIP>
     }
     arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
+    cmd add help="Add a dependency" {
+        long_help "Add a dependency\n\nAdds one or more packages to the project using the appropriate package manager.\nPackage specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@types/react@19`."
+        flag "-D --dev" help="Add as a development dependency"
+        arg <PACKAGES>… help="Package(s) to add (e.g., npm:react, npm:@types/react@19)" var=#true
+    }
+    cmd install help="Install all project dependencies" {
+        long_help "Install all project dependencies\n\nChecks if dependency lockfiles are newer than installed outputs\nand runs install commands if needed."
+        flag --explain help="Show why a provider is fresh or stale (requires a provider argument)"
+        flag "-f --force" help="Force run all deps steps even if outputs are fresh"
+        flag "-n --dry-run" help="Only check if deps install is needed, don't run commands"
+        flag --list help="Show what deps providers are available"
+        flag --only help="Run specific deps rule(s) only" var=#true {
+            arg <ONLY>
+        }
+        flag --skip help="Skip specific deps rule(s)" var=#true {
+            arg <SKIP>
+        }
+        arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
+    }
+    cmd remove help="Remove a dependency" {
+        long_help "Remove a dependency\n\nRemoves one or more packages from the project using the appropriate package manager.\nPackage specs use the format `ecosystem:package`, e.g., `npm:lodash`."
+        arg <PACKAGES>… help="Package(s) to remove (e.g., npm:lodash)" var=#true
+    }
 }
 cmd prune help="Delete unused versions of tools" {
     long_help "Delete unused versions of tools\n\nmise tracks which config files have been used in ~/.local/state/mise/tracked-configs\nVersions which are no longer the latest specified in any of those configs are deleted.\nVersions installed only with environment variables `MISE_<PLUGIN>_VERSION` will be deleted,\nas will versions only referenced on the command line `mise exec <PLUGIN>@<VERSION>`.\n\nYou can list prunable tools with `mise ls --prunable`"
@@ -771,7 +799,7 @@ cmd run restart_token=::: help="Run task(s)" {
     flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use cache on remote tasks"
-    flag --no-prepare help="Skip automatic dependency preparation"
+    flag --no-deps help="Skip automatic dependency preparation"
     flag --no-timings help="Hides elapsed time after each task completes" {
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
@@ -800,7 +828,7 @@ cmd search help="Search for tools in the registry" {
     arg "[NAME]" help="The tool to search for" required=#false
 }
 cmd self-update help="Updates mise itself." {
-    long_help "Updates mise itself.\n\nUses the GitHub Releases API to find the latest release and binary.\nBy default, this will also update any installed plugins.\nUses the `GITHUB_API_TOKEN` environment variable if set for higher rate limits.\n\nThis command is not available if mise is installed via a package manager."
+    long_help "Updates mise itself.\n\nUses the GitHub Releases API to find the latest release and binary.\nBy default, this will also update any installed plugins.\nUses mise's GitHub token resolution chain for authenticated requests.\n\nThis command is not available if mise is installed via a package manager."
     flag "-f --force" help="Update even if already up to date"
     flag "-y --yes" help="Skip confirmation prompt"
     flag --no-plugins help="Disable auto-updating plugins"
@@ -1102,7 +1130,7 @@ cmd tasks help="Manage tasks" {
         flag --deny-write help="[experimental] Block all filesystem writes"
         flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use cache on remote tasks"
-        flag --no-prepare help="Skip automatic dependency preparation"
+        flag --no-deps help="Skip automatic dependency preparation"
         flag --no-timings help="Hides elapsed time after each task completes" {
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }

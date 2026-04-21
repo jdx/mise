@@ -34,7 +34,7 @@ impl En {
             jobs: None,
             c: None,
             command: Some(command),
-            no_prepare: false,
+            no_deps: false,
             fresh_env: false,
             deny_all: false,
             deny_read: false,

@@ -235,6 +235,43 @@
   color: var(--vp-c-brand-1);
 }
 
+.EndevFooter {
+  align-items: center;
+  border-top: 1px solid var(--vp-c-divider);
+  color: var(--vp-c-text-2);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 14px;
+  gap: 8px;
+  justify-content: center;
+  line-height: 28px;
+  margin-top: auto;
+  padding: 22px 24px 26px;
+  text-align: center;
+}
+
+.EndevFooterLink {
+  align-items: center;
+  color: inherit;
+  display: inline-flex;
+  gap: 8px;
+  line-height: 28px;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.EndevFooterLink:hover {
+  color: var(--vp-c-brand-1);
+}
+
+.EndevFooterLogo {
+  border-radius: 8px;
+  display: inline-block;
+  height: 28px;
+  vertical-align: middle;
+  width: 28px;
+}
+
 /* Hide star count on mobile to save space */
 @media (max-width: 640px) {
   .VPSocialLinks .star-count {
@@ -382,13 +419,6 @@ h1, h2, h3, h4, h5, h6,
   gap: 0 60px;
 }
 
-/* Left column: logo */
-.VPHero .main .hero-chef-logo {
-  grid-column: 1;
-  grid-row: 1;
-  justify-content: flex-start;
-}
-
 /* Hide the default VitePress hero name and actions */
 .VPHero .name {
   display: none !important;
@@ -426,6 +456,7 @@ h1, h2, h3, h4, h5, h6,
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  margin-top: 12px;
 }
 
 .action-btn {
@@ -672,7 +703,7 @@ div[class*="language-"] .copy:hover {
 
 .VPFeature {
   border: 1px solid var(--vp-c-divider);
-  border-radius: 14px;
+  border-radius: 8px;
   transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1) !important;
   background: var(--vp-c-bg);
   position: relative;
@@ -898,12 +929,6 @@ div[class*="language-"] .copy:hover {
     grid-template-columns: 1fr !important;
   }
 
-  .VPHero .main .hero-chef-logo {
-    grid-column: 1;
-    grid-row: auto;
-    justify-content: center;
-  }
-
   .VPHero .tagline {
     grid-column: 1;
     grid-row: auto;
@@ -971,4 +996,707 @@ div[class*="language-"] .copy:hover {
   background-color: var(--vp-c-danger-soft);
   color: var(--vp-c-danger-1);
   border: 1px solid var(--vp-c-danger-2);
+}
+
+/* ═══ Claude Design handoff landing page ═══ */
+.VPHero .name,
+.VPHero .tagline,
+.VPHero .actions {
+  display: none !important;
+}
+
+.VPHero {
+  padding-top: 76px !important;
+  padding-bottom: 64px !important;
+}
+
+.VPHero .container {
+  max-width: 1120px !important;
+}
+
+.VPHero .main {
+  display: grid !important;
+  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+  gap: 56px;
+  align-items: center;
+}
+
+.VPHero .text {
+  max-width: none !important;
+}
+
+.VPContent.is-home,
+.VPHome {
+  overflow-x: hidden;
+}
+
+.hero-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.hero-eyebrow,
+.landing-kicker {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem !important;
+  line-height: 1.3 !important;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+
+.hero-eyebrow::before,
+.landing-kicker::before {
+  content: "";
+  display: inline-block;
+  width: 24px;
+  height: 1px;
+  margin-right: 10px;
+  vertical-align: middle;
+  background: currentColor;
+}
+
+.hero-lockup {
+  margin-top: 18px;
+}
+
+.hero-lockup .chef-logo {
+  width: min(340px, 72vw);
+  height: auto;
+  filter: drop-shadow(0 12px 34px rgba(139, 34, 82, 0.16));
+}
+
+.hero-lockup .chef-logo-dark {
+  display: none;
+}
+
+.dark .hero-lockup .chef-logo-light {
+  display: none;
+}
+
+.dark .hero-lockup .chef-logo-dark {
+  display: inline;
+}
+
+.hero-copy h1 {
+  margin: 22px 0 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(3.4rem, 7vw, 5.75rem);
+  font-style: italic;
+  font-weight: 300;
+  line-height: 0.95;
+  letter-spacing: 0;
+  color: var(--vp-c-brand-1);
+}
+
+.hero-copy h1 em,
+.landing-section h2 em {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 300;
+  color: inherit;
+}
+
+.hero-copy p {
+  max-width: min(42ch, 100%);
+  margin: 22px 0 0;
+  color: var(--vp-c-text-2);
+  font-size: 1.1rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+.hero-right {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.hero-terminal {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 22px 48px -28px rgba(0, 0, 0, 0.5);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.82rem;
+}
+
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-mute);
+}
+
+.terminal-bar span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.terminal-bar span:nth-child(1) {
+  background: var(--vp-c-danger-1);
+}
+
+.terminal-bar span:nth-child(2) {
+  background: var(--vp-c-warning-1);
+}
+
+.terminal-bar span:nth-child(3) {
+  background: var(--vp-c-success-1);
+}
+
+.terminal-bar strong {
+  margin-left: auto;
+  margin-right: auto;
+  color: var(--vp-c-text-3);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+}
+
+.terminal-body {
+  padding: 18px 20px;
+  color: var(--vp-c-text-1);
+  line-height: 1.75;
+  white-space: nowrap;
+  overflow: auto;
+}
+
+.terminal-body .prompt {
+  color: var(--vp-c-brand-1);
+}
+
+.terminal-body .ok {
+  color: var(--vp-c-success-1);
+}
+
+.terminal-body .key {
+  color: var(--vp-c-warning-1);
+}
+
+.terminal-body .dim {
+  color: var(--vp-c-text-3);
+}
+
+.hero-install {
+  align-items: stretch;
+}
+
+.hero-install .install-command {
+  width: 100%;
+  justify-content: space-between;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+.hero-install .install-copy {
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-install .install-alt {
+  align-self: flex-start;
+}
+
+.VPHome .vp-doc {
+  max-width: none;
+  padding: 0 24px 80px;
+}
+
+.landing-page {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.landing-section {
+  margin-top: 76px;
+}
+
+.landing-metaphor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+  gap: 64px;
+  align-items: center;
+  padding-top: 72px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.landing-section h2 {
+  margin: 12px 0 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--vp-c-brand-1);
+}
+
+.landing-section p {
+  color: var(--vp-c-text-2);
+}
+
+.landing-definition {
+  padding: 22px;
+  border-left: 2px solid var(--vp-c-brand-1);
+  border-radius: 0 8px 8px 0;
+  background: var(--vp-c-bg-soft);
+}
+
+.definition-word {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.7rem;
+  font-style: italic;
+  color: var(--vp-c-text-1);
+}
+
+.definition-word span {
+  margin-left: 8px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.8rem;
+  color: var(--vp-c-text-3);
+}
+
+.landing-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 34px;
+}
+
+.landing-section-heading.centered {
+  display: block;
+  max-width: 720px;
+  margin-right: auto;
+  margin-left: auto;
+  text-align: center;
+}
+
+.landing-section-heading.centered .landing-kicker::before,
+.landing-cta .landing-kicker::before {
+  display: none;
+}
+
+.landing-small-button,
+.landing-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.landing-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.landing-feature-card {
+  position: relative;
+  min-width: 0;
+  min-height: 260px;
+  padding: 28px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  text-decoration: none !important;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.landing-feature-card:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px -32px rgba(139, 34, 82, 0.45);
+}
+
+.card-number,
+.card-link {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  color: var(--vp-c-text-3);
+}
+
+.card-icon {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 50%;
+  background: var(--vp-c-bg);
+  font-size: 1.55rem;
+}
+
+.landing-feature-card h3 {
+  margin: 70px 0 10px;
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 1.05;
+}
+
+.landing-feature-card p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.card-link {
+  display: inline-block;
+  margin-top: 20px;
+  color: var(--vp-c-brand-1);
+}
+
+.landing-tools {
+  position: relative;
+  width: 100vw;
+  margin: 76px calc(50% - 50vw) 0;
+  padding: 28px 0;
+  overflow: hidden;
+  border-top: 1px solid var(--vp-c-divider);
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+}
+
+.landing-tools p {
+  margin: 0 0 14px;
+  text-align: center;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+
+.landing-tools-track {
+  display: flex;
+  gap: 42px;
+  width: max-content;
+  animation: landing-scroll 60s linear infinite;
+}
+
+.landing-tools-track a {
+  white-space: nowrap;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-size: 1.75rem;
+  font-weight: 300;
+  color: var(--vp-c-text-2);
+  text-decoration: none;
+}
+
+@keyframes landing-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.landing-aube {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.42fr);
+  gap: 28px;
+  align-items: center;
+  margin: 48px auto 0;
+  padding: 28px;
+  border: 1px solid rgba(107, 127, 78, 0.35);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(107, 127, 78, 0.12), transparent 44%),
+    var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  text-decoration: none !important;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.landing-aube:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px -32px rgba(107, 127, 78, 0.55);
+}
+
+.dark .landing-aube {
+  background:
+    linear-gradient(135deg, rgba(143, 168, 110, 0.14), transparent 48%),
+    var(--vp-c-bg-soft);
+  border-color: rgba(143, 168, 110, 0.35);
+}
+
+.landing-aube h2 {
+  margin: 12px 0 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--vp-c-brand-1);
+}
+
+.landing-aube h2 em {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 300;
+  color: inherit;
+}
+
+.landing-aube p:not(.landing-kicker) {
+  max-width: 58ch;
+  margin: 16px 0 0;
+  color: var(--vp-c-text-2);
+}
+
+.aube-ticket {
+  display: flex;
+  align-items: center;
+  width: 220px;
+  max-width: 100%;
+  min-height: 86px;
+  padding: 0 22px;
+  border: 1px dashed rgba(107, 127, 78, 0.5);
+  border-radius: 8px;
+  background: var(--vp-c-bg);
+}
+
+.aube-ticket code {
+  font-family: var(--vp-font-family-mono);
+  font-size: 1.35rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--vp-c-success-1);
+}
+
+.landing-recipe-grid {
+  display: grid;
+  position: relative;
+  grid-template-columns: 260px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+.landing-mini-install {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 16px;
+  overflow: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.88rem;
+}
+
+.landing-quickstart {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 48px;
+}
+
+.recipe-steps {
+  padding: 20px 0;
+  border-right: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+}
+
+.recipe-tab-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.recipe-step {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+  padding: 14px 18px;
+  border-left: 2px solid transparent;
+  color: var(--vp-c-text-2);
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.recipe-step:hover {
+  background: color-mix(in srgb, var(--vp-c-brand-1) 8%, transparent);
+  color: var(--vp-c-text-1);
+}
+
+#recipe-tab-1:checked ~ .recipe-steps .recipe-step-1,
+#recipe-tab-2:checked ~ .recipe-steps .recipe-step-2,
+#recipe-tab-3:checked ~ .recipe-steps .recipe-step-3,
+#recipe-tab-4:checked ~ .recipe-steps .recipe-step-4 {
+  border-left: 2px solid var(--vp-c-brand-1);
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+}
+
+.recipe-steps span {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  color: var(--vp-c-text-3);
+}
+
+.recipe-panel {
+  display: none;
+  height: 100%;
+}
+
+#recipe-tab-1:checked ~ .landing-code .recipe-panel-1,
+#recipe-tab-2:checked ~ .landing-code .recipe-panel-2,
+#recipe-tab-3:checked ~ .landing-code .recipe-panel-3,
+#recipe-tab-4:checked ~ .landing-code .recipe-panel-4 {
+  display: block;
+}
+
+.landing-code pre {
+  height: 100%;
+  min-height: 280px;
+  margin: 0;
+  padding: 24px;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: var(--vp-code-block-bg);
+  color: var(--vp-c-text-1);
+}
+
+.landing-code code {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.88rem;
+  line-height: 1.8;
+}
+
+.landing-cta {
+  padding: 64px 28px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background:
+    radial-gradient(600px 260px at 50% 0%, rgba(139, 34, 82, 0.14), transparent),
+    var(--vp-c-bg-soft);
+  text-align: center;
+}
+
+.landing-cta h2 {
+  color: var(--vp-c-text-1);
+  font-family: "Roc Grotesk", sans-serif;
+  font-style: normal;
+  margin-bottom: 24px;
+}
+
+.landing-cta h2 em {
+  color: var(--vp-c-brand-1);
+}
+
+.landing-cta .landing-mini-install {
+  max-width: 460px;
+  margin: 0 auto;
+  justify-content: center;
+}
+
+.landing-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+@media (max-width: 960px) {
+  .VPHero .main,
+  .landing-aube,
+  .landing-metaphor,
+  .landing-quickstart,
+  .landing-recipe-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .landing-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-steps {
+    border-right: 0;
+    border-bottom: 1px solid var(--vp-c-divider);
+  }
+
+  .landing-section-heading {
+    display: block;
+  }
+}
+
+@media (max-width: 640px) {
+  .VPHero {
+    padding-top: 42px !important;
+    padding-bottom: 48px !important;
+  }
+
+  .VPHero .container {
+    padding-right: 24px !important;
+    padding-left: 24px !important;
+  }
+
+  .hero-copy h1 {
+    font-size: 2.75rem;
+  }
+
+  .hero-lockup .chef-logo {
+    width: min(260px, 100%);
+  }
+
+  .hero-copy p {
+    font-size: 1rem;
+    max-width: 30ch;
+  }
+
+  .terminal-body {
+    font-size: 0.76rem;
+  }
+
+  .landing-section {
+    margin-top: 54px;
+  }
+
+  .landing-aube {
+    margin-top: 40px;
+    padding: 22px;
+  }
+
+  .landing-metaphor {
+    padding-top: 48px;
+  }
 }

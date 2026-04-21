@@ -1,0 +1,8 @@
+description = "LLM inference in C/C++"
+test = { cmd = "llama-cli --version", expected = "version: {{version}}" }
+
+[[backends]]
+full = "github:ggml-org/llama.cpp"
+
+[backends.options]
+version_prefix = "b"

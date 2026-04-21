@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+assert "mise latest dummy" "2.0.0"
+assert "mise latest dummy@latest" "2.0.0"
+
+mise cache clear dummy
+output=$(MISE_DEBUG=1 mise latest dummy@latest 2>&1)
+
+if [[ $output != *"latest-stable"* ]]; then
+	fail "expected dummy@latest to use latest-stable, got: $output"
+fi
+
+if [[ $output == *"bin/list-all"* ]]; then
+	fail "expected dummy@latest not to use list-all, got: $output"
+fi

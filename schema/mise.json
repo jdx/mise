@@ -515,7 +515,7 @@
           "type": "boolean"
         },
         "always_keep_download": {
-          "description": "should mise keep downloaded files after installation",
+          "description": "keep downloaded files after installation for debugging",
           "type": "boolean"
         },
         "always_keep_install": {
@@ -724,8 +724,7 @@
           }
         },
         "enable_tools": {
-          "default": [],
-          "description": "Tools defined in mise.toml that should be used - all other tools are ignored",
+          "description": "Tools defined in mise.toml that should be used; unset enables all tools and empty disables all tools",
           "type": "array",
           "items": {
             "type": "string"
@@ -1183,10 +1182,10 @@
               "deprecated": true
             },
             "package_manager": {
-              "default": "npm",
+              "default": "auto",
               "description": "Package manager to use for installing npm packages.",
               "type": "string",
-              "enum": ["npm", "bun", "pnpm"]
+              "enum": ["auto", "npm", "aube", "bun", "pnpm"]
             }
           }
         },
@@ -1463,13 +1462,13 @@
               "description": "Show a warning if tools are not installed when entering a directory with a mise.toml file.",
               "type": "string"
             },
-            "show_env": {
-              "description": "Show configured env vars when entering a directory with a mise.toml file.",
+            "show_deps_stale": {
+              "default": true,
+              "description": "Show warning when deps providers have stale dependencies.",
               "type": "boolean"
             },
-            "show_prepare_stale": {
-              "default": true,
-              "description": "Show warning when prepare providers have stale dependencies.",
+            "show_env": {
+              "description": "Show configured env vars when entering a directory with a mise.toml file.",
               "type": "boolean"
             },
             "show_tools": {
@@ -2390,7 +2389,7 @@
         ]
       }
     },
-    "prepare_provider": {
+    "deps_provider": {
       "type": "object",
       "properties": {
         "auto": {
@@ -2450,7 +2449,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Other prepare providers that must complete before this one runs"
+          "description": "Other deps providers that must complete before this one runs"
         },
         "timeout": {
           "type": "string",
@@ -3161,7 +3160,7 @@
       ]
     },
     "env_file": {
-      "description": "dotenv file(s) to load",
+      "description": "dotenv file(s) to load. Deprecated; use env._.file instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
       "oneOf": [
         {
@@ -3178,7 +3177,7 @@
       ]
     },
     "dotenv": {
-      "description": "dotenv file(s) to load",
+      "description": "dotenv file(s) to load. Deprecated; use env._.file instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
       "oneOf": [
         {
@@ -3195,7 +3194,7 @@
       ]
     },
     "env_path": {
-      "description": "PATH entries to add",
+      "description": "PATH entries to add. Deprecated; use env._.path instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
       "oneOf": [
         {
@@ -3259,7 +3258,7 @@
       "description": "plugins to use",
       "type": "object"
     },
-    "prepare": {
+    "deps": {
       "type": "object",
       "properties": {
         "disable": {
@@ -3267,43 +3266,43 @@
           "items": {
             "type": "string"
           },
-          "description": "Disable specific prepare providers"
+          "description": "Disable specific deps providers"
         },
         "npm": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "yarn": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "pnpm": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "bun": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "go": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "pip": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "poetry": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "uv": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "bundler": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "composer": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         }
       },
       "additionalProperties": {
-        "$ref": "#/$defs/prepare_provider"
+        "$ref": "#/$defs/deps_provider"
       },
-      "description": "configure prepare providers"
+      "description": "configure deps providers"
     },
     "settings": {
       "$ref": "#/$defs/settings",

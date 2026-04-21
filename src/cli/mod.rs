@@ -34,6 +34,7 @@ mod hook_not_found;
 mod tool_alias;
 
 pub use hook_env::HookReason;
+mod deps;
 pub(crate) mod edit;
 mod implode;
 mod install;
@@ -47,7 +48,6 @@ mod ls_remote;
 mod mcp;
 mod outdated;
 mod plugins;
-mod prepare;
 mod prune;
 mod registry;
 #[cfg(debug_assertions)]
@@ -233,7 +233,7 @@ pub enum Commands {
     Mcp(mcp::Mcp),
     Outdated(outdated::Outdated),
     Plugins(plugins::Plugins),
-    Prepare(prepare::Prepare),
+    Deps(deps::Deps),
     Prune(prune::Prune),
     Registry(registry::Registry),
     #[cfg(debug_assertions)]
@@ -302,7 +302,7 @@ impl Commands {
             Self::Mcp(cmd) => cmd.run().await,
             Self::Outdated(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
-            Self::Prepare(cmd) => cmd.run().await,
+            Self::Deps(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
             Self::Registry(cmd) => cmd.run().await,
             #[cfg(debug_assertions)]
@@ -441,6 +441,24 @@ fn is_known_subcommand(cmd: &clap::Command, arg: &str) -> bool {
     cmd.get_subcommands()
         .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
         .any(|name| name == arg)
+}
+
+fn uses_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) -> bool {
+    matches!(
+        first_non_global_arg_idx(cmd, args).and_then(|idx| args.get(idx)),
+        Some(arg) if arg == "b"
+    )
+}
+
+fn warn_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) {
+    if uses_deprecated_backends_alias(cmd, args) {
+        deprecated_at!(
+            "2026.4.0",
+            "2027.4.0",
+            "cli.backends.b",
+            "`mise b` is deprecated. Use `mise backends` instead."
+        );
+    }
 }
 
 /// Escape flags after task names so clap doesn't parse them as mise flags.
@@ -622,6 +640,7 @@ impl Cli {
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
+        warn_deprecated_backends_alias(&cmd, args);
         measure!("migrate", { migrate::run().await });
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
@@ -688,7 +707,7 @@ impl Cli {
                         timeout: None,
                         skip_deps: false,
                         skip_tools: false,
-                        no_prepare: false,
+                        no_deps: false,
                         fresh_env: false,
                         deny_all: false,
                         deny_read: false,
@@ -864,6 +883,48 @@ mod tests {
         ];
 
         assert_eq!(escape_task_args(&cmd, &args), args);
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias() {
+        let cmd = Cli::command();
+        let args = vec!["mise".to_string(), "b".to_string()];
+
+        assert!(uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias_after_global_flag() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "--cd".to_string(),
+            "project".to_string(),
+            "b".to_string(),
+        ];
+
+        assert!(uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias_ignores_global_flag_value() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "--cd".to_string(),
+            "b".to_string(),
+            "backends".to_string(),
+        ];
+
+        assert!(!uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_uses_deprecated_backends_alias_ignores_task_arg() {
+        let cmd = Cli::command();
+        let args = vec!["mise".to_string(), "run".to_string(), "b".to_string()];
+
+        assert!(!uses_deprecated_backends_alias(&cmd, &args));
     }
 
     #[test]

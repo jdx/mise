@@ -321,8 +321,8 @@ python = ['3.10', '3.11']
 # for example, .nvmrc in the case of node's nvm
 idiomatic_version_file_enable_tools = ['node']
 
-# configure `mise install` to always keep the downloaded archive
-always_keep_download = false        # deleted after install by default
+# keep downloaded archive/source files for debugging
+always_keep_download = false        # deleted after install; not a cache
 always_keep_install = false         # deleted on failure by default
 
 # configure how frequently (in minutes) to fetch updated plugin repository changes
@@ -436,6 +436,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | pnpm       | `package.json`                            |
 | python     | `.python-version`, `.python-versions`     |
 | ruby       | `.ruby-version`, `Gemfile`                |
+| rust       | `rust-toolchain.toml`                     |
 | terraform  | `.terraform-version`, `main.tf`           |
 | terragrunt | `.terragrunt-version`                     |
 | terramate  | `.terramate-version`                      |
@@ -564,6 +565,14 @@ to store the logs but not have them litter your display.
 ### `MISE_LOG_HTTP=1`
 
 Display HTTP requests/responses in the logs.
+
+### `MISE_LOG_VERBOSE_DEPS=1`
+
+Debug and trace logs from noisy third-party crates (`h2`, `hyper`,
+`reqwest`, `rustls`, etc., which emit a line per HTTP/2 frame or socket
+read) are always dropped — they would otherwise overwhelm debug/trace
+output. Set this to `1` to let those logs through; it is the only way to
+see them, including under `--log-level=trace`/`-vv`.
 
 ### `MISE_QUIET=1`
 

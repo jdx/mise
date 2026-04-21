@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 
 assert_contains "mise backends" "cargo"
+assert_contains "mise b 2>&1" "deprecated [cli.backends.b]"
+assert_contains "mise b 2>&1" "cargo"

@@ -259,7 +259,7 @@ impl Backend for UnifiedGitBackend {
 
         let latest_tag = if self.is_gitlab() {
             // GitLab doesn't have a "latest" endpoint
-            return self.latest_version(config, Some("latest".into())).await;
+            return self.latest_version_for_query(config, "latest", None).await;
         } else if self.is_forgejo() {
             match forgejo::get_release_for_url(&api_url, &repo, "latest").await {
                 Ok(r) => Some(r.tag_name),
@@ -284,7 +284,7 @@ impl Backend for UnifiedGitBackend {
 
         match latest_version {
             Some(version) => Ok(Some(version)),
-            None => self.latest_version(config, Some("latest".into())).await,
+            None => self.latest_version_for_query(config, "latest", None).await,
         }
     }
 
@@ -474,10 +474,11 @@ impl UnifiedGitBackend {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
-                match sigstore_verification::sources::github::GitHubSource::new(
+                match sigstore_verification::sources::github::GitHubSource::with_base_url(
                     owner,
                     repo_name,
                     github::resolve_token_for_api_url(api_url).as_deref(),
+                    api_url,
                 ) {
                     Ok(source) => {
                         use sigstore_verification::AttestationSource;
@@ -571,12 +572,13 @@ impl UnifiedGitBackend {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
-                match sigstore_verification::verify_github_attestation(
+                match sigstore_verification::verify_github_attestation_with_base_url(
                     &artifact_path,
                     owner,
                     repo_name,
                     github::resolve_token_for_api_url(api_url).as_deref(),
                     None,
+                    api_url,
                 )
                 .await
                 {
@@ -1565,12 +1567,13 @@ impl UnifiedGitBackend {
         let (owner, repo_name) = (parts[0], parts[1]);
         let api_url = self.get_api_url(&tv.request.options());
 
-        match sigstore_verification::verify_github_attestation(
+        match sigstore_verification::verify_github_attestation_with_base_url(
             file_path,
             owner,
             repo_name,
             github::resolve_token_for_api_url(&api_url).as_deref(),
             None, // We don't know the expected workflow
+            &api_url,
         )
         .await
         {

@@ -1,6 +1,6 @@
 use crate::config::{Config, Settings};
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::{display_path, remove_all};
+use crate::file::remove_all_with_progress;
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::plugins::warn_if_env_plugin_shadows_registry;
@@ -15,7 +15,7 @@ use console::style;
 use contracts::requires;
 use eyre::{Context, bail, eyre};
 use indexmap::{IndexMap, indexmap};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use url::Url;
 use vfox::Vfox;
@@ -117,6 +117,7 @@ impl VfoxPlugin {
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
+        vfox.github_token = crate::github::resolve_token("github.com").map(|(token, _)| token);
         let rx = vfox.log_subscribe();
         (vfox, rx)
     }
@@ -305,20 +306,7 @@ impl Plugin for VfoxPlugin {
         }
         pr.set_message("uninstall".into());
 
-        let rmdir = |dir: &Path| {
-            if !dir.exists() {
-                return Ok(());
-            }
-            pr.set_message(format!("remove {}", display_path(dir)));
-            remove_all(dir).wrap_err_with(|| {
-                format!(
-                    "Failed to remove directory {}",
-                    style(display_path(dir)).cyan().for_stderr()
-                )
-            })
-        };
-
-        rmdir(&self.plugin_path)?;
+        remove_all_with_progress(&self.plugin_path, pr)?;
 
         Ok(())
     }
