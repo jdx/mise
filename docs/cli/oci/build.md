@@ -4,13 +4,15 @@
 - **Usage**: `mise oci build [FLAGS]`
 - **Source code**: [`src/cli/oci/build.rs`](https://github.com/jdx/mise/blob/main/src/cli/oci/build.rs)
 
-Build an OCI image from the current mise.toml
+[experimental] Build an OCI image from the current mise.toml
 
 Each tool version becomes its own content-addressable OCI layer. Bumping a
 tool version only invalidates that tool's layer — other tools, the base
 image, and config are reused unchanged. The output directory conforms to
 the OCI image-layout spec and can be consumed by `skopeo`, `crane`, or
 `podman load`.
+
+Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
 ## Flags
 

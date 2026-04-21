@@ -3,18 +3,20 @@ use std::path::PathBuf;
 use clap::ValueHint;
 use eyre::Result;
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::oci::{BuildOptions, Builder, OciConfig};
 use crate::toolset::ToolsetBuilder;
 
-/// Build an OCI image from the current mise.toml
+/// [experimental] Build an OCI image from the current mise.toml
 ///
 /// Each tool version becomes its own content-addressable OCI layer. Bumping a
 /// tool version only invalidates that tool's layer — other tools, the base
 /// image, and config are reused unchanged. The output directory conforms to
 /// the OCI image-layout spec and can be consumed by `skopeo`, `crane`, or
 /// `podman load`.
+///
+/// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Build {
@@ -41,6 +43,7 @@ pub struct Build {
 
 impl Build {
     pub async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise oci build")?;
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
 

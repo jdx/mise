@@ -4,11 +4,15 @@
 - **Usage**: `mise oci <SUBCOMMAND>`
 - **Source code**: [`src/cli/oci/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/oci/mod.rs)
 
-Build OCI container images from a mise.toml
+[experimental] Build OCI container images from a mise.toml
 
 Each tool becomes its own OCI layer, so bumping any single tool version
 only invalidates one content-addressable blob — unlike a Dockerfile where
 changing an early `RUN` invalidates every layer above it.
+
+This command is experimental and requires `mise settings experimental=true`
+(or `MISE_EXPERIMENTAL=1`). Behavior, flags, and output layout may change
+in future releases.
 
 ## Subcommands
 

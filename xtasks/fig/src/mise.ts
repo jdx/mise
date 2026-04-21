@@ -1776,11 +1776,12 @@ const completionSpec: Fig.Spec = {
     },
     {
       name: "oci",
-      description: "Build OCI container images from a mise.toml",
+      description: "[experimental] Build OCI container images from a mise.toml",
       subcommands: [
         {
           name: "build",
-          description: "Build an OCI image from the current mise.toml",
+          description:
+            "[experimental] Build an OCI image from the current mise.toml",
           options: [
             {
               name: ["-o", "--output"],

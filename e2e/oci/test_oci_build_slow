@@ -2,6 +2,8 @@
 # Tests `mise oci build` — per-tool layers, reproducibility, delta behavior.
 # Runs against a scratch base (no network) so it stays fast and offline.
 
+export MISE_EXPERIMENTAL=1
+
 cat >mise.toml <<EOF
 [tools]
 jq = "1.8.1"
