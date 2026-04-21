@@ -74,6 +74,11 @@ impl ToolVersionOptions {
         self.opts.get(key).and_then(|v| v.as_str())
     }
 
+    /// Get a scalar value for a key as an owned string.
+    pub fn get_string(&self, key: &str) -> Option<String> {
+        self.opts.get(key).and_then(Self::value_to_string)
+    }
+
     /// Convert opts to string values, extracting inner strings from
     /// `toml::Value::String` and calling `to_string()` on other types.
     pub fn opts_as_strings(&self) -> IndexMap<String, String> {
@@ -164,13 +169,7 @@ impl ToolVersionOptions {
 
     fn get_string_at_path(value: &toml::Value, path: &[&str]) -> Option<String> {
         if path.is_empty() {
-            return match value {
-                toml::Value::String(s) => Some(s.clone()),
-                toml::Value::Integer(i) => Some(i.to_string()),
-                toml::Value::Boolean(b) => Some(b.to_string()),
-                toml::Value::Float(f) => Some(f.to_string()),
-                _ => None,
-            };
+            return Self::value_to_string(value);
         }
 
         match value {
@@ -181,6 +180,16 @@ impl ToolVersionOptions {
                     None
                 }
             }
+            _ => None,
+        }
+    }
+
+    fn value_to_string(value: &toml::Value) -> Option<String> {
+        match value {
+            toml::Value::String(s) => Some(s.clone()),
+            toml::Value::Integer(i) => Some(i.to_string()),
+            toml::Value::Boolean(b) => Some(b.to_string()),
+            toml::Value::Float(f) => Some(f.to_string()),
             _ => None,
         }
     }
@@ -462,6 +471,18 @@ mod tests {
         let opts = parse_tool_options(input);
         assert_eq!(opts.get("bin_path"), Some("bin"));
         assert_eq!(opts.get("strip_components"), Some("1"));
+    }
+
+    #[test]
+    fn test_get_string_handles_scalar_values() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("integer".to_string(), toml::Value::Integer(124));
+        opts.opts
+            .insert("boolean".to_string(), toml::Value::Boolean(true));
+
+        assert_eq!(opts.get_string("integer"), Some("124".to_string()));
+        assert_eq!(opts.get_string("boolean"), Some("true".to_string()));
     }
 
     #[test]

@@ -291,8 +291,23 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
+        BackendType::Aqua => aqua::install_time_option_keys(),
         _ => vec![],
     }
+}
+
+/// Returns true if a backend option only affects installation/download.
+/// Used to filter cached options when config provides its own options.
+pub fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str) -> bool {
+    if matches!(backend_type, BackendType::Aqua) {
+        return aqua::is_install_time_option_key(key);
+    }
+
+    let install_time_keys = install_time_option_keys_for_type(backend_type);
+    install_time_keys.iter().any(|itk| itk == key)
+        || install_time_keys
+            .iter()
+            .any(|itk| key.starts_with("platforms.") && key.ends_with(&format!(".{itk}")))
 }
 
 /// Normalize idiomatic file contents by removing comments and empty lines.
