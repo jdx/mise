@@ -21,17 +21,23 @@ use crate::oci::BuildOptions;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Run {
+    // Long-only flags, kept alphabetical (asserted by
+    // `cli::tests::test_subcommands_are_sorted`).
     /// Container engine to use (`auto`, `podman`, or `docker`)
     #[clap(long, default_value = "auto")]
     engine: Engine,
+
+    /// Base image reference for the build (ignored with --image-dir)
+    #[clap(long)]
+    from: Option<String>,
 
     /// Use an already-built OCI image layout instead of building fresh
     #[clap(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise"])]
     image_dir: Option<PathBuf>,
 
-    /// Base image reference for the build (ignored with --image-dir)
+    /// Keep the image in the engine after the run (default: remove with `--rm`)
     #[clap(long)]
-    from: Option<String>,
+    keep: bool,
 
     /// Override in-image mount point (ignored with --image-dir)
     #[clap(long)]
@@ -41,6 +47,18 @@ pub struct Run {
     #[clap(long)]
     no_mise: bool,
 
+    /// Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
+    ///
+    /// Note: unlike `docker run -v`, there's no `-v` short flag here because
+    /// mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
+    #[clap(long = "volume", alias = "mount", value_name = "HOST:CONTAINER")]
+    volume: Vec<String>,
+
+    // Flags that have both a short and a long form.
+    /// Set environment variable in the container (repeatable, `KEY=VAL`)
+    #[clap(short = 'e', long = "env", value_name = "KEY=VAL")]
+    env: Vec<String>,
+
     /// Run interactively (pass `-i` to the engine)
     #[clap(short, long)]
     interactive: bool,
@@ -49,24 +67,9 @@ pub struct Run {
     #[clap(short, long)]
     tty: bool,
 
-    /// Set environment variable in the container (repeatable, `KEY=VAL`)
-    #[clap(short = 'e', long = "env", value_name = "KEY=VAL")]
-    env: Vec<String>,
-
-    /// Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
-    ///
-    /// Note: unlike `docker run -v`, there's no `-v` short flag here because
-    /// mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
-    #[clap(long = "volume", alias = "mount", value_name = "HOST:CONTAINER")]
-    volume: Vec<String>,
-
     /// Working directory inside the container
     #[clap(short = 'w', long = "workdir")]
     workdir: Option<String>,
-
-    /// Keep the image in the engine after the run (default: remove with `--rm`)
-    #[clap(long)]
-    keep: bool,
 
     /// Command and arguments to run inside the container (after `--`)
     #[clap(last = true)]

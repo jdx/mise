@@ -26,13 +26,13 @@ pub struct Push {
     #[clap(value_name = "REF")]
     reference: String,
 
-    /// Push an already-built OCI image layout (skip the build step)
-    #[clap(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise"])]
-    image_dir: Option<PathBuf>,
-
     /// Base image for the build (ignored with --image-dir)
     #[clap(long)]
     from: Option<String>,
+
+    /// Push an already-built OCI image layout (skip the build step)
+    #[clap(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise"])]
+    image_dir: Option<PathBuf>,
 
     /// Override in-image mount point (ignored with --image-dir)
     #[clap(long)]
