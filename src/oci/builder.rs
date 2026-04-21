@@ -143,6 +143,21 @@ impl Builder {
         }
 
         // --- 2. Per-tool layers ---
+        // Tool installs are host-native binaries. On non-linux hosts they'll
+        // fail at runtime inside the linux container with `Exec format error`
+        // — emit a single warning up front so the user isn't surprised after
+        // the image appears to build successfully. (`--no-mise` silences the
+        // mise-binary warning below but doesn't help with tool binaries; only
+        // running the build on a linux host does.)
+        if !versions.is_empty() && std::env::consts::OS != "linux" {
+            warn!(
+                "building on {host} host — the {n} tool layer(s) contain {host} binaries that \
+                 will fail with `Exec format error` inside a linux container. Run \
+                 `mise oci build` on a linux host (or in a linux container) for a working image.",
+                host = std::env::consts::OS,
+                n = versions.len()
+            );
+        }
         let mut tool_layers: Vec<(String, String, LayerBlob)> = Vec::new();
         for (_, tv) in &versions {
             let install_path = tv.install_path();

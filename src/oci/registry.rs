@@ -186,10 +186,16 @@ pub async fn pull_base_image(
     let token = fetch_token_if_needed(&manifest_url, &r.repository).await?;
 
     // Try OCI/Docker manifest or an index (multi-arch).
-    let (body, _headers) =
+    let (body, headers) =
         get_with_token::<serde_json::Value>(&manifest_url, token.as_deref(), &accept)
             .await
             .wrap_err_with(|| format!("fetching manifest for {reference}"))?;
+
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
 
     let manifest = resolve_manifest(
         body,
@@ -197,6 +203,7 @@ pub async fn pull_base_image(
         base_url.as_str(),
         token.as_deref(),
         desired_platform,
+        &content_type,
     )
     .await?;
 
@@ -276,15 +283,21 @@ async fn resolve_manifest(
     base_url: &str,
     token: Option<&str>,
     desired_platform: Option<(&str, &str)>,
+    content_type: &str,
 ) -> Result<ImageManifest> {
-    let media_type = body
-        .get("mediaType")
-        .and_then(|m| m.as_str())
-        .unwrap_or("")
-        .to_string();
+    // The OCI spec marks `mediaType` in the body as SHOULD, not MUST. Some
+    // registries omit it, so we also consult the response Content-Type
+    // header and a structural fallback (presence of a `manifests` array).
+    let body_media_type = body.get("mediaType").and_then(|m| m.as_str()).unwrap_or("");
+    let has_manifests_array = body.get("manifests").map(|m| m.is_array()).unwrap_or(false);
+    let is_index = body_media_type == MEDIA_TYPE_OCI_INDEX
+        || body_media_type == MEDIA_TYPE_DOCKER_MANIFEST_LIST
+        || content_type.contains(MEDIA_TYPE_OCI_INDEX)
+        || content_type.contains(MEDIA_TYPE_DOCKER_MANIFEST_LIST)
+        || (body_media_type.is_empty() && has_manifests_array);
 
     // If this is an index / manifest list, pick the right child manifest.
-    if media_type == MEDIA_TYPE_OCI_INDEX || media_type == MEDIA_TYPE_DOCKER_MANIFEST_LIST {
+    if is_index {
         let manifests = body
             .get("manifests")
             .and_then(|m| m.as_array())
