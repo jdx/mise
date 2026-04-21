@@ -68,9 +68,7 @@ impl SyncNode {
                 continue;
             }
             let v = entry.trim_start_matches("node@");
-            if crate::backend::create_symlink(node.as_ref(), v, &brew_prefix.join(&entry))?
-                .is_some()
-            {
+            if node.create_symlink(v, &brew_prefix.join(&entry))?.is_some() {
                 miseprintln!("Synced node@{} from Homebrew", v);
             }
         }
@@ -99,8 +97,7 @@ impl SyncNode {
                 continue;
             }
             let v = entry.trim_start_matches('v');
-            let symlink =
-                crate::backend::create_symlink(node.as_ref(), v, &nvm_versions_path.join(&entry))?;
+            let symlink = node.create_symlink(v, &nvm_versions_path.join(&entry))?;
             if let Some(symlink) = symlink {
                 created.push(symlink);
                 miseprintln!("Synced node@{} from nvm", v);
@@ -128,7 +125,8 @@ impl SyncNode {
             if v.starts_with(".") {
                 continue;
             }
-            if crate::backend::create_symlink(node.as_ref(), &v, &nodenv_versions_path.join(&v))?
+            if node
+                .create_symlink(&v, &nodenv_versions_path.join(&v))?
                 .is_some()
             {
                 miseprintln!("Synced node@{} from nodenv", v);

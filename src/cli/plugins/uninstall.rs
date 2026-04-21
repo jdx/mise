@@ -47,7 +47,7 @@ impl PluginsUninstall {
                 plugin.uninstall(pr.as_ref()).await?;
                 if self.purge {
                     let backend = backend::get(&plugin_name.into()).unwrap();
-                    crate::backend::purge(backend.as_ref(), pr.as_ref())?;
+                    backend.purge(pr.as_ref())?;
                 }
                 pr.finish_with_message("uninstalled".into());
             } else {

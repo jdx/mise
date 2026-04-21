@@ -59,21 +59,16 @@ impl Uninstall {
         let mpr = MultiProgressReport::get();
         let mut has_work = false;
         for (plugin, tv) in tool_versions {
-            if !crate::backend::is_version_installed(plugin.as_ref(), &config, &tv, true) {
+            if !plugin.is_version_installed(&config, &tv, true) {
                 warn!("{} is not installed", tv.style());
                 continue;
             }
 
             has_work = true;
             let pr = mpr.add(&tv.style());
-            if let Err(err) = crate::backend::uninstall_version(
-                plugin.as_ref(),
-                &config,
-                &tv,
-                pr.as_ref(),
-                self.is_dry_run(),
-            )
-            .await
+            if let Err(err) = plugin
+                .uninstall_version(&config, &tv, pr.as_ref(), self.is_dry_run())
+                .await
             {
                 error!("{err}");
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
@@ -121,7 +116,7 @@ impl Uninstall {
         for ta in runtimes {
             let backend = ta.ba.backend()?;
             let query = ta.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
-            let installed_versions = crate::backend::list_installed_versions(backend.as_ref());
+            let installed_versions = backend.list_installed_versions();
             let exact_match = installed_versions.iter().find(|v| v == &&query);
             let matches = match exact_match {
                 Some(m) => vec![m],

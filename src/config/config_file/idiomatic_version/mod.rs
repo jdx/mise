@@ -32,7 +32,7 @@ impl IdiomaticVersionFile {
         let mut tools = ToolRequestSet::new();
 
         for plugin in plugins {
-            match crate::backend::parse_idiomatic_file(plugin.as_ref(), &path).await {
+            match plugin.parse_idiomatic_file(&path).await {
                 Ok(versions) => {
                     for v in versions {
                         let tr = ToolRequest::new(plugin.ba().clone(), &v, source.clone())?;

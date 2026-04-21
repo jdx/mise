@@ -60,9 +60,9 @@ impl Latest {
         }
 
         let latest_version = if installed {
-            crate::backend::latest_installed_version(backend.as_ref(), prefix)?
+            backend.latest_installed_version(prefix)?
         } else {
-            crate::backend::latest_version(backend.as_ref(), &config, prefix, before_date).await?
+            backend.latest_version(&config, prefix, before_date).await?
         };
         if let Some(version) = latest_version {
             miseprintln!("{}", version);

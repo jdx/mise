@@ -56,9 +56,7 @@ impl VersionProvider for MiseVersionProvider {
         let config = Config::get().await.ok()?;
 
         // Get the latest version
-        crate::backend::latest_version(backend.as_ref(), &config, None, None)
-            .await
-            .ok()?
+        backend.latest_version(&config, None, None).await.ok()?
     }
 }
 

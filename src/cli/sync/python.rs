@@ -52,7 +52,7 @@ impl SyncPython {
             if v.starts_with(".") {
                 continue;
             }
-            crate::backend::create_symlink(python.as_ref(), &v, &pyenv_versions_path.join(&v))?;
+            python.create_symlink(&v, &pyenv_versions_path.join(&v))?;
             miseprintln!("Synced python@{} from pyenv", v);
         }
         Ok(())
@@ -75,7 +75,8 @@ impl SyncPython {
             }
             // name is like cpython-3.13.1-macos-aarch64-none
             let v = name.split('-').nth(1).unwrap();
-            if crate::backend::create_symlink(python.as_ref(), v, &uv_versions_path.join(&name))?
+            if python
+                .create_symlink(v, &uv_versions_path.join(&name))?
                 .is_some()
             {
                 miseprintln!("Synced python@{v} from uv to mise");

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;

@@ -66,23 +66,26 @@ pub mod ubi;
 pub mod version_list;
 pub mod vfox;
 
-pub type ABackend = Arc<dyn Backend>;
-pub type BackendMap = BTreeMap<String, ABackend>;
-pub type BackendList = Vec<ABackend>;
+pub(crate) type ABackend = Arc<dyn Backend>;
+pub(crate) type BackendMap = BTreeMap<String, ABackend>;
+pub(crate) type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
 pub struct GitHubReleaseInfo {
+    #[allow(dead_code)]
     pub repo: String,
     pub asset_pattern: Option<String>,
     pub api_url: Option<String>,
+    #[allow(dead_code)]
     pub release_type: ReleaseType,
 }
 
 #[derive(Debug, Clone)]
 pub enum ReleaseType {
     GitHub,
+    #[allow(dead_code)]
     GitLab,
 }
 
@@ -159,7 +162,7 @@ pub enum SecurityFeature {
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
-pub async fn load_tools() -> Result<Arc<BackendMap>> {
+pub(crate) async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
         return Ok(memo_tools);
     }
@@ -208,7 +211,7 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
     Ok(tools)
 }
 
-pub fn list() -> BackendList {
+pub(crate) fn list() -> BackendList {
     TOOLS
         .lock()
         .unwrap()
@@ -219,7 +222,7 @@ pub fn list() -> BackendList {
         .collect()
 }
 
-pub fn get(ba: &BackendArg) -> Option<ABackend> {
+pub(crate) fn get(ba: &BackendArg) -> Option<ABackend> {
     let mut tools = TOOLS.lock().unwrap();
     let tools_ = tools.as_ref().unwrap();
     if let Some(backend) = tools_.get(&ba.short) {
@@ -234,14 +237,14 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
     }
 }
 
-pub fn remove(short: &str) {
+pub(crate) fn remove(short: &str) {
     let mut tools = TOOLS.lock().unwrap();
     let mut tools_ = tools.as_ref().unwrap().deref().clone();
     tools_.remove(short);
     *tools = Some(Arc::new(tools_));
 }
 
-pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
+pub(crate) fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     match ba.backend_type() {
         BackendType::Core => {
             CORE_PLUGINS
@@ -365,10 +368,10 @@ mod tests {
 
 /// Backend-specific hook surface.
 ///
-/// Callers should use the shared module functions below for orchestration
-/// instead of calling implementation hooks directly.
+/// Backends implement these hooks. Callers should use the `Backend`
+/// operations trait instead of calling implementation hooks directly.
 #[async_trait]
-pub trait BackendImpl: Debug + Send + Sync {
+pub(crate) trait BackendImpl: Debug + Send + Sync {
     fn id(&self) -> &str {
         &self.ba().short
     }
@@ -666,7 +669,199 @@ pub trait BackendImpl: Debug + Send + Sync {
     }
 }
 
-pub use BackendImpl as Backend;
+/// Caller-facing backend operations.
+///
+/// This trait is blanket-implemented for every backend hook implementation, so
+/// shared operations cannot be overridden by individual backends.
+#[async_trait]
+#[allow(private_bounds)]
+pub trait Backend: BackendImpl {
+    fn get_all_dependencies(&self, optional: bool) -> Result<IndexSet<BackendArg>> {
+        crate::backend::get_all_dependencies(self, optional)
+    }
+
+    async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        crate::backend::list_remote_versions(self, config).await
+    }
+
+    async fn list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        crate::backend::list_remote_versions_with_info(self, config).await
+    }
+
+    fn list_installed_versions(&self) -> Vec<String> {
+        crate::backend::list_installed_versions(self)
+    }
+
+    fn is_version_installed(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> bool {
+        crate::backend::is_version_installed(self, config, tv, check_symlink)
+    }
+
+    async fn is_version_outdated(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        crate::backend::is_version_outdated(self, config, tv).await
+    }
+
+    fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
+        crate::backend::symlink_path(self, tv)
+    }
+
+    fn create_symlink(&self, version: &str, target: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
+        crate::backend::create_symlink(self, version, target)
+    }
+
+    fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
+        crate::backend::list_installed_versions_matching(self, query)
+    }
+
+    async fn list_versions_matching(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+    ) -> eyre::Result<Vec<String>> {
+        crate::backend::list_versions_matching(self, config, query).await
+    }
+
+    async fn list_versions_matching_with_opts(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        before_date: Option<Timestamp>,
+    ) -> eyre::Result<Vec<String>> {
+        crate::backend::list_versions_matching_with_opts(self, config, query, before_date).await
+    }
+
+    async fn latest_version_for_query(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        before_date: Option<Timestamp>,
+    ) -> eyre::Result<Option<String>> {
+        crate::backend::latest_version_for_query(self, config, query, before_date).await
+    }
+
+    async fn latest_version(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+        before_date: Option<Timestamp>,
+    ) -> eyre::Result<Option<String>> {
+        crate::backend::latest_version(self, config, query, before_date).await
+    }
+
+    fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
+        crate::backend::latest_installed_version(self, query)
+    }
+
+    async fn get_version_info(&self, config: &Arc<Config>, version: &str) -> Option<VersionInfo> {
+        crate::backend::get_version_info(self, config, version).await
+    }
+
+    async fn is_rolling_version_outdated(&self, config: &Arc<Config>, version: &str) -> bool {
+        crate::backend::is_rolling_version_outdated(self, config, version).await
+    }
+
+    async fn warn_if_dependencies_missing(&self, config: &Arc<Config>) -> eyre::Result<()> {
+        crate::backend::warn_if_dependencies_missing(self, config).await
+    }
+
+    fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
+        crate::backend::purge(self, pr)
+    }
+
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+        crate::backend::idiomatic_filenames(self).await
+    }
+
+    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
+        crate::backend::parse_idiomatic_file(self, path).await
+    }
+
+    async fn install_version(
+        &self,
+        ctx: InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
+        crate::backend::install_version(self, ctx, tv).await
+    }
+
+    async fn uninstall_version(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+        dryrun: bool,
+    ) -> eyre::Result<()> {
+        crate::backend::uninstall_version(self, config, tv, pr, dryrun).await
+    }
+
+    async fn which(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        bin_name: &str,
+    ) -> eyre::Result<Option<PathBuf>> {
+        crate::backend::which(self, config, tv, bin_name).await
+    }
+
+    async fn path_env_for_cmd(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<OsString> {
+        crate::backend::path_env_for_cmd(self, config, tv).await
+    }
+
+    async fn dependency_toolset(&self, config: &Arc<Config>) -> eyre::Result<Toolset> {
+        crate::backend::dependency_toolset(self, config).await
+    }
+
+    async fn dependency_which(&self, config: &Arc<Config>, bin: &str) -> Option<PathBuf> {
+        crate::backend::dependency_which(self, config, bin).await
+    }
+
+    async fn warn_if_dependency_missing(
+        &self,
+        config: &Arc<Config>,
+        program: &str,
+        provided_by: &[&str],
+        install_instructions: &str,
+    ) {
+        crate::backend::warn_if_dependency_missing(
+            self,
+            config,
+            program,
+            provided_by,
+            install_instructions,
+        )
+        .await
+    }
+
+    async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
+        crate::backend::dependency_env(self, config).await
+    }
+
+    fn verify_checksum(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        file: &Path,
+    ) -> Result<()> {
+        crate::backend::verify_checksum(self, ctx, tv, file)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        crate::backend::resolve_lock_info(self, tv, target).await
+    }
+}
+
+impl<T: BackendImpl + ?Sized> Backend for T {}
 
 pub(crate) fn get_all_dependencies<B: BackendImpl + ?Sized>(
     backend: &B,

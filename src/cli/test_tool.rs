@@ -229,7 +229,8 @@ impl TestTool {
         let env = ts.env_with_path(config).await?;
         let mut which_parts = cmd.split_whitespace().collect::<Vec<_>>();
         let cmd = which_parts.remove(0);
-        let mut which_cmd = crate::backend::which(backend.as_ref(), config, &tv, cmd)
+        let mut which_cmd = backend
+            .which(config, &tv, cmd)
             .await?
             .unwrap_or(PathBuf::from(cmd));
         if cfg!(windows) && which_cmd == Path::new("which") {

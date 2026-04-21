@@ -75,7 +75,7 @@ impl Current {
                 continue;
             }
             for tv in versions {
-                if !crate::backend::is_version_installed(plugin.as_ref(), &config, tv, true) {
+                if !plugin.is_version_installed(&config, tv, true) {
                     let source = ts.versions.get(tv.ba()).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",

@@ -58,7 +58,7 @@ impl InstallInto {
             before_date,
         };
         tv.install_path = Some(self.path.clone());
-        crate::backend::install_version(backend.as_ref(), install_ctx, tv).await?;
+        backend.install_version(install_ctx, tv).await?;
         Ok(())
     }
 }

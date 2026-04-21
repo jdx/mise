@@ -4,7 +4,7 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
+use crate::backend::{BackendImpl, VersionInfo, normalize_idiomatic_contents};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;

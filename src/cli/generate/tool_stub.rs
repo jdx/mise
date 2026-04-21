@@ -676,7 +676,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         for p in Platform::common_platforms() {
             for platform in backend.platform_variants(&p) {
                 let target = PlatformTarget::new(platform);
-                match crate::backend::resolve_lock_info(backend.as_ref(), &tv, &target).await {
+                match backend.resolve_lock_info(&tv, &target).await {
                     Ok(info) if info.url.is_some() => {
                         lock_platforms.insert(target.to_key(), info);
                     }

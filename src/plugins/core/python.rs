@@ -1,6 +1,6 @@
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_shasums;
-use crate::backend::{Backend, VersionCacheManager, VersionInfo};
+use crate::backend::{BackendImpl, VersionCacheManager, VersionInfo};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;

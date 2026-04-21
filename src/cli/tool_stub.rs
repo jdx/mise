@@ -388,7 +388,7 @@ async fn resolve_bin_simple(
     bin: &str,
 ) -> Result<Option<PathBuf>> {
     if let Some((backend, tv)) = toolset.which(config, bin).await {
-        crate::backend::which(backend.as_ref(), config, &tv, bin).await
+        backend.which(config, &tv, bin).await
     } else {
         Ok(None)
     }
@@ -570,7 +570,8 @@ async fn execute_with_tool_request(
             }
 
             if let Some((backend, _tv)) = toolset.list_current_installed_versions(config).first() {
-                let btp = crate::backend::dependency_toolset(backend.as_ref(), config)
+                let btp = backend
+                    .dependency_toolset(config)
                     .await?
                     .list_paths(config)
                     .await;

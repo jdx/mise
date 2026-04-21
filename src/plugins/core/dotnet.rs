@@ -7,7 +7,7 @@ use eyre::Result;
 use serde_derive::Deserialize;
 use versions::Versioning;
 
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;

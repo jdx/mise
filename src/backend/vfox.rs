@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use tokio::sync::RwLock;
 
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;

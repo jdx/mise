@@ -10,7 +10,7 @@ use crate::env::{
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolRequest, ToolVersion};
-use crate::{backend::Backend, toolset::ToolVersionOptions};
+use crate::{backend::BackendImpl, toolset::ToolVersionOptions};
 use crate::{file, github, gitlab, hash};
 use async_trait::async_trait;
 use eyre::bail;

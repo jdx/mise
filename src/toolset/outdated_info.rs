@@ -31,7 +31,7 @@ pub struct OutdatedInfo {
 impl OutdatedInfo {
     pub fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
         let t = tv.backend()?;
-        let current = if crate::backend::is_version_installed(t.as_ref(), config, &tv, true) {
+        let current = if t.is_version_installed(config, &tv, true) {
             Some(tv.version.clone())
         } else {
             None
@@ -61,8 +61,7 @@ impl OutdatedInfo {
         let latest_result = if bump {
             // Note: Backend's latest_version takes individual parameters,
             // not a ResolveOptions struct like ToolVersion's method
-            crate::backend::latest_version(
-                t.as_ref(),
+            t.latest_version(
                 config,
                 Some(prefix.clone()).filter(|s| !s.is_empty()),
                 opts.before_date,
@@ -91,12 +90,9 @@ impl OutdatedInfo {
             .is_some_and(|c| !toolset::is_outdated_version(c, &oi.latest))
         {
             // Check if this is a rolling version (like "nightly") with a new checksum
-            let rolling_outdated = crate::backend::is_rolling_version_outdated(
-                t.as_ref(),
-                config,
-                &oi.tool_version.request.version(),
-            )
-            .await;
+            let rolling_outdated = t
+                .is_rolling_version_outdated(config, &oi.tool_version.request.version())
+                .await;
             if !rolling_outdated {
                 trace!("skipping up-to-date version {}", oi.tool_version);
                 return Ok(None);

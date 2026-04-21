@@ -1244,7 +1244,7 @@ pub async fn resolve_tool_lock_info(
 
     let (info, options, conda_packages) = if let Some(backend) = backend {
         let options = backend.resolve_lockfile_options(&tv.request, &target);
-        match crate::backend::resolve_lock_info(backend.as_ref(), &tv, &target).await {
+        match backend.resolve_lock_info(&tv, &target).await {
             Ok(info) => {
                 let conda_packages = if backend.get_type() == BackendType::Conda {
                     let conda_backend = CondaBackend::from_arg(ba.clone());

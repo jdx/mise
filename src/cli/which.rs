@@ -51,7 +51,7 @@ impl Which {
                 } else if self.plugin {
                     miseprintln!("{p}");
                 } else {
-                    let path = crate::backend::which(p.as_ref(), &config, &tv, &bin_name).await?;
+                    let path = p.which(&config, &tv, &bin_name).await?;
                     miseprintln!("{}", path.unwrap().display());
                 }
                 Ok(())

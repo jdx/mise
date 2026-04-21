@@ -109,7 +109,7 @@ impl Ls {
         if self.installed {
             let mut installed_runtimes = vec![];
             for (ls, p, tv, source) in runtimes {
-                if crate::backend::is_version_installed(p.as_ref(), &config, &tv, true) {
+                if p.is_version_installed(&config, &tv, true) {
                     installed_runtimes.push((ls, p, tv, source));
                 }
             }
@@ -118,7 +118,7 @@ impl Ls {
         if self.missing {
             let mut missing_runtimes = vec![];
             for (ls, p, tv, source) in runtimes {
-                if !crate::backend::is_version_installed(p.as_ref(), &config, &tv, true) {
+                if !p.is_version_installed(&config, &tv, true) {
                     missing_runtimes.push((ls, p, tv, source));
                 }
             }
@@ -314,8 +314,7 @@ impl Ls {
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
             // if it isn't installed and it's not specified, don't show it
             .filter(|(_ls, p, tv, source)| {
-                !source.is_unknown()
-                    || crate::backend::is_version_installed(p.as_ref(), config, tv, true)
+                !source.is_unknown() || p.is_version_installed(config, tv, true)
             })
             .filter(|(_ls, p, _, _)| match &self.installed_tool {
                 Some(backend) => backend.contains(p.ba()),
@@ -363,8 +362,7 @@ impl Ls {
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
             // if it isn't installed and it's not specified, don't show it
             .filter(|(_ls, p, tv, source)| {
-                !source.is_unknown()
-                    || crate::backend::is_version_installed(p.as_ref(), config, tv, true)
+                !source.is_unknown() || p.is_version_installed(config, tv, true)
             })
             .filter(|(_ls, p, _, _)| match &self.installed_tool {
                 Some(backend) => backend.contains(p.ba()),
@@ -587,7 +585,7 @@ async fn resolve_version_status(
     let install_path = tv.install_path();
     if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
         VersionStatus::Symlink(tv.version.clone(), active)
-    } else if !crate::backend::is_version_installed(p, config, tv, true) {
+    } else if !p.is_version_installed(config, tv, true) {
         VersionStatus::Missing(tv.version.clone())
     } else {
         let category = env::install_path_category(&install_path);
@@ -601,7 +599,7 @@ async fn resolve_version_status(
         }
         if active {
             let outdated = if ls.outdated {
-                crate::backend::is_version_outdated(p, config, tv).await
+                p.is_version_outdated(config, tv).await
             } else {
                 false
             };

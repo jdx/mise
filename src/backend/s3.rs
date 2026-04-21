@@ -42,7 +42,7 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_with_fallback, template_string, verify_artifact,
 };
 use crate::backend::version_list;
-use crate::backend::{Backend, VersionInfo};
+use crate::backend::{BackendImpl, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file;

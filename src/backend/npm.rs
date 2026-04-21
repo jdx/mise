@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};

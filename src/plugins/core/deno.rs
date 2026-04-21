@@ -10,7 +10,7 @@ use itertools::Itertools;
 use serde::Deserialize;
 use versions::Versioning;
 
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_file;

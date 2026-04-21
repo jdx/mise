@@ -22,7 +22,7 @@ use crate::{
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
-use crate::{backend::Backend, config::Config};
+use crate::{backend::BackendImpl, config::Config};
 use crate::{env, file, github, minisign};
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, bail, eyre};

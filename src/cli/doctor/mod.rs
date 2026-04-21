@@ -161,7 +161,7 @@ impl Doctor {
                 .filter(|tv| tv.request.is_os_supported())
                 .map(|tv: &ToolVersion| {
                     let mut tool = serde_json::Map::new();
-                    match crate::backend::is_version_installed(f.as_ref(), &config, tv, true) {
+                    match f.is_version_installed(&config, tv, true) {
                         true => {
                             tool.insert("version".into(), tv.version.to_string().into());
                         }
@@ -357,15 +357,13 @@ impl Doctor {
         let tools = ts
             .list_current_versions()
             .into_iter()
-            .map(|(f, tv)| {
-                match crate::backend::is_version_installed(f.as_ref(), &config, &tv, true) {
-                    true => (tv.to_string(), style::nstyle("")),
-                    false => {
-                        self.errors.push(format!(
-                            "tool {tv} is not installed, install with `mise install`"
-                        ));
-                        (tv.to_string(), style::ndim("(missing)"))
-                    }
+            .map(|(f, tv)| match f.is_version_installed(&config, &tv, true) {
+                true => (tv.to_string(), style::nstyle("")),
+                false => {
+                    self.errors.push(format!(
+                        "tool {tv} is not installed, install with `mise install`"
+                    ));
+                    (tv.to_string(), style::ndim("(missing)"))
                 }
             })
             .collect_vec();

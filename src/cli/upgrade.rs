@@ -412,7 +412,8 @@ impl Upgrade {
         pr: &dyn SingleReport,
     ) -> Result<()> {
         let backend = tv.backend()?;
-        crate::backend::uninstall_version(backend.as_ref(), config, tv, pr, self.dry_run)
+        backend
+            .uninstall_version(config, tv, pr, self.dry_run)
             .await
             .wrap_err_with(|| format!("failed to uninstall {tv}"))?;
         pr.finish();

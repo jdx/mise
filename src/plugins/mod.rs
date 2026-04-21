@@ -58,6 +58,7 @@ impl PluginEnum {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_plugin_type(&self) -> PluginType {
         match self {
             PluginEnum::Asdf(_) => PluginType::Asdf,
@@ -138,6 +139,7 @@ impl PluginEnum {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.install(config, pr).await,

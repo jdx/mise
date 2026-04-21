@@ -66,12 +66,12 @@ impl LsRemote {
         };
         let matches_prefix = |v: &str| prefix.as_ref().is_none_or(|p| v.starts_with(p));
 
-        let versions: Vec<_> =
-            crate::backend::list_remote_versions_with_info(plugin.as_ref(), config)
-                .await?
-                .into_iter()
-                .filter(|v| matches_prefix(&v.version))
-                .collect();
+        let versions: Vec<_> = plugin
+            .list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .filter(|v| matches_prefix(&v.version))
+            .collect();
 
         if self.json {
             miseprintln!("{}", serde_json::to_string(&versions)?);
@@ -87,7 +87,7 @@ impl LsRemote {
         let mut versions = vec![];
         for b in backend::list() {
             let tool = b.id().to_string();
-            for v in crate::backend::list_remote_versions_with_info(b.as_ref(), config).await? {
+            for v in b.list_remote_versions_with_info(config).await? {
                 versions.push(VersionOutputAll {
                     tool: tool.clone(),
                     version: v.version,

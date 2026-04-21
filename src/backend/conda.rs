@@ -9,7 +9,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{self, Lockfile, PlatformInfo};
 use crate::toolset::ToolSource;
 use crate::toolset::ToolVersion;
-use crate::{backend::Backend, dirs, parallel};
+use crate::{backend::BackendImpl, dirs, parallel};
 use crate::{file, hash};
 use async_trait::async_trait;
 use eyre::Result;

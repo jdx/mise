@@ -738,7 +738,7 @@ across different installation systems.
 
 1. **Create the backend module** in `src/backend/` (e.g., `my_backend.rs`)
 
-2. **Implement the backend hook trait**:
+2. **Implement the crate-private backend hook trait**:
 
    ```rust
    use crate::backend::{BackendImpl, BackendType, VersionInfo};
@@ -770,9 +770,11 @@ across different installation systems.
    }
    ```
 
-   CLI and toolset code should call shared operations such as
-   `backend::list_remote_versions`, `backend::install_version`, and
-   `backend::uninstall_version` instead of calling implementation hooks directly.
+   CLI and toolset code should call shared operations through the `Backend`
+   operations trait, such as `backend.list_remote_versions(config).await`,
+   `backend.install_version(ctx, tv).await`, and
+   `backend.uninstall_version(config, &tv, pr, dry_run).await`, instead of
+   calling implementation hooks directly.
 
 3. **Register the backend** in `src/backend/mod.rs`:
 
