@@ -190,7 +190,7 @@ impl Builder {
                     install_path.display()
                 );
             }
-            let tv_prefix = tool_prefix(&mount_point, tv);
+            let tv_prefix = tool_tar_prefix(&mount_point, tv);
             let blob = layer::build_layer_from_dir(&install_path, &tv_prefix)
                 .wrap_err_with(|| format!("building layer for {}", tv.style()))?;
             tool_layers.push((tv.ba().short.clone(), tv.version.clone(), blob));
@@ -414,7 +414,7 @@ impl Builder {
         // in-image location so they're valid inside the container.
         for (backend, tv) in versions {
             let host_install = tv.install_path();
-            let in_image_root = format!("/{}", tool_prefix(mount_point, tv));
+            let in_image_root = tool_in_image_path(mount_point, tv);
             match backend.exec_env(&self.cfg, &self.ts, tv).await {
                 Ok(tool_env) => {
                     for (k, v) in tool_env {
@@ -453,7 +453,7 @@ impl Builder {
         let mut path_entries: Vec<String> = Vec::new();
         for (backend, tv) in versions {
             let install_path = tv.install_path();
-            let in_image_tool_root = format!("/{}", tool_prefix(mount_point, tv));
+            let in_image_tool_root = tool_in_image_path(mount_point, tv);
             let bin_paths = backend
                 .list_bin_paths(&self.cfg, tv)
                 .await
@@ -607,17 +607,29 @@ fn rebase_path_value(value: &str, host_prefix: &std::path::Path, in_image_prefix
     value.replace(host, in_image_prefix)
 }
 
-fn tool_prefix(mount_point: &str, tv: &ToolVersion) -> String {
-    // Use the canonical directory names that mise itself uses on the host
-    // (via `BackendArg::tool_dir_name` / `ToolVersion::tv_pathname`). A
-    // naive `short.replace([':', '/'], "-")` would diverge — the real
-    // path name goes through `to_kebab_case()` which also strips
-    // non-alphanumerics and splits camelCase boundaries. Mismatching
-    // would mean files land at a path mise can't resolve inside the
-    // container.
+/// In-image absolute path for a tool's install dir, e.g.
+/// `/mise/installs/node/20.0.0`. Used when we need a path that mise (or the
+/// image config's PATH / env vars) can reference at runtime.
+///
+/// Uses the canonical directory names that mise itself uses on the host
+/// (via `BackendArg::tool_dir_name` / `ToolVersion::tv_pathname`). A naive
+/// `short.replace([':', '/'], "-")` would diverge — the real path name goes
+/// through `to_kebab_case()` which also strips non-alphanumerics and splits
+/// camelCase boundaries. Mismatching would mean files land at a path mise
+/// can't resolve inside the container.
+fn tool_in_image_path(mount_point: &str, tv: &ToolVersion) -> String {
     let plugin_dir = tv.ba().tool_dir_name();
     let version_dir = tv.tv_pathname();
+    // `mount_point` is guaranteed absolute and trimmed of trailing slashes
+    // by the validation in Builder::build (empty + must-start-with-/
+    // checks), so a single `/` between segments is always correct.
     format!("{mount_point}/installs/{plugin_dir}/{version_dir}")
+}
+
+/// Same as `tool_in_image_path` but stripped of its leading `/` for use as
+/// a tar entry name (tar paths are conventionally relative).
+fn tool_tar_prefix(mount_point: &str, tv: &ToolVersion) -> String {
+    tool_in_image_path(mount_point, tv)
         .trim_start_matches('/')
         .to_string()
 }

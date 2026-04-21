@@ -76,41 +76,40 @@ pub struct OciConfig {
 }
 
 impl OciConfig {
-    /// Overlay `other` onto `self`, field-by-field. Scalar fields in `other`
-    /// replace ones in `self` if set; map fields are merged with `other`'s
-    /// keys taking precedence.
+    /// Fill any field on `self` that is `None` / empty from `other`, leaving
+    /// existing values on `self` untouched. Call this while iterating
+    /// config files from **most specific to least specific** — the first
+    /// value encountered wins, independent of the map's iteration order.
     ///
-    /// This lets users split the `[oci]` section across layered config files
-    /// (e.g. a global mise.toml sets `from`, a project mise.toml sets `tag`)
-    /// and get the union rather than one arbitrary winner.
-    pub fn overlay(mut self, other: Self) -> Self {
-        if other.from.is_some() {
+    /// For map fields (env, labels), keys already present on `self` win;
+    /// new keys from `other` are added.
+    pub fn fill_defaults_from(&mut self, other: Self) {
+        if self.from.is_none() {
             self.from = other.from;
         }
-        if other.tag.is_some() {
+        if self.tag.is_none() {
             self.tag = other.tag;
         }
-        if other.workdir.is_some() {
+        if self.workdir.is_none() {
             self.workdir = other.workdir;
         }
-        if other.entrypoint.is_some() {
+        if self.entrypoint.is_none() {
             self.entrypoint = other.entrypoint;
         }
-        if other.cmd.is_some() {
+        if self.cmd.is_none() {
             self.cmd = other.cmd;
         }
-        if other.user.is_some() {
+        if self.user.is_none() {
             self.user = other.user;
         }
-        if other.mount_point.is_some() {
+        if self.mount_point.is_none() {
             self.mount_point = other.mount_point;
         }
         for (k, v) in other.env {
-            self.env.insert(k, v);
+            self.env.entry(k).or_insert(v);
         }
         for (k, v) in other.labels {
-            self.labels.insert(k, v);
+            self.labels.entry(k).or_insert(v);
         }
-        self
     }
 }
