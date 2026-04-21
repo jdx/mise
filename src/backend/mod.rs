@@ -677,14 +677,21 @@ pub trait Backend: Debug + Send + Sync {
                 if let Some(install_path) = tv.request.install_path(config)
                     && check_path(&install_path, true)
                 {
-                    // For Prefix requests, install_path finds any installed dir
-                    // matching the prefix (e.g., "1.0.0" for prefix "1"), but if
-                    // the ToolVersion resolved to a different version (e.g., "1.1.0"),
-                    // we must not treat it as installed.
-                    if let ToolRequest::Prefix { .. } = &tv.request
-                        && install_path
-                            .file_name()
-                            .is_some_and(|f| f.to_string_lossy() != tv.version)
+                    // The request's install_path is derived from the REQUEST version
+                    // (e.g., "latest" or prefix "1"), which may differ from the resolved
+                    // concrete version. If they differ, the request path can refer to a
+                    // stale install dir — for channel pins like `@latest` the dir is named
+                    // after the channel (`installs/<id>/latest/`) from a prior install that
+                    // never got a symlink (e.g., first install ran offline or remote resolution
+                    // transiently returned None, leaving tv.version="latest"). We must check
+                    // the RESOLVED path instead so that `mise upgrade` re-runs the backend's
+                    // install hook and writes the new version to `installs/<id>/<new-version>/`.
+                    if matches!(
+                        &tv.request,
+                        ToolRequest::Version { .. } | ToolRequest::Prefix { .. }
+                    ) && install_path
+                        .file_name()
+                        .is_some_and(|f| f.to_string_lossy() != tv.version)
                     {
                         return check_path(&tv.install_path(), check_symlink);
                     }
