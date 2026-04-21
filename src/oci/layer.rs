@@ -118,6 +118,11 @@ enum EntryKind {
 }
 
 fn collect_sorted_entries(src_dir: &Path) -> Result<Vec<Entry>> {
+    // Canonicalize once so we can match symlink targets that traverse via
+    // different path spellings (e.g. with `..` components or through
+    // intermediate symlinks).
+    let canonical_src = std::fs::canonicalize(src_dir).unwrap_or_else(|_| src_dir.to_path_buf());
+
     let mut entries: Vec<Entry> = Vec::new();
     for entry in WalkDir::new(src_dir).sort_by_file_name() {
         let entry = entry.wrap_err("walking source directory")?;
@@ -131,7 +136,8 @@ fn collect_sorted_entries(src_dir: &Path) -> Result<Vec<Entry>> {
         let (kind, mode, size) = if file_type.is_dir() {
             (EntryKind::Dir, 0o755u32, 0u64)
         } else if file_type.is_symlink() {
-            let target = std::fs::read_link(entry.path())?;
+            let raw_target = std::fs::read_link(entry.path())?;
+            let target = rebase_symlink_target(&raw_target, &abs, &canonical_src, src_dir);
             (EntryKind::Symlink(target), 0o777u32, 0u64)
         } else {
             let is_exec = file_is_executable(entry.path(), &md);
@@ -351,6 +357,59 @@ fn file_is_executable(path: &Path, _md: &std::fs::Metadata) -> bool {
     )
 }
 
+/// If a symlink's target is an absolute path that points inside the tool's
+/// install tree, rewrite it to a *relative* symlink so it stays valid after
+/// the layer extracts to a different prefix inside the container.
+///
+/// Absolute targets that fall outside the tool tree are left alone with a
+/// warning — they'd be dangling inside the container either way, and
+/// rewriting them requires knowledge we don't have at layer-build time.
+fn rebase_symlink_target(
+    raw: &Path,
+    link_abs_path: &Path,
+    canonical_src: &Path,
+    src_dir: &Path,
+) -> PathBuf {
+    if !raw.is_absolute() {
+        return raw.to_path_buf();
+    }
+
+    // Canonicalize the target's parent so we can match layouts where the
+    // target is expressed via a different symlink path or with `..`. Fall
+    // back to the raw target if canonicalize fails (e.g. the symlink is
+    // already dangling on disk — we still want to emit it verbatim).
+    let target_canon = std::fs::canonicalize(raw).unwrap_or_else(|_| raw.to_path_buf());
+
+    let rel_target: PathBuf = if let Ok(r) = target_canon.strip_prefix(canonical_src) {
+        r.to_path_buf()
+    } else if let Ok(r) = raw.strip_prefix(src_dir) {
+        r.to_path_buf()
+    } else {
+        warn!(
+            "oci layer: symlink {} → {} has an absolute target outside the tool's install dir; \
+             it will be dangling inside the container",
+            link_abs_path.display(),
+            raw.display()
+        );
+        return raw.to_path_buf();
+    };
+
+    // Compute a relative path from the symlink's directory back up to
+    // `src_dir`, then descend into the rebased target. This gives a symlink
+    // that's correct in both the host layout and the in-image layout.
+    let link_rel = link_abs_path
+        .strip_prefix(src_dir)
+        .unwrap_or(Path::new(""))
+        .to_path_buf();
+    let depth = link_rel.components().count().saturating_sub(1);
+    let mut out = PathBuf::new();
+    for _ in 0..depth {
+        out.push("..");
+    }
+    out.push(rel_target);
+    out
+}
+
 pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
@@ -401,5 +460,54 @@ mod tests {
         let a = build_layer_from_files(&files).unwrap();
         let b = build_layer_from_files(&files).unwrap();
         assert_eq!(a.bytes, b.bytes);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absolute_intra_tree_symlinks_become_relative() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let src = dir.path();
+        fs::create_dir_all(src.join("bin")).unwrap();
+        fs::create_dir_all(src.join("lib/node_modules/npm/bin")).unwrap();
+        fs::write(
+            src.join("lib/node_modules/npm/bin/npm-cli.js"),
+            b"#!/bin/sh\n",
+        )
+        .unwrap();
+
+        // Absolute symlink pointing within the same install tree.
+        let canonical = std::fs::canonicalize(src).unwrap();
+        let target = canonical.join("lib/node_modules/npm/bin/npm-cli.js");
+        symlink(&target, src.join("bin/npm")).unwrap();
+
+        // Absolute symlink pointing OUTSIDE the install tree (should be left
+        // as-is with a warning; we only assert it doesn't panic).
+        symlink("/usr/bin/false", src.join("bin/external")).unwrap();
+
+        let entries = collect_sorted_entries(src).unwrap();
+        let npm = entries
+            .iter()
+            .find(|e| e.rel == Path::new("bin/npm"))
+            .unwrap();
+        match &npm.kind {
+            EntryKind::Symlink(t) => {
+                assert!(
+                    !t.is_absolute(),
+                    "intra-tree symlink should have been rewritten to relative, got {t:?}",
+                );
+                assert_eq!(t, &PathBuf::from("../lib/node_modules/npm/bin/npm-cli.js"),);
+            }
+            k => panic!("expected symlink, got {k:?}"),
+        }
+        let external = entries
+            .iter()
+            .find(|e| e.rel == Path::new("bin/external"))
+            .unwrap();
+        match &external.kind {
+            EntryKind::Symlink(t) => assert_eq!(t, &PathBuf::from("/usr/bin/false")),
+            k => panic!("expected symlink, got {k:?}"),
+        }
     }
 }
