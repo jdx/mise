@@ -1832,6 +1832,15 @@ const completionSpec: Fig.Spec = {
             "[experimental] Build an OCI image and push it to a registry",
           options: [
             {
+              name: "--from",
+              description:
+                "Base image for the build (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "from",
+              },
+            },
+            {
               name: "--image-dir",
               description:
                 "Push an already-built OCI image layout (skip the build step)",
@@ -1839,15 +1848,6 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "image_dir",
                 template: "folders",
-              },
-            },
-            {
-              name: "--from",
-              description:
-                "Base image for the build (ignored with --image-dir)",
-              isRepeatable: false,
-              args: {
-                name: "from",
               },
             },
             {
@@ -1902,6 +1902,15 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
+              name: "--from",
+              description:
+                "Base image reference for the build (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "from",
+              },
+            },
+            {
               name: "--image-dir",
               description:
                 "Use an already-built OCI image layout instead of building fresh",
@@ -1912,13 +1921,10 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
-              name: "--from",
+              name: "--keep",
               description:
-                "Base image reference for the build (ignored with --image-dir)",
+                "Keep the image in the engine after the run (default: remove with `--rm`)",
               isRepeatable: false,
-              args: {
-                name: "from",
-              },
             },
             {
               name: "--mount-point",
@@ -1936,14 +1942,13 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
-              name: ["-i", "--interactive"],
-              description: "Run interactively (pass `-i` to the engine)",
-              isRepeatable: false,
-            },
-            {
-              name: ["-t", "--tty"],
-              description: "Allocate a TTY (pass `-t` to the engine)",
-              isRepeatable: false,
+              name: "--volume",
+              description:
+                "Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)",
+              isRepeatable: true,
+              args: {
+                name: "host:container",
+              },
             },
             {
               name: ["-e", "--env"],
@@ -1955,13 +1960,14 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
-              name: "--volume",
-              description:
-                "Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)",
-              isRepeatable: true,
-              args: {
-                name: "host:container",
-              },
+              name: ["-i", "--interactive"],
+              description: "Run interactively (pass `-i` to the engine)",
+              isRepeatable: false,
+            },
+            {
+              name: ["-t", "--tty"],
+              description: "Allocate a TTY (pass `-t` to the engine)",
+              isRepeatable: false,
             },
             {
               name: ["-w", "--workdir"],
@@ -1971,12 +1977,6 @@ const completionSpec: Fig.Spec = {
                 name: "workdir",
                 template: "folders",
               },
-            },
-            {
-              name: "--keep",
-              description:
-                "Keep the image in the engine after the run (default: remove with `--rm`)",
-              isRepeatable: false,
             },
           ],
           args: {

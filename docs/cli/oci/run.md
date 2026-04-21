@@ -34,13 +34,17 @@ Container engine to use (`auto`, `podman`, or `docker`)
 
 **Default:** `auto`
 
+### `--from <FROM>`
+
+Base image reference for the build (ignored with --image-dir)
+
 ### `--image-dir <IMAGE_DIR>`
 
 Use an already-built OCI image layout instead of building fresh
 
-### `--from <FROM>`
+### `--keep`
 
-Base image reference for the build (ignored with --image-dir)
+Keep the image in the engine after the run (default: remove with `--rm`)
 
 ### `--mount-point <MOUNT_POINT>`
 
@@ -50,6 +54,16 @@ Override in-image mount point (ignored with --image-dir)
 
 Don't embed the mise binary (ignored with --image-dir)
 
+### `--volume… <HOST:CONTAINER>`
+
+Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
+
+Note: unlike `docker run -v`, there's no `-v` short flag here because mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
+
+### `-e --env… <KEY=VAL>`
+
+Set environment variable in the container (repeatable, `KEY=VAL`)
+
 ### `-i --interactive`
 
 Run interactively (pass `-i` to the engine)
@@ -58,23 +72,9 @@ Run interactively (pass `-i` to the engine)
 
 Allocate a TTY (pass `-t` to the engine)
 
-### `-e --env… <KEY=VAL>`
-
-Set environment variable in the container (repeatable, `KEY=VAL`)
-
-### `--volume… <HOST:CONTAINER>`
-
-Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
-
-Note: unlike `docker run -v`, there's no `-v` short flag here because mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
-
 ### `-w --workdir <WORKDIR>`
 
 Working directory inside the container
-
-### `--keep`
-
-Keep the image in the engine after the run (default: remove with `--rm`)
 
 Examples:
 

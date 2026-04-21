@@ -23,13 +23,13 @@ Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
 
 ## Flags
 
-### `--image-dir <IMAGE_DIR>`
-
-Push an already-built OCI image layout (skip the build step)
-
 ### `--from <FROM>`
 
 Base image for the build (ignored with --image-dir)
+
+### `--image-dir <IMAGE_DIR>`
+
+Push an already-built OCI image layout (skip the build step)
 
 ### `--mount-point <MOUNT_POINT>`
 

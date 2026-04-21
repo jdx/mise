@@ -1567,11 +1567,11 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-image\-dir\fR \fI<IMAGE_DIR>\fR
-Push an already\-built OCI image layout (skip the build step)
-.TP
 \fB\-\-from\fR \fI<FROM>\fR
 Base image for the build (ignored with \-\-image\-dir)
+.TP
+\fB\-\-image\-dir\fR \fI<IMAGE_DIR>\fR
+Push an already\-built OCI image layout (skip the build step)
 .TP
 \fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
 Override in\-image mount point (ignored with \-\-image\-dir)
@@ -1611,11 +1611,14 @@ Container engine to use (`auto`, `podman`, or `docker`)
 \fIDefault: \fRauto
 .RE
 .TP
+\fB\-\-from\fR \fI<FROM>\fR
+Base image reference for the build (ignored with \-\-image\-dir)
+.TP
 \fB\-\-image\-dir\fR \fI<IMAGE_DIR>\fR
 Use an already\-built OCI image layout instead of building fresh
 .TP
-\fB\-\-from\fR \fI<FROM>\fR
-Base image reference for the build (ignored with \-\-image\-dir)
+\fB\-\-keep\fR
+Keep the image in the engine after the run (default: remove with `\-\-rm`)
 .TP
 \fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
 Override in\-image mount point (ignored with \-\-image\-dir)
@@ -1623,25 +1626,22 @@ Override in\-image mount point (ignored with \-\-image\-dir)
 \fB\-\-no\-mise\fR
 Don't embed the mise binary (ignored with \-\-image\-dir)
 .TP
+\fB\-\-volume\fR \fI<HOST:CONTAINER>\fR
+Bind\-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
+
+Note: unlike `docker run \-v`, there's no `\-v` short flag here because mise reserves `\-v` for \-\-verbose. Use `\-\-volume` or `\-\-mount`.
+.TP
+\fB\-e, \-\-env\fR \fI<KEY=VAL>\fR
+Set environment variable in the container (repeatable, `KEY=VAL`)
+.TP
 \fB\-i, \-\-interactive\fR
 Run interactively (pass `\-i` to the engine)
 .TP
 \fB\-t, \-\-tty\fR
 Allocate a TTY (pass `\-t` to the engine)
 .TP
-\fB\-e, \-\-env\fR \fI<KEY=VAL>\fR
-Set environment variable in the container (repeatable, `KEY=VAL`)
-.TP
-\fB\-\-volume\fR \fI<HOST:CONTAINER>\fR
-Bind\-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
-
-Note: unlike `docker run \-v`, there's no `\-v` short flag here because mise reserves `\-v` for \-\-verbose. Use `\-\-volume` or `\-\-mount`.
-.TP
 \fB\-w, \-\-workdir\fR \fI<WORKDIR>\fR
 Working directory inside the container
-.TP
-\fB\-\-keep\fR
-Keep the image in the engine after the run (default: remove with `\-\-rm`)
 \fBArguments:\fR
 .PP
 .TP
