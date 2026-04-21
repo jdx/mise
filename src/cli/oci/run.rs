@@ -249,8 +249,18 @@ fn load_image(engine: Engine, image_dir: &Path) -> Result<String> {
         }
         Engine::Docker => {
             // skopeo is the portable way to get an OCI layout into a docker
-            // daemon — and unlike podman it gives us a predictable tag.
-            let tag = "mise-oci:run";
+            // daemon. Pick a per-invocation tag so concurrent `mise oci run`
+            // calls don't clobber each other — a shared `mise-oci:run` tag
+            // would otherwise race: the second skopeo copy would overwrite
+            // the first image before the first container started.
+            let tag = format!(
+                "mise-oci:run-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            );
             let src = format!("oci:{}", image_dir.display());
             let dst = format!("docker-daemon:{tag}");
             let status = Command::new("skopeo")
@@ -263,7 +273,7 @@ fn load_image(engine: Engine, image_dir: &Path) -> Result<String> {
                      your user has access to the socket."
                 );
             }
-            Ok(tag.to_string())
+            Ok(tag)
         }
         Engine::Auto => unreachable!(),
     }
