@@ -1,4 +1,4 @@
 backends = ["aqua:kiro.dev/kiro-cli"]
 description = "Kiro CLI is an agentic coding tool that lives in your terminal"
 os = ["linux", "macos"]
-test = { cmd = "kiro-cli --version", expected = "{{version}}" }
+test = { cmd = "kiro-cli --version", expected = "kiro-cli {{version}}" }
