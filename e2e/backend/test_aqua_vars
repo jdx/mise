@@ -74,4 +74,5 @@ cat <<'EOF_MISE' >mise.toml
 "aqua:example/vars-tool" = { version = "1.0.0", vars = { fixture_version = ["2.0.0"] } }
 EOF_MISE
 
+# shellcheck disable=SC2016
 assert_fail "mise install --force aqua:example/vars-tool@1.0.0" 'aqua var `vars.fixture_version` must be a string, got array'
