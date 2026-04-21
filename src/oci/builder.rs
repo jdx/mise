@@ -622,9 +622,25 @@ fn synthesize_embedded_config_toml(
 
 fn rfc3339_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    // Honor SOURCE_DATE_EPOCH for reproducible builds.
+    // Honor SOURCE_DATE_EPOCH for reproducible builds. If it's set but
+    // unparseable, warn and fall back to the real clock rather than silently
+    // using epoch zero — which would be indistinguishable from an intentional
+    // `SOURCE_DATE_EPOCH=0` and leave the user wondering why the timestamp
+    // looks wrong.
     let secs = if let Ok(s) = std::env::var("SOURCE_DATE_EPOCH") {
-        s.parse::<u64>().unwrap_or(0)
+        match s.parse::<u64>() {
+            Ok(n) => n,
+            Err(_) => {
+                warn!(
+                    "ignoring SOURCE_DATE_EPOCH={s:?}: not a non-negative integer. \
+                     Using the system clock instead."
+                );
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0)
+            }
+        }
     } else {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
