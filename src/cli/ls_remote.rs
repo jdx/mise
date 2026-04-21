@@ -104,8 +104,8 @@ impl LsRemote {
         plugin: Arc<dyn Backend>,
         before_date: Option<Timestamp>,
     ) -> Result<()> {
-        let before_date = resolve_before_date_for_backend(config, plugin.as_ref(), before_date)
-            .await?;
+        let before_date =
+            resolve_before_date_for_backend(config, plugin.as_ref(), before_date).await?;
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
@@ -140,8 +140,8 @@ impl LsRemote {
         let mut versions = vec![];
         for b in backend::list() {
             let tool = b.id().to_string();
-            let before_date = resolve_before_date_for_backend(config, b.as_ref(), before_date)
-                .await?;
+            let before_date =
+                resolve_before_date_for_backend(config, b.as_ref(), before_date).await?;
             for v in filter_versions_by_date(
                 b.list_remote_versions_with_info(config).await?,
                 before_date,

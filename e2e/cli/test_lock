@@ -109,6 +109,40 @@ output=$(mise lock --before 2019-01-01 --platform linux-x64 --dry-run 2>&1)
 assert_contains "echo '$output'" "jq@1.6 for linux-x64"
 assert_not_contains "echo '$output'" "jq@1.7.1"
 
+echo "=== Testing before filtering for overridden latest tools ==="
+rm -rf subdir mise.lock
+cat <<EOF >mise.toml
+[tools]
+jq = { version = "latest", install_before = "2019-01-01" }
+EOF
+
+mkdir subdir
+cat <<EOF >subdir/mise.toml
+[tools]
+jq = "1.7.1"
+EOF
+
+output=$(cd subdir && mise lock --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" "jq@1.6 for linux-x64"
+assert_contains "echo '$output'" "jq@1.7.1 for linux-x64"
+
+rm -rf subdir mise.lock
+cat <<EOF >mise.toml
+[tools]
+jq = { version = "latest", install_before = "2019-01-01" }
+EOF
+
+mkdir subdir
+cat <<EOF >subdir/mise.toml
+[tools]
+jq = { version = "latest", install_before = "2024-01-01" }
+EOF
+
+output=$(cd subdir && mise lock --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" "jq@1.6 for linux-x64"
+assert_contains "echo '$output'" "jq@1.7.1 for linux-x64"
+assert_not_contains "echo '$output'" "Processing 2 tool(s)"
+
 echo "=== Testing filtered dry-run skips prune lockfile read ==="
 cat <<EOF >mise.toml
 [tools]
