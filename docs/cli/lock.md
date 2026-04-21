@@ -47,6 +47,7 @@ Only lock versions released before this date
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
+Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
 
 ### `--local`
 
