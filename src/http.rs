@@ -434,17 +434,13 @@ pub fn error_code(e: &Report) -> Option<u16> {
 }
 
 fn host_auth_headers(url: &Url) -> HeaderMap {
+    if crate::github::is_github_api_url(url) {
+        return crate::github::get_headers(url.as_str());
+    }
+
     let Some(host) = url.host_str() else {
         return HeaderMap::new();
     };
-
-    let is_github = host == "api.github.com"
-        || host == "github.com"
-        || crate::github::is_githubusercontent_auth_host(host)
-        || crate::github::is_gh_host(host);
-    if is_github {
-        return crate::github::get_headers(url.as_str());
-    }
 
     let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
     if is_gitlab {
