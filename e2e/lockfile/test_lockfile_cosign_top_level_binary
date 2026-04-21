@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Regression test: top-level aqua cosign config should record cosign provenance.
+
+export MISE_LOCKFILE=1
+export MISE_AQUA_COSIGN=true
+export MISE_AQUA_SLSA=false
+export MISE_GITHUB_ATTESTATIONS=0
+export MISE_AQUA__GITHUB_ATTESTATIONS=0
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+echo "=== Testing top-level cosign lockfile provenance ==="
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:technicalpickles/envsense" = "0.3.4"
+EOF
+
+mise lock --platform "$PLATFORM"
+assert "test -f mise.lock"
+assert_contains "cat mise.lock" 'provenance = "cosign"'
+
+echo "=== Testing install with top-level cosign lockfile ==="
+mise install
+
+echo "=== Cleanup ==="
+rm -f mise.lock mise.toml
+mise uninstall aqua:technicalpickles/envsense@0.3.4 || true
+
+echo "top-level cosign lockfile test passed!"
