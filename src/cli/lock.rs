@@ -59,7 +59,7 @@ pub struct Lock {
     /// This only affects fuzzy version matches like "20" or "latest".
     /// Explicitly pinned versions like "22.5.0" are not filtered.
     #[clap(long, verbatim_doc_comment)]
-    before: Option<String>,
+    pub before: Option<String>,
 
     /// Update mise.local.lock instead of mise.lock
     /// Use for tools defined in .local.toml configs
@@ -78,13 +78,19 @@ impl Lock {
         let config = Config::get().await?;
         let before_date = self.get_before_date()?;
 
-        let ts = ToolsetBuilder::new()
-            .with_resolve_options(ResolveOptions {
-                before_date,
-                ..Default::default()
-            })
-            .build(&config)
-            .await?;
+        let ts_owned;
+        let ts = if before_date.is_some() {
+            ts_owned = ToolsetBuilder::new()
+                .with_resolve_options(ResolveOptions {
+                    before_date,
+                    ..Default::default()
+                })
+                .build(&config)
+                .await?;
+            &ts_owned
+        } else {
+            config.get_toolset().await?
+        };
 
         let scoped_config_paths = self.config_paths_in_lock_scope(&config);
         let lockfile_targets = self.get_lockfile_targets(&config, &scoped_config_paths);
