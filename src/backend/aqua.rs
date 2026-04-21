@@ -22,7 +22,10 @@ use crate::{
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
-use crate::{backend::Backend, backend::strict_metadata, config::Config};
+use crate::{
+    backend::{Backend, include_prereleases, strict_metadata},
+    config::Config,
+};
 use crate::{file, github, minisign};
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
@@ -244,37 +247,27 @@ impl Backend for AquaBackend {
 
         let mut versions = Vec::new();
         for (tag, created_at, prerelease) in tags_with_timestamps.into_iter().rev() {
-            let mut version = tag.as_str();
-            match pkg.version_filter_ok(version) {
-                Ok(true) => {}
-                Ok(false) => continue,
+            let version = match version_from_tag(&pkg, &tag) {
+                Ok(Some(version)) => version,
+                Ok(None) => continue,
                 Err(e) => {
                     warn!("[{}] aqua version filter error: {e}", self.ba());
                     continue;
                 }
-            }
-            let versioned_pkg = pkg.clone().with_version(&[version], os(), arch());
-            if let Some(prefix) = &versioned_pkg.version_prefix {
-                if let Some(_v) = version.strip_prefix(prefix) {
-                    version = _v;
-                } else {
-                    continue;
-                }
-            }
-            version = version.strip_prefix('v').unwrap_or(version);
+            };
 
             // Validate the package has assets
             let check_pkg = AQUA_REGISTRY
                 .package_with_version(&self.id, &[&tag])
                 .await
                 .unwrap_or_default();
-            if !check_pkg.no_asset && check_pkg.error_message.is_none() {
+            if package_has_asset(&check_pkg) {
                 let release_url = format!(
                     "https://github.com/{}/{}/releases/tag/{}",
                     pkg.repo_owner, pkg.repo_name, tag
                 );
                 versions.push(VersionInfo {
-                    version: version.to_string(),
+                    version,
                     created_at,
                     release_url: Some(release_url),
                     prerelease,
@@ -283,6 +276,92 @@ impl Backend for AquaBackend {
             }
         }
         Ok(versions)
+    }
+
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        if Settings::get().offline() {
+            trace!("Skipping latest stable version due to offline mode");
+            return Ok(None);
+        }
+
+        let pkg = match AQUA_REGISTRY.package(&self.id).await {
+            Ok(pkg) => pkg,
+            Err(e) => {
+                warn!("Latest version cannot be fetched: {}", e);
+                return Ok(None);
+            }
+        };
+
+        if pkg.repo_owner.is_empty() || pkg.repo_name.is_empty() {
+            warn!(
+                "aqua package {} does not have repo_owner and/or repo_name.",
+                self.id
+            );
+            return Ok(None);
+        }
+
+        let opts = config
+            .get_tool_opts(&self.ba)
+            .await?
+            .unwrap_or_else(|| self.ba.opts());
+        let want_prereleases = include_prereleases(&opts);
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let latest_version = if pkg.version_source.as_deref() == Some("github_tag") {
+            match github::list_tags(&repo).await {
+                Ok(tags) => {
+                    self.first_installable_version_from_tags(&pkg, tags, want_prereleases)
+                        .await
+                }
+                Err(e) => {
+                    debug!(
+                        "Failed to fetch GitHub tags for aqua package {}: {e}",
+                        self.id
+                    );
+                    None
+                }
+            }
+        } else {
+            match github::get_release(&repo, "latest").await {
+                Ok(release) => match self
+                    .installable_version_from_tag(&pkg, &release.tag_name)
+                    .await
+                {
+                    Ok(Some(version))
+                        if version_allowed_by_prerelease_opts(
+                            &version,
+                            release.prerelease,
+                            want_prereleases,
+                        ) =>
+                    {
+                        Some(version)
+                    }
+                    Ok(Some(version)) => {
+                        debug!(
+                            "Latest GitHub release for aqua package {} ({version}) is a pre-release; falling back to chronological latest",
+                            self.id
+                        );
+                        None
+                    }
+                    Ok(None) => None,
+                    Err(e) => {
+                        debug!(
+                            "Failed to resolve latest GitHub release tag for aqua package {}: {e}",
+                            self.id
+                        );
+                        None
+                    }
+                },
+                Err(e) => {
+                    debug!(
+                        "Failed to fetch latest GitHub release for aqua package {}: {e}",
+                        self.id
+                    );
+                    None
+                }
+            }
+        };
+
+        Ok(latest_version)
     }
 
     async fn install_version_(
@@ -1288,25 +1367,15 @@ impl AquaBackend {
                     // a pre-release version under a project-local override.
                     let tags = get_tags(&pkg).await?;
                     for tag in tags.into_iter().rev() {
-                        let mut version = tag.as_str();
-                        match pkg.version_filter_ok(version) {
-                            Ok(true) => {}
-                            Ok(false) => continue,
+                        let version = match version_from_tag(&pkg, &tag) {
+                            Ok(Some(version)) => version,
+                            Ok(None) => continue,
                             Err(e) => {
                                 warn!("[{}] aqua version filter error: {e}", self.ba());
                                 continue;
                             }
-                        }
-                        let pkg = pkg.clone().with_version(&[version], os(), arch());
-                        if let Some(prefix) = &pkg.version_prefix {
-                            if let Some(_v) = version.strip_prefix(prefix) {
-                                version = _v;
-                            } else {
-                                continue;
-                            }
-                        }
-                        version = version.strip_prefix('v').unwrap_or(version);
-                        versions.push((version.to_string(), tag));
+                        };
+                        versions.push((version, tag));
                     }
                 } else {
                     bail!(
@@ -1317,6 +1386,53 @@ impl AquaBackend {
                 Ok(versions)
             })
             .await
+    }
+
+    async fn installable_version_from_tag(
+        &self,
+        pkg: &AquaPackage,
+        tag: &str,
+    ) -> Result<Option<String>> {
+        let Some(version) = version_from_tag(pkg, tag)? else {
+            return Ok(None);
+        };
+        if self.tag_has_installable_package(tag).await {
+            Ok(Some(version))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn first_installable_version_from_tags(
+        &self,
+        pkg: &AquaPackage,
+        tags: Vec<String>,
+        want_prereleases: bool,
+    ) -> Option<String> {
+        for tag in tags {
+            match self.installable_version_from_tag(pkg, &tag).await {
+                Ok(Some(version))
+                    if version_allowed_by_prerelease_opts(&version, false, want_prereleases) =>
+                {
+                    return Some(version);
+                }
+                Ok(None) => continue,
+                Ok(Some(_)) => continue,
+                Err(e) => {
+                    warn!("[{}] aqua version filter error: {e}", self.ba());
+                    continue;
+                }
+            }
+        }
+        None
+    }
+
+    async fn tag_has_installable_package(&self, tag: &str) -> bool {
+        let check_pkg = AQUA_REGISTRY
+            .package_with_version(&self.id, &[tag])
+            .await
+            .unwrap_or_default();
+        package_has_asset(&check_pkg)
     }
 
     async fn get_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, bool, Option<String>)> {
@@ -2388,6 +2504,35 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
         .collect())
 }
 
+fn version_from_tag(pkg: &AquaPackage, tag: &str) -> Result<Option<String>> {
+    if !pkg.version_filter_ok(tag)? {
+        return Ok(None);
+    }
+
+    let mut version = tag;
+    let versioned_pkg = pkg.clone().with_version(&[tag], os(), arch());
+    if let Some(prefix) = &versioned_pkg.version_prefix {
+        let Some(stripped) = version.strip_prefix(prefix) else {
+            return Ok(None);
+        };
+        version = stripped;
+    }
+    let version = version.strip_prefix('v').unwrap_or(version);
+    Ok(Some(version.to_string()))
+}
+
+fn version_allowed_by_prerelease_opts(
+    version: &str,
+    prerelease: bool,
+    want_prereleases: bool,
+) -> bool {
+    want_prereleases || (!prerelease && !VERSION_REGEX.is_match(version))
+}
+
+fn package_has_asset(pkg: &AquaPackage) -> bool {
+    !pkg.no_asset && pkg.error_message.is_none()
+}
+
 /// Get tags with optional created_at timestamps and a pre-release flag.
 /// Returns `(tag_name, Option<created_at>, prerelease)` triples.
 ///
@@ -2625,6 +2770,57 @@ mod lock_candidate_tests {
         let (v, candidates) = build_lock_candidates("1.7.1", None, Some("jq-"));
         assert_eq!(v, "jq-1.7.1");
         assert_eq!(candidates, vec!["jq-v1.7.1", "jq-1.7.1"]);
+    }
+
+    #[test]
+    fn test_version_from_tag_strips_v_prefix() {
+        let pkg = AquaPackage::default();
+        assert_eq!(
+            version_from_tag(&pkg, "v1.2.3").unwrap(),
+            Some("1.2.3".to_string())
+        );
+    }
+
+    #[test]
+    fn test_version_from_tag_strips_aqua_version_prefix() {
+        let mut pkg = AquaPackage::default();
+        pkg.version_prefix = Some("mountpoint-s3-".to_string());
+
+        assert_eq!(
+            version_from_tag(&pkg, "mountpoint-s3-1.2.3").unwrap(),
+            Some("1.2.3".to_string())
+        );
+        assert_eq!(version_from_tag(&pkg, "other-1.2.3").unwrap(), None);
+    }
+
+    #[test]
+    fn test_version_allowed_by_prerelease_opts() {
+        assert!(version_allowed_by_prerelease_opts("1.2.3", false, false));
+        assert!(!version_allowed_by_prerelease_opts("1.2.3", true, false));
+        assert!(version_allowed_by_prerelease_opts("1.2.3", true, true));
+        assert!(!version_allowed_by_prerelease_opts(
+            "1.2.3-rc.1",
+            false,
+            false
+        ));
+        assert!(version_allowed_by_prerelease_opts(
+            "1.2.3-rc.1",
+            false,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_package_has_asset_rejects_no_asset_and_errors() {
+        let mut pkg = AquaPackage::default();
+        assert!(package_has_asset(&pkg));
+
+        pkg.no_asset = true;
+        assert!(!package_has_asset(&pkg));
+
+        pkg.no_asset = false;
+        pkg.error_message = Some("unsupported version".to_string());
+        assert!(!package_has_asset(&pkg));
     }
 
     fn asset(name: &str) -> GithubAsset {
