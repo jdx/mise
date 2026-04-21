@@ -127,16 +127,38 @@ impl Builder {
                     platform: l.platform.clone(),
                 })
                 .collect();
-            if let Some(diff_ids) = pull
+
+            // Extract the base's diff_ids. The OCI spec requires the image
+            // config's `rootfs.diff_ids` to have exactly one entry per
+            // manifest layer; a registry whose config is missing or
+            // malformed here would silently produce an image that podman /
+            // skopeo reject. Fail loudly instead.
+            let diff_ids_raw = pull
                 .config_json
                 .get("rootfs")
                 .and_then(|r| r.get("diff_ids"))
                 .and_then(|d| d.as_array())
-            {
-                base_diff_ids = diff_ids
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "pulled base image {ref_} has no rootfs.diff_ids in its config \
+                         — cannot produce a valid OCI image on top of it"
+                    )
+                })?;
+            base_diff_ids = diff_ids_raw
+                .iter()
+                .map(|v| {
+                    v.as_str().map(String::from).ok_or_else(|| {
+                        eyre::eyre!("base image {ref_} has a non-string entry in rootfs.diff_ids")
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if base_diff_ids.len() != base_layers.len() {
+                bail!(
+                    "base image {ref_} has {} layers in its manifest but {} diff_ids in its \
+                     config — refusing to emit an OCI-spec-violating image",
+                    base_layers.len(),
+                    base_diff_ids.len()
+                );
             }
             platform = pull.platform;
             base_config_json = Some(pull.config_json);
