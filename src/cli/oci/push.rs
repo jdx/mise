@@ -3,6 +3,7 @@ use std::process::Command;
 
 use clap::ValueHint;
 use eyre::{Context, Result, bail};
+use tempfile::TempDir;
 
 use crate::cli::oci::common::perform_build;
 use crate::config::Settings;
@@ -67,30 +68,33 @@ impl Push {
                 self.reference
             );
         }
-        let image_dir: PathBuf = if let Some(d) = &self.image_dir {
-            if !d.join("index.json").is_file() {
-                bail!(
-                    "{}: does not look like an OCI image layout (missing index.json)",
-                    d.display()
-                );
-            }
-            d.clone()
-        } else {
-            let out_dir = std::env::temp_dir().join(format!("mise-oci-{}", std::process::id()));
-            if out_dir.exists() {
-                std::fs::remove_dir_all(&out_dir).ok();
-            }
-            let opts = BuildOptions {
-                out_dir: out_dir.clone(),
-                from: self.from.clone(),
-                tag: Some(self.reference.clone()),
-                mount_point: self.mount_point.clone(),
-                include_mise: !self.no_mise,
+        // Keep the temp dir alive for the duration of the push — it removes
+        // itself on drop, so multi-hundred-megabyte image layouts don't
+        // accumulate in /tmp.
+        let (image_dir, _tempdir_guard): (PathBuf, Option<TempDir>) =
+            if let Some(d) = &self.image_dir {
+                if !d.join("index.json").is_file() {
+                    bail!(
+                        "{}: does not look like an OCI image layout (missing index.json)",
+                        d.display()
+                    );
+                }
+                (d.clone(), None)
+            } else {
+                let td = TempDir::with_prefix("mise-oci-push-")
+                    .wrap_err("creating temp dir for oci build output")?;
+                let out_dir = td.path().join("image");
+                let opts = BuildOptions {
+                    out_dir: out_dir.clone(),
+                    from: self.from.clone(),
+                    tag: Some(self.reference.clone()),
+                    mount_point: self.mount_point.clone(),
+                    include_mise: !self.no_mise,
+                };
+                let built = perform_build(opts).await?;
+                info!("built image: {}", built.manifest_digest);
+                (out_dir, Some(td))
             };
-            let built = perform_build(opts).await?;
-            info!("built image: {}", built.manifest_digest);
-            out_dir
-        };
 
         // Resolve tool after argument validation so bad args don't mask
         // "tool missing" errors (and vice versa).

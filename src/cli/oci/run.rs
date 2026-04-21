@@ -3,6 +3,7 @@ use std::process::Command;
 
 use clap::ValueHint;
 use eyre::{Context, Result, bail};
+use tempfile::TempDir;
 
 use crate::cli::oci::common::perform_build;
 use crate::config::Settings;
@@ -100,31 +101,35 @@ impl Run {
         // 2. Locate a container engine.
         let engine = select_engine(self.engine)?;
 
-        // 3. Build (or reuse an existing layout).
-        let image_dir: PathBuf = if let Some(d) = &self.image_dir {
-            d.clone()
-        } else {
-            let out_dir = std::env::temp_dir().join(format!("mise-oci-{}", std::process::id()));
-            if out_dir.exists() {
-                std::fs::remove_dir_all(&out_dir).ok();
-            }
-            let opts = BuildOptions {
-                out_dir: out_dir.clone(),
-                from: self.from.clone(),
-                tag: Some("mise-oci:run".to_string()),
-                mount_point: self.mount_point.clone(),
-                include_mise: !self.no_mise,
+        // 3. Build (or reuse an existing layout). When building, keep the
+        // `TempDir` alive for the duration of the command — it removes the
+        // directory on drop, so partial-gigabyte tool layers don't pile up
+        // in /tmp across invocations.
+        let (image_dir, _tempdir_guard): (PathBuf, Option<TempDir>) =
+            if let Some(d) = &self.image_dir {
+                (d.clone(), None)
+            } else {
+                let td = TempDir::with_prefix("mise-oci-run-")
+                    .wrap_err("creating temp dir for oci build output")?;
+                let out_dir = td.path().join("image");
+                let opts = BuildOptions {
+                    out_dir: out_dir.clone(),
+                    from: self.from.clone(),
+                    tag: Some("mise-oci:run".to_string()),
+                    mount_point: self.mount_point.clone(),
+                    include_mise: !self.no_mise,
+                };
+                let built = perform_build(opts).await?;
+                info!("built image: {}", built.manifest_digest);
+                (out_dir, Some(td))
             };
-            let built = perform_build(opts).await?;
-            info!("built image: {}", built.manifest_digest);
-            out_dir
-        };
 
-        // 3. Load into the engine under a known local tag.
-        let tag = "mise-oci:run";
-        load_image(engine, &image_dir, tag)?;
+        // 4. Load into the engine. Returns the image reference to actually
+        // pass to `podman run` / `docker run` (podman uses an image ID;
+        // docker uses the tag skopeo copied under).
+        let image_ref = load_image(engine, &image_dir)?;
 
-        // 4. docker/podman run <flags> <tag> <cmd...>
+        // 5. docker/podman run <flags> <image-ref> <cmd...>
         let engine_bin = engine_name(engine);
         let mut args: Vec<String> = vec!["run".into()];
         if !self.keep {
@@ -148,7 +153,7 @@ impl Run {
             args.push("-w".into());
             args.push(w.clone());
         }
-        args.push(tag.into());
+        args.push(image_ref);
         args.extend(self.cmd.clone());
 
         let status = Command::new(engine_bin)
@@ -212,31 +217,40 @@ fn engine_name(engine: Engine) -> &'static str {
     }
 }
 
-fn load_image(engine: Engine, image_dir: &Path, tag: &str) -> Result<()> {
+/// Load the OCI layout at `image_dir` into the given engine and return the
+/// image reference that should be passed to the engine's `run` subcommand.
+///
+/// We don't rely on `podman tag` here because `podman tag` takes an image
+/// name/ID (not a transport reference), and the image name that `podman
+/// pull oci:<dir>` assigns depends on the layout's `ref.name` annotation
+/// and the podman version. Capturing the image ID printed by
+/// `podman pull --quiet` is deterministic across versions.
+fn load_image(engine: Engine, image_dir: &Path) -> Result<String> {
     match engine {
         Engine::Podman => {
-            // `podman pull oci:<dir>` loads an OCI layout into local storage.
-            let arg = format!("oci:{}", image_dir.display());
-            let status = Command::new("podman")
-                .args(["pull", "--quiet", &arg])
-                .status()
+            let src = format!("oci:{}", image_dir.display());
+            let out = Command::new("podman")
+                .args(["pull", "--quiet", &src])
+                .output()
                 .wrap_err("running `podman pull`")?;
-            if !status.success() {
-                bail!("podman pull failed: {status:?}");
+            if !out.status.success() {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                bail!("podman pull failed: {}: {stderr}", out.status);
             }
-            // Tag it as `mise-oci:run` for convenience.
-            let status = Command::new("podman")
-                .args(["tag", &arg, tag])
-                .status()
-                .wrap_err("running `podman tag`")?;
-            if !status.success() {
-                // `podman tag` from oci: refs can be finicky; best-effort only.
-                warn!("`podman tag {arg} {tag}` failed; will run via the oci: ref directly");
+            // `podman pull --quiet` prints just the image ID on stdout.
+            let id = String::from_utf8(out.stdout)
+                .wrap_err("podman pull produced non-utf8 output")?
+                .trim()
+                .to_string();
+            if id.is_empty() {
+                bail!("podman pull succeeded but printed no image ID");
             }
-            Ok(())
+            Ok(id)
         }
         Engine::Docker => {
-            // skopeo is the portable way to get an OCI layout into a docker daemon.
+            // skopeo is the portable way to get an OCI layout into a docker
+            // daemon — and unlike podman it gives us a predictable tag.
+            let tag = "mise-oci:run";
             let src = format!("oci:{}", image_dir.display());
             let dst = format!("docker-daemon:{tag}");
             let status = Command::new("skopeo")
@@ -249,7 +263,7 @@ fn load_image(engine: Engine, image_dir: &Path, tag: &str) -> Result<()> {
                      your user has access to the socket."
                 );
             }
-            Ok(())
+            Ok(tag.to_string())
         }
         Engine::Auto => unreachable!(),
     }
