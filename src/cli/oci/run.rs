@@ -36,7 +36,13 @@ pub struct Run {
     #[clap(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise"])]
     image_dir: Option<PathBuf>,
 
-    /// Keep the image in the engine after the run (default: remove with `--rm`)
+    /// Keep the loaded image in the engine's storage after the run
+    ///
+    /// By default, both the container (`--rm`) and the loaded image are
+    /// removed when the command exits, so repeated `mise oci run` calls
+    /// don't accumulate images in podman / docker storage. Pass `--keep`
+    /// to retain the image under the tag mise used (`mise-oci:run-*` for
+    /// docker; the pulled image ID for podman).
     #[clap(long)]
     keep: bool,
 
@@ -153,14 +159,36 @@ impl Run {
             args.push("-w".into());
             args.push(w.clone());
         }
-        args.push(image_ref);
+        args.push(image_ref.clone());
         args.extend(self.cmd.clone());
 
-        let status = Command::new(engine_bin)
+        let run_result = Command::new(engine_bin)
             .args(&args)
             .status()
-            .wrap_err_with(|| format!("exec {engine_bin} {args:?}"))?;
+            .wrap_err_with(|| format!("exec {engine_bin} {args:?}"));
 
+        // Clean up the loaded image unless the user passed `--keep`.
+        // `docker run --rm` / `podman run --rm` only removes the
+        // *container*; the image the engine loaded for us stays in local
+        // storage and would otherwise accumulate across invocations.
+        if !self.keep {
+            let rmi = Command::new(engine_bin)
+                .args(["rmi", "--force", &image_ref])
+                .output();
+            match rmi {
+                Ok(out) if out.status.success() => {}
+                Ok(out) => {
+                    // Don't fail the overall command — just note it; a
+                    // failing rmi usually means the image is still in use
+                    // (e.g. another concurrent run) or was already deleted.
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    debug!("{engine_bin} rmi {image_ref} failed: {stderr}");
+                }
+                Err(e) => debug!("failed to spawn {engine_bin} rmi: {e}"),
+            }
+        }
+
+        let status = run_result?;
         if let Some(code) = status.code() {
             if code != 0 {
                 std::process::exit(code);
@@ -285,8 +313,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     Build the current mise.toml and drop into bash:
     $ <bold>mise oci run -it -- bash</bold>
 
-    Run a one-shot command with env + volume:
-    $ <bold>mise oci run -e DEBUG=1 -v $PWD:/work -w /work -- npm test</bold>
+    Run a one-shot command with env + volume (note: `-v` is reserved
+    for --verbose, so use `--volume`):
+    $ <bold>mise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test</bold>
 
     Re-use a previously built layout (skip the build step):
     $ <bold>mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'</bold>

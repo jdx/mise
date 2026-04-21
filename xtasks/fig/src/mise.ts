@@ -1923,7 +1923,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--keep",
               description:
-                "Keep the image in the engine after the run (default: remove with `--rm`)",
+                "Keep the loaded image in the engine's storage after the run",
               isRepeatable: false,
             },
             {

@@ -44,7 +44,9 @@ Use an already-built OCI image layout instead of building fresh
 
 ### `--keep`
 
-Keep the image in the engine after the run (default: remove with `--rm`)
+Keep the loaded image in the engine's storage after the run
+
+By default, both the container (`--rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `--keep` to retain the image under the tag mise used (`mise-oci:run-*` for docker; the pulled image ID for podman).
 
 ### `--mount-point <MOUNT_POINT>`
 
@@ -82,8 +84,9 @@ Examples:
 Build the current mise.toml and drop into bash:
 $ mise oci run -it -- bash
 
-Run a one-shot command with env + volume:
-$ mise oci run -e DEBUG=1 -v $PWD:/work -w /work -- npm test
+Run a one-shot command with env + volume (note: `-v` is reserved
+for --verbose, so use `--volume`):
+$ mise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test
 
 Re-use a previously built layout (skip the build step):
 $ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'

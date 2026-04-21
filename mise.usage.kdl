@@ -643,7 +643,7 @@ cmd oci subcommand_required=#true help="[experimental] Build OCI container image
     }
     cmd run help="[experimental] Build an OCI image from the current mise.toml and run a command in it" {
         long_help "[experimental] Build an OCI image from the current mise.toml and run a command in it\n\nEquivalent to `mise oci build` followed by `docker run` / `podman run`.\nThe built image is loaded into the local container engine (podman is\npreferred; docker works via skopeo) and the given command is executed\ninside it with stdin/stdout/stderr inherited.\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and\none of: `podman`, `docker+skopeo`."
-        after_long_help "Examples:\n\n    Build the current mise.toml and drop into bash:\n    $ mise oci run -it -- bash\n\n    Run a one-shot command with env + volume:\n    $ mise oci run -e DEBUG=1 -v $PWD:/work -w /work -- npm test\n\n    Re-use a previously built layout (skip the build step):\n    $ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'\n\nEngines:\n\n    Prefers podman (loads OCI layouts natively). Falls back to\n    docker + skopeo. Pass --engine podman or --engine docker to override.\n"
+        after_long_help "Examples:\n\n    Build the current mise.toml and drop into bash:\n    $ mise oci run -it -- bash\n\n    Run a one-shot command with env + volume (note: `-v` is reserved\n    for --verbose, so use `--volume`):\n    $ mise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test\n\n    Re-use a previously built layout (skip the build step):\n    $ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'\n\nEngines:\n\n    Prefers podman (loads OCI layouts natively). Falls back to\n    docker + skopeo. Pass --engine podman or --engine docker to override.\n"
         flag --engine help="Container engine to use (`auto`, `podman`, or `docker`)" default=auto {
             arg <ENGINE> {
                 choices auto podman docker
@@ -655,7 +655,9 @@ cmd oci subcommand_required=#true help="[experimental] Build OCI container image
         flag --image-dir help="Use an already-built OCI image layout instead of building fresh" {
             arg <IMAGE_DIR>
         }
-        flag --keep help="Keep the image in the engine after the run (default: remove with `--rm`)"
+        flag --keep help="Keep the loaded image in the engine's storage after the run" {
+            long_help "Keep the loaded image in the engine's storage after the run\n\nBy default, both the container (`--rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `--keep` to retain the image under the tag mise used (`mise-oci:run-*` for docker; the pulled image ID for podman)."
+        }
         flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
             arg <MOUNT_POINT>
         }

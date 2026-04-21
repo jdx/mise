@@ -1618,7 +1618,9 @@ Base image reference for the build (ignored with \-\-image\-dir)
 Use an already\-built OCI image layout instead of building fresh
 .TP
 \fB\-\-keep\fR
-Keep the image in the engine after the run (default: remove with `\-\-rm`)
+Keep the loaded image in the engine's storage after the run
+
+By default, both the container (`\-\-rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `\-\-keep` to retain the image under the tag mise used (`mise\-oci:run\-*` for docker; the pulled image ID for podman).
 .TP
 \fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
 Override in\-image mount point (ignored with \-\-image\-dir)
