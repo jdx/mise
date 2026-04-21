@@ -98,7 +98,7 @@ impl Lock {
         let mut all_provenance_errors: Vec<String> = Vec::new();
 
         for (lockfile_path, config_paths) in &lockfile_targets {
-            let tools = self.get_tools_to_lock(&config, &ts, lockfile_path, config_paths);
+            let tools = self.get_tools_to_lock(&config, ts, lockfile_path, config_paths);
 
             if tools.is_empty() {
                 // `tools` can be empty either because config has no tools, or because a filter excludes all.
