@@ -15,7 +15,7 @@ pub mod registry;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-pub use builder::{BuildOptions, Builder};
+pub use builder::{BuildOptions, BuildOutput, Builder};
 
 /// Normalize a Rust-style arch name (`x86_64`, `aarch64`) to the OCI-spec
 /// value (`amd64`, `arm64`).

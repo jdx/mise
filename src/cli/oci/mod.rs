@@ -1,6 +1,9 @@
 use clap::Subcommand;
 
 mod build;
+mod common;
+mod push;
+mod run;
 
 /// [experimental] Build OCI container images from a mise.toml
 ///
@@ -21,12 +24,16 @@ pub struct Oci {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Build(build::Build),
+    Push(push::Push),
+    Run(run::Run),
 }
 
 impl Commands {
     pub async fn run(self) -> eyre::Result<()> {
         match self {
             Self::Build(cmd) => cmd.run().await,
+            Self::Push(cmd) => cmd.run().await,
+            Self::Run(cmd) => cmd.run().await,
         }
     }
 }

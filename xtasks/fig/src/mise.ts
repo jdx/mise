@@ -1826,6 +1826,167 @@ const completionSpec: Fig.Spec = {
             },
           ],
         },
+        {
+          name: "push",
+          description:
+            "[experimental] Build an OCI image and push it to a registry",
+          options: [
+            {
+              name: "--image-dir",
+              description:
+                "Push an already-built OCI image layout (skip the build step)",
+              isRepeatable: false,
+              args: {
+                name: "image_dir",
+                template: "folders",
+              },
+            },
+            {
+              name: "--from",
+              description:
+                "Base image for the build (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "from",
+              },
+            },
+            {
+              name: "--mount-point",
+              description:
+                "Override in-image mount point (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "mount_point",
+              },
+            },
+            {
+              name: "--no-mise",
+              description:
+                "Don't embed the mise binary (ignored with --image-dir)",
+              isRepeatable: false,
+            },
+            {
+              name: "--tool",
+              description:
+                "Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`",
+              isRepeatable: false,
+              args: {
+                name: "tool",
+                generators: completionGeneratorTemplate(
+                  `mise registry --complete`
+                ),
+                suggestions: ["auto", "skopeo", "crane"],
+                debounce: true,
+              },
+            },
+          ],
+          args: {
+            name: "ref",
+            description:
+              "Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)",
+          },
+        },
+        {
+          name: "run",
+          description:
+            "[experimental] Build an OCI image from the current mise.toml and run a command in it",
+          options: [
+            {
+              name: "--engine",
+              description:
+                "Container engine to use (`auto`, `podman`, or `docker`)",
+              isRepeatable: false,
+              args: {
+                name: "engine",
+                suggestions: ["auto", "podman", "docker"],
+              },
+            },
+            {
+              name: "--image-dir",
+              description:
+                "Use an already-built OCI image layout instead of building fresh",
+              isRepeatable: false,
+              args: {
+                name: "image_dir",
+                template: "folders",
+              },
+            },
+            {
+              name: "--from",
+              description:
+                "Base image reference for the build (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "from",
+              },
+            },
+            {
+              name: "--mount-point",
+              description:
+                "Override in-image mount point (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "mount_point",
+              },
+            },
+            {
+              name: "--no-mise",
+              description:
+                "Don't embed the mise binary (ignored with --image-dir)",
+              isRepeatable: false,
+            },
+            {
+              name: ["-i", "--interactive"],
+              description: "Run interactively (pass `-i` to the engine)",
+              isRepeatable: false,
+            },
+            {
+              name: ["-t", "--tty"],
+              description: "Allocate a TTY (pass `-t` to the engine)",
+              isRepeatable: false,
+            },
+            {
+              name: ["-e", "--env"],
+              description:
+                "Set environment variable in the container (repeatable, `KEY=VAL`)",
+              isRepeatable: true,
+              args: {
+                name: "key=val",
+              },
+            },
+            {
+              name: "--volume",
+              description:
+                "Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)",
+              isRepeatable: true,
+              args: {
+                name: "host:container",
+              },
+            },
+            {
+              name: ["-w", "--workdir"],
+              description: "Working directory inside the container",
+              isRepeatable: false,
+              args: {
+                name: "workdir",
+                template: "folders",
+              },
+            },
+            {
+              name: "--keep",
+              description:
+                "Keep the image in the engine after the run (default: remove with `--rm`)",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "cmd",
+            description:
+              "Command and arguments to run inside the container (after `--`)",
+            isOptional: true,
+            isVariadic: true,
+          },
+        },
       ],
     },
     {

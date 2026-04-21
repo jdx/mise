@@ -621,6 +621,59 @@ cmd oci subcommand_required=#true help="[experimental] Build OCI container image
         }
         flag --no-mise help="Do not embed the currently-running mise binary at /usr/local/bin/mise"
     }
+    cmd push help="[experimental] Build an OCI image and push it to a registry" {
+        long_help "[experimental] Build an OCI image and push it to a registry\n\nRequires `skopeo` (or `crane`) on PATH. If `--image-dir` is not passed,\nbuilds fresh from the current mise.toml first, then shells out to\n`skopeo copy oci:<dir> docker://<ref>` (or `crane push <dir> <ref>`).\nAuthentication is handled by the underlying tool — configure it the same\nway you would for a plain `skopeo` / `crane` push (e.g. `docker login`,\n`REGISTRY_AUTH_FILE`, `~/.config/containers/auth.json`).\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`)."
+        after_long_help "Examples:\n\n    Build and push to GHCR:\n    $ mise oci push ghcr.io/me/devenv:latest\n\n    Push an image built earlier:\n    $ mise oci build -o ./img\n    $ mise oci push --image-dir ./img ghcr.io/me/devenv:v1\n\n    Force a specific push tool:\n    $ mise oci push --tool crane ghcr.io/me/devenv:latest\n\nAuth:\n\n    mise shells out to skopeo (preferred) or crane; configure registry\n    credentials the usual way — `docker login`, `REGISTRY_AUTH_FILE`,\n    or `~/.config/containers/auth.json` for skopeo; `crane auth login`\n    for crane.\n"
+        flag --image-dir help="Push an already-built OCI image layout (skip the build step)" {
+            arg <IMAGE_DIR>
+        }
+        flag --from help="Base image for the build (ignored with --image-dir)" {
+            arg <FROM>
+        }
+        flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
+            arg <MOUNT_POINT>
+        }
+        flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag --tool help="Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`" default=auto {
+            arg <TOOL> {
+                choices auto skopeo crane
+            }
+        }
+        arg <REF> help="Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)"
+    }
+    cmd run help="[experimental] Build an OCI image from the current mise.toml and run a command in it" {
+        long_help "[experimental] Build an OCI image from the current mise.toml and run a command in it\n\nEquivalent to `mise oci build` followed by `docker run` / `podman run`.\nThe built image is loaded into the local container engine (podman is\npreferred; docker works via skopeo) and the given command is executed\ninside it with stdin/stdout/stderr inherited.\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and\none of: `podman`, `docker+skopeo`."
+        after_long_help "Examples:\n\n    Build the current mise.toml and drop into bash:\n    $ mise oci run -it -- bash\n\n    Run a one-shot command with env + volume:\n    $ mise oci run -e DEBUG=1 -v $PWD:/work -w /work -- npm test\n\n    Re-use a previously built layout (skip the build step):\n    $ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'\n\nEngines:\n\n    Prefers podman (loads OCI layouts natively). Falls back to\n    docker + skopeo. Pass --engine podman or --engine docker to override.\n"
+        flag --engine help="Container engine to use (`auto`, `podman`, or `docker`)" default=auto {
+            arg <ENGINE> {
+                choices auto podman docker
+            }
+        }
+        flag --image-dir help="Use an already-built OCI image layout instead of building fresh" {
+            arg <IMAGE_DIR>
+        }
+        flag --from help="Base image reference for the build (ignored with --image-dir)" {
+            arg <FROM>
+        }
+        flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
+            arg <MOUNT_POINT>
+        }
+        flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag "-i --interactive" help="Run interactively (pass `-i` to the engine)"
+        flag "-t --tty" help="Allocate a TTY (pass `-t` to the engine)"
+        flag "-e --env" help="Set environment variable in the container (repeatable, `KEY=VAL`)" var=#true {
+            arg "<KEY=VAL>"
+        }
+        flag --volume help="Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)" var=#true {
+            long_help "Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)\n\nNote: unlike `docker run -v`, there's no `-v` short flag here because mise reserves `-v` for --verbose. Use `--volume` or `--mount`."
+            arg <HOST:CONTAINER>
+        }
+        flag "-w --workdir" help="Working directory inside the container" {
+            arg <WORKDIR>
+        }
+        flag --keep help="Keep the image in the engine after the run (default: remove with `--rm`)"
+        arg "[-- CMD]…" help="Command and arguments to run inside the container (after `--`)" required=#false var=#true
+    }
 }
 cmd outdated help="Shows outdated tool versions" {
     long_help "Shows outdated tool versions\n\nSee `mise upgrade` to upgrade these versions."

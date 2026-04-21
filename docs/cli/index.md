@@ -125,6 +125,8 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise mcp`](/cli/mcp.md)
 - [`mise oci <SUBCOMMAND>`](/cli/oci.md)
 - [`mise oci build [FLAGS]`](/cli/oci/build.md)
+- [`mise oci push [FLAGS] <REF>`](/cli/oci/push.md)
+- [`mise oci run [FLAGS] [-- CMD]…`](/cli/oci/run.md)
 - [`mise outdated [FLAGS] [TOOL@VERSION]…`](/cli/outdated.md)
 - [`mise plugins [FLAGS] <SUBCOMMAND>`](/cli/plugins.md)
 - [`mise plugins install [FLAGS] [NEW_PLUGIN] [GIT_URL]`](/cli/plugins/install.md)

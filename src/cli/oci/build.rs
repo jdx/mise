@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use clap::ValueHint;
 use eyre::Result;
 
-use crate::config::{Config, Settings};
+use crate::cli::oci::common::{perform_build, short_digest};
+use crate::config::Settings;
 use crate::file::display_path;
-use crate::oci::{BuildOptions, Builder, OciConfig};
-use crate::toolset::ToolsetBuilder;
+use crate::oci::BuildOptions;
 
 /// [experimental] Build an OCI image from the current mise.toml
 ///
@@ -44,10 +44,6 @@ pub struct Build {
 impl Build {
     pub async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise oci build")?;
-        let config = Config::get().await?;
-        let ts = ToolsetBuilder::new().build(&config).await?;
-
-        let oci = merged_oci_config(&config);
 
         let opts = BuildOptions {
             out_dir: self.output.clone(),
@@ -56,9 +52,7 @@ impl Build {
             mount_point: self.mount_point.clone(),
             include_mise: !self.no_mise,
         };
-
-        let builder = Builder::new(config.clone(), ts, oci, opts);
-        let out = builder.build().await?;
+        let out = perform_build(opts).await?;
 
         miseprintln!("wrote OCI image layout to {}", display_path(&out.out_dir));
         miseprintln!("manifest: {}", out.manifest_digest);
@@ -73,29 +67,6 @@ impl Build {
             );
         }
         Ok(())
-    }
-}
-
-/// Merge `[oci]` sections across all loaded config files, with more specific
-/// (closer to the current directory) configs overriding less specific ones.
-///
-/// `config_files` iterates most-specific-first, so we `.rev()` to start from
-/// the least-specific and let each subsequent overlay win.
-fn merged_oci_config(config: &crate::config::Config) -> OciConfig {
-    config
-        .config_files
-        .values()
-        .rev()
-        .filter_map(|cf| cf.oci_config())
-        .fold(OciConfig::default(), |acc, cur| acc.overlay(cur))
-}
-
-fn short_digest(d: &str) -> String {
-    let hex = d.trim_start_matches("sha256:");
-    if hex.len() >= 12 {
-        format!("sha256:{}", &hex[..12])
-    } else {
-        d.to_string()
     }
 }
 

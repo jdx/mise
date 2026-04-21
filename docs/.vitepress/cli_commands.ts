@@ -195,6 +195,12 @@ export const commands: { [key: string]: Command } = {
       build: {
         hide: false,
       },
+      push: {
+        hide: false,
+      },
+      run: {
+        hide: false,
+      },
     },
   },
   outdated: {

@@ -24,6 +24,14 @@ MISE_EXPERIMENTAL=1 mise oci build …
 Flags, output layout, and defaults may change in future releases.
 :::
 
+## Commands at a glance
+
+| Command          | What it does                                                             |
+| ---------------- | ------------------------------------------------------------------------ |
+| `mise oci build` | Produce an OCI image layout on disk.                                     |
+| `mise oci run`   | Build (or reuse) an image and run a command inside it via podman/docker. |
+| `mise oci push`  | Build (or reuse) an image and push it to a registry via skopeo or crane. |
+
 ## Quick start
 
 ```sh
@@ -31,14 +39,16 @@ Flags, output layout, and defaults may change in future releases.
 # (debian:bookworm-slim). Output goes to ./mise-oci/.
 mise oci build
 
-# Inspect it
+# Run an interactive shell in the image (uses podman if present, else
+# docker + skopeo).
+mise oci run -it -- bash
+
+# Push to a registry (shells out to skopeo; falls back to crane).
+mise oci push ghcr.io/me/devenv:latest
+
+# You can also go through skopeo/crane manually:
 skopeo inspect oci:./mise-oci
-
-# Push to a registry
 skopeo copy oci:./mise-oci docker://ghcr.io/me/devenv:latest
-
-# Or load straight into a local Docker daemon
-skopeo copy oci:./mise-oci docker-daemon:me/devenv:latest
 ```
 
 ## How layering works
@@ -67,9 +77,7 @@ Bumping `node` from `20.10` to `20.11` only invalidates the node layer.
 Python, jq, mise, the base, and the synthesized config are reused from
 the previous build (or from the registry, on pull).
 
-## Configuration
-
-### CLI flags
+## `mise oci build`
 
 ```sh
 mise oci build [-o PATH] [--from REF] [--tag REF] [--mount-point PATH] [--no-mise]
@@ -84,6 +92,72 @@ mise oci build [-o PATH] [--from REF] [--tag REF] [--mount-point PATH] [--no-mis
   (default `/mise`). Must be absolute.
 - `--no-mise` — don't embed the running mise binary at
   `/usr/local/bin/mise`
+
+## `mise oci run`
+
+Build (or reuse) an image and run a command inside it, like
+`docker run` / `podman run`. Stdin/stdout/stderr are inherited.
+
+```sh
+mise oci run [--engine ENGINE] [--image-dir DIR]
+             [--from REF] [--mount-point PATH] [--no-mise]
+             [-i] [-t] [-e KEY=VAL]... [--volume HOST:CONTAINER]...
+             [-w DIR] [--keep]
+             -- <cmd> [args...]
+```
+
+- `--engine` — `auto` (default, prefers podman), `podman`, or `docker`.
+- `--image-dir` — skip the build and use an existing OCI layout.
+- `-i`, `-t`, `-e`, `--volume`, `-w`, `--keep` — pass through to the
+  underlying engine the same way `docker run` uses them. (There's no
+  `-v` short flag for `--volume` because mise reserves `-v` for
+  `--verbose`; use `--volume` or `--mount`.)
+
+Examples:
+
+```sh
+# Interactive shell
+mise oci run -it -- bash
+
+# One-shot command with env + volume
+mise oci run -e DEBUG=1 --volume "$PWD:/work" -w /work -- npm test
+
+# Re-use a previously built layout
+mise oci build -o ./img
+mise oci run --image-dir ./img -- node --version
+```
+
+**Requirements:** either `podman` (native OCI-layout support) or
+`docker + skopeo` (skopeo loads the layout into the docker daemon).
+
+## `mise oci push`
+
+Build (or reuse) an image and push it to a registry via `skopeo` or
+`crane`. mise never handles credentials itself — configure the
+underlying tool (`docker login`, `REGISTRY_AUTH_FILE`, `crane auth
+login`, etc.).
+
+```sh
+mise oci push [--tool TOOL] [--image-dir DIR]
+              [--from REF] [--mount-point PATH] [--no-mise]
+              <REGISTRY_REF>
+```
+
+- `<REGISTRY_REF>` — fully-qualified destination (e.g.
+  `ghcr.io/me/devenv:latest`). Must include a registry host.
+- `--tool` — `auto` (default, prefers skopeo), `skopeo`, or `crane`.
+- `--image-dir` — push an existing OCI layout instead of building.
+
+Examples:
+
+```sh
+# Build + push in one shot
+mise oci push ghcr.io/me/devenv:latest
+
+# Push an image built earlier
+mise oci build -o ./img
+mise oci push --image-dir ./img ghcr.io/me/devenv:v1
+```
 
 ### `[oci]` section in `mise.toml`
 
@@ -210,10 +284,15 @@ works). mise prints a warning when this mismatch is detected.
 ## Known limitations (v1)
 
 - `asdf` / `vfox` backends are rejected (see above).
-- Only anonymous registry pulls; no auth.
-- Cross-platform builds produce broken images (binaries are host-native).
-- No built-in registry push — use `skopeo copy oci:…` or `crane push`.
+- Only anonymous registry pulls for `--from`; no auth yet.
+  (`mise oci push` does handle auth — it just delegates to skopeo/crane
+  which already do.)
+- Cross-platform builds produce broken images (binaries are host-native);
+  run the build on a linux host.
 - Alpine / musl base images will break most tools.
+- `mise oci run` / `oci push` shell out to external tools
+  (podman, docker+skopeo, crane). No built-in container runtime or
+  registry client.
 
 ## See also
 
