@@ -12,6 +12,7 @@ use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
+use crate::install_before::resolve_before_date;
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
@@ -35,6 +36,8 @@ pub fn reset_install_path_cache() {
 pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
+    /// Effective install-before cutoff used to resolve this version.
+    pub before_date: Option<Timestamp>,
     locked: bool,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
@@ -59,6 +62,7 @@ impl ToolVersion {
         ToolVersion {
             request,
             version,
+            before_date: None,
             locked: false,
             lock_platforms: Default::default(),
             install_path: None,
@@ -71,37 +75,47 @@ impl ToolVersion {
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        let install_before = request.options().get("install_before").map(str::to_string);
+        let mut opts = opts.clone();
+        opts.before_date = resolve_before_date(opts.before_date, install_before.as_deref())?;
+
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
             && !has_linked_version(request.ba())
             && let Some(lt) = request.lockfile_resolve(config)?
         {
-            return Ok(Self::from_lockfile(request.clone(), lt));
+            return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
         }
         let backend = request.ba().backend()?;
         if let Some(plugin) = backend.plugin()
             && !plugin.is_installed()
         {
             let tv = Self::new(request.clone(), request.version());
-            return Ok(tv);
+            return Ok(tv.with_before_date(opts.before_date));
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
-                Self::resolve_version(config, request, &v, opts).await?
+                Self::resolve_version(config, request, &v, &opts).await?
             }
             ToolRequest::Prefix { prefix, .. } => {
-                Self::resolve_prefix(config, request, &prefix, opts).await?
+                Self::resolve_prefix(config, request, &prefix, &opts).await?
             }
             ToolRequest::Sub {
                 sub, orig_version, ..
-            } => Self::resolve_sub(config, request, &sub, &orig_version, opts).await?,
+            } => Self::resolve_sub(config, request, &sub, &orig_version, &opts).await?,
             _ => {
                 let version = request.version();
                 Self::new(request, version)
             }
         };
+        let tv = tv.with_before_date(opts.before_date);
         trace!("resolved: {tv}");
         Ok(tv)
+    }
+
+    fn with_before_date(mut self, before_date: Option<Timestamp>) -> Self {
+        self.before_date = before_date;
+        self
     }
 
     fn from_lockfile(request: ToolRequest, lt: LockfileTool) -> Self {

@@ -15,6 +15,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
+use crate::install_before::resolve_before_date;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -1804,20 +1805,17 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
     if before_date.is_some() {
         return Ok(before_date);
     }
-    if let Some(before) = backend.ba().opts().get("install_before") {
-        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
+
+    let backend_opts = backend.ba().opts();
+    if let Some(before) = backend_opts.get("install_before") {
+        return resolve_before_date(None, Some(before));
     }
-    if let Some(before) = config
+
+    let config_install_before = config
         .get_tool_opts(backend.ba())
         .await?
-        .and_then(|opts| opts.get("install_before").map(str::to_string))
-    {
-        return Ok(Some(crate::duration::parse_into_timestamp(&before)?));
-    }
-    if let Some(before) = &Settings::get().install_before {
-        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
-    }
-    Ok(None)
+        .and_then(|opts| opts.get("install_before").map(str::to_string));
+    resolve_before_date(None, config_install_before.as_deref())
 }
 
 #[cfg(test)]
@@ -2090,6 +2088,25 @@ mod latest_version_tests {
             backend.latest_installed_version(None).unwrap(),
             Some("2.0.0".into())
         );
+    }
+
+    #[tokio::test]
+    async fn test_inline_install_before_wins_over_config_entry() {
+        let config = Config::get().await.unwrap();
+        // The test fixture has a `tiny` config entry without install_before.
+        // Inline backend opts must still win when a config entry exists.
+        let backend = LatestBackend::new("tiny[install_before=2024-06-01]");
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), None)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 1);
     }
 }
 
