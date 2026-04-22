@@ -14,7 +14,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
-use crate::env::{self, PATH_KEY};
+use crate::env::PATH_KEY;
 use crate::git::{CloneOptions, Git};
 use crate::github::{self, GithubRelease};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -802,12 +802,12 @@ impl RubyPlugin {
         ctx.pr
             .set_message("verify GitHub artifact attestations".to_string());
 
-        match sigstore_verification::verify_github_attestation(
+        match crate::github::sigstore::verify_attestation(
             tarball_path,
             owner,
             repo,
-            env::GITHUB_TOKEN.as_deref(),
             None, // Accept any workflow from repo
+            None,
         )
         .await
         {
@@ -823,7 +823,7 @@ impl RubyPlugin {
             Ok(false) => Err(eyre!(
                 "GitHub artifact attestations verification failed for ruby@{version}\n{ATTESTATION_HELP}"
             )),
-            Err(sigstore_verification::AttestationError::NoAttestations) => Err(eyre!(
+            Err(crate::github::sigstore::AttestationError::NoAttestations) => Err(eyre!(
                 "No GitHub artifact attestations found for ruby@{version}\n{ATTESTATION_HELP}"
             )),
             Err(e) => Err(eyre!(
