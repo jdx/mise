@@ -43,6 +43,22 @@ pub struct ToolVersion {
 }
 
 impl ToolVersion {
+    fn is_semver_fuzzy_query(v: &str) -> bool {
+        v == "latest" || (versions::Versioning::new(v).is_some() && v.matches('.').count() < 2)
+    }
+
+    fn no_versions_found(backend: &ABackend, before_date: Option<Timestamp>) -> eyre::Report {
+        let msg = if before_date.is_some() {
+            format!(
+                "no versions found for {} matching date filter",
+                backend.id()
+            )
+        } else {
+            format!("no versions found for {}", backend.id())
+        };
+        eyre::eyre!(msg)
+    }
+
     pub fn new(request: ToolRequest, version: String) -> Self {
         ToolVersion {
             request,
@@ -328,6 +344,7 @@ impl ToolVersion {
             {
                 return build(v);
             }
+            return Err(Self::no_versions_found(&backend, opts.before_date));
         }
         if !opts.latest_versions {
             let matches = backend.list_installed_versions_matching(&v);
@@ -374,6 +391,9 @@ impl ToolVersion {
         }
         // When OFFLINE, skip ALL remote version fetching regardless of version format
         if is_offline {
+            if Self::is_semver_fuzzy_query(&v) {
+                return Err(Self::no_versions_found(&backend, opts.before_date));
+            }
             return build(v);
         }
         // In prefer-offline mode (hook-env, activate, exec), skip remote version
@@ -390,6 +410,9 @@ impl ToolVersion {
         if matches.contains(&v) {
             return build(v);
         }
+        if let Some(v) = matches.last() {
+            return build(v.clone());
+        }
         // If date filter is active and exact version not found, check without filter.
         // Explicit pinned versions like "22.5.0" should not be filtered by date.
         if opts.before_date.is_some() {
@@ -399,7 +422,10 @@ impl ToolVersion {
                 return build(v);
             }
         }
-        Self::resolve_prefix(config, request, &v, opts).await
+        if Self::is_semver_fuzzy_query(&v) {
+            return Err(Self::no_versions_found(&backend, opts.before_date));
+        }
+        build(v)
     }
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
@@ -415,17 +441,7 @@ impl ToolVersion {
             "latest" => backend
                 .latest_version(config, None, opts.before_date)
                 .await?
-                .ok_or_else(|| {
-                    let msg = if opts.before_date.is_some() {
-                        format!(
-                            "no versions found for {} matching date filter",
-                            backend.id()
-                        )
-                    } else {
-                        format!("no versions found for {}", backend.id())
-                    };
-                    eyre::eyre!(msg)
-                })?,
+                .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?,
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
@@ -447,11 +463,9 @@ impl ToolVersion {
         let matches = backend
             .list_versions_matching_with_opts(config, prefix, opts.before_date)
             .await?;
-        let v = match matches.last() {
-            Some(v) => v,
-            None => prefix,
-            // None => Err(VersionNotFound(plugin.name.clone(), prefix.to_string()))?,
-        };
+        let v = matches
+            .last()
+            .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?;
         Ok(Self::new(request, v.to_string()))
     }
 

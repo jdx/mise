@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/fuzzytest"
+mkdir -p "$PLUGIN_DIR/bin"
+
+cat <<'LISTALL' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+exit 0
+LISTALL
+chmod +x "$PLUGIN_DIR/bin/list-all"
+
+cat <<'INSTALL' >"$PLUGIN_DIR/bin/install"
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cat <<EOF >"$ASDF_INSTALL_PATH/bin/fuzzytest"
+#!/usr/bin/env bash
+echo "fuzzytest $ASDF_INSTALL_VERSION"
+EOF
+chmod +x "$ASDF_INSTALL_PATH/bin/fuzzytest"
+INSTALL
+chmod +x "$PLUGIN_DIR/bin/install"
+
+assert_fail "mise install fuzzytest@latest" "no versions found for fuzzytest"
+assert_fail "mise install fuzzytest@24" "no versions found for fuzzytest"
+assert_fail "mise install fuzzytest@24.0" "no versions found for fuzzytest"
+
+assert_fail "test -d $MISE_DATA_DIR/installs/fuzzytest/latest"
+assert_fail "test -d $MISE_DATA_DIR/installs/fuzzytest/24"
+assert_fail "test -d $MISE_DATA_DIR/installs/fuzzytest/24.0"

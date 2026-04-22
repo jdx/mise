@@ -92,6 +92,13 @@ fn rebuild_symlinks_in_dir(
             {
                 trace!("Removing existing symlink: {}", from.display());
                 file::remove_file(&from)?;
+            } else if from
+                .file_name()
+                .zip(to.file_name())
+                .is_some_and(|(from_name, to_name)| from_name != to_name)
+            {
+                trace!("Replacing stale runtime dir: {}", from.display());
+                file::remove_all(&from)?;
             } else {
                 continue;
             }

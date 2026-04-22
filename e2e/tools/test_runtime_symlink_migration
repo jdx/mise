@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
 
-cat <<TOML >mise.toml
-[tools]
-dummy = "1.0"
-TOML
-
 mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0.2/bin"
 mkdir -p "$MISE_DATA_DIR/installs/dummy/2.0.0/bin"
 mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0"
@@ -16,5 +11,3 @@ assert "mise --version >/dev/null"
 assert "readlink $MISE_DATA_DIR/installs/dummy/1.0" "./1.0.2"
 assert "readlink $MISE_DATA_DIR/installs/dummy/latest" "./2.0.0"
 assert "test -f $MISE_DATA_DIR/migrations/runtime-symlink-dirs-v1"
-
-rm -f mise.toml

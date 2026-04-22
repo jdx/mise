@@ -42,6 +42,7 @@ use itertools::Itertools;
 use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
+use versions::Versioning;
 
 pub mod aqua;
 pub mod asdf;
@@ -861,18 +862,24 @@ pub trait Backend: Debug + Send + Sync {
             None => {
                 let installed_symlink = self.ba().installs_path.join("latest");
                 if installed_symlink.exists() {
-                    let Some(target) = file::resolve_symlink(&installed_symlink)? else {
-                        return Ok(Some("latest".to_string()));
-                    };
-                    let version = target
-                        .file_name()
-                        .ok_or_else(|| eyre!("Invalid symlink target"))?
-                        .to_string_lossy()
-                        .to_string();
-                    Ok(Some(version))
-                } else {
-                    Ok(None)
+                    if let Some(target) = file::resolve_symlink(&installed_symlink)? {
+                        let version = target
+                            .file_name()
+                            .ok_or_else(|| eyre!("Invalid symlink target"))?
+                            .to_string_lossy()
+                            .to_string();
+                        return Ok(Some(version));
+                    }
                 }
+                Ok(file::dir_subdirs(&self.ba().installs_path)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|v| !v.starts_with('.'))
+                    .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
+                    .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
+                    .filter(|v| v != "latest")
+                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+                    .last())
             }
         }
     }
@@ -1116,8 +1123,6 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
 
-        self.repair_runtime_symlink(&ctx.config, &tv)?;
-
         let install_path = tv.install_path();
         if install_path.starts_with(*dirs::INSTALLS) {
             install_state::write_backend_meta(self.ba())?;
@@ -1157,34 +1162,6 @@ pub trait Backend: Debug + Send + Sync {
         }
         ctx.pr.finish_with_message("installed".to_string());
         Ok(tv)
-    }
-
-    fn repair_runtime_symlink(&self, config: &Config, tv: &ToolVersion) -> eyre::Result<()> {
-        if !matches!(
-            tv.request,
-            ToolRequest::Version { .. } | ToolRequest::Prefix { .. }
-        ) {
-            return Ok(());
-        }
-        let Some(request_path) = tv.request.install_path(config) else {
-            return Ok(());
-        };
-        if !request_path.starts_with(&tv.ba().installs_path)
-            || is_runtime_symlink(&request_path)
-            || !request_path.exists()
-        {
-            return Ok(());
-        }
-        if request_path
-            .file_name()
-            .is_none_or(|f| f.to_string_lossy() == tv.version)
-        {
-            return Ok(());
-        }
-
-        file::remove_all(&request_path)?;
-        file::make_symlink_or_file(&PathBuf::from(".").join(tv.tv_pathname()), &request_path)?;
-        Ok(())
     }
 
     async fn run_postinstall_hook(
@@ -1809,7 +1786,9 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
 #[cfg(test)]
 mod latest_version_tests {
     use super::*;
+    use crate::cli::args::BackendResolution;
     use pretty_assertions::assert_eq;
+    use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Debug)]
@@ -1930,6 +1909,32 @@ mod latest_version_tests {
         );
         assert_eq!(backend.stable_calls(), 0);
         assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[test]
+    fn test_latest_installed_version_ignores_real_latest_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::new_raw(
+            "latest-real-dir".into(),
+            None,
+            "latest-real-dir".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        ba.installs_path = temp_dir.path().join("installs").join("latest-real-dir");
+        fs::create_dir_all(ba.installs_path.join("2.0.0")).unwrap();
+        fs::create_dir_all(ba.installs_path.join("latest")).unwrap();
+
+        let backend = LatestBackend {
+            ba: Arc::new(ba),
+            stable_calls: AtomicUsize::new(0),
+            list_calls: AtomicUsize::new(0),
+        };
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap(),
+            Some("2.0.0".into())
+        );
     }
 }
 
