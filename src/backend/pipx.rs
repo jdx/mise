@@ -139,7 +139,7 @@ impl Backend for PIPXBackend {
         }
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+    async fn latest_stable_version(&self, _config: &Arc<Config>) -> eyre::Result<Option<String>> {
         let this = self;
         timeout::run_with_timeout_async(
             async || {
@@ -185,7 +185,7 @@ impl Backend for PIPXBackend {
                                 Ok(version)
                             }
                         }
-                        _ => this.latest_version_for_query(config, "latest", None).await,
+                        _ => Ok(None),
                     })
                     .await
             },

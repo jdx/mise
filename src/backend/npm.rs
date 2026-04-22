@@ -168,7 +168,7 @@ impl Backend for NPMBackend {
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
                             Value::String(ref s) => Ok(Some(s.clone())),
-                            _ => this.latest_version_for_query(config, "latest", None).await,
+                            _ => Ok(None),
                         }
                     })
                     .await

@@ -502,6 +502,9 @@ pub trait Backend: Debug + Send + Sync {
     /// method first tries the versions host (mise-versions.jdx.dev) which provides
     /// version info with created_at timestamps, and falls back to the backend's
     /// `_list_remote_versions_with_info` implementation on failure.
+    ///
+    /// In offline mode, this reads the existing remote-versions cache without
+    /// fetching or writing. If no cache exists, it returns an empty list.
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
@@ -592,6 +595,16 @@ pub trait Backend: Debug + Send + Sync {
                 "Skipping remote version listing for {} due to offline mode",
                 ba.to_string()
             );
+            match remote_versions.get_cached() {
+                Ok(versions) => return Ok(versions),
+                Err(err) => {
+                    debug!(
+                        "No cached remote versions available for {} while offline: {:#}",
+                        ba.to_string(),
+                        err
+                    );
+                }
+            }
             return Ok(vec![]);
         }
 
@@ -650,8 +663,12 @@ pub trait Backend: Debug + Send + Sync {
     /// Do not call this from CLI/toolset code. Use `latest_version` instead so
     /// `install_before` / `--before` cutoffs are resolved before this fast path
     /// is used.
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        self.latest_version_for_query(config, "latest", None).await
+    ///
+    /// Return `Ok(None)` when the backend does not have a fast path result.
+    /// `latest_version` centrally falls back to the shared version-list path,
+    /// which can use the remote versions cache in offline mode.
+    async fn latest_stable_version(&self, _config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        Ok(None)
     }
     fn list_installed_versions(&self) -> Vec<String> {
         install_state::list_versions(&self.ba().short)
@@ -846,7 +863,9 @@ pub trait Backend: Debug + Send + Sync {
     /// `latest_stable_version` may use backend-specific fast paths (dist tags,
     /// latest release endpoints, plugin scripts). Those fast paths return the
     /// absolute latest stable version, so only use them when no install-before
-    /// cutoff is active.
+    /// cutoff is active. If the fast path returns `None`, fall back to the
+    /// shared version-list path here instead of duplicating that fallback in
+    /// each backend.
     async fn latest_version(
         &self,
         config: &Arc<Config>,
@@ -860,7 +879,10 @@ pub trait Backend: Debug + Send + Sync {
                     self.latest_version_for_query(config, "latest", Some(before))
                         .await
                 }
-                None => self.latest_stable_version(config).await,
+                None => match self.latest_stable_version(config).await? {
+                    Some(version) => Ok(Some(version)),
+                    None => self.latest_version_for_query(config, "latest", None).await,
+                },
             },
             Some(query) => {
                 self.latest_version_for_query(config, query, before_date)
@@ -1802,6 +1824,8 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
 mod latest_version_tests {
     use super::*;
     use crate::cli::args::BackendResolution;
+    use crate::config::settings::SettingsPartial;
+    use confique::Layer;
     use pretty_assertions::assert_eq;
     use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1809,6 +1833,7 @@ mod latest_version_tests {
     #[derive(Debug)]
     struct LatestBackend {
         ba: Arc<BackendArg>,
+        stable_result: Option<String>,
         stable_calls: AtomicUsize,
         list_calls: AtomicUsize,
     }
@@ -1817,9 +1842,15 @@ mod latest_version_tests {
         fn new(name: &str) -> Self {
             Self {
                 ba: Arc::new(name.into()),
+                stable_result: Some("9.9.9".to_string()),
                 stable_calls: AtomicUsize::new(0),
                 list_calls: AtomicUsize::new(0),
             }
+        }
+
+        fn with_stable_result(mut self, stable_result: Option<&str>) -> Self {
+            self.stable_result = stable_result.map(str::to_string);
+            self
         }
 
         fn stable_calls(&self) -> usize {
@@ -1835,13 +1866,6 @@ mod latest_version_tests {
     impl Backend for LatestBackend {
         fn ba(&self) -> &Arc<BackendArg> {
             &self.ba
-        }
-
-        async fn list_remote_versions_with_info(
-            &self,
-            _config: &Arc<Config>,
-        ) -> eyre::Result<Vec<VersionInfo>> {
-            self._list_remote_versions(_config).await
         }
 
         async fn _list_remote_versions(
@@ -1868,7 +1892,7 @@ mod latest_version_tests {
             _config: &Arc<Config>,
         ) -> eyre::Result<Option<String>> {
             self.stable_calls.fetch_add(1, Ordering::SeqCst);
-            Ok(Some("9.9.9".to_string()))
+            Ok(self.stable_result.clone())
         }
 
         async fn install_version_(
@@ -1912,6 +1936,12 @@ mod latest_version_tests {
     async fn test_date_filtered_latest_bypasses_latest_stable_version() {
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-before-date");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
         let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
 
         assert_eq!(
@@ -1924,6 +1954,115 @@ mod latest_version_tests {
         );
         assert_eq!(backend.stable_calls(), 0);
         assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_offline_remote_versions_use_cache_without_fetching() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-offline-cache");
+        let cache = backend.get_remote_version_cache();
+        {
+            let cache = cache.lock().await;
+            cache
+                .write(&vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "2.0.0".to_string(),
+                        ..Default::default()
+                    },
+                ])
+                .unwrap();
+        }
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let versions = backend.list_remote_versions(&config).await.unwrap();
+        Settings::reset(None);
+
+        assert_eq!(versions, vec!["1.0.0".to_string(), "2.0.0".to_string()]);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_offline_latest_uses_fast_path_when_available() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-offline-latest-cache");
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let latest = backend.latest_version(&config, None, None).await.unwrap();
+        Settings::reset(None);
+
+        assert_eq!(latest.as_deref(), Some("9.9.9"));
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_offline_latest_falls_back_to_cached_versions_when_fast_path_has_no_result() {
+        let config = Config::get().await.unwrap();
+        let backend =
+            LatestBackend::new("test-offline-latest-cache-fallback").with_stable_result(None);
+        let cache = backend.get_remote_version_cache();
+        {
+            let cache = cache.lock().await;
+            cache
+                .write(&vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "2.0.0".to_string(),
+                        ..Default::default()
+                    },
+                ])
+                .unwrap();
+        }
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let latest = backend.latest_version(&config, None, None).await.unwrap();
+        Settings::reset(None);
+
+        assert_eq!(latest.as_deref(), Some("2.0.0"));
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_latest_falls_back_to_cached_versions_when_fast_path_has_no_result() {
+        Settings::reset(None);
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-latest-fast-path-none").with_stable_result(None);
+        let cache = backend.get_remote_version_cache();
+        {
+            let cache = cache.lock().await;
+            cache
+                .write(&vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "2.0.0".to_string(),
+                        ..Default::default()
+                    },
+                ])
+                .unwrap();
+        }
+
+        let latest = backend.latest_version(&config, None, None).await.unwrap();
+
+        assert_eq!(latest.as_deref(), Some("2.0.0"));
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
     }
 
     #[test]
@@ -1942,6 +2081,7 @@ mod latest_version_tests {
 
         let backend = LatestBackend {
             ba: Arc::new(ba),
+            stable_result: Some("9.9.9".to_string()),
             stable_calls: AtomicUsize::new(0),
             list_calls: AtomicUsize::new(0),
         };
