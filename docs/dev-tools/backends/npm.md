@@ -91,12 +91,12 @@ Additional arguments to pass to `bun` installs when `settings.npm.package_manage
 Additional arguments to pass to `aube add --global` when
 `settings.npm.package_manager = "aube"`.
 
-For example, to allow a pnpm build script for a package:
+For example, to set the aube reporter mode:
 
 ```toml
 [tools]
 "npm:react-devtools" = {
   version = "latest",
-  pnpm_args = "--ignore-scripts=false --allow-build=electron",
+  aube_args = "--reporter append-only",
 }
 ```
