@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+cat <<TOML >mise.toml
+[tools]
+dummy = "latest"
+TOML
+
+mise uninstall dummy --all
+
+mkdir -p "$MISE_DATA_DIR/installs/dummy/latest/bin"
+cat <<'SCRIPT' >"$MISE_DATA_DIR/installs/dummy/latest/bin/dummy"
+#!/usr/bin/env bash
+echo "This is stale dummy"
+SCRIPT
+chmod +x "$MISE_DATA_DIR/installs/dummy/latest/bin/dummy"
+
+mise up
+
+assert "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"
+assert "test -L '$MISE_DATA_DIR/installs/dummy/latest'"
+assert "readlink '$MISE_DATA_DIR/installs/dummy/latest'" "./2.0.0"
+
+output="$(mise x -- dummy)"
+if [[ $output != *"This is Dummy 2.0.0"* ]]; then
+	fail "expected dummy 2.0.0 output, got: $output"
+fi
+
+if [[ $output == *"This is stale dummy"* ]]; then
+	fail "stale dummy binary was used after upgrade"
+fi
