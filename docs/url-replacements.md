@@ -140,8 +140,7 @@ Full regex syntax documentation: <https://docs.rs/regex/latest/regex/#syntax>
 When using regex patterns, ensure your replacement URLs point to trusted sources,
 as this feature can redirect tool downloads to arbitrary locations.
 
-> [!WARNING]
-> **Credential Leaking**: When using `url_replacements`, any authentication headers (like `Authorization: Bearer <TOKEN>`) generated for the original URL (e.g., `api.github.com`) are **preserved** and sent to the replaced URL.
+> [!WARNING] > **Credential Leaking**: When using `url_replacements`, any authentication headers (like `Authorization: Bearer <TOKEN>`) generated for the original URL (e.g., `api.github.com`) are **preserved** and sent to the replaced URL.
 >
 > This is by design to allow authentication with internal proxies that forward requests to upstream services (GitHub, GitLab, Forgejo, etc.). However, it means you must **only** replace URLs with trusted servers. Redirecting to an untrusted server will leak your credentials to that server.
 >
