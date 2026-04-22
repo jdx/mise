@@ -510,8 +510,8 @@ impl TaskExecutor {
         }));
         let tasks = config.tasks_with_context(Some(&ctx)).await?;
         let tasks_map: BTreeMap<String, Task> = tasks
-            .iter()
-            .flat_map(|(_, t)| {
+            .values()
+            .flat_map(|t| {
                 t.aliases
                     .iter()
                     .map(|a| (a.to_string(), t.clone()))

@@ -3,13 +3,14 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
+use crate::dirs;
 use crate::file;
-use crate::hash::file_hash_blake3;
+use crate::hash::{file_hash_blake3, hash_to_str};
 
 /// Persistent state for deps freshness checking.
 ///
 /// Stores blake3 content hashes of source files keyed by provider ID.
-/// Persisted to `.mise/deps-state.toml`.
+/// Persisted to `$MISE_STATE_DIR/deps/<hash>.toml`, keyed by project root.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DepsState {
     /// provider_id → (relative_path → blake3_hex)
@@ -18,7 +19,7 @@ pub struct DepsState {
 }
 
 impl DepsState {
-    /// Load state from `.mise/deps-state.toml`, returning default if not found.
+    /// Load state for a project, returning default if not found.
     pub fn load(project_root: &Path) -> Self {
         let path = state_path(project_root);
         if !path.exists() {
@@ -39,7 +40,7 @@ impl DepsState {
         }
     }
 
-    /// Save state to `.mise/deps-state.toml`.
+    /// Save state for a project.
     pub fn save(&self, project_root: &Path) -> Result<()> {
         let path = state_path(project_root);
         file::create_dir_all(path.parent().unwrap())?;
@@ -118,6 +119,11 @@ fn hash_dir_files(
 }
 
 /// Path to the state file for a given project root.
+///
+/// Uses a hash of the project root path so state is scoped per-project without
+/// writing inside the project directory (mirrors `tracked-configs`).
 fn state_path(project_root: &Path) -> PathBuf {
-    project_root.join(".mise").join("deps-state.toml")
+    dirs::STATE
+        .join("deps")
+        .join(format!("{}.toml", hash_to_str(&project_root)))
 }

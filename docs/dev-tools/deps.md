@@ -126,7 +126,8 @@ run = "npx prisma generate"
 ## Freshness Checking
 
 mise uses blake3 content hashing to determine if sources have changed since the last
-successful run. Hashes are stored in `.mise/deps-state.toml`.
+successful run. Hashes are stored in `$MISE_STATE_DIR/deps/<hash>.toml`, keyed by
+project root (so nothing is written inside the project directory).
 
 1. Compute blake3 hashes of all source files
 2. Compare against stored hashes from the last successful run
