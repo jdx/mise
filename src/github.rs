@@ -15,6 +15,8 @@ use tokio::sync::RwLock;
 use tokio::sync::RwLockReadGuard;
 use xx::regex;
 
+pub mod sigstore;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GithubRelease {
     pub tag_name: String,

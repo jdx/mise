@@ -1,0 +1,229 @@
+//! Sole mise-internal bridge to the `sigstore-verification` crate.
+//!
+//! Every call mise makes into `sigstore_verification` goes through this module. Callers never
+//! touch the external crate directly and never pass a GitHub token — the token is resolved
+//! internally via [`crate::github::resolve_token_for_api_url`], which walks the full chain
+//! (env vars → `credential_command` → `github_tokens.toml` → gh CLI → git credential fill).
+//!
+//! ## Why this exists
+//!
+//! Before this module, three sigstore call sites (`src/backend/aqua.rs`,
+//! `src/plugins/core/python.rs`, `src/plugins/core/ruby.rs`) passed
+//! `crate::env::GITHUB_TOKEN.as_deref()` — env vars only — while the github backend used the
+//! full chain. That asymmetry left `mise lock` issuing unauthenticated attestation requests,
+//! which hit GitHub's 60/hour IP rate limit after the second run.
+//!
+//! Concentrating the `sigstore_verification` surface here makes the asymmetry
+//! structurally impossible: wrapper signatures omit the token argument, so callers cannot
+//! re-introduce the bug without first editing this file.
+//!
+//! ## Default API URL
+//!
+//! Functions that accept `api_url: Option<&str>` fall back to [`crate::github::API_URL`]
+//! (`"https://api.github.com"`) when `None` is passed. The default must be a full URL so
+//! [`crate::github::resolve_token_for_api_url`] can parse the host correctly; a bare hostname
+//! would be silently misrouted for GitHub Enterprise Server tenants.
+
+use std::path::Path;
+
+use sigstore_verification::sources::github::GitHubSource;
+use sigstore_verification::{ArtifactRef, AttestationSource};
+
+pub use sigstore_verification::AttestationError;
+
+/// Result alias that matches `sigstore_verification`'s internal convention.
+type AttestationResult<T> = std::result::Result<T, AttestationError>;
+
+/// Resolve a GitHub token for an optional API base URL, defaulting to [`crate::github::API_URL`].
+fn resolve_token_for_wrapper(api_url: Option<&str>) -> Option<String> {
+    let url = api_url.unwrap_or(crate::github::API_URL);
+    crate::github::resolve_token_for_api_url(url)
+}
+
+/// Verify a GitHub artifact attestation for a file on disk.
+///
+/// Dispatches to [`sigstore_verification::verify_github_attestation_with_base_url`] when
+/// `api_url` is `Some` (to support GitHub Enterprise) and to
+/// [`sigstore_verification::verify_github_attestation`] otherwise.
+pub async fn verify_attestation(
+    artifact_path: &Path,
+    owner: &str,
+    repo: &str,
+    expected_workflow: Option<&str>,
+    api_url: Option<&str>,
+) -> AttestationResult<bool> {
+    let token = resolve_token_for_wrapper(api_url);
+    match api_url {
+        Some(base_url) => {
+            sigstore_verification::verify_github_attestation_with_base_url(
+                artifact_path,
+                owner,
+                repo,
+                token.as_deref(),
+                expected_workflow,
+                base_url,
+            )
+            .await
+        }
+        None => {
+            sigstore_verification::verify_github_attestation(
+                artifact_path,
+                owner,
+                repo,
+                token.as_deref(),
+                expected_workflow,
+            )
+            .await
+        }
+    }
+}
+
+/// Probe the GitHub attestation API for the given digest without downloading the artifact.
+///
+/// Returns `Ok(true)` if any attestations exist for the digest. Used at lock time to decide
+/// whether `ProvenanceType::GithubAttestations` should be recorded before committing to a
+/// full download + verify.
+pub async fn detect_attestations(
+    owner: &str,
+    repo: &str,
+    api_url: &str,
+    digest: &str,
+) -> AttestationResult<bool> {
+    let token = resolve_token_for_wrapper(Some(api_url));
+    let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), api_url)?;
+    let artifact_ref = ArtifactRef::from_digest(digest);
+    let attestations = source.fetch_attestations(&artifact_ref).await?;
+    Ok(!attestations.is_empty())
+}
+
+/// Verify SLSA provenance for an already-downloaded artifact. Passthrough — no token needed.
+pub async fn verify_slsa_provenance(
+    artifact_path: &Path,
+    provenance_path: &Path,
+    min_level: u8,
+) -> AttestationResult<bool> {
+    sigstore_verification::verify_slsa_provenance(artifact_path, provenance_path, min_level).await
+}
+
+/// Verify a keyless Cosign signature or bundle. Passthrough — no token needed.
+pub async fn verify_cosign_signature(
+    artifact_path: &Path,
+    sig_or_bundle_path: &Path,
+) -> AttestationResult<bool> {
+    sigstore_verification::verify_cosign_signature(artifact_path, sig_or_bundle_path).await
+}
+
+/// Verify a Cosign signature against a public key. Passthrough — no token needed.
+pub async fn verify_cosign_signature_with_key(
+    artifact_path: &Path,
+    sig_or_bundle_path: &Path,
+    public_key_path: &Path,
+) -> AttestationResult<bool> {
+    sigstore_verification::verify_cosign_signature_with_key(
+        artifact_path,
+        sig_or_bundle_path,
+        public_key_path,
+    )
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env as mise_env;
+
+    /// Serializes env-var mutations across tests in this module.
+    static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    const TOKEN_ENV_VARS: &[&str] = &[
+        "MISE_GITHUB_TOKEN",
+        "GITHUB_API_TOKEN",
+        "GITHUB_TOKEN",
+        "MISE_GITHUB_ENTERPRISE_TOKEN",
+    ];
+
+    fn snapshot_token_env_vars() -> Vec<(&'static str, Option<String>)> {
+        TOKEN_ENV_VARS
+            .iter()
+            .map(|name| (*name, std::env::var(name).ok()))
+            .collect()
+    }
+
+    fn clear_token_env_vars() {
+        for name in TOKEN_ENV_VARS {
+            mise_env::remove_var(name);
+        }
+    }
+
+    fn restore_token_env_vars(saved: Vec<(&'static str, Option<String>)>) {
+        for (name, value) in saved {
+            match value {
+                Some(v) => mise_env::set_var(name, v),
+                None => mise_env::remove_var(name),
+            }
+        }
+    }
+
+    #[test]
+    fn test_resolve_token_wrapper_uses_env_var_with_default_url() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let saved = snapshot_token_env_vars();
+        clear_token_env_vars();
+        mise_env::set_var("GITHUB_TOKEN", "ghp_wrapper_default");
+
+        let resolved = resolve_token_for_wrapper(None);
+        assert_eq!(
+            resolved.as_deref(),
+            Some("ghp_wrapper_default"),
+            "env var should flow through the wrapper with the default API URL"
+        );
+
+        restore_token_env_vars(saved);
+    }
+
+    #[test]
+    fn test_resolve_token_wrapper_uses_env_var_with_explicit_api_url() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let saved = snapshot_token_env_vars();
+        clear_token_env_vars();
+        mise_env::set_var("MISE_GITHUB_TOKEN", "ghp_explicit_api");
+
+        let resolved = resolve_token_for_wrapper(Some(crate::github::API_URL));
+        assert_eq!(
+            resolved.as_deref(),
+            Some("ghp_explicit_api"),
+            "explicit api.github.com URL should resolve identically to the default"
+        );
+
+        restore_token_env_vars(saved);
+    }
+
+    #[test]
+    fn test_resolve_token_wrapper_respects_enterprise_api_url() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let saved = snapshot_token_env_vars();
+        clear_token_env_vars();
+        mise_env::set_var("GITHUB_TOKEN", "ghp_public_only");
+        mise_env::set_var("MISE_GITHUB_ENTERPRISE_TOKEN", "ghp_enterprise_only");
+
+        // An enterprise API URL must parse and route to the enterprise token, proving the
+        // wrapper passes a full URL (not a bare hostname) to `resolve_token_for_api_url`.
+        let resolved =
+            resolve_token_for_wrapper(Some("https://github.enterprise.example.com/api/v3"));
+        assert_eq!(
+            resolved.as_deref(),
+            Some("ghp_enterprise_only"),
+            "enterprise api_url should resolve the enterprise token, not the public one"
+        );
+
+        // And the default (None) must still pick the public token.
+        let resolved_default = resolve_token_for_wrapper(None);
+        assert_eq!(
+            resolved_default.as_deref(),
+            Some("ghp_public_only"),
+            "default api_url should still resolve the public token"
+        );
+
+        restore_token_env_vars(saved);
+    }
+}
