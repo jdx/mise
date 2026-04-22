@@ -709,6 +709,50 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
     }
+    fn cleanup_stale_request_install_path(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<()> {
+        let ToolRequest::Version {
+            version: requested_version,
+            ..
+        } = &tv.request
+        else {
+            return Ok(());
+        };
+        if requested_version == &tv.version {
+            return Ok(());
+        }
+        let Some(request_install_path) = tv.request.install_path(config) else {
+            return Ok(());
+        };
+        if request_install_path == tv.install_path()
+            || !request_install_path.starts_with(&self.ba().installs_path)
+            || request_install_path.parent() != Some(self.ba().installs_path.as_path())
+            || is_runtime_symlink(&request_install_path)
+        {
+            return Ok(());
+        }
+        let Ok(metadata) = request_install_path.symlink_metadata() else {
+            return Ok(());
+        };
+        let file_type = metadata.file_type();
+        if file_type.is_dir() {
+            trace!(
+                "removing stale request install dir: {}",
+                display_path(&request_install_path)
+            );
+            file::remove_all(&request_install_path)?;
+        } else if file_type.is_file() {
+            trace!(
+                "removing stale request install file: {}",
+                display_path(&request_install_path)
+            );
+            file::remove_file(&request_install_path)?;
+        }
+        Ok(())
+    }
     async fn is_version_outdated(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
         let latest = match tv.latest_version(config).await {
             Ok(latest) => latest,
@@ -1081,6 +1125,8 @@ pub trait Backend: Debug + Send + Sync {
             tv.install_path = Some(tv.ba().installs_path.join(tv.tv_pathname()));
         }
 
+        self.cleanup_stale_request_install_path(&ctx.config, &tv)?;
+
         let will_uninstall = ctx.force && self.is_version_installed(&ctx.config, &tv, true);
 
         // Query backend for operation count and set up progress tracking
@@ -1123,6 +1169,8 @@ pub trait Backend: Debug + Send + Sync {
                 return Err(e);
             }
         };
+
+        self.cleanup_stale_request_install_path(&ctx.config, &tv)?;
 
         let install_path = tv.install_path();
         if install_path.starts_with(*dirs::INSTALLS) {
