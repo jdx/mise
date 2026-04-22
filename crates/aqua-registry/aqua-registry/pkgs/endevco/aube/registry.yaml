@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: endevco
+    repo_name: aube
+    description: A fast Node.js package manager
+    asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-gnu
+      windows: pc-windows-msvc
+    overrides:
+      - goos: darwin
+        replacements:
+          amd64: amd64
+      - goos: windows
+        format: zip
+    supported_envs:
+      - linux
+      - darwin/arm64
+      - windows
