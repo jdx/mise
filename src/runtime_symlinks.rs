@@ -84,8 +84,13 @@ fn rebuild_symlinks_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
+    let concrete_installs = installed_versions_in_dir(installs_dir)
+        .into_iter()
+        .filter(|v| is_concrete_install(v))
+        .collect::<std::collections::HashSet<_>>();
     let symlinks = list_symlinks_for_dir(config, backend, installs_dir);
     for (from, to) in symlinks {
+        let from_name = from.clone();
         let from = installs_dir.join(from);
         if from.exists() {
             if is_runtime_symlink(&from) && file::resolve_symlink(&from)?.unwrap_or_default() != to
@@ -96,6 +101,7 @@ fn rebuild_symlinks_in_dir(
                 .file_name()
                 .zip(to.file_name())
                 .is_some_and(|(from_name, to_name)| from_name != to_name)
+                && !concrete_installs.contains(&from_name)
             {
                 trace!("Replacing stale runtime dir: {}", from.display());
                 file::remove_all(&from)?;
@@ -114,10 +120,15 @@ fn migrate_real_dirs_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
+    let concrete_installs = installed_versions_in_dir(installs_dir)
+        .into_iter()
+        .filter(|v| is_concrete_install(v))
+        .collect::<std::collections::HashSet<_>>();
     let symlinks = list_symlinks_for_dir(config, backend, installs_dir);
     for (from, to) in symlinks {
+        let from_name = from.clone();
         let from = installs_dir.join(from);
-        if !from.exists() || is_runtime_symlink(&from) {
+        if !from.exists() || is_runtime_symlink(&from) || concrete_installs.contains(&from_name) {
             continue;
         }
         file::remove_all(&from)?;
@@ -194,6 +205,11 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
         .filter(|v| !VERSION_REGEX.is_match(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
+}
+
+fn is_concrete_install(v: &str) -> bool {
+    let (_, version) = split_version_prefix(v);
+    Versioning::new(version).is_some()
 }
 
 pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {

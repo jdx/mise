@@ -35,11 +35,10 @@ mise up
 # The resolved version dir must now exist — proving `install_version_` ran.
 assert "test -d $MISE_DATA_DIR/installs/dummy/2.0.0"
 
-# And the stale request dir must be repaired into the runtime symlink so execs
-# and future latest/version lookups resolve through the new concrete install.
-assert "readlink $MISE_DATA_DIR/installs/dummy/latest" "./2.0.0"
+# And runtime resolution must use the new concrete install, not the stale dir.
+assert "mise where dummy" "$MISE_DATA_DIR/installs/dummy/2.0.0"
 
-# The active binary must then report the new version.
+# The active binary must report the new version.
 assert_contains "mise x dummy -- dummy" "This is Dummy 2.0.0"
 
 rm -f mise.toml

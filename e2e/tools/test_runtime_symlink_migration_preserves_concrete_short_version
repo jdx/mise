@@ -2,14 +2,16 @@
 
 cat <<TOML >mise.toml
 [tools]
-node = "latest"
+node = "20"
 TOML
 
+mkdir -p "$MISE_DATA_DIR/installs/node/20/bin"
 mkdir -p "$MISE_DATA_DIR/installs/node/20.0.0/bin"
 
 # Any mise command triggers startup migrations.
 assert "mise --version >/dev/null"
 
-assert "test -f $MISE_DATA_DIR/migrations/runtime-symlink-dirs-v1"
+assert "test -d $MISE_DATA_DIR/installs/node/20"
+assert "test ! -L $MISE_DATA_DIR/installs/node/20"
 
 rm -f mise.toml
