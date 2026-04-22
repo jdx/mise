@@ -60,6 +60,11 @@ fn rebuild_symlinks_in_dir(
             {
                 trace!("Removing existing symlink: {}", from.display());
                 file::remove_file(&from)?;
+            } else if from.file_name().is_some_and(|f| f == "latest")
+                && from.symlink_metadata()?.file_type().is_dir()
+            {
+                trace!("Removing stale latest install dir: {}", from.display());
+                file::remove_all(&from)?;
             } else {
                 continue;
             }
@@ -133,6 +138,7 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
         .unwrap_or_default()
         .into_iter()
         .filter(|v| !v.starts_with('.'))
+        .filter(|v| v != "latest")
         .filter(|v| !is_runtime_symlink(&installs_dir.join(v)))
         .filter(|v| !installs_dir.join(v).join("incomplete").exists())
         .filter(|v| !VERSION_REGEX.is_match(v))

@@ -692,14 +692,15 @@ pub trait Backend: Debug + Send + Sync {
                 if let Some(install_path) = tv.request.install_path(config)
                     && check_path(&install_path, true)
                 {
-                    // For Prefix requests, install_path finds any installed dir
-                    // matching the prefix (e.g., "1.0.0" for prefix "1"), but if
-                    // the ToolVersion resolved to a different version (e.g., "1.1.0"),
-                    // we must not treat it as installed.
-                    if let ToolRequest::Prefix { .. } = &tv.request
-                        && install_path
-                            .file_name()
-                            .is_some_and(|f| f.to_string_lossy() != tv.version)
+                    // The request path can be an alias/prefix path such as
+                    // "latest" or "1". If resolution selected a different
+                    // concrete version, only the resolved path counts.
+                    if matches!(
+                        &tv.request,
+                        ToolRequest::Version { .. } | ToolRequest::Prefix { .. }
+                    ) && install_path
+                        .file_name()
+                        .is_some_and(|f| f.to_string_lossy() != tv.version)
                     {
                         return check_path(&tv.install_path(), check_symlink);
                     }
@@ -869,8 +870,11 @@ pub trait Backend: Debug + Send + Sync {
             None => {
                 let installed_symlink = self.ba().installs_path.join("latest");
                 if installed_symlink.exists() {
+                    if !is_runtime_symlink(&installed_symlink) {
+                        return Ok(None);
+                    }
                     let Some(target) = file::resolve_symlink(&installed_symlink)? else {
-                        return Ok(Some("latest".to_string()));
+                        return Ok(None);
                     };
                     let version = target
                         .file_name()

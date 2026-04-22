@@ -321,13 +321,28 @@ impl ToolVersion {
             {
                 return build(v);
             }
-            if !is_offline
-                && let Some(v) = backend
-                    .latest_version(config, None, opts.before_date)
-                    .await?
-            {
+            let latest_error = if !is_offline {
+                match backend.latest_version(config, None, opts.before_date).await {
+                    Ok(Some(v)) => return build(v),
+                    Ok(None) => None,
+                    Err(err) => Some(err),
+                }
+            } else {
+                None
+            };
+            if let Some(v) = backend.latest_installed_version(None)? {
                 return build(v);
             }
+            if let Some(err) = latest_error {
+                return Err(err);
+            }
+            if opts.before_date.is_some() {
+                bail!(
+                    "no versions found for {} matching date filter",
+                    backend.id()
+                );
+            }
+            bail!("no latest version found for {}", backend.id());
         }
         if !opts.latest_versions {
             let matches = backend.list_installed_versions_matching(&v);
