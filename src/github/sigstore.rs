@@ -299,29 +299,4 @@ mod tests {
             "wrapper should resolve tokens from github_tokens.toml when env vars are empty"
         );
     }
-
-    /// Regression marker for the stacked follow-up that adds `gh auth token` / macOS
-    /// Keychain support.
-    ///
-    /// On macOS, `gh auth login` stores the OAuth token in the system Keychain by default,
-    /// leaving `~/.config/gh/hosts.yml` with no `oauth_token` field. mise's current gh CLI
-    /// reader ([`crate::github::read_gh_hosts`]) filters those entries out, so
-    /// `resolve_token_for_wrapper` returns `None` for users who rely on `gh auth` —
-    /// exactly the scenario the original bug report surfaced for github-backend tools.
-    ///
-    /// This test is ignored so CI stays green while the fix is pending. Running
-    /// `cargo test -- --ignored` surfaces it. When the follow-up branch (see workpad
-    /// Deferred Items) lands, the implementer should:
-    ///   1. Replace the `unimplemented!()` with assertions that seed a hosts.yml entry
-    ///      without `oauth_token` and an override simulating the Keychain/gh-auth-token
-    ///      return value.
-    ///   2. Remove the `#[ignore]` attribute.
-    #[test]
-    #[ignore = "stacked follow-up: gh CLI macOS Keychain / `gh auth token` support is not yet \
-                implemented — tracked under workpad Deferred Items"]
-    fn test_wrapper_resolves_gh_cli_token_from_macos_keychain_after_fix() {
-        unimplemented!(
-            "pending macOS Keychain / `gh auth token` support in the stacked follow-up PR"
-        )
-    }
 }
