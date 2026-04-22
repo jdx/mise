@@ -861,8 +861,8 @@ pub trait Backend: Debug + Send + Sync {
             }
             None => {
                 let installed_symlink = self.ba().installs_path.join("latest");
-                if installed_symlink.exists() {
-                    if let Some(target) = file::resolve_symlink(&installed_symlink)? {
+                if installed_symlink.exists()
+                    && let Some(target) = file::resolve_symlink(&installed_symlink)? {
                         let version = target
                             .file_name()
                             .ok_or_else(|| eyre!("Invalid symlink target"))?
@@ -870,7 +870,6 @@ pub trait Backend: Debug + Send + Sync {
                             .to_string();
                         return Ok(Some(version));
                     }
-                }
                 Ok(file::dir_subdirs(&self.ba().installs_path)
                     .unwrap_or_default()
                     .into_iter()
