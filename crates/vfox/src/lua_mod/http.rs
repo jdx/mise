@@ -139,31 +139,22 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
         return headers;
     };
 
-    // Release-download URLs on github.com 302 to a CDN host that rejects our
-    // Authorization header. We still attach auth on the initial github.com
-    // request (required for private-repo downloads) and rely on reqwest's
-    // default redirect policy to strip sensitive headers on the cross-origin
-    // hop to the CDN. Matches src/github.rs::is_github_release_asset_host.
-    let is_github = host == "api.github.com"
-        || host == "github.com"
-        || (host.ends_with(".githubusercontent.com")
-            && !matches!(
-                host,
-                "objects.githubusercontent.com"
-                    | "objects-origin.githubusercontent.com"
-                    | "release-assets.githubusercontent.com"
-            ));
+    // Only attach auth to GitHub REST API URLs. Sending auth to github.com
+    // release-download URLs causes GitHub to 302 to objects.githubusercontent.com
+    // (instead of the public release-assets host), which then 401s once
+    // reqwest strips the Authorization header on the cross-origin redirect.
+    // Mirrors src/github.rs::is_github_api_url.
+    let is_api =
+        host == "api.github.com" || (host.starts_with("api.") && host.ends_with(".ghe.com"));
 
-    if is_github && let Some(token) = github_token(lua) {
+    if is_api && let Some(token) = github_token(lua) {
         if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
             headers.insert(AUTHORIZATION, value);
         }
-        if host == "api.github.com" {
-            headers.insert(
-                "x-github-api-version",
-                HeaderValue::from_static("2022-11-28"),
-            );
-        }
+        headers.insert(
+            "x-github-api-version",
+            HeaderValue::from_static("2022-11-28"),
+        );
     }
 
     headers
@@ -490,9 +481,10 @@ mod tests {
     }
 
     #[test]
-    fn test_add_default_headers_sends_auth_on_github_release_download_url() {
-        // Private-repo release downloads require auth on the initial github.com
-        // request; reqwest strips it on the cross-origin redirect to the CDN.
+    fn test_add_default_headers_skips_github_release_download_url() {
+        // Sending auth to github.com release downloads makes GitHub redirect
+        // to objects.githubusercontent.com, which 401s once reqwest strips
+        // Authorization on the cross-origin hop.
         let lua = Lua::new();
         lua.set_named_registry_value("github_token", "ghp_registry")
             .unwrap();
@@ -503,16 +495,11 @@ mod tests {
             HeaderMap::default(),
         );
 
-        assert_eq!(
-            headers
-                .get(AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("Bearer ghp_registry")
-        );
+        assert!(!headers.contains_key(AUTHORIZATION));
     }
 
     #[test]
-    fn test_add_default_headers_only_sends_api_version_to_api_host() {
+    fn test_add_default_headers_skips_raw_githubusercontent() {
         let lua = Lua::new();
         lua.set_named_registry_value("github_token", "ghp_registry")
             .unwrap();
@@ -523,13 +510,34 @@ mod tests {
             HeaderMap::default(),
         );
 
+        assert!(!headers.contains_key(AUTHORIZATION));
+        assert!(!headers.contains_key("x-github-api-version"));
+    }
+
+    #[test]
+    fn test_add_default_headers_attaches_to_ghe_api_host() {
+        let lua = Lua::new();
+        lua.set_named_registry_value("github_token", "ghe_token")
+            .unwrap();
+
+        let headers = add_default_headers(
+            &lua,
+            "https://api.octocorp.ghe.com/repos/owner/repo/releases",
+            HeaderMap::default(),
+        );
+
         assert_eq!(
             headers
                 .get(AUTHORIZATION)
                 .and_then(|value| value.to_str().ok()),
-            Some("Bearer ghp_registry")
+            Some("Bearer ghe_token")
         );
-        assert!(!headers.contains_key("x-github-api-version"));
+        assert_eq!(
+            headers
+                .get("x-github-api-version")
+                .and_then(|value| value.to_str().ok()),
+            Some("2022-11-28")
+        );
     }
 
     #[tokio::test]
