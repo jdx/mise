@@ -40,9 +40,8 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
                 tokio::time::sleep(retry_delay(attempt)).await;
             }
             Ok(resp) => return Ok(resp),
-            Err(err) if attempt + 1 < HTTP_RETRY_ATTEMPTS => {
+            Err(err) if err.is_timeout() && attempt + 1 < HTTP_RETRY_ATTEMPTS => {
                 tokio::time::sleep(retry_delay(attempt)).await;
-                let _ = err;
             }
             Err(err) => return Err(err),
         }
@@ -140,6 +139,9 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
         return headers;
     };
 
+    // Public release asset downloads from github.com redirect to a CDN that rejects requests
+    // carrying our Authorization header. Private-repo downloads would need auth here, but
+    // plugins requiring that can pass an explicit `Authorization` header (handled above).
     let path = url.path();
     let is_release_asset_url = host == "github.com" && path.contains("/releases/download/");
 
