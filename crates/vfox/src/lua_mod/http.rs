@@ -139,12 +139,11 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
         return headers;
     };
 
-    // Public release asset downloads from github.com redirect to a CDN that rejects requests
-    // carrying our Authorization header. Private-repo downloads would need auth here, but
-    // plugins requiring that can pass an explicit `Authorization` header (handled above).
-    let path = url.path();
-    let is_release_asset_url = host == "github.com" && path.contains("/releases/download/");
-
+    // Release-download URLs on github.com 302 to a CDN host that rejects our
+    // Authorization header. We still attach auth on the initial github.com
+    // request (required for private-repo downloads) and rely on reqwest's
+    // default redirect policy to strip sensitive headers on the cross-origin
+    // hop to the CDN. Matches src/github.rs::is_github_release_asset_host.
     let is_github = host == "api.github.com"
         || host == "github.com"
         || (host.ends_with(".githubusercontent.com")
@@ -155,10 +154,7 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
                     | "release-assets.githubusercontent.com"
             ));
 
-    if is_github
-        && !is_release_asset_url
-        && let Some(token) = github_token(lua)
-    {
+    if is_github && let Some(token) = github_token(lua) {
         if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
             headers.insert(AUTHORIZATION, value);
         }
@@ -494,7 +490,9 @@ mod tests {
     }
 
     #[test]
-    fn test_add_default_headers_skips_release_download_urls() {
+    fn test_add_default_headers_sends_auth_on_github_release_download_url() {
+        // Private-repo release downloads require auth on the initial github.com
+        // request; reqwest strips it on the cross-origin redirect to the CDN.
         let lua = Lua::new();
         lua.set_named_registry_value("github_token", "ghp_registry")
             .unwrap();
@@ -505,7 +503,12 @@ mod tests {
             HeaderMap::default(),
         );
 
-        assert!(!headers.contains_key(AUTHORIZATION));
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer ghp_registry")
+        );
     }
 
     #[test]
