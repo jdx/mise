@@ -1,0 +1,10 @@
+description = "Sudo for Windows - a privilege elevation tool"
+os = ["windows"]
+test = { cmd = "gsudo --version", expected = "gsudo v{{version}}" }
+
+[[backends]]
+full = "github:gerardog/gsudo"
+
+[backends.options]
+asset_pattern = "gsudo.portable.zip"
+bin_path = "{{ arch() }}"

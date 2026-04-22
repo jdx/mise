@@ -65,6 +65,7 @@ pub(crate) mod maplit;
 mod migrate;
 mod minisign;
 mod netrc;
+mod oci;
 pub(crate) mod parallel;
 mod path;
 mod path_env;
@@ -149,6 +150,10 @@ fn handle_err(err: Report) -> eyre::Result<()> {
     {
         return Ok(());
     }
+    if is_interrupted_io_error(&err) {
+        stop_multi_progress();
+        exit(130);
+    }
 
     // Check for miette diagnostic errors and render them specially
     if let Some(diagnostic) = err.downcast_ref::<config::config_file::diagnostic::MiseDiagnostic>()
@@ -190,6 +195,20 @@ fn display_friendly_err(err: &Report) {
     error!("{msg}");
 }
 
+fn is_interrupted_io_error(err: &Report) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::Interrupted)
+    })
+}
+
+fn stop_multi_progress() {
+    if let Some(mpr) = MultiProgressReport::try_get() {
+        let _ = mpr.stop();
+    }
+}
+
 static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
 
 pub fn install_panic_hook() {
@@ -220,4 +239,21 @@ pub fn install_panic_hook() {
 
         default_hook(panic_info);
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eyre::eyre;
+
+    #[test]
+    fn detects_interrupted_io_error() {
+        assert!(is_interrupted_io_error(&eyre!(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "user cancelled"
+        ))));
+        assert!(!is_interrupted_io_error(&eyre!(std::io::Error::other(
+            "user cancelled"
+        ))));
+    }
 }

@@ -12,7 +12,7 @@ use crate::toolset::ToolVersion;
 use crate::{backend::Backend, dirs, parallel};
 use crate::{file, hash};
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
@@ -29,6 +29,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use versions::Versioning;
 
 /// Conda package info stored in the shared conda-packages section of lockfiles
@@ -48,6 +49,19 @@ pub struct CondaBackend {
 }
 
 impl CondaBackend {
+    fn next_temp_id() -> u64 {
+        static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn temp_download_path(dest: &std::path::Path) -> PathBuf {
+        dest.with_extension(format!(
+            "tmp.{}.{}",
+            std::process::id(),
+            Self::next_temp_id()
+        ))
+    }
+
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
@@ -199,7 +213,7 @@ impl CondaBackend {
         }
 
         file::create_dir_all(Self::conda_data_dir())?;
-        let temp = dest.with_extension(format!("tmp.{}", std::process::id()));
+        let temp = Self::temp_download_path(dest);
         HTTP.download_file(url, &temp, None).await?;
 
         if !Self::verify_checksum(&temp, checksum)? {
@@ -212,7 +226,22 @@ impl CondaBackend {
             ));
         }
 
-        file::rename(&temp, dest)?;
+        if let Err(err) = file::rename(&temp, dest) {
+            let _ = file::remove_all(&temp);
+
+            // Another concurrent installer may have won the race and written `dest`.
+            // If `dest` now exists and verifies, treat this as success.
+            if dest.exists() && Self::verify_checksum(dest, checksum)? {
+                return Ok(());
+            }
+
+            return Err(err).wrap_err_with(|| {
+                format!(
+                    "failed to finalize conda archive download for {}",
+                    dest.display()
+                )
+            });
+        }
         Ok(())
     }
 
@@ -737,5 +766,23 @@ impl Backend for CondaBackend {
         } else {
             Ok(vec![install_path.join("bin")])
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CondaBackend;
+
+    #[test]
+    fn temp_download_path_is_unique_per_call() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let dest = tmpdir.path().join("libgcc-15.2.0-he0feb66_18.conda");
+
+        let first = CondaBackend::temp_download_path(&dest);
+        let second = CondaBackend::temp_download_path(&dest);
+
+        assert_ne!(first, second);
+        assert_eq!(first.parent(), dest.parent());
+        assert_eq!(second.parent(), dest.parent());
     }
 }

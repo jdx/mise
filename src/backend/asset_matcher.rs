@@ -207,7 +207,7 @@ impl AssetPicker {
     /// Picks the best asset from available options
     pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
         let mut scored_assets = self.score_all_assets(assets);
-        scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
+        scored_assets.sort_by_key(|item| std::cmp::Reverse(item.0));
         scored_assets
             .first()
             .filter(|(score, _)| *score > 0)
@@ -241,7 +241,7 @@ impl AssetPicker {
             })
             .collect();
 
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_by_key(|item| std::cmp::Reverse(item.0));
         scored.first().map(|(_, asset)| (*asset).clone())
     }
 
