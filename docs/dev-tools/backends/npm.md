@@ -91,11 +91,11 @@ Additional arguments to pass to `bun` installs when `settings.npm.package_manage
 Additional arguments to pass to `aube add --global` when
 `settings.npm.package_manager = "aube"`.
 
-For example, to set the aube reporter mode:
+For example, to install `npm` with aube's append-only reporter mode:
 
 ```toml
 [tools]
-"npm:react-devtools" = {
+"npm:npm" = {
   version = "latest",
   aube_args = "--reporter append-only",
 }
