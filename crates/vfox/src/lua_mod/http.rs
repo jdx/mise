@@ -93,6 +93,8 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
         return headers;
     };
 
+    let is_release_asset_url = host == "github.com" && url.path().contains("/releases/download/");
+
     let is_github = host == "api.github.com"
         || host == "github.com"
         || (host.ends_with(".githubusercontent.com")
@@ -103,7 +105,10 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
                     | "release-assets.githubusercontent.com"
             ));
 
-    if is_github && let Some(token) = github_token(lua) {
+    if is_github
+        && !is_release_asset_url
+        && let Some(token) = github_token(lua)
+    {
         if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
             headers.insert(AUTHORIZATION, value);
         }
@@ -438,6 +443,21 @@ mod tests {
         let headers = add_default_headers(
             &lua,
             "https://release-assets.githubusercontent.com/github-production-release-asset/1/file",
+            HeaderMap::default(),
+        );
+
+        assert!(!headers.contains_key(AUTHORIZATION));
+    }
+
+    #[test]
+    fn test_add_default_headers_skips_release_download_urls() {
+        let lua = Lua::new();
+        lua.set_named_registry_value("github_token", "ghp_registry")
+            .unwrap();
+
+        let headers = add_default_headers(
+            &lua,
+            "https://github.com/JetBrains/kotlin/releases/download/v2.0.20/kotlin-compiler-2.0.20.zip",
             HeaderMap::default(),
         );
 
