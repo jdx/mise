@@ -269,7 +269,7 @@ impl S3Backend {
 
     /// Fetch versions using the configured method (manifest or listing)
     async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        let opts = config.get_tool_opts(&self.ba).await?.unwrap_or_default();
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
 
         // Try manifest-based version discovery first
         if let Some(manifest_url) = Self::get_opt(&opts, "version_list_url") {

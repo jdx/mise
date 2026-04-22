@@ -98,7 +98,7 @@ impl Backend for GoBackend {
 
         let install_version = tv.version.clone();
 
-        let opts = self.ba.opts();
+        let opts = tv.request.options();
 
         let install = async |v| {
             let mut cmd = CmdLineRunner::new("go").arg("install").arg("-mod=readonly");

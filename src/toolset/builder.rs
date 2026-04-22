@@ -145,10 +145,12 @@ impl ToolsetBuilder {
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
                     let mut tvr = tvr.clone();
-                    if tvr.options().is_empty()
-                        && let Some(opts) = &config_options
-                    {
-                        tvr.set_options(opts.clone());
+                    if let Some(opts) = &config_options {
+                        let opts = match arg.ba.explicit_opts() {
+                            Some(overrides) => opts.clone().with_overrides(overrides),
+                            None => opts.clone(),
+                        };
+                        tvr.set_options(opts);
                     }
                     arg_ts.add_version(tvr);
                 } else if self.default_to_latest {
@@ -170,7 +172,11 @@ impl ToolsetBuilder {
                             ToolSource::Argument,
                         )?;
                         if let Some(opts) = &config_options {
-                            tvr.set_options(opts.clone());
+                            let opts = match arg.ba.explicit_opts() {
+                                Some(overrides) => opts.clone().with_overrides(overrides),
+                                None => opts.clone(),
+                            };
+                            tvr.set_options(opts);
                         }
                         arg_ts.add_version(tvr);
                     } else {
