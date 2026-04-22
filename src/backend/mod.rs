@@ -1116,6 +1116,8 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
 
+        self.repair_runtime_symlink(&ctx.config, &tv)?;
+
         let install_path = tv.install_path();
         if install_path.starts_with(*dirs::INSTALLS) {
             install_state::write_backend_meta(self.ba())?;
@@ -1155,6 +1157,34 @@ pub trait Backend: Debug + Send + Sync {
         }
         ctx.pr.finish_with_message("installed".to_string());
         Ok(tv)
+    }
+
+    fn repair_runtime_symlink(&self, config: &Config, tv: &ToolVersion) -> eyre::Result<()> {
+        if !matches!(
+            tv.request,
+            ToolRequest::Version { .. } | ToolRequest::Prefix { .. }
+        ) {
+            return Ok(());
+        }
+        let Some(request_path) = tv.request.install_path(config) else {
+            return Ok(());
+        };
+        if !request_path.starts_with(&tv.ba().installs_path)
+            || is_runtime_symlink(&request_path)
+            || !request_path.exists()
+        {
+            return Ok(());
+        }
+        if request_path
+            .file_name()
+            .is_none_or(|f| f.to_string_lossy() == tv.version)
+        {
+            return Ok(());
+        }
+
+        file::remove_all(&request_path)?;
+        file::make_symlink_or_file(&PathBuf::from(".").join(tv.tv_pathname()), &request_path)?;
+        Ok(())
     }
 
     async fn run_postinstall_hook(

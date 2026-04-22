@@ -47,6 +47,38 @@ pub async fn rebuild(config: &Config) -> Result<()> {
     Ok(())
 }
 
+pub async fn migrate_real_dirs(config: &Config) -> Result<()> {
+    for backend in backend::list() {
+        let ba = backend.ba();
+        let mut installs_dirs = vec![ba.installs_path.clone()];
+        let tool_dir_name = ba.tool_dir_name();
+        for shared_dir in env::shared_install_dirs() {
+            let dir = shared_dir.join(&tool_dir_name);
+            if dir.is_dir() && !installs_dirs.contains(&dir) {
+                installs_dirs.push(dir);
+            }
+        }
+
+        if let Some(installs_dir) = installs_dirs.first() {
+            migrate_real_dirs_in_dir(config, &backend, installs_dir)?;
+        }
+        for installs_dir in installs_dirs.iter().skip(1) {
+            if let Err(e) = migrate_real_dirs_in_dir(config, &backend, installs_dir) {
+                if is_permission_error(&e) {
+                    warn!(
+                        "skipping runtime symlink migration for {}: {}",
+                        installs_dir.display(),
+                        e
+                    );
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn rebuild_symlinks_in_dir(
     config: &Config,
     backend: &Arc<dyn Backend>,
@@ -67,6 +99,23 @@ fn rebuild_symlinks_in_dir(
         make_symlink_or_file(&to, &from)?;
     }
     remove_missing_symlinks_in_dir(installs_dir)?;
+    Ok(())
+}
+
+fn migrate_real_dirs_in_dir(
+    config: &Config,
+    backend: &Arc<dyn Backend>,
+    installs_dir: &Path,
+) -> Result<()> {
+    let symlinks = list_symlinks_for_dir(config, backend, installs_dir);
+    for (from, to) in symlinks {
+        let from = installs_dir.join(from);
+        if !from.exists() || is_runtime_symlink(&from) {
+            continue;
+        }
+        file::remove_all(&from)?;
+        make_symlink_or_file(&to, &from)?;
+    }
     Ok(())
 }
 
