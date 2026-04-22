@@ -57,6 +57,7 @@ mod hash;
 mod hook_env;
 mod hooks;
 mod http;
+mod install_before;
 mod install_context;
 mod lock_file;
 mod lockfile;

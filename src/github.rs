@@ -15,6 +15,8 @@ use tokio::sync::RwLock;
 use tokio::sync::RwLockReadGuard;
 use xx::regex;
 
+pub(crate) mod sigstore;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GithubRelease {
     pub tag_name: String,
@@ -476,6 +478,12 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     // 4. github_tokens.toml
+    #[cfg(test)]
+    if let Some((token, source)) = test_support::lookup_tokens_file_override(&lookup_hosts)
+        .map(|t| (t, TokenSource::TokensFile))
+    {
+        return Some((token, source));
+    }
     for lookup_host in &lookup_hosts {
         if let Some(token) = MISE_GITHUB_TOKENS.get(*lookup_host) {
             return Some((token.clone(), TokenSource::TokensFile));
@@ -621,17 +629,50 @@ struct GhHostEntry {
     oauth_token: Option<String>,
 }
 
+/// Serializes env-var mutations across every `#[cfg(test)]` module that touches GitHub token
+/// environment variables. `github::tests` and `github::sigstore::tests` both mutate the same
+/// four tokens (`MISE_GITHUB_TOKEN`, `GITHUB_API_TOKEN`, `GITHUB_TOKEN`,
+/// `MISE_GITHUB_ENTERPRISE_TOKEN`); sharing a single lock prevents parallel test runs from
+/// racing.
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    //! Test-only hooks that let sibling modules seed non-env-var token sources without
+    //! spinning up global configuration infrastructure. Only consulted from `resolve_token`
+    //! under `#[cfg(test)]`; production builds never see these statics.
+
+    use std::collections::HashMap;
+    use std::sync::RwLock;
+
+    /// Overrides the `github_tokens.toml` path (source #4 in [`super::resolve_token`]).
+    /// Keyed by the same lookup hosts `resolve_token` walks — e.g. `"github.com"`.
+    /// Hold [`super::TEST_ENV_LOCK`] while mutating; always clear before returning.
+    pub(crate) static TOKENS_FILE_OVERRIDE: RwLock<Option<HashMap<String, String>>> =
+        RwLock::new(None);
+
+    pub(crate) fn lookup_tokens_file_override(lookup_hosts: &[&str]) -> Option<String> {
+        let guard = TOKENS_FILE_OVERRIDE.read().ok()?;
+        let map = guard.as_ref()?;
+        for host in lookup_hosts {
+            if let Some(token) = map.get(*host) {
+                return Some(token.clone());
+            }
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn with_github_token<F, R>(test_fn: F) -> R
     where
         F: FnOnce() -> R,
     {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _guard = super::TEST_ENV_LOCK.lock().unwrap();
         let orig_mise = std::env::var("MISE_GITHUB_TOKEN").ok();
         let orig_api = std::env::var("GITHUB_API_TOKEN").ok();
         let orig_gh = std::env::var("GITHUB_TOKEN").ok();

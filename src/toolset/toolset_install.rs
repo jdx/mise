@@ -17,7 +17,7 @@ use crate::toolset::Toolset;
 use crate::toolset::helpers::show_python_install_hint;
 use crate::toolset::install_options::InstallOptions;
 use crate::toolset::tool_deps::{ToolDeps, tool_key};
-use crate::toolset::tool_request::{ToolRequest, effective_before_date};
+use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::ToolVersion;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -452,16 +452,13 @@ impl Toolset {
         opts: &Arc<InstallOptions>,
     ) -> Result<ToolVersion> {
         let mpr = MultiProgressReport::get();
-        let before_date = effective_before_date(Some(tr), &opts.resolve_options)?;
-        let mut resolve_options = opts.resolve_options.clone();
-        resolve_options.before_date = before_date;
-
-        let mut tv = tr.resolve(config, &resolve_options).await?;
+        let mut tv = tr.resolve(config, &opts.resolve_options).await?;
         if let Some(dir) = &opts.install_dir {
             let tool_dir_name = tv.ba().tool_dir_name();
             tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));
         }
         let backend = tr.backend()?;
+        let before_date = tv.before_date;
 
         let ctx = InstallContext {
             config: config.clone(),

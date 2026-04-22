@@ -439,7 +439,11 @@ async fn query_proxy_version_metadata(
 }
 
 fn parse_goproxy() -> Vec<GoProxy> {
-    let goproxy = std::env::var("GOPROXY").unwrap_or_else(|_| DEFAULT_GOPROXY.to_string());
+    // Treat unset or empty GOPROXY as the default, matching `go env GOPROXY`.
+    let goproxy = std::env::var("GOPROXY")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_GOPROXY.to_string());
     parse_goproxy_value(&goproxy)
 }
 
@@ -655,5 +659,25 @@ mod tests {
             parse_goproxy_value("https://corp-proxy.example.com,off,https://proxy.golang.org");
         assert_eq!(proxies.len(), 1);
         assert_eq!(proxies[0].url, "https://corp-proxy.example.com");
+    }
+
+    #[test]
+    fn parse_goproxy_empty_uses_default() {
+        // SAFETY: test is single-threaded; matches `go env GOPROXY` behavior for GOPROXY=.
+        // The prev guard restores the previous value so parallel test runs stay stable.
+        struct EnvGuard(Option<String>);
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(v) => unsafe { std::env::set_var("GOPROXY", v) },
+                    None => unsafe { std::env::remove_var("GOPROXY") },
+                }
+            }
+        }
+        let _g = EnvGuard(std::env::var("GOPROXY").ok());
+        unsafe { std::env::set_var("GOPROXY", "") };
+        let proxies = parse_goproxy();
+        assert_eq!(proxies.len(), 1);
+        assert_eq!(proxies[0].url, "https://proxy.golang.org");
     }
 }
