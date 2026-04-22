@@ -616,11 +616,10 @@ impl InteractiveConfig {
         let target = self.cursor.target(&self.doc);
 
         match target {
-            Some(CursorTarget::SectionHeader(section_idx)) => {
-                if !self.doc.sections[section_idx].expanded {
+            Some(CursorTarget::SectionHeader(section_idx))
+                if !self.doc.sections[section_idx].expanded => {
                     self.doc.sections[section_idx].expanded = true;
                 }
-            }
             Some(CursorTarget::Entry(section_idx, entry_idx)) => {
                 let entry = &self.doc.sections[section_idx].entries[entry_idx];
                 // Only expand if it's a complex type (array or inline table)
@@ -641,16 +640,14 @@ impl InteractiveConfig {
         let target = self.cursor.target(&self.doc);
 
         match target {
-            Some(CursorTarget::SectionHeader(section_idx)) => {
-                if self.doc.sections[section_idx].expanded {
+            Some(CursorTarget::SectionHeader(section_idx))
+                if self.doc.sections[section_idx].expanded => {
                     self.doc.sections[section_idx].expanded = false;
                 }
-            }
-            Some(CursorTarget::Entry(section_idx, entry_idx)) => {
-                if self.doc.sections[section_idx].entries[entry_idx].expanded {
+            Some(CursorTarget::Entry(section_idx, entry_idx))
+                if self.doc.sections[section_idx].entries[entry_idx].expanded => {
                     self.doc.sections[section_idx].entries[entry_idx].expanded = false;
                 }
-            }
             // If on a child item (array item or inline table field), collapse the parent entry
             Some(CursorTarget::ArrayItem(section_idx, entry_idx, _))
             | Some(CursorTarget::InlineTableField(section_idx, entry_idx, _)) => {
@@ -843,9 +840,9 @@ impl InteractiveConfig {
                 // Move to the new field and edit its value
                 // TODO: implement moving to and editing the new field
             }
-            Some(CursorTarget::AddButton(AddButtonKind::EnvDotenv(section_idx))) => {
+            Some(CursorTarget::AddButton(AddButtonKind::EnvDotenv(section_idx)))
                 // key_name is the filename, add as mise.file = "<filename>"
-                if !key_name.is_empty() {
+                if !key_name.is_empty() => {
                     self.doc
                         .add_entry(section_idx, "mise.file".to_string(), key_name);
                     // Track undo for added entry
@@ -853,10 +850,9 @@ impl InteractiveConfig {
                     self.undo_stack
                         .push(UndoAction::AddEntry(section_idx, new_entry_idx));
                 }
-            }
-            Some(CursorTarget::AddButton(AddButtonKind::EnvSource(section_idx))) => {
+            Some(CursorTarget::AddButton(AddButtonKind::EnvSource(section_idx)))
                 // key_name is the script path, add as _.source = "<script>"
-                if !key_name.is_empty() {
+                if !key_name.is_empty() => {
                     self.doc
                         .add_entry(section_idx, "_.source".to_string(), key_name);
                     // Track undo for added entry
@@ -864,13 +860,12 @@ impl InteractiveConfig {
                     self.undo_stack
                         .push(UndoAction::AddEntry(section_idx, new_entry_idx));
                 }
-            }
             // ToolRegistry and EnvPath are handled in handle_enter directly
             Some(CursorTarget::AddButton(AddButtonKind::ToolRegistry(_)))
             | Some(CursorTarget::AddButton(AddButtonKind::EnvPath(_))) => {}
-            Some(CursorTarget::AddButton(AddButtonKind::ToolBackend(section_idx))) => {
+            Some(CursorTarget::AddButton(AddButtonKind::ToolBackend(section_idx)))
                 // Add backend tool (e.g., cargo:ripgrep) with "latest" as default
-                if !key_name.is_empty() {
+                if !key_name.is_empty() => {
                     self.doc
                         .add_entry(section_idx, key_name, "latest".to_string());
                     // Track undo for added entry
@@ -878,10 +873,9 @@ impl InteractiveConfig {
                     self.undo_stack
                         .push(UndoAction::AddEntry(section_idx, new_entry_idx));
                 }
-            }
-            Some(CursorTarget::AddButton(AddButtonKind::Hook(section_idx))) => {
+            Some(CursorTarget::AddButton(AddButtonKind::Hook(section_idx)))
                 // Add custom hook entry (e.g., custom_hook = "echo hello")
-                if !key_name.is_empty() {
+                if !key_name.is_empty() => {
                     self.doc.add_entry(section_idx, key_name, String::new());
                     // Track undo for added entry
                     let new_entry_idx = self.doc.sections[section_idx].entries.len() - 1;
@@ -892,10 +886,9 @@ impl InteractiveConfig {
                     self.cursor.goto(&self.doc, &target);
                     self.mode = Mode::Edit(InlineEdit::new(""));
                 }
-            }
-            Some(CursorTarget::AddButton(AddButtonKind::TaskConfig(section_idx))) => {
+            Some(CursorTarget::AddButton(AddButtonKind::TaskConfig(section_idx)))
                 // Add custom task_config entry
-                if !key_name.is_empty() {
+                if !key_name.is_empty() => {
                     self.doc.add_entry(section_idx, key_name, String::new());
                     // Track undo for added entry
                     let new_entry_idx = self.doc.sections[section_idx].entries.len() - 1;
@@ -906,10 +899,9 @@ impl InteractiveConfig {
                     self.cursor.goto(&self.doc, &target);
                     self.mode = Mode::Edit(InlineEdit::new(""));
                 }
-            }
-            Some(CursorTarget::AddButton(AddButtonKind::Monorepo(section_idx))) => {
+            Some(CursorTarget::AddButton(AddButtonKind::Monorepo(section_idx)))
                 // Add custom monorepo entry
-                if !key_name.is_empty() {
+                if !key_name.is_empty() => {
                     self.doc.add_entry(section_idx, key_name, String::new());
                     // Track undo for added entry
                     let new_entry_idx = self.doc.sections[section_idx].entries.len() - 1;
@@ -920,7 +912,6 @@ impl InteractiveConfig {
                     self.cursor.goto(&self.doc, &target);
                     self.mode = Mode::Edit(InlineEdit::new(""));
                 }
-            }
             _ => {}
         }
     }

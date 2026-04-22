@@ -246,12 +246,11 @@ impl OutputHandler {
     /// Initialize output handling for a task
     pub fn init_task(&mut self, task: &Task) {
         match self.output(Some(task)) {
-            TaskOutput::KeepOrder => {
+            TaskOutput::KeepOrder
                 // Only add tasks that produce output (not orchestrator-only tasks)
-                if task_needs_permit(task) {
+                if task_needs_permit(task) => {
                     self.keep_order_state.lock().unwrap().init_task(task);
                 }
-            }
             TaskOutput::Replacing => {
                 self.get_or_init_task_pr(task);
             }

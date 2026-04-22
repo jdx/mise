@@ -206,11 +206,10 @@ pub async fn run_one_hook_with_context(
                         continue;
                     }
                 }
-                (Hooks::Cd, Some((_old, new))) => {
-                    if !new.starts_with(root) {
+                (Hooks::Cd, Some((_old, new)))
+                    if !new.starts_with(root) => {
                         continue;
                     }
-                }
                 // Pre/postinstall hooks only run if CWD is under the config root
                 (Hooks::Preinstall | Hooks::Postinstall, _) => {
                     if let Some(cwd) = dirs::CWD.as_ref()
