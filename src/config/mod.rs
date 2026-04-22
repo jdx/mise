@@ -431,7 +431,9 @@ impl Config {
 
     pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
         let tasks = self.tasks().await?;
-        Ok(tasks.values().flat_map(|t| {
+        Ok(tasks
+            .values()
+            .flat_map(|t| {
                 t.aliases
                     .iter()
                     .map(|a| (a.to_string(), t.clone()))

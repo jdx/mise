@@ -617,9 +617,10 @@ impl InteractiveConfig {
 
         match target {
             Some(CursorTarget::SectionHeader(section_idx))
-                if !self.doc.sections[section_idx].expanded => {
-                    self.doc.sections[section_idx].expanded = true;
-                }
+                if !self.doc.sections[section_idx].expanded =>
+            {
+                self.doc.sections[section_idx].expanded = true;
+            }
             Some(CursorTarget::Entry(section_idx, entry_idx)) => {
                 let entry = &self.doc.sections[section_idx].entries[entry_idx];
                 // Only expand if it's a complex type (array or inline table)
@@ -641,13 +642,15 @@ impl InteractiveConfig {
 
         match target {
             Some(CursorTarget::SectionHeader(section_idx))
-                if self.doc.sections[section_idx].expanded => {
-                    self.doc.sections[section_idx].expanded = false;
-                }
+                if self.doc.sections[section_idx].expanded =>
+            {
+                self.doc.sections[section_idx].expanded = false;
+            }
             Some(CursorTarget::Entry(section_idx, entry_idx))
-                if self.doc.sections[section_idx].entries[entry_idx].expanded => {
-                    self.doc.sections[section_idx].entries[entry_idx].expanded = false;
-                }
+                if self.doc.sections[section_idx].entries[entry_idx].expanded =>
+            {
+                self.doc.sections[section_idx].entries[entry_idx].expanded = false;
+            }
             // If on a child item (array item or inline table field), collapse the parent entry
             Some(CursorTarget::ArrayItem(section_idx, entry_idx, _))
             | Some(CursorTarget::InlineTableField(section_idx, entry_idx, _)) => {
