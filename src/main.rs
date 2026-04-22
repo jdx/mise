@@ -149,6 +149,9 @@ fn handle_err(err: Report) -> eyre::Result<()> {
     {
         return Ok(());
     }
+    if is_user_cancelled(&err) {
+        return Ok(());
+    }
 
     // Check for miette diagnostic errors and render them specially
     if let Some(diagnostic) = err.downcast_ref::<config::config_file::diagnostic::MiseDiagnostic>()
@@ -190,6 +193,10 @@ fn display_friendly_err(err: &Report) {
     error!("{msg}");
 }
 
+fn is_user_cancelled(err: &Report) -> bool {
+    err.chain().any(|err| err.to_string() == "user cancelled")
+}
+
 static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
 
 pub fn install_panic_hook() {
@@ -220,4 +227,16 @@ pub fn install_panic_hook() {
 
         default_hook(panic_info);
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eyre::eyre;
+
+    #[test]
+    fn detects_exact_user_cancelled_error() {
+        assert!(is_user_cancelled(&eyre!("user cancelled")));
+        assert!(!is_user_cancelled(&eyre!("download cancelled by user")));
+    }
 }
