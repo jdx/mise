@@ -42,7 +42,7 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_with_fallback, template_string, verify_artifact,
 };
 use crate::backend::version_list;
-use crate::backend::{Backend, VersionInfo};
+use crate::backend::{BackendImpl, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file;
@@ -409,7 +409,7 @@ fn handle_s3_error<E: std::fmt::Debug>(err: E, bucket: &str, key: &str) -> eyre:
 }
 
 #[async_trait]
-impl Backend for S3Backend {
+impl crate::backend::BackendImpl for S3Backend {
     fn get_type(&self) -> BackendType {
         BackendType::S3
     }

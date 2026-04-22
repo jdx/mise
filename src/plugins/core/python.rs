@@ -1,6 +1,6 @@
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_shasums;
-use crate::backend::{Backend, VersionCacheManager, VersionInfo};
+use crate::backend::{BackendImpl, VersionCacheManager, VersionInfo};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -306,7 +306,7 @@ impl PythonPlugin {
             .or_default()
             .url = Some(url.to_string());
 
-        self.verify_checksum(ctx, tv, &tarball_path)?;
+        crate::backend::verify_checksum(self, ctx, tv, &tarball_path)?;
 
         // Check lockfile provenance expectation before verification
         let locked_provenance = tv
@@ -657,7 +657,7 @@ impl PythonPlugin {
 }
 
 #[async_trait]
-impl Backend for PythonPlugin {
+impl crate::backend::BackendImpl for PythonPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -829,7 +829,7 @@ impl Backend for PythonPlugin {
         opts
     }
 
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,

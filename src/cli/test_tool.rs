@@ -197,9 +197,7 @@ impl TestTool {
 
         let mut args = vec![tool.clone()];
         args.extend(
-            tool.ba
-                .backend()?
-                .get_all_dependencies(false)?
+            crate::backend::get_all_dependencies(tool.ba.backend()?.as_ref(), false)?
                 .into_iter()
                 .map(|ba| ba.to_string().parse())
                 .collect::<Result<Vec<ToolArg>>>()?,

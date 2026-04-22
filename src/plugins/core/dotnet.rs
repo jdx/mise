@@ -7,7 +7,7 @@ use eyre::Result;
 use serde_derive::Deserialize;
 use versions::Versioning;
 
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -51,7 +51,7 @@ impl DotnetPlugin {
 }
 
 #[async_trait]
-impl Backend for DotnetPlugin {
+impl crate::backend::BackendImpl for DotnetPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }

@@ -4,7 +4,7 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
+use crate::backend::{BackendImpl, VersionInfo, normalize_idiomatic_contents};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
@@ -120,7 +120,7 @@ impl JavaPlugin {
                 platform_info.checksum = m.checksum.clone();
             }
         }
-        self.verify_checksum(ctx, tv, &tarball_path)?;
+        crate::backend::verify_checksum(self, ctx, tv, &tarball_path)?;
 
         Ok(tarball_path)
     }
@@ -292,7 +292,7 @@ impl JavaPlugin {
 }
 
 #[async_trait]
-impl Backend for JavaPlugin {
+impl crate::backend::BackendImpl for JavaPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -361,25 +361,11 @@ impl Backend for JavaPlugin {
 
     /// Override to bypass the shared remote_versions cache since Java has separate
     /// caches for GA and EA release types in fetch_java_metadata.
-    async fn list_remote_versions_with_info(
+    async fn list_remote_versions_with_info_impl(
         &self,
         config: &Arc<Config>,
     ) -> Result<Vec<VersionInfo>> {
         self._list_remote_versions(config).await
-    }
-
-    fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
-        let versions = self.list_installed_versions();
-        self.fuzzy_match_filter(versions, query)
-    }
-
-    async fn list_versions_matching(
-        &self,
-        config: &Arc<Config>,
-        query: &str,
-    ) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query))
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
@@ -453,7 +439,7 @@ impl Backend for JavaPlugin {
                         HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
                             .await?;
                         // Optionally verify checksum if present
-                        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+                        crate::backend::verify_checksum(self, ctx, &mut tv, &tarball_path)?;
                     }
 
                     // Fetch metadata for installation (for install/move logic)

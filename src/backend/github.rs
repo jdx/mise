@@ -15,7 +15,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
-use crate::{backend::Backend, forgejo, github, gitlab};
+use crate::{backend::BackendImpl, forgejo, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
@@ -74,7 +74,7 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 #[async_trait]
-impl Backend for UnifiedGitBackend {
+impl crate::backend::BackendImpl for UnifiedGitBackend {
     fn get_type(&self) -> BackendType {
         if self.is_gitlab() {
             BackendType::Gitlab
@@ -259,7 +259,7 @@ impl Backend for UnifiedGitBackend {
 
         let latest_tag = if self.is_gitlab() {
             // GitLab doesn't have a "latest" endpoint
-            return self.latest_version_for_query(config, "latest", None).await;
+            return crate::backend::latest_version_for_query(self, config, "latest", None).await;
         } else if self.is_forgejo() {
             match forgejo::get_release_for_url(&api_url, &repo, "latest").await {
                 Ok(r) => Some(r.tag_name),
@@ -284,7 +284,7 @@ impl Backend for UnifiedGitBackend {
 
         match latest_version {
             Some(version) => Ok(Some(version)),
-            None => self.latest_version_for_query(config, "latest", None).await,
+            None => crate::backend::latest_version_for_query(self, config, "latest", None).await,
         }
     }
 
@@ -363,7 +363,7 @@ impl Backend for UnifiedGitBackend {
 
     /// Resolve platform-specific lock information for cross-platform lockfile generation.
     /// This fetches release asset metadata including SHA256 digests from GitHub/GitLab API.
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
@@ -796,7 +796,7 @@ impl UnifiedGitBackend {
             .get(&platform_key)
             .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
 
-        self.verify_checksum(ctx, tv, &file_path)?;
+        crate::backend::verify_checksum(self, ctx, tv, &file_path)?;
 
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();

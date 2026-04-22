@@ -161,7 +161,7 @@ impl Toolset {
         measure!("toolset::list_missing_versions", {
             self.list_current_versions()
                 .into_iter()
-                .filter(|(p, tv)| !p.is_version_installed(config, tv, true))
+                .filter(|(p, tv)| !backend::is_version_installed(p.as_ref(), config, tv, true))
                 .map(|(_, tv)| tv)
                 .collect()
         })
@@ -176,7 +176,7 @@ impl Toolset {
         let current_versions = Arc::new(current_versions);
         let mut versions = vec![];
         for b in backend::list().into_iter() {
-            for v in b.list_installed_versions() {
+            for v in backend::list_installed_versions(b.as_ref()) {
                 if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
                     versions.push((p.clone(), tv.clone()));
                 } else {
@@ -251,7 +251,7 @@ impl Toolset {
     ) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_versions()
             .into_iter()
-            .filter(|(p, tv)| p.is_version_installed(config, tv, true))
+            .filter(|(p, tv)| backend::is_version_installed(p.as_ref(), config, tv, true))
             .collect()
     }
 
@@ -304,7 +304,7 @@ impl Toolset {
                     warn!("Error getting outdated info for {tv}: {e:#}");
                 }
             }
-            if t.symlink_path(&tv).is_some() {
+            if backend::symlink_path(t.as_ref(), &tv).is_some() {
                 trace!("skipping symlinked version {tv}");
                 // do not consider symlinked versions to be outdated
                 return Ok(outdated);
@@ -483,7 +483,7 @@ impl Toolset {
         let mut installed = self.list_current_installed_versions(config);
         Self::sort_by_overrides(&mut installed).unwrap();
         for (p, tv) in installed {
-            match Box::pin(p.which(config, &tv, bin_name)).await {
+            match Box::pin(backend::which(p.as_ref(), config, &tv, bin_name)).await {
                 Ok(Some(_bin)) => return Some((p, tv)),
                 Ok(None) => {}
                 Err(e) => {
@@ -498,7 +498,8 @@ impl Toolset {
         let mut installed = self.list_current_installed_versions(config);
         Self::sort_by_overrides(&mut installed).unwrap();
         for (p, tv) in installed {
-            if let Ok(Some(bin)) = Box::pin(p.which(config, &tv, bin_name)).await {
+            if let Ok(Some(bin)) = Box::pin(backend::which(p.as_ref(), config, &tv, bin_name)).await
+            {
                 return Some(bin);
             }
         }
@@ -512,7 +513,7 @@ impl Toolset {
     ) -> Result<Vec<ToolVersion>> {
         let mut rtvs = vec![];
         for (p, tv) in self.list_installed_versions(config).await? {
-            match p.which(config, &tv, bin_name).await {
+            match backend::which(p.as_ref(), config, &tv, bin_name).await {
                 Ok(Some(_bin)) => rtvs.push(tv),
                 Ok(None) => {}
                 Err(e) => {
@@ -539,7 +540,7 @@ impl Toolset {
                 continue;
             }
             if let Ok(backend) = tv.backend() {
-                let installed = backend.list_installed_versions();
+                let installed = backend::list_installed_versions(backend.as_ref());
                 if !installed.is_empty() {
                     missing.push(tv);
                 }

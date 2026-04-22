@@ -10,7 +10,7 @@ use crate::env::{
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolRequest, ToolVersion};
-use crate::{backend::Backend, toolset::ToolVersionOptions};
+use crate::{backend::BackendImpl, toolset::ToolVersionOptions};
 use crate::{file, github, gitlab, hash};
 use async_trait::async_trait;
 use eyre::bail;
@@ -30,7 +30,7 @@ pub struct UbiBackend {
 }
 
 #[async_trait]
-impl Backend for UbiBackend {
+impl crate::backend::BackendImpl for UbiBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Ubi
     }
@@ -304,45 +304,6 @@ impl Backend for UbiBackend {
             .collect()
     }
 
-    fn verify_checksum(
-        &self,
-        ctx: &InstallContext,
-        tv: &mut ToolVersion,
-        file: &Path,
-    ) -> eyre::Result<()> {
-        // For ubi backend, generate a more specific platform key that includes tool-specific options
-        let mut platform_key = self.get_platform_key();
-        let filename = file.file_name().unwrap().to_string_lossy().to_string();
-
-        if let Some(exe) = tv.request.options().get("exe") {
-            platform_key = format!("{platform_key}-{exe}");
-        }
-        if let Some(matching) = tv.request.options().get("matching") {
-            platform_key = format!("{platform_key}-{matching}");
-        }
-        // Include filename to distinguish different downloads for the same platform
-        platform_key = format!("{platform_key}-{filename}");
-
-        // Get or create platform info for this platform key
-        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
-
-        if let Some(checksum) = &platform_info.checksum {
-            ctx.pr
-                .set_message(format!("checksum verify {platform_key}"));
-            if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
-            } else {
-                bail!("Invalid checksum: {platform_key}");
-            }
-        } else if Settings::get().lockfile_enabled() {
-            ctx.pr
-                .set_message(format!("checksum generate {platform_key}"));
-            let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
-            platform_info.checksum = Some(format!("blake3:{hash}"));
-        }
-        Ok(())
-    }
-
     async fn list_bin_paths(
         &self,
         _config: &Arc<Config>,
@@ -404,6 +365,45 @@ pub fn install_time_option_keys() -> Vec<String> {
 impl UbiBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
+    }
+
+    fn verify_checksum(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        file: &Path,
+    ) -> eyre::Result<()> {
+        // For ubi backend, generate a more specific platform key that includes tool-specific options
+        let mut platform_key = self.get_platform_key();
+        let filename = file.file_name().unwrap().to_string_lossy().to_string();
+
+        if let Some(exe) = tv.request.options().get("exe") {
+            platform_key = format!("{platform_key}-{exe}");
+        }
+        if let Some(matching) = tv.request.options().get("matching") {
+            platform_key = format!("{platform_key}-{matching}");
+        }
+        // Include filename to distinguish different downloads for the same platform
+        platform_key = format!("{platform_key}-{filename}");
+
+        // Get or create platform info for this platform key
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
+
+        if let Some(checksum) = &platform_info.checksum {
+            ctx.pr
+                .set_message(format!("checksum verify {platform_key}"));
+            if let Some((algo, check)) = checksum.split_once(':') {
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
+            } else {
+                bail!("Invalid checksum: {platform_key}");
+            }
+        } else if Settings::get().lockfile_enabled() {
+            ctx.pr
+                .set_message(format!("checksum generate {platform_key}"));
+            let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
+            platform_info.checksum = Some(format!("blake3:{hash}"));
+        }
+        Ok(())
     }
 }
 

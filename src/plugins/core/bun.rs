@@ -17,9 +17,7 @@ use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{
-    backend::{
-        Backend, GitHubReleaseInfo, ReleaseType, VersionInfo, platform_target::PlatformTarget,
-    },
+    backend::{GitHubReleaseInfo, ReleaseType, VersionInfo, platform_target::PlatformTarget},
     config::{Config, Settings},
     platform::Platform,
 };
@@ -90,7 +88,7 @@ impl BunPlugin {
 }
 
 #[async_trait]
-impl Backend for BunPlugin {
+impl crate::backend::BackendImpl for BunPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -151,7 +149,7 @@ impl Backend for BunPlugin {
     ) -> Result<ToolVersion> {
         let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
         ctx.pr.next_operation();
-        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        crate::backend::verify_checksum(self, ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
         self.install(ctx, &tv, &tarball_path)?;
         self.verify(ctx, &tv)?;
@@ -184,7 +182,7 @@ impl Backend for BunPlugin {
         }))
     }
 
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,

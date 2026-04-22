@@ -120,7 +120,7 @@ pub(crate) async fn create_python_venv(
     });
     let installed = if let Some(tv) = tv {
         let backend = backend::get(&ba).unwrap();
-        backend.is_version_installed(config, tv, false)
+        backend::is_version_installed(backend.as_ref(), config, tv, false)
     } else {
         // if no version is specified, we're assuming python3 is provided outside of mise so return "true" here
         true

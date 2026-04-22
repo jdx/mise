@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
@@ -237,7 +237,7 @@ impl ZigPlugin {
 }
 
 #[async_trait]
-impl Backend for ZigPlugin {
+impl crate::backend::BackendImpl for ZigPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -336,7 +336,7 @@ impl Backend for ZigPlugin {
         pi.provenance = Some(ProvenanceType::Minisign);
 
         ctx.pr.next_operation();
-        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        crate::backend::verify_checksum(self, ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
         self.install(ctx, &tv, &tarball_path)?;
         self.verify(ctx, &tv)?;
@@ -390,7 +390,7 @@ impl Backend for ZigPlugin {
         }
     }
 
-    async fn resolve_lock_info(
+    async fn resolve_lock_info_impl(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,

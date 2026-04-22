@@ -39,15 +39,23 @@ The CLI layer provides the user interface and delegates to core functionality:
 
 ### Backend System ([`src/backend/`](https://github.com/jdx/mise/tree/main/src/backend/))
 
-The backend system is mise's core abstraction for tool management, implementing a trait-based architecture:
+The backend system is mise's core abstraction for tool management. Backend implementations provide hooks, while callers use the blanket-implemented operations trait:
 
 ```rust
-pub trait Backend: Debug + Send + Sync {
-    async fn list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>>;
-    async fn install_version(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
-    async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()>;
-    // ... additional methods for lifecycle management
+pub(crate) trait BackendImpl: Debug + Send + Sync {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>>;
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
+    async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>>;
+    // ... additional backend-specific hooks
 }
+
+pub trait Backend: BackendImpl {
+    async fn list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>>;
+    async fn install_version(&self, ctx: InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
+}
+
+backend.list_remote_versions(config).await?;
+backend.install_version(ctx, tv).await?;
 ```
 
 **Backend Categories:**

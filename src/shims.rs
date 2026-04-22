@@ -63,7 +63,7 @@ pub async fn handle_shim() -> Result<()> {
 async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf> {
     let mut ts = ToolsetBuilder::new().build(config).await?;
     if let Some((p, tv)) = ts.which(config, bin_name).await
-        && let Some(bin) = p.which(config, &tv, bin_name).await?
+        && let Some(bin) = backend::which(p.as_ref(), config, &tv, bin_name).await?
     {
         trace!(
             "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
@@ -78,7 +78,7 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
             .unwrap_or_default()
         {
             let p = tv.backend()?;
-            if let Some(bin) = p.which(config, &tv, bin_name).await? {
+            if let Some(bin) = backend::which(p.as_ref(), config, &tv, bin_name).await? {
                 trace!(
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)

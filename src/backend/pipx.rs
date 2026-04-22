@@ -35,7 +35,7 @@ pub struct PIPXBackend {
 }
 
 #[async_trait]
-impl Backend for PIPXBackend {
+impl crate::backend::BackendImpl for PIPXBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Pipx
     }
@@ -185,7 +185,7 @@ impl Backend for PIPXBackend {
                                 Ok(version)
                             }
                         }
-                        _ => this.latest_version_for_query(config, "latest", None).await,
+                        _ => crate::backend::latest_version_for_query(this, config, "latest", None).await,
                     })
                     .await
             },
@@ -202,7 +202,8 @@ impl Backend for PIPXBackend {
             && tv.request.options().get("uvx") != Some("false");
 
         if !use_uvx {
-            self.warn_if_dependency_missing(
+            crate::backend::warn_if_dependency_missing(
+                self,
                 &ctx.config,
                 "pipx",
                 &["pipx"],
@@ -424,7 +425,12 @@ impl PIPXBackend {
             .envs(ts.env_with_path_without_tools(config).await?)
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
-            .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
+            .prepend_path(
+                crate::backend::dependency_toolset(b, config)
+                    .await?
+                    .list_paths(config)
+                    .await,
+            )
     }
 
     async fn pipx_cmd<'a>(
@@ -447,11 +453,18 @@ impl PIPXBackend {
             .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
-            .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
+            .prepend_path(
+                crate::backend::dependency_toolset(b, config)
+                    .await?
+                    .list_paths(config)
+                    .await,
+            )
     }
 
     async fn uv_is_installed(&self, config: &Arc<Config>) -> bool {
-        self.dependency_which(config, "uv").await.is_some()
+        crate::backend::dependency_which(self, config, "uv")
+            .await
+            .is_some()
     }
 }
 

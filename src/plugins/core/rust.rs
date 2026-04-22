@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;
@@ -72,7 +72,7 @@ impl RustPlugin {
 }
 
 #[async_trait]
-impl Backend for RustPlugin {
+impl crate::backend::BackendImpl for RustPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -217,8 +217,10 @@ impl Backend for RustPlugin {
             Ok(oi)
         } else {
             let ts = config.get_toolset().await?;
-            let mut cmd =
-                cmd!(RUSTUP_BIN, "check").env("PATH", self.path_env_for_cmd(config, tv).await?);
+            let mut cmd = cmd!(RUSTUP_BIN, "check").env(
+                "PATH",
+                crate::backend::path_env_for_cmd(self, config, tv).await?,
+            );
             for (k, v) in self.exec_env(config, ts, tv).await? {
                 cmd = cmd.env(k, v);
             }

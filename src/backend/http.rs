@@ -1,4 +1,4 @@
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::{
@@ -598,7 +598,7 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 #[async_trait]
-impl Backend for HttpBackend {
+impl crate::backend::BackendImpl for HttpBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Http
     }

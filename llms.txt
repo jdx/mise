@@ -884,14 +884,22 @@ mise is a Rust-based tool with a modular architecture designed around three main
 #### 3. **Backend System** (`src/backend/`)
 The backend system is the core abstraction for tool management:
 
-**Backend Trait**: Common interface for all tool backends
+**Backend Hooks**: Backend-specific hooks used by shared backend operations
 ```rust
-pub trait Backend: Debug + Send + Sync {
-    async fn list_remote_versions(&self) -> Result<Vec<String>>;
-    async fn install_version(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()>;
-    async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()>;
-    // ... other methods
+pub(crate) trait BackendImpl: Debug + Send + Sync {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>>;
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
+    async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>>;
+    // ... other backend-specific hooks
 }
+
+pub trait Backend: BackendImpl {
+    async fn list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>>;
+    async fn install_version(&self, ctx: InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
+}
+
+backend.list_remote_versions(config).await?;
+backend.install_version(ctx, tv).await?;
 ```
 
 **Backend Types**:

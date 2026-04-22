@@ -20,8 +20,8 @@ use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::{PluginType, Script, ScriptManager};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, plugins::PluginEnum, timeout};
 use crate::{dirs, env, file};
+use crate::{plugins::PluginEnum, timeout};
 use async_trait::async_trait;
 use color_eyre::eyre::{Result, WrapErr, eyre};
 use console::style;
@@ -235,7 +235,7 @@ impl Hash for AsdfBackend {
 }
 
 #[async_trait]
-impl Backend for AsdfBackend {
+impl crate::backend::BackendImpl for AsdfBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Asdf
     }
@@ -269,7 +269,8 @@ impl Backend for AsdfBackend {
         timeout::run_with_timeout_async(
             || async {
                 if !self.plugin.has_latest_stable_script() {
-                    return self.latest_version_for_query(config, "latest", None).await;
+                    return crate::backend::latest_version_for_query(self, config, "latest", None)
+                        .await;
                 }
                 self.latest_stable_cache
                     .get_or_try_init(|| self.plugin.fetch_latest_stable())

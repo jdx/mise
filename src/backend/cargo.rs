@@ -7,7 +7,7 @@ use eyre::{bail, eyre};
 use url::Url;
 
 use crate::Result;
-use crate::backend::Backend;
+use crate::backend::BackendImpl;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
@@ -27,7 +27,7 @@ pub struct CargoBackend {
 }
 
 #[async_trait]
-impl Backend for CargoBackend {
+impl crate::backend::BackendImpl for CargoBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Cargo
     }
@@ -83,7 +83,8 @@ impl Backend for CargoBackend {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         // Check if cargo is available
-        self.warn_if_dependency_missing(
+        crate::backend::warn_if_dependency_missing(
+            self,
             &ctx.config,
             "cargo",
             &["rust", "cargo"],
@@ -159,7 +160,7 @@ impl Backend for CargoBackend {
             .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
             .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
             .prepend_path(
-                self.dependency_toolset(&ctx.config)
+                crate::backend::dependency_toolset(self, &ctx.config)
                     .await?
                     .list_paths(&ctx.config)
                     .await,
@@ -203,7 +204,7 @@ impl CargoBackend {
             return false;
         }
         if file::which_non_pristine("cargo-binstall").is_none() {
-            match self.dependency_toolset(config).await {
+            match crate::backend::dependency_toolset(self, config).await {
                 Ok(ts) => {
                     if ts.which(config, "cargo-binstall").await.is_none() {
                         return false;

@@ -45,7 +45,11 @@ impl Where {
 
         let tv = tvr.resolve(&config, &Default::default()).await?;
 
-        if tv.backend()?.is_version_installed(&config, &tv, true) {
+        let res = {
+            let backend = tv.backend()?;
+            backend.is_version_installed(&config, &tv, true)
+        };
+        if res {
             miseprintln!("{}", tv.install_path().to_string_lossy());
             Ok(())
         } else {
