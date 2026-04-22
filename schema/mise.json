@@ -1182,10 +1182,26 @@
               "deprecated": true
             },
             "package_manager": {
-              "default": "npm",
+              "default": "auto",
               "description": "Package manager to use for installing npm packages.",
               "type": "string",
-              "enum": ["npm", "bun", "pnpm"]
+              "enum": ["auto", "npm", "aube", "bun", "pnpm"]
+            }
+          }
+        },
+        "oci": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default_from": {
+              "default": "debian:bookworm-slim",
+              "description": "Default base image for `mise oci build` when [oci].from is not set.",
+              "type": "string"
+            },
+            "default_mount_point": {
+              "default": "/mise",
+              "description": "Path inside OCI images where mise tools are installed.",
+              "type": "string"
             }
           }
         },
@@ -1462,13 +1478,13 @@
               "description": "Show a warning if tools are not installed when entering a directory with a mise.toml file.",
               "type": "string"
             },
-            "show_env": {
-              "description": "Show configured env vars when entering a directory with a mise.toml file.",
+            "show_deps_stale": {
+              "default": true,
+              "description": "Show warning when deps providers have stale dependencies.",
               "type": "boolean"
             },
-            "show_prepare_stale": {
-              "default": true,
-              "description": "Show warning when prepare providers have stale dependencies.",
+            "show_env": {
+              "description": "Show configured env vars when entering a directory with a mise.toml file.",
               "type": "boolean"
             },
             "show_tools": {
@@ -2394,7 +2410,7 @@
         ]
       }
     },
-    "prepare_provider": {
+    "deps_provider": {
       "type": "object",
       "properties": {
         "auto": {
@@ -2454,7 +2470,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Other prepare providers that must complete before this one runs"
+          "description": "Other deps providers that must complete before this one runs"
         },
         "timeout": {
           "type": "string",
@@ -3263,7 +3279,7 @@
       "description": "plugins to use",
       "type": "object"
     },
-    "prepare": {
+    "deps": {
       "type": "object",
       "properties": {
         "disable": {
@@ -3271,43 +3287,98 @@
           "items": {
             "type": "string"
           },
-          "description": "Disable specific prepare providers"
+          "description": "Disable specific deps providers"
         },
         "npm": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "yarn": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "pnpm": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "bun": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "go": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "pip": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "poetry": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "uv": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "bundler": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         },
         "composer": {
-          "$ref": "#/$defs/prepare_provider"
+          "$ref": "#/$defs/deps_provider"
         }
       },
       "additionalProperties": {
-        "$ref": "#/$defs/prepare_provider"
+        "$ref": "#/$defs/deps_provider"
       },
-      "description": "configure prepare providers"
+      "description": "configure deps providers"
+    },
+    "oci": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "configuration for `mise oci build`",
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Base image reference (overrides the oci.default_from setting)"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Default tag applied to the built image"
+        },
+        "workdir": {
+          "type": "string",
+          "description": "Working directory baked into the image config"
+        },
+        "entrypoint": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Entrypoint baked into the image config"
+        },
+        "cmd": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Cmd baked into the image config"
+        },
+        "user": {
+          "type": "string",
+          "description": "User baked into the image config"
+        },
+        "mount_point": {
+          "type": "string",
+          "description": "Override where mise installs go in the image (default /mise)"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Extra env vars baked into the image config"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels baked into the image config"
+        }
+      }
     },
     "settings": {
       "$ref": "#/$defs/settings",

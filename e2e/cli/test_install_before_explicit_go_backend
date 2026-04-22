@@ -21,4 +21,5 @@ install_before = "2026-04-07"
 'go:github.com/roborev-dev/roborev/cmd/roborev' = { version = "latest", install_before = "2100-01-01" }
 EOF
 
-assert_contains "mise install --dry-run 2>&1" "go:github.com/roborev-dev/roborev/cmd/roborev@0.51.0"
+assert_matches "mise install --dry-run 2>&1" "go:github.com/roborev-dev/roborev/cmd/roborev@[0-9]+\.[0-9]+\.[0-9]+"
+assert_not_contains "mise install --dry-run 2>&1" "go:github.com/roborev-dev/roborev/cmd/roborev@0.50.0"

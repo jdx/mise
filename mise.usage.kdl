@@ -287,7 +287,7 @@ cmd exec help="Execute a command with tool(s) set" {
     flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
     flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
-    flag --no-prepare help="Skip automatic dependency preparation"
+    flag --no-deps help="Skip automatic dependency preparation"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOL@VERSION]…" help="Tool(s) to start e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Command string to execute (same as --command)" required=#false var=#true
@@ -522,8 +522,12 @@ cmd install-into help="Install a tool version to a specific path" {
 }
 cmd latest help="Gets the latest available version for a plugin" {
     long_help "Gets the latest available version for a plugin\n\nSupports prefixes such as `node@20` to get the latest version of node 20."
-    after_long_help "Examples:\n\n    $ mise latest node@20  # get the latest version of node 20\n    20.0.0\n\n    $ mise latest node     # get the latest stable version of node\n    20.0.0\n"
+    after_long_help "Examples:\n\n    $ mise latest node@20  # get the latest version of node 20\n    20.0.0\n\n    $ mise latest node     # get the latest stable version of node\n    20.0.0\n\n    $ mise latest node --before 2024-01-01  # latest stable node released before 2024-01-01\n"
     flag "-i --installed" help="Show latest installed instead of available version"
+    flag --before help="Only consider versions released before this date" {
+        long_help "Only consider versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\".\nOverrides per-tool `install_before` options and the global `install_before` setting."
+        arg <BEFORE>
+    }
     arg <TOOL@VERSION> help="Tool to get the latest version of"
     arg "[ASDF_VERSION]" help="The version prefix to use when querying the latest version same as the first argument after the \"@\" used for asdf compatibility" required=#false hide=#true
 }
@@ -597,6 +601,81 @@ cmd ls-remote help="List runtime versions available for install." {
 cmd mcp help="[experimental] Run Model Context Protocol (MCP) server" {
     long_help "[experimental] Run Model Context Protocol (MCP) server\n\nThis command starts an MCP server that exposes mise functionality\nto AI assistants over stdin/stdout using JSON-RPC protocol.\n\nThe MCP server provides access to:\n- Installed and available tools\n- Task definitions and execution\n- Environment variables\n- Configuration information\n- Task execution via the run_task tool\n\nResources available:\n- mise://tools - List all tools (use ?include_inactive=true to include inactive tools)\n- mise://tasks - List all tasks with their configurations\n- mise://env - List all environment variables\n- mise://config - Show configuration files and project root\n\nTools available:\n- install_tool - Install a tool with an optional version (not yet implemented)\n- run_task - Execute a mise task with optional arguments\n\nNote: This is primarily intended for integration with AI assistants like Claude,\nCursor, or other tools that support the Model Context Protocol."
     after_long_help "Examples:\n\n    # Start the MCP server (typically used by AI assistant tools)\n    $ mise mcp\n\n    # Example integration with Claude Desktop (add to claude_desktop_config.json):\n    {\n      \"mcpServers\": {\n        \"mise\": {\n          \"command\": \"mise\",\n          \"args\": [\"mcp\"],\n          \"env\": {\n            \"MISE_EXPERIMENTAL\": \"1\"\n          }\n        }\n      }\n    }\n\n    # Interactive testing with JSON-RPC commands:\n    $ echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}' | mise mcp\n\n    # Resources you can query:\n    - mise://tools - List active tools\n    - mise://tools?include_inactive=true - List all installed tools\n    - mise://tasks - List all tasks\n    - mise://env - List environment variables\n    - mise://config - Show configuration info\n\n    # Tools available:\n    - install_tool - Install a tool (not yet implemented)\n    - run_task - Execute a mise task with optional arguments\n      Example: {\"task\": \"build\", \"args\": [\"--verbose\"]}\n"
+}
+cmd oci subcommand_required=#true help="[experimental] Build OCI container images from a mise.toml" {
+    long_help "[experimental] Build OCI container images from a mise.toml\n\nEach tool becomes its own OCI layer, so bumping any single tool version\nonly invalidates one content-addressable blob — unlike a Dockerfile where\nchanging an early `RUN` invalidates every layer above it.\n\nThis command is experimental and requires `mise settings experimental=true`\n(or `MISE_EXPERIMENTAL=1`). Behavior, flags, and output layout may change\nin future releases."
+    cmd build help="[experimental] Build an OCI image from the current mise.toml" {
+        long_help "[experimental] Build an OCI image from the current mise.toml\n\nEach tool version becomes its own content-addressable OCI layer. Bumping a\ntool version only invalidates that tool's layer — other tools, the base\nimage, and config are reused unchanged. The output directory conforms to\nthe OCI image-layout spec and can be consumed by `skopeo`, `crane`, or\n`podman load`.\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`)."
+        after_long_help "Examples:\n\n    Build with defaults (debian:bookworm-slim base):\n    $ mise oci build\n\n    Build with a specific base image and tag:\n    $ mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img\n\n    Inspect the result with skopeo:\n    $ skopeo inspect oci:./mise-oci\n\n    Push to a registry:\n    $ skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest\n\nNotes:\n\n    - asdf and vfox plugins are not supported in v1; use a different backend\n      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
+        flag "-o --output" help="Output directory for the OCI image layout" default="./mise-oci" {
+            arg <OUTPUT>
+        }
+        flag --from help="Base image reference (overrides [oci].from and the oci.default_from setting)" {
+            arg <FROM>
+        }
+        flag "-t --tag" help="Tag to record in the image index (the org.opencontainers.image.ref.name annotation)" {
+            arg <TAG>
+        }
+        flag --mount-point help="Where to place tool installs inside the image (default: /mise)" {
+            arg <MOUNT_POINT>
+        }
+        flag --no-mise help="Do not embed the currently-running mise binary at /usr/local/bin/mise"
+    }
+    cmd push help="[experimental] Build an OCI image and push it to a registry" {
+        long_help "[experimental] Build an OCI image and push it to a registry\n\nRequires `skopeo` (or `crane`) on PATH. If `--image-dir` is not passed,\nbuilds fresh from the current mise.toml first, then shells out to\n`skopeo copy oci:<dir> docker://<ref>` (or `crane push <dir> <ref>`).\nAuthentication is handled by the underlying tool — configure it the same\nway you would for a plain `skopeo` / `crane` push (e.g. `docker login`,\n`REGISTRY_AUTH_FILE`, `~/.config/containers/auth.json`).\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`)."
+        after_long_help "Examples:\n\n    Build and push to GHCR:\n    $ mise oci push ghcr.io/me/devenv:latest\n\n    Push an image built earlier:\n    $ mise oci build -o ./img\n    $ mise oci push --image-dir ./img ghcr.io/me/devenv:v1\n\n    Force a specific push tool:\n    $ mise oci push --tool crane ghcr.io/me/devenv:latest\n\nAuth:\n\n    mise shells out to skopeo (preferred) or crane; configure registry\n    credentials the usual way — `docker login`, `REGISTRY_AUTH_FILE`,\n    or `~/.config/containers/auth.json` for skopeo; `crane auth login`\n    for crane.\n"
+        flag --from help="Base image for the build (ignored with --image-dir)" {
+            arg <FROM>
+        }
+        flag --image-dir help="Push an already-built OCI image layout (skip the build step)" {
+            arg <IMAGE_DIR>
+        }
+        flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
+            arg <MOUNT_POINT>
+        }
+        flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag --tool help="Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`" default=auto {
+            arg <TOOL> {
+                choices auto skopeo crane
+            }
+        }
+        arg <REF> help="Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)"
+    }
+    cmd run help="[experimental] Build an OCI image from the current mise.toml and run a command in it" {
+        long_help "[experimental] Build an OCI image from the current mise.toml and run a command in it\n\nEquivalent to `mise oci build` followed by `docker run` / `podman run`.\nThe built image is loaded into the local container engine (podman is\npreferred; docker works via skopeo) and the given command is executed\ninside it with stdin/stdout/stderr inherited.\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and\none of: `podman`, `docker+skopeo`."
+        after_long_help "Examples:\n\n    Build the current mise.toml and drop into bash:\n    $ mise oci run -it -- bash\n\n    Run a one-shot command with env + volume (note: `-v` is reserved\n    for --verbose, so use `--volume`):\n    $ mise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test\n\n    Re-use a previously built layout (skip the build step):\n    $ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'\n\nEngines:\n\n    Prefers podman (loads OCI layouts natively). Falls back to\n    docker + skopeo. Pass --engine podman or --engine docker to override.\n"
+        flag --engine help="Container engine to use (`auto`, `podman`, or `docker`)" default=auto {
+            arg <ENGINE> {
+                choices auto podman docker
+            }
+        }
+        flag --from help="Base image reference for the build (ignored with --image-dir)" {
+            arg <FROM>
+        }
+        flag --image-dir help="Use an already-built OCI image layout instead of building fresh" {
+            arg <IMAGE_DIR>
+        }
+        flag --keep help="Keep the loaded image in the engine's storage after the run" {
+            long_help "Keep the loaded image in the engine's storage after the run\n\nBy default, both the container (`--rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `--keep` to retain the image under the tag mise used (`mise-oci:run-*` for docker; the pulled image ID for podman)."
+        }
+        flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
+            arg <MOUNT_POINT>
+        }
+        flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag --volume help="Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)" var=#true {
+            long_help "Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)\n\nNote: unlike `docker run -v`, there's no `-v` short flag here because mise reserves `-v` for --verbose. Use `--volume` or `--mount`."
+            arg <HOST:CONTAINER>
+        }
+        flag "-e --env" help="Set environment variable in the container (repeatable, `KEY=VAL`)" var=#true {
+            arg "<KEY=VAL>"
+        }
+        flag "-i --interactive" help="Run interactively (pass `-i` to the engine)"
+        flag "-t --tty" help="Allocate a TTY (pass `-t` to the engine)"
+        flag "-w --workdir" help="Working directory inside the container" {
+            arg <WORKDIR>
+        }
+        arg "[-- CMD]…" help="Command and arguments to run inside the container (after `--`)" required=#false var=#true
+    }
 }
 cmd outdated help="Shows outdated tool versions" {
     long_help "Shows outdated tool versions\n\nSee `mise upgrade` to upgrade these versions."
@@ -679,21 +758,45 @@ cmd plugins help="Manage plugins" {
         arg "[PLUGIN]…" help="Plugin(s) to update" required=#false var=#true
     }
 }
-cmd prepare help="[experimental] Ensure project dependencies are ready" {
-    alias prep
-    long_help "[experimental] Ensure project dependencies are ready\n\nRuns all applicable prepare steps for the current project.\nThis checks if dependency lockfiles are newer than installed outputs\n(e.g., package-lock.json vs node_modules/) and runs install commands\nif needed.\n\nProviders with `auto = true` are automatically invoked before `mise x` and `mise run`\nunless skipped with the --no-prepare flag."
-    after_long_help "Examples:\n\n    $ mise prepare              # Run all applicable prepare steps\n    $ mise prepare npm          # Run only npm prepare\n    $ mise prepare npm --explain # Show why npm is fresh or stale\n    $ mise prepare --dry-run    # Show what would run without executing\n    $ mise prepare --force      # Force run even if outputs are fresh\n    $ mise prepare --list       # List available prepare providers\n    $ mise prepare --skip npm   # Skip npm prepare\n\nConfiguration:\n\n```toml\n# Built-in npm provider (auto-detects lockfile)\n[prepare.npm]\nauto = true              # Auto-run before mise x/run\n\n# Custom provider\n[prepare.codegen]\nauto = true\nsources = [\"schema/*.graphql\"]\noutputs = [\"src/generated/\"]\nrun = \"npm run codegen\"\n\n[prepare]\ndisable = [\"npm\"]        # Disable specific providers at runtime\n```\n"
+cmd deps help="[experimental] Manage project dependencies" {
+    alias dep
+    alias prepare hide=#true
+    long_help "[experimental] Manage project dependencies\n\nRuns all applicable dependency install steps for the current project.\nThis checks if dependency lockfiles are newer than installed outputs\n(e.g., package-lock.json vs node_modules/) and runs install commands\nif needed.\n\nProviders with `auto = true` are automatically invoked before `mise x` and `mise run`\nunless skipped with the --no-deps flag."
+    after_long_help "Examples:\n\n    $ mise deps                    # Install all project dependencies\n    $ mise deps install            # Same as bare `mise deps`\n    $ mise deps install --force    # Force reinstall even if fresh\n    $ mise deps install --dry-run  # Show what would run\n    $ mise deps add npm:react      # Add a dependency\n    $ mise deps add -D npm:vitest  # Add a dev dependency\n    $ mise deps remove npm:lodash  # Remove a dependency\n\nConfiguration:\n\n```toml\n# Built-in npm provider (auto-detects lockfile)\n[deps.npm]\nauto = true              # Auto-run before mise x/run\n\n# Custom provider\n[deps.codegen]\nauto = true\nsources = [\"schema/*.graphql\"]\noutputs = [\"src/generated/\"]\nrun = \"npm run codegen\"\n\n[deps]\ndisable = [\"npm\"]        # Disable specific providers at runtime\n```\n"
     flag --explain help="Show why a provider is fresh or stale (requires a provider argument)"
-    flag "-f --force" help="Force run all prepare steps even if outputs are fresh"
-    flag "-n --dry-run" help="Only check if prepare is needed, don't run commands"
-    flag --list help="Show what prepare steps are available"
-    flag --only help="Run specific prepare rule(s) only" var=#true {
+    flag "-f --force" help="Force run all deps steps even if outputs are fresh"
+    flag "-n --dry-run" help="Only check if deps install is needed, don't run commands"
+    flag --list help="Show what deps providers are available"
+    flag --only help="Run specific deps rule(s) only" var=#true {
         arg <ONLY>
     }
-    flag --skip help="Skip specific prepare rule(s)" var=#true {
+    flag --skip help="Skip specific deps rule(s)" var=#true {
         arg <SKIP>
     }
     arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
+    cmd add help="Add a dependency" {
+        long_help "Add a dependency\n\nAdds one or more packages to the project using the appropriate package manager.\nPackage specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@types/react@19`."
+        flag "-D --dev" help="Add as a development dependency"
+        arg <PACKAGES>… help="Package(s) to add (e.g., npm:react, npm:@types/react@19)" var=#true
+    }
+    cmd install help="Install all project dependencies" {
+        long_help "Install all project dependencies\n\nChecks if dependency lockfiles are newer than installed outputs\nand runs install commands if needed."
+        flag --explain help="Show why a provider is fresh or stale (requires a provider argument)"
+        flag "-f --force" help="Force run all deps steps even if outputs are fresh"
+        flag "-n --dry-run" help="Only check if deps install is needed, don't run commands"
+        flag --list help="Show what deps providers are available"
+        flag --only help="Run specific deps rule(s) only" var=#true {
+            arg <ONLY>
+        }
+        flag --skip help="Skip specific deps rule(s)" var=#true {
+            arg <SKIP>
+        }
+        arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
+    }
+    cmd remove help="Remove a dependency" {
+        long_help "Remove a dependency\n\nRemoves one or more packages from the project using the appropriate package manager.\nPackage specs use the format `ecosystem:package`, e.g., `npm:lodash`."
+        arg <PACKAGES>… help="Package(s) to remove (e.g., npm:lodash)" var=#true
+    }
 }
 cmd prune help="Delete unused versions of tools" {
     long_help "Delete unused versions of tools\n\nmise tracks which config files have been used in ~/.local/state/mise/tracked-configs\nVersions which are no longer the latest specified in any of those configs are deleted.\nVersions installed only with environment variables `MISE_<PLUGIN>_VERSION` will be deleted,\nas will versions only referenced on the command line `mise exec <PLUGIN>@<VERSION>`.\n\nYou can list prunable tools with `mise ls --prunable`"
@@ -771,7 +874,7 @@ cmd run restart_token=::: help="Run task(s)" {
     flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use cache on remote tasks"
-    flag --no-prepare help="Skip automatic dependency preparation"
+    flag --no-deps help="Skip automatic dependency preparation"
     flag --no-timings help="Hides elapsed time after each task completes" {
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
@@ -800,7 +903,7 @@ cmd search help="Search for tools in the registry" {
     arg "[NAME]" help="The tool to search for" required=#false
 }
 cmd self-update help="Updates mise itself." {
-    long_help "Updates mise itself.\n\nUses the GitHub Releases API to find the latest release and binary.\nBy default, this will also update any installed plugins.\nUses the `GITHUB_API_TOKEN` environment variable if set for higher rate limits.\n\nThis command is not available if mise is installed via a package manager."
+    long_help "Updates mise itself.\n\nUses the GitHub Releases API to find the latest release and binary.\nBy default, this will also update any installed plugins.\nUses mise's GitHub token resolution chain for authenticated requests.\n\nThis command is not available if mise is installed via a package manager."
     flag "-f --force" help="Update even if already up to date"
     flag "-y --yes" help="Skip confirmation prompt"
     flag --no-plugins help="Disable auto-updating plugins"
@@ -1102,7 +1205,7 @@ cmd tasks help="Manage tasks" {
         flag --deny-write help="[experimental] Block all filesystem writes"
         flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use cache on remote tasks"
-        flag --no-prepare help="Skip automatic dependency preparation"
+        flag --no-deps help="Skip automatic dependency preparation"
         flag --no-timings help="Hides elapsed time after each task completes" {
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }

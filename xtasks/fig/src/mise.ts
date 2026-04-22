@@ -1045,7 +1045,7 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--no-prepare",
+          name: "--no-deps",
           description: "Skip automatic dependency preparation",
           isRepeatable: false,
         },
@@ -1561,6 +1561,14 @@ const completionSpec: Fig.Spec = {
           description: "Show latest installed instead of available version",
           isRepeatable: false,
         },
+        {
+          name: "--before",
+          description: "Only consider versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
+          },
+        },
       ],
       args: {
         name: "tool@version",
@@ -1765,6 +1773,221 @@ const completionSpec: Fig.Spec = {
     {
       name: "mcp",
       description: "[experimental] Run Model Context Protocol (MCP) server",
+    },
+    {
+      name: "oci",
+      description: "[experimental] Build OCI container images from a mise.toml",
+      subcommands: [
+        {
+          name: "build",
+          description:
+            "[experimental] Build an OCI image from the current mise.toml",
+          options: [
+            {
+              name: ["-o", "--output"],
+              description: "Output directory for the OCI image layout",
+              isRepeatable: false,
+              args: {
+                name: "output",
+              },
+            },
+            {
+              name: "--from",
+              description:
+                "Base image reference (overrides [oci].from and the oci.default_from setting)",
+              isRepeatable: false,
+              args: {
+                name: "from",
+              },
+            },
+            {
+              name: ["-t", "--tag"],
+              description:
+                "Tag to record in the image index (the org.opencontainers.image.ref.name annotation)",
+              isRepeatable: false,
+              args: {
+                name: "tag",
+              },
+            },
+            {
+              name: "--mount-point",
+              description:
+                "Where to place tool installs inside the image (default: /mise)",
+              isRepeatable: false,
+              args: {
+                name: "mount_point",
+              },
+            },
+            {
+              name: "--no-mise",
+              description:
+                "Do not embed the currently-running mise binary at /usr/local/bin/mise",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
+          name: "push",
+          description:
+            "[experimental] Build an OCI image and push it to a registry",
+          options: [
+            {
+              name: "--from",
+              description:
+                "Base image for the build (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "from",
+              },
+            },
+            {
+              name: "--image-dir",
+              description:
+                "Push an already-built OCI image layout (skip the build step)",
+              isRepeatable: false,
+              args: {
+                name: "image_dir",
+                template: "folders",
+              },
+            },
+            {
+              name: "--mount-point",
+              description:
+                "Override in-image mount point (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "mount_point",
+              },
+            },
+            {
+              name: "--no-mise",
+              description:
+                "Don't embed the mise binary (ignored with --image-dir)",
+              isRepeatable: false,
+            },
+            {
+              name: "--tool",
+              description:
+                "Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`",
+              isRepeatable: false,
+              args: {
+                name: "tool",
+                generators: completionGeneratorTemplate(
+                  `mise registry --complete`
+                ),
+                suggestions: ["auto", "skopeo", "crane"],
+                debounce: true,
+              },
+            },
+          ],
+          args: {
+            name: "ref",
+            description:
+              "Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)",
+          },
+        },
+        {
+          name: "run",
+          description:
+            "[experimental] Build an OCI image from the current mise.toml and run a command in it",
+          options: [
+            {
+              name: "--engine",
+              description:
+                "Container engine to use (`auto`, `podman`, or `docker`)",
+              isRepeatable: false,
+              args: {
+                name: "engine",
+                suggestions: ["auto", "podman", "docker"],
+              },
+            },
+            {
+              name: "--from",
+              description:
+                "Base image reference for the build (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "from",
+              },
+            },
+            {
+              name: "--image-dir",
+              description:
+                "Use an already-built OCI image layout instead of building fresh",
+              isRepeatable: false,
+              args: {
+                name: "image_dir",
+                template: "folders",
+              },
+            },
+            {
+              name: "--keep",
+              description:
+                "Keep the loaded image in the engine's storage after the run",
+              isRepeatable: false,
+            },
+            {
+              name: "--mount-point",
+              description:
+                "Override in-image mount point (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "mount_point",
+              },
+            },
+            {
+              name: "--no-mise",
+              description:
+                "Don't embed the mise binary (ignored with --image-dir)",
+              isRepeatable: false,
+            },
+            {
+              name: "--volume",
+              description:
+                "Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)",
+              isRepeatable: true,
+              args: {
+                name: "host:container",
+              },
+            },
+            {
+              name: ["-e", "--env"],
+              description:
+                "Set environment variable in the container (repeatable, `KEY=VAL`)",
+              isRepeatable: true,
+              args: {
+                name: "key=val",
+              },
+            },
+            {
+              name: ["-i", "--interactive"],
+              description: "Run interactively (pass `-i` to the engine)",
+              isRepeatable: false,
+            },
+            {
+              name: ["-t", "--tty"],
+              description: "Allocate a TTY (pass `-t` to the engine)",
+              isRepeatable: false,
+            },
+            {
+              name: ["-w", "--workdir"],
+              description: "Working directory inside the container",
+              isRepeatable: false,
+              args: {
+                name: "workdir",
+                template: "folders",
+              },
+            },
+          ],
+          args: {
+            name: "cmd",
+            description:
+              "Command and arguments to run inside the container (after `--`)",
+            isOptional: true,
+            isVariadic: true,
+          },
+        },
+      ],
     },
     {
       name: "outdated",
@@ -1979,8 +2202,86 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
-      name: ["prepare", "prep"],
-      description: "[experimental] Ensure project dependencies are ready",
+      name: ["deps", "dep"],
+      description: "[experimental] Manage project dependencies",
+      subcommands: [
+        {
+          name: "add",
+          description: "Add a dependency",
+          options: [
+            {
+              name: ["-D", "--dev"],
+              description: "Add as a development dependency",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "packages",
+            description:
+              "Package(s) to add (e.g., npm:react, npm:@types/react@19)",
+            isVariadic: true,
+          },
+        },
+        {
+          name: "install",
+          description: "Install all project dependencies",
+          options: [
+            {
+              name: "--explain",
+              description:
+                "Show why a provider is fresh or stale (requires a provider argument)",
+              isRepeatable: false,
+            },
+            {
+              name: ["-f", "--force"],
+              description: "Force run all deps steps even if outputs are fresh",
+              isRepeatable: false,
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Only check if deps install is needed, don't run commands",
+              isRepeatable: false,
+            },
+            {
+              name: "--list",
+              description: "Show what deps providers are available",
+              isRepeatable: false,
+            },
+            {
+              name: "--only",
+              description: "Run specific deps rule(s) only",
+              isRepeatable: true,
+              args: {
+                name: "only",
+              },
+            },
+            {
+              name: "--skip",
+              description: "Skip specific deps rule(s)",
+              isRepeatable: true,
+              args: {
+                name: "skip",
+              },
+            },
+          ],
+          args: {
+            name: "provider",
+            description:
+              "Provider to operate on (runs only this provider, or use with --explain)",
+            isOptional: true,
+          },
+        },
+        {
+          name: "remove",
+          description: "Remove a dependency",
+          args: {
+            name: "packages",
+            description: "Package(s) to remove (e.g., npm:lodash)",
+            isVariadic: true,
+          },
+        },
+      ],
       options: [
         {
           name: "--explain",
@@ -1990,22 +2291,23 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["-f", "--force"],
-          description: "Force run all prepare steps even if outputs are fresh",
+          description: "Force run all deps steps even if outputs are fresh",
           isRepeatable: false,
         },
         {
           name: ["-n", "--dry-run"],
-          description: "Only check if prepare is needed, don't run commands",
+          description:
+            "Only check if deps install is needed, don't run commands",
           isRepeatable: false,
         },
         {
           name: "--list",
-          description: "Show what prepare steps are available",
+          description: "Show what deps providers are available",
           isRepeatable: false,
         },
         {
           name: "--only",
-          description: "Run specific prepare rule(s) only",
+          description: "Run specific deps rule(s) only",
           isRepeatable: true,
           args: {
             name: "only",
@@ -2013,7 +2315,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--skip",
-          description: "Skip specific prepare rule(s)",
+          description: "Skip specific deps rule(s)",
           isRepeatable: true,
           args: {
             name: "skip",
@@ -2267,7 +2569,7 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--no-prepare",
+          name: "--no-deps",
           description: "Skip automatic dependency preparation",
           isRepeatable: false,
         },
@@ -3178,7 +3480,7 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
-              name: "--no-prepare",
+              name: "--no-deps",
               description: "Skip automatic dependency preparation",
               isRepeatable: false,
             },

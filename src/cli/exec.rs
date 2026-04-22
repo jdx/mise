@@ -12,8 +12,8 @@ use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
 use crate::config::{Config, Settings};
+use crate::deps::{DepsEngine, DepsOptions};
 use crate::env;
-use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
@@ -92,7 +92,7 @@ pub struct Exec {
 
     /// Skip automatic dependency preparation
     #[clap(long)]
-    pub no_prepare: bool,
+    pub no_deps: bool,
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
@@ -167,11 +167,11 @@ impl Exec {
 
         let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
 
-        // Run auto-enabled prepare steps (unless --no-prepare)
-        if !self.no_prepare {
-            let engine = PrepareEngine::new(&config)?;
+        // Run auto-enabled deps steps (unless --no-deps)
+        if !self.no_deps {
+            let engine = DepsEngine::new(&config)?;
             engine
-                .run(PrepareOptions {
+                .run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
                     env: env.clone(),
                     ..Default::default()

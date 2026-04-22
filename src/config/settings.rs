@@ -93,7 +93,9 @@ pub enum SettingsStatusMissingTools {
 #[strum(serialize_all = "snake_case")]
 pub enum NpmPackageManager {
     #[default]
+    Auto,
     Npm,
+    Aube,
     Bun,
     Pnpm,
 }

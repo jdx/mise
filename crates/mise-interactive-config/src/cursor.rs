@@ -47,8 +47,8 @@ pub enum AddButtonKind {
     EnvVariable(usize),
     /// Add a task (section index) - for [tasks] section
     Task(usize),
-    /// Add a prepare provider (section index) - for [prepare] section
-    Prepare(usize),
+    /// Add a deps provider (section index) - for [deps] section
+    Deps(usize),
     /// Add a setting via picker (section index) - for [settings] section
     Setting(usize),
     /// Add a hook via picker (section index) - for [hooks] section
@@ -305,8 +305,8 @@ impl Cursor {
             "tasks" => {
                 items.push(CursorTarget::AddButton(AddButtonKind::Task(section_idx)));
             }
-            "prepare" => {
-                items.push(CursorTarget::AddButton(AddButtonKind::Prepare(section_idx)));
+            "deps" => {
+                items.push(CursorTarget::AddButton(AddButtonKind::Deps(section_idx)));
             }
             "settings" => {
                 items.push(CursorTarget::AddButton(AddButtonKind::Setting(section_idx)));

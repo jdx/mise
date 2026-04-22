@@ -75,7 +75,7 @@ which python
 
 If you want `mise` to use the virtual environment created by `uv`, you can set the [`python.uv_venv_auto`](/lang/python.html#python.uv_venv_auto) setting in your `mise.toml` file.
 Use `"source"` to only source an existing `.venv`, or `"create|source"` to create it if missing and then source it.
-If you prefer `mise prepare` to create the venv, keep it at `"source"`, enable `[prepare.uv]`, and run `mise prepare`.
+If you prefer `mise deps` to create the venv, keep it at `"source"`, enable `[deps.uv]`, and run `mise deps`.
 
 ```toml [mise.toml]
 [settings]

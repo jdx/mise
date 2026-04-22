@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use jiff::Timestamp;
 use serde_json::Value;
 use std::ffi::OsString;
+use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -26,6 +27,7 @@ use tokio::sync::Mutex as TokioMutex;
 /// the package manager.
 const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
 const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
+const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 
@@ -60,6 +62,8 @@ impl Backend for NPMBackend {
         // But we still need the configured package manager for installation
         if tool_name == "npm" {
             return match package_manager {
+                NpmPackageManager::Auto => Ok(vec!["node"]),
+                NpmPackageManager::Aube => Ok(vec!["node", "aube"]),
                 NpmPackageManager::Bun => Ok(vec!["node", "bun"]),
                 NpmPackageManager::Pnpm => Ok(vec!["node", "pnpm"]),
                 NpmPackageManager::Npm => Ok(vec!["node"]),
@@ -76,6 +80,8 @@ impl Backend for NPMBackend {
         // For regular packages: need npm (for version queries) + configured package manager
         let mut deps = vec!["node", "npm"];
         match package_manager {
+            NpmPackageManager::Auto => {}
+            NpmPackageManager::Aube => deps.push("aube"),
             NpmPackageManager::Bun => deps.push("bun"),
             NpmPackageManager::Pnpm => deps.push("pnpm"),
             NpmPackageManager::Npm => {} // npm is already in deps
@@ -87,6 +93,10 @@ impl Backend for NPMBackend {
     /// It doesn't support installing from direct URLs, so lockfile URLs are not applicable.
     fn supports_lockfile_url(&self) -> bool {
         false
+    }
+
+    fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {
+        Ok(vec!["aube"])
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -170,8 +180,11 @@ impl Backend for NPMBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        self.check_install_deps(&ctx.config).await;
-        let package_manager = Settings::get().npm.package_manager;
+        let package_manager = self
+            .package_manager_for_install(&ctx.config, Some(&ctx.ts))
+            .await;
+        self.check_install_deps(&ctx.config, package_manager, Some(&ctx.ts))
+            .await;
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
                 self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
@@ -182,6 +195,29 @@ impl Backend for NPMBackend {
             None => Vec::new(),
         };
         match package_manager {
+            NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
+            NpmPackageManager::Aube => {
+                let aube_program = self
+                    .aube_path_for_install(&ctx.config, Some(&ctx.ts))
+                    .await
+                    .unwrap_or_else(|| AUBE_PROGRAM.into());
+                self.write_aube_npmrc(&tv.install_path(), ctx.before_date)?;
+                CmdLineRunner::new(aube_program)
+                    .arg("add")
+                    .arg("--global")
+                    .arg(format!("{}@{}", self.tool_name(), tv.version))
+                    .with_pr(ctx.pr.as_ref())
+                    .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                    .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+                    .prepend_path(
+                        self.dependency_toolset(&ctx.config)
+                            .await?
+                            .list_paths(&ctx.config)
+                            .await,
+                    )?
+                    .current_dir(tv.install_path())
+                    .execute()?;
+            }
             NpmPackageManager::Bun => {
                 CmdLineRunner::new("bun")
                     .arg("install")
@@ -263,11 +299,7 @@ impl Backend for NPMBackend {
         _config: &Arc<Config>,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        if Settings::get().npm.package_manager == NpmPackageManager::Npm {
-            Ok(vec![tv.install_path()])
-        } else {
-            Ok(vec![tv.install_path().join("bin")])
-        }
+        Ok(Self::windows_bin_paths_for_install_path(&tv.install_path()))
     }
 }
 
@@ -291,6 +323,8 @@ impl NPMBackend {
     ) -> Vec<OsString> {
         let seconds = elapsed_seconds_ceil(before_date, process_now());
         match package_manager {
+            NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
+            NpmPackageManager::Aube => Vec::new(),
             NpmPackageManager::Npm => {
                 // Sub-day windows always emit --before because --min-release-age
                 // is day-granular — which is also the fallback for older npm.
@@ -373,6 +407,8 @@ impl NPMBackend {
         package_manager: NpmPackageManager,
     ) -> Option<(&'static str, &'static str, &'static str)> {
         match package_manager {
+            NpmPackageManager::Auto => None,
+            NpmPackageManager::Aube => None,
             NpmPackageManager::Npm => None,
             NpmPackageManager::Bun => {
                 Some(("bun", BUN_MIN_RELEASE_AGE_VERSION, "--minimum-release-age"))
@@ -466,14 +502,36 @@ impl NPMBackend {
             &["node", "npm"],
             "To use npm packages with mise, you need to install Node.js first:\n\
               mise use node@latest\n\n\
-            Note: npm is required for querying package information, even when using bun for installation.",
+            Note: npm is required for querying package information, even when using aube, bun, or pnpm for installation.",
         )
         .await
     }
 
     /// Check dependencies for package installation (npm or bun based on settings)
-    async fn check_install_deps(&self, config: &Arc<Config>) {
-        match Settings::get().npm.package_manager {
+    async fn check_install_deps(
+        &self,
+        config: &Arc<Config>,
+        package_manager: NpmPackageManager,
+        ts: Option<&Toolset>,
+    ) {
+        match package_manager {
+            NpmPackageManager::Aube => {
+                if let Some(ts) = ts
+                    && ts.which_bin(config, AUBE_PROGRAM).await.is_some()
+                {
+                    return;
+                }
+                self.warn_if_dependency_missing(
+                    config,
+                    "aube",
+                    &["aube"],
+                    "To use npm packages with aube, you need to install aube first:\n\
+                          mise use aube@latest\n\n\
+                        Or switch back to npm by setting:\n\
+                          mise settings npm.package_manager=npm",
+                )
+                .await
+            }
             NpmPackageManager::Bun => {
                 self.warn_if_dependency_missing(
                     config,
@@ -498,18 +556,92 @@ impl NPMBackend {
                 )
                 .await
             }
-            _ => {
+            NpmPackageManager::Auto => {
+                unreachable!("auto package manager should be resolved before dependency checks")
+            }
+            NpmPackageManager::Npm => {
                 self.warn_if_dependency_missing(
                     config,
                     "npm",
                     &["node", "npm"],
                     "To use npm packages with mise, you need to install Node.js first:\n\
                       mise use node@latest\n\n\
-                    Alternatively, you can use bun or pnpm instead of npm by setting:\n\
-                      mise settings npm.package_manager=bun",
+                    Alternatively, install aube to use it automatically, or set:\n\
+                      mise settings npm.package_manager=aube",
                 )
                 .await
             }
+        }
+    }
+
+    async fn package_manager_for_install(
+        &self,
+        config: &Arc<Config>,
+        ts: Option<&Toolset>,
+    ) -> NpmPackageManager {
+        let settings = Settings::get();
+        match settings.npm.package_manager {
+            NpmPackageManager::Auto if self.aube_is_installed(config, ts).await => {
+                NpmPackageManager::Aube
+            }
+            NpmPackageManager::Auto => NpmPackageManager::Npm,
+            package_manager => package_manager,
+        }
+    }
+
+    async fn aube_is_installed(&self, config: &Arc<Config>, ts: Option<&Toolset>) -> bool {
+        self.aube_path_for_install(config, ts).await.is_some()
+    }
+
+    async fn aube_path_for_install(
+        &self,
+        config: &Arc<Config>,
+        ts: Option<&Toolset>,
+    ) -> Option<std::path::PathBuf> {
+        if let Some(ts) = ts
+            && let Some(bin) = ts.which_bin(config, AUBE_PROGRAM).await
+        {
+            return Some(bin);
+        }
+        self.dependency_which(config, AUBE_PROGRAM).await
+    }
+
+    fn write_aube_npmrc(&self, install_path: &Path, before_date: Option<Timestamp>) -> Result<()> {
+        let bin_dir = install_path.join("bin");
+        crate::file::create_dir_all(install_path)?;
+        crate::file::create_dir_all(&bin_dir)?;
+        let mut npmrc = format!(
+            "globalDir={}\nglobalBinDir={}\n",
+            Self::npmrc_path_value(install_path),
+            Self::npmrc_path_value(&bin_dir)
+        );
+        if let Some(before_date) = before_date {
+            let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
+                before_date,
+                process_now(),
+            ));
+            // aube documents minimumReleaseAge in minutes, matching pnpm's setting.
+            npmrc.push_str(&format!("minimumReleaseAge={minutes}\n"));
+        }
+        crate::file::write(install_path.join(".npmrc"), npmrc)?;
+        Ok(())
+    }
+
+    fn npmrc_path_value(path: &Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
+    }
+
+    fn build_aube_minimum_release_age(seconds: u64) -> u64 {
+        seconds.div_ceil(60)
+    }
+
+    #[cfg(any(windows, test))]
+    fn windows_bin_paths_for_install_path(install_path: &Path) -> Vec<std::path::PathBuf> {
+        let bin_dir = install_path.join("bin");
+        if bin_dir.exists() {
+            vec![bin_dir]
+        } else {
+            vec![install_path.to_path_buf()]
         }
     }
 }
@@ -648,7 +780,53 @@ mod tests {
     }
 
     #[test]
+    fn test_build_aube_minimum_release_age_rounds_up_to_minutes() {
+        assert_eq!(NPMBackend::build_aube_minimum_release_age(1), 1);
+        assert_eq!(NPMBackend::build_aube_minimum_release_age(60), 1);
+        assert_eq!(NPMBackend::build_aube_minimum_release_age(61), 2);
+    }
+
+    #[test]
+    fn test_npmrc_path_value_uses_forward_slashes() {
+        assert_eq!(
+            NPMBackend::npmrc_path_value(Path::new(r"C:\Users\me\mise\npm-cowsay\1.6.0")),
+            "C:/Users/me/mise/npm-cowsay/1.6.0"
+        );
+    }
+
+    #[test]
+    fn test_windows_bin_paths_prefers_created_bin_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-cowsay").join("1.6.0");
+        std::fs::create_dir_all(install_path.join("bin")).unwrap();
+
+        assert_eq!(
+            NPMBackend::windows_bin_paths_for_install_path(&install_path),
+            vec![install_path.join("bin")]
+        );
+    }
+
+    #[test]
+    fn test_windows_bin_paths_falls_back_to_install_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-cowsay").join("1.6.0");
+
+        assert_eq!(
+            NPMBackend::windows_bin_paths_for_install_path(&install_path),
+            vec![install_path]
+        );
+    }
+
+    #[test]
     fn test_release_age_package_manager_requirements() {
+        assert_eq!(
+            NPMBackend::release_age_package_manager_requirement(NpmPackageManager::Auto),
+            None
+        );
+        assert_eq!(
+            NPMBackend::release_age_package_manager_requirement(NpmPackageManager::Aube),
+            None
+        );
         assert_eq!(
             NPMBackend::release_age_package_manager_requirement(NpmPackageManager::Npm),
             None

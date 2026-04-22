@@ -47,19 +47,64 @@ pub async fn rebuild(config: &Config) -> Result<()> {
     Ok(())
 }
 
+pub async fn migrate_real_dirs(config: &Config) -> Result<()> {
+    for backend in backend::list() {
+        let ba = backend.ba();
+        let mut installs_dirs = vec![ba.installs_path.clone()];
+        let tool_dir_name = ba.tool_dir_name();
+        for shared_dir in env::shared_install_dirs() {
+            let dir = shared_dir.join(&tool_dir_name);
+            if dir.is_dir() && !installs_dirs.contains(&dir) {
+                installs_dirs.push(dir);
+            }
+        }
+
+        if let Some(installs_dir) = installs_dirs.first() {
+            migrate_real_dirs_in_dir(config, &backend, installs_dir)?;
+        }
+        for installs_dir in installs_dirs.iter().skip(1) {
+            if let Err(e) = migrate_real_dirs_in_dir(config, &backend, installs_dir) {
+                if is_permission_error(&e) {
+                    warn!(
+                        "skipping runtime symlink migration for {}: {}",
+                        installs_dir.display(),
+                        e
+                    );
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn rebuild_symlinks_in_dir(
     config: &Config,
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
+    let concrete_installs = installed_versions_in_dir(installs_dir)
+        .into_iter()
+        .filter(|v| is_concrete_install(v))
+        .collect::<std::collections::HashSet<_>>();
     let symlinks = list_symlinks_for_dir(config, backend, installs_dir);
     for (from, to) in symlinks {
+        let from_name = from.clone();
         let from = installs_dir.join(from);
         if from.exists() {
             if is_runtime_symlink(&from) && file::resolve_symlink(&from)?.unwrap_or_default() != to
             {
                 trace!("Removing existing symlink: {}", from.display());
                 file::remove_file(&from)?;
+            } else if from
+                .file_name()
+                .zip(to.file_name())
+                .is_some_and(|(from_name, to_name)| from_name != to_name)
+                && !concrete_installs.contains(&from_name)
+            {
+                trace!("Replacing stale runtime dir: {}", from.display());
+                file::remove_all(&from)?;
             } else {
                 continue;
             }
@@ -67,6 +112,28 @@ fn rebuild_symlinks_in_dir(
         make_symlink_or_file(&to, &from)?;
     }
     remove_missing_symlinks_in_dir(installs_dir)?;
+    Ok(())
+}
+
+fn migrate_real_dirs_in_dir(
+    config: &Config,
+    backend: &Arc<dyn Backend>,
+    installs_dir: &Path,
+) -> Result<()> {
+    let concrete_installs = installed_versions_in_dir(installs_dir)
+        .into_iter()
+        .filter(|v| is_concrete_install(v))
+        .collect::<std::collections::HashSet<_>>();
+    let symlinks = list_symlinks_for_dir(config, backend, installs_dir);
+    for (from, to) in symlinks {
+        let from_name = from.clone();
+        let from = installs_dir.join(from);
+        if !from.exists() || is_runtime_symlink(&from) || concrete_installs.contains(&from_name) {
+            continue;
+        }
+        file::remove_all(&from)?;
+        make_symlink_or_file(&to, &from)?;
+    }
     Ok(())
 }
 
@@ -138,6 +205,11 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
         .filter(|v| !VERSION_REGEX.is_match(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
+}
+
+fn is_concrete_install(v: &str) -> bool {
+    let (_, version) = split_version_prefix(v);
+    Versioning::new(version).is_some()
 }
 
 pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {

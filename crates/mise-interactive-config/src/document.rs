@@ -44,11 +44,11 @@ pub enum EntryValue {
 impl TomlDocument {
     /// Create a new document with default sections
     pub fn new() -> Self {
-        Self::new_with_prepare(false)
+        Self::new_with_deps(false)
     }
 
-    /// Create a new document with default sections, optionally including prepare
-    pub fn new_with_prepare(include_prepare: bool) -> Self {
+    /// Create a new document with default sections, optionally including deps
+    pub fn new_with_deps(include_deps: bool) -> Self {
         let mut sections = vec![
             Section {
                 name: "tools".to_string(),
@@ -70,9 +70,9 @@ impl TomlDocument {
             },
         ];
 
-        if include_prepare {
+        if include_deps {
             sections.push(Section {
-                name: "prepare".to_string(),
+                name: "deps".to_string(),
                 entries: Vec::new(),
                 expanded: false,
                 comments: Vec::new(),
@@ -98,7 +98,7 @@ impl TomlDocument {
         let mut sections = Vec::new();
 
         // Known sections in preferred order
-        let known_sections = ["tools", "env", "tasks", "prepare", "settings"];
+        let known_sections = ["tools", "env", "tasks", "deps", "settings"];
 
         // Collect top-level entries (non-table items like min_version)
         let mut root_entries = Vec::new();

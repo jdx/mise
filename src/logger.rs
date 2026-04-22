@@ -1,9 +1,10 @@
 use crate::config::{Config, Settings};
 use clx::progress;
 use eyre::Result;
+use std::collections::HashSet;
 use std::fs::{File, OpenOptions, create_dir_all};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::{io::Write, sync::OnceLock};
 
@@ -18,12 +19,52 @@ struct Logger {
     log_file: Option<Mutex<File>>,
 }
 
+/// Root crate names of third-party dependencies that emit very noisy debug
+/// and trace logs (often per HTTP/2 frame, per socket read, etc.) and would
+/// otherwise overwhelm `-v`/`-vv` output. Debug and Trace records from these
+/// crates are dropped entirely unless `MISE_LOG_VERBOSE_DEPS=1` is set.
+/// Info/Warn/Error still pass through — those are rare and worth seeing.
+static NOISY_DEP_TARGETS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    [
+        "h2",
+        "hyper",
+        "hyper_util",
+        "mio",
+        "reqwest",
+        "rustls",
+        "tokio_util",
+        "tower",
+        "want",
+    ]
+    .into_iter()
+    .collect()
+});
+
+fn is_noisy_dep_target(target: &str) -> bool {
+    // `log` targets default to the module path (e.g. "h2::proto::streams").
+    // Match on the crate-root segment so we don't accidentally match an
+    // unrelated crate whose name happens to start with one of ours
+    // (e.g. "h2extra") — zero allocation: just splits the input slice.
+    let root = target.split_once("::").map_or(target, |(r, _)| r);
+    NOISY_DEP_TARGETS.contains(root)
+}
+
 impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= *self.level.lock().unwrap()
     }
 
     fn log(&self, record: &Record) {
+        // Drop Debug/Trace spam from noisy third-party crates (e.g. h2 logging
+        // every received DATA frame) regardless of terminal/file level. Opt
+        // back in with MISE_LOG_VERBOSE_DEPS=1.
+        if matches!(record.level(), Level::Debug | Level::Trace)
+            && !*env::MISE_LOG_VERBOSE_DEPS
+            && is_noisy_dep_target(record.target())
+        {
+            return;
+        }
+
         let term_level = *self.term_level.lock().unwrap();
         let will_log_file = record.level() <= self.file_level && self.log_file.is_some();
         let will_log_term = record.level() <= term_level;

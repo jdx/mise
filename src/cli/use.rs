@@ -287,6 +287,7 @@ impl Use {
         remove: &[BackendArg],
     ) -> Result<()> {
         let path = display_path(cf.get_path());
+        let quiet = Settings::get().quiet;
 
         if self.is_dry_run() {
             let mut messages = vec![];
@@ -302,17 +303,19 @@ impl Use {
             }
 
             if !messages.is_empty() {
-                miseprintln!(
-                    "{} would update {} ({})",
-                    style("mise").green(),
-                    style(&path).cyan().for_stderr(),
-                    messages.join(", ")
-                );
+                if !quiet {
+                    miseprintln!(
+                        "{} would update {} ({})",
+                        style("mise").green(),
+                        style(&path).cyan().for_stderr(),
+                        messages.join(", ")
+                    );
+                }
                 if self.dry_run_code {
                     exit::exit(1);
                 }
             }
-        } else {
+        } else if !quiet {
             if !versions.is_empty() {
                 let tools = versions.iter().map(|t| t.style()).join(", ");
                 miseprintln!(

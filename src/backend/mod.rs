@@ -42,6 +42,7 @@ use itertools::Itertools;
 use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
+use versions::Versioning;
 
 pub mod aqua;
 pub mod asdf;
@@ -291,8 +292,23 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
+        BackendType::Aqua => aqua::install_time_option_keys(),
         _ => vec![],
     }
+}
+
+/// Returns true if a backend option only affects installation/download.
+/// Used to filter cached options when config provides its own options.
+pub fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str) -> bool {
+    if matches!(backend_type, BackendType::Aqua) {
+        return aqua::is_install_time_option_key(key);
+    }
+
+    let install_time_keys = install_time_option_keys_for_type(backend_type);
+    install_time_keys.iter().any(|itk| itk == key)
+        || install_time_keys
+            .iter()
+            .any(|itk| key.starts_with("platforms.") && key.ends_with(&format!(".{itk}")))
 }
 
 /// Normalize idiomatic file contents by removing comments and empty lines.
@@ -677,14 +693,21 @@ pub trait Backend: Debug + Send + Sync {
                 if let Some(install_path) = tv.request.install_path(config)
                     && check_path(&install_path, true)
                 {
-                    // For Prefix requests, install_path finds any installed dir
-                    // matching the prefix (e.g., "1.0.0" for prefix "1"), but if
-                    // the ToolVersion resolved to a different version (e.g., "1.1.0"),
-                    // we must not treat it as installed.
-                    if let ToolRequest::Prefix { .. } = &tv.request
-                        && install_path
-                            .file_name()
-                            .is_some_and(|f| f.to_string_lossy() != tv.version)
+                    // The request's install_path is derived from the REQUEST version
+                    // (e.g., "latest" or prefix "1"), which may differ from the resolved
+                    // concrete version. If they differ, the request path can refer to a
+                    // stale install dir — for channel pins like `@latest` the dir is named
+                    // after the channel (`installs/<id>/latest/`) from a prior install that
+                    // never got a symlink (e.g., first install ran offline or remote resolution
+                    // transiently returned None, leaving tv.version="latest"). We must check
+                    // the RESOLVED path instead so that `mise upgrade` re-runs the backend's
+                    // install hook and writes the new version to `installs/<id>/<new-version>/`.
+                    if matches!(
+                        &tv.request,
+                        ToolRequest::Version { .. } | ToolRequest::Prefix { .. }
+                    ) && install_path
+                        .file_name()
+                        .is_some_and(|f| f.to_string_lossy() != tv.version)
                     {
                         return check_path(&tv.install_path(), check_symlink);
                     }
@@ -853,19 +876,25 @@ pub trait Backend: Debug + Send + Sync {
             }
             None => {
                 let installed_symlink = self.ba().installs_path.join("latest");
-                if installed_symlink.exists() {
-                    let Some(target) = file::resolve_symlink(&installed_symlink)? else {
-                        return Ok(Some("latest".to_string()));
-                    };
+                if installed_symlink.exists()
+                    && let Some(target) = file::resolve_symlink(&installed_symlink)?
+                {
                     let version = target
                         .file_name()
                         .ok_or_else(|| eyre!("Invalid symlink target"))?
                         .to_string_lossy()
                         .to_string();
-                    Ok(Some(version))
-                } else {
-                    Ok(None)
+                    return Ok(Some(version));
                 }
+                Ok(file::dir_subdirs(&self.ba().installs_path)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|v| !v.starts_with('.'))
+                    .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
+                    .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
+                    .filter(|v| v != "latest")
+                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+                    .last())
             }
         }
     }
@@ -1772,7 +1801,9 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
 #[cfg(test)]
 mod latest_version_tests {
     use super::*;
+    use crate::cli::args::BackendResolution;
     use pretty_assertions::assert_eq;
+    use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Debug)]
@@ -1893,6 +1924,32 @@ mod latest_version_tests {
         );
         assert_eq!(backend.stable_calls(), 0);
         assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[test]
+    fn test_latest_installed_version_ignores_real_latest_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::new_raw(
+            "latest-real-dir".into(),
+            None,
+            "latest-real-dir".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        ba.installs_path = temp_dir.path().join("installs").join("latest-real-dir");
+        fs::create_dir_all(ba.installs_path.join("2.0.0")).unwrap();
+        fs::create_dir_all(ba.installs_path.join("latest")).unwrap();
+
+        let backend = LatestBackend {
+            ba: Arc::new(ba),
+            stable_calls: AtomicUsize::new(0),
+            list_calls: AtomicUsize::new(0),
+        };
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap(),
+            Some("2.0.0".into())
+        );
     }
 }
 

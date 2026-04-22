@@ -156,7 +156,7 @@ Bypass the environment cache and recompute the environment
 
 Do not use cache on remote tasks
 
-### `--no-prepare`
+### `--no-deps`
 
 Skip automatic dependency preparation
 
