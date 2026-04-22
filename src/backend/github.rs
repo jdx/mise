@@ -164,10 +164,7 @@ impl Backend for UnifiedGitBackend {
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let repo = self.ba.tool_name();
         let id = self.ba.to_string();
-        let opts = config
-            .get_tool_opts(&self.ba)
-            .await?
-            .unwrap_or_else(|| self.ba.opts());
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
 
@@ -264,10 +261,7 @@ impl Backend for UnifiedGitBackend {
         }
 
         let repo = self.ba.tool_name();
-        let opts = config
-            .get_tool_opts(&self.ba)
-            .await?
-            .unwrap_or_else(|| self.ba.opts());
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
 
@@ -317,11 +311,7 @@ impl Backend for UnifiedGitBackend {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let repo = self.repo();
-        let opts = ctx
-            .config
-            .get_tool_opts(&self.ba)
-            .await?
-            .unwrap_or_else(|| self.ba.opts());
+        let opts = ctx.config.get_tool_opts_with_overrides(&self.ba).await?;
         let api_url = self.get_api_url(&opts);
 
         // Check if URL already exists in lockfile platforms first

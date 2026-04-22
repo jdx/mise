@@ -148,17 +148,13 @@ fn parse_backend_components(
     full: Option<&String>,
 ) -> (String, String, Option<ToolVersionOptions>) {
     let short = unalias_backend(short).to_string();
-    let (_backend, mut tool_name) = full
-        .unwrap_or(&short)
-        .split_once(':')
-        .unwrap_or(("", full.unwrap_or(&short)));
+    let source = full.unwrap_or(&short);
+    let (source, opts) = match split_bracketed_opts(source) {
+        Some((name, opts_str)) => (name, Some(parse_tool_options(opts_str))),
+        None => (source.as_str(), None),
+    };
+    let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
-
-    let mut opts = None;
-    if let Some((name, opts_str)) = split_bracketed_opts(tool_name) {
-        tool_name = name;
-        opts = Some(parse_tool_options(opts_str));
-    }
 
     (short, tool_name.to_string(), opts)
 }
@@ -448,34 +444,36 @@ impl BackendArg {
     }
 
     pub fn opts(&self) -> ToolVersionOptions {
-        // Start with registry options as base (if available)
-        let full = self.full();
-        let mut opts = REGISTRY
-            .get(self.short.as_str())
-            .map(|rt| rt.backend_options(&full))
-            .unwrap_or_default();
+        let mut opts = self.registry_opts();
 
-        // Get user-provided options (from self.opts or from full string)
-        let user_opts = self.opts.clone().unwrap_or_else(|| {
-            if let Some((_, opts_str)) = split_bracketed_opts(&full) {
-                parse_tool_options(opts_str)
-            } else {
-                ToolVersionOptions::default()
-            }
-        });
-
-        // Merge user options on top (user options take precedence)
-        for (k, v) in user_opts.opts {
-            opts.opts.insert(k, v);
-        }
-        for (k, v) in user_opts.install_env {
-            opts.install_env.insert(k, v);
-        }
-        if user_opts.os.is_some() {
-            opts.os = user_opts.os;
+        if let Some(user_opts) = self.explicit_opts() {
+            opts.apply_overrides(user_opts);
         }
 
         opts
+    }
+
+    pub fn registry_opts(&self) -> ToolVersionOptions {
+        let full = self.full();
+        REGISTRY
+            .get(self.short.as_str())
+            .map(|rt| rt.backend_options(&full))
+            .unwrap_or_default()
+    }
+
+    pub fn opts_with_config(&self, config_opts: Option<ToolVersionOptions>) -> ToolVersionOptions {
+        let mut opts = self.registry_opts();
+        if let Some(config_opts) = config_opts {
+            opts.apply_overrides(&config_opts);
+        }
+        if let Some(user_opts) = self.explicit_opts() {
+            opts.apply_overrides(user_opts);
+        }
+        opts
+    }
+
+    pub fn explicit_opts(&self) -> Option<&ToolVersionOptions> {
+        self.opts.as_ref()
     }
 
     pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
@@ -829,5 +827,32 @@ mod tests {
             "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
             fa.full_with_opts()
         );
+    }
+
+    #[tokio::test]
+    async fn test_parse_backend_opts_with_url_value_on_shorthand() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg = "tiny[api_url=https://inline.example/api/v3]".into();
+
+        assert_eq!(ba.short, "tiny");
+        assert_eq!(ba.tool_name, "tiny");
+        assert_eq!(
+            ba.opts().get("api_url"),
+            Some("https://inline.example/api/v3")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_opts_with_config_overlays_registry_config_and_inline() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg = "graphite[exe=inline,foo=inline]".into();
+        let config_opts = parse_tool_options("exe=config,bar=config");
+
+        let opts = ba.opts_with_config(Some(config_opts));
+
+        assert_eq!(ba.registry_opts().get("exe"), Some("gt"));
+        assert_eq!(opts.get("exe"), Some("inline"));
+        assert_eq!(opts.get("bar"), Some("config"));
+        assert_eq!(opts.get("foo"), Some("inline"));
     }
 }
