@@ -189,6 +189,20 @@ export const commands: { [key: string]: Command } = {
   mcp: {
     hide: false,
   },
+  oci: {
+    hide: false,
+    subcommands: {
+      build: {
+        hide: false,
+      },
+      push: {
+        hide: false,
+      },
+      run: {
+        hide: false,
+      },
+    },
+  },
   outdated: {
     hide: false,
   },

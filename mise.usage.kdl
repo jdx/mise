@@ -602,6 +602,81 @@ cmd mcp help="[experimental] Run Model Context Protocol (MCP) server" {
     long_help "[experimental] Run Model Context Protocol (MCP) server\n\nThis command starts an MCP server that exposes mise functionality\nto AI assistants over stdin/stdout using JSON-RPC protocol.\n\nThe MCP server provides access to:\n- Installed and available tools\n- Task definitions and execution\n- Environment variables\n- Configuration information\n- Task execution via the run_task tool\n\nResources available:\n- mise://tools - List all tools (use ?include_inactive=true to include inactive tools)\n- mise://tasks - List all tasks with their configurations\n- mise://env - List all environment variables\n- mise://config - Show configuration files and project root\n\nTools available:\n- install_tool - Install a tool with an optional version (not yet implemented)\n- run_task - Execute a mise task with optional arguments\n\nNote: This is primarily intended for integration with AI assistants like Claude,\nCursor, or other tools that support the Model Context Protocol."
     after_long_help "Examples:\n\n    # Start the MCP server (typically used by AI assistant tools)\n    $ mise mcp\n\n    # Example integration with Claude Desktop (add to claude_desktop_config.json):\n    {\n      \"mcpServers\": {\n        \"mise\": {\n          \"command\": \"mise\",\n          \"args\": [\"mcp\"],\n          \"env\": {\n            \"MISE_EXPERIMENTAL\": \"1\"\n          }\n        }\n      }\n    }\n\n    # Interactive testing with JSON-RPC commands:\n    $ echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}' | mise mcp\n\n    # Resources you can query:\n    - mise://tools - List active tools\n    - mise://tools?include_inactive=true - List all installed tools\n    - mise://tasks - List all tasks\n    - mise://env - List environment variables\n    - mise://config - Show configuration info\n\n    # Tools available:\n    - install_tool - Install a tool (not yet implemented)\n    - run_task - Execute a mise task with optional arguments\n      Example: {\"task\": \"build\", \"args\": [\"--verbose\"]}\n"
 }
+cmd oci subcommand_required=#true help="[experimental] Build OCI container images from a mise.toml" {
+    long_help "[experimental] Build OCI container images from a mise.toml\n\nEach tool becomes its own OCI layer, so bumping any single tool version\nonly invalidates one content-addressable blob — unlike a Dockerfile where\nchanging an early `RUN` invalidates every layer above it.\n\nThis command is experimental and requires `mise settings experimental=true`\n(or `MISE_EXPERIMENTAL=1`). Behavior, flags, and output layout may change\nin future releases."
+    cmd build help="[experimental] Build an OCI image from the current mise.toml" {
+        long_help "[experimental] Build an OCI image from the current mise.toml\n\nEach tool version becomes its own content-addressable OCI layer. Bumping a\ntool version only invalidates that tool's layer — other tools, the base\nimage, and config are reused unchanged. The output directory conforms to\nthe OCI image-layout spec and can be consumed by `skopeo`, `crane`, or\n`podman load`.\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`)."
+        after_long_help "Examples:\n\n    Build with defaults (debian:bookworm-slim base):\n    $ mise oci build\n\n    Build with a specific base image and tag:\n    $ mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img\n\n    Inspect the result with skopeo:\n    $ skopeo inspect oci:./mise-oci\n\n    Push to a registry:\n    $ skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest\n\nNotes:\n\n    - asdf and vfox plugins are not supported in v1; use a different backend\n      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
+        flag "-o --output" help="Output directory for the OCI image layout" default="./mise-oci" {
+            arg <OUTPUT>
+        }
+        flag --from help="Base image reference (overrides [oci].from and the oci.default_from setting)" {
+            arg <FROM>
+        }
+        flag "-t --tag" help="Tag to record in the image index (the org.opencontainers.image.ref.name annotation)" {
+            arg <TAG>
+        }
+        flag --mount-point help="Where to place tool installs inside the image (default: /mise)" {
+            arg <MOUNT_POINT>
+        }
+        flag --no-mise help="Do not embed the currently-running mise binary at /usr/local/bin/mise"
+    }
+    cmd push help="[experimental] Build an OCI image and push it to a registry" {
+        long_help "[experimental] Build an OCI image and push it to a registry\n\nRequires `skopeo` (or `crane`) on PATH. If `--image-dir` is not passed,\nbuilds fresh from the current mise.toml first, then shells out to\n`skopeo copy oci:<dir> docker://<ref>` (or `crane push <dir> <ref>`).\nAuthentication is handled by the underlying tool — configure it the same\nway you would for a plain `skopeo` / `crane` push (e.g. `docker login`,\n`REGISTRY_AUTH_FILE`, `~/.config/containers/auth.json`).\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`)."
+        after_long_help "Examples:\n\n    Build and push to GHCR:\n    $ mise oci push ghcr.io/me/devenv:latest\n\n    Push an image built earlier:\n    $ mise oci build -o ./img\n    $ mise oci push --image-dir ./img ghcr.io/me/devenv:v1\n\n    Force a specific push tool:\n    $ mise oci push --tool crane ghcr.io/me/devenv:latest\n\nAuth:\n\n    mise shells out to skopeo (preferred) or crane; configure registry\n    credentials the usual way — `docker login`, `REGISTRY_AUTH_FILE`,\n    or `~/.config/containers/auth.json` for skopeo; `crane auth login`\n    for crane.\n"
+        flag --from help="Base image for the build (ignored with --image-dir)" {
+            arg <FROM>
+        }
+        flag --image-dir help="Push an already-built OCI image layout (skip the build step)" {
+            arg <IMAGE_DIR>
+        }
+        flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
+            arg <MOUNT_POINT>
+        }
+        flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag --tool help="Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`" default=auto {
+            arg <TOOL> {
+                choices auto skopeo crane
+            }
+        }
+        arg <REF> help="Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)"
+    }
+    cmd run help="[experimental] Build an OCI image from the current mise.toml and run a command in it" {
+        long_help "[experimental] Build an OCI image from the current mise.toml and run a command in it\n\nEquivalent to `mise oci build` followed by `docker run` / `podman run`.\nThe built image is loaded into the local container engine (podman is\npreferred; docker works via skopeo) and the given command is executed\ninside it with stdin/stdout/stderr inherited.\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and\none of: `podman`, `docker+skopeo`."
+        after_long_help "Examples:\n\n    Build the current mise.toml and drop into bash:\n    $ mise oci run -it -- bash\n\n    Run a one-shot command with env + volume (note: `-v` is reserved\n    for --verbose, so use `--volume`):\n    $ mise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test\n\n    Re-use a previously built layout (skip the build step):\n    $ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'\n\nEngines:\n\n    Prefers podman (loads OCI layouts natively). Falls back to\n    docker + skopeo. Pass --engine podman or --engine docker to override.\n"
+        flag --engine help="Container engine to use (`auto`, `podman`, or `docker`)" default=auto {
+            arg <ENGINE> {
+                choices auto podman docker
+            }
+        }
+        flag --from help="Base image reference for the build (ignored with --image-dir)" {
+            arg <FROM>
+        }
+        flag --image-dir help="Use an already-built OCI image layout instead of building fresh" {
+            arg <IMAGE_DIR>
+        }
+        flag --keep help="Keep the loaded image in the engine's storage after the run" {
+            long_help "Keep the loaded image in the engine's storage after the run\n\nBy default, both the container (`--rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `--keep` to retain the image under the tag mise used (`mise-oci:run-*` for docker; the pulled image ID for podman)."
+        }
+        flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
+            arg <MOUNT_POINT>
+        }
+        flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag --volume help="Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)" var=#true {
+            long_help "Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)\n\nNote: unlike `docker run -v`, there's no `-v` short flag here because mise reserves `-v` for --verbose. Use `--volume` or `--mount`."
+            arg <HOST:CONTAINER>
+        }
+        flag "-e --env" help="Set environment variable in the container (repeatable, `KEY=VAL`)" var=#true {
+            arg "<KEY=VAL>"
+        }
+        flag "-i --interactive" help="Run interactively (pass `-i` to the engine)"
+        flag "-t --tty" help="Allocate a TTY (pass `-t` to the engine)"
+        flag "-w --workdir" help="Working directory inside the container" {
+            arg <WORKDIR>
+        }
+        arg "[-- CMD]…" help="Command and arguments to run inside the container (after `--`)" required=#false var=#true
+    }
+}
 cmd outdated help="Shows outdated tool versions" {
     long_help "Shows outdated tool versions\n\nSee `mise upgrade` to upgrade these versions."
     after_long_help "Examples:\n\n    $ mise outdated\n    Plugin  Requested  Current  Latest\n    python  3.11       3.11.0   3.11.1\n    node    20         20.0.0   20.1.0\n\n    $ mise outdated node\n    Plugin  Requested  Current  Latest\n    node    20         20.0.0   20.1.0\n\n    $ mise outdated --json\n    {\"python\": {\"requested\": \"3.11\", \"current\": \"3.11.0\", \"latest\": \"3.11.1\"}, ...}\n\n    $ mise outdated --local\n    Plugin  Requested  Current  Latest\n    node    20         20.0.0   20.1.0\n"

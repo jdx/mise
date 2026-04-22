@@ -68,6 +68,7 @@ export default withMermaid(
             { text: "Registry", link: "/registry" },
             { text: "GitHub Tokens", link: "/dev-tools/github-tokens" },
             { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
+            { text: "OCI Images (experimental)", link: "/dev-tools/mise-oci" },
             { text: "Deps", link: "/dev-tools/deps" },
             {
               text: "Backend Architecture",
