@@ -566,6 +566,14 @@ to store the logs but not have them litter your display.
 
 Display HTTP requests/responses in the logs.
 
+### `MISE_LOG_VERBOSE_DEPS=1`
+
+Debug and trace logs from noisy third-party crates (`h2`, `hyper`,
+`reqwest`, `rustls`, etc., which emit a line per HTTP/2 frame or socket
+read) are always dropped — they would otherwise overwhelm debug/trace
+output. Set this to `1` to let those logs through; it is the only way to
+see them, including under `--log-level=trace`/`-vv`.
+
 ### `MISE_QUIET=1`
 
 Equivalent to `MISE_LOG_LEVEL=warn`.

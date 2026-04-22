@@ -68,7 +68,8 @@ export default withMermaid(
             { text: "Registry", link: "/registry" },
             { text: "GitHub Tokens", link: "/dev-tools/github-tokens" },
             { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
-            { text: "Prepare", link: "/dev-tools/prepare" },
+            { text: "OCI Images (experimental)", link: "/dev-tools/mise-oci" },
+            { text: "Deps", link: "/dev-tools/deps" },
             {
               text: "Backend Architecture",
               link: "/dev-tools/backend_architecture",
@@ -240,11 +241,7 @@ export default withMermaid(
           insights: true,
         },
       },
-      footer: {
-        message:
-          'Licensed under the MIT License. Maintained by <a href="https://github.com/jdx">@jdx</a> and <a href="https://github.com/jdx/mise/graphs/contributors">friends</a>.',
-        copyright: `Copyright © ${new Date().getFullYear()} <a href="https://github.com/jdx">@jdx</a>`,
-      },
+      footer: false,
       carbonAds: {
         code: "CWYIPKQN",
         placement: "misejdxdev",

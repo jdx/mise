@@ -64,6 +64,20 @@ When enabled:
 - A `.mise-bins` subdirectory is created with symlinks to the exposed binaries
 - Bundled dependencies and other extra executables, such as Python in `aws-cli`, are not added to PATH
 
+### `vars`
+
+Some aqua registry entries define template variables (for example <span v-pre>`{{.Vars.channel}}`</span>).
+Set them via tool options using either top-level keys or a nested `vars` table:
+
+```toml
+[tools]
+"aqua:flutter/flutter" = { version = "3.32.8", channel = "stable" }
+"aqua:scenarigo/scenarigo" = { version = "0.21.0", vars = { go_version = "1.24" } }
+```
+
+Vars with defaults are filled automatically. Vars marked as required in the aqua registry must be set
+unless the registry also provides a default.
+
 ## Settings
 
 <script setup>

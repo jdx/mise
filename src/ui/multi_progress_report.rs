@@ -10,10 +10,7 @@ use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, Verb
 #[derive(Debug)]
 pub struct MultiProgressReport {
     quiet: bool,
-    verbose: bool,
-    raw: bool,
-    has_stderr: bool,
-    force_progress: bool,
+    use_progress_ui: bool,
     total_count: Mutex<usize>,
     completed_count: Mutex<usize>,
     /// Header job for updating progress display
@@ -41,20 +38,27 @@ impl MultiProgressReport {
         let settings = Settings::get();
         let has_stderr = console::user_attended_stderr();
         let force_progress = *env::MISE_FORCE_PROGRESS;
+        let ci = settings.ci;
 
         progress_trace!(
-            "MultiProgressReport::new: raw={}, quiet={}, verbose={}, has_stderr={}, force_progress={}",
+            "MultiProgressReport::new: raw={}, quiet={}, verbose={}, has_stderr={}, force_progress={}, ci={}",
             settings.raw,
             settings.quiet,
             settings.verbose,
             has_stderr,
             force_progress,
+            ci,
         );
 
         // Configure clx output mode based on settings
         // MISE_FORCE_PROGRESS=1 forces progress UI even in non-TTY (for debugging)
-        let use_progress_ui =
-            !settings.raw && !settings.quiet && !settings.verbose && (has_stderr || force_progress);
+        // Prefer text output in known CI environments even when stderr looks interactive:
+        // CI systems often allocate a PTY for colors, then strip cursor controls into
+        // thousands of spinner-frame log rows.
+        let use_progress_ui = !settings.raw
+            && !settings.quiet
+            && !settings.verbose
+            && (force_progress || (has_stderr && !ci));
         if !use_progress_ui {
             progress::set_output(ProgressOutput::Text);
         }
@@ -71,19 +75,11 @@ impl MultiProgressReport {
 
         MultiProgressReport {
             quiet: settings.quiet,
-            verbose: settings.verbose,
-            raw: settings.raw,
-            has_stderr,
-            force_progress,
+            use_progress_ui,
             total_count: Mutex::new(0),
             completed_count: Mutex::new(0),
             header_job: Mutex::new(None),
         }
-    }
-
-    /// Check if we should use UI-style progress (not quiet/verbose/raw)
-    fn use_progress_ui(&self) -> bool {
-        !self.raw && !self.quiet && !self.verbose && (self.has_stderr || self.force_progress)
     }
 
     pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
@@ -97,7 +93,7 @@ impl MultiProgressReport {
                 prefix
             );
             Box::new(QuietReport::new())
-        } else if self.use_progress_ui() && !dry_run {
+        } else if self.use_progress_ui && !dry_run {
             progress_trace!(
                 "add_with_options[{}]: creating ProgressReport with clx",
                 prefix
@@ -107,7 +103,7 @@ impl MultiProgressReport {
             progress_trace!(
                 "add_with_options[{}]: creating VerboseReport (use_progress_ui={}, dry_run={})",
                 prefix,
-                self.use_progress_ui(),
+                self.use_progress_ui,
                 dry_run
             );
             Box::new(VerboseReport::new(prefix.to_string()))
@@ -136,7 +132,7 @@ impl MultiProgressReport {
 
         // Create header job showing overall progress (only in progress UI mode)
         // Left-aligned, colored header with "mise VERSION by @jdx" and cur/total count
-        if self.use_progress_ui() && !dry_run {
+        if self.use_progress_ui && !dry_run {
             use crate::ui::style;
 
             // Build colored header text parts

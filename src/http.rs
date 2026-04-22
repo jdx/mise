@@ -89,6 +89,22 @@ impl Client {
         Ok(resp.bytes().await?)
     }
 
+    /// Like `get_bytes`, but lets the caller supply the exact headers used
+    /// for the request. Does NOT merge `host_auth_headers` — this mirrors
+    /// `json_headers_with_headers` so callers get consistent behavior
+    /// between manifest JSON fetches and blob byte fetches to the same host
+    /// (e.g. `ghcr.io`, where the OCI Bearer token must not be mixed with
+    /// the GitHub token that host_auth_headers would inject).
+    pub async fn get_bytes_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<impl AsRef<[u8]>> {
+        let url = url.into_url().unwrap();
+        let resp = self.get_async_with_headers(url, headers).await?;
+        Ok(resp.bytes().await?)
+    }
+
     pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let url = url.into_url().unwrap();
         let headers = host_auth_headers(&url);
@@ -434,17 +450,13 @@ pub fn error_code(e: &Report) -> Option<u16> {
 }
 
 fn host_auth_headers(url: &Url) -> HeaderMap {
+    if crate::github::is_github_api_url(url) {
+        return crate::github::get_headers(url.as_str());
+    }
+
     let Some(host) = url.host_str() else {
         return HeaderMap::new();
     };
-
-    let is_github = host == "api.github.com"
-        || host == "github.com"
-        || crate::github::is_githubusercontent_auth_host(host)
-        || crate::github::is_gh_host(host);
-    if is_github {
-        return crate::github::get_headers(url.as_str());
-    }
 
     let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
     if is_gitlab {

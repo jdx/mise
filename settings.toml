@@ -1426,14 +1426,46 @@ hide = true
 type = "Bool"
 
 [npm.package_manager]
-default = "npm"
+default = "auto"
 description = "Package manager to use for installing npm packages."
 docs = """
-Package manager to use for installing npm packages.
+Package manager to use for installing npm packages. The default, `auto`, uses
+`aube` when it is installed and falls back to `npm`, similar to how the pipx
+backend uses `uv` when available. Set this to `npm`, `aube`, `bun`, or `pnpm`
+to force a specific package manager.
 """
-enum = ["npm", "bun", "pnpm"]
+enum = ["auto", "npm", "aube", "bun", "pnpm"]
 env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
+type = "String"
+
+[oci.default_from]
+default = "debian:bookworm-slim"
+description = "Default base image for `mise oci build` when [oci].from is not set."
+docs = """
+Default base image reference used by `mise oci build` when the `mise.toml` does
+not set `[oci].from` and `--from` is not passed on the CLI. Must be a glibc-based
+image for most mise tool installs (Node, Python, Ruby prebuilt binaries) to work.
+
+Common overrides:
+- `debian:bookworm-slim` (default) — glibc, ~30MB compressed
+- `ubuntu:24.04` — glibc, slightly larger, familiar
+- `gcr.io/distroless/cc-debian12` — glibc, no shell (not recommended for dev)
+
+Alpine-based images are **not** recommended because their musl libc breaks
+glibc-linked prebuilt binaries that most tools ship.
+"""
+env = "MISE_OCI_DEFAULT_FROM"
+type = "String"
+
+[oci.default_mount_point]
+default = "/mise"
+description = "Path inside OCI images where mise tools are installed."
+docs = """
+Path inside the built image where mise tool installs and shims are placed.
+Defaults to `/mise`. The resulting image sets `MISE_DATA_DIR` to this path.
+"""
+env = "MISE_OCI_DEFAULT_MOUNT_POINT"
 type = "String"
 
 [offline]
@@ -1929,15 +1961,15 @@ Disable tools with [`disable_tools`](#disable_tools).
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"
 
+[status.show_deps_stale]
+default = true
+description = "Show warning when deps providers have stale dependencies."
+env = "MISE_STATUS_SHOW_DEPS_STALE"
+type = "Bool"
+
 [status.show_env]
 description = "Show configured env vars when entering a directory with a mise.toml file."
 env = "MISE_STATUS_MESSAGE_SHOW_ENV"
-type = "Bool"
-
-[status.show_prepare_stale]
-default = true
-description = "Show warning when prepare providers have stale dependencies."
-env = "MISE_STATUS_SHOW_PREPARE_STALE"
 type = "Bool"
 
 [status.show_tools]

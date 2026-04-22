@@ -67,3 +67,22 @@ Set the URL for the provider's API. This is useful when using a self-hosted inst
 [tools]
 "spm:acme/my-tool" = { version = "latest", provider = "gitlab", api_url = "https://gitlab.acme.com/api/v4" }
 ```
+
+### `filter_bins`
+
+Restrict which executable products are built and linked from the package. When unset, every
+executable product declared in `Package.swift` is built and symlinked into `bin/` (the default
+behavior).
+
+Useful when a package ships helper executables (e.g. test harnesses) that you don't want on your
+`PATH`. Filtering happens before `swift build`, so unwanted products are never built.
+
+Accepts a TOML array or a comma-separated string. If any listed name does not match an executable
+product in the package, installation fails with a clear error.
+
+```toml
+[tools]
+"spm:swiftlang/swiftly" = { version = "latest", filter_bins = ["swiftly"] }
+# or
+"spm:swiftlang/swiftly" = { version = "latest", filter_bins = "swiftly" }
+```

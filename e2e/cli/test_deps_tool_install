@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Test that tools from [tools] are installed BEFORE prepare steps run
+# Regression test: prepare steps that depend on mise-managed tools
+# should not fail because the tool hasn't been installed yet.
+
+cat <<'EOF' >mise.toml
+[tools]
+tiny = "1"
+
+[deps.needs_tool]
+auto = true
+sources = ["input.txt"]
+outputs = ["output.txt"]
+run = "rtx-tiny > output.txt"
+EOF
+
+touch input.txt
+
+# Remove tiny if installed so we test the install-before-prepare path
+rm -rf "${MISE_DATA_DIR}/installs/tiny/1"* 2>/dev/null || true
+
+# mise deps should install tiny THEN run the prepare step (which uses tiny)
+assert_contains "mise deps --only needs_tool 2>&1" "Installed: needs_tool"
+assert_contains "cat output.txt" "rtx-tiny"
+
+# Clean up
+rm -f mise.toml input.txt output.txt

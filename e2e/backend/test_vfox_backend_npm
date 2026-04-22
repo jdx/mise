@@ -14,6 +14,20 @@ mise install "vfox-npm:prettier@$latest_version"
 assert "mise use vfox-npm:prettier@$latest_version"
 assert_contains "mise exec -- prettier --version" "$latest_version"
 
+# Test --locked works with a version-only lockfile entry. Backend plugins have
+# no hook for supplying URLs, so --locked should accept version-only entries
+# rather than failing with "No lockfile URL found".
+cat <<EOF >mise.toml
+[tools]
+"vfox-npm:prettier" = "$latest_version"
+EOF
+cat <<EOF >mise.lock
+[[tools."vfox-npm:prettier"]]
+version = "$latest_version"
+backend = "vfox-npm:prettier"
+EOF
+assert "mise install --locked --dry-run"
+
 # Test uninstall functionality
 assert "mise uninstall vfox-npm:prettier@$latest_version"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/vfox-npm/prettier/$latest_version"

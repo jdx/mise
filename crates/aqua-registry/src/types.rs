@@ -38,6 +38,7 @@ pub struct AquaPackage {
     pub complete_windows_ext: bool,
     pub supported_envs: Vec<String>,
     pub files: Vec<AquaFile>,
+    pub vars: Vec<AquaVar>,
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
     version_filter: Option<String>,
@@ -54,6 +55,8 @@ pub struct AquaPackage {
     pub no_asset: bool,
     pub error_message: Option<String>,
     pub path: Option<String>,
+    #[serde(skip)]
+    var_values: HashMap<String, String>,
 }
 
 /// Override configuration for specific OS/architecture combinations
@@ -63,6 +66,15 @@ struct AquaOverride {
     pkg: AquaPackage,
     goos: Option<String>,
     goarch: Option<String>,
+}
+
+/// Variable definition for Aqua templates
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct AquaVar {
+    pub name: String,
+    pub default: Option<serde_yaml::Value>,
+    #[serde(default)]
+    pub required: bool,
 }
 
 /// File definition within a package
@@ -195,6 +207,7 @@ impl Default for AquaPackage {
             complete_windows_ext: true,
             supported_envs: Vec::new(),
             files: Vec::new(),
+            vars: Vec::new(),
             replacements: HashMap::new(),
             version_prefix: None,
             version_filter: None,
@@ -210,6 +223,7 @@ impl Default for AquaPackage {
             no_asset: false,
             error_message: None,
             path: None,
+            var_values: HashMap::new(),
         }
     }
 }
@@ -232,6 +246,13 @@ impl AquaPackage {
             self = apply_override(self, &avo.pkg)
         }
         self
+    }
+
+    /// Apply user-provided variable values used by aqua `vars` templates.
+    pub fn with_var_values(mut self, var_values: HashMap<String, String>) -> Result<AquaPackage> {
+        self.var_values = var_values;
+        self.validate_vars()?;
+        Ok(self)
     }
 
     fn version_override(&self, versions: &[&str]) -> &AquaPackage {
@@ -401,9 +422,43 @@ impl AquaPackage {
         ctx.insert("GOARCH".to_string(), replace(actual_arch));
         ctx.insert("Arch".to_string(), replace(actual_arch));
         ctx.insert("Format".to_string(), replace(&self.format));
+        ctx.extend(self.vars_ctx()?);
         ctx.extend(overrides.clone());
 
         crate::template::render(s, &ctx)
+    }
+
+    fn vars_ctx(&self) -> Result<HashMap<String, String>> {
+        self.validate_vars()?;
+        let mut ctx = HashMap::new();
+        for var in &self.vars {
+            if let Some(value) = self.var_value(var)? {
+                ctx.insert(format!("Vars.{}", var.name), value);
+            }
+        }
+        Ok(ctx)
+    }
+
+    fn validate_vars(&self) -> Result<()> {
+        for var in &self.vars {
+            if var.name.is_empty() {
+                return Err(eyre!("aqua var name is empty"));
+            }
+            if var.required && self.var_value(var)?.is_none() {
+                return Err(eyre!("required aqua var not set: {}", var.name));
+            }
+        }
+        Ok(())
+    }
+
+    fn var_value(&self, var: &AquaVar) -> Result<Option<String>> {
+        if let Some(value) = self.var_values.get(&var.name) {
+            return Ok(Some(value.clone()));
+        }
+        var.default
+            .as_ref()
+            .map(|value| yaml_var_to_string(&var.name, value))
+            .transpose()
     }
 
     /// Set up version filter expression if configured
@@ -470,6 +525,31 @@ impl AquaPackage {
         let mut ctx = Context::default();
         ctx.insert("Version", v);
         ctx
+    }
+}
+
+fn yaml_var_to_string(name: &str, value: &serde_yaml::Value) -> Result<String> {
+    match value {
+        serde_yaml::Value::String(s) => Ok(s.clone()),
+        serde_yaml::Value::Null => Ok(String::new()),
+        serde_yaml::Value::Tagged(tagged) => yaml_var_to_string(name, &tagged.value),
+        value => Err(eyre!(
+            "aqua var `{}` must be a string, got {}",
+            name,
+            yaml_value_kind(value)
+        )),
+    }
+}
+
+fn yaml_value_kind(value: &serde_yaml::Value) -> &'static str {
+    match value {
+        serde_yaml::Value::String(_) => "string",
+        serde_yaml::Value::Number(_) => "number",
+        serde_yaml::Value::Bool(_) => "boolean",
+        serde_yaml::Value::Sequence(_) => "array",
+        serde_yaml::Value::Mapping(_) => "object",
+        serde_yaml::Value::Null => "null",
+        serde_yaml::Value::Tagged(tagged) => yaml_value_kind(&tagged.value),
     }
 }
 
@@ -560,6 +640,9 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     }
     if !avo.files.is_empty() {
         orig.files = avo.files.clone();
+    }
+    if !avo.vars.is_empty() {
+        orig.vars = avo.vars.clone();
     }
     orig.replacements.extend(avo.replacements.clone());
     if let Some(avo_version_prefix) = avo.version_prefix.clone() {
@@ -904,6 +987,10 @@ impl AquaGithubArtifactAttestations {
 mod tests {
     use super::*;
 
+    fn default_str(value: &str) -> Option<serde_yaml::Value> {
+        Some(serde_yaml::Value::String(value.to_string()))
+    }
+
     #[test]
     fn test_aqua_file_src_gradle() {
         // Test the gradle package src template: {{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle
@@ -1029,5 +1116,146 @@ mod tests {
                 "Asset string should not have double .exe, got: {s}"
             );
         }
+    }
+
+    #[test]
+    fn test_vars_default_value() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "channel".to_string(),
+                default: default_str("stable"),
+                required: false,
+            }],
+            ..Default::default()
+        };
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(asset, "tool-stable-1.0.0.tar.gz");
+    }
+
+    #[test]
+    fn test_vars_override_value() {
+        let mut var_values = HashMap::new();
+        var_values.insert("channel".to_string(), "beta".to_string());
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "channel".to_string(),
+                default: default_str("stable"),
+                required: false,
+            }],
+            ..Default::default()
+        }
+        .with_var_values(var_values)
+        .unwrap();
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(asset, "tool-beta-1.0.0.tar.gz");
+    }
+
+    #[test]
+    fn test_vars_default_scalar_value() {
+        let pkg = AquaPackage {
+            asset: "tool-go{{.Vars.go_version}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "go_version".to_string(),
+                default: Some(serde_yaml::from_str(r#""1.24""#).unwrap()),
+                required: false,
+            }],
+            ..Default::default()
+        };
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(asset, "tool-go1.24-1.0.0.tar.gz");
+    }
+
+    #[test]
+    fn test_vars_default_array_errors() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.channels}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "channels".to_string(),
+                default: Some(serde_yaml::from_str("[stable, beta]").unwrap()),
+                required: true,
+            }],
+            ..Default::default()
+        };
+        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("aqua var `channels` must be a string, got array"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_vars_default_object_errors() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.config}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "config".to_string(),
+                default: Some(serde_yaml::from_str("{channel: stable, flavor: beta}").unwrap()),
+                required: true,
+            }],
+            ..Default::default()
+        };
+        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("aqua var `config` must be a string, got object"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_vars_required_missing() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "channel".to_string(),
+                default: None,
+                required: true,
+            }],
+            ..Default::default()
+        };
+        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("required aqua var not set: channel"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_vars_required_missing_with_var_values() {
+        let pkg = AquaPackage {
+            vars: vec![AquaVar {
+                name: "go_version".to_string(),
+                default: None,
+                required: true,
+            }],
+            ..Default::default()
+        };
+        let err = pkg.with_var_values(HashMap::new()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("required aqua var not set: go_version"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_vars_empty_name() {
+        let pkg = AquaPackage {
+            vars: vec![AquaVar {
+                name: String::new(),
+                default: None,
+                required: false,
+            }],
+            ..Default::default()
+        };
+        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
+        assert!(
+            err.to_string().contains("aqua var name is empty"),
+            "unexpected error: {err}"
+        );
     }
 }

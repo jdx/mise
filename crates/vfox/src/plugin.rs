@@ -103,6 +103,12 @@ impl Plugin {
         Ok(())
     }
 
+    /// Store a GitHub token for the Lua http module.
+    pub fn set_github_token(&self, token: &str) -> Result<()> {
+        self.lua.set_named_registry_value("github_token", token)?;
+        Ok(())
+    }
+
     pub fn list() -> Result<Vec<String>> {
         let config = Config::get();
         if !config.plugin_dir.exists() {
