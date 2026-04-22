@@ -78,6 +78,32 @@ pub async fn verify_attestation(
     }
 }
 
+/// Reason the pre-download attestation probe could not complete.
+///
+/// Preserved as two variants so callers can log distinct warnings for a misconfigured
+/// endpoint (source creation) versus an API/network error (fetch). The original inline
+/// pre-wrapper code at `src/backend/github.rs` emitted different messages for each; the
+/// wrapper keeps that signal instead of flattening both into one error string.
+#[derive(Debug)]
+pub enum DetectError {
+    /// `GitHubSource::with_base_url` rejected the (owner, repo, api_url) tuple — usually a
+    /// malformed base URL.
+    SourceCreation(AttestationError),
+    /// The attestations endpoint returned an error (403 rate-limit, 5xx, network failure).
+    Fetch(AttestationError),
+}
+
+impl std::fmt::Display for DetectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DetectError::SourceCreation(e) => write!(f, "{e}"),
+            DetectError::Fetch(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for DetectError {}
+
 /// Probe the GitHub attestation API for the given digest without downloading the artifact.
 ///
 /// Returns `Ok(true)` if any attestations exist for the digest. Used at lock time to decide
@@ -88,11 +114,15 @@ pub async fn detect_attestations(
     repo: &str,
     api_url: &str,
     digest: &str,
-) -> AttestationResult<bool> {
+) -> Result<bool, DetectError> {
     let token = resolve_token_for_wrapper(Some(api_url));
-    let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), api_url)?;
+    let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), api_url)
+        .map_err(DetectError::SourceCreation)?;
     let artifact_ref = ArtifactRef::from_digest(digest);
-    let attestations = source.fetch_attestations(&artifact_ref).await?;
+    let attestations = source
+        .fetch_attestations(&artifact_ref)
+        .await
+        .map_err(DetectError::Fetch)?;
     Ok(!attestations.is_empty())
 }
 
@@ -221,5 +251,70 @@ mod tests {
             Some("ghp_public_only"),
             "default api_url should still resolve the public token"
         );
+    }
+
+    /// Guard that seeds the `github_tokens.toml` test override and clears it on drop.
+    struct TokensFileOverrideGuard;
+
+    impl TokensFileOverrideGuard {
+        fn set(host: &str, token: &str) -> Self {
+            let mut map = std::collections::HashMap::new();
+            map.insert(host.to_string(), token.to_string());
+            *crate::github::test_support::TOKENS_FILE_OVERRIDE
+                .write()
+                .unwrap() = Some(map);
+            Self
+        }
+    }
+
+    impl Drop for TokensFileOverrideGuard {
+        fn drop(&mut self) {
+            *crate::github::test_support::TOKENS_FILE_OVERRIDE
+                .write()
+                .unwrap() = None;
+        }
+    }
+
+    #[test]
+    fn test_resolve_token_wrapper_uses_github_tokens_toml_source() {
+        // Proves the wrapper delegates all the way through `resolve_token` to the
+        // non-env-var sources — here, the `github_tokens.toml` path (source #4). Without
+        // this, a future regression could short-circuit on env vars and silently pass all
+        // prior tests.
+        let _lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TokenEnvGuard::new();
+        let _tokens_file = TokensFileOverrideGuard::set("github.com", "ghp_from_tokens_file");
+
+        let resolved = resolve_token_for_wrapper(None);
+        assert_eq!(
+            resolved.as_deref(),
+            Some("ghp_from_tokens_file"),
+            "wrapper should resolve tokens from github_tokens.toml when env vars are empty"
+        );
+    }
+
+    /// Regression marker for the stacked follow-up that adds `gh auth token` / macOS
+    /// Keychain support.
+    ///
+    /// On macOS, `gh auth login` stores the OAuth token in the system Keychain by default,
+    /// leaving `~/.config/gh/hosts.yml` with no `oauth_token` field. mise's current gh CLI
+    /// reader ([`crate::github::read_gh_hosts`]) filters those entries out, so
+    /// `resolve_token_for_wrapper` returns `None` for users who rely on `gh auth` —
+    /// exactly the scenario the original bug report surfaced for github-backend tools.
+    ///
+    /// This test is ignored so CI stays green while the fix is pending. Running
+    /// `cargo test -- --ignored` surfaces it. When the follow-up branch (see workpad
+    /// Deferred Items) lands, the implementer should:
+    ///   1. Replace the `unimplemented!()` with assertions that seed a hosts.yml entry
+    ///      without `oauth_token` and an override simulating the Keychain/gh-auth-token
+    ///      return value.
+    ///   2. Remove the `#[ignore]` attribute.
+    #[test]
+    #[ignore = "stacked follow-up: gh CLI macOS Keychain / `gh auth token` support is not yet \
+                implemented — tracked under workpad Deferred Items"]
+    fn test_wrapper_resolves_gh_cli_token_from_macos_keychain_after_fix() {
+        unimplemented!(
+            "pending macOS Keychain / `gh auth token` support in the stacked follow-up PR"
+        )
     }
 }

@@ -478,6 +478,12 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     // 4. github_tokens.toml
+    #[cfg(test)]
+    if let Some((token, source)) = test_support::lookup_tokens_file_override(&lookup_hosts)
+        .map(|t| (t, TokenSource::TokensFile))
+    {
+        return Some((token, source));
+    }
     for lookup_host in &lookup_hosts {
         if let Some(token) = MISE_GITHUB_TOKENS.get(*lookup_host) {
             return Some((token.clone(), TokenSource::TokensFile));
@@ -630,6 +636,33 @@ struct GhHostEntry {
 /// racing.
 #[cfg(test)]
 pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    //! Test-only hooks that let sibling modules seed non-env-var token sources without
+    //! spinning up global configuration infrastructure. Only consulted from `resolve_token`
+    //! under `#[cfg(test)]`; production builds never see these statics.
+
+    use std::collections::HashMap;
+    use std::sync::RwLock;
+
+    /// Overrides the `github_tokens.toml` path (source #4 in [`super::resolve_token`]).
+    /// Keyed by the same lookup hosts `resolve_token` walks — e.g. `"github.com"`.
+    /// Hold [`super::TEST_ENV_LOCK`] while mutating; always clear before returning.
+    pub(crate) static TOKENS_FILE_OVERRIDE: RwLock<Option<HashMap<String, String>>> =
+        RwLock::new(None);
+
+    pub(crate) fn lookup_tokens_file_override(lookup_hosts: &[&str]) -> Option<String> {
+        let guard = TOKENS_FILE_OVERRIDE.read().ok()?;
+        let map = guard.as_ref()?;
+        for host in lookup_hosts {
+            if let Some(token) = map.get(*host) {
+                return Some(token.clone());
+            }
+        }
+        None
+    }
+}
 
 #[cfg(test)]
 mod tests {

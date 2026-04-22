@@ -481,7 +481,13 @@ impl UnifiedGitBackend {
                 {
                     Ok(true) => return Some(ProvenanceType::GithubAttestations),
                     Ok(false) => {}
-                    Err(e) => {
+                    Err(crate::github::sigstore::DetectError::SourceCreation(e)) => {
+                        warn!(
+                            "Failed to create GitHub attestation source for {owner}/{repo_name}: {e}. \
+                             Lockfile may not record github-attestations provenance."
+                        );
+                    }
+                    Err(crate::github::sigstore::DetectError::Fetch(e)) => {
                         warn!(
                             "GitHub attestation API query failed for {owner}/{repo_name}: {e}. \
                              Lockfile may not record github-attestations provenance."
