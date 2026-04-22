@@ -1,8 +1,54 @@
 use mlua::{BorrowedStr, ExternalResult, Lua, MultiValue, Result, Table, Value};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
+use reqwest::{RequestBuilder, Response, StatusCode};
+use std::time::Duration;
 use url::Url;
 
 use crate::http::CLIENT;
+
+const HTTP_RETRY_ATTEMPTS: usize = 3;
+
+fn should_retry_status(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::REQUEST_TIMEOUT
+            | StatusCode::TOO_MANY_REQUESTS
+            | StatusCode::BAD_GATEWAY
+            | StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::GATEWAY_TIMEOUT
+    )
+}
+
+fn retry_delay(attempt: usize) -> Duration {
+    Duration::from_millis(200 * (attempt as u64 + 1))
+}
+
+async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Response, reqwest::Error> {
+    let Some(template) = builder.try_clone() else {
+        return builder.send().await;
+    };
+
+    for attempt in 0..HTTP_RETRY_ATTEMPTS {
+        let response = template
+            .try_clone()
+            .expect("cloned request builder should remain cloneable")
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) if should_retry_status(resp.status()) && attempt + 1 < HTTP_RETRY_ATTEMPTS => {
+                tokio::time::sleep(retry_delay(attempt)).await;
+            }
+            Ok(resp) => return Ok(resp),
+            Err(err) if err.is_timeout() && attempt + 1 < HTTP_RETRY_ATTEMPTS => {
+                tokio::time::sleep(retry_delay(attempt)).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    unreachable!("retry loop should always return a response or error")
+}
 
 pub fn mod_http(lua: &Lua) -> Result<()> {
     let package: Table = lua.globals().get("package")?;
@@ -93,6 +139,11 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
         return headers;
     };
 
+    // Release-download URLs on github.com 302 to a CDN host that rejects our
+    // Authorization header. We still attach auth on the initial github.com
+    // request (required for private-repo downloads) and rely on reqwest's
+    // default redirect policy to strip sensitive headers on the cross-origin
+    // hop to the CDN. Matches src/github.rs::is_github_release_asset_host.
     let is_github = host == "api.github.com"
         || host == "github.com"
         || (host.ends_with(".githubusercontent.com")
@@ -125,10 +176,7 @@ async fn get(lua: &Lua, input: Table) -> Result<Table> {
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = CLIENT
-        .get(&url)
-        .headers(headers)
-        .send()
+    let resp = send_with_retry(CLIENT.get(&url).headers(headers))
         .await
         .into_lua_err()?;
     let t = lua.create_table()?;
@@ -147,10 +195,7 @@ async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
     };
     let headers = add_default_headers(lua, &url, headers);
     let path: String = input.iter().nth(1).unwrap().to_string()?;
-    let resp = CLIENT
-        .get(&url)
-        .headers(headers)
-        .send()
+    let resp = send_with_retry(CLIENT.get(&url).headers(headers))
         .await
         .into_lua_err()?;
     resp.error_for_status_ref().into_lua_err()?;
@@ -169,10 +214,7 @@ async fn head(lua: &Lua, input: Table) -> Result<Table> {
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = CLIENT
-        .head(&url)
-        .headers(headers)
-        .send()
+    let resp = send_with_retry(CLIENT.head(&url).headers(headers))
         .await
         .into_lua_err()?;
     let t = lua.create_table()?;
@@ -188,7 +230,7 @@ async fn try_get(lua: &Lua, input: Table) -> Result<MultiValue> {
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = match CLIENT.get(&url).headers(headers).send().await {
+    let resp = match send_with_retry(CLIENT.get(&url).headers(headers)).await {
         Ok(resp) => resp,
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![
@@ -219,7 +261,7 @@ async fn try_head(lua: &Lua, input: Table) -> Result<MultiValue> {
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = match CLIENT.head(&url).headers(headers).send().await {
+    let resp = match send_with_retry(CLIENT.head(&url).headers(headers)).await {
         Ok(resp) => resp,
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![
@@ -259,7 +301,7 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
             ]));
         }
     };
-    let resp = match CLIENT.get(&url).headers(headers).send().await {
+    let resp = match send_with_retry(CLIENT.get(&url).headers(headers)).await {
         Ok(resp) => resp,
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![
@@ -312,6 +354,9 @@ fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -445,6 +490,28 @@ mod tests {
     }
 
     #[test]
+    fn test_add_default_headers_sends_auth_on_github_release_download_url() {
+        // Private-repo release downloads require auth on the initial github.com
+        // request; reqwest strips it on the cross-origin redirect to the CDN.
+        let lua = Lua::new();
+        lua.set_named_registry_value("github_token", "ghp_registry")
+            .unwrap();
+
+        let headers = add_default_headers(
+            &lua,
+            "https://github.com/JetBrains/kotlin/releases/download/v2.0.20/kotlin-compiler-2.0.20.zip",
+            HeaderMap::default(),
+        );
+
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer ghp_registry")
+        );
+    }
+
+    #[test]
     fn test_add_default_headers_only_sends_api_version_to_api_host() {
         let lua = Lua::new();
         lua.set_named_registry_value("github_token", "ghp_registry")
@@ -495,6 +562,43 @@ mod tests {
         .exec_async()
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_head_retries_transient_status() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            for status in [503, 200] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buf = [0_u8; 1024];
+                let _ = stream.read(&mut buf).unwrap();
+                let response = if status == 200 {
+                    "HTTP/1.1 200 OK\r\nConnection: close\r\nX-Test-Header: ok\r\nContent-Length: 0\r\n\r\n"
+                } else {
+                    "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
+                };
+                stream.write_all(response.as_bytes()).unwrap();
+                stream.flush().unwrap();
+            }
+        });
+
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        let url = format!("http://{addr}/retry-head");
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local resp = http.head({ url = $url })
+            assert(resp.status_code == 200)
+            assert(resp.headers["x-test-header"] == "ok")
+        })
+        .exec_async()
+        .await
+        .unwrap();
+
+        server.join().unwrap();
     }
 
     #[tokio::test]
