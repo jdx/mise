@@ -252,8 +252,7 @@ mod tests {
             std::io::ErrorKind::Interrupted,
             "user cancelled"
         ))));
-        assert!(!is_interrupted_io_error(&eyre!(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        assert!(!is_interrupted_io_error(&eyre!(std::io::Error::other(
             "user cancelled"
         ))));
     }
