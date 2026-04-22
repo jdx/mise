@@ -149,8 +149,9 @@ fn handle_err(err: Report) -> eyre::Result<()> {
     {
         return Ok(());
     }
-    if is_user_cancelled(&err) {
-        return Ok(());
+    if is_interrupted_io_error(&err) {
+        stop_multi_progress();
+        exit(130);
     }
 
     // Check for miette diagnostic errors and render them specially
@@ -193,8 +194,18 @@ fn display_friendly_err(err: &Report) {
     error!("{msg}");
 }
 
-fn is_user_cancelled(err: &Report) -> bool {
-    err.chain().any(|err| err.to_string() == "user cancelled")
+fn is_interrupted_io_error(err: &Report) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::Interrupted)
+    })
+}
+
+fn stop_multi_progress() {
+    if let Some(mpr) = MultiProgressReport::try_get() {
+        let _ = mpr.stop();
+    }
 }
 
 static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
@@ -235,8 +246,14 @@ mod tests {
     use eyre::eyre;
 
     #[test]
-    fn detects_exact_user_cancelled_error() {
-        assert!(is_user_cancelled(&eyre!("user cancelled")));
-        assert!(!is_user_cancelled(&eyre!("download cancelled by user")));
+    fn detects_interrupted_io_error() {
+        assert!(is_interrupted_io_error(&eyre!(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "user cancelled"
+        ))));
+        assert!(!is_interrupted_io_error(&eyre!(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "user cancelled"
+        ))));
     }
 }
