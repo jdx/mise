@@ -854,11 +854,7 @@ pub trait Backend: Debug + Send + Sync {
         query: Option<String>,
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
-        let opts = config
-            .get_tool_opts(self.ba())
-            .await?
-            .unwrap_or_else(|| self.ba().opts());
-        let before_date = resolve_before_date(before_date, opts.get("install_before"))?;
+        let before_date = effective_latest_before_date(self, config, before_date).await?;
         match query.as_deref() {
             Some("latest") | None => match before_date {
                 Some(before) => {
@@ -1779,6 +1775,27 @@ pub trait Backend: Debug + Send + Sync {
     }
 }
 
+async fn effective_latest_before_date<B: Backend + ?Sized>(
+    backend: &B,
+    config: &Arc<Config>,
+    before_date: Option<Timestamp>,
+) -> eyre::Result<Option<Timestamp>> {
+    if before_date.is_some() {
+        return Ok(before_date);
+    }
+
+    let backend_opts = backend.ba().opts();
+    if let Some(before) = backend_opts.get("install_before") {
+        return resolve_before_date(None, Some(before));
+    }
+
+    let config_install_before = config
+        .get_tool_opts(backend.ba())
+        .await?
+        .and_then(|opts| opts.get("install_before").map(str::to_string));
+    resolve_before_date(None, config_install_before.as_deref())
+}
+
 #[cfg(test)]
 mod latest_version_tests {
     use super::*;
@@ -1931,6 +1948,25 @@ mod latest_version_tests {
             backend.latest_installed_version(None).unwrap(),
             Some("2.0.0".into())
         );
+    }
+
+    #[tokio::test]
+    async fn test_inline_install_before_wins_over_config_entry() {
+        let config = Config::get().await.unwrap();
+        // The test fixture has a `tiny` config entry without install_before.
+        // Inline backend opts must still win when a config entry exists.
+        let backend = LatestBackend::new("tiny[install_before=2024-06-01]");
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), None)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 1);
     }
 }
 
