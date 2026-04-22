@@ -220,7 +220,6 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             })
             .into_iter()
             .filter(|v| !v.starts_with('.'))
-            .filter(|v| v != "latest")
             .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
             .filter(|v| !dir.join(v).join("incomplete").exists())
             .sorted_by_cached_key(|v| {
@@ -327,7 +326,6 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 })
                 .into_iter()
                 .filter(|v| !v.starts_with('.'))
-                .filter(|v| v != "latest")
                 .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
                 .filter(|v| !dir.join(v).join("incomplete").exists())
                 .sorted_by_cached_key(|v| {

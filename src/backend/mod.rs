@@ -390,6 +390,9 @@ pub trait Backend: Debug + Send + Sync {
         BackendType::Core
     }
     fn ba(&self) -> &Arc<BackendArg>;
+    fn allows_literal_latest_version(&self) -> bool {
+        false
+    }
 
     /// Generates a platform key for lockfile storage.
     /// Default implementation uses the current platform key (os-arch or os-arch-qualifier),
@@ -653,7 +656,12 @@ pub trait Backend: Debug + Send + Sync {
         self.latest_version_for_query(config, "latest", None).await
     }
     fn list_installed_versions(&self) -> Vec<String> {
-        install_state::list_versions(&self.ba().short)
+        let versions = install_state::list_versions(&self.ba().short);
+        if self.allows_literal_latest_version() {
+            versions
+        } else {
+            versions.into_iter().filter(|v| v != "latest").collect()
+        }
     }
     fn is_version_installed(
         &self,
@@ -871,7 +879,9 @@ pub trait Backend: Debug + Send + Sync {
                 let installed_symlink = self.ba().installs_path.join("latest");
                 if installed_symlink.exists() {
                     if !is_runtime_symlink(&installed_symlink) {
-                        return Ok(None);
+                        return Ok(self
+                            .allows_literal_latest_version()
+                            .then(|| "latest".to_string()));
                     }
                     let Some(target) = file::resolve_symlink(&installed_symlink)? else {
                         return Ok(None);

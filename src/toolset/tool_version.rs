@@ -323,8 +323,10 @@ impl ToolVersion {
             }
             let latest_error = if !is_offline {
                 match backend.latest_version(config, None, opts.before_date).await {
-                    Ok(Some(v)) => return build(v),
-                    Ok(None) => None,
+                    Ok(Some(v)) if v != "latest" || backend.allows_literal_latest_version() => {
+                        return build(v);
+                    }
+                    Ok(Some(_)) | Ok(None) => None,
                     Err(err) => Some(err),
                 }
             } else {

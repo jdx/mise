@@ -39,6 +39,10 @@ impl Backend for UbiBackend {
         &self.ba
     }
 
+    fn allows_literal_latest_version(&self) -> bool {
+        name_is_url(&self.tool_name())
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         deprecated_at!(
             "2026.4.0",
