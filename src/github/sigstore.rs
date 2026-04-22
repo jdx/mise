@@ -102,7 +102,14 @@ impl std::fmt::Display for DetectError {
     }
 }
 
-impl std::error::Error for DetectError {}
+impl std::error::Error for DetectError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            DetectError::SourceCreation(e) => Some(e),
+            DetectError::Fetch(e) => Some(e),
+        }
+    }
+}
 
 /// Probe the GitHub attestation API for the given digest without downloading the artifact.
 ///
