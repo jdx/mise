@@ -43,10 +43,6 @@ pub struct ToolVersion {
 }
 
 impl ToolVersion {
-    fn is_semver_fuzzy_query(v: &str) -> bool {
-        v == "latest" || (versions::Versioning::new(v).is_some() && v.matches('.').count() < 2)
-    }
-
     fn no_versions_found(backend: &ABackend, before_date: Option<Timestamp>) -> eyre::Report {
         let msg = if before_date.is_some() {
             format!(
@@ -391,9 +387,6 @@ impl ToolVersion {
         }
         // When OFFLINE, skip ALL remote version fetching regardless of version format
         if is_offline {
-            if Self::is_semver_fuzzy_query(&v) {
-                return Err(Self::no_versions_found(&backend, opts.before_date));
-            }
             return build(v);
         }
         // In prefer-offline mode (hook-env, activate, exec), skip remote version
@@ -421,9 +414,6 @@ impl ToolVersion {
                 // Exact match exists but was filtered by date - use it anyway
                 return build(v);
             }
-        }
-        if Self::is_semver_fuzzy_query(&v) {
-            return Err(Self::no_versions_found(&backend, opts.before_date));
         }
         build(v)
     }

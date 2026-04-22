@@ -21,8 +21,8 @@ INSTALL
 chmod +x "$PLUGIN_DIR/bin/install"
 
 assert_fail "mise install fuzzytest@latest" "no versions found for fuzzytest"
-assert_fail "mise install fuzzytest@24" "no versions found for fuzzytest"
-assert_fail "mise install fuzzytest@24.0" "no versions found for fuzzytest"
+assert_fail "mise install fuzzytest@prefix:24" "no versions found for fuzzytest"
+assert_fail "mise install fuzzytest@prefix:24.0" "no versions found for fuzzytest"
 
 assert_fail "test -d $MISE_DATA_DIR/installs/fuzzytest/latest"
 assert_fail "test -d $MISE_DATA_DIR/installs/fuzzytest/24"
