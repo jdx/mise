@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 use tokio::sync::RwLockReadGuard;
 use xx::regex;
 
-pub mod sigstore;
+pub(crate) mod sigstore;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GithubRelease {
@@ -623,17 +623,23 @@ struct GhHostEntry {
     oauth_token: Option<String>,
 }
 
+/// Serializes env-var mutations across every `#[cfg(test)]` module that touches GitHub token
+/// environment variables. `github::tests` and `github::sigstore::tests` both mutate the same
+/// four tokens (`MISE_GITHUB_TOKEN`, `GITHUB_API_TOKEN`, `GITHUB_TOKEN`,
+/// `MISE_GITHUB_ENTERPRISE_TOKEN`); sharing a single lock prevents parallel test runs from
+/// racing.
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn with_github_token<F, R>(test_fn: F) -> R
     where
         F: FnOnce() -> R,
     {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _guard = super::TEST_ENV_LOCK.lock().unwrap();
         let orig_mise = std::env::var("MISE_GITHUB_TOKEN").ok();
         let orig_api = std::env::var("GITHUB_API_TOKEN").ok();
         let orig_gh = std::env::var("GITHUB_TOKEN").ok();

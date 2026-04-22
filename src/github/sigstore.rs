@@ -132,9 +132,6 @@ mod tests {
     use super::*;
     use crate::env as mise_env;
 
-    /// Serializes env-var mutations across tests in this module.
-    static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     const TOKEN_ENV_VARS: &[&str] = &[
         "MISE_GITHUB_TOKEN",
         "GITHUB_API_TOKEN",
@@ -142,33 +139,40 @@ mod tests {
         "MISE_GITHUB_ENTERPRISE_TOKEN",
     ];
 
-    fn snapshot_token_env_vars() -> Vec<(&'static str, Option<String>)> {
-        TOKEN_ENV_VARS
-            .iter()
-            .map(|name| (*name, std::env::var(name).ok()))
-            .collect()
+    /// RAII guard: snapshots the tracked token env vars on construction, clears them for the
+    /// test body, and restores the original values on drop — including when a test panics.
+    struct TokenEnvGuard {
+        saved: Vec<(&'static str, Option<String>)>,
     }
 
-    fn clear_token_env_vars() {
-        for name in TOKEN_ENV_VARS {
-            mise_env::remove_var(name);
+    impl TokenEnvGuard {
+        fn new() -> Self {
+            let saved: Vec<_> = TOKEN_ENV_VARS
+                .iter()
+                .map(|name| (*name, std::env::var(name).ok()))
+                .collect();
+            for name in TOKEN_ENV_VARS {
+                mise_env::remove_var(name);
+            }
+            Self { saved }
         }
     }
 
-    fn restore_token_env_vars(saved: Vec<(&'static str, Option<String>)>) {
-        for (name, value) in saved {
-            match value {
-                Some(v) => mise_env::set_var(name, v),
-                None => mise_env::remove_var(name),
+    impl Drop for TokenEnvGuard {
+        fn drop(&mut self) {
+            for (name, value) in std::mem::take(&mut self.saved) {
+                match value {
+                    Some(v) => mise_env::set_var(name, v),
+                    None => mise_env::remove_var(name),
+                }
             }
         }
     }
 
     #[test]
     fn test_resolve_token_wrapper_uses_env_var_with_default_url() {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let saved = snapshot_token_env_vars();
-        clear_token_env_vars();
+        let _lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TokenEnvGuard::new();
         mise_env::set_var("GITHUB_TOKEN", "ghp_wrapper_default");
 
         let resolved = resolve_token_for_wrapper(None);
@@ -177,15 +181,12 @@ mod tests {
             Some("ghp_wrapper_default"),
             "env var should flow through the wrapper with the default API URL"
         );
-
-        restore_token_env_vars(saved);
     }
 
     #[test]
     fn test_resolve_token_wrapper_uses_env_var_with_explicit_api_url() {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let saved = snapshot_token_env_vars();
-        clear_token_env_vars();
+        let _lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TokenEnvGuard::new();
         mise_env::set_var("MISE_GITHUB_TOKEN", "ghp_explicit_api");
 
         let resolved = resolve_token_for_wrapper(Some(crate::github::API_URL));
@@ -194,15 +195,12 @@ mod tests {
             Some("ghp_explicit_api"),
             "explicit api.github.com URL should resolve identically to the default"
         );
-
-        restore_token_env_vars(saved);
     }
 
     #[test]
     fn test_resolve_token_wrapper_respects_enterprise_api_url() {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let saved = snapshot_token_env_vars();
-        clear_token_env_vars();
+        let _lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TokenEnvGuard::new();
         mise_env::set_var("GITHUB_TOKEN", "ghp_public_only");
         mise_env::set_var("MISE_GITHUB_ENTERPRISE_TOKEN", "ghp_enterprise_only");
 
@@ -223,7 +221,5 @@ mod tests {
             Some("ghp_public_only"),
             "default api_url should still resolve the public token"
         );
-
-        restore_token_env_vars(saved);
     }
 }
