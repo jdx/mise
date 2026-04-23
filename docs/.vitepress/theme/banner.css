@@ -3,7 +3,7 @@
   top: 0;
   left: 0;
   right: 0;
-  z-index: 60;
+  z-index: 1001;
   display: flex;
   gap: 0.75rem;
   align-items: center;
@@ -22,7 +22,7 @@
   margin-left: auto;
   background: transparent;
   border: 0;
-  color: #fff;
+  color: inherit;
   font-size: 1.25rem;
   cursor: pointer;
   line-height: 1;
