@@ -7,11 +7,13 @@
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  padding: 0.5rem 1rem;
+  justify-content: center;
+  padding: 0.5rem 2.75rem 0.5rem 1rem;
   background: var(--vp-c-brand-1, #3451b2);
   color: #fff;
   font-size: 0.9rem;
   line-height: 1.4;
+  text-align: center;
 }
 .jdx-banner a {
   color: #fff;
@@ -19,14 +21,17 @@
   font-weight: 500;
 }
 .jdx-banner button {
-  margin-left: auto;
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
   background: transparent;
   border: 0;
   color: inherit;
   font-size: 1.25rem;
   cursor: pointer;
   line-height: 1;
-  padding: 0 0.25rem;
+  padding: 0 0.5rem;
   opacity: 0.85;
 }
 .jdx-banner button:hover {
@@ -35,6 +40,6 @@
 @media (max-width: 640px) {
   .jdx-banner {
     font-size: 0.85rem;
-    padding: 0.4rem 0.75rem;
+    padding: 0.4rem 2.5rem 0.4rem 0.75rem;
   }
 }

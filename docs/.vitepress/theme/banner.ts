@@ -46,7 +46,7 @@ function render(b: BannerData): void {
     const a = document.createElement("a");
     a.href = b.link;
     a.target = "_blank";
-    a.rel = "noopener noreferrer";
+    a.rel = "noopener";
     a.textContent = b.linkText || "Learn more";
     el.appendChild(a);
   }
