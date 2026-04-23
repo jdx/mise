@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Test that `path:` values in [tools] resolve correctly:
+# - relative paths are resolved against the config file's directory
+# - `./` prefix is stripped
+# - `~/` is expanded to $HOME
+# See: https://github.com/jdx/mise/discussions/9288
+
+workdir="$HOME/workdir"
+
+mkdir -p "$workdir/packages/dummy"
+
+cat >mise.toml <<EOF
+[tools]
+dummy = "path:./packages/dummy"
+EOF
+
+# `mise where` should print the absolute path to the directory.
+# It must NOT contain the install-state path "installs/dummy/".
+assert "mise where dummy" "$workdir/packages/dummy"
+assert_not_contains "mise where dummy" "installs/dummy/"
+
+# mise ls should display the path with ~/ substitution via display_user.
+assert_contains "mise ls dummy" "path:~/workdir/packages/dummy"
+
+# A path without the ./ prefix should also resolve against the config root.
+cat >mise.toml <<EOF
+[tools]
+dummy = "path:packages/dummy"
+EOF
+assert "mise where dummy" "$workdir/packages/dummy"
+
+# A ~/ path should expand to $HOME.
+mkdir -p "$HOME/extra-dummy"
+cat >mise.toml <<EOF
+[tools]
+dummy = "path:~/extra-dummy"
+EOF
+assert "mise where dummy" "$HOME/extra-dummy"
+
+# An absolute path should pass through unchanged.
+cat >mise.toml <<EOF
+[tools]
+dummy = "path:$workdir/packages/dummy"
+EOF
+assert "mise where dummy" "$workdir/packages/dummy"
