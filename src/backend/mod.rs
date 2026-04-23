@@ -684,8 +684,14 @@ pub trait Backend: Debug + Send + Sync {
             let is_installed = install_path.exists();
             let is_not_incomplete = !self.incomplete_file_path(tv).exists();
             let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
+            // Treat an existing-but-empty install dir as not installed. This catches silent
+            // failures where a backend returned Ok without producing any files — see
+            // https://github.com/jdx/mise/discussions/9324.
+            let is_not_empty = !is_installed
+                || !install_path.is_dir()
+                || !file::is_empty_dir(install_path).unwrap_or(false);
 
-            let installed = is_installed && is_not_incomplete && is_valid_symlink;
+            let installed = is_installed && is_not_incomplete && is_valid_symlink && is_not_empty;
             if log::log_enabled!(log::Level::Trace) && !installed {
                 let mut msg = format!(
                     "{} is not installed, path: {}",
@@ -700,6 +706,9 @@ pub trait Backend: Debug + Send + Sync {
                 }
                 if !is_valid_symlink {
                     msg += " (runtime symlink)";
+                }
+                if !is_not_empty {
+                    msg += " (empty)";
                 }
                 trace!("{}", msg);
             }

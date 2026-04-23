@@ -624,7 +624,7 @@ pub fn all_dirs<P: AsRef<Path>>(
         .collect())
 }
 
-fn is_empty_dir(path: &Path) -> Result<bool> {
+pub fn is_empty_dir(path: &Path) -> Result<bool> {
     path.read_dir()
         .map(|mut i| i.next().is_none())
         .wrap_err_with(|| format!("failed to read_dir: {}", display_path(path)))

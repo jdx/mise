@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/9324
+# mise previously treated any existing install dir (even an empty one) as
+# "installed", so a broken install silently passed all checks. Doctor reported
+# "No problems found", subsequent `mise install` runs skipped the retry, and
+# `mise which`/`mise where` disagreed about whether the tool was installed.
+#
+# With the fix, an empty install dir is treated as not installed, so doctor
+# flags it, `mise install` re-runs the install, and the state self-heals.
+
+assert "mise use dummy@1.0.0"
+
+install_dir="$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Sanity check: a fresh install produces a non-empty dir.
+assert_directory_not_empty "$install_dir"
+
+# Simulate the broken state: empty the install dir but leave it in place,
+# mimicking a backend that returned Ok without producing any files.
+rm -rf "${install_dir:?}"/*
+rm -rf "${install_dir:?}"/.[!.]* 2>/dev/null || true
+assert_directory_exists "$install_dir"
+assert_directory_empty "$install_dir"
+
+# `mise where` now reports the tool as not installed (previously: returned the
+# empty install dir path, masking the problem).
+assert_fail "mise where dummy"
+
+# `mise doctor` now flags the broken state (previously: "No problems found").
+assert_fail_contains "mise doctor" "dummy@1.0.0 is not installed"
+
+# `mise install` re-runs the install rather than short-circuiting on the empty
+# dir, self-healing the state.
+assert "mise install"
+assert_directory_not_empty "$install_dir"
+assert "mise where dummy"
