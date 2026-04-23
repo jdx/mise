@@ -445,6 +445,11 @@ impl Lock {
                     continue;
                 }
             }
+            // Skip unresolved symbolic versions (e.g., a lockfile poisoned with "latest"
+            // as the version). Pass 2's fallback will resolve these to a concrete version.
+            if tv.version == "latest" {
+                continue;
+            }
             let key = (backend.ba().short.clone(), tv.version.clone());
             if seen.insert(key) {
                 all_tools.push((backend.ba().as_ref().clone(), tv));
@@ -462,9 +467,13 @@ impl Lock {
                     for request in requests {
                         if let Ok(backend) = ba.backend() {
                             // Check if the resolved toolset has a matching version
+                            let mut matched_resolved = false;
                             if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
                                 for tv in &resolved_tv.versions {
-                                    if tv.request.version() == request.version() {
+                                    if tv.request.version() == request.version()
+                                        && tv.version != "latest"
+                                    {
+                                        matched_resolved = true;
                                         let key = (ba.short.clone(), tv.version.clone());
                                         if seen.insert(key) {
                                             all_tools.push((ba.as_ref().clone(), tv.clone()));
@@ -472,18 +481,18 @@ impl Lock {
                                     }
                                 }
                             }
-                            // For "latest" or prefix requests not yet matched, find the
-                            // best installed version (handles overridden tools)
-                            if request.version() == "latest" {
-                                let installed = backend.list_installed_versions();
-                                if let Some(latest_version) = installed.iter().max_by(|a, b| {
-                                    versions::Versioning::new(a).cmp(&versions::Versioning::new(b))
-                                }) {
+                            // For "latest" requests where nothing was resolved (e.g., tool was
+                            // overridden by a higher-priority config, or the lockfile holds a
+                            // bogus "latest" literal), fall back to the best installed version.
+                            if !matched_resolved && request.version() == "latest" {
+                                if let Some(latest_version) =
+                                    best_installed_version_for_backend(&backend)
+                                {
                                     let key = (ba.short.clone(), latest_version.clone());
                                     if seen.insert(key) {
                                         let tv = crate::toolset::ToolVersion::new(
                                             request.clone(),
-                                            latest_version.clone(),
+                                            latest_version,
                                         );
                                         all_tools.push((ba.as_ref().clone(), tv));
                                     }
@@ -507,17 +516,29 @@ impl Lock {
                     (t.ba.short.clone(), version)
                 })
                 .collect();
-            all_tools
+            // For `tool@latest`, we want upgrade semantics: resolve "latest" to the
+            // best installed version and lock that. Writing the literal "latest" string
+            // to the lockfile would be a bug.
+            let mut tools: Vec<LockTool> = all_tools
                 .into_iter()
                 .filter(|(ba, _)| specified_versions.contains_key(&ba.short))
                 .map(|(ba, mut tv)| {
-                    // If a specific version was requested, override the resolved version
                     if let Some(Some(version)) = specified_versions.get(&ba.short) {
-                        tv.version.clone_from(version);
+                        if version == "latest" {
+                            if let Some(latest_version) = best_installed_version(&ba) {
+                                tv.version = latest_version;
+                            }
+                        } else {
+                            tv.version.clone_from(version);
+                        }
                     }
                     (ba, tv)
                 })
-                .collect()
+                .collect();
+            // Deduplicate after potential "latest" -> concrete-version resolution.
+            let mut seen_after: BTreeSet<(String, String)> = BTreeSet::new();
+            tools.retain(|(ba, tv)| seen_after.insert((ba.short.clone(), tv.version.clone())));
+            tools
         }
     }
 
@@ -631,6 +652,19 @@ impl Lock {
 
         Ok((results, provenance_errors))
     }
+}
+
+/// Return the newest installed version for a given backend, or None if nothing is installed.
+fn best_installed_version_for_backend(backend: &crate::backend::ABackend) -> Option<String> {
+    backend
+        .list_installed_versions()
+        .into_iter()
+        .max_by(|a, b| versions::Versioning::new(a).cmp(&versions::Versioning::new(b)))
+}
+
+/// Resolve "latest" to the newest installed version for a given backend arg.
+fn best_installed_version(ba: &crate::cli::args::BackendArg) -> Option<String> {
+    crate::backend::get(ba).and_then(|b| best_installed_version_for_backend(&b))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
