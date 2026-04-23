@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# Installing a registry short name should not inherit options from a config entry
+# keyed by the resolved full backend name.
+cat <<EOF >mise.toml
+[tools]
+"github:aquaproj/aqua" = { version = "2.0.0", asset_pattern = "definitely-not-a-real-aqua-asset" }
+EOF
+
+assert "mise install aqua@2.0.0"
