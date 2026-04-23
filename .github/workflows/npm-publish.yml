@@ -77,14 +77,16 @@ jobs:
           curl -fsSL https://mise.run | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Install aube via mise
+        # aube comes from this repo's `mise.toml` -> `registry/aube.toml`
+        # (-> `github:endevco/aube`). Same install path local devs see when
+        # they run `mise install`. aube signs SLSA provenance via the
+        # Sigstore public-good instance using the workflow's
+        # `id-token: write` permission, the same way `npm publish
+        # --provenance` does.
+        run: mise install aube
+
       - name: Publish npm packages
-        # `mise x aube@latest` resolves aube from the mise registry
-        # (`registry/aube.toml` -> `github:endevco/aube`) and puts it on PATH
-        # for the script. aube is intentionally *not* in this repo's
-        # `mise.toml` because mise's npm backend auto-selects aube over npm
-        # when it's installed in the toolset (see `package_manager_for_install`
-        # in `src/backend/npm.rs`), which would change the install path for
-        # every `npm:*` dev tool the repo uses.
         run: |
           if [[ ${DRY_RUN:-0} != 1 ]]; then
             if [[ -n "${{ inputs.version }}" ]]; then
@@ -94,7 +96,7 @@ jobs:
             fi
             export MISE_VERSION
             export RELEASE_DIR="releases"
-            NPM_PREFIX=@jdxcode/mise mise x aube@latest -- ./scripts/release-npm.sh
+            NPM_PREFIX=@jdxcode/mise mise x aube -- ./scripts/release-npm.sh
           else
             echo "DRY RUN: Would publish npm packages"
           fi
