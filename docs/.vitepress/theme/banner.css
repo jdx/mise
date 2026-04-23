@@ -1,5 +1,8 @@
 .jdx-banner {
-  position: relative;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 60;
   display: flex;
   gap: 0.75rem;
