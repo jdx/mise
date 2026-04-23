@@ -68,6 +68,13 @@ jobs:
           node-version: "24.x"
           registry-url: "https://registry.npmjs.org"
 
+      - name: Install aube
+        # aube reads the .npmrc that setup-node wrote (auth token + registry URL)
+        # and signs SLSA provenance via the Sigstore public-good instance using
+        # the workflow's `id-token: write` permission, the same way `npm publish
+        # --provenance` does.
+        run: npm install -g @endevco/aube@latest
+
       - name: Publish npm packages
         run: |
           if [[ ${DRY_RUN:-0} != 1 ]]; then

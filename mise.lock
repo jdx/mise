@@ -59,6 +59,43 @@ checksum = "sha256:5414b7124a91f4b5abee62e5c9d84802237734f8d15b9b7032732a32c3ebf
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_windows_amd64.zip"
 provenance = "github-attestations"
 
+[[tools.actionlint]]
+version = "1.7.12"
+backend = "aqua:rhysd/actionlint"
+
+[tools.actionlint."platforms.linux-arm64"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.linux-arm64-musl"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.linux-x64"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.linux-x64-baseline"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.linux-x64-musl"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.linux-x64-musl-baseline"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.macos-arm64"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.macos-x64"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.macos-x64-baseline"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.windows-x64"]
+provenance = "github-attestations"
+
+[tools.actionlint."platforms.windows-x64-baseline"]
+provenance = "github-attestations"
+
 [[tools.age]]
 version = "1.3.1"
 backend = "aqua:FiloSottile/age"
@@ -107,6 +144,56 @@ provenance = "github-attestations"
 checksum = "sha256:c56e8ce22f7e80cb85ad946cc82d198767b056366201d3e1a2b93d865be38154"
 url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-windows-amd64.zip"
 provenance = "github-attestations"
+
+[[tools.aube]]
+version = "1.0.0-beta.12"
+backend = "github:endevco/aube"
+
+[tools.aube."platforms.linux-arm64"]
+checksum = "sha256:2090ca7a5ee569b9077f2c4f50714de310067e0abc5cb033f91ff95c486ca5c7"
+url = "https://github.com/endevco/aube/releases/download/v1.0.0-beta.12/aube-v1.0.0-beta.12-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/402905100"
+
+[tools.aube."platforms.linux-arm64-musl"]
+checksum = "sha256:3ef377be36638a666afad7f242260469a4293d0ae591a17cf5b740a255099faf"
+url = "https://github.com/endevco/aube/releases/download/v1.0.0-beta.12/aube-v1.0.0-beta.12-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/402905297"
+
+[tools.aube."platforms.linux-x64"]
+checksum = "sha256:023cd7f1493e0a880c5311b56643b0020968e5292c7a6c8a530560f9ea0165a5"
+url = "https://github.com/endevco/aube/releases/download/v1.0.0-beta.12/aube-v1.0.0-beta.12-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/402905001"
+
+[tools.aube."platforms.linux-x64-baseline"]
+checksum = "sha256:023cd7f1493e0a880c5311b56643b0020968e5292c7a6c8a530560f9ea0165a5"
+url = "https://github.com/endevco/aube/releases/download/v1.0.0-beta.12/aube-v1.0.0-beta.12-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/402905001"
+
+[tools.aube."platforms.linux-x64-musl"]
+checksum = "sha256:865202821e0489ba50b1ed5261c1b8a4e71ce1051806ab25349f6d8239b099e7"
+url = "https://github.com/endevco/aube/releases/download/v1.0.0-beta.12/aube-v1.0.0-beta.12-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/402905104"
+
+[tools.aube."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:023cd7f1493e0a880c5311b56643b0020968e5292c7a6c8a530560f9ea0165a5"
+url = "https://github.com/endevco/aube/releases/download/v1.0.0-beta.12/aube-v1.0.0-beta.12-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/402905001"
+
+[tools.aube."platforms.macos-arm64"]
+checksum = "sha256:2c68f0453bee40bf6e3b990b4f47b9337ce77fac717820e8e3adb272d129004b"
+url = "https://github.com/endevco/aube/releases/download/v1.0.0-beta.12/aube-v1.0.0-beta.12-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/402905355"
+provenance = "github-attestations"
+
+[tools.aube."platforms.windows-x64"]
+checksum = "sha256:24297909de34f8a129ea8948cd4b8d62dadc22ef8926d5938d94be1a95c8db1a"
+url = "https://github.com/endevco/aube/releases/download/v1.0.0-beta.12/aube-v1.0.0-beta.12-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/402907813"
+
+[tools.aube."platforms.windows-x64-baseline"]
+checksum = "sha256:24297909de34f8a129ea8948cd4b8d62dadc22ef8926d5938d94be1a95c8db1a"
+url = "https://github.com/endevco/aube/releases/download/v1.0.0-beta.12/aube-v1.0.0-beta.12-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/402907813"
 
 [[tools.bun]]
 version = "1.3.10"
@@ -204,8 +291,16 @@ url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.17.6/ca
 checksum = "sha256:5fcbddde2d415704d2432bbe606a5767ddaf1ef4ee2c16b7828f8be2ed1e5a5c"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.17.6/cargo-binstall-x86_64-pc-windows-msvc.zip"
 
+[[tools.cargo-binstall]]
+version = "1.18.1"
+backend = "aqua:cargo-bins/cargo-binstall"
+
 [[tools."cargo:cargo-edit"]]
 version = "0.13.9"
+backend = "cargo:cargo-edit"
+
+[[tools."cargo:cargo-edit"]]
+version = "0.13.10"
 backend = "cargo:cargo-edit"
 
 [[tools."cargo:cargo-insta"]]
@@ -425,6 +520,46 @@ url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-x86_64-pc-windows-
 checksum = "sha256:102a744a25530f3896f5699b5038d996341b3b4c86feb7f595eea1eb769a29b5"
 url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-x86_64-pc-windows-msvc.zip"
 
+[[tools.hk]]
+version = "1.44.0"
+backend = "aqua:jdx/hk"
+
+[tools.hk."platforms.linux-arm64"]
+checksum = "sha256:0dbca69b6d2141bf60aa9b5cd54e59232ba5b10855a9c7b52426a9645211809f"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-aarch64-unknown-linux-gnu.tar.gz"
+
+[tools.hk."platforms.linux-arm64-musl"]
+checksum = "sha256:0dbca69b6d2141bf60aa9b5cd54e59232ba5b10855a9c7b52426a9645211809f"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-aarch64-unknown-linux-gnu.tar.gz"
+
+[tools.hk."platforms.linux-x64"]
+checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2270"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+
+[tools.hk."platforms.linux-x64-baseline"]
+checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2270"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+
+[tools.hk."platforms.linux-x64-musl"]
+checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2270"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+
+[tools.hk."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2270"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+
+[tools.hk."platforms.macos-arm64"]
+checksum = "sha256:6a1de3c576487983e46d0458b3c9f20af51c4c785d22b96e3396be5c164a1e04"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-aarch64-apple-darwin.tar.gz"
+
+[tools.hk."platforms.windows-x64"]
+checksum = "sha256:8a0fb733ccae1e83234be60998e1de7df64c728cc9d1e4ebd40c9642fc8b0b3c"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-pc-windows-msvc.zip"
+
+[tools.hk."platforms.windows-x64-baseline"]
+checksum = "sha256:8a0fb733ccae1e83234be60998e1de7df64c728cc9d1e4ebd40c9642fc8b0b3c"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-pc-windows-msvc.zip"
+
 [[tools.jq]]
 version = "1.8.1"
 backend = "aqua:jqlang/jq"
@@ -640,6 +775,10 @@ url = "https://github.com/apple/pkl/releases/download/0.31.0/pkl-windows-amd64.e
 checksum = "sha256:37d35ce8a165766502fb13799071d4cefa84d39fb455c75c471b47b9b5d12b04"
 url = "https://github.com/apple/pkl/releases/download/0.31.0/pkl-windows-amd64.exe"
 
+[[tools.pkl]]
+version = "0.31.1"
+backend = "aqua:apple/pkl"
+
 [[tools.ripgrep]]
 version = "15.1.0"
 backend = "aqua:BurntSushi/ripgrep"
@@ -783,6 +922,10 @@ url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_windo
 [tools.shfmt."platforms.windows-x64-baseline"]
 checksum = "sha256:c8bda517ba1c640ce4a715c0fa665439ddbe4357ba5e9b77b0e51e70e2b9c94b"
 url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_windows_amd64.exe"
+
+[[tools.shfmt]]
+version = "3.13.1"
+backend = "aqua:mvdan/sh"
 
 [[tools.sops]]
 version = "3.12.1"
