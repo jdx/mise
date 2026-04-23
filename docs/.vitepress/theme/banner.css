@@ -8,7 +8,7 @@
   gap: 0.75rem;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem 2.75rem 0.5rem 1rem;
+  padding: 0.5rem 2.75rem;
   background: var(--vp-c-brand-1, #3451b2);
   color: #fff;
   font-size: 0.9rem;
@@ -40,6 +40,6 @@
 @media (max-width: 640px) {
   .jdx-banner {
     font-size: 0.85rem;
-    padding: 0.4rem 2.5rem 0.4rem 0.75rem;
+    padding: 0.4rem 2.5rem;
   }
 }
