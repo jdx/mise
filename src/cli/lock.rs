@@ -484,8 +484,8 @@ impl Lock {
                             // For "latest" requests where nothing was resolved (e.g., tool was
                             // overridden by a higher-priority config, or the lockfile holds a
                             // bogus "latest" literal), fall back to the best installed version.
-                            if !matched_resolved && request.version() == "latest" {
-                                if let Some(latest_version) =
+                            if !matched_resolved && request.version() == "latest"
+                                && let Some(latest_version) =
                                     best_installed_version_for_backend(&backend)
                                 {
                                     let key = (ba.short.clone(), latest_version.clone());
@@ -497,7 +497,6 @@ impl Lock {
                                         all_tools.push((ba.as_ref().clone(), tv));
                                     }
                                 }
-                            }
                         }
                     }
                 }
