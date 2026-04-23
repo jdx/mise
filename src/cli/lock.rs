@@ -483,10 +483,13 @@ impl Lock {
                             }
                             // For "latest" requests where nothing was resolved (e.g., tool was
                             // overridden by a higher-priority config, or the lockfile holds a
-                            // bogus "latest" literal), fall back to the best installed version.
-                            if !matched_resolved && request.version() == "latest"
-                                && let Some(latest_version) =
-                                    best_installed_version_for_backend(&backend)
+                            // bogus "latest" literal), ask the backend to resolve `latest`
+                            // against installed versions. Deliberately not sorting version
+                            // strings ourselves — each backend knows its own versioning scheme.
+                            if !matched_resolved
+                                && request.version() == "latest"
+                                && let Ok(Some(latest_version)) =
+                                    backend.latest_installed_version(Some("latest".to_string()))
                                 {
                                     let key = (ba.short.clone(), latest_version.clone());
                                     if seen.insert(key) {
@@ -515,16 +518,22 @@ impl Lock {
                     (t.ba.short.clone(), version)
                 })
                 .collect();
-            // For `tool@latest`, we want upgrade semantics: resolve "latest" to the
-            // best installed version and lock that. Writing the literal "latest" string
-            // to the lockfile would be a bug.
+            // For `tool@latest`, we want upgrade semantics: resolve "latest" to an
+            // installed concrete version and lock that. Writing the literal "latest"
+            // string to the lockfile would be a bug. Use the backend's own resolver so
+            // we don't impose a semver ordering on tools that don't follow semver.
             let mut tools: Vec<LockTool> = all_tools
                 .into_iter()
                 .filter(|(ba, _)| specified_versions.contains_key(&ba.short))
                 .map(|(ba, mut tv)| {
                     if let Some(Some(version)) = specified_versions.get(&ba.short) {
                         if version == "latest" {
-                            if let Some(latest_version) = best_installed_version(&ba) {
+                            if let Some(latest_version) = crate::backend::get(&ba)
+                                .and_then(|b| {
+                                    b.latest_installed_version(Some("latest".to_string())).ok()
+                                })
+                                .flatten()
+                            {
                                 tv.version = latest_version;
                             }
                         } else {
@@ -651,19 +660,6 @@ impl Lock {
 
         Ok((results, provenance_errors))
     }
-}
-
-/// Return the newest installed version for a given backend, or None if nothing is installed.
-fn best_installed_version_for_backend(backend: &crate::backend::ABackend) -> Option<String> {
-    backend
-        .list_installed_versions()
-        .into_iter()
-        .max_by(|a, b| versions::Versioning::new(a).cmp(&versions::Versioning::new(b)))
-}
-
-/// Resolve "latest" to the newest installed version for a given backend arg.
-fn best_installed_version(ba: &crate::cli::args::BackendArg) -> Option<String> {
-    crate::backend::get(ba).and_then(|b| best_installed_version_for_backend(&b))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
