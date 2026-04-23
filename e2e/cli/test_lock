@@ -109,6 +109,12 @@ output=$(mise lock --before 2019-01-01 --platform linux-x64 --dry-run 2>&1)
 assert_contains "echo '$output'" "jq@1.6 for linux-x64"
 assert_not_contains "echo '$output'" "jq@1.7.1"
 
+mkdir -p "$MISE_DATA_DIR/installs/jq/1.7.1"
+output=$(mise lock --before 2019-01-01 --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" "jq@1.6 for linux-x64"
+assert_not_contains "echo '$output'" "jq@1.7.1"
+rm -rf "$MISE_DATA_DIR/installs/jq/1.7.1"
+
 echo "=== Testing before filtering for overridden latest tools ==="
 rm -rf subdir mise.lock
 cat <<EOF >mise.toml
