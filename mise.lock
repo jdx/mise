@@ -246,6 +246,7 @@ url_api = "https://api.github.com/repos/jdx/communique/releases/assets/401268923
 checksum = "sha256:0b1fc485a8a388b8fa6f3bf198e5053ce7c7f47418e9a31893a369a95d411dbc"
 url = "https://github.com/jdx/communique/releases/download/v1.0.2/communique-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/401268760"
+provenance = "github-attestations"
 
 [tools.communique."platforms.linux-x64-baseline"]
 checksum = "sha256:0b1fc485a8a388b8fa6f3bf198e5053ce7c7f47418e9a31893a369a95d411dbc"
