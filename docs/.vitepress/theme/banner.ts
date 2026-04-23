@@ -6,6 +6,7 @@ interface BannerData {
   message: string;
   link?: string;
   linkText?: string;
+  expires?: string;
 }
 
 const ENDPOINT = "https://jdx.dev/banner.json";
@@ -17,10 +18,18 @@ export function initBanner(): void {
     .then((r) => (r.ok ? (r.json() as Promise<BannerData>) : null))
     .then((b) => {
       if (!b || !b.enabled) return;
+      if (isExpired(b.expires)) return;
       if (localStorage.getItem(STORAGE_KEY) === b.id) return;
       render(b);
     })
     .catch(() => {});
+}
+
+function isExpired(expires: string | undefined): boolean {
+  if (!expires) return false;
+  const t = Date.parse(expires);
+  if (Number.isNaN(t)) return false;
+  return Date.now() >= t;
 }
 
 function isHttpUrl(value: string): boolean {
