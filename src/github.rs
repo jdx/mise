@@ -127,6 +127,26 @@ async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<Gith
 }
 
 pub async fn list_releases(repo: &str) -> Result<Vec<GithubRelease>> {
+    Ok(list_releases_including_prereleases(repo)
+        .await?
+        .into_iter()
+        .filter(|r| !r.prerelease)
+        .collect())
+}
+
+pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
+    Ok(list_releases_including_prereleases_from_url(api_url, repo)
+        .await?
+        .into_iter()
+        .filter(|r| !r.prerelease)
+        .collect())
+}
+
+/// Like [`list_releases`] but includes releases flagged `prerelease: true`.
+/// Drafts are always filtered out. Callers opting in to pre-releases (e.g. the
+/// `github:` backend with `prerelease = true`) use this variant; the cache is
+/// shared with [`list_releases`] so there's no extra API cost.
+pub async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<GithubRelease>> {
     let key = repo.to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -136,7 +156,10 @@ pub async fn list_releases(repo: &str) -> Result<Vec<GithubRelease>> {
         .to_vec())
 }
 
-pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
+pub async fn list_releases_including_prereleases_from_url(
+    api_url: &str,
+    repo: &str,
+) -> Result<Vec<GithubRelease>> {
     let key = format!("{api_url}-{repo}").to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -163,7 +186,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
             headers = h;
         }
     }
-    releases.retain(|r| !r.draft && !r.prerelease);
+    releases.retain(|r| !r.draft);
 
     Ok(releases)
 }

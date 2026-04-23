@@ -73,6 +73,15 @@ pub fn install_time_option_keys() -> Vec<String> {
     ]
 }
 
+/// Whether the `prerelease = true` tool option is set. When set, releases
+/// flagged `prerelease: true` on GitHub are included in `ls-remote` output
+/// and considered when resolving `latest`. Has no effect on GitLab/Forgejo.
+fn include_prereleases(opts: &ToolVersionOptions) -> bool {
+    opts.get("prerelease")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+}
+
 #[async_trait]
 impl Backend for UnifiedGitBackend {
     fn get_type(&self) -> BackendType {
@@ -214,8 +223,13 @@ impl Backend for UnifiedGitBackend {
                 })
                 .collect()
         } else {
-            github::list_releases_from_url(api_url.as_str(), &repo)
-                .await?
+            let releases = if include_prereleases(&opts) {
+                github::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
+                    .await?
+            } else {
+                github::list_releases_from_url(api_url.as_str(), &repo).await?
+            };
+            releases
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
                 .map(|r| VersionInfo {
@@ -257,6 +271,14 @@ impl Backend for UnifiedGitBackend {
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
 
+        // When `prerelease = true`, skip the `/releases/latest` shortcut (which
+        // is stable-only by design) and resolve `latest` against the full list,
+        // which now includes pre-releases. Uses `latest_version_for_query` to
+        // avoid recursing back into this method.
+        if include_prereleases(&opts) {
+            return self.latest_version_for_query(config, "latest", None).await;
+        }
+
         let latest_tag = if self.is_gitlab() {
             // GitLab doesn't have a "latest" endpoint
             return Ok(None);
@@ -286,6 +308,15 @@ impl Backend for UnifiedGitBackend {
             Some(version) => Ok(Some(version)),
             None => Ok(None),
         }
+    }
+
+    /// When `prerelease = true`, skip the default `VERSION_REGEX` filter so
+    /// that pre-release tags (e.g. `1.0.0-rc1`, `0.1.2-dev.86`) survive fuzzy
+    /// matching against `latest` and partial queries. Otherwise defer to the
+    /// default behavior.
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+        let filter = !include_prereleases(&self.ba.opts());
+        crate::backend::fuzzy_match_versions(versions, query, filter)
     }
 
     async fn install_version_(
@@ -1797,6 +1828,56 @@ mod tests {
         let backend = create_test_backend();
         assert!(backend.matches_pattern("test-v1.0.0.zip", "test-*"));
         assert!(!backend.matches_pattern("other-v1.0.0.zip", "test-*"));
+    }
+
+    fn create_test_backend_with_opts(opts: ToolVersionOptions) -> UnifiedGitBackend {
+        let mut ba = BackendArg::new("github".to_string(), Some("github:test/repo".to_string()));
+        ba.set_opts(Some(opts));
+        UnifiedGitBackend::from_arg(ba)
+    }
+
+    #[test]
+    fn test_fuzzy_match_filter_excludes_prereleases_by_default() {
+        let backend = create_test_backend();
+        let versions = vec![
+            "1.0.0".to_string(),
+            "1.1.0-rc1".to_string(),
+            "1.1.0".to_string(),
+        ];
+        let got = backend.fuzzy_match_filter(versions, "latest");
+        assert_eq!(got, vec!["1.0.0".to_string(), "1.1.0".to_string()]);
+    }
+
+    #[test]
+    fn test_fuzzy_match_filter_includes_prereleases_when_opted_in() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("true".into()));
+        let backend = create_test_backend_with_opts(opts);
+        let versions = vec![
+            "1.0.0".to_string(),
+            "1.1.0-rc1".to_string(),
+            "1.1.0".to_string(),
+            "0.1.2-dev.86".to_string(),
+        ];
+        let got = backend.fuzzy_match_filter(versions.clone(), "latest");
+        assert_eq!(got, versions);
+    }
+
+    #[test]
+    fn test_include_prereleases_parses_bool_opt() {
+        let mut opts = ToolVersionOptions::default();
+        assert!(!include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("true".into()));
+        assert!(include_prereleases(&opts));
+
+        opts.opts.insert(
+            "prerelease".to_string(),
+            toml::Value::String("false".into()),
+        );
+        assert!(!include_prereleases(&opts));
     }
 
     #[test]

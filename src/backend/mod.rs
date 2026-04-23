@@ -378,6 +378,48 @@ mod tests {
             "3.14.2"
         );
     }
+
+    #[test]
+    fn test_fuzzy_match_versions_filters_prereleases_by_default() {
+        let versions = vec![
+            "1.0.0".to_string(),
+            "1.1.0-rc1".to_string(),
+            "1.1.0".to_string(),
+            "1.2.0-dev.5".to_string(),
+        ];
+        let got = fuzzy_match_versions(versions, "latest", true);
+        assert_eq!(got, vec!["1.0.0".to_string(), "1.1.0".to_string()]);
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_includes_prereleases_when_opted_in() {
+        let versions = vec![
+            "1.0.0".to_string(),
+            "1.1.0-rc1".to_string(),
+            "1.1.0".to_string(),
+            "1.2.0-dev.5".to_string(),
+            "0.1.2-dev.86".to_string(),
+        ];
+        let got = fuzzy_match_versions(versions.clone(), "latest", false);
+        assert_eq!(got, versions);
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_partial_query_respects_prerelease_flag() {
+        let versions = vec![
+            "1.2.0".to_string(),
+            "1.2.1-rc1".to_string(),
+            "1.2.1".to_string(),
+        ];
+        assert_eq!(
+            fuzzy_match_versions(versions.clone(), "1.2", true),
+            vec!["1.2.0".to_string(), "1.2.1".to_string()]
+        );
+        assert_eq!(
+            fuzzy_match_versions(versions.clone(), "1.2", false),
+            versions
+        );
+    }
 }
 
 #[async_trait]
@@ -1537,57 +1579,7 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
-        let escaped_query = regex::escape(query);
-        let query_pattern = if query == "latest" {
-            "v?[0-9].*"
-        } else {
-            &escaped_query
-        };
-        // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
-        // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
-        // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
-        // the prefix (e.g. "temurin-25.0.1").
-        let query_regex = if query != "latest" && query.ends_with('-') {
-            Regex::new(&format!("^{query_pattern}.*$")).unwrap()
-        } else {
-            Regex::new(&format!("^{query_pattern}([+\\-.].+)?$")).unwrap()
-        };
-
-        // Also create a regex without the 'v' prefix if query starts with 'v'
-        // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
-        let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
-            let without_v = regex::escape(&query[1..]);
-            let re = if query.ends_with('-') {
-                Regex::new(&format!("^{without_v}.*$")).unwrap()
-            } else {
-                Regex::new(&format!("^{without_v}([+\\-.].+)?$")).unwrap()
-            };
-            Some(re)
-        } else {
-            None
-        };
-
-        versions
-            .into_iter()
-            .filter(|v| {
-                if query == v {
-                    return true;
-                }
-                if VERSION_REGEX.is_match(v) {
-                    return false;
-                }
-                if query_regex.is_match(v) {
-                    return true;
-                }
-                // Try matching without the 'v' prefix
-                if let Some(ref re) = query_without_v_regex
-                    && re.is_match(v)
-                {
-                    return true;
-                }
-                false
-            })
-            .collect()
+        fuzzy_match_versions(versions, query, /* filter_prereleases = */ true)
     }
 
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
@@ -2164,6 +2156,67 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
     }
+}
+
+/// Fuzzy-match `versions` against `query`. When `filter_prereleases` is true,
+/// drop strings matching [`VERSION_REGEX`] (e.g. `1.0.0-rc1`, `1.0.0-dev`) —
+/// the historical behavior. Backends opting into pre-releases call this with
+/// `false` to keep those tags in the match set.
+pub(crate) fn fuzzy_match_versions(
+    versions: Vec<String>,
+    query: &str,
+    filter_prereleases: bool,
+) -> Vec<String> {
+    let escaped_query = regex::escape(query);
+    let query_pattern = if query == "latest" {
+        "v?[0-9].*"
+    } else {
+        &escaped_query
+    };
+    // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
+    // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
+    // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
+    // the prefix (e.g. "temurin-25.0.1").
+    let query_regex = if query != "latest" && query.ends_with('-') {
+        Regex::new(&format!("^{query_pattern}.*$")).unwrap()
+    } else {
+        Regex::new(&format!("^{query_pattern}([+\\-.].+)?$")).unwrap()
+    };
+
+    // Also create a regex without the 'v' prefix if query starts with 'v'
+    // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
+    let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
+        let without_v = regex::escape(&query[1..]);
+        let re = if query.ends_with('-') {
+            Regex::new(&format!("^{without_v}.*$")).unwrap()
+        } else {
+            Regex::new(&format!("^{without_v}([+\\-.].+)?$")).unwrap()
+        };
+        Some(re)
+    } else {
+        None
+    };
+
+    versions
+        .into_iter()
+        .filter(|v| {
+            if query == v {
+                return true;
+            }
+            if filter_prereleases && VERSION_REGEX.is_match(v) {
+                return false;
+            }
+            if query_regex.is_match(v) {
+                return true;
+            }
+            if let Some(ref re) = query_without_v_regex
+                && re.is_match(v)
+            {
+                return true;
+            }
+            false
+        })
+        .collect()
 }
 
 pub fn unalias_backend(backend: &str) -> &str {
