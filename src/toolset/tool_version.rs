@@ -340,9 +340,11 @@ impl ToolVersion {
 
         let settings = Settings::get();
         let is_offline = settings.offline();
+        let has_before_date = opts.before_date.is_some();
 
         if v == "latest" {
             if !opts.latest_versions
+                && !has_before_date
                 && let Some(v) = backend.latest_installed_version(None)?
             {
                 return build(v);
@@ -361,7 +363,7 @@ impl ToolVersion {
             if matches.contains(&v) {
                 return build(v);
             }
-            if let Some(v) = matches.last() {
+            if !has_before_date && let Some(v) = matches.last() {
                 return build(v.clone());
             }
         }
@@ -371,7 +373,7 @@ impl ToolVersion {
                 if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
         ) && crate::semver::is_npm_semver_range_query(&v)
         {
-            if !opts.latest_versions {
+            if !opts.latest_versions && !has_before_date {
                 let installed_versions = backend.list_installed_versions();
                 if let Some(matches) =
                     crate::semver::npm_semver_range_filter(&installed_versions, &v)
@@ -460,6 +462,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         if !opts.latest_versions
+            && opts.before_date.is_none()
             && let Some(v) = backend.list_installed_versions_matching(prefix).last()
         {
             return Ok(Self::new(request, v.to_string()));

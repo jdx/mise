@@ -873,7 +873,7 @@ pub trait Backend: Debug + Send + Sync {
         query: Option<String>,
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
-        let before_date = effective_latest_before_date(self, config, before_date).await?;
+        let before_date = resolve_before_date_for_backend(config, self, before_date).await?;
         match query.as_deref() {
             Some("latest") | None => match before_date {
                 Some(before) => {
@@ -1797,17 +1797,16 @@ pub trait Backend: Debug + Send + Sync {
     }
 }
 
-async fn effective_latest_before_date<B: Backend + ?Sized>(
-    backend: &B,
+pub async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
     config: &Arc<Config>,
+    backend: &B,
     before_date: Option<Timestamp>,
 ) -> eyre::Result<Option<Timestamp>> {
     if before_date.is_some() {
-        return Ok(before_date);
+        return resolve_before_date(before_date, None);
     }
 
-    let backend_opts = backend.ba().opts();
-    if let Some(before) = backend_opts.get("install_before") {
+    if let Some(before) = backend.ba().opts().get("install_before") {
         return resolve_before_date(None, Some(before));
     }
 
