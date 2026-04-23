@@ -365,6 +365,16 @@ pub fn install_time_option_keys() -> Vec<String> {
     ]
 }
 
+/// Returns options that affect S3 remote version listing.
+pub fn list_remote_versions_option_keys() -> Vec<String> {
+    vec![
+        "version_list_url".into(),
+        "version_regex".into(),
+        "version_json_path".into(),
+        "version_expr".into(),
+    ]
+}
+
 /// Create an S3 client with the given configuration
 async fn create_s3_client(region: Option<&str>, endpoint: Option<&str>) -> Result<S3Client> {
     let mut config_loader = aws_config::defaults(BehaviorVersion::latest());
