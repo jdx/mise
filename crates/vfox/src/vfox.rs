@@ -514,7 +514,7 @@ impl Vfox {
                 let token = std::env::var("MISE_GITHUB_TOKEN")
                     .or_else(|_| std::env::var("GITHUB_TOKEN"))
                     .or(Err("GitHub artifact attestation verification requires either the MISE_GITHUB_TOKEN or GITHUB_TOKEN environment variable set"))?;
-                sigstore_verification::verify_github_attestation(
+                mise_sigstore::verify_github_attestation(
                     file,
                     owner.as_str(),
                     repo.as_str(),
@@ -534,15 +534,14 @@ impl Vfox {
 
             if let Some(sig_or_bundle_path) = &attestation.cosign_sig_or_bundle_path {
                 if let Some(public_key_path) = &attestation.cosign_public_key_path {
-                    sigstore_verification::verify_cosign_signature_with_key(
+                    mise_sigstore::verify_cosign_signature_with_key(
                         file,
                         sig_or_bundle_path,
                         public_key_path,
                     )
                     .await?;
                 } else {
-                    sigstore_verification::verify_cosign_signature(file, sig_or_bundle_path)
-                        .await?;
+                    mise_sigstore::verify_cosign_signature(file, sig_or_bundle_path).await?;
                 }
                 // Cosign has the lowest recording priority: only record it if no
                 // higher-priority verification was already recorded.
@@ -556,8 +555,7 @@ impl Vfox {
 
             if let Some(provenance_path) = &attestation.slsa_provenance_path {
                 let min_level = attestation.slsa_min_level.unwrap_or(1u8);
-                sigstore_verification::verify_slsa_provenance(file, provenance_path, min_level)
-                    .await?;
+                mise_sigstore::verify_slsa_provenance(file, provenance_path, min_level).await?;
                 // SLSA has mid-tier recording priority: record it unless GitHub
                 // attestation (higher priority) was already recorded.
                 // Note: if Cosign also passed, SLSA supersedes it (SLSA > Cosign).

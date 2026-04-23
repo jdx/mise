@@ -4,6 +4,7 @@ members = [
   "crates/aqua-registry",
   "crates/mise-interactive-config",
   "crates/mise-shim",
+  "crates/mise-sigstore",
 ]
 
 [package]
@@ -101,7 +102,7 @@ expr-lang = "1"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
-sigstore-verification = { version = "0.2", default-features = false }
+mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 fslock = "0.2.1"
 fuzzy-matcher = "0.3"
 gix = { version = "<1", features = ["worktree-mutation"] }
@@ -257,7 +258,7 @@ native-tls = [
   "reqwest/native-tls",
   "rattler/native-tls",
   "rattler_repodata_gateway/native-tls",
-  "sigstore-verification/native-tls",
+  "mise-sigstore/native-tls",
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
@@ -267,7 +268,7 @@ rustls = [
   "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
-  "sigstore-verification/rustls",
+  "mise-sigstore/rustls",
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
@@ -277,7 +278,7 @@ rustls-native-roots = [
   "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
-  "sigstore-verification/rustls-native-roots",
+  "mise-sigstore/rustls",
   "ubi/rustls-tls-native-roots",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",

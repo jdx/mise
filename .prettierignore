@@ -10,6 +10,7 @@
 .agent-os/
 CHANGELOG.md
 crates/aqua-registry/aqua-registry/
+crates/mise-sigstore/data/
 docs/.vitepress/cache
 docs/.vitepress/dist
 docs/.vitepress/theme/custom.css
