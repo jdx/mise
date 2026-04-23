@@ -1,12 +1,33 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
-  - type: go_install
+  - type: github_release
     repo_owner: go-delve
     repo_name: delve
     description: Delve is a debugger for the Go programming language
+    files:
+      - name: dlv
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.26.1")
+        type: go_install
         path: github.com/go-delve/delve/cmd/dlv
-        files:
-          - name: dlv
+      - version_constraint: "true"
+        asset: dlv_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/go-delve/delve/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/go-delve/delve/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/go-delve/delve/releases/download/{{.Version}}/checksums.txt.cert
+        overrides:
+          - goos: windows
+            format: zip

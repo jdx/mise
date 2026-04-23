@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -5,6 +6,7 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
+use crate::install_before::resolve_before_date;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
@@ -83,16 +85,18 @@ impl Lock {
             ..Default::default()
         };
 
-        let ts_owned;
         let ts = if before_date.is_some() {
-            ts_owned = ToolsetBuilder::new()
-                .with_resolve_options(lock_resolve_options.clone())
-                .build(&config)
-                .await?;
-            &ts_owned
+            Cow::Owned(
+                ToolsetBuilder::new()
+                    .with_resolve_options(lock_resolve_options.clone())
+                    .build(&config)
+                    .await?,
+            )
         } else {
-            config.get_toolset().await?
+            Cow::Borrowed(config.get_toolset().await?)
         };
+
+        let ts = ts.as_ref();
 
         // Collect distinct lockfile targets from config files
         let lockfile_targets = self.get_lockfile_targets(&config);
@@ -522,10 +526,12 @@ impl Lock {
                             // installed-version selection so the fallback still uses release
                             // dates from the remote version metadata.
                             if request.version() == "latest" {
-                                let mut resolve_options = match request
-                                    .resolve_options(base_resolve_options)
-                                {
-                                    Ok(opts) => opts,
+                                let mut resolve_options = base_resolve_options.clone();
+                                resolve_options.before_date = match resolve_before_date(
+                                    resolve_options.before_date,
+                                    request.options().get("install_before"),
+                                ) {
+                                    Ok(before_date) => before_date,
                                     Err(err) => {
                                         debug!("failed to resolve options for {request}: {err}");
                                         continue;

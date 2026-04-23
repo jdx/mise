@@ -1,5 +1,79 @@
 # Changelog
 
+## [2026.4.19](https://github.com/jdx/mise/compare/v2026.4.18..v2026.4.19) - 2026-04-22
+
+### 🚀 Features
+
+- **(backend)** support aqua vars templates by @risu729 in [#9110](https://github.com/jdx/mise/pull/9110)
+- **(oci)** build OCI images from mise.toml with per-tool layers by @jdx in [#9273](https://github.com/jdx/mise/pull/9273)
+- add gsudo (Sudo for Windows) to registry by @matracey in [#9281](https://github.com/jdx/mise/pull/9281)
+
+### 🐛 Bug Fixes
+
+- **(backend)** stop fuzzy requests installing literal dirs by @AsgardMuninn in [#9276](https://github.com/jdx/mise/pull/9276)
+- **(backend)** use full token chain for all sigstore attestation calls by @cameronbrill in [#9307](https://github.com/jdx/mise/pull/9307)
+- **(backend)** use remote version cache offline by @risu729 in [#9304](https://github.com/jdx/mise/pull/9304)
+- **(cli)** retrieve token from github helper for `self-update` command by @sushichan044 in [#9259](https://github.com/jdx/mise/pull/9259)
+- **(cli)** suppress error output after interactive cancel by @jdx in [#9294](https://github.com/jdx/mise/pull/9294)
+- **(conda)** avoid temp file collisions during parallel package downloads by @salim-b in [#9293](https://github.com/jdx/mise/pull/9293)
+- **(github)** scope auth headers to API URLs by @risu729 in [#9271](https://github.com/jdx/mise/pull/9271)
+- **(go)** treat empty GOPROXY as default by @jdx in [#9310](https://github.com/jdx/mise/pull/9310)
+- **(vfox)** use github token for lua http requests by @jdx in [#9257](https://github.com/jdx/mise/pull/9257)
+- **(vfox)** avoid auth on release asset downloads by @jdx in [#9299](https://github.com/jdx/mise/pull/9299)
+- **(vfox)** scope github auth to API URLs only by @jdx in [#9309](https://github.com/jdx/mise/pull/9309)
+
+### 🚜 Refactor
+
+- **(core)** centralize install_before resolution by @risu729 in [#9286](https://github.com/jdx/mise/pull/9286)
+- **(deps)** store deps state under $MISE_STATE_DIR by @jdx in [#9301](https://github.com/jdx/mise/pull/9301)
+
+### 📚 Documentation
+
+- add aube hero banner by @jdx in [#9265](https://github.com/jdx/mise/pull/9265)
+- add en.dev footer by @jdx in [#9267](https://github.com/jdx/mise/pull/9267)
+- implement landing page design by @jdx in [#9266](https://github.com/jdx/mise/pull/9266)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#9268](https://github.com/jdx/mise/pull/9268)
+- bump msrv for aws smithy updates by @jdx in [#9295](https://github.com/jdx/mise/pull/9295)
+- bump sigstore-verification to 0.2.7 by @jdx in [#9302](https://github.com/jdx/mise/pull/9302)
+
+### 📦 Registry
+
+- add llama.cpp ([github:ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)) by @igor-makarov in [#9282](https://github.com/jdx/mise/pull/9282)
+- add kiro-cli by @shalk in [#9274](https://github.com/jdx/mise/pull/9274)
+- add flux-operator & flux-operator-mcp by @monotek in [#8852](https://github.com/jdx/mise/pull/8852)
+
+### Chore
+
+- **(ci)** increase autofix timeout by @jdx in [#9296](https://github.com/jdx/mise/pull/9296)
+- **(ci)** stop release-plz from saving build cache by @jdx in [#9297](https://github.com/jdx/mise/pull/9297)
+- **(ci)** stop lint from saving build cache by @jdx in [#9298](https://github.com/jdx/mise/pull/9298)
+- **(ci)** restore lint as Linux build cache writer by @jdx in [#9305](https://github.com/jdx/mise/pull/9305)
+- **(release)** add en.dev sponsor blurb to release notes by @jdx in [#9272](https://github.com/jdx/mise/pull/9272)
+- bump communique to 1.0.1 by @jdx in [#9264](https://github.com/jdx/mise/pull/9264)
+
+### New Contributors
+
+- @AsgardMuninn made their first contribution in [#9276](https://github.com/jdx/mise/pull/9276)
+- @monotek made their first contribution in [#8852](https://github.com/jdx/mise/pull/8852)
+- @igor-makarov made their first contribution in [#9282](https://github.com/jdx/mise/pull/9282)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`controlplaneio-fluxcd/flux-operator/flux-operator-mcp`](https://github.com/controlplaneio-fluxcd/flux-operator/flux-operator-mcp)
+- [`endevco/aube`](https://github.com/endevco/aube)
+- [`ricoberger/grafana-kubernetes-plugin`](https://github.com/ricoberger/grafana-kubernetes-plugin)
+
+#### Updated Packages (3)
+
+- [`controlplaneio-fluxcd/flux-operator`](https://github.com/controlplaneio-fluxcd/flux-operator)
+- [`go-delve/delve`](https://github.com/go-delve/delve)
+- [`graelo/pumas`](https://github.com/graelo/pumas)
+
 ## [2026.4.18](https://github.com/jdx/mise/compare/v2026.4.17..v2026.4.18) - 2026-04-19
 
 ### 🚀 Features
