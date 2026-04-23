@@ -226,7 +226,8 @@ impl Backend for AquaBackend {
             return Ok(vec![]);
         }
 
-        let tags_with_timestamps = match get_tags_with_created_at(&pkg).await {
+        let include_prerelease = include_prereleases(&self.ba.opts());
+        let tags_with_timestamps = match get_tags_with_created_at(&pkg, include_prerelease).await {
             Ok(tags) => tags,
             Err(e) => {
                 warn!("Remote versions cannot be fetched: {}", e);
@@ -540,6 +541,7 @@ impl Backend for AquaBackend {
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+        let include_prerelease = include_prereleases(&self.ba.opts());
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
             "\\D*[0-9].*"
@@ -553,7 +555,7 @@ impl Backend for AquaBackend {
                 if query == v {
                     return true;
                 }
-                if VERSION_REGEX.is_match(v) {
+                if !include_prerelease && VERSION_REGEX.is_match(v) {
                     return false;
                 }
                 query_regex.is_match(v)
@@ -1217,7 +1219,7 @@ impl AquaBackend {
                 let pkg = AQUA_REGISTRY.package(&self.id).await?;
                 let mut versions = Vec::new();
                 if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
-                    let tags = get_tags(&pkg).await?;
+                    let tags = get_tags(&pkg, include_prereleases(&self.ba.opts())).await?;
                     for tag in tags.into_iter().rev() {
                         let mut version = tag.as_str();
                         match pkg.version_filter_ok(version) {
@@ -2218,8 +2220,8 @@ mod tests {
     }
 }
 
-async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
-    Ok(get_tags_with_created_at(pkg)
+async fn get_tags(pkg: &AquaPackage, include_prereleases: bool) -> Result<Vec<String>> {
+    Ok(get_tags_with_created_at(pkg, include_prereleases)
         .await?
         .into_iter()
         .map(|(tag, _)| tag)
@@ -2228,22 +2230,43 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
 
 /// Get tags with optional created_at timestamps.
 /// Returns (tag_name, Option<created_at>) pairs.
-async fn get_tags_with_created_at(pkg: &AquaPackage) -> Result<Vec<(String, Option<String>)>> {
+///
+/// When `include_prereleases` is true, releases flagged `prerelease: true` on
+/// GitHub are included. Has no effect on the `github_tag` version source, since
+/// git tags don't carry a prerelease flag.
+async fn get_tags_with_created_at(
+    pkg: &AquaPackage,
+    include_prereleases: bool,
+) -> Result<Vec<(String, Option<String>)>> {
     if let Some("github_tag") = pkg.version_source.as_deref() {
         // Tags don't have created_at timestamps
         let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
         return Ok(versions.into_iter().map(|v| (v, None)).collect());
     }
-    let releases = github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+    let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+    let releases = if include_prereleases {
+        github::list_releases_including_prereleases(&repo).await?
+    } else {
+        github::list_releases(&repo).await?
+    };
     if releases.is_empty() {
         // Fall back to tags (no timestamps)
-        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+        let versions = github::list_tags(&repo).await?;
         return Ok(versions.into_iter().map(|v| (v, None)).collect());
     }
     Ok(releases
         .into_iter()
         .map(|r| (r.tag_name, Some(r.created_at)))
         .collect())
+}
+
+/// Whether the `prerelease = true` tool option is set. When set, releases
+/// flagged `prerelease: true` on GitHub are included in `ls-remote` output
+/// and considered when resolving `latest`.
+fn include_prereleases(opts: &ToolVersionOptions) -> bool {
+    opts.get("prerelease")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
 }
 
 fn validate(pkg: &AquaPackage) -> Result<()> {
