@@ -490,16 +490,16 @@ impl Lock {
                                 && request.version() == "latest"
                                 && let Ok(Some(latest_version)) =
                                     backend.latest_installed_version(Some("latest".to_string()))
-                                {
-                                    let key = (ba.short.clone(), latest_version.clone());
-                                    if seen.insert(key) {
-                                        let tv = crate::toolset::ToolVersion::new(
-                                            request.clone(),
-                                            latest_version,
-                                        );
-                                        all_tools.push((ba.as_ref().clone(), tv));
-                                    }
+                            {
+                                let key = (ba.short.clone(), latest_version.clone());
+                                if seen.insert(key) {
+                                    let tv = crate::toolset::ToolVersion::new(
+                                        request.clone(),
+                                        latest_version,
+                                    );
+                                    all_tools.push((ba.as_ref().clone(), tv));
                                 }
+                            }
                         }
                     }
                 }
