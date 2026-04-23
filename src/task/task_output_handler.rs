@@ -106,10 +106,7 @@ impl KeepOrderState {
     /// Stops at the first non-finished task to preserve definition order.
     fn flush_finished(&mut self) {
         let mut finished: std::collections::HashSet<_> = self.finished.drain(..).collect();
-        loop {
-            let Some((task, _)) = self.buffers.first() else {
-                break;
-            };
+        while let Some((task, _)) = self.buffers.first() {
             if !finished.remove(task) {
                 break; // Hit a non-finished task, stop
             }
@@ -246,11 +243,9 @@ impl OutputHandler {
     /// Initialize output handling for a task
     pub fn init_task(&mut self, task: &Task) {
         match self.output(Some(task)) {
-            TaskOutput::KeepOrder => {
+            TaskOutput::KeepOrder if task_needs_permit(task) => {
                 // Only add tasks that produce output (not orchestrator-only tasks)
-                if task_needs_permit(task) {
-                    self.keep_order_state.lock().unwrap().init_task(task);
-                }
+                self.keep_order_state.lock().unwrap().init_task(task);
             }
             TaskOutput::Replacing => {
                 self.get_or_init_task_pr(task);

@@ -440,6 +440,17 @@ pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var(&*PATH
 });
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
 
+/// GitHub token resolved from environment variables ONLY
+/// (`MISE_GITHUB_TOKEN`, `GITHUB_API_TOKEN`, `GITHUB_TOKEN`).
+///
+/// Intended for subprocess env-var plumbing — passing a token to child processes such as
+/// `cargo install` or `ruby-build` that read it themselves.
+///
+/// **Do not use for mise's own HTTP or sigstore calls.** Use
+/// [`crate::github::resolve_token_for_api_url`] (which walks env vars,
+/// `credential_command`, `github_tokens.toml`, gh CLI, and git credentials) or the
+/// [`crate::github::sigstore`] wrapper (which calls it internally). Passing this static
+/// to attestation verification is the original cause of the lock-time rate-limit bug.
 pub static GITHUB_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"]));
 pub static MISE_GITHUB_ENTERPRISE_TOKEN: Lazy<Option<String>> =

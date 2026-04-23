@@ -16,7 +16,7 @@ assert_fail go
 cat >>.mise.toml <<EOF
 [tools]
 go = "prefix:1.24"
-"go:github.com/golangci/golangci-lint/cmd/golangci-lint" = "latest"
+"go:github.com/golangci/golangci-lint/cmd/golangci-lint" = "1.64.8"
 [settings]
 experimental = true
 EOF

@@ -158,6 +158,20 @@ where
         Ok(val)
     }
 
+    /// Read the cache file without checking freshness and without fetching or writing.
+    pub fn get_cached(&self) -> Result<T>
+    where
+        T: Clone,
+    {
+        if let Some(val) = self.cache_async.get() {
+            return Ok(val.clone());
+        }
+        if let Some(val) = self.cache.get() {
+            return Ok(val.clone());
+        }
+        self.parse()
+    }
+
     fn parse(&self) -> Result<T> {
         let path = &self.cache_file_path;
         trace!("reading {}", display_path(path));

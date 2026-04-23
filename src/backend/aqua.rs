@@ -23,7 +23,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{backend::Backend, config::Config};
-use crate::{env, file, github, minisign};
+use crate::{file, github, minisign};
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, bail, eyre};
 use indexmap::IndexSet;
@@ -936,12 +936,12 @@ impl AquaBackend {
             .as_ref()
             .and_then(|att| att.signer_workflow.clone());
 
-        match sigstore_verification::verify_github_attestation(
+        match crate::github::sigstore::verify_attestation(
             artifact_path,
             &pkg.repo_owner,
             &pkg.repo_name,
-            env::GITHUB_TOKEN.as_deref(),
             signer_workflow.as_deref(),
+            None,
         )
         .await
         {
@@ -1005,7 +1005,7 @@ impl AquaBackend {
         HTTP.download_file(&provenance_url, &provenance_path, pr)
             .await?;
 
-        match sigstore_verification::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
+        match crate::github::sigstore::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
             .await
         {
             Ok(true) => {
@@ -1122,7 +1122,7 @@ impl AquaBackend {
                 checksum_path.with_extension("sig")
             };
 
-            match sigstore_verification::verify_cosign_signature_with_key(
+            match crate::github::sigstore::verify_cosign_signature_with_key(
                 checksum_path,
                 &sig_path,
                 &key_path,
@@ -1153,7 +1153,8 @@ impl AquaBackend {
             let bundle_path = download_dir.join(get_filename_from_url(&bundle_url));
             HTTP.download_file(&bundle_url, &bundle_path, pr).await?;
 
-            match sigstore_verification::verify_cosign_signature(checksum_path, &bundle_path).await
+            match crate::github::sigstore::verify_cosign_signature(checksum_path, &bundle_path)
+                .await
             {
                 Ok(true) => {
                     debug!("cosign (bundle) verified");

@@ -14,7 +14,7 @@ use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
-use crate::{dirs, env, file, plugins, sysconfig};
+use crate::{dirs, file, plugins, sysconfig};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
@@ -625,12 +625,12 @@ impl PythonPlugin {
         ctx.pr
             .set_message("verify GitHub artifact attestations".to_string());
 
-        match sigstore_verification::verify_github_attestation(
+        match crate::github::sigstore::verify_attestation(
             tarball_path,
             "astral-sh",
             "python-build-standalone",
-            env::GITHUB_TOKEN.as_deref(),
             None, // Accept any workflow from repo
+            None,
         )
         .await
         {
@@ -646,7 +646,7 @@ impl PythonPlugin {
             Ok(false) => Err(eyre!(
                 "GitHub artifact attestations verification failed for python@{version}\n{ATTESTATION_HELP}"
             )),
-            Err(sigstore_verification::AttestationError::NoAttestations) => Err(eyre!(
+            Err(crate::github::sigstore::AttestationError::NoAttestations) => Err(eyre!(
                 "No GitHub artifact attestations found for python@{version}\n{ATTESTATION_HELP}"
             )),
             Err(e) => Err(eyre!(

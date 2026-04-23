@@ -1,8 +1,7 @@
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::install_context::InstallContext;
-use crate::toolset::tool_request::effective_before_date;
-use crate::toolset::{ResolveOptions, ToolsetBuilder};
+use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use clap::ValueHint;
 use eyre::{Result, eyre};
@@ -27,14 +26,9 @@ pub struct InstallInto {
 impl InstallInto {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let before_date = effective_before_date(self.tool.tvr.as_ref(), &Default::default())?;
         let ts = Arc::new(
             ToolsetBuilder::new()
                 .with_args(std::slice::from_ref(&self.tool))
-                .with_resolve_options(ResolveOptions {
-                    before_date,
-                    ..Default::default()
-                })
                 .build(&config)
                 .await?,
         );
@@ -46,6 +40,7 @@ impl InstallInto {
             .first()
             .unwrap()
             .clone();
+        let before_date = tv.before_date;
         let backend = tv.backend()?;
         let mpr = MultiProgressReport::get();
         let install_ctx = InstallContext {
