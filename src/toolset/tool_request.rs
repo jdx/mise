@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{
     fmt::{Display, Formatter},
     sync::Arc,
@@ -11,8 +11,11 @@ use xx::file;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
+use crate::config::config_file::config_root;
+use crate::dirs;
 use crate::env;
 use crate::lockfile::LockfileTool;
+use crate::path::PathExt;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
@@ -80,12 +83,15 @@ impl ToolRequest {
                 backend,
                 source,
             },
-            Some(("path", p)) => Self::Path {
-                path: PathBuf::from(p),
-                options: backend.opts(),
-                backend,
-                source,
-            },
+            Some(("path", p)) => {
+                let path = resolve_path(p, &source);
+                Self::Path {
+                    path,
+                    options: backend.opts(),
+                    backend,
+                    source,
+                }
+            }
             Some((p, v)) if p.starts_with("sub-") => Self::Sub {
                 sub: p.split_once('-').unwrap().1.to_string(),
                 options: backend.opts(),
@@ -189,7 +195,7 @@ impl ToolRequest {
             Self::Ref {
                 ref_: r, ref_type, ..
             } => format!("{ref_type}:{r}"),
-            Self::Path { path: p, .. } => format!("path:{}", p.display()),
+            Self::Path { path: p, .. } => format!("path:{}", p.display_user()),
             Self::Sub {
                 sub, orig_version, ..
             } => format!("sub-{sub}:{orig_version}"),
@@ -371,6 +377,33 @@ impl ToolRequest {
         }
         self.ba().is_os_supported()
     }
+}
+
+/// Resolve a `path:` tool version request value against the config file's directory.
+///
+/// - `~/` is expanded to `$HOME`
+/// - a leading `./` is stripped
+/// - remaining relative paths are joined with `config_root(source)` when the
+///   source is a file-based config; otherwise they fall back to the current
+///   working directory so CLI usage (e.g. `mise use tool@path:./x`) behaves
+///   the way users expect.
+fn resolve_path(p: &str, source: &ToolSource) -> PathBuf {
+    let p = Path::new(p);
+    if let Ok(rest) = p.strip_prefix("~/") {
+        return dirs::HOME.join(rest);
+    }
+    if p.is_absolute() {
+        return p.to_path_buf();
+    }
+    let p = p.strip_prefix("./").unwrap_or(p);
+    let base = match source.path() {
+        Some(src) => config_root::config_root(src),
+        None => dirs::CWD
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| PathBuf::from(".")),
+    };
+    base.join(p)
 }
 
 /// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
