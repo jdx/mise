@@ -7,4 +7,5 @@ cat <<EOF >mise.toml
 "github:aquaproj/aqua" = { version = "2.0.0", asset_pattern = "definitely-not-a-real-aqua-asset" }
 EOF
 
-assert "mise install aqua@2.0.0"
+assert "mise install --force aqua@2.0.0"
+assert "mise where aqua@2.0.0" "$MISE_DATA_DIR/installs/aqua/2.0.0"
