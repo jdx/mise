@@ -7,10 +7,10 @@ use std::time::Duration;
 use super::args::ToolArg;
 use crate::cli::{Cli, unescape_task_args};
 use crate::config::{Config, Settings};
+use crate::deps::{DepsEngine, DepsOptions};
 use crate::duration;
 use crate::env;
 use crate::file::display_path;
-use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::task::has_any_usage_spec;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
@@ -181,7 +181,7 @@ pub struct Run {
 
     /// Skip automatic dependency preparation
     #[clap(long)]
-    pub no_prepare: bool,
+    pub no_deps: bool,
 
     /// Hides elapsed time after each task completes
     ///
@@ -245,7 +245,7 @@ impl Run {
             env::reset_env_cache_key();
         }
 
-        // Check if --help or -h is in the task args BEFORE toolset/prepare
+        // Check if --help or -h is in the task args BEFORE toolset/deps
         // NOTE: Only check self.args, not self.args_last, because args_last contains
         // arguments after explicit -- which should always be passed through to the task
         let has_help_in_task_args =
@@ -253,7 +253,7 @@ impl Run {
 
         let mut config = Config::get().await?;
 
-        // Handle task help early to avoid unnecessary toolset/prepare work
+        // Handle task help early to avoid unnecessary toolset/deps work
         if has_help_in_task_args {
             // Build args list to get the task (filter out --help/-h for task lookup)
             let args = once(self.task.clone())
@@ -291,7 +291,7 @@ impl Run {
             }
         }
 
-        // Build and install toolset so tools like npm are available for prepare
+        // Build and install toolset so tools like npm are available for deps
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_default_to_latest(true)
@@ -361,14 +361,14 @@ impl Run {
         time!("run get_task_lists");
 
         // Resolve transitive dependencies once upfront so we can:
-        // 1. Discover prepare providers from monorepo subdirectory configs
+        // 1. Discover deps providers from monorepo subdirectory configs
         // 2. Reuse the resolved list for execution (avoiding duplicate work)
         let resolved_tasks = resolve_depends(&config, task_list).await?;
 
-        // Run auto-enabled prepare steps (unless --no-prepare)
-        if !self.no_prepare {
+        // Run auto-enabled deps steps (unless --no-deps)
+        if !self.no_deps {
             let env = ts.env_with_path(&config).await?;
-            let mut engine = PrepareEngine::new(&config)?;
+            let mut engine = DepsEngine::new(&config)?;
 
             // Collect subdirectory config files from all resolved tasks
             let subdir_configs: Vec<_> = resolved_tasks
@@ -380,7 +380,7 @@ impl Run {
             }
 
             engine
-                .run(PrepareOptions {
+                .run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
                     env,
                     ..Default::default()

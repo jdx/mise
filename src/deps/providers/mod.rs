@@ -11,34 +11,34 @@ mod poetry;
 mod uv;
 mod yarn;
 
-pub use bun::BunPrepareProvider;
-pub use bundler::BundlerPrepareProvider;
-pub use composer::ComposerPrepareProvider;
-pub use custom::CustomPrepareProvider;
-pub use git_submodule::GitSubmodulePrepareProvider;
-pub use go::GoPrepareProvider;
-pub use npm::NpmPrepareProvider;
-pub use pip::PipPrepareProvider;
-pub use pnpm::PnpmPrepareProvider;
-pub use poetry::PoetryPrepareProvider;
-pub use uv::UvPrepareProvider;
-pub use yarn::YarnPrepareProvider;
+pub use bun::BunDepsProvider;
+pub use bundler::BundlerDepsProvider;
+pub use composer::ComposerDepsProvider;
+pub use custom::CustomDepsProvider;
+pub use git_submodule::GitSubmoduleDepsProvider;
+pub use go::GoDepsProvider;
+pub use npm::NpmDepsProvider;
+pub use pip::PipDepsProvider;
+pub use pnpm::PnpmDepsProvider;
+pub use poetry::PoetryDepsProvider;
+pub use uv::UvDepsProvider;
+pub use yarn::YarnDepsProvider;
 
 use std::path::{Path, PathBuf};
 
-use crate::prepare::rule::PrepareProviderConfig;
+use crate::deps::rule::DepsProviderConfig;
 
-/// Shared base for all prepare providers, holding the id, project root, and config.
+/// Shared base for all deps providers, holding the id, project root, and config.
 /// Provides common implementations for `id` and `is_auto`.
 #[derive(Debug)]
 pub struct ProviderBase {
     pub(crate) id: String,
     pub(crate) project_root: PathBuf,
-    pub(crate) config: PrepareProviderConfig,
+    pub(crate) config: DepsProviderConfig,
 }
 
 impl ProviderBase {
-    pub fn new(id: impl Into<String>, project_root: &Path, config: PrepareProviderConfig) -> Self {
+    pub fn new(id: impl Into<String>, project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             id: id.into(),
             project_root: project_root.to_path_buf(),

@@ -163,8 +163,8 @@ pub(crate) async fn create_python_venv(
     }
     .envs(env_vars);
     cmd.execute()?;
-    // Mark venv as stale so prepare knows to run
-    crate::prepare::mark_output_stale(venv.to_path_buf());
+    // Mark venv as stale so deps knows to run
+    crate::deps::mark_output_stale(venv.to_path_buf());
     Ok(true)
 }
 

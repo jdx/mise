@@ -8,13 +8,18 @@ The code for this is inside of the mise repository at [`./src/backend/npm.rs`](h
 ## Dependencies
 
 This relies on having `npm` installed for resolving package versions.
-If you use `bun` or `pnpm` as the package manager, they must also be installed.
+With the default `npm.package_manager = "auto"` setting, mise uses
+[`aube`](https://aube.en.dev/) for installing npm packages when it is installed,
+similar to how the pipx backend uses `uv` when available.
+If you use `aube`, `bun`, or `pnpm` as the package manager, that package manager
+must also be installed.
 
 When [`install_before`](/configuration/settings.html#install_before) is set, the npm backend
 forwards that cutoff to transitive dependency resolution during install. This relies on the
 configured package manager supporting its native release-age flag:
 
 - `npm >= 11.10.0` using `--min-release-age=<days>`; `npm 6.9.0–11.9.x` using `--before <timestamp>` (sub-day `install_before` windows also use `--before` since `--min-release-age` is day-granular)
+- `aube` using its `minimumReleaseAge` setting
 - `bun >= 1.3.0` using `--minimum-release-age <seconds>`
 - `pnpm >= 10.16.0` using `--config.minimumReleaseAge=<minutes>`
 
@@ -27,9 +32,11 @@ Here is how to install `npm` with mise:
 mise use -g node
 ```
 
-To install `bun` or `pnpm`:
+To install `aube`, `bun`, or `pnpm`:
 
 ```sh
+mise use -g aube
+# or
 mise use -g bun
 # or
 mise use -g pnpm

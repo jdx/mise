@@ -2,19 +2,19 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::prepare::rule::PrepareProviderConfig;
-use crate::prepare::{PrepareCommand, PrepareProvider};
+use crate::deps::rule::DepsProviderConfig;
+use crate::deps::{DepsCommand, DepsProvider};
 
 use super::ProviderBase;
 
-/// Prepare provider for bun (bun.lockb or bun.lock)
+/// Deps provider for bun (bun.lockb or bun.lock)
 #[derive(Debug)]
-pub struct BunPrepareProvider {
+pub struct BunDepsProvider {
     base: ProviderBase,
 }
 
-impl BunPrepareProvider {
-    pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
+impl BunDepsProvider {
+    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("bun", project_root, config),
         }
@@ -35,7 +35,7 @@ impl BunPrepareProvider {
     }
 }
 
-impl PrepareProvider for BunPrepareProvider {
+impl DepsProvider for BunDepsProvider {
     fn base(&self) -> &ProviderBase {
         &self.base
     }
@@ -53,12 +53,12 @@ impl PrepareProvider for BunPrepareProvider {
         vec![self.base.config_root().join("node_modules")]
     }
 
-    fn prepare_command(&self) -> Result<PrepareCommand> {
+    fn install_command(&self) -> Result<DepsCommand> {
         if let Some(run) = &self.base.config.run {
-            return PrepareCommand::from_string(run, &self.base.project_root, &self.base.config);
+            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
         }
 
-        Ok(PrepareCommand {
+        Ok(DepsCommand {
             program: "bun".to_string(),
             args: vec!["install".to_string()],
             env: self.base.config.env.clone(),
@@ -74,5 +74,34 @@ impl PrepareProvider for BunPrepareProvider {
 
     fn is_applicable(&self) -> bool {
         self.lockfile_path().is_some()
+    }
+
+    fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
+        let mut args = vec!["add".to_string()];
+        if dev {
+            args.push("--dev".to_string());
+        }
+        args.extend(packages.iter().map(|p| p.to_string()));
+
+        Ok(DepsCommand {
+            program: "bun".to_string(),
+            args,
+            env: self.base.config.env.clone(),
+            cwd: Some(self.base.config_root()),
+            description: format!("bun add {}", packages.join(" ")),
+        })
+    }
+
+    fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
+        let mut args = vec!["remove".to_string()];
+        args.extend(packages.iter().map(|p| p.to_string()));
+
+        Ok(DepsCommand {
+            program: "bun".to_string(),
+            args,
+            env: self.base.config.env.clone(),
+            cwd: Some(self.base.config_root()),
+            description: format!("bun remove {}", packages.join(" ")),
+        })
     }
 }

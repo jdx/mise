@@ -1045,7 +1045,7 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--no-prepare",
+          name: "--no-deps",
           description: "Skip automatic dependency preparation",
           isRepeatable: false,
         },
@@ -1561,6 +1561,14 @@ const completionSpec: Fig.Spec = {
           description: "Show latest installed instead of available version",
           isRepeatable: false,
         },
+        {
+          name: "--before",
+          description: "Only consider versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
+          },
+        },
       ],
       args: {
         name: "tool@version",
@@ -1979,8 +1987,86 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
-      name: ["prepare", "prep"],
-      description: "[experimental] Ensure project dependencies are ready",
+      name: ["deps", "dep"],
+      description: "[experimental] Manage project dependencies",
+      subcommands: [
+        {
+          name: "add",
+          description: "Add a dependency",
+          options: [
+            {
+              name: ["-D", "--dev"],
+              description: "Add as a development dependency",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "packages",
+            description:
+              "Package(s) to add (e.g., npm:react, npm:@types/react@19)",
+            isVariadic: true,
+          },
+        },
+        {
+          name: "install",
+          description: "Install all project dependencies",
+          options: [
+            {
+              name: "--explain",
+              description:
+                "Show why a provider is fresh or stale (requires a provider argument)",
+              isRepeatable: false,
+            },
+            {
+              name: ["-f", "--force"],
+              description: "Force run all deps steps even if outputs are fresh",
+              isRepeatable: false,
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Only check if deps install is needed, don't run commands",
+              isRepeatable: false,
+            },
+            {
+              name: "--list",
+              description: "Show what deps providers are available",
+              isRepeatable: false,
+            },
+            {
+              name: "--only",
+              description: "Run specific deps rule(s) only",
+              isRepeatable: true,
+              args: {
+                name: "only",
+              },
+            },
+            {
+              name: "--skip",
+              description: "Skip specific deps rule(s)",
+              isRepeatable: true,
+              args: {
+                name: "skip",
+              },
+            },
+          ],
+          args: {
+            name: "provider",
+            description:
+              "Provider to operate on (runs only this provider, or use with --explain)",
+            isOptional: true,
+          },
+        },
+        {
+          name: "remove",
+          description: "Remove a dependency",
+          args: {
+            name: "packages",
+            description: "Package(s) to remove (e.g., npm:lodash)",
+            isVariadic: true,
+          },
+        },
+      ],
       options: [
         {
           name: "--explain",
@@ -1990,22 +2076,23 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["-f", "--force"],
-          description: "Force run all prepare steps even if outputs are fresh",
+          description: "Force run all deps steps even if outputs are fresh",
           isRepeatable: false,
         },
         {
           name: ["-n", "--dry-run"],
-          description: "Only check if prepare is needed, don't run commands",
+          description:
+            "Only check if deps install is needed, don't run commands",
           isRepeatable: false,
         },
         {
           name: "--list",
-          description: "Show what prepare steps are available",
+          description: "Show what deps providers are available",
           isRepeatable: false,
         },
         {
           name: "--only",
-          description: "Run specific prepare rule(s) only",
+          description: "Run specific deps rule(s) only",
           isRepeatable: true,
           args: {
             name: "only",
@@ -2013,7 +2100,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--skip",
-          description: "Skip specific prepare rule(s)",
+          description: "Skip specific deps rule(s)",
           isRepeatable: true,
           args: {
             name: "skip",
@@ -2267,7 +2354,7 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--no-prepare",
+          name: "--no-deps",
           description: "Skip automatic dependency preparation",
           isRepeatable: false,
         },
@@ -3178,7 +3265,7 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
-              name: "--no-prepare",
+              name: "--no-deps",
               description: "Skip automatic dependency preparation",
               isRepeatable: false,
             },

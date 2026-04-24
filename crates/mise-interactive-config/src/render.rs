@@ -704,7 +704,7 @@ impl Renderer {
                     AddButtonKind::EnvSource(_) => "    [+ Source script]",
                     AddButtonKind::EnvVariable(_) => "    [+ Add variable]",
                     AddButtonKind::Task(_) => "    [+ Add task]",
-                    AddButtonKind::Prepare(_) => "    [+ Add prepare provider]",
+                    AddButtonKind::Deps(_) => "    [+ Add deps provider]",
                     AddButtonKind::Setting(_) => "    [+ Add setting]",
                     AddButtonKind::Hook(_) => "    [+ Add hook]",
                     AddButtonKind::TaskConfig(_) => "    [+ Add task config]",
@@ -745,7 +745,7 @@ impl Renderer {
                         | AddButtonKind::EnvSource(_)
                         | AddButtonKind::EnvVariable(_)
                         | AddButtonKind::Task(_)
-                        | AddButtonKind::Prepare(_)
+                        | AddButtonKind::Deps(_)
                         | AddButtonKind::Setting(_)
                         | AddButtonKind::Hook(_)
                         | AddButtonKind::TaskConfig(_)
@@ -765,7 +765,7 @@ impl Renderer {
                         AddButtonKind::EnvSource(_) => "Script: ",
                         AddButtonKind::EnvVariable(_) => "KEY=value: ",
                         AddButtonKind::Task(_) => "Task name: ",
-                        AddButtonKind::Prepare(_) => "Provider name: ",
+                        AddButtonKind::Deps(_) => "Provider name: ",
                         AddButtonKind::Setting(_) => "Setting: ",
                         AddButtonKind::Hook(_) => "Hook name: ",
                         AddButtonKind::TaskConfig(_) => "Config key: ",

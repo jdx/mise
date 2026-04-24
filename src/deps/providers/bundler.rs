@@ -2,26 +2,26 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::prepare::rule::PrepareProviderConfig;
-use crate::prepare::{PrepareCommand, PrepareProvider};
+use crate::deps::rule::DepsProviderConfig;
+use crate::deps::{DepsCommand, DepsProvider};
 
 use super::ProviderBase;
 
-/// Prepare provider for Ruby Bundler (Gemfile.lock)
+/// Deps provider for Ruby Bundler (Gemfile.lock)
 #[derive(Debug)]
-pub struct BundlerPrepareProvider {
+pub struct BundlerDepsProvider {
     base: ProviderBase,
 }
 
-impl BundlerPrepareProvider {
-    pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
+impl BundlerDepsProvider {
+    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("bundler", project_root, config),
         }
     }
 }
 
-impl PrepareProvider for BundlerPrepareProvider {
+impl DepsProvider for BundlerDepsProvider {
     fn base(&self) -> &ProviderBase {
         &self.base
     }
@@ -43,12 +43,12 @@ impl PrepareProvider for BundlerPrepareProvider {
         }
     }
 
-    fn prepare_command(&self) -> Result<PrepareCommand> {
+    fn install_command(&self) -> Result<DepsCommand> {
         if let Some(run) = &self.base.config.run {
-            return PrepareCommand::from_string(run, &self.base.project_root, &self.base.config);
+            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
         }
 
-        Ok(PrepareCommand {
+        Ok(DepsCommand {
             program: "bundle".to_string(),
             args: vec!["install".to_string()],
             env: self.base.config.env.clone(),

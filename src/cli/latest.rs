@@ -2,6 +2,7 @@ use color_eyre::eyre::{Result, bail};
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::duration::parse_into_timestamp;
 use crate::toolset::ToolRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -24,18 +25,32 @@ pub struct Latest {
     /// Show latest installed instead of available version
     #[clap(short, long)]
     installed: bool,
+
+    /// Only consider versions released before this date
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    /// Overrides per-tool `install_before` options and the global `install_before` setting.
+    #[clap(long, verbatim_doc_comment, conflicts_with = "installed")]
+    before: Option<String>,
 }
 
 impl Latest {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let mut prefix = match self.tool.tvr {
-            None => self.asdf_version,
-            Some(ToolRequest::Version { version, .. }) => Some(version),
-            _ => bail!("invalid version: {}", self.tool.style()),
+        let Self {
+            tool,
+            asdf_version,
+            installed,
+            before,
+        } = self;
+        let before_date = before.as_deref().map(parse_into_timestamp).transpose()?;
+        let mut prefix = match &tool.tvr {
+            None => asdf_version,
+            Some(ToolRequest::Version { version, .. }) => Some(version.clone()),
+            _ => bail!("invalid version: {}", tool.style()),
         };
 
-        let backend = self.tool.ba.backend()?;
+        let backend = tool.ba.backend()?;
         let mpr = MultiProgressReport::get();
         if let Some(plugin) = backend.plugin() {
             plugin.ensure_installed(&config, &mpr, false, false).await?;
@@ -44,10 +59,10 @@ impl Latest {
             prefix = Some(config.resolve_alias(&backend, &v).await?);
         }
 
-        let latest_version = if self.installed {
+        let latest_version = if installed {
             backend.latest_installed_version(prefix)?
         } else {
-            backend.latest_version(&config, prefix, None).await?
+            backend.latest_version(&config, prefix, before_date).await?
         };
         if let Some(version) = latest_version {
             miseprintln!("{}", version);
@@ -64,5 +79,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise latest node</bold>     # get the latest stable version of node
     20.0.0
+
+    $ <bold>mise latest node --before 2024-01-01</bold>  # latest stable node released before 2024-01-01
 "#
 );

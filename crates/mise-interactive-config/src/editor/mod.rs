@@ -185,36 +185,35 @@ impl InteractiveConfig {
         }
     }
 
-    /// Add a prepare provider with auto = true
-    pub fn add_prepare(&mut self, provider: &str) {
-        // Find or create prepare section
-        let prepare_idx =
-            if let Some(idx) = self.doc.sections.iter().position(|s| s.name == "prepare") {
-                idx
-            } else {
-                // Insert prepare section before settings
-                let settings_idx = self.doc.sections.iter().position(|s| s.name == "settings");
-                let insert_idx = settings_idx.unwrap_or(self.doc.sections.len());
-                self.doc.sections.insert(
-                    insert_idx,
-                    crate::document::Section {
-                        name: "prepare".to_string(),
-                        entries: Vec::new(),
-                        expanded: false,
-                        comments: Vec::new(),
-                    },
-                );
-                insert_idx
-            };
+    /// Add a deps provider with auto = true
+    pub fn add_deps(&mut self, provider: &str) {
+        // Find or create deps section
+        let deps_idx = if let Some(idx) = self.doc.sections.iter().position(|s| s.name == "deps") {
+            idx
+        } else {
+            // Insert deps section before settings
+            let settings_idx = self.doc.sections.iter().position(|s| s.name == "settings");
+            let insert_idx = settings_idx.unwrap_or(self.doc.sections.len());
+            self.doc.sections.insert(
+                insert_idx,
+                crate::document::Section {
+                    name: "deps".to_string(),
+                    entries: Vec::new(),
+                    expanded: false,
+                    comments: Vec::new(),
+                },
+            );
+            insert_idx
+        };
 
         // Check if provider already exists
-        if !self.doc.sections[prepare_idx]
+        if !self.doc.sections[deps_idx]
             .entries
             .iter()
             .any(|e| e.key == provider)
         {
             // Add as inline table with auto = true
-            self.doc.sections[prepare_idx]
+            self.doc.sections[deps_idx]
                 .entries
                 .push(crate::document::Entry {
                     key: provider.to_string(),

@@ -2,19 +2,19 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::prepare::rule::PrepareProviderConfig;
-use crate::prepare::{PrepareCommand, PrepareProvider};
+use crate::deps::rule::DepsProviderConfig;
+use crate::deps::{DepsCommand, DepsProvider};
 
 use super::ProviderBase;
 
-/// Prepare provider for git submodules (.gitmodules)
+/// Deps provider for git submodules (.gitmodules)
 #[derive(Debug)]
-pub struct GitSubmodulePrepareProvider {
+pub struct GitSubmoduleDepsProvider {
     base: ProviderBase,
 }
 
-impl GitSubmodulePrepareProvider {
-    pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
+impl GitSubmoduleDepsProvider {
+    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("git-submodule", project_root, config),
         }
@@ -62,7 +62,7 @@ impl GitSubmodulePrepareProvider {
     }
 }
 
-impl PrepareProvider for GitSubmodulePrepareProvider {
+impl DepsProvider for GitSubmoduleDepsProvider {
     fn base(&self) -> &ProviderBase {
         &self.base
     }
@@ -75,12 +75,12 @@ impl PrepareProvider for GitSubmodulePrepareProvider {
         self.submodule_paths()
     }
 
-    fn prepare_command(&self) -> Result<PrepareCommand> {
+    fn install_command(&self) -> Result<DepsCommand> {
         if let Some(run) = &self.base.config.run {
-            return PrepareCommand::from_string(run, &self.base.project_root, &self.base.config);
+            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
         }
 
-        Ok(PrepareCommand {
+        Ok(DepsCommand {
             program: "git".to_string(),
             args: vec![
                 "submodule".to_string(),

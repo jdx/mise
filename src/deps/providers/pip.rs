@@ -2,26 +2,26 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::prepare::rule::PrepareProviderConfig;
-use crate::prepare::{PrepareCommand, PrepareProvider};
+use crate::deps::rule::DepsProviderConfig;
+use crate::deps::{DepsCommand, DepsProvider};
 
 use super::ProviderBase;
 
-/// Prepare provider for pip (requirements.txt)
+/// Deps provider for pip (requirements.txt)
 #[derive(Debug)]
-pub struct PipPrepareProvider {
+pub struct PipDepsProvider {
     base: ProviderBase,
 }
 
-impl PipPrepareProvider {
-    pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
+impl PipDepsProvider {
+    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("pip", project_root, config),
         }
     }
 }
 
-impl PrepareProvider for PipPrepareProvider {
+impl DepsProvider for PipDepsProvider {
     fn base(&self) -> &ProviderBase {
         &self.base
     }
@@ -35,12 +35,12 @@ impl PrepareProvider for PipPrepareProvider {
         vec![self.base.config_root().join(".venv")]
     }
 
-    fn prepare_command(&self) -> Result<PrepareCommand> {
+    fn install_command(&self) -> Result<DepsCommand> {
         if let Some(run) = &self.base.config.run {
-            return PrepareCommand::from_string(run, &self.base.project_root, &self.base.config);
+            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
         }
 
-        Ok(PrepareCommand {
+        Ok(DepsCommand {
             program: "pip".to_string(),
             args: vec![
                 "install".to_string(),

@@ -1426,12 +1426,15 @@ hide = true
 type = "Bool"
 
 [npm.package_manager]
-default = "npm"
+default = "auto"
 description = "Package manager to use for installing npm packages."
 docs = """
-Package manager to use for installing npm packages.
+Package manager to use for installing npm packages. The default, `auto`, uses
+`aube` when it is installed and falls back to `npm`, similar to how the pipx
+backend uses `uv` when available. Set this to `npm`, `aube`, `bun`, or `pnpm`
+to force a specific package manager.
 """
-enum = ["npm", "bun", "pnpm"]
+enum = ["auto", "npm", "aube", "bun", "pnpm"]
 env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
 type = "String"
@@ -1929,15 +1932,15 @@ Disable tools with [`disable_tools`](#disable_tools).
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"
 
+[status.show_deps_stale]
+default = true
+description = "Show warning when deps providers have stale dependencies."
+env = "MISE_STATUS_SHOW_DEPS_STALE"
+type = "Bool"
+
 [status.show_env]
 description = "Show configured env vars when entering a directory with a mise.toml file."
 env = "MISE_STATUS_MESSAGE_SHOW_ENV"
-type = "Bool"
-
-[status.show_prepare_stale]
-default = true
-description = "Show warning when prepare providers have stale dependencies."
-env = "MISE_STATUS_SHOW_PREPARE_STALE"
 type = "Bool"
 
 [status.show_tools]
