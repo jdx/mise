@@ -337,7 +337,8 @@ impl Upgrade {
 
         // Get versions needed by tracked configs AFTER upgrade
         // This ensures we don't uninstall versions still needed by other projects
-        let versions_needed_by_tracked = get_versions_needed_by_tracked_configs(config).await?;
+        let versions_needed_by_tracked =
+            get_versions_needed_by_tracked_configs(config, false).await?;
 
         // Only uninstall old versions of tools that were successfully upgraded
         // and are not needed by any tracked config

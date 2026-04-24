@@ -634,6 +634,10 @@ impl Lockfile {
         platforms
     }
 
+    pub fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
+        &self.tools
+    }
+
     /// Keep only tools matching configured short names or backend identifiers.
     /// Also removes conda packages that become unreferenced.
     pub fn retain_tools_by_short_or_backend(

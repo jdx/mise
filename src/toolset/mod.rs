@@ -3,6 +3,7 @@ use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::env::TERM_WIDTH;
+use crate::lockfile::{Lockfile, lockfile_path_for_config};
 use crate::registry::REGISTRY;
 use crate::registry::tool_enabled;
 use crate::{backend, parallel};
@@ -600,16 +601,40 @@ impl From<ToolRequestSet> for Toolset {
 /// uninstalling versions that other projects still need.
 pub async fn get_versions_needed_by_tracked_configs(
     config: &Arc<Config>,
+    use_locked_version: bool,
 ) -> Result<std::collections::HashSet<(String, String)>> {
     let mut needed = std::collections::HashSet::new();
-    // Use use_locked_version: false to resolve based on what config files actually
-    // request, not what was previously locked. This is important during upgrade
-    // because the lockfile hasn't been updated yet when this is called.
+    // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
+    // passes false because it checks what tracked configs resolve to after an
+    // upgrade, before their lockfiles have been updated.
     let opts = ResolveOptions {
-        use_locked_version: false,
+        use_locked_version,
         ..Default::default()
     };
-    for cf in config.get_tracked_config_files().await?.values() {
+    for (path, cf) in config.get_tracked_config_files().await? {
+        // Prune should protect versions pinned by other tracked projects'
+        // lockfiles. Upgrade passes use_locked_version=false because it must
+        // decide whether old versions are still needed after upgrading.
+        if use_locked_version && Settings::get().lockfile_enabled() {
+            let (lockfile_path, _) = lockfile_path_for_config(&path);
+            match Lockfile::read(&lockfile_path) {
+                Ok(lockfile) => {
+                    for (short, tools) in lockfile.tools() {
+                        for tool in tools {
+                            let version = tool.version.replace([':', '/'], "-");
+                            needed.insert((short.clone(), version.clone()));
+                            if let Some(backend) = &tool.backend {
+                                needed.insert((backend.clone(), version));
+                            }
+                        }
+                    }
+                }
+                Err(err) => warn!(
+                    "error loading tracked lockfile {}: {err:#}",
+                    lockfile_path.display()
+                ),
+            }
+        }
         let mut ts = Toolset::from(cf.to_tool_request_set()?);
         ts.resolve_with_opts(config, &opts).await?;
         for (_, tv) in ts.list_current_versions() {
