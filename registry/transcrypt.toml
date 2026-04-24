@@ -5,7 +5,7 @@ test = { cmd = "transcrypt --version", expected = "transcrypt v{{ version }}" }
 full = "http:transcrypt"
 
 [backends.options]
-url = "https://raw.githubusercontent.com/elasticdog/transcrypt/v{{ version }}/transcrypt"
 bin = "transcrypt"
-version_list_url = "https://api.github.com/repos/elasticdog/transcrypt/releases"
+url = "https://raw.githubusercontent.com/elasticdog/transcrypt/v{{ version }}/transcrypt"
 version_expr = 'fromJSON(body) | map({ replace(#.tag_name, "v", "") }) | sortVersions()'
+version_list_url = "https://api.github.com/repos/elasticdog/transcrypt/releases"
