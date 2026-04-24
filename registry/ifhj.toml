@@ -1,0 +1,2 @@
+backends = ["github:therealparmesh/ifhj"]
+description = "TUI for Jira — kanban board, issue editing, filters, and more from the terminal"
