@@ -273,54 +273,53 @@ version = "3.1.0"
 backend = "cargo:usage-cli"
 
 [[tools.communique]]
-version = "1.0.3"
+version = "1.0.4"
 backend = "github:jdx/communique"
 
 [tools.communique."platforms.linux-arm64"]
-checksum = "sha256:b8425a0193c0c14f45c7d2454bc3d7ce6203930765f912fe75fff83a8eb04c14"
-url = "https://github.com/jdx/communique/releases/download/v1.0.3/communique-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/403764139"
+checksum = "sha256:3c3b8bc3ea4f887c3db1d3a9af9875864ecdb4f053c7ad7e05d55b51769359b5"
+url = "https://github.com/jdx/communique/releases/download/v1.0.4/communique-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/404781311"
 
 [tools.communique."platforms.linux-arm64-musl"]
-checksum = "sha256:b8425a0193c0c14f45c7d2454bc3d7ce6203930765f912fe75fff83a8eb04c14"
-url = "https://github.com/jdx/communique/releases/download/v1.0.3/communique-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/403764139"
+checksum = "sha256:3c3b8bc3ea4f887c3db1d3a9af9875864ecdb4f053c7ad7e05d55b51769359b5"
+url = "https://github.com/jdx/communique/releases/download/v1.0.4/communique-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/404781311"
 
 [tools.communique."platforms.linux-x64"]
-checksum = "sha256:ec51b288886506409b6526044fe9bbcea7b07d2088729ae70f9ffcbeabf82871"
-url = "https://github.com/jdx/communique/releases/download/v1.0.3/communique-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/403764051"
-provenance = "github-attestations"
+checksum = "sha256:4ea1bc9e59fee38bee3b6e2d377eeb80f1c4c85787db0aed53c70e0b70857897"
+url = "https://github.com/jdx/communique/releases/download/v1.0.4/communique-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/404781142"
 
 [tools.communique."platforms.linux-x64-baseline"]
-checksum = "sha256:ec51b288886506409b6526044fe9bbcea7b07d2088729ae70f9ffcbeabf82871"
-url = "https://github.com/jdx/communique/releases/download/v1.0.3/communique-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/403764051"
+checksum = "sha256:4ea1bc9e59fee38bee3b6e2d377eeb80f1c4c85787db0aed53c70e0b70857897"
+url = "https://github.com/jdx/communique/releases/download/v1.0.4/communique-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/404781142"
 
 [tools.communique."platforms.linux-x64-musl"]
-checksum = "sha256:ec51b288886506409b6526044fe9bbcea7b07d2088729ae70f9ffcbeabf82871"
-url = "https://github.com/jdx/communique/releases/download/v1.0.3/communique-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/403764051"
+checksum = "sha256:4ea1bc9e59fee38bee3b6e2d377eeb80f1c4c85787db0aed53c70e0b70857897"
+url = "https://github.com/jdx/communique/releases/download/v1.0.4/communique-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/404781142"
 
 [tools.communique."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:ec51b288886506409b6526044fe9bbcea7b07d2088729ae70f9ffcbeabf82871"
-url = "https://github.com/jdx/communique/releases/download/v1.0.3/communique-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/403764051"
+checksum = "sha256:4ea1bc9e59fee38bee3b6e2d377eeb80f1c4c85787db0aed53c70e0b70857897"
+url = "https://github.com/jdx/communique/releases/download/v1.0.4/communique-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/404781142"
 
 [tools.communique."platforms.macos-arm64"]
-checksum = "sha256:4efa78274b808b90b6bd2a40d3454c761f331211a891c3afce1815da19853d9f"
-url = "https://github.com/jdx/communique/releases/download/v1.0.3/communique-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/403764017"
+checksum = "sha256:27eed5b2ebd1492f3a0fcfb5e2799148c7e6d8fdbdadfe3f70e3b721d04c2ca7"
+url = "https://github.com/jdx/communique/releases/download/v1.0.4/communique-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/404782180"
 
 [tools.communique."platforms.windows-x64"]
-checksum = "sha256:7747987ad9f5b212198699422dfb65da955ed21f125a4626c2f90d4d045abf67"
-url = "https://github.com/jdx/communique/releases/download/v1.0.3/communique-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/403765157"
+checksum = "sha256:f2efaa4c0b7369b0040127b21e5c00f27ca2c4f2493e9bb534707e67586109d8"
+url = "https://github.com/jdx/communique/releases/download/v1.0.4/communique-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/404781972"
 
 [tools.communique."platforms.windows-x64-baseline"]
-checksum = "sha256:7747987ad9f5b212198699422dfb65da955ed21f125a4626c2f90d4d045abf67"
-url = "https://github.com/jdx/communique/releases/download/v1.0.3/communique-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/403765157"
+checksum = "sha256:f2efaa4c0b7369b0040127b21e5c00f27ca2c4f2493e9bb534707e67586109d8"
+url = "https://github.com/jdx/communique/releases/download/v1.0.4/communique-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/404781972"
 
 [[tools.fd]]
 version = "10.3.0"

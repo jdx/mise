@@ -109,7 +109,7 @@ pub async fn prunable_tools(
     }
 
     // Remove versions that are still needed by tracked configs
-    let needed_versions = get_versions_needed_by_tracked_configs(config).await?;
+    let needed_versions = get_versions_needed_by_tracked_configs(config, true).await?;
     for key in needed_versions {
         to_delete.remove(&key);
     }
@@ -133,14 +133,17 @@ async fn delete(
         if dry_run {
             prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
         }
-        let pr = mpr.add(&prefix);
-        if dry_run || Settings::get().yes || prompt::confirm_with_all(format!("remove {} ?", &tv))?
+        if !dry_run
+            && !Settings::get().yes
+            && !prompt::confirm_with_all(format!("remove {} ?", &tv))?
         {
-            p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
-                .await?;
-            runtime_symlinks::remove_missing_symlinks(p)?;
-            pr.finish();
+            continue;
         }
+        let pr = mpr.add(&prefix);
+        p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
+            .await?;
+        runtime_symlinks::remove_missing_symlinks(p)?;
+        pr.finish();
     }
     Ok(())
 }
