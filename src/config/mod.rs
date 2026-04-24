@@ -335,14 +335,26 @@ impl Config {
     ) -> Result<Option<ToolVersionOptions>> {
         let trs = self.get_tool_request_set().await?;
         let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
-        let tool_request = short_match.or_else(|| {
-            if !self.has_backend_alias(&backend_arg.short) {
-                return None;
-            }
-
+        let resolved_match = if self.has_backend_alias(&backend_arg.short) {
             let resolved_ba = BackendArg::new(backend_arg.full(), None);
             trs.iter().find(|tr| tr.0.short == resolved_ba.short)
-        });
+        } else {
+            None
+        };
+        let tool_request = if let Some(short) = short_match {
+            if short
+                .1
+                .first()
+                .is_some_and(|req| !req.options().opts.is_empty())
+                || resolved_match.is_none()
+            {
+                Some(short)
+            } else {
+                resolved_match
+            }
+        } else {
+            resolved_match
+        };
         Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
     }
 

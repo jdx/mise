@@ -65,3 +65,16 @@ assert_contains "mise ls-remote my-test-tool" "1.0.0"
 
 mise install
 assert_contains "mise x my-test-tool -- hello-world" "hello world"
+
+# Test GitLab backend alias with options from a non-default GitLab instance.
+# Regression test for https://github.com/jdx/mise/discussions/8079
+cat <<EOF >mise.toml
+[tools]
+"gitlab:FBibonne/treesize" = { version = "1.0.0", api_url = "https://framagit.org/api/v4" }
+
+[tool_alias]
+treesize = 'gitlab:FBibonne/treesize'
+EOF
+
+assert_contains "mise ls-remote treesize" "1.0.0"
+assert "mise install --force treesize@1.0.0"
