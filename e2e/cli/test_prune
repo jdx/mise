@@ -22,3 +22,25 @@ assert "ls $MISE_DATA_DIR/installs/tiny/3.0.0"
 
 # Test: --dry-run-code should exit 0 when there is nothing to prune
 assert_succeed "mise prune --dry-run-code 2>&1"
+
+echo "=== prune keeps lockfile-pinned versions ==="
+locked_project="$(mktemp -d)"
+cd "$locked_project" || exit 1
+export MISE_LOCKFILE=1
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "latest"
+EOF
+cat >mise.lock <<'EOF'
+# @generated
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+assert "mise install"
+cd "$(mktemp -d)" || exit 1
+MISE_YES=1 assert "mise prune --tools"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+cd "$locked_project" || exit 1
+assert_contains "mise install 2>&1" "all tools are installed"
