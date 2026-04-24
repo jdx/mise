@@ -818,6 +818,9 @@ cmd registry help="List available tools to install" {
     flag --complete help="Print all tools with descriptions for shell completions" hide=#true
     flag --hide-aliased help="Hide aliased tools"
     flag "-J --json" help="Output in JSON format"
+    flag --security help="Include security features for each tool's backends in JSON output" {
+        long_help "Include security features for each tool's backends in JSON output.\n\nHas no effect without --json. Security info is de-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually."
+    }
     arg "[NAME]" help="Show only the specified tool's full name" required=#false
 }
 cmd render-help hide=#true help="internal command to generate markdown from help"

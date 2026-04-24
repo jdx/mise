@@ -30,6 +30,12 @@ Hide aliased tools
 
 Output in JSON format
 
+### `--security`
+
+Include security features for each tool's backends in JSON output.
+
+Has no effect without --json. Security info is de-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually.
+
 Examples:
 
 ```
