@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert_fail_contains "mise missing-task 2>&1" "no tasks defined"
+assert_fail "test -d $MISE_DATA_DIR/installs/dummy"
