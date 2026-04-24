@@ -946,7 +946,7 @@ impl Backend for RubyPlugin {
                 "ruby_precompiled",
                 "installing precompiled ruby from jdx/ruby\n\
                     if you experience issues, switch to ruby-build by running",
-                "mise settings ruby.compile=1"
+                "mise settings ruby.compile=true"
             );
             self.install_rubygems_hook(&installed_tv)?;
             if let Err(err) = self
