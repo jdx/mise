@@ -511,6 +511,9 @@ Removes installed tool versions
 \fBunset\fR
 Remove environment variable(s) from the config file.
 .TP
+\fBuntrust\fR
+No longer trust a config, will prompt in the future
+.TP
 \fBunuse\fR
 Removes installed tool versions from mise.toml
 .RS
@@ -3208,6 +3211,16 @@ Use the global config file
 \fB<ENV_KEY>\fR
 Environment variable(s) to remove
 e.g.: NODE_ENV
+.SH "MISE UNTRUST"
+No longer trust a config, will prompt in the future
+.PP
+\fBUsage:\fR mise untrust [<CONFIG_FILE>]
+.PP
+\fBArguments:\fR
+.PP
+.TP
+\fB<CONFIG_FILE>\fR
+The config file to untrust
 .SH "MISE UNUSE"
 Removes installed tool versions from mise.toml
 

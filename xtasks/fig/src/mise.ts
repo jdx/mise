@@ -3879,6 +3879,18 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
+      name: "untrust",
+      description: "No longer trust a config, will prompt in the future",
+      args: {
+        name: "config_file",
+        description: "The config file to untrust",
+        isOptional: true,
+        template: "filepaths",
+        generators: configPathGenerator,
+        debounce: true,
+      },
+    },
+    {
       name: ["unuse", "rm", "remove"],
       description: "Removes installed tool versions from mise.toml",
       options: [
