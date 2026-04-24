@@ -47,6 +47,8 @@
     text-wrap: balance;
   }
   .jdx-banner button {
+    top: 0.25rem;
     right: 0.25rem;
+    transform: none;
   }
 }
