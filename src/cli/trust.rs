@@ -51,7 +51,7 @@ impl Trust {
             return self.show();
         }
         if self.untrust {
-            self.untrust()
+            untrust_config_file(self.config_file())
         } else if self.ignore {
             self.ignore()
         } else if self.all {
@@ -81,31 +81,35 @@ impl Trust {
         }
         Ok(())
     }
-    fn untrust(&self) -> Result<()> {
-        let path = match self.config_file() {
-            Some(filename) => filename,
-            None => match self.get_next() {
-                Some(path) => path,
-                None => {
-                    warn!("No trusted config files found.");
-                    return Ok(());
-                }
-            },
-        };
-        let cfr = config_trust_root(&path);
-        config_file::untrust(&cfr)?;
-        let cfr = cfr.canonicalize()?;
-        info!("untrusted {}", cfr.display());
+}
 
-        let trusted_via_settings = Settings::get()
-            .trusted_config_paths()
-            .any(|p| cfr.starts_with(p));
-        if trusted_via_settings {
-            warn!("{cfr:?} is trusted via settings so it will still be trusted.");
-        }
+pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
+    let path = match config_file {
+        Some(filename) => filename,
+        None => match ALL_CONFIG_FILES.first().cloned() {
+            Some(path) => path,
+            None => {
+                warn!("No trusted config files found.");
+                return Ok(());
+            }
+        },
+    };
+    let cfr = config_trust_root(&path);
+    config_file::untrust(&cfr)?;
+    let cfr = cfr.canonicalize()?;
+    info!("untrusted {}", cfr.display());
 
-        Ok(())
+    let trusted_via_settings = Settings::get()
+        .trusted_config_paths()
+        .any(|p| cfr.starts_with(p));
+    if trusted_via_settings {
+        warn!("{cfr:?} is trusted via settings so it will still be trusted.");
     }
+
+    Ok(())
+}
+
+impl Trust {
     fn ignore(&self) -> Result<()> {
         let path = match self.config_file() {
             Some(filename) => filename,

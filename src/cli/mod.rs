@@ -71,6 +71,7 @@ pub mod tool_stub;
 mod trust;
 mod uninstall;
 mod unset;
+mod untrust;
 mod unuse;
 mod upgrade;
 mod usage;
@@ -257,6 +258,7 @@ pub enum Commands {
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Unset(unset::Unset),
+    Untrust(untrust::Untrust),
     Unuse(unuse::Unuse),
     Upgrade(upgrade::Upgrade),
     Usage(usage::Usage),
@@ -327,6 +329,7 @@ impl Commands {
             Self::Trust(cmd) => cmd.run().await,
             Self::Uninstall(cmd) => cmd.run().await,
             Self::Unset(cmd) => cmd.run().await,
+            Self::Untrust(cmd) => cmd.run(),
             Self::Unuse(cmd) => cmd.run().await,
             Self::Upgrade(cmd) => cmd.run().await,
             Self::Usage(cmd) => cmd.run(),
