@@ -336,7 +336,7 @@ impl Config {
         let trs = self.get_tool_request_set().await?;
         let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
         let tool_request = short_match.or_else(|| {
-            if !self.has_backend_alias(&backend_arg.short) {
+            if !self.has_tool_alias(&backend_arg.short) {
                 return None;
             }
 
@@ -346,7 +346,7 @@ impl Config {
         Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
     }
 
-    fn has_backend_alias(&self, short: &str) -> bool {
+    fn has_tool_alias(&self, short: &str) -> bool {
         self.all_aliases
             .get(short)
             .is_some_and(|alias| alias.backend.is_some())
