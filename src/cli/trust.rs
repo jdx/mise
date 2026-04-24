@@ -109,6 +109,19 @@ pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn resolve_config_file(config_file: Option<&PathBuf>) -> Option<PathBuf> {
+    config_file.map(|config_file| {
+        if config_file.is_dir() {
+            config_files_in_dir(config_file)
+                .last()
+                .cloned()
+                .unwrap_or(config_file.join(&*env::MISE_DEFAULT_CONFIG_FILENAME))
+        } else {
+            config_file.clone()
+        }
+    })
+}
+
 impl Trust {
     fn ignore(&self) -> Result<()> {
         let path = match self.config_file() {
@@ -152,16 +165,7 @@ impl Trust {
     }
 
     fn config_file(&self) -> Option<PathBuf> {
-        self.config_file.as_ref().map(|config_file| {
-            if config_file.is_dir() {
-                config_files_in_dir(config_file)
-                    .last()
-                    .cloned()
-                    .unwrap_or(config_file.join(&*env::MISE_DEFAULT_CONFIG_FILENAME))
-            } else {
-                config_file.clone()
-            }
-        })
+        resolve_config_file(self.config_file.as_ref())
     }
 
     fn get_next(&self) -> Option<PathBuf> {

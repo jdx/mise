@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use crate::config::config_files_in_dir;
-use crate::{Result, env};
+use crate::Result;
 use clap::ValueHint;
 
 use super::trust;
@@ -21,15 +20,6 @@ impl Untrust {
     }
 
     fn config_file(&self) -> Option<PathBuf> {
-        self.config_file.as_ref().map(|config_file| {
-            if config_file.is_dir() {
-                config_files_in_dir(config_file)
-                    .last()
-                    .cloned()
-                    .unwrap_or(config_file.join(&*env::MISE_DEFAULT_CONFIG_FILENAME))
-            } else {
-                config_file.clone()
-            }
-        })
+        trust::resolve_config_file(self.config_file.as_ref())
     }
 }
