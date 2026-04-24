@@ -30,3 +30,23 @@ assert_contains "mise x -- hello-world" "hello world"
 # Both aliases should have installed using their own asset patterns
 assert "test -d ~/.local/share/mise/installs/hw1/1.0.0/hello-world-1.0.0"
 assert "test -d ~/.local/share/mise/installs/hw2/1.0.0/hello-world-2.0.0"
+
+# When both an alias and its resolved backend are configured, the alias-specific
+# entry should win and should not fall back to the backend entry's options.
+cat <<'EOF' >mise.toml
+[tool_alias]
+hw = "github:jdx/mise-test-fixtures"
+
+[tools.hw]
+version = "1.0.0"
+asset_pattern = "hello-world-1.0.0.tar.gz"
+bin_path = "hello-world-1.0.0/bin"
+postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
+
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+asset_pattern = "definitely-not-a-real-hello-world-asset"
+EOF
+
+assert "mise install --force hw@1.0.0"
+assert "test -d ~/.local/share/mise/installs/hw/1.0.0/hello-world-1.0.0"
