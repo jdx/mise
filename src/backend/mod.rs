@@ -420,6 +420,35 @@ mod tests {
             versions
         );
     }
+
+    #[test]
+    fn test_include_prereleases_accepts_bool_and_string_values() {
+        use crate::toolset::ToolVersionOptions;
+
+        let mut opts = ToolVersionOptions::default();
+        assert!(!include_prereleases(&opts));
+
+        // Inline backend args normalize scalars to strings — cover that shape.
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("true".into()));
+        assert!(include_prereleases(&opts));
+
+        opts.opts.insert(
+            "prerelease".to_string(),
+            toml::Value::String("false".into()),
+        );
+        assert!(!include_prereleases(&opts));
+
+        // Defense-in-depth: also accept a native TOML boolean, in case a future
+        // config path stores the value without string normalization.
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(true));
+        assert!(include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(false));
+        assert!(!include_prereleases(&opts));
+    }
 }
 
 #[async_trait]
@@ -838,7 +867,10 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
-        self.fuzzy_match_filter(versions, query)
+        // No async config lookup available here; fall back to inline/registry
+        // opts, which is the best we have for a sync path.
+        let filter = !include_prereleases(&self.ba().opts());
+        self.fuzzy_match_filter(versions, query, filter)
     }
     async fn list_versions_matching(
         &self,
@@ -846,7 +878,12 @@ pub trait Backend: Debug + Send + Sync {
         query: &str,
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query))
+        let opts = config
+            .get_tool_opts(self.ba())
+            .await?
+            .unwrap_or_else(|| self.ba().opts());
+        let filter = !include_prereleases(&opts);
+        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     /// List versions matching a query, optionally filtered by release date.
@@ -873,7 +910,12 @@ pub trait Backend: Debug + Send + Sync {
             }
             None => self.list_remote_versions(config).await?,
         };
-        Ok(self.fuzzy_match_filter(versions, query))
+        let opts = config
+            .get_tool_opts(self.ba())
+            .await?
+            .unwrap_or_else(|| self.ba().opts());
+        let filter = !include_prereleases(&opts);
+        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     async fn latest_version_for_query(
@@ -1578,8 +1620,17 @@ pub trait Backend: Debug + Send + Sync {
         Ok(env)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
-        fuzzy_match_versions(versions, query, /* filter_prereleases = */ true)
+    /// Default fuzzy-match. `filter_prereleases = true` applies the historical
+    /// behavior of dropping versions that look like pre-releases
+    /// (`1.0.0-rc1`, `1.0.0-dev.5`, ...). Callers that have opted into
+    /// pre-releases pass `false` to keep those tags in the match set.
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
+        fuzzy_match_versions(versions, query, filter_prereleases)
     }
 
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
@@ -2156,6 +2207,19 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
     }
+}
+
+/// Whether the `prerelease = true` tool option is set. Accepts both TOML
+/// booleans (`prerelease = true`) and the string form (`prerelease = "true"`),
+/// since inline backend args normalize scalars to strings before they reach
+/// here. Used by `github:` and `aqua:` backends to opt in to pre-release
+/// versions in `ls-remote`, `latest` resolution, and fuzzy matching.
+pub(crate) fn include_prereleases(opts: &crate::toolset::ToolVersionOptions) -> bool {
+    opts.opts.get("prerelease").is_some_and(|v| match v {
+        toml::Value::Boolean(b) => *b,
+        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
+        _ => false,
+    })
 }
 
 /// Fuzzy-match `versions` against `query`. When `filter_prereleases` is true,

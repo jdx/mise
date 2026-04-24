@@ -22,7 +22,7 @@ use crate::{
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
-use crate::{backend::Backend, config::Config};
+use crate::{backend::Backend, backend::include_prereleases, config::Config};
 use crate::{file, github, minisign};
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, bail, eyre};
@@ -209,7 +209,7 @@ impl Backend for AquaBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(e) => {
@@ -226,7 +226,11 @@ impl Backend for AquaBackend {
             return Ok(vec![]);
         }
 
-        let include_prerelease = include_prereleases(&self.ba.opts());
+        let opts = config
+            .get_tool_opts(&self.ba)
+            .await?
+            .unwrap_or_else(|| self.ba.opts());
+        let include_prerelease = include_prereleases(&opts);
         let tags_with_timestamps = match get_tags_with_created_at(&pkg, include_prerelease).await {
             Ok(tags) => tags,
             Err(e) => {
@@ -540,8 +544,12 @@ impl Backend for AquaBackend {
         Self::lockfile_options(&request.options())
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
-        let include_prerelease = include_prereleases(&self.ba.opts());
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
             "\\D*[0-9].*"
@@ -555,7 +563,7 @@ impl Backend for AquaBackend {
                 if query == v {
                     return true;
                 }
-                if !include_prerelease && VERSION_REGEX.is_match(v) {
+                if filter_prereleases && VERSION_REGEX.is_match(v) {
                     return false;
                 }
                 query_regex.is_match(v)
@@ -2258,15 +2266,6 @@ async fn get_tags_with_created_at(
         .into_iter()
         .map(|r| (r.tag_name, Some(r.created_at)))
         .collect())
-}
-
-/// Whether the `prerelease = true` tool option is set. When set, releases
-/// flagged `prerelease: true` on GitHub are included in `ls-remote` output
-/// and considered when resolving `latest`.
-fn include_prereleases(opts: &ToolVersionOptions) -> bool {
-    opts.get("prerelease")
-        .and_then(|v| v.parse::<bool>().ok())
-        .unwrap_or(false)
 }
 
 fn validate(pkg: &AquaPackage) -> Result<()> {
