@@ -365,6 +365,20 @@ impl Config {
         Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
     }
 
+    pub async fn get_tool_opts_with_overrides(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+    ) -> Result<ToolVersionOptions> {
+        let mut opts = self
+            .get_tool_opts(backend_arg)
+            .await?
+            .unwrap_or_else(|| backend_arg.opts());
+        if let Some(overrides) = backend_arg.explicit_opts() {
+            opts.apply_overrides(overrides);
+        }
+        Ok(opts)
+    }
+
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
         let plugin_name = self
             .all_aliases
@@ -2516,6 +2530,19 @@ mod tests {
     async fn test_load() {
         let config = Config::reset().await.unwrap();
         assert_debug_snapshot!(config);
+    }
+
+    #[tokio::test]
+    async fn test_get_tool_opts_with_overrides_keeps_inline_opts_with_config_entry() -> Result<()> {
+        let config = Config::reset().await?;
+        let ba = Arc::new(BackendArg::from(
+            "tiny[api_url=https://inline.example/api/v3]",
+        ));
+
+        let opts = config.get_tool_opts_with_overrides(&ba).await?;
+
+        assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
+        Ok(())
     }
 
     #[tokio::test]

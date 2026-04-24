@@ -84,11 +84,7 @@ impl Backend for VfoxBackend {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
-                    let opts = config
-                        .get_tool_opts(&this.ba)
-                        .await?
-                        .map(|o| o.opts)
-                        .unwrap_or_default();
+                    let opts = config.get_tool_opts_with_overrides(&this.ba).await?.opts;
                     let versions = vfox
                         .backend_list_versions(&this.pathname, tool_name, opts)
                         .await

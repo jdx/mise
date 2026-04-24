@@ -148,17 +148,13 @@ fn parse_backend_components(
     full: Option<&String>,
 ) -> (String, String, Option<ToolVersionOptions>) {
     let short = unalias_backend(short).to_string();
-    let (_backend, mut tool_name) = full
-        .unwrap_or(&short)
-        .split_once(':')
-        .unwrap_or(("", full.unwrap_or(&short)));
+    let source = full.unwrap_or(&short);
+    let (source, opts) = match split_bracketed_opts(source) {
+        Some((name, opts_str)) => (name, Some(parse_tool_options(opts_str))),
+        None => (source.as_str(), None),
+    };
+    let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
-
-    let mut opts = None;
-    if let Some((name, opts_str)) = split_bracketed_opts(tool_name) {
-        tool_name = name;
-        opts = Some(parse_tool_options(opts_str));
-    }
 
     (short, tool_name.to_string(), opts)
 }
@@ -475,6 +471,10 @@ impl BackendArg {
         }
 
         opts
+    }
+
+    pub fn explicit_opts(&self) -> Option<&ToolVersionOptions> {
+        self.opts.as_ref()
     }
 
     pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
@@ -827,6 +827,19 @@ mod tests {
         assert_str_eq!(
             "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
             fa.full_with_opts()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_backend_opts_with_url_value_on_shorthand() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg = "tiny[api_url=https://inline.example/api/v3]".into();
+
+        assert_eq!(ba.short, "tiny");
+        assert_eq!(ba.tool_name, "tiny");
+        assert_eq!(
+            ba.opts().get("api_url"),
+            Some("https://inline.example/api/v3")
         );
     }
 }

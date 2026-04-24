@@ -525,12 +525,14 @@ pub trait Backend: Debug + Send + Sync {
         // setting can still disable the host globally, but cannot re-enable
         // it for backends that are not on this allowlist.
         let backend_type = self.get_type();
-        let has_version_list_url = matches!(backend_type, BackendType::Http | BackendType::S3)
-            && (ba.opts().contains_key("version_list_url")
-                || config
-                    .get_tool_opts(&ba)
-                    .await?
-                    .is_some_and(|o| o.contains_key("version_list_url")));
+        let has_version_list_url = if matches!(backend_type, BackendType::Http | BackendType::S3) {
+            config
+                .get_tool_opts_with_overrides(&ba)
+                .await?
+                .contains_key("version_list_url")
+        } else {
+            false
+        };
         let versions_host_applies = match backend_type {
             BackendType::Github
             | BackendType::Gitlab

@@ -102,6 +102,26 @@ impl ToolVersionOptions {
         }
     }
 
+    pub fn apply_overrides(&mut self, overrides: &ToolVersionOptions) {
+        for (key, value) in &overrides.opts {
+            self.opts.insert(key.clone(), value.clone());
+        }
+        for (key, value) in &overrides.install_env {
+            self.install_env.insert(key.clone(), value.clone());
+        }
+        if overrides.os.is_some() {
+            self.os = overrides.os.clone();
+        }
+        if overrides.depends.is_some() {
+            self.depends = overrides.depends.clone();
+        }
+    }
+
+    pub fn with_overrides(mut self, overrides: &ToolVersionOptions) -> Self {
+        self.apply_overrides(overrides);
+        self
+    }
+
     pub fn contains_key(&self, key: &str) -> bool {
         if self.opts.contains_key(key) {
             return true;
@@ -818,5 +838,44 @@ mod tests {
             ..Default::default()
         };
         assert!(tvo.is_empty());
+    }
+
+    #[test]
+    fn test_apply_overrides_replaces_existing_values() {
+        let mut base = ToolVersionOptions {
+            os: Some(vec!["linux".to_string()]),
+            depends: Some(vec!["node".to_string()]),
+            install_env: [("BASE".to_string(), "1".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+            opts: [
+                ("api_url".to_string(), s("https://config.example")),
+                ("version_prefix".to_string(), s("v")),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
+        };
+        let overrides = ToolVersionOptions {
+            os: Some(vec!["macos".to_string()]),
+            depends: Some(vec!["python".to_string()]),
+            install_env: [("BASE".to_string(), "2".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+            opts: [("api_url".to_string(), s("https://inline.example"))]
+                .iter()
+                .cloned()
+                .collect(),
+        };
+
+        base.apply_overrides(&overrides);
+
+        assert_eq!(base.os, Some(vec!["macos".to_string()]));
+        assert_eq!(base.depends, Some(vec!["python".to_string()]));
+        assert_eq!(base.install_env.get("BASE").map(String::as_str), Some("2"));
+        assert_eq!(base.get("api_url"), Some("https://inline.example"));
+        assert_eq!(base.get("version_prefix"), Some("v"));
     }
 }
