@@ -2391,6 +2391,12 @@ const completionSpec: Fig.Spec = {
           description: "Output in JSON format",
           isRepeatable: false,
         },
+        {
+          name: "--security",
+          description:
+            "Include security features for each tool's backends in JSON output",
+          isRepeatable: false,
+        },
       ],
       args: {
         name: "name",
