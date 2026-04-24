@@ -1,0 +1,11 @@
+description = "Transparently encrypt files within a git repository using .gitattributes and OpenSSL's symmetric cipher"
+test = { cmd = "transcrypt --version", expected = "transcrypt v{{ version }}" }
+
+[[backends]]
+full = "http:transcrypt"
+
+[backends.options]
+url = "https://raw.githubusercontent.com/elasticdog/transcrypt/v{{ version }}/transcrypt"
+bin = "transcrypt"
+version_list_url = "https://api.github.com/repos/elasticdog/transcrypt/releases"
+version_expr = 'fromJSON(body) | map({ replace(#.tag_name, "v", "") }) | sortVersions()'
