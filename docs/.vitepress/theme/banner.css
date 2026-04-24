@@ -39,7 +39,14 @@
 }
 @media (max-width: 640px) {
   .jdx-banner {
-    font-size: 0.85rem;
-    padding: 0.4rem 2.5rem;
+    flex-direction: column;
+    gap: 0.125rem;
+    font-size: 0.8rem;
+    padding: 0.5rem 2.25rem;
+    line-height: 1.3;
+    text-wrap: balance;
+  }
+  .jdx-banner button {
+    right: 0.25rem;
   }
 }
