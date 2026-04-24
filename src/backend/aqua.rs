@@ -941,10 +941,13 @@ impl AquaBackend {
         artifact_path: &Path,
         pkg: &AquaPackage,
     ) -> Result<()> {
+        // The aqua registry stores signer_workflow as a regex pattern (e.g. `\.github/workflows/release\.yaml`).
+        // sigstore-verification's verify_attestations() uses plain str::contains(), not regex, so we must
+        // unescape regex metacharacter escapes (e.g. `\.` → `.`) before passing the value through.
         let signer_workflow = pkg
             .github_artifact_attestations
             .as_ref()
-            .and_then(|att| att.signer_workflow.clone());
+            .and_then(|att| att.signer_workflow.as_deref().map(unescape_regex_literal));
 
         match crate::github::sigstore::verify_attestation(
             artifact_path,
@@ -2018,6 +2021,34 @@ impl AquaBackend {
     }
 }
 
+fn unescape_regex_literal(pattern: &str) -> Cow<'_, str> {
+    // Fast path: If there are no backslashes, we return the original slice.
+    // .contains() is highly optimized and avoids any heap allocation.
+    if !pattern.contains('\\') {
+        return Cow::Borrowed(pattern);
+    }
+
+    // Slow path: We have escapes to process, so we must allocate a new String.
+    // Capacity is set to pattern.len() to ensure exactly one allocation.
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            // If there's a character after the backslash, push it (unescaping).
+            if let Some(next) = chars.next() {
+                out.push(next);
+            } else {
+                // Handle trailing backslash: push the backslash itself.
+                out.push(c);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
+}
+
 fn toml_value_to_string(value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::String(s) => Some(s.clone()),
@@ -2225,6 +2256,48 @@ mod tests {
         assert!(is_install_time_option_key("vars.channel"));
         assert!(is_install_time_option_key("vars"));
         assert!(!is_install_time_option_key("symlink_bins"));
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_no_backslash_is_borrowed() {
+        let result = unescape_regex_literal("astral-sh/ruff/.github/workflows/release.yml");
+        assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(result, "astral-sh/ruff/.github/workflows/release.yml");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_escaped_dot() {
+        assert_eq!(unescape_regex_literal(r"\."), ".");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_updatecli_signer_workflow() {
+        assert_eq!(
+            unescape_regex_literal(r"updatecli/updatecli/\.github/workflows/release\.yaml"),
+            "updatecli/updatecli/.github/workflows/release.yaml"
+        );
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_escaped_backslash() {
+        assert_eq!(unescape_regex_literal(r"\\"), "\\");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_trailing_backslash() {
+        assert_eq!(unescape_regex_literal("foo\\"), "foo\\");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_empty_string() {
+        let result = unescape_regex_literal("");
+        assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_only_backslash() {
+        assert_eq!(unescape_regex_literal("\\"), "\\");
     }
 }
 
