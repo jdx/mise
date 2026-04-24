@@ -106,7 +106,7 @@ async fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<Git
         .await
         .entry(key.to_string())
         .or_insert_with(|| {
-            CacheManagerBuilder::new(cache_dir().join(format!("{key}-releases.msgpack.z")))
+            CacheManagerBuilder::new(cache_dir().join(format!("{key}-all-releases.msgpack.z")))
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
