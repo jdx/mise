@@ -7,6 +7,7 @@ use crate::ui::table::MiseTable;
 use eyre::{Result, bail};
 use itertools::Itertools;
 use serde_derive::Serialize;
+use tokio::task::JoinSet;
 
 /// List available tools to install
 ///
@@ -37,7 +38,7 @@ pub struct Registry {
 
     /// Include security features for each tool's backends in JSON output.
     ///
-    /// Has no effect without --json. Security info is de-duplicated across
+    /// Requires --json. Security info is de-duplicated across
     /// all of a tool's backends. This can add noticeable time for large
     /// listings since each backend's security info is resolved individually.
     #[clap(long, requires = "json")]
@@ -61,7 +62,9 @@ impl Registry {
         if let Some(name) = &self.name {
             if let Some(rt) = REGISTRY.get(name.as_str()) {
                 if self.json {
-                    let tool = self.to_output(name, rt).await;
+                    let (short, backends, description, aliases) = self.output_args(name, rt);
+                    let tool =
+                        to_output(short, backends, description, aliases, self.security).await;
                     miseprintln!("{}", serde_json::to_string_pretty(&tool)?);
                 } else {
                     miseprintln!("{}", self.filter_backends(rt).join(" "));
@@ -90,26 +93,22 @@ impl Registry {
         }
     }
 
-    async fn to_output(&self, short: &str, rt: &RegistryTool) -> RegistryToolOutput {
+    fn output_args(
+        &self,
+        short: &str,
+        rt: &RegistryTool,
+    ) -> (String, Vec<String>, Option<String>, Vec<String>) {
         let backends: Vec<String> = self
             .filter_backends(rt)
             .iter()
             .map(|s| s.to_string())
             .collect();
-
-        let security = if self.security {
-            collect_security(short, &backends).await
-        } else {
-            vec![]
-        };
-
-        RegistryToolOutput {
-            short: short.to_string(),
+        (
+            short.to_string(),
             backends,
-            description: rt.description.map(|s| s.to_string()),
-            aliases: rt.aliases.iter().map(|s| s.to_string()).collect(),
-            security,
-        }
+            rt.description.map(|s| s.to_string()),
+            rt.aliases.iter().map(|s| s.to_string()).collect(),
+        )
     }
 
     fn filtered_tools(&self) -> impl Iterator<Item = (&&'static str, &RegistryTool)> {
@@ -156,16 +155,27 @@ impl Registry {
     }
 
     async fn display_json(&self) -> Result<()> {
-        // Collect (short, RegistryTool) pairs first so we can drop the
-        // REGISTRY lock borrow before hitting the async per-tool loop.
-        let tools: Vec<(&&'static str, &RegistryTool)> = self
+        // Collect owned output args before async work so parallel tasks do not
+        // borrow from the static registry map.
+        let tools: Vec<(String, Vec<String>, Option<String>, Vec<String>)> = self
             .filtered_tools()
             .filter(|(_, rt)| !self.filter_backends(rt).is_empty())
+            .map(|(short, rt)| self.output_args(short, rt))
             .collect();
 
         let mut outputs: Vec<RegistryToolOutput> = Vec::with_capacity(tools.len());
-        for (short, rt) in tools {
-            outputs.push(self.to_output(short, rt).await);
+        if self.security {
+            let mut jset: JoinSet<RegistryToolOutput> = JoinSet::new();
+            for (short, backends, description, aliases) in tools {
+                jset.spawn(to_output(short, backends, description, aliases, true));
+            }
+            while let Some(result) = jset.join_next().await {
+                outputs.push(result?);
+            }
+        } else {
+            for (short, backends, description, aliases) in tools {
+                outputs.push(to_output(short, backends, description, aliases, false).await);
+            }
         }
         outputs.sort_by(|a, b| a.short.cmp(&b.short));
         miseprintln!("{}", serde_json::to_string_pretty(&outputs)?);
@@ -175,18 +185,15 @@ impl Registry {
 
 /// Resolve and merge security features across every backend for a tool.
 /// Duplicate features (same variant + payload) are collapsed.
-async fn collect_security(short: &str, backends: &[String]) -> Vec<SecurityFeature> {
+async fn collect_security(backends: &[String]) -> Vec<SecurityFeature> {
     let mut features: Vec<SecurityFeature> = Vec::new();
     for full in backends {
-        let ba = BackendArg::new(short.to_string(), Some(full.to_string()));
-        let Some(backend) = backend::get(&ba) else {
+        let ba = BackendArg::from(full.as_str());
+        let Some(backend) = backend::arg_to_backend(ba) else {
             continue;
         };
         for feature in backend.security_info().await {
-            if !features
-                .iter()
-                .any(|existing| same_feature(existing, &feature))
-            {
+            if !features.contains(&feature) {
                 features.push(feature);
             }
         }
@@ -194,18 +201,25 @@ async fn collect_security(short: &str, backends: &[String]) -> Vec<SecurityFeatu
     features
 }
 
-fn same_feature(a: &SecurityFeature, b: &SecurityFeature) -> bool {
-    use SecurityFeature::*;
-    match (a, b) {
-        (Checksum { algorithm: x }, Checksum { algorithm: y }) => x == y,
-        (GithubAttestations { signer_workflow: x }, GithubAttestations { signer_workflow: y }) => {
-            x == y
-        }
-        (Slsa { level: x }, Slsa { level: y }) => x == y,
-        (Cosign, Cosign) => true,
-        (Minisign { public_key: x }, Minisign { public_key: y }) => x == y,
-        (Gpg, Gpg) => true,
-        _ => false,
+async fn to_output(
+    short: String,
+    backends: Vec<String>,
+    description: Option<String>,
+    aliases: Vec<String>,
+    security: bool,
+) -> RegistryToolOutput {
+    let security = if security {
+        collect_security(&backends).await
+    } else {
+        vec![]
+    };
+
+    RegistryToolOutput {
+        short,
+        backends,
+        description,
+        aliases,
+        security,
     }
 }
 
