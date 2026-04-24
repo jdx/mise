@@ -7,7 +7,8 @@ use crate::ui::table::MiseTable;
 use eyre::{Result, bail};
 use itertools::Itertools;
 use serde_derive::Serialize;
-use tokio::task::JoinSet;
+use std::sync::Arc;
+use tokio::{sync::Semaphore, task::JoinSet};
 
 /// List available tools to install
 ///
@@ -57,14 +58,19 @@ struct RegistryToolOutput {
     security: Vec<SecurityFeature>,
 }
 
+struct RegistryToolOutputArgs {
+    short: String,
+    backends: Vec<String>,
+    description: Option<String>,
+    aliases: Vec<String>,
+}
+
 impl Registry {
     pub async fn run(self) -> Result<()> {
         if let Some(name) = &self.name {
             if let Some(rt) = REGISTRY.get(name.as_str()) {
                 if self.json {
-                    let (short, backends, description, aliases) = self.output_args(name, rt);
-                    let tool =
-                        to_output(short, backends, description, aliases, self.security).await;
+                    let tool = to_output(self.output_args(name, rt), self.security).await;
                     miseprintln!("{}", serde_json::to_string_pretty(&tool)?);
                 } else {
                     miseprintln!("{}", self.filter_backends(rt).join(" "));
@@ -93,22 +99,18 @@ impl Registry {
         }
     }
 
-    fn output_args(
-        &self,
-        short: &str,
-        rt: &RegistryTool,
-    ) -> (String, Vec<String>, Option<String>, Vec<String>) {
+    fn output_args(&self, short: &str, rt: &RegistryTool) -> RegistryToolOutputArgs {
         let backends: Vec<String> = self
             .filter_backends(rt)
             .iter()
             .map(|s| s.to_string())
             .collect();
-        (
-            short.to_string(),
+        RegistryToolOutputArgs {
+            short: short.to_string(),
             backends,
-            rt.description.map(|s| s.to_string()),
-            rt.aliases.iter().map(|s| s.to_string()).collect(),
-        )
+            description: rt.description.map(|s| s.to_string()),
+            aliases: rt.aliases.iter().map(|s| s.to_string()).collect(),
+        }
     }
 
     fn filtered_tools(&self) -> impl Iterator<Item = (&&'static str, &RegistryTool)> {
@@ -157,7 +159,7 @@ impl Registry {
     async fn display_json(&self) -> Result<()> {
         // Collect owned output args before async work so parallel tasks do not
         // borrow from the static registry map.
-        let tools: Vec<(String, Vec<String>, Option<String>, Vec<String>)> = self
+        let tools: Vec<RegistryToolOutputArgs> = self
             .filtered_tools()
             .filter(|(_, rt)| !self.filter_backends(rt).is_empty())
             .map(|(short, rt)| self.output_args(short, rt))
@@ -165,16 +167,21 @@ impl Registry {
 
         let mut outputs: Vec<RegistryToolOutput> = Vec::with_capacity(tools.len());
         if self.security {
+            let semaphore = Arc::new(Semaphore::new(Settings::get().jobs));
             let mut jset: JoinSet<RegistryToolOutput> = JoinSet::new();
-            for (short, backends, description, aliases) in tools {
-                jset.spawn(to_output(short, backends, description, aliases, true));
+            for tool in tools {
+                let permit = semaphore.clone().acquire_owned().await?;
+                jset.spawn(async move {
+                    let _permit = permit;
+                    to_output(tool, true).await
+                });
             }
             while let Some(result) = jset.join_next().await {
                 outputs.push(result?);
             }
         } else {
-            for (short, backends, description, aliases) in tools {
-                outputs.push(to_output(short, backends, description, aliases, false).await);
+            for tool in tools {
+                outputs.push(to_output(tool, false).await);
             }
         }
         outputs.sort_by(|a, b| a.short.cmp(&b.short));
@@ -201,24 +208,18 @@ async fn collect_security(backends: &[String]) -> Vec<SecurityFeature> {
     features
 }
 
-async fn to_output(
-    short: String,
-    backends: Vec<String>,
-    description: Option<String>,
-    aliases: Vec<String>,
-    security: bool,
-) -> RegistryToolOutput {
+async fn to_output(tool: RegistryToolOutputArgs, security: bool) -> RegistryToolOutput {
     let security = if security {
-        collect_security(&backends).await
+        collect_security(&tool.backends).await
     } else {
         vec![]
     };
 
     RegistryToolOutput {
-        short,
-        backends,
-        description,
-        aliases,
+        short: tool.short,
+        backends: tool.backends,
+        description: tool.description,
+        aliases: tool.aliases,
         security,
     }
 }
