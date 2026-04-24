@@ -335,34 +335,22 @@ impl Config {
     ) -> Result<Option<ToolVersionOptions>> {
         let trs = self.get_tool_request_set().await?;
         let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
-        // Also try matching by resolved full name for aliased tools.
-        // e.g., ba.short="treesize" resolves to full="gitlab:FBibonne/treesize"
-        // while the config entry has short="gitlab-f-bibonne-treesize" with api_url set.
-        let full = backend_arg.full();
-        let resolved_ba = BackendArg::new(full, None);
-        let resolved_match = trs.iter().find(|tr| tr.0.short == resolved_ba.short);
-
-        let has_opts = |tr: &(&Arc<BackendArg>, &Vec<crate::toolset::ToolRequest>, _)| -> bool {
-            tr.1.first()
-                .is_some_and(|req| !req.options().opts.is_empty())
-        };
-        // Prefer whichever match has options set. When both have options,
-        // prefer the short (alias-specific) match since it's more specific.
-        // Fall back to the resolved match for cases where a CLI-created
-        // request without options shadows the config entry (treesize case).
-        let tool_request = match (short_match, resolved_match) {
-            (Some(s), Some(r)) => {
-                if has_opts(&s) {
-                    Some(s)
-                } else {
-                    Some(r)
-                }
+        let tool_request = short_match.or_else(|| {
+            if !self.has_tool_alias(&backend_arg.short) {
+                return None;
             }
-            (Some(s), None) => Some(s),
-            (None, Some(r)) => Some(r),
-            (None, None) => None,
-        };
+
+            let resolved_ba = BackendArg::new(backend_arg.full(), None);
+            trs.iter().find(|tr| tr.0.short == resolved_ba.short)
+        });
         Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
+    }
+
+    fn has_tool_alias(&self, short: &str) -> bool {
+        self.all_aliases
+            .get(short)
+            .is_some_and(|alias| alias.backend.is_some())
+            || self.repo_urls.contains_key(short)
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
