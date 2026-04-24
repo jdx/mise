@@ -156,6 +156,24 @@ If the replacement has been available for a long time, the CLI warning can start
 ### Backend System
 When implementing new tool backends, follow the pattern in `src/backend/mod.rs`. Each backend must implement the `Backend` trait with methods for listing versions, installing tools, and managing tool metadata.
 
+### DO NOT ASSUME SEMVER
+**Do not assume tool versions follow semver or any other orderable scheme.** mise manages hundreds of tools with wildly different versioning conventions:
+
+- Date-based: `2024.01.15`, `20241015`
+- Pre-release / ref / tag versions: `tip`, `HEAD`, `nightly`, `edge`, `canary`, `ref:main`, `tag:v1`, `sub-X.Y:...`
+- Non-numeric tags: Python `3.12.0a1`, Ruby `3.2.0-preview1`, Go `1.22rc1`, Node `lts/hydrogen`, `lts-iron`
+- Tool-specific meanings of `latest` (e.g. some exclude pre-releases, some don't)
+
+**Rules:**
+1. Do not call `versions::Versioning::new(...)` (or any other semver comparator) at a new call site to pick the "newest" version, "resolve latest", or sort a version list. That crate silently returns `None` / arbitrary ordering for non-semver strings, which means wrong versions get chosen for many tools.
+2. To resolve a version request (`latest`, a prefix, a channel name), delegate to the backend via `Backend::latest_version`, `Backend::latest_installed_version`, `Backend::list_versions_matching`, or `ToolRequest::resolve` — the backend knows what "latest" means for its tool.
+3. To list installed versions in a meaningful order, use `Backend::list_installed_versions_matching` or the toolset's resolved versions. Do not reorder them yourself.
+4. Lockfile version strings must be treated as opaque — compare with `==`, never with a version ordering. Never write a non-concrete string (`latest`, `lts/*`, a prefix) into the lockfile; resolve first.
+
+A few existing call sites (e.g. runtime symlinks) do use `Versioning` ordering today, but that's legacy behavior and arguably also wrong — do not point at them to justify new semver assumptions.
+
+If you think you need to pick "the newest installed version" at a new call site, stop and ask — that call almost always belongs on the backend, not inline.
+
 ### Plugin Development
 - Core tools are implemented in `src/plugins/core/`
 - External plugins use ASDF or vfox compatibility layers

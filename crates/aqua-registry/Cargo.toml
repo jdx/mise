@@ -15,7 +15,9 @@ include = [
   "/README.md",
   "/build.rs",
   "/src/**/*.rs",
-  "/aqua-registry/pkgs/**/registry.yaml",
+  "/aqua-registry/LICENSE",
+  "/aqua-registry/metadata.json",
+  "/aqua-registry/registry.yaml",
 ]
 
 [package.metadata.cargo-machete]
@@ -51,4 +53,5 @@ log = "0.4"
 tokio = { version = "1", features = ["rt", "macros"] }
 
 [build-dependencies]
+eyre = "0.6"
 serde_yaml = "0.9"

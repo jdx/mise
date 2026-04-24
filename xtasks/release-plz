@@ -264,24 +264,33 @@ fi
 mise run fetch-gpg-keys
 mise run render ::: lint-fix
 
-# Capture current aqua-registry package list before updating
-OLD_AQUA_PKGS=""
-if [[ -d crates/aqua-registry/aqua-registry/pkgs ]]; then
-	OLD_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yaml -type f | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
+AQUA_REGISTRY_DIR="crates/aqua-registry/aqua-registry"
+AQUA_REGISTRY_METADATA="$AQUA_REGISTRY_DIR/metadata.json"
+AQUA_REGISTRY_REPO="aquaproj/aqua-registry"
+
+# Capture current aqua-registry tag before updating
+OLD_AQUA_REGISTRY_TAG=""
+if [[ -f $AQUA_REGISTRY_METADATA ]]; then
+	OLD_AQUA_REGISTRY_TAG="$(jq -r '.tag // empty' "$AQUA_REGISTRY_METADATA")"
 fi
+NEW_AQUA_REGISTRY_TAG="$(gh release view --repo "$AQUA_REGISTRY_REPO" --json tagName --jq .tagName)"
 
-rm -rf crates/aqua-registry/aqua-registry
-git clone https://github.com/aquaproj/aqua-registry crates/aqua-registry/aqua-registry
-# Keep only pkgs/**/registry.yaml files, remove everything else
-find crates/aqua-registry/aqua-registry -type f ! -path "crates/aqua-registry/aqua-registry/pkgs/*/registry.yaml" ! -name LICENSE -delete
-find crates/aqua-registry/aqua-registry -type d -empty -delete
-
-# Capture new aqua-registry package list after updating
-NEW_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yaml -type f | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
+rm -rf "$AQUA_REGISTRY_DIR"
+mkdir -p "$AQUA_REGISTRY_DIR"
+curl -fsSL "https://raw.githubusercontent.com/$AQUA_REGISTRY_REPO/$NEW_AQUA_REGISTRY_TAG/registry.yaml" \
+	-o "$AQUA_REGISTRY_DIR/registry.yaml"
+curl -fsSL "https://raw.githubusercontent.com/$AQUA_REGISTRY_REPO/$NEW_AQUA_REGISTRY_TAG/LICENSE" \
+	-o "$AQUA_REGISTRY_DIR/LICENSE"
+cat >"$AQUA_REGISTRY_METADATA" <<EOF
+{
+  "repository": "$AQUA_REGISTRY_REPO",
+  "tag": "$NEW_AQUA_REGISTRY_TAG"
+}
+EOF
 
 # Generate aqua-registry changelog section for both CHANGELOG.md and PR body
-AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "###" || true)"
-AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "##" || true)"
+AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_REGISTRY_TAG" "$NEW_AQUA_REGISTRY_TAG" "###" || true)"
+AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_REGISTRY_TAG" "$NEW_AQUA_REGISTRY_TAG" "##" || true)"
 
 # Generate changelog using git-cliff with explicit calver version (not --bump which uses semver)
 # LLM editorialization happens in release.yml after merge
