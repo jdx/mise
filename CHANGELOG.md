@@ -1,5 +1,56 @@
 # Changelog
 
+## [2026.4.20](https://github.com/jdx/mise/compare/v2026.4.19..v2026.4.20) - 2026-04-24
+
+### 🐛 Bug Fixes
+
+- **(config)** resolve relative path: tool versions against config root by @jdx in [#9320](https://github.com/jdx/mise/pull/9320)
+- **(lock)** resolve @latest and prune poisoned lockfile entries by @jdx in [#9321](https://github.com/jdx/mise/pull/9321)
+- fix - be able to work with regex in attestation check by @monotek in [#9327](https://github.com/jdx/mise/pull/9327)
+
+### 🚜 Refactor
+
+- **(aqua)** bake aqua registry from merged yaml by @risu729 in [#9043](https://github.com/jdx/mise/pull/9043)
+
+### 📚 Documentation
+
+- add cross-site announcement banner by @jdx in [#9326](https://github.com/jdx/mise/pull/9326)
+- keep banner height in sync via ResizeObserver by @jdx in [#9330](https://github.com/jdx/mise/pull/9330)
+- respect banner expires field by @jdx in [#9334](https://github.com/jdx/mise/pull/9334)
+
+### 📦️ Dependency Updates
+
+- bump communique to 1.0.2 by @jdx in [#9313](https://github.com/jdx/mise/pull/9313)
+- bump communique to 1.0.3 by @jdx in [#9332](https://github.com/jdx/mise/pull/9332)
+- update actions/setup-node digest to 48b55a0 by @renovate[bot] in [#9339](https://github.com/jdx/mise/pull/9339)
+- update ghcr.io/jdx/mise:alpine docker digest to a92efa5 by @renovate[bot] in [#9340](https://github.com/jdx/mise/pull/9340)
+- update ghcr.io/jdx/mise:rpm docker digest to 5c24f69 by @renovate[bot] in [#9343](https://github.com/jdx/mise/pull/9343)
+- update rust docker digest to e4f09e8 by @renovate[bot] in [#9345](https://github.com/jdx/mise/pull/9345)
+- update rui314/setup-mold digest to 9c9c13b by @renovate[bot] in [#9344](https://github.com/jdx/mise/pull/9344)
+- update ghcr.io/jdx/mise:deb docker digest to a3afe3e by @renovate[bot] in [#9342](https://github.com/jdx/mise/pull/9342)
+- update ghcr.io/jdx/mise:copr docker digest to 4098d5a by @renovate[bot] in [#9341](https://github.com/jdx/mise/pull/9341)
+- update taiki-e/install-action digest to 74e87cb by @renovate[bot] in [#9346](https://github.com/jdx/mise/pull/9346)
+
+### Chore
+
+- **(ci)** remove cargo-vendor install from ppa publish by @jdx in [#9312](https://github.com/jdx/mise/pull/9312)
+- **(release)** publish snap to stable channel by @jdx in [#9318](https://github.com/jdx/mise/pull/9318)
+- remove FUNDING.yml in favor of jdx/.github default by @jdx in [#9331](https://github.com/jdx/mise/pull/9331)
+
+### 📦 Aqua Registry
+
+Updated [aqua-registry](https://github.com/aquaproj/aqua-registry): [v4.492.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.492.0) -> [v4.498.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.498.0).
+
+Included aqua-registry releases:
+
+- [v4.493.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.493.0)
+- [v4.494.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.494.0)
+- [v4.494.1](https://github.com/aquaproj/aqua-registry/releases/tag/v4.494.1)
+- [v4.495.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.495.0)
+- [v4.496.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.496.0)
+- [v4.497.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.497.0)
+- [v4.498.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.498.0)
+
 ## [2026.4.19](https://github.com/jdx/mise/compare/v2026.4.18..v2026.4.19) - 2026-04-22
 
 ### 🚀 Features
