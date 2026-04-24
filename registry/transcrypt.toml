@@ -1,5 +1,5 @@
 description = "Transparently encrypt files within a git repository using .gitattributes and OpenSSL's symmetric cipher"
-test = { cmd = "transcrypt --version", expected = "transcrypt v{{ version }}" }
+test = { cmd = "transcrypt --version", expected = "transcrypt {{ version }}" }
 
 [[backends]]
 full = "http:transcrypt"
