@@ -53,6 +53,7 @@ assert_contains "mise deps --list" "schema.graphql"
 # Test --only flag
 assert_contains "mise deps --dry-run --only codegen 2>&1" "codegen"
 assert_not_contains "mise deps --dry-run --only codegen 2>&1" "npm"
+assert_contains "mise deps --force --only codegen 2>&1" "[deps.codegen] codegen"
 
 # Test --skip flag
 assert_not_contains "mise deps --dry-run --skip npm 2>&1" "npm install"

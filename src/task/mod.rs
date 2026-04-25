@@ -7,7 +7,7 @@ use crate::task::task_script_parser::TaskScriptParser;
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
-use console::{Color, measure_text_width, truncate_str};
+use console::{measure_text_width, truncate_str};
 use eyre::{Result, bail, eyre};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -1026,18 +1026,7 @@ impl Task {
     }
 
     pub fn estyled_prefix(&self) -> String {
-        static COLORS: Lazy<Vec<Color>> =
-            Lazy::new(|| vec![Color::Blue, Color::Magenta, Color::Cyan, Color::Green]);
-        let hash = self.display_name.chars().map(|c| c as usize).sum::<usize>();
-        let mut styled = style::estyle(self.prefix()).fg(COLORS[hash % COLORS.len()]);
-        match (hash / COLORS.len()) % 4 {
-            1 => styled = styled.bold(),
-            2 => styled = styled.dim(),
-            3 => styled = styled.bright(),
-            _ => {}
-        }
-
-        style::ereset() + &styled.to_string()
+        style::prefix(self.prefix(), &self.display_name, true)
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
