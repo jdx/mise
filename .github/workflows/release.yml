@@ -383,8 +383,7 @@ jobs:
             echo "::warning::communique failed, falling back to git-cliff changelog"
             mise x -- git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
             echo "RELEASE_TITLE=$VERSION" >> "$GITHUB_ENV"
-          fi
-          cat >> /tmp/release-notes.txt <<'EOF'
+            cat >> /tmp/release-notes.txt <<'EOF'
 
           ## 💚 Sponsor mise
 
@@ -392,6 +391,7 @@ jobs:
 
           If mise saves you or your team time, please consider sponsoring at [en.dev](https://en.dev). Individual and company sponsorships keep mise fast, free, and independent.
           EOF
+          fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Create Draft GitHub Release
