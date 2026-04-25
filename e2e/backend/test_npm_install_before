@@ -1,47 +1,47 @@
 #!/usr/bin/env bash
-# Test install_before with npm backend (dist-tag fallback)
+# Test minimum_release_age with npm backend (dist-tag fallback)
 # Regression test for https://github.com/jdx/mise/discussions/9136
 
 export NPM_CONFIG_FUND=false
 
 mise use node
 
-# Test: mise latest with install_before should resolve to an older version
+# Test: mise latest with minimum_release_age should resolve to an older version
 # prettier 3.0.0 was released 2023-07-05, 2.8.8 was released 2023-05-23
-# Setting install_before to 2023-06-01 should give us 2.8.8 (not 3.x)
+# Setting minimum_release_age to 2023-06-01 should give us 2.8.8 (not 3.x)
 # This must bypass NPMBackend::latest_stable_version because npm dist-tags
 # always return the absolute latest version.
-export MISE_INSTALL_BEFORE="2023-06-01"
+export MISE_MINIMUM_RELEASE_AGE="2023-06-01"
 assert_contains "mise latest npm:prettier" "2.8.8"
-unset MISE_INSTALL_BEFORE
+unset MISE_MINIMUM_RELEASE_AGE
 
-# Test: without install_before, latest is the absolute latest (newer than 2.8.8)
+# Test: without minimum_release_age, latest is the absolute latest (newer than 2.8.8)
 assert_not_contains "mise latest npm:prettier" "2.8.8"
 
 # Test: `mise latest --before` CLI flag should filter by date
 assert_contains "mise latest npm:prettier --before 2023-06-01" "2.8.8"
 
-# Test: CLI --before flag overrides the global install_before setting
+# Test: CLI --before flag overrides the global minimum_release_age setting
 # Global is 2024-01-01 (would give 3.1.0), CLI is 2023-06-01 (gives 2.8.8)
-export MISE_INSTALL_BEFORE="2024-01-01"
+export MISE_MINIMUM_RELEASE_AGE="2024-01-01"
 assert_not_contains "mise latest npm:prettier" "2.8.8"
 assert_contains "mise latest npm:prettier --before 2023-06-01" "2.8.8"
-unset MISE_INSTALL_BEFORE
+unset MISE_MINIMUM_RELEASE_AGE
 
 # Test: CLI --before flag accepts relative durations.
 assert_not_empty "mise latest npm:prettier --before 5y"
 
-# Test: per-tool install_before also affects backend-level latest lookup.
+# Test: per-tool minimum_release_age also affects backend-level latest lookup.
 cat <<EOF >mise.toml
 [tools]
-"npm:prettier" = { version = "latest", install_before = "2023-06-01" }
+"npm:prettier" = { version = "latest", minimum_release_age = "2023-06-01" }
 EOF
 assert_contains "mise latest npm:prettier" "2.8.8"
 
-# Test: CLI --before flag overrides per-tool install_before.
+# Test: CLI --before flag overrides per-tool minimum_release_age.
 cat <<EOF >mise.toml
 [tools]
-"npm:prettier" = { version = "latest", install_before = "2024-01-01" }
+"npm:prettier" = { version = "latest", minimum_release_age = "2024-01-01" }
 EOF
 assert_not_contains "mise latest npm:prettier" "2.8.8"
 assert_contains "mise latest npm:prettier --before 2023-06-01" "2.8.8"

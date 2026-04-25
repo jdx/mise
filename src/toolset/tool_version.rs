@@ -75,9 +75,9 @@ impl ToolVersion {
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
-        let install_before = request.options().get("install_before").map(str::to_string);
+        let minimum_release_age = request.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
-        opts.before_date = resolve_before_date(opts.before_date, install_before.as_deref())?;
+        opts.before_date = resolve_before_date(opts.before_date, minimum_release_age.as_deref())?;
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
