@@ -104,6 +104,12 @@ pub struct VersionInfo {
     /// Checksum of the release asset, used to detect changes in rolling releases
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub checksum: Option<String>,
+    /// Whether the upstream flagged this as a pre-release. Backends that have a
+    /// reliable signal (e.g. GitHub releases' `prerelease: true`) populate this
+    /// so the shared remote-versions cache can store the superset and apply the
+    /// `prerelease` tool option as a read-time filter.
+    #[serde(default)]
+    pub prerelease: bool,
 }
 
 impl VersionInfo {
@@ -422,6 +428,59 @@ mod tests {
     }
 
     #[test]
+    fn test_filter_cached_prereleases_drops_flagged_entries_by_default() {
+        // The cache stores the pre-release superset; `prerelease = false` (the
+        // default) must filter out entries flagged by the upstream so the user
+        // sees the same list whether or not pre-releases were ever fetched.
+        let cached = vec![
+            VersionInfo {
+                version: "1.0.0".into(),
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0-rc1".into(),
+                prerelease: true,
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0".into(),
+                ..Default::default()
+            },
+        ];
+
+        // Default opt: pre-releases dropped.
+        let stable = filter_cached_prereleases(cached.clone(), false);
+        let stable_versions: Vec<_> = stable.iter().map(|v| v.version.as_str()).collect();
+        assert_eq!(stable_versions, vec!["1.0.0", "1.1.0"]);
+
+        // Opted in: same cache, full list returned without refetch.
+        let all = filter_cached_prereleases(cached, true);
+        let all_versions: Vec<_> = all.iter().map(|v| v.version.as_str()).collect();
+        assert_eq!(all_versions, vec!["1.0.0", "1.1.0-rc1", "1.1.0"]);
+    }
+
+    #[test]
+    fn test_filter_cached_prereleases_leaves_unflagged_backends_alone() {
+        // Backends that don't populate `VersionInfo.prerelease` (e.g. node,
+        // ruby, aqua's `github_tag` source) keep the legacy regex-based filter
+        // in `fuzzy_match_versions` for pre-release-shaped strings. The
+        // cache-layer filter must not strip those entries on its own.
+        let cached = vec![
+            VersionInfo {
+                version: "1.0.0".into(),
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0-rc1".into(),
+                ..Default::default()
+            },
+        ];
+        let filtered = filter_cached_prereleases(cached.clone(), false);
+        let versions: Vec<_> = filtered.iter().map(|v| v.version.as_str()).collect();
+        assert_eq!(versions, vec!["1.0.0", "1.1.0-rc1"]);
+    }
+
+    #[test]
     fn test_include_prereleases_accepts_bool_and_string_values() {
         use crate::toolset::ToolVersionOptions;
 
@@ -603,10 +662,15 @@ pub trait Backend: Debug + Send + Sync {
                     .await?
                     .is_some_and(|o| o.contains_key("version_list_url")));
         let versions_host_applies = match backend_type {
-            BackendType::Github
-            | BackendType::Gitlab
+            // github + aqua intentionally bypass the versions host. Both honor
+            // the `prerelease` tool option, and we cache the pre-release superset
+            // locally so a user flipping `prerelease = true` (e.g. via a project
+            // override) sees the right list immediately. The versions host serves
+            // a stable-only list, so reusing it would either re-introduce the
+            // option-dependent cache bug or force per-opt cache slots.
+            BackendType::Github | BackendType::Aqua => false,
+            BackendType::Gitlab
             | BackendType::Forgejo
-            | BackendType::Aqua
             | BackendType::Ubi
             | BackendType::Core
             | BackendType::Asdf
@@ -662,13 +726,23 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
 
+        // Read-time filter: cache stores the pre-release superset for backends
+        // that honor `prerelease`. When the current opts don't opt in, drop
+        // entries with `prerelease = true` before returning so flipping the
+        // tool option takes effect without invalidating the cache.
+        let opts = config
+            .get_tool_opts(&ba)
+            .await?
+            .unwrap_or_else(|| ba.opts());
+        let want_prereleases = include_prereleases(&opts);
+
         if Settings::get().offline() {
             trace!(
                 "Skipping remote version listing for {} due to offline mode",
                 ba.to_string()
             );
             match remote_versions.get_cached() {
-                Ok(versions) => return Ok(versions),
+                Ok(versions) => return Ok(filter_cached_prereleases(versions, want_prereleases)),
                 Err(err) => {
                     debug!(
                         "No cached remote versions available for {} while offline: {:#}",
@@ -722,7 +796,10 @@ pub trait Backend: Debug + Send + Sync {
                 Ok(versions)
             })
             .await?;
-        Ok(versions.clone())
+        Ok(filter_cached_prereleases(
+            versions.clone(),
+            want_prereleases,
+        ))
     }
 
     /// Backend implementation for fetching remote versions with metadata.
@@ -1644,8 +1721,12 @@ pub trait Backend: Debug + Send + Sync {
             .unwrap()
             .entry(self.ba().full())
             .or_insert_with(|| {
+                // Bumped from `remote_versions.msgpack.z` to invalidate caches written
+                // before `VersionInfo.prerelease` existed: github/aqua now store the
+                // pre-release superset, and stale stable-only caches would otherwise
+                // mask pre-releases for `prerelease = true` users until TTL expiry.
                 let mut cm = CacheManagerBuilder::new(
-                    self.ba().cache_path.join("remote_versions.msgpack.z"),
+                    self.ba().cache_path.join("remote_versions_v2.msgpack.z"),
                 )
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
@@ -2206,6 +2287,23 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     match list.contains(&query.to_string()) {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
+    }
+}
+
+/// Apply the read-time `prerelease` filter to the cached remote-versions
+/// superset. Backends that honor `prerelease` (github, aqua) cache the full
+/// list and stamp `VersionInfo.prerelease` per entry; this helper drops
+/// pre-release entries when the current tool opts don't opt in. Backends that
+/// don't populate the flag are unaffected because their entries default to
+/// `prerelease = false`.
+pub(crate) fn filter_cached_prereleases(
+    versions: Vec<VersionInfo>,
+    want_prereleases: bool,
+) -> Vec<VersionInfo> {
+    if want_prereleases {
+        versions
+    } else {
+        versions.into_iter().filter(|v| !v.prerelease).collect()
     }
 }
 

@@ -214,19 +214,20 @@ impl Backend for UnifiedGitBackend {
                 })
                 .collect()
         } else {
-            let releases = if include_prereleases(&opts) {
-                github::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
-                    .await?
-            } else {
-                github::list_releases_from_url(api_url.as_str(), &repo).await?
-            };
-            releases
+            // Always fetch the pre-release superset and stamp `prerelease` on
+            // each entry. The shared remote-versions cache stores the superset
+            // so flipping the `prerelease` tool option (e.g. via a project
+            // override) is correct without invalidating the cache; the read
+            // path filters on `prerelease` according to the current opts.
+            github::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
+                .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
                     created_at: Some(r.created_at),
                     release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                    prerelease: r.prerelease,
                     ..Default::default()
                 })
                 .collect()
