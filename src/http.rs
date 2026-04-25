@@ -208,7 +208,7 @@ impl Client {
         let url = url.into_url().unwrap();
         let resp = self.get_async(url.clone()).await?;
         let html = resp.text().await?;
-        if !html.starts_with("<!DOCTYPE html>") {
+        if !looks_like_html(&html) {
             bail!("Got non-HTML text from {}", url);
         }
         Ok(html)
@@ -582,6 +582,17 @@ fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = std::time::Dur
         .take(retries.max(0) as usize)
 }
 
+fn looks_like_html(text: &str) -> bool {
+    let text = text.trim_start().as_bytes();
+    starts_with_ignore_ascii_case(text, b"<!doctype html")
+        || starts_with_ignore_ascii_case(text, b"<html")
+}
+
+fn starts_with_ignore_ascii_case(text: &[u8], prefix: &[u8]) -> bool {
+    text.get(..prefix.len())
+        .is_some_and(|start| start.eq_ignore_ascii_case(prefix))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -614,6 +625,32 @@ mod tests {
         crate::config::Settings::reset(None);
 
         result
+    }
+
+    #[test]
+    fn test_looks_like_html_accepts_common_starts() {
+        for html in [
+            "<!DOCTYPE html><html></html>",
+            "<!doctype html><html></html>",
+            "\n\t<!DOCTYPE html><html></html>",
+            "<html></html>",
+            "<HTML lang=\"en\"></HTML>",
+        ] {
+            assert!(looks_like_html(html), "{html:?}");
+        }
+    }
+
+    #[test]
+    fn test_looks_like_html_rejects_non_html() {
+        for text in [
+            "",
+            "pkg-1.0.tar.gz",
+            "{\"ok\":true}",
+            "<head><title>simple index</title></head>",
+            "<svg></svg>",
+        ] {
+            assert!(!looks_like_html(text), "{text:?}");
+        }
     }
 
     #[test]
