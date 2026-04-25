@@ -23,33 +23,6 @@ fn normalize_version_for_sort(v: &str) -> &str {
         .unwrap_or(v)
 }
 
-fn runtime_label_backend_type_from_meta(
-    manifest_tool: Option<&ManifestTool>,
-    legacy_meta: Option<&(String, Option<String>, bool)>,
-) -> Option<BackendType> {
-    if let Some(full) = manifest_tool
-        .and_then(|mt| mt.full.as_deref())
-        .or_else(|| legacy_meta.and_then(|(_, full, _)| full.as_deref()))
-    {
-        let backend_type = BackendType::guess(full);
-        if backend_type != BackendType::Unknown {
-            return Some(backend_type);
-        }
-    }
-
-    if let Some(short) = manifest_tool
-        .map(|mt| mt.short.as_str())
-        .or_else(|| legacy_meta.map(|(short, _, _)| short.as_str()))
-    {
-        let backend_type = BackendType::guess(short);
-        if backend_type != BackendType::Unknown {
-            return Some(backend_type);
-        }
-    }
-
-    None
-}
-
 type InstallStatePlugins = BTreeMap<String, PluginType>;
 type InstallStateTools = BTreeMap<String, InstallStateTool>;
 type MutexResult<T> = Result<Arc<T>>;
@@ -244,9 +217,6 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         } else {
             None
         };
-        let runtime_label_backend_type =
-            runtime_label_backend_type_from_meta(manifest_tool, legacy_meta.as_ref());
-
         // Read versions from filesystem (1 syscall per tool — unavoidable)
         let versions: Vec<String> = file::dir_subdirs(&dir)
             .unwrap_or_else(|err| {
@@ -255,13 +225,6 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             })
             .into_iter()
             .filter(|v| !v.starts_with('.'))
-            .filter(|v| {
-                runtime_label_backend_type
-                    .as_ref()
-                    .is_none_or(|backend_type| {
-                        !runtime_symlinks::is_runtime_label_for_backend(v, backend_type)
-                    })
-            })
             .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
             .filter(|v| !dir.join(v).join("incomplete").exists())
             .sorted_by_cached_key(|v| {
@@ -362,8 +325,6 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         for dir_name in shared_subdirs {
             let dir = shared_dir.join(&dir_name);
             let manifest_tool = shared_manifest.get(&dir_name);
-            let runtime_label_backend_type =
-                runtime_label_backend_type_from_meta(manifest_tool, None);
             let versions: Vec<String> = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
                     warn!("reading versions in {} failed: {err:?}", display_path(&dir));
@@ -371,13 +332,6 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 })
                 .into_iter()
                 .filter(|v| !v.starts_with('.'))
-                .filter(|v| {
-                    runtime_label_backend_type
-                        .as_ref()
-                        .is_none_or(|backend_type| {
-                            !runtime_symlinks::is_runtime_label_for_backend(v, backend_type)
-                        })
-                })
                 .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
                 .filter(|v| !dir.join(v).join("incomplete").exists())
                 .sorted_by_cached_key(|v| {

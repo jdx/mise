@@ -1,32 +1,17 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
-export GOPROXY="https://proxy.golang.org,direct"
-
-cat <<'EOF' >mise.toml
-[settings]
-install_before = "7d"
-
-[tools]
-'go:golang.org/x/pkgsite/cmd/pkgsite' = "latest"
-'pipx:a13xp0p0v/kernel-hardening-checker' = "latest"
-EOF
-
-mkdir -p "$MISE_DATA_DIR/installs/go-golang-org-x-pkgsite-cmd-pkgsite/latest/bin"
-mkdir -p "$MISE_DATA_DIR/installs/pipx-a13xp0p0v-kernel-hardening-checker/latest/bin"
+mkdir -p "$MISE_DATA_DIR/installs/github-jdx-mise-test-fixtures/1.0.0/bin"
+mkdir -p "$MISE_DATA_DIR/installs/github-jdx-mise-test-fixtures/latest/bin"
 cat <<'EOF' >"$MISE_DATA_DIR/installs/.mise-installs.toml"
-[go-golang-org-x-pkgsite-cmd-pkgsite]
-short = "go:golang.org/x/pkgsite/cmd/pkgsite"
-full = "go:golang.org/x/pkgsite/cmd/pkgsite"
-explicit_backend = true
-
-[pipx-a13xp0p0v-kernel-hardening-checker]
-short = "pipx:a13xp0p0v/kernel-hardening-checker"
-full = "pipx:a13xp0p0v/kernel-hardening-checker"
+[github-jdx-mise-test-fixtures]
+short = "github:jdx/mise-test-fixtures"
+full = "github:jdx/mise-test-fixtures"
 explicit_backend = true
 EOF
 
-output=$(mise ls --verbose 2>&1)
-if [[ $output == *"mise ERROR"* ]]; then
-	fail "mise ls emitted an error: $output"
-fi
+output=$(mise ls github:jdx/mise-test-fixtures)
+latest_link="$MISE_DATA_DIR/installs/github-jdx-mise-test-fixtures/latest"
+link_target=$(readlink "$latest_link")
+assert "test '$link_target' = ./1.0.0"
+assert_not_contains "echo '$output'" "latest"
+assert_contains "echo '$output'" "1.0.0"
