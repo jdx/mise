@@ -2301,16 +2301,34 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
 
 /// Get tags with optional created_at timestamps.
 /// Returns (tag_name, Option<created_at>) pairs.
+///
+/// On a transient `list_releases` failure (rate limit, 5xx, network blip),
+/// fall back to `list_tags` rather than letting the error propagate up and
+/// wipe the entire version list. Downstream consumers (e.g. `mise ls-remote
+/// --json`) would otherwise see `[]` from a momentary API hiccup and treat
+/// it as "no versions exist", which can cause version metadata regressions
+/// in pipelines that snapshot the output.
 async fn get_tags_with_created_at(pkg: &AquaPackage) -> Result<Vec<(String, Option<String>)>> {
+    let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+
     if let Some("github_tag") = pkg.version_source.as_deref() {
         // Tags don't have created_at timestamps
-        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+        let versions = github::list_tags(&repo).await?;
         return Ok(versions.into_iter().map(|v| (v, None)).collect());
     }
-    let releases = github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+
+    let releases = match github::list_releases(&repo).await {
+        Ok(r) => r,
+        Err(e) => {
+            debug!("aqua: list_releases({repo}) failed, falling back to tags: {e:#}");
+            let versions = github::list_tags(&repo).await?;
+            return Ok(versions.into_iter().map(|v| (v, None)).collect());
+        }
+    };
+
     if releases.is_empty() {
         // Fall back to tags (no timestamps)
-        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+        let versions = github::list_tags(&repo).await?;
         return Ok(versions.into_iter().map(|v| (v, None)).collect());
     }
     Ok(releases
