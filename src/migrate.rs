@@ -1,11 +1,11 @@
 use std::fs;
 use std::path::Path;
 
-use crate::backend;
 use crate::config::Config;
 use crate::dirs::*;
 use crate::file;
 use crate::runtime_symlinks;
+use crate::toolset::install_state;
 use eyre::Result;
 
 pub async fn run() {
@@ -81,9 +81,10 @@ async fn migrate_runtime_symlink_dirs_impl(marker: &Path) -> Result<()> {
     let config = Config::get().await?;
     runtime_symlinks::migrate_real_dirs(&config).await?;
     // `backend::load_tools()` initializes install_state before migrations run in
-    // normal CLI startup. Refresh it after rewriting stale runtime dirs so this
-    // process does not keep using the pre-migration filesystem scan.
-    backend::reset().await?;
+    // normal CLI startup. Refresh only install_state after rewriting stale dirs
+    // so config alias removals in the already-loaded backend map are preserved.
+    install_state::reset();
+    install_state::init().await?;
     file::create_dir_all(marker.parent().unwrap())?;
     file::write(marker, "ok\n")?;
     Ok(())
