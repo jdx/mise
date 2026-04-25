@@ -1,0 +1,11 @@
+description = "Little language inspired by Rust that compiles to Go"
+test = { cmd = "lis version", expected = "lisette {{version}}" }
+
+[[backends]]
+full = "github:ivov/lisette"
+
+[backends.options]
+version_prefix = "lisette-v"
+
+[[backends]]
+full = "cargo:lisette"
