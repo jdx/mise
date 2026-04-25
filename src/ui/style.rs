@@ -1,15 +1,8 @@
 use std::path::Path;
+use std::sync::LazyLock;
 
 use crate::file::display_path;
-use console::{StyledObject, style};
-
-pub fn ereset() -> String {
-    if console::colors_enabled_stderr() {
-        "\x1b[0m".to_string()
-    } else {
-        "".to_string()
-    }
-}
+use console::{Color, StyledObject, style};
 
 pub fn estyle<D>(val: D) -> StyledObject<D> {
     style(val).for_stderr()
@@ -89,4 +82,26 @@ pub fn ndim<D>(val: D) -> StyledObject<D> {
 
 pub fn nbright<D>(val: D) -> StyledObject<D> {
     nstyle(val).bright()
+}
+
+pub fn prefix(label: impl Into<String>, hash_key: impl AsRef<str>, stderr: bool) -> String {
+    static COLORS: LazyLock<Vec<Color>> =
+        LazyLock::new(|| vec![Color::Blue, Color::Magenta, Color::Cyan, Color::Green]);
+
+    let label = label.into();
+    let hash = hash_key.as_ref().chars().map(|c| c as usize).sum::<usize>();
+    let styled = style(label).fg(COLORS[hash % COLORS.len()]);
+    let mut styled = if stderr {
+        styled.for_stderr()
+    } else {
+        styled.for_stdout()
+    };
+    match (hash / COLORS.len()) % 4 {
+        1 => styled = styled.bold(),
+        2 => styled = styled.dim(),
+        3 => styled = styled.bright(),
+        _ => {}
+    }
+
+    styled.to_string()
 }
