@@ -142,6 +142,11 @@ checksum = "sha256:7ba3551a7b63f82d9aa4734791db66167b3905e940e749db297372422c829
 url = "https://github.com/endevco/aube/releases/download/v1.1.0/aube-v1.1.0-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/endevco/aube/releases/assets/404654853"
 
+[tools.aube."platforms.macos-arm64"]
+checksum = "sha256:4d77b4f54c78297e6aef6da4ccb8a2327c31297f1a9f37b84fb746928129c4b2"
+url = "https://github.com/endevco/aube/releases/download/v1.1.0/aube-v1.1.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/404655454"
+
 [tools.aube."platforms.windows-x64"]
 checksum = "sha256:41f7d31e35bf7e21d32221ad74fb535bca3fc2fde9da80aee6061cc061f5e0f7"
 url = "https://github.com/endevco/aube/releases/download/v1.1.0/aube-v1.1.0-x86_64-pc-windows-msvc.zip"
