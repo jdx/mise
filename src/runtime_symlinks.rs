@@ -160,6 +160,9 @@ fn list_symlinks_for_dir(
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
     for v in installed_versions_in_dir(installs_dir) {
+        if is_temporary_runtime_label(&v) {
+            continue;
+        }
         let (prefix, version) = split_version_prefix(&v);
         let Some(versions) = Versioning::new(version) else {
             continue;
@@ -213,6 +216,18 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
 fn is_concrete_install(v: &str) -> bool {
     let (_, version) = split_version_prefix(v);
     version.chars().any(|c| c.is_ascii_digit()) && Versioning::new(version).is_some()
+}
+
+fn is_temporary_runtime_label(v: &str) -> bool {
+    let remove_version = Versioning::new("2026.10.0").unwrap();
+    debug_assert!(
+        *crate::cli::version::V < remove_version,
+        "Temporary runtime symlink migration guard should be removed in version 2026.10.0."
+    );
+    // The 2026.4 runtime symlink regression created real "latest" dirs. Treat
+    // only that literal label as generated state: numeric prefixes like "25"
+    // may be concrete installs requested by users and must not be migrated.
+    v == "latest"
 }
 
 pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
