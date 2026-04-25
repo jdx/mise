@@ -23,31 +23,17 @@ fn normalize_version_for_sort(v: &str) -> &str {
         .unwrap_or(v)
 }
 
-fn runtime_label_backend_type_from_dir(dir_name: &str) -> BackendType {
-    // Metadata is preferred when available. This fallback is only for legacy or
-    // manually created install dirs like the stale Go/Pipx `latest` dirs this
-    // PR cleans up.
-    if dir_name == "go" || dir_name.starts_with("go-") {
-        BackendType::Go
-    } else if dir_name == "pipx" || dir_name.starts_with("pipx-") {
-        BackendType::Pipx
-    } else {
-        BackendType::Unknown
-    }
-}
-
 fn runtime_label_backend_type_from_meta(
-    dir_name: &str,
     manifest_tool: Option<&ManifestTool>,
     legacy_meta: Option<&(String, Option<String>, bool)>,
-) -> BackendType {
+) -> Option<BackendType> {
     if let Some(full) = manifest_tool
         .and_then(|mt| mt.full.as_deref())
         .or_else(|| legacy_meta.and_then(|(_, full, _)| full.as_deref()))
     {
         let backend_type = BackendType::guess(full);
         if backend_type != BackendType::Unknown {
-            return backend_type;
+            return Some(backend_type);
         }
     }
 
@@ -57,15 +43,11 @@ fn runtime_label_backend_type_from_meta(
     {
         let backend_type = BackendType::guess(short);
         if backend_type != BackendType::Unknown {
-            return backend_type;
+            return Some(backend_type);
         }
     }
 
-    if manifest_tool.is_some() || legacy_meta.is_some() {
-        BackendType::Unknown
-    } else {
-        runtime_label_backend_type_from_dir(dir_name)
-    }
+    None
 }
 
 type InstallStatePlugins = BTreeMap<String, PluginType>;
@@ -263,7 +245,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             None
         };
         let runtime_label_backend_type =
-            runtime_label_backend_type_from_meta(&dir_name, manifest_tool, legacy_meta.as_ref());
+            runtime_label_backend_type_from_meta(manifest_tool, legacy_meta.as_ref());
 
         // Read versions from filesystem (1 syscall per tool — unavoidable)
         let versions: Vec<String> = file::dir_subdirs(&dir)
@@ -274,7 +256,11 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             .into_iter()
             .filter(|v| !v.starts_with('.'))
             .filter(|v| {
-                !runtime_symlinks::is_runtime_label_for_backend(v, &runtime_label_backend_type)
+                runtime_label_backend_type
+                    .as_ref()
+                    .is_none_or(|backend_type| {
+                        !runtime_symlinks::is_runtime_label_for_backend(v, backend_type)
+                    })
             })
             .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
             .filter(|v| !dir.join(v).join("incomplete").exists())
@@ -377,7 +363,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             let dir = shared_dir.join(&dir_name);
             let manifest_tool = shared_manifest.get(&dir_name);
             let runtime_label_backend_type =
-                runtime_label_backend_type_from_meta(&dir_name, manifest_tool, None);
+                runtime_label_backend_type_from_meta(manifest_tool, None);
             let versions: Vec<String> = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
                     warn!("reading versions in {} failed: {err:?}", display_path(&dir));
@@ -386,7 +372,11 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 .into_iter()
                 .filter(|v| !v.starts_with('.'))
                 .filter(|v| {
-                    !runtime_symlinks::is_runtime_label_for_backend(v, &runtime_label_backend_type)
+                    runtime_label_backend_type
+                        .as_ref()
+                        .is_none_or(|backend_type| {
+                            !runtime_symlinks::is_runtime_label_for_backend(v, backend_type)
+                        })
                 })
                 .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
                 .filter(|v| !dir.join(v).join("incomplete").exists())

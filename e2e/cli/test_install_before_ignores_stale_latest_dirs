@@ -14,6 +14,17 @@ EOF
 
 mkdir -p "$MISE_DATA_DIR/installs/go-golang-org-x-pkgsite-cmd-pkgsite/latest/bin"
 mkdir -p "$MISE_DATA_DIR/installs/pipx-a13xp0p0v-kernel-hardening-checker/latest/bin"
+cat <<'EOF' >"$MISE_DATA_DIR/installs/.mise-installs.toml"
+[go-golang-org-x-pkgsite-cmd-pkgsite]
+short = "go:golang.org/x/pkgsite/cmd/pkgsite"
+full = "go:golang.org/x/pkgsite/cmd/pkgsite"
+explicit_backend = true
+
+[pipx-a13xp0p0v-kernel-hardening-checker]
+short = "pipx:a13xp0p0v/kernel-hardening-checker"
+full = "pipx:a13xp0p0v/kernel-hardening-checker"
+explicit_backend = true
+EOF
 
 output=$(mise ls --verbose 2>&1)
 if [[ $output == *"mise ERROR"* ]]; then
