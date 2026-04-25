@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { Command, commands } from "./cli_commands";
 import {
@@ -8,6 +11,13 @@ import { tabsMarkdownPlugin } from "vitepress-plugin-tabs";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import kdlGrammar from "./grammars/kdl.tmLanguage.json";
 import miseTomlGrammar from "./grammars/mise-toml.tmLanguage.json";
+
+const configDir = dirname(fileURLToPath(import.meta.url));
+const cargoToml = readFileSync(resolve(configDir, "../../Cargo.toml"), "utf8");
+const versionMatch = cargoToml.match(
+  /\[package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/,
+);
+const latestVersion = versionMatch?.[1] ?? "0.0.0";
 
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
@@ -30,6 +40,10 @@ export default withMermaid(
         { text: "Dev Tools", link: "/dev-tools/" },
         { text: "Environments", link: "/environments/" },
         { text: "Tasks", link: "/tasks/" },
+        {
+          text: `v${latestVersion}`,
+          link: "https://github.com/jdx/mise/releases",
+        },
       ],
       sidebar: [
         {
