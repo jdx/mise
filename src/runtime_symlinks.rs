@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
@@ -84,7 +85,7 @@ fn rebuild_symlinks_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(installs_dir)
+    let concrete_installs = installed_versions_in_dir(installs_dir, backend.get_type())
         .into_iter()
         .filter(|v| is_concrete_install(v))
         .collect::<std::collections::HashSet<_>>();
@@ -120,7 +121,7 @@ fn migrate_real_dirs_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(installs_dir)
+    let concrete_installs = installed_versions_in_dir(installs_dir, backend.get_type())
         .into_iter()
         .filter(|v| is_concrete_install(v))
         .collect::<std::collections::HashSet<_>>();
@@ -158,7 +159,7 @@ fn list_symlinks_for_dir(
 ) -> IndexMap<String, PathBuf> {
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
-    for v in installed_versions_in_dir(installs_dir) {
+    for v in installed_versions_in_dir(installs_dir, backend.get_type()) {
         let (prefix, version) = split_version_prefix(&v);
         let versions = Versioning::new(version).unwrap_or_default();
         let mut partial = vec![];
@@ -192,7 +193,7 @@ fn list_symlinks_for_dir(
 }
 
 /// List real (non-symlink) installed versions in a specific directory.
-fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
+fn installed_versions_in_dir(installs_dir: &Path, backend_type: BackendType) -> Vec<String> {
     if !installs_dir.is_dir() {
         return vec![];
     }
@@ -200,7 +201,7 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
         .unwrap_or_default()
         .into_iter()
         .filter(|v| !v.starts_with('.'))
-        .filter(|v| !is_runtime_label(v))
+        .filter(|v| !is_runtime_label_for_backend(v, &backend_type))
         .filter(|v| !is_runtime_symlink(&installs_dir.join(v)))
         .filter(|v| !installs_dir.join(v).join("incomplete").exists())
         .filter(|v| !VERSION_REGEX.is_match(v))
@@ -209,10 +210,14 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
 }
 
 pub fn is_runtime_label(version: &str) -> bool {
-    // `latest` is a global runtime symlink label created for every concrete
-    // install. Other labels are version prefixes or config aliases that need
-    // per-backend/config context, so keep this early install-state filter narrow.
     version == "latest"
+}
+
+pub fn is_runtime_label_for_backend(version: &str, backend_type: &BackendType) -> bool {
+    // Some backends, like UBI direct URLs, still use `latest` as the actual
+    // install directory. Limit this stale-label filter to backends that resolve
+    // `latest` to a concrete version before installation.
+    matches!(backend_type, BackendType::Go | BackendType::Pipx) && is_runtime_label(version)
 }
 
 fn is_concrete_install(v: &str) -> bool {

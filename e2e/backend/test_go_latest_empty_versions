@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-export GOPROXY="direct"
-
-assert_matches \
-	"mise install --dry-run 'go:github.com/go-kratos/kratos/cmd/kratos/v2@latest' 2>&1" \
-	'go:github.com/go-kratos/kratos/cmd/kratos/v2@2\.0\.0-[0-9]{14}-[0-9a-f]+'

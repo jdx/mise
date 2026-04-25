@@ -23,6 +23,16 @@ fn normalize_version_for_sort(v: &str) -> &str {
         .unwrap_or(v)
 }
 
+fn runtime_label_backend_type_from_dir(dir_name: &str) -> BackendType {
+    if dir_name == "go" || dir_name.starts_with("go-") {
+        BackendType::Go
+    } else if dir_name == "pipx" || dir_name.starts_with("pipx-") {
+        BackendType::Pipx
+    } else {
+        BackendType::Unknown
+    }
+}
+
 type InstallStatePlugins = BTreeMap<String, PluginType>;
 type InstallStateTools = BTreeMap<String, InstallStateTool>;
 type MutexResult<T> = Result<Arc<T>>;
@@ -220,7 +230,12 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             })
             .into_iter()
             .filter(|v| !v.starts_with('.'))
-            .filter(|v| !runtime_symlinks::is_runtime_label(v))
+            .filter(|v| {
+                !runtime_symlinks::is_runtime_label_for_backend(
+                    v,
+                    &runtime_label_backend_type_from_dir(&dir_name),
+                )
+            })
             .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
             .filter(|v| !dir.join(v).join("incomplete").exists())
             .sorted_by_cached_key(|v| {
@@ -327,7 +342,12 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 })
                 .into_iter()
                 .filter(|v| !v.starts_with('.'))
-                .filter(|v| !runtime_symlinks::is_runtime_label(v))
+                .filter(|v| {
+                    !runtime_symlinks::is_runtime_label_for_backend(
+                        v,
+                        &runtime_label_backend_type_from_dir(&dir_name),
+                    )
+                })
                 .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
                 .filter(|v| !dir.join(v).join("incomplete").exists())
                 .sorted_by_cached_key(|v| {
