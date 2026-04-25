@@ -200,11 +200,19 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
         .unwrap_or_default()
         .into_iter()
         .filter(|v| !v.starts_with('.'))
+        .filter(|v| !is_runtime_label(v))
         .filter(|v| !is_runtime_symlink(&installs_dir.join(v)))
         .filter(|v| !installs_dir.join(v).join("incomplete").exists())
         .filter(|v| !VERSION_REGEX.is_match(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
+}
+
+pub fn is_runtime_label(version: &str) -> bool {
+    // `latest` is a global runtime symlink label created for every concrete
+    // install. Other labels are version prefixes or config aliases that need
+    // per-backend/config context, so keep this early install-state filter narrow.
+    version == "latest"
 }
 
 fn is_concrete_install(v: &str) -> bool {
