@@ -1,5 +1,37 @@
 # Changelog
 
+## [2026.4.22](https://github.com/jdx/mise/compare/v2026.4.21..v2026.4.22) - 2026-04-25
+
+### 🚀 Features
+
+- **(copr)** add Fedora 44 & Rawhide support by @bestagi in [#9391](https://github.com/jdx/mise/pull/9391)
+
+### 🐛 Bug Fixes
+
+- **(backend)** repair latest runtime labels and go resolution by @jdx in [#9383](https://github.com/jdx/mise/pull/9383)
+- **(task)** label deps output by provider by @jdx in [#9385](https://github.com/jdx/mise/pull/9385)
+
+### 🚜 Refactor
+
+- **(config)** rename install_before setting by @jdx in [#9384](https://github.com/jdx/mise/pull/9384)
+
+### 📚 Documentation
+
+- **(site)** show release version in nav by @jdx in [#9388](https://github.com/jdx/mise/pull/9388)
+- **(site)** address release nav feedback by @jdx in [#9389](https://github.com/jdx/mise/pull/9389)
+
+### 🧪 Testing
+
+- **(config)** pin tombi schema test version by @jdx in [#9386](https://github.com/jdx/mise/pull/9386)
+
+### 📦 Aqua Registry
+
+Updated [aqua-registry](https://github.com/aquaproj/aqua-registry): [v4.498.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.498.0) -> [v4.499.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.499.0).
+
+Included aqua-registry releases:
+
+- [v4.499.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.499.0)
+
 ## [2026.4.21](https://github.com/jdx/mise/compare/v2026.4.20..v2026.4.21) - 2026-04-25
 
 ### 🚀 Features
