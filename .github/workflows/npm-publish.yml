@@ -63,10 +63,28 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
+        # `actions/setup-node` writes the npm registry URL and `NODE_AUTH_TOKEN`
+        # auth into ~/.npmrc — aube reads the same file when it PUTs the
+        # tarball, so this step is still needed even though npm itself is not
+        # the publish client.
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24.x"
           registry-url: "https://registry.npmjs.org"
+
+      - name: Install mise
+        run: |
+          curl -fsSL https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install aube via mise
+        # aube comes from this repo's `mise.toml` -> `registry/aube.toml`
+        # (-> `github:endevco/aube`). Same install path local devs see when
+        # they run `mise install`. aube signs SLSA provenance via the
+        # Sigstore public-good instance using the workflow's
+        # `id-token: write` permission, the same way `npm publish
+        # --provenance` does.
+        run: mise install aube
 
       - name: Publish npm packages
         run: |
@@ -78,7 +96,7 @@ jobs:
             fi
             export MISE_VERSION
             export RELEASE_DIR="releases"
-            NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
+            NPM_PREFIX=@jdxcode/mise mise x aube -- ./scripts/release-npm.sh
           else
             echo "DRY RUN: Would publish npm packages"
           fi

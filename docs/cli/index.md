@@ -180,6 +180,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise trust [FLAGS] [CONFIG_FILE]`](/cli/trust.md)
 - [`mise uninstall [FLAGS] [INSTALLED_TOOL@VERSION]…`](/cli/uninstall.md)
 - [`mise unset [-f --file <FILE>] [-g --global] [ENV_KEY]…`](/cli/unset.md)
+- [`mise untrust [CONFIG_FILE]`](/cli/untrust.md)
 - [`mise unuse [FLAGS] <INSTALLED_TOOL@VERSION>…`](/cli/unuse.md)
 - [`mise upgrade [FLAGS] [INSTALLED_TOOL@VERSION]…`](/cli/upgrade.md)
 - [`mise use [FLAGS] [TOOL@VERSION]…`](/cli/use.md)

@@ -62,11 +62,11 @@ EOF
 	tree || true
 	if [ "${DRY_RUN:-1}" != "0" ]; then
 		echo DRY_RUN
-		echo npm publish --access public --tag "$dist_tag" --provenance
+		echo aube publish --access public --tag "$dist_tag" --provenance
 		echo DRY_RUN
 	else
-		if ! npm publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
-			if grep -q "You cannot publish over the previously published versions" /tmp/npm-publish.log; then
+		if ! aube publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
+			if grep -qE "already (on|published)|previously published" /tmp/npm-publish.log; then
 				echo "Version already published, skipping..."
 			else
 				cat /tmp/npm-publish.log
@@ -166,11 +166,11 @@ EOF
 pushd "$RELEASE_DIR/npm"
 if [ "${DRY_RUN:-1}" != "0" ]; then
 	echo DRY_RUN
-	echo npm publish --access public --tag "$dist_tag" --provenance
+	echo aube publish --access public --tag "$dist_tag" --provenance
 	echo DRY_RUN
 else
-	if ! npm publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
-		if grep -q "You cannot publish over the previously published versions" /tmp/npm-publish.log; then
+	if ! aube publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
+		if grep -qE "already (on|published)|previously published" /tmp/npm-publish.log; then
 			echo "Version already published, skipping..."
 		else
 			cat /tmp/npm-publish.log

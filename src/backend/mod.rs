@@ -136,7 +136,7 @@ impl VersionInfo {
 }
 
 /// Security feature information for a tool
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SecurityFeature {
     Checksum {

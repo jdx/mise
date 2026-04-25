@@ -291,7 +291,23 @@ impl Run {
             }
         }
 
-        // Build and install toolset so tools like npm are available for deps
+        if !self.skip_deps {
+            self.skip_deps = Settings::get().task.skip_depends;
+        }
+
+        time!("run init");
+        let tmpdir = tempfile::tempdir()?;
+        self.tmpdir = tmpdir.path().to_path_buf();
+
+        // Build args list - don't include args_last yet, they'll be added after task resolution
+        let args = once(self.task.clone())
+            .chain(self.args.clone())
+            .collect_vec();
+
+        let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
+
+        // Build and install toolset only after tasks resolve. A naked run that
+        // does not match any task should fail without installing project tools.
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_default_to_latest(true)
@@ -309,21 +325,6 @@ impl Run {
         if !self.skip_tools {
             let _ = ts.install_missing_versions(&mut config, &opts).await?;
         }
-
-        if !self.skip_deps {
-            self.skip_deps = Settings::get().task.skip_depends;
-        }
-
-        time!("run init");
-        let tmpdir = tempfile::tempdir()?;
-        self.tmpdir = tmpdir.path().to_path_buf();
-
-        // Build args list - don't include args_last yet, they'll be added after task resolution
-        let args = once(self.task.clone())
-            .chain(self.args.clone())
-            .collect_vec();
-
-        let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect

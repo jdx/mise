@@ -158,10 +158,11 @@ impl JavaPlugin {
             .unwrap()?
             .path();
         let contents_dir = basedir.join("Contents");
-        let source_dir = match m.vendor.as_str() {
-            "zulu" | "liberica" => basedir,
-            _ if os() == "macosx" => basedir.join("Contents").join("Home"),
-            _ => basedir,
+        let contents_home_dir = contents_dir.join("Home");
+        let source_dir = if os() == "macosx" && contents_home_dir.is_dir() {
+            contents_home_dir
+        } else {
+            basedir
         };
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path())?;
@@ -206,17 +207,15 @@ impl JavaPlugin {
 
         // if vendor is Zulu, symlink zulu-{major_version}.jdk/Contents to install path for macOS
         if m.vendor.as_str() == "zulu" {
-            let (major_version, _) = m
-                .version
-                .split_once('.')
-                .unwrap_or_else(|| (&m.version, ""));
-            file::make_symlink(
-                tv.install_path()
-                    .join(format!("zulu-{major_version}.jdk"))
-                    .join("Contents")
-                    .as_path(),
-                &tv.install_path().join("Contents"),
-            )?;
+            let major_version = m.version.split('.').next().unwrap();
+            let contents_symlink_path = tv.install_path().join("Contents");
+            let zulu_contents_path = tv
+                .install_path()
+                .join(format!("zulu-{major_version}.jdk"))
+                .join("Contents");
+            if zulu_contents_path.exists() && !contents_symlink_path.exists() {
+                file::make_symlink(zulu_contents_path.as_path(), &contents_symlink_path)?;
+            }
         }
 
         if tv.install_path().join("Contents").exists() {

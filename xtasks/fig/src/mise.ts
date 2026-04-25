@@ -2391,6 +2391,12 @@ const completionSpec: Fig.Spec = {
           description: "Output in JSON format",
           isRepeatable: false,
         },
+        {
+          name: "--security",
+          description:
+            "Include security features for each tool's backends in JSON output",
+          isRepeatable: false,
+        },
       ],
       args: {
         name: "name",
@@ -3875,6 +3881,18 @@ const completionSpec: Fig.Spec = {
         isOptional: true,
         isVariadic: true,
         generators: completionGeneratorTemplate(`mise set --complete`),
+        debounce: true,
+      },
+    },
+    {
+      name: "untrust",
+      description: "No longer trust a config, will prompt in the future",
+      args: {
+        name: "config_file",
+        description: "The config file to untrust",
+        isOptional: true,
+        template: "filepaths",
+        generators: configPathGenerator,
         debounce: true,
       },
     },
