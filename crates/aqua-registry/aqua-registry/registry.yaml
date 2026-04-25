@@ -80415,6 +80415,81 @@ packages:
             replacements:
               amd64: x64
   - type: github_release
+    repo_owner: smol-machines
+    repo_name: smolvm
+    description: Tool to build & run portable, lightweight, self-contained virtual machines
+    files:
+      - name: smolvm
+        src: "{{.AssetWithoutExt}}/smolvm"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.1.17", "v0.1.19"]
+        asset: smolvm-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin/arm64
+      - version_constraint: Version == "v0.1.18"
+        asset: smolvm-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - darwin/arm64
+      - version_constraint: semver("<= 0.1.5")
+        asset: smolvm-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin/arm64
+      - version_constraint: semver("<= 0.1.8")
+        asset: smolvm-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - darwin/arm64
+      - version_constraint: semver("<= 0.1.11")
+        asset: smolvm-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin/arm64
+      - version_constraint: semver("<= 0.1.16")
+        asset: smolvm-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - darwin/arm64
+      - version_constraint: semver("<= 0.5.0")
+        asset: smolvm-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+      - version_constraint: "true"
+        asset: smolvm-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.sha256
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+  - type: github_release
     repo_owner: smtg-ai
     repo_name: claude-squad
     description: Manage multiple AI agents like Claude Code, Aider, Codex, and Amp. 10x your productivity
@@ -88910,12 +88985,29 @@ packages:
             format: zip
             files:
               - name: tombi
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.9.22")
         asset: tombi-cli-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: gz
         files:
           - name: tombi
             src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: tombi
+      - version_constraint: "true"
+        asset: tombi-cli-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tombi
+            src: "{{.AssetWithoutExt}}/tombi"
         replacements:
           amd64: x86_64
           arm64: aarch64
