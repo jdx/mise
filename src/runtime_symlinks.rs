@@ -219,9 +219,11 @@ fn is_concrete_install(v: &str) -> bool {
 }
 
 fn is_temporary_runtime_label(v: &str) -> bool {
-    let remove_version = Versioning::new("2026.10.0").unwrap();
     debug_assert!(
-        *crate::cli::version::V < remove_version,
+        {
+            let remove_version = Versioning::new("2026.10.0").unwrap();
+            *crate::cli::version::V < remove_version
+        },
         "Temporary runtime symlink migration guard should be removed in version 2026.10.0."
     );
     // The 2026.4 runtime symlink regression created real "latest" dirs. Treat
