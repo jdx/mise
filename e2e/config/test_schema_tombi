@@ -4,12 +4,13 @@
 # Regression test for https://github.com/jdx/mise/discussions/8254
 # where unevaluatedProperties caused tombi to reject valid task properties.
 
-# Install tombi via mise
-mise use -g tombi
+# Install a pinned tombi version so release asset packaging changes do not break
+# this schema regression test.
+mise use -g tombi@0.9.22
 
 SCHEMA_PATH="$ROOT/schema/mise.json"
 TASK_SCHEMA_PATH="$ROOT/schema/mise-task.json"
-TOMBI="mise x tombi -- tombi"
+TOMBI="mise x tombi@0.9.22 -- tombi"
 
 # Set up tombi config pointing to local schema
 cat >"$HOME/tombi.toml" <<EOF
