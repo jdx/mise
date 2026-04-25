@@ -68,10 +68,12 @@ impl Backend for GoBackend {
                 }
 
                 // Fall back to `go list -m -versions` for GOPROXY=direct
-                if let Some(versions) = self.fetch_go_module_versions(config, &tool_name).await?
-                    && !versions.is_empty()
-                {
-                    return Ok(versions);
+                match self.fetch_go_module_versions(config, &tool_name).await {
+                    Ok(Some(versions)) if !versions.is_empty() => return Ok(versions),
+                    Ok(_) => {}
+                    Err(err) => {
+                        warn!("failed to list Go module versions for {tool_name}: {err:#}");
+                    }
                 }
 
                 Ok(vec![])

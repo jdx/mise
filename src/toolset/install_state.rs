@@ -24,12 +24,47 @@ fn normalize_version_for_sort(v: &str) -> &str {
 }
 
 fn runtime_label_backend_type_from_dir(dir_name: &str) -> BackendType {
+    // Metadata is preferred when available. This fallback is only for legacy or
+    // manually created install dirs like the stale Go/Pipx `latest` dirs this
+    // PR cleans up.
     if dir_name == "go" || dir_name.starts_with("go-") {
         BackendType::Go
     } else if dir_name == "pipx" || dir_name.starts_with("pipx-") {
         BackendType::Pipx
     } else {
         BackendType::Unknown
+    }
+}
+
+fn runtime_label_backend_type_from_meta(
+    dir_name: &str,
+    manifest_tool: Option<&ManifestTool>,
+    legacy_meta: Option<&(String, Option<String>, bool)>,
+) -> BackendType {
+    if let Some(full) = manifest_tool
+        .and_then(|mt| mt.full.as_deref())
+        .or_else(|| legacy_meta.and_then(|(_, full, _)| full.as_deref()))
+    {
+        let backend_type = BackendType::guess(full);
+        if backend_type != BackendType::Unknown {
+            return backend_type;
+        }
+    }
+
+    if let Some(short) = manifest_tool
+        .map(|mt| mt.short.as_str())
+        .or_else(|| legacy_meta.map(|(short, _, _)| short.as_str()))
+    {
+        let backend_type = BackendType::guess(short);
+        if backend_type != BackendType::Unknown {
+            return backend_type;
+        }
+    }
+
+    if manifest_tool.is_some() || legacy_meta.is_some() {
+        BackendType::Unknown
+    } else {
+        runtime_label_backend_type_from_dir(dir_name)
     }
 }
 
@@ -221,6 +256,14 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     let mut tools = BTreeMap::new();
     for dir_name in subdirs {
         let dir = dirs::INSTALLS.join(&dir_name);
+        let manifest_tool = manifest.get(&dir_name);
+        let legacy_meta = if manifest_tool.is_none() {
+            read_legacy_backend_meta(&dir_name)
+        } else {
+            None
+        };
+        let runtime_label_backend_type =
+            runtime_label_backend_type_from_meta(&dir_name, manifest_tool, legacy_meta.as_ref());
 
         // Read versions from filesystem (1 syscall per tool — unavoidable)
         let versions: Vec<String> = file::dir_subdirs(&dir)
@@ -231,10 +274,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             .into_iter()
             .filter(|v| !v.starts_with('.'))
             .filter(|v| {
-                !runtime_symlinks::is_runtime_label_for_backend(
-                    v,
-                    &runtime_label_backend_type_from_dir(&dir_name),
-                )
+                !runtime_symlinks::is_runtime_label_for_backend(v, &runtime_label_backend_type)
             })
             .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
             .filter(|v| !dir.join(v).join("incomplete").exists())
@@ -249,7 +289,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         }
 
         // Get metadata: prefer manifest, fall back to legacy .mise.backend
-        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest.get(&dir_name) {
+        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
             let mut full = mt.full.clone();
             let mut opts = mt.opts.clone();
             // Backward compat: if opts is empty but full contains [...], extract opts
@@ -279,7 +319,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 );
             }
             (mt.short.clone(), full, mt.explicit_backend, opts)
-        } else if let Some((s, full, explicit)) = read_legacy_backend_meta(&dir_name) {
+        } else if let Some((s, full, explicit)) = legacy_meta {
             // Migration: absorb into manifest (clone on first migration)
             let m = updated_manifest.get_or_insert_with(|| manifest.clone());
             m.insert(
@@ -335,6 +375,9 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         };
         for dir_name in shared_subdirs {
             let dir = shared_dir.join(&dir_name);
+            let manifest_tool = shared_manifest.get(&dir_name);
+            let runtime_label_backend_type =
+                runtime_label_backend_type_from_meta(&dir_name, manifest_tool, None);
             let versions: Vec<String> = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
                     warn!("reading versions in {} failed: {err:?}", display_path(&dir));
@@ -343,10 +386,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 .into_iter()
                 .filter(|v| !v.starts_with('.'))
                 .filter(|v| {
-                    !runtime_symlinks::is_runtime_label_for_backend(
-                        v,
-                        &runtime_label_backend_type_from_dir(&dir_name),
-                    )
+                    !runtime_symlinks::is_runtime_label_for_backend(v, &runtime_label_backend_type)
                 })
                 .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
                 .filter(|v| !dir.join(v).join("incomplete").exists())
@@ -360,17 +400,16 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 continue;
             }
 
-            let (short, full, explicit_backend, opts) =
-                if let Some(mt) = shared_manifest.get(&dir_name) {
-                    (
-                        mt.short.clone(),
-                        mt.full.clone(),
-                        mt.explicit_backend,
-                        mt.opts.clone(),
-                    )
-                } else {
-                    (dir_name.clone(), None, true, BTreeMap::new())
-                };
+            let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
+                (
+                    mt.short.clone(),
+                    mt.full.clone(),
+                    mt.explicit_backend,
+                    mt.opts.clone(),
+                )
+            } else {
+                (dir_name.clone(), None, true, BTreeMap::new())
+            };
 
             // Merge with existing tool entry or create new one
             let tool = tools
