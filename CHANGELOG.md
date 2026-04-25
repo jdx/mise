@@ -1,5 +1,49 @@
 # Changelog
 
+## [2026.4.21](https://github.com/jdx/mise/compare/v2026.4.20..v2026.4.21) - 2026-04-25
+
+### 🚀 Features
+
+- **(registry)** add --security flag to include security info in JSON output by @jdx in [#9364](https://github.com/jdx/mise/pull/9364)
+
+### 🐛 Bug Fixes
+
+- **(config)** limit resolved backend opts to aliases by @risu729 in [#9315](https://github.com/jdx/mise/pull/9315)
+- **(docs)** stack banner message and link on mobile by @jdx in [#9362](https://github.com/jdx/mise/pull/9362)
+- **(github)** prefer shortest asset name as tiebreaker in auto-detection by @jdx in [#9361](https://github.com/jdx/mise/pull/9361)
+- **(java)** newer zulu versions use a different directory structure by @roele in [#9365](https://github.com/jdx/mise/pull/9365)
+- **(prune)** respect tracked lockfiles by @jdx in [#9373](https://github.com/jdx/mise/pull/9373)
+- **(task)** skip tool install for missing naked tasks by @jdx in [#9374](https://github.com/jdx/mise/pull/9374)
+- **(trust)** add untrust command by @jdx in [#9370](https://github.com/jdx/mise/pull/9370)
+- fix - flux-operator-mcp aqua path by @monotek in [#9357](https://github.com/jdx/mise/pull/9357)
+
+### 📚 Documentation
+
+- update ruby compile msg by @fladson in [#9338](https://github.com/jdx/mise/pull/9338)
+
+### 📦️ Dependency Updates
+
+- update ubuntu docker tag to v26 by @renovate[bot] in [#9347](https://github.com/jdx/mise/pull/9347)
+- update ghcr.io/jdx/mise:deb docker digest to 1af5a69 by @renovate[bot] in [#9352](https://github.com/jdx/mise/pull/9352)
+- update taiki-e/install-action digest to 787505c by @renovate[bot] in [#9354](https://github.com/jdx/mise/pull/9354)
+- update ghcr.io/jdx/mise:rpm docker digest to 7015ff3 by @renovate[bot] in [#9353](https://github.com/jdx/mise/pull/9353)
+- update ghcr.io/jdx/mise:copr docker digest to da63a0f by @renovate[bot] in [#9351](https://github.com/jdx/mise/pull/9351)
+- update ghcr.io/jdx/mise:alpine docker digest to 461700f by @renovate[bot] in [#9350](https://github.com/jdx/mise/pull/9350)
+- bump communique 1.0.3 → 1.0.4 by @jdx in [#9378](https://github.com/jdx/mise/pull/9378)
+
+### 📦 Registry
+
+- remove openshift-install by @jdx in [#9372](https://github.com/jdx/mise/pull/9372)
+- remove go-sdk by @jdx in [#9371](https://github.com/jdx/mise/pull/9371)
+
+### Chore
+
+- **(npm-publish)** use aube publish instead of npm publish by @jdx in [#9328](https://github.com/jdx/mise/pull/9328)
+
+### New Contributors
+
+- @fladson made their first contribution in [#9338](https://github.com/jdx/mise/pull/9338)
+
 ## [2026.4.20](https://github.com/jdx/mise/compare/v2026.4.19..v2026.4.20) - 2026-04-24
 
 ### 🐛 Bug Fixes
