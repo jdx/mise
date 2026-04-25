@@ -662,7 +662,7 @@ pub trait Backend: Debug + Send + Sync {
     /// Backend-specific fast path for the absolute latest stable version.
     ///
     /// Do not call this from CLI/toolset code. Use `latest_version` instead so
-    /// `install_before` / `--before` cutoffs are resolved before this fast path
+    /// `minimum_release_age` / `--before` cutoffs are resolved before this fast path
     /// is used.
     ///
     /// Return `Ok(None)` when the backend does not have a fast path result.
@@ -1807,14 +1807,14 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
     }
 
     let backend_opts = backend.ba().opts();
-    if let Some(before) = backend_opts.get("install_before") {
+    if let Some(before) = backend_opts.minimum_release_age() {
         return resolve_before_date(None, Some(before));
     }
 
     let config_install_before = config
         .get_tool_opts(backend.ba())
         .await?
-        .and_then(|opts| opts.get("install_before").map(str::to_string));
+        .and_then(|opts| opts.minimum_release_age().map(str::to_string));
     resolve_before_date(None, config_install_before.as_deref())
 }
 
@@ -2096,6 +2096,12 @@ mod latest_version_tests {
         // The test fixture has a `tiny` config entry without install_before.
         // Inline backend opts must still win when a config entry exists.
         let backend = LatestBackend::new("tiny[install_before=2024-06-01]");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
 
         assert_eq!(
             backend

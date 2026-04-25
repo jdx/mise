@@ -14,11 +14,11 @@ similar to how the pipx backend uses `uv` when available.
 If you use `aube`, `bun`, or `pnpm` as the package manager, that package manager
 must also be installed.
 
-When [`install_before`](/configuration/settings.html#install_before) is set, the npm backend
+When [`minimum_release_age`](/configuration/settings.html#minimum_release_age) is set, the npm backend
 forwards that cutoff to transitive dependency resolution during install. This relies on the
 configured package manager supporting its native release-age flag:
 
-- `npm >= 11.10.0` using `--min-release-age=<days>`; `npm 6.9.0–11.9.x` using `--before <timestamp>` (sub-day `install_before` windows also use `--before` since `--min-release-age` is day-granular)
+- `npm >= 11.10.0` using `--min-release-age=<days>`; `npm 6.9.0–11.9.x` using `--before <timestamp>` (sub-day `minimum_release_age` windows also use `--before` since `--min-release-age` is day-granular)
 - `aube` using its `minimumReleaseAge` setting
 - `bun >= 1.3.0` using `--minimum-release-age <seconds>`
 - `pnpm >= 10.16.0` using `--config.minimumReleaseAge=<minutes>`

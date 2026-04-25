@@ -4,8 +4,13 @@ use indexmap::IndexMap;
 /// be persisted in the manifest or included in `full_with_opts()`.
 // install_env is a named field on ToolVersionOptions (serde puts it in self.install_env),
 // but parse_tool_options() can still place it in opts, so we filter it here as well.
-pub const EPHEMERAL_OPT_KEYS: &[&str] =
-    &["postinstall", "install_env", "depends", "install_before"];
+pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
+    "postinstall",
+    "install_env",
+    "depends",
+    "install_before",
+    "minimum_release_age",
+];
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
@@ -72,6 +77,22 @@ impl ToolVersionOptions {
     /// or None for non-string values.
     pub fn get(&self, key: &str) -> Option<&str> {
         self.opts.get(key).and_then(|v| v.as_str())
+    }
+
+    pub fn minimum_release_age(&self) -> Option<&str> {
+        if let Some(value) = self.get("minimum_release_age") {
+            return Some(value);
+        }
+        if let Some(value) = self.get("install_before") {
+            deprecated_at!(
+                "2026.10.0",
+                "2027.10.0",
+                "tool_option.install_before",
+                "`install_before` tool option is deprecated. Use `minimum_release_age` instead."
+            );
+            return Some(value);
+        }
+        None
     }
 
     /// Get a scalar value for a key as an owned string.

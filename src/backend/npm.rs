@@ -22,7 +22,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 /// Tolerance applied when converting an absolute `before_date` back to a
 /// relative duration for CLI flags. This ensures that a user-supplied
-/// `install_before = "3d"` never gets rounded up to `4d` due to small amounts
+/// `minimum_release_age = "3d"` never gets rounded up to `4d` due to small amounts
 /// of elapsed time between when mise resolved the cutoff and when it invoked
 /// the package manager.
 const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
@@ -185,7 +185,7 @@ impl Backend for NPMBackend {
             .await;
         self.check_install_deps(&ctx.config, package_manager, Some(&ctx.ts))
             .await;
-        let install_before_args = match ctx.before_date {
+        let release_age_args = match ctx.before_date {
             Some(before_date) => {
                 self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
                     .await;
@@ -228,7 +228,7 @@ impl Backend for NPMBackend {
                     // https://github.com/jdx/mise/discussions/7541
                     .arg("--linker")
                     .arg("hoisted")
-                    .args(install_before_args)
+                    .args(release_age_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
@@ -254,7 +254,7 @@ impl Backend for NPMBackend {
                     .arg(tv.install_path())
                     .arg("--global-bin-dir")
                     .arg(&bin_dir)
-                    .args(install_before_args)
+                    .args(release_age_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
@@ -276,7 +276,7 @@ impl Backend for NPMBackend {
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--prefix")
                     .arg(tv.install_path())
-                    .args(install_before_args)
+                    .args(release_age_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
@@ -392,7 +392,7 @@ impl NPMBackend {
 
         if semver_is_older_than(&version, required_version).unwrap_or(false) {
             warn!(
-                "install_before is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/npm.html",
+                "minimum_release_age is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/npm.html",
                 self.tool_name(),
                 tool,
                 version,
