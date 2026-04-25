@@ -25,23 +25,10 @@ pub async fn rebuild(config: &Config) -> Result<()> {
             }
         }
 
-        // Process user dir (first entry) with normal error propagation
-        if let Some(installs_dir) = installs_dirs.first() {
-            rebuild_symlinks_in_dir(config, &backend, installs_dir)?;
-        }
-        // Process shared/system dirs with permission error tolerance
-        for installs_dir in installs_dirs.iter().skip(1) {
-            if let Err(e) = rebuild_symlinks_in_dir(config, &backend, installs_dir) {
-                if is_permission_error(&e) {
-                    warn!(
-                        "skipping symlink update for {}: {}",
-                        installs_dir.display(),
-                        e
-                    );
-                } else {
-                    return Err(e);
-                }
-            }
+        for installs_dir in &installs_dirs {
+            run_with_permission_tolerance(installs_dir, "symlink update", || {
+                rebuild_symlinks_in_dir(config, &backend, installs_dir)
+            })?;
         }
     }
     Ok(())
@@ -59,24 +46,40 @@ pub async fn migrate_real_dirs(config: &Config) -> Result<()> {
             }
         }
 
-        if let Some(installs_dir) = installs_dirs.first() {
-            migrate_real_dirs_in_dir(config, &backend, installs_dir)?;
-        }
-        for installs_dir in installs_dirs.iter().skip(1) {
-            if let Err(e) = migrate_real_dirs_in_dir(config, &backend, installs_dir) {
-                if is_permission_error(&e) {
-                    warn!(
-                        "skipping runtime symlink migration for {}: {}",
-                        installs_dir.display(),
-                        e
-                    );
-                } else {
-                    return Err(e);
-                }
-            }
+        for installs_dir in &installs_dirs {
+            run_with_permission_tolerance(installs_dir, "runtime symlink migration", || {
+                migrate_real_dirs_in_dir(config, &backend, installs_dir)
+            })?;
         }
     }
     Ok(())
+}
+
+/// Run an operation against an install directory, tolerating permission errors
+/// for system or shared install directories. Errors from the user's own
+/// install directory are still propagated.
+fn run_with_permission_tolerance(
+    installs_dir: &Path,
+    op: &str,
+    f: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    match f() {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let is_user_local =
+                env::install_path_category(installs_dir) == env::InstallPathCategory::Local;
+            if !is_user_local && is_permission_error(&e) {
+                // Expected when system/shared install dirs are owned by another
+                // user (e.g. root-owned in a Docker image).  Logged at debug
+                // level so the normal install output stays clean — enable
+                // MISE_LOG_LEVEL=debug to inspect.
+                debug!("skipping {op} for {}: {}", installs_dir.display(), e);
+                Ok(())
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 fn rebuild_symlinks_in_dir(

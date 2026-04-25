@@ -494,7 +494,16 @@ async fn get_desired_shims(
         let bins = list_tool_bins(config, t.clone(), &tv)
             .await
             .unwrap_or_else(|e| {
-                warn!("Error listing bin paths for {}: {:#}", tv, e);
+                // Failures on system/shared install dirs are expected when the
+                // current user doesn't have read access (e.g. root-owned dirs
+                // in a Docker image), so they're logged at debug level. The
+                // user's own install dir failures stay at warn level.
+                if env::install_path_category(&tv.install_path()) != env::InstallPathCategory::Local
+                {
+                    debug!("Error listing bin paths for {}: {:#}", tv, e);
+                } else {
+                    warn!("Error listing bin paths for {}: {:#}", tv, e);
+                }
                 Vec::new()
             });
         if cfg!(windows) {

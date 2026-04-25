@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# Regression test: when a tool is ONLY installed in the system directory and
+# that directory is read-only (e.g. owned by root in a Docker image), `mise
+# install` of any tool must still succeed.
+#
+# Before the fix, runtime_symlinks::rebuild treated `installs_dirs[0]` (the
+# backend's `ba.installs_path`) as the user-local dir without permission
+# tolerance.  When the tool was system-only, `ba.installs_path` was the
+# system path, so writing runtime symlinks there failed with permission
+# denied and aborted the entire install.
+
+# Bootstrap: install tiny in the user dir to load its plugin/backend.
+mise install tiny@1.0.0
+
+# Move the install into a fake system dir so tiny becomes system-only.
+system_dir="$PWD/tmp/system-installs"
+mkdir -p "$system_dir"
+mv "$MISE_DATA_DIR/installs/tiny" "$system_dir/tiny"
+
+# Manifest entry so mise recognises the tool from the system dir
+cat >"$system_dir/.mise-installs.toml" <<'TOML'
+[tiny]
+short = "tiny"
+full = "asdf:tiny"
+explicit_backend = true
+TOML
+
+# Point MISE_SYSTEM_DATA_DIR at our fake system dir
+system_data="$PWD/tmp/system-data"
+mkdir -p "$system_data"
+ln -s "$system_dir" "$system_data/installs"
+export MISE_SYSTEM_DATA_DIR="$system_data"
+
+# Verify tiny is visible from the system dir only
+assert_contains "mise ls tiny --installed" "1.0.0"
+assert_fail "test -d $MISE_DATA_DIR/installs/tiny/1.0.0"
+
+# Lock down the system installs tree — simulates root-owned dirs in Docker.
+# runtime_symlinks::rebuild will try to create `tiny/1`, `tiny/latest`, etc.
+# inside this directory and hit Permission denied.
+chmod -R a-w "$system_dir"
+chmod a-w "$system_dir"
+
+# Install a *different* tool.  This triggers rebuild_shims_and_runtime_symlinks
+# which iterates over ALL backends — including `tiny`, whose `ba.installs_path`
+# resolves to the read-only system dir.  Without the fix this aborts with
+# "failed to rebuild runtime symlinks ... Permission denied".
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "2.0.0"
+TOML
+assert_succeed "mise install"
+
+# Verify the user-level tool was installed and shimmed
+assert_contains "mise ls dummy" "2.0.0"
+assert "test -f $MISE_DATA_DIR/shims/dummy"
+
+# Restore permissions for cleanup
+chmod -R u+w "$system_dir"
+
+# Clean up
+rm -rf "$PWD/tmp" mise.toml

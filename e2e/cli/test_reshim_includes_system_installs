@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Regression test: tools installed only in the system directory must still
+# get user-local shims so they remain on $PATH for the user.  This is the
+# typical Docker scenario where root pre-installs tools at image build time
+# (read-only for non-root users) and the user expects `mise` to expose them.
+
+# Bootstrap: install tiny in the user dir to load its plugin/backend.
+mise install tiny@1.0.0
+
+# Move the install into a fake system dir so tiny becomes system-only.
+system_dir="$PWD/tmp/system-installs"
+mkdir -p "$system_dir"
+mv "$MISE_DATA_DIR/installs/tiny" "$system_dir/tiny"
+
+# Manifest entry so mise recognises the tool from the system dir
+cat >"$system_dir/.mise-installs.toml" <<'TOML'
+[tiny]
+short = "tiny"
+full = "asdf:tiny"
+explicit_backend = true
+TOML
+
+# Point MISE_SYSTEM_DATA_DIR at our fake system dir
+system_data="$PWD/tmp/system-data"
+mkdir -p "$system_data"
+ln -s "$system_dir" "$system_data/installs"
+export MISE_SYSTEM_DATA_DIR="$system_data"
+
+# Verify tiny is visible from the system dir only
+assert_contains "mise ls tiny --installed" "1.0.0"
+assert_fail "test -d $MISE_DATA_DIR/installs/tiny/1.0.0"
+
+# Force a reshim — system dir is readable, just not in MISE_DATA_DIR.
+mise reshim
+
+# The shim for the system-installed tool MUST exist so it's on $PATH.
+# (the tiny plugin installs its binary as `rtx-tiny`)
+assert "test -f $MISE_DATA_DIR/shims/rtx-tiny"
+
+# Clean up
+rm -rf "$PWD/tmp"
