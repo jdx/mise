@@ -456,6 +456,10 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
+        if v == "latest" && (Settings::get().offline() || opts.offline) {
+            let version = request.version();
+            return Ok(Self::new(request, version));
+        }
         let v = match v {
             "latest" => backend
                 .latest_version(config, None, opts.before_date)
