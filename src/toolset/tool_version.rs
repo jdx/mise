@@ -354,6 +354,14 @@ impl ToolVersion {
             {
                 return build(v);
             }
+            if !is_offline {
+                let versions = backend.list_remote_versions(config).await?;
+                if versions.is_empty()
+                    && let Some(v) = backend.unresolved_latest_version()
+                {
+                    return build(v);
+                }
+            }
             return Err(Self::no_versions_found(&backend, opts.before_date));
         }
         if !opts.latest_versions {

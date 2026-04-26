@@ -671,6 +671,20 @@ pub trait Backend: Debug + Send + Sync {
     async fn latest_stable_version(&self, _config: &Arc<Config>) -> eyre::Result<Option<String>> {
         Ok(None)
     }
+
+    /// Backend opt-in for installing an unresolved `latest` request.
+    ///
+    /// Most backends must resolve `latest` to a concrete version before install.
+    /// Override this only when the backend can pass an unresolved selector through
+    /// to its installer, and only for requests where the selector is meaningful.
+    ///
+    /// `ToolVersion::resolve_version` uses this as a last resort after normal
+    /// latest resolution fails, and only when the backend's unfiltered remote
+    /// version list is empty. If remote versions exist but are all filtered out by
+    /// `minimum_release_age` / `--before`, this hook is not used.
+    fn unresolved_latest_version(&self) -> Option<String> {
+        None
+    }
     fn list_installed_versions(&self) -> Vec<String> {
         install_state::list_versions(&self.ba().short)
     }
