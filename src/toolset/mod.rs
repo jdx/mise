@@ -602,13 +602,17 @@ impl From<ToolRequestSet> for Toolset {
 pub async fn get_versions_needed_by_tracked_configs(
     config: &Arc<Config>,
     use_locked_version: bool,
+    offline: bool,
 ) -> Result<std::collections::HashSet<(String, String)>> {
     let mut needed = std::collections::HashSet::new();
     // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
     // passes false because it checks what tracked configs resolve to after an
     // upgrade, before their lockfiles have been updated.
+    // Prune also passes offline=true: it only protects installed versions, so
+    // remote resolution can never affect the outcome and just adds latency.
     let opts = ResolveOptions {
         use_locked_version,
+        offline,
         ..Default::default()
     };
     for (path, cf) in config.get_tracked_config_files().await? {
@@ -639,6 +643,20 @@ pub async fn get_versions_needed_by_tracked_configs(
         ts.resolve_with_opts(config, &opts).await?;
         for (_, tv) in ts.list_current_versions() {
             needed.insert((tv.ba().short.to_string(), tv.tv_pathname()));
+            // Offline can't resolve `sub-N:latest` to a concrete version
+            // (no remote latest available). Conservatively protect every
+            // installed version of this backend so we don't delete the
+            // active one.
+            if offline
+                && let crate::toolset::ToolRequest::Sub { orig_version, .. } = &tv.request
+                && orig_version == "latest"
+                && let Ok(backend) = tv.backend()
+            {
+                let short = tv.ba().short.to_string();
+                for v in backend.list_installed_versions() {
+                    needed.insert((short.clone(), v));
+                }
+            }
         }
     }
     Ok(needed)

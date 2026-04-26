@@ -227,6 +227,7 @@ impl ToolVersion {
             latest_versions: true,
             use_locked_version: false,
             before_date: base_opts.before_date,
+            offline: base_opts.offline,
         };
         let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref
@@ -339,7 +340,7 @@ impl ToolVersion {
         }
 
         let settings = Settings::get();
-        let is_offline = settings.offline();
+        let is_offline = settings.offline() || opts.offline;
 
         if v == "latest" {
             if !opts.latest_versions
@@ -361,6 +362,13 @@ impl ToolVersion {
                 {
                     return build(v);
                 }
+            }
+            // Prune-style offline (opts.offline) wants a non-erroring no-op
+            // when nothing is installed — the literal "latest" can't match
+            // any installed pathname so it's safe. Global MISE_OFFLINE keeps
+            // the original error to avoid surprising upgrade/outdated callers.
+            if opts.offline {
+                return build(v);
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
         }
@@ -449,6 +457,15 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
+        if v == "latest" && opts.offline {
+            // Can't resolve sub-N:latest offline (no remote latest, and
+            // applying version_sub to latest_installed_version would shift
+            // one step too low). Return the raw spec; callers that care
+            // (`get_versions_needed_by_tracked_configs`) over-protect by
+            // keeping all installed versions of this backend.
+            let version = request.version();
+            return Ok(Self::new(request, version));
+        }
         let v = match v {
             "latest" => backend
                 .latest_version(config, None, opts.before_date)
@@ -471,6 +488,9 @@ impl ToolVersion {
             && let Some(v) = backend.list_installed_versions_matching(prefix).last()
         {
             return Ok(Self::new(request, v.to_string()));
+        }
+        if opts.offline {
+            return Ok(Self::new(request, prefix.to_string()));
         }
         let matches = backend
             .list_versions_matching_with_opts(config, prefix, opts.before_date)
@@ -553,6 +573,8 @@ pub struct ResolveOptions {
     pub use_locked_version: bool,
     /// Only consider versions released before this timestamp
     pub before_date: Option<Timestamp>,
+    /// Additive to `Settings::offline()` — either being true skips remote version listing.
+    pub offline: bool,
 }
 
 impl Default for ResolveOptions {
@@ -561,6 +583,7 @@ impl Default for ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
             before_date: None,
+            offline: false,
         }
     }
 }
@@ -597,6 +620,9 @@ impl Display for ResolveOptions {
         }
         if let Some(ts) = &self.before_date {
             opts.push(format!("before_date={ts}"));
+        }
+        if self.offline {
+            opts.push("offline".to_string());
         }
         write!(f, "({})", opts.join(", "))
     }
