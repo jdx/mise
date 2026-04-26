@@ -1,5 +1,38 @@
 # Changelog
 
+## [2026.4.23](https://github.com/jdx/mise/compare/v2026.4.22..v2026.4.23) - 2026-04-26
+
+### 🚀 Features
+
+- **(backend)** add global libc preference by @jdx in [#9404](https://github.com/jdx/mise/pull/9404)
+- opt-in to pre-release versions for github and aqua backends by @jakedgy in [#9329](https://github.com/jdx/mise/pull/9329)
+
+### 🐛 Bug Fixes
+
+- **(backend)** allow unresolved latest opt-in by @jdx in [#9401](https://github.com/jdx/mise/pull/9401)
+- **(install)** stop rewriting healthy runtime symlinks by @jdx in [#9410](https://github.com/jdx/mise/pull/9410)
+- **(node)** route musl tarball URLs to unofficial-builds by @jdx in [#9409](https://github.com/jdx/mise/pull/9409)
+- **(prune)** skip remote version resolution for tracked configs by @jdx in [#9406](https://github.com/jdx/mise/pull/9406)
+- **(schema)** allow array values in tool additionalProperties by @JP-Ellis in [#9400](https://github.com/jdx/mise/pull/9400)
+
+### 📦️ Dependency Updates
+
+- bump communique to 1.1.2 by @jdx in [#9402](https://github.com/jdx/mise/pull/9402)
+
+### 📦 Registry
+
+- use aqua for rumdl by @scop in [#9397](https://github.com/jdx/mise/pull/9397)
+
+### Chore
+
+- **(ci)** improve pr-closer workflow by @jdx in [#9403](https://github.com/jdx/mise/pull/9403)
+- **(docs)** switch canonical domain to mise.en.dev by @jdx in [#9411](https://github.com/jdx/mise/pull/9411)
+- **(release)** stop appending sponsor blurb when communique succeeds by @jdx in [#9395](https://github.com/jdx/mise/pull/9395)
+
+### New Contributors
+
+- @JP-Ellis made their first contribution in [#9400](https://github.com/jdx/mise/pull/9400)
+
 ## [2026.4.22](https://github.com/jdx/mise/compare/v2026.4.21..v2026.4.22) - 2026-04-25
 
 ### 🚀 Features
