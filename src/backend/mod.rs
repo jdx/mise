@@ -508,6 +508,27 @@ mod tests {
             .insert("prerelease".to_string(), toml::Value::Boolean(false));
         assert!(!include_prereleases(&opts));
     }
+
+    #[test]
+    fn test_include_prereleases_global_setting_overrides_per_tool_default() {
+        use crate::config::settings::SettingsPartial;
+        use crate::toolset::ToolVersionOptions;
+        use confique::Layer;
+
+        let opts = ToolVersionOptions::default();
+        // Sanity: with no per-tool opt and no setting, prereleases stay filtered.
+        assert!(!include_prereleases(&opts));
+
+        // Flipping the global setting takes effect without any per-tool config —
+        // this is the path `MISE_PRERELEASES=1` and `mise ls-remote --prerelease`
+        // both ride on.
+        let mut partial = SettingsPartial::empty();
+        partial.prereleases = Some(true);
+        Settings::reset(Some(partial));
+        let res = include_prereleases(&opts);
+        Settings::reset(None);
+        assert!(res);
+    }
 }
 
 #[async_trait]
@@ -2322,12 +2343,19 @@ pub(crate) fn filter_cached_prereleases(
     }
 }
 
-/// Whether the `prerelease = true` tool option is set. Accepts both TOML
-/// booleans (`prerelease = true`) and the string form (`prerelease = "true"`),
-/// since inline backend args normalize scalars to strings before they reach
-/// here. Used by `github:` and `aqua:` backends to opt in to pre-release
-/// versions in `ls-remote`, `latest` resolution, and fuzzy matching.
+/// Whether pre-release versions should be included for the current tool.
+///
+/// Returns true if either the global `prereleases` setting (`MISE_PRERELEASES=1`,
+/// or `--prerelease` on `ls-remote`) is on, or the per-tool `prerelease = true`
+/// option is set. Accepts both TOML booleans (`prerelease = true`) and the
+/// string form (`prerelease = "true"`), since inline backend args normalize
+/// scalars to strings before they reach here. Used by `github:` and `aqua:`
+/// backends to opt in to pre-release versions in `ls-remote`, `latest`
+/// resolution, and fuzzy matching.
 pub(crate) fn include_prereleases(opts: &crate::toolset::ToolVersionOptions) -> bool {
+    if Settings::get().prereleases {
+        return true;
+    }
     opts.opts.get("prerelease").is_some_and(|v| match v {
         toml::Value::Boolean(b) => *b,
         toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),

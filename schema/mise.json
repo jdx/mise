@@ -1271,6 +1271,10 @@
           "description": "Prefer locally cached data over remote fetches when possible.",
           "type": "boolean"
         },
+        "prereleases": {
+          "description": "Include pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching for all tools.",
+          "type": "boolean"
+        },
         "profile": {
           "description": "Profile to use for mise.${MISE_PROFILE}.toml files.",
           "type": "string",

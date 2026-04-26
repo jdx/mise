@@ -121,7 +121,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise link [-f --force] <TOOL@VERSION> <PATH>`](/cli/link.md)
 - [`mise lock [FLAGS] [TOOL]…`](/cli/lock.md)
 - [`mise ls [FLAGS] [INSTALLED_TOOL]…`](/cli/ls.md)
-- [`mise ls-remote [--all] [-J --json] [TOOL@VERSION] [PREFIX]`](/cli/ls-remote.md)
+- [`mise ls-remote [FLAGS] [TOOL@VERSION] [PREFIX]`](/cli/ls-remote.md)
 - [`mise mcp`](/cli/mcp.md)
 - [`mise oci <SUBCOMMAND>`](/cli/oci.md)
 - [`mise oci build [FLAGS]`](/cli/oci/build.md)

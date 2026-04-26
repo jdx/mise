@@ -1626,6 +1626,26 @@ This is automatically enabled for fast commands like `hook-env`, `activate`, `ex
 env = "MISE_PREFER_OFFLINE"
 type = "Bool"
 
+[prereleases]
+description = "Include pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching for all tools."
+docs = """
+By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote`,
+`latest` resolution, and fuzzy version matching. Per-tool opt-in is available via the
+`prerelease = true` tool option (currently honored by the `github:` and `aqua:` backends).
+
+Set `prereleases = true` (or `MISE_PRERELEASES=1`) to opt in globally for every tool —
+equivalent to setting `prerelease = true` on each one. Useful for build pipelines that
+mirror the full release catalog (e.g. https://github.com/jdx/mise-versions) and for users
+who want pre-release tags to surface in `mise ls-remote` without per-tool config.
+
+Can also be set with the `--prerelease` flag on `mise ls-remote`.
+
+Has no effect on backends that don't carry an upstream pre-release flag (e.g. `github_tag`
+version source). Draft releases are always excluded.
+"""
+env = "MISE_PRERELEASES"
+type = "Bool"
+
 [profile]
 deprecated = "Use MISE_ENV_FILE instead."
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."

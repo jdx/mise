@@ -1511,6 +1511,12 @@ Show all installed plugins and versions
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format (includes version metadata like created_at timestamps when available)
+.TP
+\fB\-\-prerelease\fR
+Include pre\-release versions in the output for backends that report
+an upstream prerelease flag (currently github + aqua). Equivalent to
+setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
+duration of this command.
 \fBArguments:\fR
 .PP
 .TP
