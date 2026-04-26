@@ -319,6 +319,7 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
         let parent = path.parent().unwrap();
