@@ -2294,6 +2294,9 @@
                 "type": "boolean"
               },
               {
+                "type": "array"
+              },
+              {
                 "type": "object",
                 "additionalProperties": true
               }
