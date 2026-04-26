@@ -662,16 +662,11 @@ pub trait Backend: Debug + Send + Sync {
                     .await?
                     .is_some_and(|o| o.contains_key("version_list_url")));
         let versions_host_applies = match backend_type {
-            // github + aqua intentionally bypass the versions host. Both honor
-            // the `prerelease` tool option, and we cache the pre-release superset
-            // locally so a user flipping `prerelease = true` (e.g. via a project
-            // override) sees the right list immediately. The versions host serves
-            // a stable-only list, so reusing it would either re-introduce the
-            // option-dependent cache bug or force per-opt cache slots.
-            BackendType::Github | BackendType::Aqua => false,
-            BackendType::Gitlab
+            BackendType::Github
+            | BackendType::Gitlab
             | BackendType::Forgejo
             | BackendType::Ubi
+            | BackendType::Aqua
             | BackendType::Core
             | BackendType::Asdf
             | BackendType::Vfox

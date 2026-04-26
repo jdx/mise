@@ -16,6 +16,10 @@ struct VersionOutputAll {
     version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<String>,
+    /// Upstream pre-release flag, sourced from the versions host or the
+    /// backend (currently github + aqua report this). Always emitted so
+    /// JSON consumers can rely on its presence.
+    prerelease: bool,
 }
 
 /// List runtime versions available for install.
@@ -92,6 +96,7 @@ impl LsRemote {
                     tool: tool.clone(),
                     version: v.version,
                     created_at: v.created_at,
+                    prerelease: v.prerelease,
                 });
             }
         }
@@ -138,6 +143,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     20.1.0
 
     $ <bold>mise ls-remote github:cli/cli --json</bold>
-    [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z"},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z"}]
+    [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
 "#
 );
