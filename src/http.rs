@@ -596,13 +596,15 @@ fn display_github_rate_limit(resp: &Response) {
 }
 
 fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = Duration> {
-    // Hand-rolled schedule (with jitter): ~200ms / ~1s / ~4s / ~15s. Enough for
-    // transient server blips (5xx, brief network drops) without making install
-    // commands wait minutes. Note: tokio_retry's ExponentialBackoff::from_millis
-    // is geometric in the base value (base, base*base, ...), so picking a base
-    // that gives nice human-scale delays is awkward — explicit sequence is clearer.
+    // Hand-rolled schedule (with jitter): ~200ms / ~1s / ~4s / ~15s, then 15s
+    // for every retry beyond the schedule. The trailing repeat matters because
+    // `MISE_HTTP_RETRIES` can be set arbitrarily high — a fixed-length array
+    // would silently cap retries at its length. tokio_retry's ExponentialBackoff
+    // ::from_millis is geometric in the base (base, base*base, …) so picking a
+    // base that gives nice human-scale delays is awkward; explicit is clearer.
     [200u64, 1_000, 4_000, 15_000]
         .into_iter()
+        .chain(std::iter::repeat(15_000))
         .map(Duration::from_millis)
         .map(jitter)
         .take(retries.max(0) as usize)
@@ -835,6 +837,14 @@ mod tests {
         let err = client.get_async(url).await.unwrap_err();
         assert!(format!("{err:?}").contains("500"));
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_backoff_strategy_yields_requested_count_beyond_schedule() {
+        // Regression: a fixed-length schedule used to silently cap retries at 4.
+        // Now extra retries should fall back to the longest delay.
+        let delays: Vec<_> = default_backoff_strategy(7).collect();
+        assert_eq!(delays.len(), 7);
     }
 
     #[tokio::test(flavor = "current_thread")]
