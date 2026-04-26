@@ -144,6 +144,7 @@ impl Use {
             latest_versions: false,
             use_locked_version: true,
             before_date: self.get_before_date()?,
+            offline: false,
         };
         let versions: Vec<_> = self
             .tool
