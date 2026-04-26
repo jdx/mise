@@ -971,8 +971,8 @@
           }
         },
         "http_retries": {
-          "default": 0,
-          "description": "Number of retries for HTTP requests in mise.",
+          "default": 3,
+          "description": "Number of retries for transient HTTP failures in mise.",
           "type": "number"
         },
         "http_timeout": {
