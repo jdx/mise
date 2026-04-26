@@ -227,6 +227,7 @@ impl ToolVersion {
             latest_versions: true,
             use_locked_version: false,
             before_date: base_opts.before_date,
+            offline: base_opts.offline,
         };
         let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref
@@ -339,7 +340,7 @@ impl ToolVersion {
         }
 
         let settings = Settings::get();
-        let is_offline = settings.offline();
+        let is_offline = settings.offline() || opts.offline;
 
         if v == "latest" {
             if !opts.latest_versions
@@ -361,6 +362,12 @@ impl ToolVersion {
                 {
                     return build(v);
                 }
+            }
+            // When offline with nothing installed, leave "latest" unresolved
+            // rather than erroring — callers like prune treat the unresolved
+            // string as a no-op (it won't match any installed pathname).
+            if is_offline {
+                return build(v);
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
         }
@@ -472,6 +479,9 @@ impl ToolVersion {
         {
             return Ok(Self::new(request, v.to_string()));
         }
+        if Settings::get().offline() || opts.offline {
+            return Ok(Self::new(request, prefix.to_string()));
+        }
         let matches = backend
             .list_versions_matching_with_opts(config, prefix, opts.before_date)
             .await?;
@@ -553,6 +563,8 @@ pub struct ResolveOptions {
     pub use_locked_version: bool,
     /// Only consider versions released before this timestamp
     pub before_date: Option<Timestamp>,
+    /// Additive to `Settings::offline()` — either being true skips remote version listing.
+    pub offline: bool,
 }
 
 impl Default for ResolveOptions {
@@ -561,6 +573,7 @@ impl Default for ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
             before_date: None,
+            offline: false,
         }
     }
 }
@@ -597,6 +610,9 @@ impl Display for ResolveOptions {
         }
         if let Some(ts) = &self.before_date {
             opts.push(format!("before_date={ts}"));
+        }
+        if self.offline {
+            opts.push("offline".to_string());
         }
         write!(f, "({})", opts.join(", "))
     }

@@ -602,13 +602,17 @@ impl From<ToolRequestSet> for Toolset {
 pub async fn get_versions_needed_by_tracked_configs(
     config: &Arc<Config>,
     use_locked_version: bool,
+    offline: bool,
 ) -> Result<std::collections::HashSet<(String, String)>> {
     let mut needed = std::collections::HashSet::new();
     // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
     // passes false because it checks what tracked configs resolve to after an
     // upgrade, before their lockfiles have been updated.
+    // Prune also passes offline=true: it only protects installed versions, so
+    // remote resolution can never affect the outcome and just adds latency.
     let opts = ResolveOptions {
         use_locked_version,
+        offline,
         ..Default::default()
     };
     for (path, cf) in config.get_tracked_config_files().await? {
