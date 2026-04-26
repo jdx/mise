@@ -70,8 +70,9 @@ pub(crate) fn retry_delay(attempt: usize) -> Duration {
 /// Retry an async operation that issues a request AND extracts the body.
 /// Use for download/text/bytes flows where mid-stream failures (is_body()) need
 /// to restart the whole request. Warns immediately on each transient failure
-/// (so users see flakiness without waiting through the backoff) and again on
-/// eventual success or final exhaustion.
+/// (so users see flakiness without waiting through the backoff). Successful
+/// rescues and final exhaustion don't get extra warnings — the caller surfaces
+/// the outcome.
 pub(crate) async fn retry_async<F, Fut, T>(
     url: &str,
     mut f: F,
@@ -81,27 +82,12 @@ where
     Fut: std::future::Future<Output = std::result::Result<T, reqwest::Error>>,
 {
     let attempts = http_retry_attempts().max(1);
-    let mut had_transient_failure = false;
     let mut last_err: Option<reqwest::Error> = None;
     for attempt in 0..attempts {
         match f().await {
-            Ok(value) => {
-                if had_transient_failure {
-                    log::warn!("HTTP {} succeeded on attempt {}", url, attempt + 1);
-                }
-                return Ok(value);
-            }
+            Ok(value) => return Ok(value),
             Err(err) => {
-                if !is_transient(&err) {
-                    return Err(err);
-                }
-                if attempt + 1 >= attempts {
-                    log::warn!(
-                        "HTTP {} failed after {} attempts: {}",
-                        url,
-                        attempt + 1,
-                        err
-                    );
+                if !is_transient(&err) || attempt + 1 >= attempts {
                     return Err(err);
                 }
                 let delay = retry_delay(attempt);
@@ -112,7 +98,6 @@ where
                     err,
                     delay
                 );
-                had_transient_failure = true;
                 last_err = Some(err);
                 tokio::time::sleep(delay).await;
             }

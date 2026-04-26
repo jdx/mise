@@ -18,7 +18,6 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
     };
 
     let attempts = http_retry_attempts().max(1);
-    let mut had_transient_failure = false;
     for attempt in 0..attempts {
         let response = template
             .try_clone()
@@ -30,24 +29,7 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
             Ok(resp) if should_retry_status(resp.status()) && attempt + 1 < attempts => {
                 Some(format!("HTTP {}", resp.status()))
             }
-            Ok(resp) => {
-                // The retry-status arm above only fires while attempts remain,
-                // so the final attempt's 5xx (if any) lands here. Distinguish
-                // real success from "ran out of retries with a bad status."
-                if had_transient_failure {
-                    if resp.status().is_success() {
-                        log::warn!("HTTP {} succeeded on attempt {}", url, attempt + 1);
-                    } else {
-                        log::warn!(
-                            "HTTP {} failed after {} attempts: HTTP {}",
-                            url,
-                            attempt + 1,
-                            resp.status()
-                        );
-                    }
-                }
-                return Ok(resp);
-            }
+            Ok(resp) => return Ok(resp),
             Err(err) if is_transient(&err) && attempt + 1 < attempts => Some(err.to_string()),
             Err(err) => return Err(err),
         };
@@ -61,7 +43,6 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
                 msg,
                 delay
             );
-            had_transient_failure = true;
             tokio::time::sleep(delay).await;
         }
     }

@@ -644,10 +644,10 @@ pub(crate) fn is_transient(err: &Report) -> bool {
 }
 
 /// Retry an async operation on transient errors using `default_backoff_strategy`.
-/// Emits a warn! immediately on each transient failure (so the user sees what's
-/// happening without waiting through the backoff schedule) and again on the
-/// eventual successful rescue, so flaky infrastructure doesn't silently mask
-/// itself either way.
+/// Emits a warn! immediately on each transient failure so the user sees flaky
+/// infrastructure as it's happening, instead of waiting through the backoff
+/// schedule. Successful rescues and final exhaustion don't get extra warnings
+/// — the caller surfaces the outcome.
 pub(crate) async fn retry_async<F, Fut, T>(verb_label: &str, url: &Url, mut f: F) -> Result<T>
 where
     F: FnMut() -> Fut,
@@ -655,34 +655,20 @@ where
 {
     let mut backoff = default_backoff_strategy(Settings::get().http_retries);
     let mut attempt: usize = 1;
-    let mut had_transient_failure = false;
     loop {
         match f().await {
-            Ok(value) => {
-                if had_transient_failure {
-                    warn!(
-                        "HTTP {} {} succeeded on attempt {}",
-                        verb_label, url, attempt
-                    );
-                }
-                return Ok(value);
-            }
+            Ok(value) => return Ok(value),
             Err(err) => {
                 if !is_transient(&err) {
                     return Err(err);
                 }
                 let Some(delay) = backoff.next() else {
-                    warn!(
-                        "HTTP {} {} failed after {} attempts: {}",
-                        verb_label, url, attempt, err
-                    );
                     return Err(err);
                 };
                 warn!(
                     "HTTP {} {} attempt {} failed (transient): {}; retrying in {:?}",
                     verb_label, url, attempt, err, delay
                 );
-                had_transient_failure = true;
                 tokio::time::sleep(delay).await;
                 attempt += 1;
             }
