@@ -27,6 +27,10 @@ impl PlatformTarget {
         self.platform.qualifier.as_deref()
     }
 
+    pub fn libc(&self) -> Option<&str> {
+        self.platform.libc()
+    }
+
     pub fn to_key(&self) -> String {
         self.platform.to_key()
     }
@@ -61,7 +65,16 @@ mod tests {
         assert_eq!(target.os_name(), "linux");
         assert_eq!(target.arch_name(), "x64");
         assert_eq!(target.qualifier(), Some("musl"));
+        assert_eq!(target.libc(), Some("musl"));
         assert_eq!(target.to_key(), "linux-x64-musl");
+    }
+
+    #[test]
+    fn test_platform_target_with_compound_libc_qualifier() {
+        let platform = Platform::parse("linux-x64-musl-baseline").unwrap();
+        let target = PlatformTarget::new(platform);
+
+        assert_eq!(target.libc(), Some("musl"));
     }
 
     #[test]

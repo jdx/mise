@@ -1046,6 +1046,11 @@
             "type": "string"
           }
         },
+        "libc": {
+          "description": "Libc implementation to use for precompiled Linux binaries.",
+          "type": "string",
+          "enum": ["glibc", "gnu", "musl"]
+        },
         "libgit2": {
           "default": true,
           "description": "Use libgit2 for git operations, set to false to shell out to git.",

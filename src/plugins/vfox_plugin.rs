@@ -112,7 +112,14 @@ impl VfoxPlugin {
     }
 
     pub fn vfox(&self) -> (Vfox, mpsc::Receiver<String>) {
+        let settings = Settings::get();
+        let env_type = if settings.os() == "linux" {
+            settings.libc().map(str::to_string)
+        } else {
+            None
+        };
         let mut vfox = Vfox::new();
+        vfox.runtime_env_type = env_type;
         vfox.plugin_dir = dirs::PLUGINS.to_path_buf();
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();

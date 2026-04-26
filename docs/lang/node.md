@@ -108,6 +108,9 @@ mise settings node.flavor=musl
 mise settings node.flavor=glibc-217
 ```
 
+For the common musl case, `mise settings libc=musl` also selects Node's `musl`
+flavor when `node.flavor` is unset.
+
 ## Settings
 
 <script setup>

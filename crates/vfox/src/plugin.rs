@@ -24,6 +24,7 @@ pub enum PluginSource {
 pub struct Plugin {
     pub name: String,
     pub dir: PathBuf,
+    pub runtime_env_type: Option<String>,
     source: PluginSource,
     lua: Lua,
     metadata: OnceCell<Metadata>,
@@ -41,6 +42,7 @@ impl Plugin {
         Ok(Self {
             name,
             dir: dir.to_path_buf(),
+            runtime_env_type: None,
             source: PluginSource::Filesystem(dir.to_path_buf()),
             lua,
             metadata: OnceCell::new(),
@@ -57,6 +59,7 @@ impl Plugin {
         Ok(Self {
             name: name.to_string(),
             dir: dummy_dir,
+            runtime_env_type: None,
             source: PluginSource::Embedded(embedded),
             lua,
             metadata: OnceCell::new(),
@@ -209,7 +212,10 @@ impl Plugin {
 
             let metadata = self.load_metadata()?;
             self.set_global("PLUGIN", metadata.clone())?;
-            self.set_global("RUNTIME", Runtime::get(self.dir.clone()))?;
+            self.set_global(
+                "RUNTIME",
+                Runtime::get(self.dir.clone(), self.runtime_env_type.as_deref()),
+            )?;
             self.set_global("OS_TYPE", config::os())?;
             self.set_global("ARCH_TYPE", config::arch())?;
 
