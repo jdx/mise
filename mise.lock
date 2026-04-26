@@ -138,9 +138,9 @@ url = "https://github.com/endevco/aube/releases/download/v1.1.0/aube-v1.1.0-x86_
 url_api = "https://api.github.com/repos/endevco/aube/releases/assets/404654425"
 
 [tools.aube."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:7ba3551a7b63f82d9aa4734791db66167b3905e940e749db297372422c82933a"
-url = "https://github.com/endevco/aube/releases/download/v1.1.0/aube-v1.1.0-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/404654853"
+checksum = "sha256:447f14e9edad5f212ad029758c5ea416437d225592ca8d716b8d1933b020cf4c"
+url = "https://github.com/endevco/aube/releases/download/v1.1.0/aube-v1.1.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/endevco/aube/releases/assets/404654425"
 
 [tools.aube."platforms.macos-arm64"]
 checksum = "sha256:4d77b4f54c78297e6aef6da4ccb8a2327c31297f1a9f37b84fb746928129c4b2"
@@ -307,9 +307,9 @@ url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-x86
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964691"
 
 [tools.communique."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:5e74ead7037f42940c7dba4f6aa4ed968920cbb55a047aa0d291b0c675c65676"
-url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405963914"
+checksum = "sha256:01a6a8b49e635a5a209fdaf6c7b2e976374debc2db1c846c033f567fdba0d86c"
+url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964691"
 
 [tools.communique."platforms.macos-arm64"]
 checksum = "sha256:459993e31a6c4ccbd09882f5679a2bc1ea5d9068701ecefc411a00fb69ce82e6"
@@ -442,8 +442,8 @@ checksum = "sha256:0dbca69b6d2141bf60aa9b5cd54e59232ba5b10855a9c7b52426a96452118
 url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-aarch64-unknown-linux-gnu.tar.gz"
 
 [tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:0dbca69b6d2141bf60aa9b5cd54e59232ba5b10855a9c7b52426a9645211809f"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:0f6bf44d490a17cc57c04738e28ccd89e9784fd4047d10b9f19dfe2405fe9270"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-aarch64-unknown-linux-musl.tar.gz"
 
 [tools.hk."platforms.linux-x64"]
 checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2270"
@@ -454,12 +454,12 @@ checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2
 url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2270"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:f96f5f9eb99fa21ab0de8389722bd3eb05c003b9c46fcc75c3fccbe155f33b8b"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.hk."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2270"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:f96f5f9eb99fa21ab0de8389722bd3eb05c003b9c46fcc75c3fccbe155f33b8b"
+url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.hk."platforms.macos-arm64"]
 checksum = "sha256:6a1de3c576487983e46d0458b3c9f20af51c4c785d22b96e3396be5c164a1e04"
@@ -922,8 +922,8 @@ checksum = "sha256:21908eec45ff9666d4ae72825b81faa7fc4119124ed656eb1d470cbf9ed41
 url = "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.3.1/stylua-linux-aarch64.zip"
 
 [tools.stylua."platforms.linux-arm64-musl"]
-checksum = "sha256:21908eec45ff9666d4ae72825b81faa7fc4119124ed656eb1d470cbf9ed41bc9"
-url = "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.3.1/stylua-linux-aarch64.zip"
+checksum = "sha256:3a5fef8220f3d482fd9f4c1d2655827c90e42197a11a28da6c7b42e7ddde8be6"
+url = "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.3.1/stylua-linux-aarch64-musl.zip"
 
 [tools.stylua."platforms.linux-x64"]
 checksum = "sha256:1b3ca3f577e584e19a0ad2264a0ab87f4133818e35700a094416ca98251ffb4a"
