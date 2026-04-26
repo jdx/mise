@@ -643,6 +643,20 @@ pub async fn get_versions_needed_by_tracked_configs(
         ts.resolve_with_opts(config, &opts).await?;
         for (_, tv) in ts.list_current_versions() {
             needed.insert((tv.ba().short.to_string(), tv.tv_pathname()));
+            // Offline can't resolve `sub-N:latest` to a concrete version
+            // (no remote latest available). Conservatively protect every
+            // installed version of this backend so we don't delete the
+            // active one.
+            if offline
+                && let crate::toolset::ToolRequest::Sub { orig_version, .. } = &tv.request
+                && orig_version == "latest"
+                && let Ok(backend) = tv.backend()
+            {
+                let short = tv.ba().short.to_string();
+                for v in backend.list_installed_versions() {
+                    needed.insert((short.clone(), v));
+                }
+            }
         }
     }
     Ok(needed)
