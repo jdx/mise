@@ -5,7 +5,7 @@ CURRENT_VERSION="${1}"
 echo "Current version: $CURRENT_VERSION"
 
 # Cloudflare API endpoint for updating redirect rules
-ZONE_ID="90dfd7997bdcfa8579c52d8ee8dd4cd1" # jdx.dev zone ID
+ZONE_ID="531d003297f1f4ae2415b41f7f5da8fa" # en.dev zone ID
 
 # Use the correct ruleset ID and rule ID from the API response
 RULESET_ID="f929f651a2824bfcac1cca11bbd3cf73"
@@ -21,7 +21,7 @@ curl --fail-with-body -X PATCH "https://api.cloudflare.com/client/v4/zones/$ZONE
 	-H "Content-Type: application/json" \
 	--data @- <<EOF
 {
-  "expression": "(http.host eq \"mise.jdx.dev\" and starts_with(http.request.uri.path, \"/mise-latest-\"))",
+  "expression": "(http.host eq \"mise.en.dev\" and starts_with(http.request.uri.path, \"/mise-latest-\"))",
   "action": "redirect",
   "action_parameters": {
     "from_value": {

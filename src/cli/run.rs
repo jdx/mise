@@ -817,7 +817,7 @@ fn display_task_help(task: &Task) -> Result<()> {
         "To define arguments, add a `usage` field to the task definition in the config file."
     };
     miseprintln!("{hint}");
-    miseprintln!("See https://mise.jdx.dev/tasks/task-configuration.html for more information.");
+    miseprintln!("See https://mise.en.dev/tasks/task-configuration.html for more information.");
     Ok(())
 }
 

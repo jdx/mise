@@ -203,10 +203,10 @@ When posting comments on GitHub PRs or discussions, always include a note that t
 ### URL Structure
 When referencing mise documentation URLs, use the correct path structure based on the `docs/` directory layout:
 
-- **Dev tools & backends**: `mise.jdx.dev/dev-tools/backends/<backend>.html` (e.g., `mise.jdx.dev/dev-tools/backends/s3.html`)
-- **Configuration**: `mise.jdx.dev/configuration/...`
-- **Tasks**: `mise.jdx.dev/tasks/...`
-- **Environments**: `mise.jdx.dev/environments/...`
-- **CLI reference**: `mise.jdx.dev/cli/...`
+- **Dev tools & backends**: `mise.en.dev/dev-tools/backends/<backend>.html` (e.g., `mise.en.dev/dev-tools/backends/s3.html`)
+- **Configuration**: `mise.en.dev/configuration/...`
+- **Tasks**: `mise.en.dev/tasks/...`
+- **Environments**: `mise.en.dev/environments/...`
+- **CLI reference**: `mise.en.dev/cli/...`
 
-Do NOT use shortened paths like `mise.jdx.dev/backends/...` - always include the full path matching the `docs/` directory structure.
+Do NOT use shortened paths like `mise.en.dev/backends/...` - always include the full path matching the `docs/` directory structure.

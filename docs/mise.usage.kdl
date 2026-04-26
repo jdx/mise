@@ -229,7 +229,7 @@ This can be used to temporarily disable mise in a shell session."
 cmd "direnv" help="Output direnv function to use mise inside direnv" {
     long_help r"Output direnv function to use mise inside direnv
 
-See https://mise.jdx.dev/direnv.html for more information
+See https://mise.en.dev/direnv.html for more information
 
 Because this generates the idiomatic files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
@@ -239,7 +239,7 @@ direnv may not know to update environment variables when legacy file versions ch
     cmd "activate" help="Output direnv function to use mise inside direnv" {
         long_help r"Output direnv function to use mise inside direnv
 
-See https://mise.jdx.dev/direnv.html for more information
+See https://mise.en.dev/direnv.html for more information
 
 Because this generates the legacy files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise

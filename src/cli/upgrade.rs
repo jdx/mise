@@ -24,7 +24,7 @@ use jiff::Timestamp;
 /// upgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version
 /// and bump the version in mise.toml.
 ///
-/// This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
+/// This will update mise.lock if it is enabled, see https://mise.en.dev/configuration/settings.html#lockfile
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Upgrade {

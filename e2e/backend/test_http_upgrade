@@ -48,7 +48,7 @@ echo "Test 1: Install HTTP tool with version_list_url"
 cat <<EOF >mise.toml
 [tools."http:hello-upgrade"]
 version = "1.0.0"
-url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}.tar.gz"
+url = "https://mise.en.dev/test-fixtures/hello-world-{{version}}.tar.gz"
 version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
 bin_path = "hello-world-1.0.0/bin"
 postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"

@@ -181,7 +181,7 @@ Release:        1%{?dist}
 Summary:        The front-end to your dev env
 
 License:        MIT
-URL:            https://mise.jdx.dev
+URL:            https://mise.en.dev
 Source0:        https://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
 Source1:        mise-vendor-%{version}.tar.gz
 
