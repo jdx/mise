@@ -857,10 +857,11 @@ impl BuildOpts {
 const UNOFFICIAL_NODE_MIRROR_URL: &str = "https://unofficial-builds.nodejs.org/download/release/";
 
 fn mirror_url_for(node: &crate::config::settings::SettingsNode, filename: &str) -> Url {
-    if node.mirror_url.is_none() && filename.contains("-musl") {
+    let mirror = node.mirror_url();
+    if filename.contains("-musl") && mirror.as_str() == DEFAULT_NODE_MIRROR_URL {
         return Url::parse(UNOFFICIAL_NODE_MIRROR_URL).unwrap();
     }
-    node.mirror_url()
+    mirror
 }
 
 fn os() -> &'static str {
