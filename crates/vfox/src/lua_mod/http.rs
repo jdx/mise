@@ -4,7 +4,7 @@ use reqwest::{RequestBuilder, Response};
 use url::Url;
 
 use crate::http::{
-    CLIENT, HTTP_RETRY_ATTEMPTS, is_transient, retry_async, retry_delay, should_retry_status,
+    CLIENT, http_retry_attempts, is_transient, retry_async, retry_delay, should_retry_status,
 };
 
 async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Response, reqwest::Error> {
@@ -17,8 +17,9 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
         return builder.send().await;
     };
 
+    let attempts = http_retry_attempts().max(1);
     let mut last_err_msg: Option<String> = None;
-    for attempt in 0..HTTP_RETRY_ATTEMPTS {
+    for attempt in 0..attempts {
         let response = template
             .try_clone()
             .expect("cloned request builder should remain cloneable")
@@ -26,7 +27,7 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
             .await;
 
         let transient_err: Option<String> = match response {
-            Ok(resp) if should_retry_status(resp.status()) && attempt + 1 < HTTP_RETRY_ATTEMPTS => {
+            Ok(resp) if should_retry_status(resp.status()) && attempt + 1 < attempts => {
                 Some(format!("HTTP {}", resp.status()))
             }
             Ok(resp) => {
@@ -40,9 +41,7 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
                 }
                 return Ok(resp);
             }
-            Err(err) if is_transient(&err) && attempt + 1 < HTTP_RETRY_ATTEMPTS => {
-                Some(err.to_string())
-            }
+            Err(err) if is_transient(&err) && attempt + 1 < attempts => Some(err.to_string()),
             Err(err) => return Err(err),
         };
 

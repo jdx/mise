@@ -750,8 +750,7 @@ mod tests {
         let count = Arc::new(AtomicUsize::new(0));
         let count_inner = count.clone();
         tokio::spawn(async move {
-            let mut iter = responses.into_iter();
-            while let Some(resp) = iter.next() {
+            for resp in responses {
                 let Ok((mut sock, _)) = listener.accept().await else {
                     return;
                 };
