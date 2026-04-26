@@ -947,10 +947,19 @@ env = "MISE_HOOK_ENV_CHPWD_ONLY"
 type = "Bool"
 
 [http_retries]
-default = 0
-description = "Number of retries for HTTP requests in mise."
+default = 3
+description = "Number of retries for transient HTTP failures in mise."
 docs = """
-Uses an exponential backoff strategy. The duration is calculated by taking the base (10ms) to the n-th power.
+Retries are attempted only on transient errors: HTTP 5xx (server errors), 408
+(Request Timeout), 429 (Too Many Requests), and network-layer failures (connect
+refused, timeout, mid-stream body drops). Other 4xx responses (e.g. 404) are
+treated as permanent and not retried.
+
+Backoff schedule with jitter: ~200ms / ~1s / ~4s / ~15s. Set to 0 to disable
+retries entirely.
+
+When a retry rescues a request, a warning is logged with the original error so
+flaky infrastructure doesn't silently mask itself.
 """
 env = "MISE_HTTP_RETRIES"
 type = "Integer"
