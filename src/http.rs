@@ -644,8 +644,10 @@ pub(crate) fn is_transient(err: &Report) -> bool {
 }
 
 /// Retry an async operation on transient errors using `default_backoff_strategy`.
-/// On a successful retry (attempt > 1), emits a warn! noting which transient
-/// error was rescued, so flaky infrastructure doesn't silently mask itself.
+/// Emits a warn! immediately on each transient failure (so the user sees what's
+/// happening without waiting through the backoff schedule) and again on the
+/// eventual successful rescue, so flaky infrastructure doesn't silently mask
+/// itself either way.
 pub(crate) async fn retry_async<F, Fut, T>(verb_label: &str, url: &Url, mut f: F) -> Result<T>
 where
     F: FnMut() -> Fut,
@@ -653,14 +655,14 @@ where
 {
     let mut backoff = default_backoff_strategy(Settings::get().http_retries);
     let mut attempt: usize = 1;
-    let mut last_err: Option<Report> = None;
+    let mut had_transient_failure = false;
     loop {
         match f().await {
             Ok(value) => {
-                if let Some(prev) = last_err {
+                if had_transient_failure {
                     warn!(
-                        "HTTP {} {} succeeded on attempt {} after transient error: {}",
-                        verb_label, url, attempt, prev
+                        "HTTP {} {} succeeded on attempt {}",
+                        verb_label, url, attempt
                     );
                 }
                 return Ok(value);
@@ -670,13 +672,17 @@ where
                     return Err(err);
                 }
                 let Some(delay) = backoff.next() else {
+                    warn!(
+                        "HTTP {} {} failed after {} attempts: {}",
+                        verb_label, url, attempt, err
+                    );
                     return Err(err);
                 };
-                debug!(
+                warn!(
                     "HTTP {} {} attempt {} failed (transient): {}; retrying in {:?}",
                     verb_label, url, attempt, err, delay
                 );
-                last_err = Some(err);
+                had_transient_failure = true;
                 tokio::time::sleep(delay).await;
                 attempt += 1;
             }

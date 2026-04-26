@@ -18,7 +18,7 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
     };
 
     let attempts = http_retry_attempts().max(1);
-    let mut last_err_msg: Option<String> = None;
+    let mut had_transient_failure = false;
     for attempt in 0..attempts {
         let response = template
             .try_clone()
@@ -31,13 +31,8 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
                 Some(format!("HTTP {}", resp.status()))
             }
             Ok(resp) => {
-                if let Some(prev) = last_err_msg {
-                    log::warn!(
-                        "HTTP {} succeeded on attempt {} after transient error: {}",
-                        url,
-                        attempt + 1,
-                        prev
-                    );
+                if had_transient_failure {
+                    log::warn!("HTTP {} succeeded on attempt {}", url, attempt + 1);
                 }
                 return Ok(resp);
             }
@@ -47,14 +42,14 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
 
         if let Some(msg) = transient_err {
             let delay = retry_delay(attempt);
-            log::debug!(
+            log::warn!(
                 "HTTP {} attempt {} failed (transient): {}; retrying in {:?}",
                 url,
                 attempt + 1,
                 msg,
                 delay
             );
-            last_err_msg = Some(msg);
+            had_transient_failure = true;
             tokio::time::sleep(delay).await;
         }
     }
