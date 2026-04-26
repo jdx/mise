@@ -8,7 +8,7 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use eyre::{Report, Result, bail, ensure};
 use regex::Regex;
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
 use tokio::sync::OnceCell;
@@ -207,10 +207,21 @@ impl Client {
     pub async fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url().unwrap();
         let resp = self.get_async(url.clone()).await?;
-        let html = resp.text().await?;
-        if !html.starts_with("<!DOCTYPE html>") {
+        let is_html = resp
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|content_type| content_type.to_str().ok())
+            .is_some_and(|content_type| {
+                content_type
+                    .split_once(';')
+                    .map_or(content_type, |(media_type, _)| media_type)
+                    .trim()
+                    .eq_ignore_ascii_case("text/html")
+            });
+        if !is_html {
             bail!("Got non-HTML text from {}", url);
         }
+        let html = resp.text().await?;
         Ok(html)
     }
 
@@ -614,6 +625,51 @@ mod tests {
         crate::config::Settings::reset(None);
 
         result
+    }
+
+    #[tokio::test]
+    async fn test_get_html_accepts_text_html_without_doctype() {
+        let mut server = mockito::Server::new_async().await;
+        let expected_body = "<html><body>package index</body></html>";
+        let mock = server
+            .mock("GET", "/simple")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body(expected_body)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+        let html = client
+            .get_html(format!("{}/simple", server.url()))
+            .await
+            .unwrap();
+
+        assert_eq!(html, expected_body);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_html_rejects_non_html_content_type() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/plain")
+            .with_status(200)
+            .with_header("content-type", "text/plain")
+            .with_body("<!DOCTYPE html><html></html>")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+        let err = client
+            .get_html(format!("{}/plain", server.url()))
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("Got non-HTML text from"));
+        mock.assert();
     }
 
     #[test]
