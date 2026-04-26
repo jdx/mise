@@ -12,7 +12,6 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
 use tokio::sync::OnceCell;
-use tokio_retry::strategy::jitter;
 use url::Url;
 
 use crate::cli::version;
@@ -607,8 +606,16 @@ fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = Duration> {
         .into_iter()
         .chain(std::iter::repeat(15_000))
         .map(Duration::from_millis)
-        .map(jitter)
+        .map(equal_jitter)
         .take(retries.max(0) as usize)
+}
+
+/// Jitter the duration to a random value in `[d/2, d)` — "equal jitter" per
+/// AWS's backoff guidance. Avoids tokio_retry's `jitter` which can return
+/// near-zero (its range is `[0, d)`), defeating the point of backoff.
+fn equal_jitter(d: Duration) -> Duration {
+    let factor = 0.5 + rand::random::<f64>() * 0.5;
+    Duration::from_secs_f64(d.as_secs_f64() * factor)
 }
 
 /// True if the error is a network-layer connection problem (no status received).
