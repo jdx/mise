@@ -1,5 +1,5 @@
 {
-  "$id": "https://mise.jdx.dev/schema/mise-task.json",
+  "$id": "https://mise.en.dev/schema/mise-task.json",
   "$schema": "https://json-schema.org/draft/2019-09/schema#",
   "title": "mise-task-schema",
   "type": "object",
@@ -1224,7 +1224,7 @@
       ]
     }
   },
-  "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",
+  "description": "Config file for included mise tasks (https://mise.en.dev/tasks/#task-configuration)",
   "additionalProperties": {
     "$ref": "#/$defs/task"
   }

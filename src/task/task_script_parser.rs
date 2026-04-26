@@ -92,7 +92,7 @@ impl TaskScriptParser {
             "2027.5.0",
             "tera_template_task_args",
             "Task '{}' uses deprecated Tera template functions (arg(), option(), flag()) in run scripts. \
-             Use the 'usage' field instead. See https://mise.jdx.dev/tasks/task-arguments.html",
+             Use the 'usage' field instead. See https://mise.en.dev/tasks/task-arguments.html",
             task_name
         );
     }

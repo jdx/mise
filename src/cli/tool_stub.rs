@@ -634,7 +634,7 @@ async fn execute_with_tool_request(
 /// The stub will automatically install the specified tool version if missing
 /// and execute it with any arguments passed to the stub.
 ///
-/// For more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html
+/// For more information, see: https://mise.en.dev/dev-tools/tool-stubs.html
 #[derive(Debug, Parser)]
 #[clap(disable_help_flag = true, disable_version_flag = true)]
 pub struct ToolStub {

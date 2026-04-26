@@ -7,7 +7,7 @@ An assortment of helpful tips for using `mise`.
 If you have a need to run tools as x86_64 on Apple Silicon, this can be done with mise however you'll currently
 need to use the x86_64 version of mise itself. A common reason for doing this is to support compiling node <=14.
 
-You can do this either with the [`MISE_ARCH`](https://mise.jdx.dev/configuration/settings.html#arch)
+You can do this either with the [`MISE_ARCH`](https://mise.en.dev/configuration/settings.html#arch)
 setting or by using a dedicated rosetta mise bin as described below:
 
 First, you'll need a copy of mise that's built for x86_64:
@@ -116,7 +116,7 @@ mise set NODE_ENV=production
 
 ## Using Tera to read unsupported version files
 
-Some project-local version files are already supported as [idiomatic version files](https://mise.jdx.dev/configuration.html#idiomatic-version-files). For other version files, you can use Tera templates in `mise.toml` to read the file and assign the version to the appropriate tool.
+Some project-local version files are already supported as [idiomatic version files](https://mise.en.dev/configuration.html#idiomatic-version-files). For other version files, you can use Tera templates in `mise.toml` to read the file and assign the version to the appropriate tool.
 
 For example, to use a `.hvm` file with a plain Hugo version:
 

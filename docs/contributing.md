@@ -816,9 +816,9 @@ docker run -ti --rm ubuntu
 apt update -y
 apt install -y curl
 install -dm 755 /etc/apt/keyrings
-curl -fSso /etc/apt/keyrings/mise-archive-keyring.pub https://mise.jdx.dev/gpg-key.pub
+curl -fSso /etc/apt/keyrings/mise-archive-keyring.pub https://mise.en.dev/gpg-key.pub
 echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.pub arch=arm64] \
-https://mise.jdx.dev/deb stable main" >/etc/apt/sources.list.d/mise.list
+https://mise.en.dev/deb stable main" >/etc/apt/sources.list.d/mise.list
 apt update -y
 apt install -y mise
 mise -V

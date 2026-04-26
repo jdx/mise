@@ -238,9 +238,9 @@ in. In other words, their return values **_may_** (but are not guaranteed to) be
 across executions of any given _task_, and should be expected to be inconsistent across
 different task definition(s).
 
-For example, `task_source_files()` returns a different set of filepaths depending on the [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources) of the task it's called from.
+For example, `task_source_files()` returns a different set of filepaths depending on the [`sources`](https://mise.en.dev/tasks/task-configuration.html#sources) of the task it's called from.
 
-- <span id="task-source-files">`task_source_files() -> Vec<String>`</span> – Returns the task's [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources)
+- <span id="task-source-files">`task_source_files() -> Vec<String>`</span> – Returns the task's [`sources`](https://mise.en.dev/tasks/task-configuration.html#sources)
   as an array of resolved file paths. This function processes glob patterns and Tera template strings
   defined in the task's sources, expanding them into actual file paths. If a pattern doesn't match any
   files, it will be omitted from the result. Returns an empty array if no sources are configured or if

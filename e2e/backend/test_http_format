@@ -7,7 +7,7 @@
 cat <<EOF >mise.toml
 [tools."http:hello-format"]
 version = "1.0.0"
-url = "https://mise.jdx.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball"
+url = "https://mise.en.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball"
 format = "tar.gz"
 bin_path = "hello-world-1.0.0/bin"
 postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
@@ -25,10 +25,10 @@ bin_path = "hello-world-1.0.0/bin"
 postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
 
 [tools."http:hello-format-platform".platforms]
-darwin-arm64 = { url = "https://mise.jdx.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball", format = "tar.gz" }
-darwin-amd64 = { url = "https://mise.jdx.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball", format = "tar.gz" }
-linux-amd64 = { url = "https://mise.jdx.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball", format = "tar.gz" }
-linux-arm64 = { url = "https://mise.jdx.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball", format = "tar.gz" }
+darwin-arm64 = { url = "https://mise.en.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball", format = "tar.gz" }
+darwin-amd64 = { url = "https://mise.en.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball", format = "tar.gz" }
+linux-amd64 = { url = "https://mise.en.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball", format = "tar.gz" }
+linux-arm64 = { url = "https://mise.en.dev/test-fixtures/test-fixtures_hello-world-1.0.0-tarball", format = "tar.gz" }
 EOF
 
 mise install
