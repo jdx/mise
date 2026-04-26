@@ -31,8 +31,20 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
                 Some(format!("HTTP {}", resp.status()))
             }
             Ok(resp) => {
+                // The retry-status arm above only fires while attempts remain,
+                // so the final attempt's 5xx (if any) lands here. Distinguish
+                // real success from "ran out of retries with a bad status."
                 if had_transient_failure {
-                    log::warn!("HTTP {} succeeded on attempt {}", url, attempt + 1);
+                    if resp.status().is_success() {
+                        log::warn!("HTTP {} succeeded on attempt {}", url, attempt + 1);
+                    } else {
+                        log::warn!(
+                            "HTTP {} failed after {} attempts: HTTP {}",
+                            url,
+                            attempt + 1,
+                            resp.status()
+                        );
+                    }
                 }
                 return Ok(resp);
             }
