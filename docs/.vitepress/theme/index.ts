@@ -25,7 +25,7 @@ export default {
         if (githubLink && !githubLink.querySelector(".star-count")) {
           const starBadge = document.createElement("span");
           starBadge.className = "star-count";
-          starBadge.innerHTML = starsData.stars;
+          starBadge.textContent = `★ ${starsData.stars}`;
           starBadge.title = "GitHub Stars";
           githubLink.appendChild(starBadge);
         }
