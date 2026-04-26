@@ -43,8 +43,13 @@ impl Platform {
     pub fn current() -> Self {
         let settings = Settings::get();
         let os = settings.os().to_string();
-        let qualifier = if os == "linux" && is_musl_system() {
-            Some("musl".to_string())
+        let qualifier = if os == "linux" {
+            match settings.libc() {
+                Some("musl") => Some("musl".to_string()),
+                Some("gnu") => None,
+                _ if is_musl_system() => Some("musl".to_string()),
+                _ => None,
+            }
         } else {
             None
         };
@@ -53,6 +58,17 @@ impl Platform {
             arch: settings.arch().to_string(),
             qualifier,
         }
+    }
+
+    pub fn libc(&self) -> Option<&str> {
+        self.qualifier
+            .as_deref()?
+            .split('-')
+            .find_map(|part| match part {
+                "gnu" | "glibc" => Some("gnu"),
+                "musl" => Some("musl"),
+                _ => None,
+            })
     }
 
     /// Validate that this platform is supported
@@ -78,9 +94,9 @@ impl Platform {
         // Validate qualifier if present
         if let Some(qualifier) = &self.qualifier {
             match qualifier.as_str() {
-                "gnu" | "musl" | "msvc" | "baseline" | "musl-baseline" => {}
+                "gnu" | "glibc" | "musl" | "msvc" | "baseline" | "musl-baseline" => {}
                 _ => bail!(
-                    "Unsupported qualifier '{}'. Supported: gnu, musl, msvc, baseline, musl-baseline",
+                    "Unsupported qualifier '{}'. Supported: gnu, glibc, musl, msvc, baseline, musl-baseline",
                     qualifier
                 ),
             }
@@ -193,14 +209,6 @@ impl From<&str> for Platform {
 fn is_musl_system() -> bool {
     use std::sync::LazyLock;
     static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
-        // Allow explicit override via environment variable (only gnu/musl accepted)
-        if let Ok(val) = std::env::var("MISE_LIBC") {
-            match val.to_lowercase().as_str() {
-                "musl" => return true,
-                "gnu" => return false,
-                _ => {} // invalid value ignored, fall through to runtime detection
-            }
-        }
         // If glibc's dynamic linker exists, this is a glibc system
         for dir in ["/lib", "/lib64"] {
             if has_file_prefix(dir, "ld-linux-") {
@@ -283,6 +291,12 @@ mod tests {
         assert!(Platform::parse("macos-arm64").unwrap().validate().is_ok());
         assert!(Platform::parse("windows-x64").unwrap().validate().is_ok());
         assert!(Platform::parse("linux-x64-gnu").unwrap().validate().is_ok());
+        assert!(
+            Platform::parse("linux-x64-glibc")
+                .unwrap()
+                .validate()
+                .is_ok()
+        );
 
         // Invalid OS
         assert!(Platform::parse("invalid-x64").unwrap().validate().is_err());

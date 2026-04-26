@@ -331,10 +331,14 @@ impl BunPlugin {
     }
 
     /// Check if we're running on a musl-based system
-    /// This is determined by the binary's compile-time target, since mixing
-    /// glibc and musl binaries on the same system doesn't work anyway
+    /// Respects the global libc setting when configured, otherwise falls back
+    /// to the binary's compile-time target.
     fn is_musl() -> bool {
-        cfg!(target_env = "musl")
+        match Settings::get().libc() {
+            Some("musl") => true,
+            Some("gnu") => false,
+            _ => cfg!(target_env = "musl"),
+        }
     }
 
     /// Get the platform variant suffix for the current system

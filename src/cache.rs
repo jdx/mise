@@ -18,6 +18,7 @@ use crate::build_time::built_info;
 use crate::config::Settings;
 use crate::file::{display_path, modified_duration};
 use crate::hash::hash_to_str;
+use crate::platform::Platform;
 use crate::rand::random_string;
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, file};
@@ -46,7 +47,11 @@ impl CacheManagerBuilder {
     pub fn new(cache_file_path: impl AsRef<Path>) -> Self {
         let settings = Settings::get();
         let mut cache_keys = BASE_CACHE_KEYS.clone();
-        cache_keys.extend([settings.os().to_string(), settings.arch().to_string()]);
+        cache_keys.extend([
+            settings.os().to_string(),
+            settings.arch().to_string(),
+            Platform::current().libc().unwrap_or_default().to_string(),
+        ]);
         Self {
             cache_file_path: cache_file_path.as_ref().to_path_buf(),
             cache_keys,

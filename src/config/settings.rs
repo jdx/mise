@@ -704,6 +704,14 @@ impl Settings {
         }
     }
 
+    pub fn libc(&self) -> Option<&str> {
+        match self.libc.as_deref()?.to_ascii_lowercase().as_str() {
+            "glibc" | "gnu" => Some("gnu"),
+            "musl" => Some("musl"),
+            _ => None,
+        }
+    }
+
     pub fn no_config() -> bool {
         *env::MISE_NO_CONFIG
             || !*crate::env::IS_RUNNING_AS_SHIM
