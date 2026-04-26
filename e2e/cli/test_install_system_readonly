@@ -24,25 +24,27 @@ assert "readlink $SYSTEM_INSTALLS/tiny/latest" "./2.1.0"
 chmod -R a-w "$SYSTEM_INSTALLS"
 trap 'chmod -R u+w "$SYSTEM_INSTALLS" 2>/dev/null || true' EXIT
 
+assert_silent_install() {
+	local out
+	if ! out="$($1 2>&1)"; then
+		echo "$out"
+		fail "[$1] command failed"
+	fi
+	echo "$out"
+	if [[ $out == *"skipping symlink update"* || $out == *"Permission denied"* || $out == *"failed rm"* ]]; then
+		fail "[$1] unexpected system-dir warning during install"
+	fi
+}
+
 # Re-installing a tool that lives only in the user dir must succeed without
 # any warning about the system dir — the system-side runtime symlink already
 # matches the desired state, so nothing should be written or attempted there.
-out="$(mise install --force tiny@1.0.0 2>&1)"
-echo "$out"
-if [[ $out == *"skipping symlink update"* || $out == *"Permission denied"* || $out == *"failed rm"* ]]; then
-	echo "FAIL: unexpected system-dir warning during install"
-	exit 1
-fi
+assert_silent_install "mise install --force tiny@1.0.0"
 assert "readlink $USER_INSTALLS/tiny/latest" "./1.0.0"
 assert "readlink $SYSTEM_INSTALLS/tiny/latest" "./2.1.0"
 
 # Installing a different tool that doesn't touch the system dir at all must
 # also succeed silently.
-out="$(mise install dummy@1.0.0 2>&1)"
-echo "$out"
-if [[ $out == *"skipping symlink update"* || $out == *"Permission denied"* || $out == *"failed rm"* ]]; then
-	echo "FAIL: unexpected system-dir warning during install"
-	exit 1
-fi
+assert_silent_install "mise install dummy@1.0.0"
 assert_directory_exists "$USER_INSTALLS/dummy/1.0.0"
 assert "readlink $SYSTEM_INSTALLS/tiny/latest" "./2.1.0"
