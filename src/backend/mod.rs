@@ -756,12 +756,33 @@ pub trait Backend: Debug + Send + Sync {
                 if use_versions_host {
                     match versions_host::list_versions(&ba.short).await {
                         Ok(Some(versions)) => {
-                            trace!(
-                                "Got {} versions from versions host for {}",
-                                versions.len(),
-                                ba.to_string()
+                            // Defense against stale/incomplete cache: for backends
+                            // that always populate `release_url` upstream
+                            // (github/gitlab/forgejo), any entry missing it means
+                            // the versions host has bad data — fall through to
+                            // direct upstream so the gap doesn't get propagated
+                            // back to mise-versions on the next sync.
+                            let expects_release_url = matches!(
+                                backend_type,
+                                BackendType::Github
+                                    | BackendType::Gitlab
+                                    | BackendType::Forgejo
                             );
-                            return Ok(versions);
+                            if expects_release_url
+                                && versions.iter().any(|v| v.release_url.is_none())
+                            {
+                                debug!(
+                                    "versions host returned entries with missing release_url for {}; falling back to upstream",
+                                    ba.short
+                                );
+                            } else {
+                                trace!(
+                                    "Got {} versions from versions host for {}",
+                                    versions.len(),
+                                    ba.to_string()
+                                );
+                                return Ok(versions);
+                            }
                         }
                         Ok(None) => {}
                         Err(e) => {
