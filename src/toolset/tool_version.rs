@@ -458,6 +458,17 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         if v == "latest" && opts.offline {
+            // Use the latest installed version as the basis for the sub
+            // computation so the resolved concrete version still matches an
+            // installed pathname (and gets protected from prune). Falling
+            // straight to the raw "sub-N:latest" string would never match
+            // anything in `to_delete`.
+            if !opts.latest_versions
+                && let Some(latest) = backend.latest_installed_version(None)?
+            {
+                let v = tool_request::version_sub(&latest, sub);
+                return Box::pin(Self::resolve_version(config, request, &v, opts)).await;
+            }
             let version = request.version();
             return Ok(Self::new(request, version));
         }
