@@ -1065,6 +1065,20 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
+[libc]
+default_docs = '"glibc" | "musl"'
+description = "Libc implementation to use for precompiled Linux binaries."
+docs = """
+Libc implementation to use for precompiled Linux binaries. This is used by backends that publish
+separate glibc and musl builds. If unset, mise will detect the current system's libc.
+
+`gnu` is accepted as an alias for `glibc`.
+"""
+enum = ["glibc", "gnu", "musl"]
+env = "MISE_LIBC"
+optional = true
+type = "String"
+
 [libgit2]
 default = true
 description = "Use libgit2 for git operations, set to false to shell out to git."

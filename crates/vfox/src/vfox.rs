@@ -55,6 +55,8 @@ pub struct Vfox {
     pub cmd_env: Option<IndexMap<String, String>>,
     /// Optional GitHub token for Lua http requests to GitHub API endpoints.
     pub github_token: Option<String>,
+    /// Optional runtime env type (`gnu` or `musl`) exposed to plugin hooks.
+    pub runtime_env_type: Option<String>,
     log_tx: Option<mpsc::Sender<String>>,
 }
 
@@ -123,7 +125,9 @@ impl Vfox {
     }
 
     pub fn get_sdk(&self, name: &str) -> Result<Plugin> {
-        Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))
+        let mut plugin = Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))?;
+        plugin.runtime_env_type = self.runtime_env_type.clone();
+        Ok(plugin)
     }
 
     fn get_sdk_with_env(&self, name: &str) -> Result<Plugin> {
@@ -146,12 +150,16 @@ impl Vfox {
         // Check filesystem first - allows user to override embedded plugins
         let plugin_dir = self.plugin_dir.join(sdk);
         if plugin_dir.exists() {
-            return Plugin::from_dir(&plugin_dir);
+            let mut plugin = Plugin::from_dir(&plugin_dir)?;
+            plugin.runtime_env_type = self.runtime_env_type.clone();
+            return Ok(plugin);
         }
 
         // Fall back to embedded plugin if available
         if let Some(embedded) = crate::embedded_plugins::get_embedded_plugin(sdk) {
-            return Plugin::from_embedded(sdk, embedded);
+            let mut plugin = Plugin::from_embedded(sdk, embedded)?;
+            plugin.runtime_env_type = self.runtime_env_type.clone();
+            return Ok(plugin);
         }
 
         // Otherwise install from registry
@@ -175,7 +183,9 @@ impl Vfox {
             debug!("Installing plugin {sdk}");
             xx::git::clone(url.as_ref(), &plugin_dir, &Default::default())?;
         }
-        Plugin::from_dir(&plugin_dir)
+        let mut plugin = Plugin::from_dir(&plugin_dir)?;
+        plugin.runtime_env_type = self.runtime_env_type.clone();
+        Ok(plugin)
     }
 
     pub fn uninstall_plugin(&self, sdk: &str) -> Result<()> {
@@ -588,6 +598,7 @@ impl Default for Vfox {
             skip_verification: false,
             cmd_env: None,
             github_token: None,
+            runtime_env_type: None,
             log_tx: None,
         }
     }
@@ -615,6 +626,7 @@ mod tests {
                 skip_verification: false,
                 cmd_env: None,
                 github_token: None,
+                runtime_env_type: None,
                 log_tx: None,
             }
         }

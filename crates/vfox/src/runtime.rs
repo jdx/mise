@@ -24,14 +24,17 @@ static RUNTIME: Lazy<Mutex<Runtime>> = Lazy::new(|| {
 });
 
 impl Runtime {
-    pub(crate) fn get(plugin_dir_path: PathBuf) -> Runtime {
+    pub(crate) fn get(plugin_dir_path: PathBuf, env_type_override: Option<&str>) -> Runtime {
         let mut runtime = RUNTIME.lock().unwrap().clone();
         runtime.plugin_dir_path = plugin_dir_path;
+        if let Some(env_type) = env_type_override {
+            runtime.env_type = Some(env_type.to_string());
+        }
         runtime
     }
 
     pub(crate) fn with_platform(plugin_dir_path: PathBuf, os: &str, arch: &str) -> Runtime {
-        let mut runtime = Self::get(plugin_dir_path);
+        let mut runtime = Self::get(plugin_dir_path, None);
         runtime.os = os.to_string();
         runtime.arch = arch.to_string();
         runtime.env_type = None; // target libc is unknown in cross-platform context

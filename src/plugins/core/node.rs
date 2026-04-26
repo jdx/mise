@@ -13,6 +13,7 @@ use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, gpg, hash, http, plugins};
@@ -782,12 +783,18 @@ impl NodePlugin {
         let os = Self::map_os(target.os_name());
         let arch = Self::map_arch(target.arch_name());
 
-        // Flavor (like "glibc") only applies to the current Linux platform
-        // Don't apply it to non-current platforms during cross-platform locking
-        if target.is_current()
-            && target.os_name() == "linux"
-            && let Some(flavor) = &settings.node.flavor
-        {
+        // Only Linux has Node flavors. The node-specific flavor is for the
+        // current host; lock targets use their own libc qualifier.
+        let flavor = match (target.os_name(), target.is_current()) {
+            ("linux", true) => settings
+                .node
+                .flavor
+                .as_deref()
+                .or_else(|| target.libc().filter(|libc| *libc == "musl")),
+            ("linux", false) => target.libc().filter(|libc| *libc == "musl"),
+            _ => None,
+        };
+        if let Some(flavor) = flavor {
             return format!("node-v{version}-{os}-{arch}-{flavor}");
         }
         format!("node-v{version}-{os}-{arch}")
@@ -863,7 +870,17 @@ fn arch(settings: &Settings) -> &str {
 
 fn slug(v: &str) -> String {
     let settings = Settings::get();
-    if let Some(flavor) = &settings.node.flavor {
+    let current = Platform::current();
+    let flavor = if current.os == "linux" {
+        settings
+            .node
+            .flavor
+            .as_deref()
+            .or_else(|| current.libc().filter(|libc| *libc == "musl"))
+    } else {
+        None
+    };
+    if let Some(flavor) = flavor {
         format!("node-v{v}-{}-{}-{flavor}", os(), arch(&settings))
     } else {
         format!("node-v{v}-{}-{}", os(), arch(&settings))

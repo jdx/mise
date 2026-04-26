@@ -55,7 +55,7 @@ pub(crate) fn env_type() -> Option<String> {
         if let Ok(val) = std::env::var("MISE_LIBC") {
             match val.to_lowercase().as_str() {
                 "musl" => return Some("musl".to_string()),
-                "gnu" => return Some("gnu".to_string()),
+                "glibc" | "gnu" => return Some("gnu".to_string()),
                 _ => {} // invalid value ignored, fall through to runtime detection
             }
         }
