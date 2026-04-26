@@ -249,28 +249,50 @@ impl PlatformInfo {
     /// - Prefers sha256 checksums over blake3 (more portable/verifiable)
     /// - Preserves URL if missing in self
     /// - Preserves url_api if missing in self
+    /// - Drops the other side's checksum/size/url_api when URLs disagree, since
+    ///   those fields describe a specific artifact and become stale if the URL
+    ///   changes.
     pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
+        let url_changed = self.url.is_some() && other.url.is_some() && self.url != other.url;
+
         // For checksums, prefer sha256 over blake3 since sha256 comes from
-        // official releases and is more portable/verifiable
-        let checksum = match (&self.checksum, &other.checksum) {
-            (Some(self_cs), Some(other_cs)) => {
-                let self_is_sha256 = self_cs.starts_with("sha256:");
-                let other_is_sha256 = other_cs.starts_with("sha256:");
-                match (self_is_sha256, other_is_sha256) {
-                    (true, _) => Some(self_cs.clone()),
-                    (false, true) => Some(other_cs.clone()),
-                    (false, false) => Some(self_cs.clone()), // both blake3, use self
+        // official releases and is more portable/verifiable. If URLs disagree,
+        // ignore the other side's artifact-bound fields entirely.
+        let checksum = if url_changed {
+            self.checksum.clone()
+        } else {
+            match (&self.checksum, &other.checksum) {
+                (Some(self_cs), Some(other_cs)) => {
+                    let self_is_sha256 = self_cs.starts_with("sha256:");
+                    let other_is_sha256 = other_cs.starts_with("sha256:");
+                    match (self_is_sha256, other_is_sha256) {
+                        (true, _) => Some(self_cs.clone()),
+                        (false, true) => Some(other_cs.clone()),
+                        (false, false) => Some(self_cs.clone()), // both blake3, use self
+                    }
                 }
+                (Some(cs), None) | (None, Some(cs)) => Some(cs.clone()),
+                (None, None) => None,
             }
-            (Some(cs), None) | (None, Some(cs)) => Some(cs.clone()),
-            (None, None) => None,
+        };
+
+        let size = if url_changed {
+            self.size
+        } else {
+            self.size.or(other.size)
+        };
+
+        let url_api = if url_changed {
+            self.url_api.clone()
+        } else {
+            self.url_api.clone().or_else(|| other.url_api.clone())
         };
 
         PlatformInfo {
             checksum,
-            size: self.size.or(other.size),
+            size,
             url: self.url.clone().or_else(|| other.url.clone()),
-            url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
+            url_api,
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
             provenance: match (self.provenance.clone(), other.provenance.clone()) {
                 (Some(a), Some(b)) => Some(a.merge(b)),
@@ -726,13 +748,35 @@ impl Lockfile {
             .iter_mut()
             .find(|t| t.version == version && &t.options == options)
         {
-            // Merge with existing platform info, preferring new values when present
+            // Merge with existing platform info, preferring new values when present.
+            // When the URL changes, drop existing checksum/size/url_api — those fields
+            // describe a specific artifact and are stale once the URL points elsewhere.
             let merged = if let Some(existing) = tool.platforms.get(platform_key) {
+                let url_changed = platform_info.url.is_some()
+                    && existing.url.is_some()
+                    && platform_info.url != existing.url;
+                let preserve_artifact_fields = !url_changed;
                 PlatformInfo {
-                    checksum: platform_info.checksum.or_else(|| existing.checksum.clone()),
-                    size: platform_info.size.or(existing.size),
+                    checksum: platform_info.checksum.or_else(|| {
+                        if preserve_artifact_fields {
+                            existing.checksum.clone()
+                        } else {
+                            None
+                        }
+                    }),
+                    size: platform_info.size.or(if preserve_artifact_fields {
+                        existing.size
+                    } else {
+                        None
+                    }),
                     url: platform_info.url.or_else(|| existing.url.clone()),
-                    url_api: platform_info.url_api.or_else(|| existing.url_api.clone()),
+                    url_api: platform_info.url_api.or_else(|| {
+                        if preserve_artifact_fields {
+                            existing.url_api.clone()
+                        } else {
+                            None
+                        }
+                    }),
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
@@ -2438,15 +2482,17 @@ backend = "conda:jq"
 
     #[test]
     fn test_platform_info_merge_prefers_sha256() {
-        // Test that merge_with prefers sha256 over blake3
+        // The sha256-vs-blake3 preference only matters when both checksums
+        // describe the same artifact, so use a shared URL here.
+        let url = Some("https://example.com/a".to_string());
         let sha256_info = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
-            url: Some("https://example.com/a".to_string()),
+            url: url.clone(),
             ..Default::default()
         };
         let blake3_info = PlatformInfo {
             checksum: Some("blake3:def456".to_string()),
-            url: Some("https://example.com/b".to_string()),
+            url: url.clone(),
             ..Default::default()
         };
 
@@ -2461,6 +2507,7 @@ backend = "conda:jq"
         // blake3 + blake3 -> self (first)
         let another_blake3 = PlatformInfo {
             checksum: Some("blake3:ghi789".to_string()),
+            url: url.clone(),
             ..Default::default()
         };
         let merged = blake3_info.merge_with(&another_blake3);
@@ -2473,7 +2520,43 @@ backend = "conda:jq"
             ..Default::default()
         };
         let merged = no_url.merge_with(&blake3_info);
-        assert_eq!(merged.url, Some("https://example.com/b".to_string()));
+        assert_eq!(merged.url, url);
+    }
+
+    #[test]
+    fn test_platform_info_merge_drops_stale_checksum_on_url_change() {
+        // When URLs disagree, the other side's checksum/size/url_api describe
+        // a different artifact and must not be carried over (e.g. node musl
+        // URL bumped but old glibc checksum still on disk).
+        let new_info = PlatformInfo {
+            checksum: None,
+            size: None,
+            url: Some("https://example.com/v2.tar.gz".to_string()),
+            url_api: None,
+            ..Default::default()
+        };
+        let stale_info = PlatformInfo {
+            checksum: Some("sha256:OLD".to_string()),
+            size: Some(123),
+            url: Some("https://example.com/v1.tar.gz".to_string()),
+            url_api: Some("https://api.example.com/v1".to_string()),
+            ..Default::default()
+        };
+
+        let merged = new_info.merge_with(&stale_info);
+        assert_eq!(merged.url.as_deref(), Some("https://example.com/v2.tar.gz"));
+        assert_eq!(merged.checksum, None);
+        assert_eq!(merged.size, None);
+        assert_eq!(merged.url_api, None);
+
+        // Same artifact (matching URLs) preserves the missing fields.
+        let same_url = PlatformInfo {
+            url: Some("https://example.com/v1.tar.gz".to_string()),
+            ..Default::default()
+        };
+        let merged = same_url.merge_with(&stale_info);
+        assert_eq!(merged.checksum.as_deref(), Some("sha256:OLD"));
+        assert_eq!(merged.size, Some(123));
     }
 
     #[test]
