@@ -8,22 +8,22 @@ on:
 jobs:
   close-stale-prs:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - name: Close stale PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          gh pr list -R jdx/mise --state open --json number,author,labels,updatedAt,statusCheckRollup --limit 100 | \
-          jq -r '.[] | select(
-            (.updatedAt | fromdateiso8601) < (now - 30*24*60*60) and
-            .author.login != "jdx" and
-            ([.labels[].name] | index("keep-open") | not)
-          ) | [.number, (if (.statusCheckRollup | length > 0) and ([.statusCheckRollup[].conclusion] | index("FAILURE") or index("failure")) then "failing" else "passing" end)] | @tsv' | \
+          CUTOFF=$(date -u -d '30 days ago' +%Y-%m-%d)
+          gh pr list -R "$REPO" --state open --search "updated:<$CUTOFF -author:jdx -label:keep-open sort:updated-asc" --json number,statusCheckRollup --limit 500 | \
+          jq -r '.[] | [.number, (if (.statusCheckRollup | length > 0) and ([.statusCheckRollup[].conclusion] | index("FAILURE") or index("failure")) then "failing" else "passing" end)] | @tsv' | \
           while read -r pr status; do
             echo "Closing PR #$pr (checks: $status)"
             if [ "$status" = "failing" ]; then
-              gh pr close "$pr" -R jdx/mise -c "This PR has been open for more than 30 days without activity. Note: CI checks were failing, which may be why it wasn't reviewed. Feel free to reopen or create a new PR if you'd like to continue working on this."
+              gh pr close "$pr" -R "$REPO" -c "This PR has been open for more than 30 days without activity. Note: CI checks were failing, which may be why it wasn't reviewed. Feel free to reopen or create a new PR if you'd like to continue working on this."
             else
-              gh pr close "$pr" -R jdx/mise -c "This PR has been open for more than 30 days without activity. Feel free to reopen or create a new PR if you'd like to continue working on this."
+              gh pr close "$pr" -R "$REPO" -c "This PR has been open for more than 30 days without activity. Feel free to reopen or create a new PR if you'd like to continue working on this."
             fi
           done
