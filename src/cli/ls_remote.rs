@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
+use crate::config::Settings;
 use crate::toolset::{ToolRequest, tool_request};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config::Config};
@@ -45,10 +46,20 @@ pub struct LsRemote {
     /// Output in JSON format (includes version metadata like created_at timestamps when available)
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
+
+    /// Include pre-release versions in the output for backends that report
+    /// an upstream prerelease flag (currently github + aqua). Equivalent to
+    /// setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
+    /// duration of this command.
+    #[clap(long, verbatim_doc_comment)]
+    pub prerelease: bool,
 }
 
 impl LsRemote {
     pub async fn run(self) -> Result<()> {
+        if self.prerelease {
+            Settings::override_with(|s| s.prereleases = Some(true));
+        }
         let config = Config::get().await?;
         if let Some(plugin) = self.get_plugin(&config).await? {
             self.run_single(&config, plugin).await
