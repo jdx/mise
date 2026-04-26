@@ -226,6 +226,9 @@ impl Backend for AquaBackend {
             return Ok(vec![]);
         }
 
+        // Always fetch the pre-release superset; the shared remote-versions
+        // cache stores it untouched and the trait's read path filters on
+        // `VersionInfo.prerelease` based on the current tool opts.
         let tags_with_timestamps = match get_tags_with_created_at(&pkg).await {
             Ok(tags) => tags,
             Err(e) => {
@@ -235,7 +238,7 @@ impl Backend for AquaBackend {
         };
 
         let mut versions = Vec::new();
-        for (tag, created_at) in tags_with_timestamps.into_iter().rev() {
+        for (tag, created_at, prerelease) in tags_with_timestamps.into_iter().rev() {
             let mut version = tag.as_str();
             match pkg.version_filter_ok(version) {
                 Ok(true) => {}
@@ -269,6 +272,7 @@ impl Backend for AquaBackend {
                     version: version.to_string(),
                     created_at,
                     release_url: Some(release_url),
+                    prerelease,
                     ..Default::default()
                 });
             }
@@ -539,7 +543,12 @@ impl Backend for AquaBackend {
         Self::lockfile_options(&request.options())
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
             "\\D*[0-9].*"
@@ -553,7 +562,7 @@ impl Backend for AquaBackend {
                 if query == v {
                     return true;
                 }
-                if VERSION_REGEX.is_match(v) {
+                if filter_prereleases && VERSION_REGEX.is_match(v) {
                     return false;
                 }
                 query_regex.is_match(v)
@@ -1208,9 +1217,15 @@ impl AquaBackend {
         Self {
             id: id.to_string(),
             ba: Arc::new(ba),
-            version_tags_cache: CacheManagerBuilder::new(cache_path.join("version_tags.msgpack.z"))
-                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                .build(),
+            // Bumped from `version_tags.msgpack.z`: this cache used to be filtered
+            // by the inline `prerelease` opt, so previously cached lists could be
+            // missing pre-release tags needed at install/lock time. The new cache
+            // always stores the superset.
+            version_tags_cache: CacheManagerBuilder::new(
+                cache_path.join("version_tags_v2.msgpack.z"),
+            )
+            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+            .build(),
         }
     }
 
@@ -1220,6 +1235,10 @@ impl AquaBackend {
                 let pkg = AQUA_REGISTRY.package(&self.id).await?;
                 let mut versions = Vec::new();
                 if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
+                    // Always fetch the superset; install/lock resolution needs
+                    // every tag (including pre-releases) regardless of the
+                    // current `prerelease` opt, since the user may have pinned
+                    // a pre-release version under a project-local override.
                     let tags = get_tags(&pkg).await?;
                     for tag in tags.into_iter().rev() {
                         let mut version = tag.as_str();
@@ -2295,27 +2314,36 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
     Ok(get_tags_with_created_at(pkg)
         .await?
         .into_iter()
-        .map(|(tag, _)| tag)
+        .map(|(tag, _, _)| tag)
         .collect())
 }
 
-/// Get tags with optional created_at timestamps.
-/// Returns (tag_name, Option<created_at>) pairs.
-async fn get_tags_with_created_at(pkg: &AquaPackage) -> Result<Vec<(String, Option<String>)>> {
+/// Get tags with optional created_at timestamps and a pre-release flag.
+/// Returns `(tag_name, Option<created_at>, prerelease)` triples.
+///
+/// Always fetches the pre-release superset so the shared remote-versions cache
+/// is independent of the `prerelease` tool option; callers filter on the
+/// returned `prerelease` bit at read time. Git tags (the `github_tag` version
+/// source) carry no pre-release flag, so those entries are reported as
+/// `prerelease = false` and rely on the shared regex-based fuzzy-match filter.
+async fn get_tags_with_created_at(
+    pkg: &AquaPackage,
+) -> Result<Vec<(String, Option<String>, bool)>> {
     if let Some("github_tag") = pkg.version_source.as_deref() {
-        // Tags don't have created_at timestamps
+        // Tags don't have created_at timestamps or a prerelease flag
         let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
-        return Ok(versions.into_iter().map(|v| (v, None)).collect());
+        return Ok(versions.into_iter().map(|v| (v, None, false)).collect());
     }
-    let releases = github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+    let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+    let releases = github::list_releases_including_prereleases(&repo).await?;
     if releases.is_empty() {
-        // Fall back to tags (no timestamps)
-        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
-        return Ok(versions.into_iter().map(|v| (v, None)).collect());
+        // Fall back to tags (no timestamps, no prerelease flag)
+        let versions = github::list_tags(&repo).await?;
+        return Ok(versions.into_iter().map(|v| (v, None, false)).collect());
     }
     Ok(releases
         .into_iter()
-        .map(|r| (r.tag_name, Some(r.created_at)))
+        .map(|r| (r.tag_name, Some(r.created_at), r.prerelease))
         .collect())
 }
 

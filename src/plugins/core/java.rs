@@ -369,7 +369,8 @@ impl Backend for JavaPlugin {
 
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
-        self.fuzzy_match_filter(versions, query)
+        // Java doesn't support the `prerelease` opt-in; always filter.
+        self.fuzzy_match_filter(versions, query, true)
     }
 
     async fn list_versions_matching(
@@ -378,7 +379,7 @@ impl Backend for JavaPlugin {
         query: &str,
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query))
+        Ok(self.fuzzy_match_filter(versions, query, true))
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
@@ -495,7 +496,12 @@ impl Backend for JavaPlugin {
         Ok(map)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
         let is_vendor_prefix = query != "latest" && query.ends_with('-');
         let query_escaped = regex::escape(query);
         let query = match query {
@@ -518,7 +524,7 @@ impl Backend for JavaPlugin {
                 if query == v {
                     return true;
                 }
-                if VERSION_REGEX.is_match(v) {
+                if filter_prereleases && VERSION_REGEX.is_match(v) {
                     return false;
                 }
                 query_regex.is_match(v)

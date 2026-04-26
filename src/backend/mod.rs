@@ -104,6 +104,12 @@ pub struct VersionInfo {
     /// Checksum of the release asset, used to detect changes in rolling releases
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub checksum: Option<String>,
+    /// Whether the upstream flagged this as a pre-release. Backends that have a
+    /// reliable signal (e.g. GitHub releases' `prerelease: true`) populate this
+    /// so the shared remote-versions cache can store the superset and apply the
+    /// `prerelease` tool option as a read-time filter.
+    #[serde(default)]
+    pub prerelease: bool,
 }
 
 impl VersionInfo {
@@ -378,6 +384,130 @@ mod tests {
             "3.14.2"
         );
     }
+
+    #[test]
+    fn test_fuzzy_match_versions_filters_prereleases_by_default() {
+        let versions = vec![
+            "1.0.0".to_string(),
+            "1.1.0-rc1".to_string(),
+            "1.1.0".to_string(),
+            "1.2.0-dev.5".to_string(),
+        ];
+        let got = fuzzy_match_versions(versions, "latest", true);
+        assert_eq!(got, vec!["1.0.0".to_string(), "1.1.0".to_string()]);
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_includes_prereleases_when_opted_in() {
+        let versions = vec![
+            "1.0.0".to_string(),
+            "1.1.0-rc1".to_string(),
+            "1.1.0".to_string(),
+            "1.2.0-dev.5".to_string(),
+            "0.1.2-dev.86".to_string(),
+        ];
+        let got = fuzzy_match_versions(versions.clone(), "latest", false);
+        assert_eq!(got, versions);
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_partial_query_respects_prerelease_flag() {
+        let versions = vec![
+            "1.2.0".to_string(),
+            "1.2.1-rc1".to_string(),
+            "1.2.1".to_string(),
+        ];
+        assert_eq!(
+            fuzzy_match_versions(versions.clone(), "1.2", true),
+            vec!["1.2.0".to_string(), "1.2.1".to_string()]
+        );
+        assert_eq!(
+            fuzzy_match_versions(versions.clone(), "1.2", false),
+            versions
+        );
+    }
+
+    #[test]
+    fn test_filter_cached_prereleases_drops_flagged_entries_by_default() {
+        // The cache stores the pre-release superset; `prerelease = false` (the
+        // default) must filter out entries flagged by the upstream so the user
+        // sees the same list whether or not pre-releases were ever fetched.
+        let cached = vec![
+            VersionInfo {
+                version: "1.0.0".into(),
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0-rc1".into(),
+                prerelease: true,
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0".into(),
+                ..Default::default()
+            },
+        ];
+
+        // Default opt: pre-releases dropped.
+        let stable = filter_cached_prereleases(cached.clone(), false);
+        let stable_versions: Vec<_> = stable.iter().map(|v| v.version.as_str()).collect();
+        assert_eq!(stable_versions, vec!["1.0.0", "1.1.0"]);
+
+        // Opted in: same cache, full list returned without refetch.
+        let all = filter_cached_prereleases(cached, true);
+        let all_versions: Vec<_> = all.iter().map(|v| v.version.as_str()).collect();
+        assert_eq!(all_versions, vec!["1.0.0", "1.1.0-rc1", "1.1.0"]);
+    }
+
+    #[test]
+    fn test_filter_cached_prereleases_leaves_unflagged_backends_alone() {
+        // Backends that don't populate `VersionInfo.prerelease` (e.g. node,
+        // ruby, aqua's `github_tag` source) keep the legacy regex-based filter
+        // in `fuzzy_match_versions` for pre-release-shaped strings. The
+        // cache-layer filter must not strip those entries on its own.
+        let cached = vec![
+            VersionInfo {
+                version: "1.0.0".into(),
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0-rc1".into(),
+                ..Default::default()
+            },
+        ];
+        let filtered = filter_cached_prereleases(cached.clone(), false);
+        let versions: Vec<_> = filtered.iter().map(|v| v.version.as_str()).collect();
+        assert_eq!(versions, vec!["1.0.0", "1.1.0-rc1"]);
+    }
+
+    #[test]
+    fn test_include_prereleases_accepts_bool_and_string_values() {
+        use crate::toolset::ToolVersionOptions;
+
+        let mut opts = ToolVersionOptions::default();
+        assert!(!include_prereleases(&opts));
+
+        // Inline backend args normalize scalars to strings — cover that shape.
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("true".into()));
+        assert!(include_prereleases(&opts));
+
+        opts.opts.insert(
+            "prerelease".to_string(),
+            toml::Value::String("false".into()),
+        );
+        assert!(!include_prereleases(&opts));
+
+        // Defense-in-depth: also accept a native TOML boolean, in case a future
+        // config path stores the value without string normalization.
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(true));
+        assert!(include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(false));
+        assert!(!include_prereleases(&opts));
+    }
 }
 
 #[async_trait]
@@ -535,8 +665,8 @@ pub trait Backend: Debug + Send + Sync {
             BackendType::Github
             | BackendType::Gitlab
             | BackendType::Forgejo
-            | BackendType::Aqua
             | BackendType::Ubi
+            | BackendType::Aqua
             | BackendType::Core
             | BackendType::Asdf
             | BackendType::Vfox
@@ -591,13 +721,23 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
 
+        // Read-time filter: cache stores the pre-release superset for backends
+        // that honor `prerelease`. When the current opts don't opt in, drop
+        // entries with `prerelease = true` before returning so flipping the
+        // tool option takes effect without invalidating the cache.
+        let opts = config
+            .get_tool_opts(&ba)
+            .await?
+            .unwrap_or_else(|| ba.opts());
+        let want_prereleases = include_prereleases(&opts);
+
         if Settings::get().offline() {
             trace!(
                 "Skipping remote version listing for {} due to offline mode",
                 ba.to_string()
             );
             match remote_versions.get_cached() {
-                Ok(versions) => return Ok(versions),
+                Ok(versions) => return Ok(filter_cached_prereleases(versions, want_prereleases)),
                 Err(err) => {
                     debug!(
                         "No cached remote versions available for {} while offline: {:#}",
@@ -651,7 +791,10 @@ pub trait Backend: Debug + Send + Sync {
                 Ok(versions)
             })
             .await?;
-        Ok(versions.clone())
+        Ok(filter_cached_prereleases(
+            versions.clone(),
+            want_prereleases,
+        ))
     }
 
     /// Backend implementation for fetching remote versions with metadata.
@@ -796,7 +939,10 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
-        self.fuzzy_match_filter(versions, query)
+        // No async config lookup available here; fall back to inline/registry
+        // opts, which is the best we have for a sync path.
+        let filter = !include_prereleases(&self.ba().opts());
+        self.fuzzy_match_filter(versions, query, filter)
     }
     async fn list_versions_matching(
         &self,
@@ -804,7 +950,12 @@ pub trait Backend: Debug + Send + Sync {
         query: &str,
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query))
+        let opts = config
+            .get_tool_opts(self.ba())
+            .await?
+            .unwrap_or_else(|| self.ba().opts());
+        let filter = !include_prereleases(&opts);
+        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     /// List versions matching a query, optionally filtered by release date.
@@ -831,7 +982,12 @@ pub trait Backend: Debug + Send + Sync {
             }
             None => self.list_remote_versions(config).await?,
         };
-        Ok(self.fuzzy_match_filter(versions, query))
+        let opts = config
+            .get_tool_opts(self.ba())
+            .await?
+            .unwrap_or_else(|| self.ba().opts());
+        let filter = !include_prereleases(&opts);
+        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     async fn latest_version_for_query(
@@ -1536,58 +1692,17 @@ pub trait Backend: Debug + Send + Sync {
         Ok(env)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
-        let escaped_query = regex::escape(query);
-        let query_pattern = if query == "latest" {
-            "v?[0-9].*"
-        } else {
-            &escaped_query
-        };
-        // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
-        // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
-        // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
-        // the prefix (e.g. "temurin-25.0.1").
-        let query_regex = if query != "latest" && query.ends_with('-') {
-            Regex::new(&format!("^{query_pattern}.*$")).unwrap()
-        } else {
-            Regex::new(&format!("^{query_pattern}([+\\-.].+)?$")).unwrap()
-        };
-
-        // Also create a regex without the 'v' prefix if query starts with 'v'
-        // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
-        let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
-            let without_v = regex::escape(&query[1..]);
-            let re = if query.ends_with('-') {
-                Regex::new(&format!("^{without_v}.*$")).unwrap()
-            } else {
-                Regex::new(&format!("^{without_v}([+\\-.].+)?$")).unwrap()
-            };
-            Some(re)
-        } else {
-            None
-        };
-
-        versions
-            .into_iter()
-            .filter(|v| {
-                if query == v {
-                    return true;
-                }
-                if VERSION_REGEX.is_match(v) {
-                    return false;
-                }
-                if query_regex.is_match(v) {
-                    return true;
-                }
-                // Try matching without the 'v' prefix
-                if let Some(ref re) = query_without_v_regex
-                    && re.is_match(v)
-                {
-                    return true;
-                }
-                false
-            })
-            .collect()
+    /// Default fuzzy-match. `filter_prereleases = true` applies the historical
+    /// behavior of dropping versions that look like pre-releases
+    /// (`1.0.0-rc1`, `1.0.0-dev.5`, ...). Callers that have opted into
+    /// pre-releases pass `false` to keep those tags in the match set.
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
+        fuzzy_match_versions(versions, query, filter_prereleases)
     }
 
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
@@ -1601,8 +1716,12 @@ pub trait Backend: Debug + Send + Sync {
             .unwrap()
             .entry(self.ba().full())
             .or_insert_with(|| {
+                // Bumped from `remote_versions.msgpack.z` to invalidate caches written
+                // before `VersionInfo.prerelease` existed: github/aqua now store the
+                // pre-release superset, and stale stable-only caches would otherwise
+                // mask pre-releases for `prerelease = true` users until TTL expiry.
                 let mut cm = CacheManagerBuilder::new(
-                    self.ba().cache_path.join("remote_versions.msgpack.z"),
+                    self.ba().cache_path.join("remote_versions_v2.msgpack.z"),
                 )
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
@@ -2170,6 +2289,97 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
     }
+}
+
+/// Apply the read-time `prerelease` filter to the cached remote-versions
+/// superset. Backends that honor `prerelease` (github, aqua) cache the full
+/// list and stamp `VersionInfo.prerelease` per entry; this helper drops
+/// pre-release entries when the current tool opts don't opt in. Backends that
+/// don't populate the flag are unaffected because their entries default to
+/// `prerelease = false`.
+pub(crate) fn filter_cached_prereleases(
+    versions: Vec<VersionInfo>,
+    want_prereleases: bool,
+) -> Vec<VersionInfo> {
+    if want_prereleases {
+        versions
+    } else {
+        versions.into_iter().filter(|v| !v.prerelease).collect()
+    }
+}
+
+/// Whether the `prerelease = true` tool option is set. Accepts both TOML
+/// booleans (`prerelease = true`) and the string form (`prerelease = "true"`),
+/// since inline backend args normalize scalars to strings before they reach
+/// here. Used by `github:` and `aqua:` backends to opt in to pre-release
+/// versions in `ls-remote`, `latest` resolution, and fuzzy matching.
+pub(crate) fn include_prereleases(opts: &crate::toolset::ToolVersionOptions) -> bool {
+    opts.opts.get("prerelease").is_some_and(|v| match v {
+        toml::Value::Boolean(b) => *b,
+        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
+        _ => false,
+    })
+}
+
+/// Fuzzy-match `versions` against `query`. When `filter_prereleases` is true,
+/// drop strings matching [`VERSION_REGEX`] (e.g. `1.0.0-rc1`, `1.0.0-dev`) —
+/// the historical behavior. Backends opting into pre-releases call this with
+/// `false` to keep those tags in the match set.
+pub(crate) fn fuzzy_match_versions(
+    versions: Vec<String>,
+    query: &str,
+    filter_prereleases: bool,
+) -> Vec<String> {
+    let escaped_query = regex::escape(query);
+    let query_pattern = if query == "latest" {
+        "v?[0-9].*"
+    } else {
+        &escaped_query
+    };
+    // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
+    // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
+    // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
+    // the prefix (e.g. "temurin-25.0.1").
+    let query_regex = if query != "latest" && query.ends_with('-') {
+        Regex::new(&format!("^{query_pattern}.*$")).unwrap()
+    } else {
+        Regex::new(&format!("^{query_pattern}([+\\-.].+)?$")).unwrap()
+    };
+
+    // Also create a regex without the 'v' prefix if query starts with 'v'
+    // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
+    let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
+        let without_v = regex::escape(&query[1..]);
+        let re = if query.ends_with('-') {
+            Regex::new(&format!("^{without_v}.*$")).unwrap()
+        } else {
+            Regex::new(&format!("^{without_v}([+\\-.].+)?$")).unwrap()
+        };
+        Some(re)
+    } else {
+        None
+    };
+
+    versions
+        .into_iter()
+        .filter(|v| {
+            if query == v {
+                return true;
+            }
+            if filter_prereleases && VERSION_REGEX.is_match(v) {
+                return false;
+            }
+            if query_regex.is_match(v) {
+                return true;
+            }
+            if let Some(ref re) = query_without_v_regex
+                && re.is_match(v)
+            {
+                return true;
+            }
+            false
+        })
+        .collect()
 }
 
 pub fn unalias_backend(backend: &str) -> &str {

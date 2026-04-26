@@ -15,7 +15,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
-use crate::{backend::Backend, forgejo, github, gitlab};
+use crate::{backend::Backend, backend::include_prereleases, forgejo, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
@@ -214,7 +214,12 @@ impl Backend for UnifiedGitBackend {
                 })
                 .collect()
         } else {
-            github::list_releases_from_url(api_url.as_str(), &repo)
+            // Always fetch the pre-release superset and stamp `prerelease` on
+            // each entry. The shared remote-versions cache stores the superset
+            // so flipping the `prerelease` tool option (e.g. via a project
+            // override) is correct without invalidating the cache; the read
+            // path filters on `prerelease` according to the current opts.
+            github::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
@@ -222,6 +227,7 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
                     created_at: Some(r.created_at),
                     release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                    prerelease: r.prerelease,
                     ..Default::default()
                 })
                 .collect()
@@ -256,6 +262,15 @@ impl Backend for UnifiedGitBackend {
             .unwrap_or_else(|| self.ba.opts());
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
+
+        // When `prerelease = true`, skip the `/releases/latest` shortcut
+        // (which returns whichever release the repo owner marked as "Latest",
+        // defaulting to the newest non-prerelease). Returning `None` lets the
+        // trait's `latest_version` fall through to `latest_version_for_query`,
+        // which resolves against the full list — now including pre-releases.
+        if include_prereleases(&opts) {
+            return Ok(None);
+        }
 
         let latest_tag = if self.is_gitlab() {
             // GitLab doesn't have a "latest" endpoint
