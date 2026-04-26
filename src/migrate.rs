@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::dirs::*;
 use crate::file;
 use crate::runtime_symlinks;
+use crate::toolset::install_state;
 use eyre::Result;
 
 pub async fn run() {
@@ -63,7 +64,7 @@ fn remove_deprecated_plugin(name: &str, plugin_name: &str) -> Result<()> {
 }
 
 async fn migrate_runtime_symlink_dirs() {
-    const MARKER: &str = "runtime-symlink-dirs-v1";
+    const MARKER: &str = "runtime-symlink-dirs-v2";
     let marker = DATA.join("migrations").join(MARKER);
     if marker.exists() {
         return;
@@ -79,6 +80,11 @@ async fn migrate_runtime_symlink_dirs_impl(marker: &Path) -> Result<()> {
     // and `24.0` that should be runtime symlinks. Remove after 2026.10.0.
     let config = Config::get().await?;
     runtime_symlinks::migrate_real_dirs(&config).await?;
+    // `backend::load_tools()` initializes install_state before migrations run in
+    // normal CLI startup. Refresh only install_state after rewriting stale dirs
+    // so config alias removals in the already-loaded backend map are preserved.
+    install_state::reset();
+    install_state::init().await?;
     file::create_dir_all(marker.parent().unwrap())?;
     file::write(marker, "ok\n")?;
     Ok(())

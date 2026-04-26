@@ -23,7 +23,7 @@ pub fn elapsed_seconds_ceil(from: Timestamp, to: Timestamp) -> u64 {
 
 /// Returns a stable "now" timestamp for the lifetime of the process.
 ///
-/// This is used for resolving relative durations (e.g. `install_before = "3d"`)
+/// This is used for resolving relative durations (e.g. `minimum_release_age = "3d"`)
 /// consistently: every resolution of the same relative duration within a single
 /// mise invocation produces the same absolute timestamp, and downstream code
 /// that converts the absolute timestamp back to a duration (e.g. for npm's

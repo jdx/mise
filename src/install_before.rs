@@ -4,12 +4,12 @@ use jiff::Timestamp;
 use crate::config::Settings;
 use crate::duration::parse_into_timestamp;
 
-/// Resolve the effective `install_before` cutoff.
+/// Resolve the effective `minimum_release_age` cutoff.
 ///
 /// Precedence (highest to lowest):
 /// 1. `before_date` - a pre-resolved `ResolveOptions` cutoff.
-/// 2. A per-tool, backend, or config `install_before` option.
-/// 3. The global `install_before` setting.
+/// 2. A per-tool, backend, or config `minimum_release_age` option.
+/// 3. The global `minimum_release_age` setting.
 ///
 /// All string-based durations (e.g. `"3d"`) are resolved against
 /// [`crate::duration::process_now`] so that every call within a single mise
@@ -19,15 +19,15 @@ use crate::duration::parse_into_timestamp;
 /// `--min-release-age`) without the two drifting apart.
 pub fn resolve_before_date(
     before_date: Option<Timestamp>,
-    install_before: Option<&str>,
+    minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
     if let Some(before_date) = before_date {
         return Ok(Some(before_date));
     }
-    if let Some(before) = install_before {
+    if let Some(before) = minimum_release_age {
         return Ok(Some(parse_into_timestamp(before)?));
     }
-    if let Some(before) = &Settings::get().install_before {
+    if let Some(before) = &Settings::get().minimum_release_age {
         return Ok(Some(parse_into_timestamp(before)?));
     }
     Ok(None)
@@ -43,9 +43,9 @@ mod tests {
 
     fn resolved_timestamp(
         before_date: Option<Timestamp>,
-        install_before: Option<&str>,
+        minimum_release_age: Option<&str>,
     ) -> Option<Timestamp> {
-        resolve_before_date(before_date, install_before).unwrap()
+        resolve_before_date(before_date, minimum_release_age).unwrap()
     }
 
     #[test]
@@ -72,7 +72,7 @@ mod tests {
     #[test]
     fn test_effective_before_date_falls_back_to_global_setting() {
         let mut partial = SettingsPartial::empty();
-        partial.install_before = Some("2024-01-03".to_string());
+        partial.minimum_release_age = Some("2024-01-03".to_string());
         Settings::reset(Some(partial));
         assert_eq!(
             resolved_timestamp(None, None),
@@ -94,7 +94,7 @@ mod tests {
         // identically across calls within one invocation.
         Settings::reset(None);
         let mut partial = SettingsPartial::empty();
-        partial.install_before = Some("3d".to_string());
+        partial.minimum_release_age = Some("3d".to_string());
         Settings::reset(Some(partial));
         let a = resolved_timestamp(None, None);
         let b = resolved_timestamp(None, None);

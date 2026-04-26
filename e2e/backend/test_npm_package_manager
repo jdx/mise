@@ -2,7 +2,7 @@
 
 # Test that npm backend properly uses npm.package_manager settings
 
-export MISE_INSTALL_BEFORE=1d
+export MISE_MINIMUM_RELEASE_AGE=1d
 
 # Ensure npm is available by installing node if needed
 if ! command -v npm >/dev/null 2>&1; then

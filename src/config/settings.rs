@@ -364,6 +364,12 @@ impl Settings {
 
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
+        if let Some(v) = self.install_before.take() {
+            warn_deprecated("install_before");
+            if self.minimum_release_age.is_none() {
+                self.minimum_release_age = Some(v);
+            }
+        }
         // Migrate task_* settings to task.* (must run before auto_install override below)
         if let Some(v) = self.task_disable_paths.take()
             && !v.is_empty()
@@ -509,8 +515,18 @@ impl Settings {
     }
 
     pub fn hidden_configs() -> &'static HashSet<&'static str> {
-        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
-            Lazy::new(|| ["ci", "cd", "debug", "env_file", "trace", "log_level"].into());
+        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+            [
+                "ci",
+                "cd",
+                "debug",
+                "env_file",
+                "install_before",
+                "trace",
+                "log_level",
+            ]
+            .into()
+        });
         &HIDDEN_CONFIGS
     }
 
@@ -1026,6 +1042,16 @@ mod tests {
         assert!(settings.prefer_offline());
         // prefer_offline does NOT imply offline
         assert!(!settings.offline);
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_install_before_hidden_alias_sets_minimum_release_age() {
+        let mut partial = SettingsPartial::empty();
+        partial.install_before = Some("7d".to_string());
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert_eq!(settings.minimum_release_age.as_deref(), Some("7d"));
         Settings::reset(None);
     }
 

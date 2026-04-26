@@ -1012,7 +1012,8 @@
         },
         "install_before": {
           "description": "Minimum release age / supply chain protection — only install versions released before this date",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "java": {
           "type": "object",
@@ -1076,6 +1077,10 @@
           "description": "Show more/less output.",
           "type": "string",
           "enum": ["trace", "debug", "info", "warn", "error"]
+        },
+        "minimum_release_age": {
+          "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
+          "type": "string"
         },
         "netrc": {
           "default": true,

@@ -175,7 +175,7 @@ To limit supply chain risk, you can restrict mise to only install versions relea
 ```toml
 # mise.toml
 [settings]
-install_before = "7d"  # only install versions released more than 7 days ago
+minimum_release_age = "7d"  # only install versions released more than 7 days ago
 ```
 
 Supports relative durations (`7d`, `6m`, `1y`) and absolute dates (`2024-06-01`). For most backends, this only affects fuzzy version resolution (e.g., `node@20` or `latest`) — explicitly pinned versions like `node@22.5.0` bypass the filter.
@@ -185,21 +185,21 @@ during install. Refer to the
 [npm backend docs](/dev-tools/backends/npm.html) and [pipx backend docs](/dev-tools/backends/pipx.html)
 for package-manager support details.
 
-You can also set `install_before` per-tool to override the global setting:
+You can also set `minimum_release_age` per-tool to override the global setting:
 
 ```toml
 # mise.toml
 [settings]
-install_before = "7d"  # default for all tools
+minimum_release_age = "7d"  # default for all tools
 
 [tools.trivy]
 version = "latest"
-install_before = "1d"  # trivy updates are time-sensitive, use a shorter window
+minimum_release_age = "1d"  # trivy updates are time-sensitive, use a shorter window
 ```
 
-Precedence: `--before` CLI flag > per-tool `install_before` > global `install_before` setting.
+Precedence: `--before` CLI flag > per-tool `minimum_release_age` > global `minimum_release_age` setting.
 
-See [`install_before`](/configuration/settings.html#install_before) for more details.
+See [`minimum_release_age`](/configuration/settings.html#minimum_release_age) for more details.
 
 ## [`mise up --bump`](/cli/upgrade.html)
 

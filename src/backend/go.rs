@@ -14,6 +14,7 @@ use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion};
 use async_trait::async_trait;
 use dashmap::DashMap;
+use eyre::WrapErr;
 use serde_json::Deserializer;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
@@ -67,10 +68,12 @@ impl Backend for GoBackend {
                 }
 
                 // Fall back to `go list -m -versions` for GOPROXY=direct
-                if let Some(versions) = self.fetch_go_module_versions(config, &tool_name).await?
-                    && !versions.is_empty()
-                {
-                    return Ok(versions);
+                match self.fetch_go_module_versions(config, &tool_name).await {
+                    Ok(Some(versions)) if !versions.is_empty() => return Ok(versions),
+                    Ok(_) => {}
+                    Err(err) => {
+                        warn!("failed to list Go module versions for {tool_name}: {err:#}");
+                    }
                 }
 
                 Ok(vec![])
@@ -283,6 +286,10 @@ impl GoBackend {
                     Err(_) => return Ok(None),
                 };
 
+                if mod_info.versions.is_empty() {
+                    return self.fetch_go_module_latest_info(config, mod_path).await;
+                }
+
                 let versions = self
                     .fetch_go_module_version_infos(config, mod_path, &mod_info.versions)
                     .await;
@@ -291,6 +298,29 @@ impl GoBackend {
             })
             .await
             .cloned()
+    }
+
+    async fn fetch_go_module_latest_info(
+        &self,
+        config: &Arc<Config>,
+        mod_path: &str,
+    ) -> eyre::Result<Option<Vec<VersionInfo>>> {
+        let env = self.dependency_env(config).await?;
+        let raw = cmd!(
+            "go",
+            "list",
+            "-mod=readonly",
+            "-m",
+            "-json",
+            format!("{mod_path}@latest")
+        )
+        .full_env(env)
+        .read()
+        .wrap_err_with(|| format!("failed to resolve latest Go module version for {mod_path}"))?;
+        let info = serde_json::from_str::<GoModuleVersionMetadata>(&raw).wrap_err_with(|| {
+            format!("failed to parse latest Go module metadata for {mod_path}")
+        })?;
+        Ok(Some(vec![version_info_from_metadata(info)]))
     }
 
     async fn fetch_go_module_version_infos(

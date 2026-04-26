@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+mkdir -p "$MISE_DATA_DIR/installs/github-jdx-mise-test-fixtures/1.0.0/bin"
+mkdir -p "$MISE_DATA_DIR/installs/github-jdx-mise-test-fixtures/latest/bin"
+mkdir -p "$MISE_DATA_DIR/installs/node/latest/bin"
+cat <<'EOF' >"$MISE_DATA_DIR/installs/.mise-installs.toml"
+[github-jdx-mise-test-fixtures]
+short = "github:jdx/mise-test-fixtures"
+full = "github:jdx/mise-test-fixtures"
+explicit_backend = true
+EOF
+
+output=$(mise ls github:jdx/mise-test-fixtures)
+latest_link="$MISE_DATA_DIR/installs/github-jdx-mise-test-fixtures/latest"
+link_target=$(readlink "$latest_link")
+assert "test '$link_target' = ./1.0.0"
+assert "test -d '$MISE_DATA_DIR/installs/node/latest'"
+assert "test ! -L '$MISE_DATA_DIR/installs/node/latest'"
+if [[ $output == *latest* ]]; then
+	fail "mise ls included stale latest entry: $output"
+fi
+if [[ $output != *1.0.0* ]]; then
+	fail "mise ls did not include concrete version: $output"
+fi
