@@ -363,10 +363,11 @@ impl ToolVersion {
                     return build(v);
                 }
             }
-            // When offline with nothing installed, leave "latest" unresolved
-            // rather than erroring — callers like prune treat the unresolved
-            // string as a no-op (it won't match any installed pathname).
-            if is_offline {
+            // Prune-style offline (opts.offline) wants a non-erroring no-op
+            // when nothing is installed — the literal "latest" can't match
+            // any installed pathname so it's safe. Global MISE_OFFLINE keeps
+            // the original error to avoid surprising upgrade/outdated callers.
+            if opts.offline {
                 return build(v);
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
@@ -456,7 +457,7 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
-        if v == "latest" && (Settings::get().offline() || opts.offline) {
+        if v == "latest" && opts.offline {
             let version = request.version();
             return Ok(Self::new(request, version));
         }
@@ -483,7 +484,7 @@ impl ToolVersion {
         {
             return Ok(Self::new(request, v.to_string()));
         }
-        if Settings::get().offline() || opts.offline {
+        if opts.offline {
             return Ok(Self::new(request, prefix.to_string()));
         }
         let matches = backend
