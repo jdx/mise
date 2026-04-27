@@ -130,7 +130,26 @@ impl TaskExecutor {
     }
 
     /// Build a SandboxConfig for a task by merging task-level config with CLI overrides.
-    fn build_sandbox_for_task(&self, task: &Task) -> SandboxConfig {
+    ///
+    /// Task-level relative `allow_read`/`allow_write` paths are resolved against the task's
+    /// effective working directory (`task.dir(config)`, falling back to `config_root`) so that
+    /// `allow_read = ["."]` means "the directory the task runs in", matching how `dir` itself
+    /// resolves. CLI-supplied paths are left as-is and resolved against cwd by `resolve_paths()`.
+    async fn build_sandbox_for_task(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+    ) -> Result<SandboxConfig> {
+        let task_base = task.dir(config).await?.or_else(|| task.config_root.clone());
+        let resolve_task_path = |p: &PathBuf| -> PathBuf {
+            if p.is_absolute() {
+                p.clone()
+            } else if let Some(base) = &task_base {
+                base.join(p)
+            } else {
+                p.clone()
+            }
+        };
         let mut config = SandboxConfig {
             deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
@@ -139,14 +158,14 @@ impl TaskExecutor {
             allow_read: task
                 .allow_read
                 .iter()
-                .chain(self.sandbox.allow_read.iter())
-                .cloned()
+                .map(&resolve_task_path)
+                .chain(self.sandbox.allow_read.iter().cloned())
                 .collect(),
             allow_write: task
                 .allow_write
                 .iter()
-                .chain(self.sandbox.allow_write.iter())
-                .cloned()
+                .map(&resolve_task_path)
+                .chain(self.sandbox.allow_write.iter().cloned())
                 .collect(),
             allow_net: task
                 .allow_net
@@ -162,7 +181,7 @@ impl TaskExecutor {
                 .collect(),
         };
         config.resolve_paths();
-        config
+        Ok(config)
     }
 
     pub fn task_timings(&self) -> bool {
@@ -854,7 +873,7 @@ impl TaskExecutor {
         let program = program.to_executable();
         let redactions = config.redactions();
         let raw = self.raw(Some(task));
-        let sandbox = self.build_sandbox_for_task(task);
+        let sandbox = self.build_sandbox_for_task(task, &config).await?;
         let env = if sandbox.is_active() {
             Settings::get().ensure_experimental("sandbox")?;
             &sandbox.filter_env(env)

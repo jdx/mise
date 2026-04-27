@@ -63,6 +63,8 @@ allow_write = ["./node_modules"]
 allow_net = ["registry.npmjs.org"]
 ```
 
+Relative paths in task-level `allow_read` and `allow_write` are resolved against the task's `dir` (or the directory containing `mise.toml` if `dir` is unset), matching how `dir` itself is resolved. CLI flags continue to be resolved against the shell's working directory.
+
 CLI flags on `mise run` override task-level config:
 
 ```bash
