@@ -362,8 +362,23 @@ export default withMermaid(
       [
         "script",
         {
+          async: "",
+          src: "https://www.googletagmanager.com/gtag/js?id=G-B69G389C8T",
+        },
+      ],
+      [
+        "script",
+        {},
+        `window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-B69G389C8T');`,
+      ],
+      [
+        "script",
+        {
           defer: "",
-          "data-domain": "mise.jdx.dev",
+          "data-domain": "mise.en.dev",
           "data-api": "https://shrill-1.en.dev/f5f1/event",
           src: "https://shrill-1.en.dev/shrill/script.js",
         },
