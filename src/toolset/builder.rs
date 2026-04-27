@@ -4,11 +4,12 @@ use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::{Config, ConfigMap};
+use crate::config::config_file::mise_toml::Tasks;
+use crate::config::{Config, ConfigMap, Settings, expand_task_include};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset};
-use crate::{config, env};
+use crate::{config, env, file};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigScope {
@@ -65,6 +66,9 @@ impl ToolsetBuilder {
         let mut toolset = Toolset {
             ..Default::default()
         };
+        measure!("toolset_builder::build::load_task_tools", {
+            self.load_task_tools(config, &mut toolset)?;
+        });
         measure!("toolset_builder::build::load_config_files", {
             self.load_config_files(config, &mut toolset)?;
         });
@@ -88,6 +92,72 @@ impl ToolsetBuilder {
 
         time!("toolset::builder::build");
         Ok(toolset)
+    }
+
+    /// Load tools declared in task `tools` fields as the lowest-priority layer.
+    /// Only runs when `settings.task.surface_tools = true`.
+    /// Reads task TOML files directly to avoid a circular dependency:
+    /// task.render() → tera_ctx() → config.get_toolset() → get_tool_request_set().
+    fn load_task_tools(&self, config: &Arc<Config>, ts: &mut Toolset) -> eyre::Result<()> {
+        if !Settings::get().task.surface_tools {
+            return Ok(());
+        }
+        if self.scope == ConfigScope::GlobalOnly {
+            return Ok(());
+        }
+        let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
+        for cf in config_files.values() {
+            let Some(includes) = cf.task_config().includes.as_ref() else {
+                continue;
+            };
+            let is_global = config::is_global_config(cf.get_path());
+            if self.scope == ConfigScope::LocalOnly && is_global {
+                continue;
+            }
+            let config_root = cf.config_root();
+            for include in includes {
+                if include.starts_with("git::") {
+                    continue;
+                }
+                let paths = expand_task_include(&config_root, include);
+                for path in paths {
+                    if !path.is_file()
+                        || path.extension().map(|e| e != "toml").unwrap_or(true)
+                    {
+                        continue;
+                    }
+                    let raw = match file::read_to_string(&path) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            warn!("surface_tools: failed to read {}: {e}", path.display());
+                            continue;
+                        }
+                    };
+                    let tasks = match toml::from_str::<Tasks>(&raw) {
+                        Ok(t) => t.0,
+                        Err(e) => {
+                            warn!("surface_tools: failed to parse {}: {e}", path.display());
+                            continue;
+                        }
+                    };
+                    let source = ToolSource::MiseToml(path.clone());
+                    let mut file_ts = Toolset::new(source.clone());
+                    for (_name, task) in tasks {
+                        for (tool, version) in &task.tools {
+                            let ba: Arc<BackendArg> = Arc::new(tool.as_str().into());
+                            match ToolRequest::new(ba.clone(), version, source.clone()) {
+                                Ok(tr) => file_ts.add_version(tr),
+                                Err(e) => {
+                                    warn!("surface_tools: invalid tool {tool}@{version}: {e}")
+                                }
+                            }
+                        }
+                    }
+                    ts.merge(file_ts);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn load_config_files(&self, config: &Arc<Config>, ts: &mut Toolset) -> eyre::Result<()> {
