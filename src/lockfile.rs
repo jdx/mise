@@ -977,6 +977,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                     .or_default();
                 versions.retain(|tv| {
                     tv.ba() != new_version.ba()
+                        || tv.request.version() != new_version.request.version()
                         || tv.request.source() != new_version.request.source()
                 });
                 versions.push(new_version.clone());
@@ -1215,9 +1216,6 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
             continue;
         }
         if let Some(source_path) = tv.request.source().path() {
-            if crate::config::is_global_config(source_path) {
-                continue;
-            }
             let (lockfile_path, _) = lockfile_path_for_config(source_path);
             versions_by_lockfile
                 .entry(lockfile_path)
