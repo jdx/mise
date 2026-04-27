@@ -12,7 +12,6 @@ use eyre::{Result, bail, eyre};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use globset::GlobBuilder;
-use heck::ToSnakeCase;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
@@ -2069,7 +2068,7 @@ pub async fn parse_usage_values_from_task(
     let (spec, _) = task
         .parse_usage_spec_with_vars(config, None, &env, None)
         .await?;
-    if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() {
+    if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() && spec.cmd.subcommands.is_empty() {
         return Ok(IndexMap::new());
     }
     // Build args list with empty first element (usage parser expects argv[0] to be the command)
@@ -2083,26 +2082,13 @@ pub async fn parse_usage_values_from_task(
             return Ok(IndexMap::new());
         }
     };
-    let mut values = IndexMap::new();
-    let to_tera_value = |val: &usage::parse::ParseValue| -> tera::Value {
-        use tera::Value;
-        use usage::parse::ParseValue::*;
-        match val {
-            MultiBool(v) => Value::Number(serde_json::Number::from(v.len())),
-            MultiString(v) => Value::Array(v.iter().map(|s| Value::String(s.clone())).collect()),
-            Bool(v) => Value::Bool(*v),
-            String(v) => Value::String(v.clone()),
-        }
-    };
-    for (arg, val) in &po.args {
-        values.insert(arg.name.to_snake_case(), to_tera_value(val));
-    }
-    for (flag, val) in &po.flags {
-        values.insert(flag.name.to_snake_case(), to_tera_value(val));
-    }
-    if !spec.cmd.subcommands.is_empty() {
-        let cmd = po.cmds.iter().skip(1).map(|c| c.name.clone()).join(" ");
-        values.insert("cmd".to_string(), tera::Value::String(cmd));
+    let mut values: IndexMap<String, tera::Value> =
+        TaskScriptParser::make_usage_ctx(&po).into_iter().collect();
+    // `make_usage_ctx` only inserts `cmd` when a subcommand was actually selected.
+    // Templates referencing `{{ usage.cmd }}` should still resolve (to "") when
+    // subcommands are defined in the spec but none was selected.
+    if !spec.cmd.subcommands.is_empty() && !values.contains_key("cmd") {
+        values.insert("cmd".to_string(), tera::Value::String(String::new()));
     }
     Ok(values)
 }

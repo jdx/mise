@@ -788,7 +788,9 @@ impl TaskScriptParser {
         Ok(out)
     }
 
-    fn make_usage_ctx(usage: &usage::parse::ParseOutput) -> HashMap<String, tera::Value> {
+    pub(crate) fn make_usage_ctx(
+        usage: &usage::parse::ParseOutput,
+    ) -> HashMap<String, tera::Value> {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
         // These values are not escaped or shell-quoted.
