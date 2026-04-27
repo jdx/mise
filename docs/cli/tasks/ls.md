@@ -43,6 +43,10 @@ Show hidden tasks
 
 Do not print table header
 
+### `--name-only`
+
+Only show task names, one per line. Useful for piping to fzf and similar tools.
+
 ### `--sort <COLUMN>`
 
 Sort by column. Default is name.

@@ -1070,6 +1070,7 @@ cmd tasks help="Manage tasks" {
     flag --complete help="Display tasks for usage completion" hide=#true
     flag --hidden help="Show hidden tasks" global=#true
     flag --no-header help="Do not print table header" global=#true
+    flag --name-only help="Only show task names, one per line. Useful for piping to fzf and similar tools."
     flag --sort help="Sort by column. Default is name." global=#true {
         arg <COLUMN> {
             choices name alias description source
@@ -1151,6 +1152,7 @@ cmd tasks help="Manage tasks" {
         flag --complete help="Display tasks for usage completion" hide=#true
         flag --hidden help="Show hidden tasks" global=#true
         flag --no-header help="Do not print table header" global=#true
+        flag --name-only help="Only show task names, one per line. Useful for piping to fzf and similar tools."
         flag --sort help="Sort by column. Default is name." global=#true {
             arg <COLUMN> {
                 choices name alias description source

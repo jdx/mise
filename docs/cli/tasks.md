@@ -64,6 +64,12 @@ Sort order. Default is asc.
 - `asc`
 - `desc`
 
+## Flags
+
+### `--name-only`
+
+Only show task names, one per line. Useful for piping to fzf and similar tools.
+
 ## Subcommands
 
 - [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)

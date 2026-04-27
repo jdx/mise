@@ -67,6 +67,14 @@ pub struct TasksLs {
     #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
     pub no_header: bool,
 
+    /// Only show task names, one per line. Useful for piping to fzf and similar tools.
+    #[clap(
+        long,
+        verbatim_doc_comment,
+        conflicts_with_all = ["json", "extended", "complete", "usage"]
+    )]
+    pub name_only: bool,
+
     /// Sort by column. Default is name.
     #[clap(long, global = true, value_name = "COLUMN", verbatim_doc_comment)]
     pub sort: Option<SortColumn>,
@@ -144,8 +152,17 @@ impl TasksLs {
             self.display_usage(&config, tasks).await?;
         } else if self.json {
             self.display_json(&config, tasks).await?;
+        } else if self.name_only {
+            self.display_name_only(tasks)?;
         } else {
             self.display(tasks)?;
+        }
+        Ok(())
+    }
+
+    fn display_name_only(&self, tasks: Vec<Task>) -> Result<()> {
+        for t in tasks {
+            calm_io::stdoutln!("{}", t.display_name)?;
         }
         Ok(())
     }

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.build]
+description = "build the project"
+run = 'echo build'
+[tasks.lint]
+description = "lint the code"
+run = 'echo lint'
+[tasks.test]
+description = "run the tests"
+run = 'echo test'
+EOF
+
+mkdir -p .mise/tasks
+cat <<'EOF' >.mise/tasks/deploy
+#!/usr/bin/env bash
+# mise description="deploy the app"
+echo deploy
+EOF
+chmod +x .mise/tasks/deploy
+
+assert "mise tasks ls --name-only" "build
+deploy
+lint
+test"
+
+# --no-header is harmless and the output is identical
+assert "mise tasks ls --name-only --no-header" "build
+deploy
+lint
+test"
+
+# Composes with --sort/--sort-order
+assert "mise tasks ls --name-only --sort name --sort-order desc" "test
+lint
+deploy
+build"
+
+# Local/global filtering still applies
+echo "tasks.myglobal = { run = 'echo myglobal' }" >~/.config/mise/config.toml
+assert "mise tasks ls --name-only --global" "myglobal"
+assert "mise tasks ls --name-only --local" "build
+deploy
+lint
+test"
+
+# Conflicts with other output formats
+assert_fail "mise tasks ls --name-only --json"
+assert_fail "mise tasks ls --name-only -x"
