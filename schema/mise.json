@@ -1587,6 +1587,11 @@
               "description": "Automatically install missing tools when executing tasks.",
               "type": "boolean"
             },
+            "surface_tools": {
+              "default": false,
+              "description": "Surface tools declared in task `tools` fields as project-level tools, installing them with `mise install` and adding them to the shell PATH. Tools in `[tools]` in mise.toml take priority on version conflicts.",
+              "type": "boolean"
+            },
             "show_full_cmd": {
               "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
               "type": "boolean"
