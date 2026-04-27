@@ -113,8 +113,15 @@ impl Backend for UbiBackend {
             let mut version_infos: Vec<VersionInfo> = match forge {
                 ForgeType::GitHub => {
                     let releases =
-                        github::list_releases_from_url(api_url, &self.tool_name()).await?;
+                        github::list_releases_from_url_allow_empty(api_url, &self.tool_name())
+                            .await?;
                     if releases.is_empty() {
+                        if super::strict_metadata() {
+                            bail!(
+                                "strict metadata requested but GitHub returned no releases for {}",
+                                self.tool_name()
+                            );
+                        }
                         // Fall back to tags (no created_at available)
                         github::list_tags_from_url(api_url, &self.tool_name())
                             .await?

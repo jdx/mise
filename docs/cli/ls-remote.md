@@ -29,6 +29,14 @@ Show all installed plugins and versions
 
 Output in JSON format (includes version metadata like created_at timestamps when available)
 
+### `--strict-metadata`
+
+Fail instead of falling back when version metadata sources are unavailable
+
+This is intended for automation that writes canonical version metadata.
+It requires --json and prevents metadata source failures from silently
+degrading to less-authoritative fallback data.
+
 ### `--prerelease`
 
 Include pre-release versions in the output for backends that report
@@ -52,5 +60,8 @@ $ mise ls-remote node 20
 20.1.0
 
 $ mise ls-remote github:cli/cli --json
+[{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
+
+$ mise ls-remote github:cli/cli --json --strict-metadata
 [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
 ```

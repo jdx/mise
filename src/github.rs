@@ -150,10 +150,11 @@ pub async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<Githu
     let key = repo.to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
+    let releases = cache
         .get_or_try_init_async(async || list_releases_(API_URL, repo).await)
         .await?
-        .to_vec())
+        .to_vec();
+    ensure_releases_not_empty(repo, releases)
 }
 
 pub async fn list_releases_including_prereleases_from_url(
@@ -163,13 +164,45 @@ pub async fn list_releases_including_prereleases_from_url(
     let key = format!("{api_url}-{repo}").to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
+    let releases = cache
         .get_or_try_init_async(async || list_releases_(api_url, repo).await)
         .await?
-        .to_vec())
+        .to_vec();
+    ensure_releases_not_empty(repo, releases)
+}
+
+pub async fn list_releases_from_url_allow_empty(
+    api_url: &str,
+    repo: &str,
+) -> Result<Vec<GithubRelease>> {
+    let key = format!("{api_url}-{repo}-allow-empty").to_kebab_case();
+    let cache = get_releases_cache(&key).await;
+    let cache = cache.get(&key).unwrap();
+    Ok(cache
+        .get_or_try_init_async(async || list_releases_once(api_url, repo).await)
+        .await?
+        .to_vec()
+        .into_iter()
+        .filter(|r| !r.prerelease)
+        .collect())
 }
 
 async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
+    let mut releases = vec![];
+    for attempt in 0..3 {
+        releases = list_releases_once(api_url, repo).await?;
+        if !releases.is_empty() {
+            return Ok(releases);
+        }
+        debug!(
+            "GitHub returned empty /releases for {repo} on attempt {}",
+            attempt + 1
+        );
+    }
+    ensure_releases_not_empty(repo, releases)
+}
+
+async fn list_releases_once(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
     let url = format!("{api_url}/repos/{repo}/releases");
     let headers = get_headers(&url);
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
@@ -189,6 +222,25 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
     releases.retain(|r| !r.draft);
 
     Ok(releases)
+}
+
+fn ensure_releases_not_empty(
+    repo: &str,
+    releases: Vec<GithubRelease>,
+) -> Result<Vec<GithubRelease>> {
+    if releases.is_empty() {
+        eyre::bail!("{}", empty_releases_message(repo));
+    }
+    Ok(releases)
+}
+
+pub fn is_empty_releases_error(err: &eyre::Report) -> bool {
+    err.to_string()
+        .contains("github returned empty /releases for ")
+}
+
+fn empty_releases_message(repo: &str) -> String {
+    format!("github returned empty /releases for {repo}; likely transient")
 }
 
 pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
@@ -690,6 +742,15 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn required_releases_reject_empty_results() {
+        let err = ensure_releases_not_empty("owner/repo", vec![]).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("github returned empty /releases for owner/repo")
+        );
+    }
 
     fn with_github_token<F, R>(test_fn: F) -> R
     where

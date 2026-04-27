@@ -47,6 +47,14 @@ pub struct LsRemote {
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
+    /// Fail instead of falling back when version metadata sources are unavailable
+    ///
+    /// This is intended for automation that writes canonical version metadata.
+    /// It requires --json and prevents metadata source failures from silently
+    /// degrading to less-authoritative fallback data.
+    #[clap(long, verbatim_doc_comment, requires = "json")]
+    pub strict_metadata: bool,
+
     /// Include pre-release versions in the output for backends that report
     /// an upstream prerelease flag (currently github + aqua). Equivalent to
     /// setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
@@ -59,6 +67,9 @@ impl LsRemote {
     pub async fn run(self) -> Result<()> {
         if self.prerelease {
             Settings::override_with(|s| s.prereleases = Some(true));
+        }
+        if self.strict_metadata {
+            backend::set_strict_metadata(true);
         }
         let config = Config::get().await?;
         if let Some(plugin) = self.get_plugin(&config).await? {
@@ -87,7 +98,6 @@ impl LsRemote {
             .into_iter()
             .filter(|v| matches_prefix(&v.version))
             .collect();
-
         if self.json {
             miseprintln!("{}", serde_json::to_string(&versions)?);
         } else {
@@ -102,7 +112,8 @@ impl LsRemote {
         let mut versions = vec![];
         for b in backend::list() {
             let tool = b.id().to_string();
-            for v in b.list_remote_versions_with_info(config).await? {
+            let backend_versions = b.list_remote_versions_with_info(config).await?;
+            for v in backend_versions {
                 versions.push(VersionOutputAll {
                     tool: tool.clone(),
                     version: v.version,
@@ -154,6 +165,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     20.1.0
 
     $ <bold>mise ls-remote github:cli/cli --json</bold>
+    [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
+
+    $ <bold>mise ls-remote github:cli/cli --json --strict-metadata</bold>
     [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
 "#
 );

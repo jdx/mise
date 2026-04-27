@@ -1750,6 +1750,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--strict-metadata",
+          description:
+            "Fail instead of falling back when version metadata sources are unavailable",
+          isRepeatable: false,
+        },
+        {
           name: "--prerelease",
           description:
             "Include pre-release versions in the output for backends that report\nan upstream prerelease flag (currently github + aqua). Equivalent to\nsetting `MISE_PRERELEASES=1` or the `prereleases` setting for the\nduration of this command.",

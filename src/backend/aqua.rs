@@ -231,6 +231,7 @@ impl Backend for AquaBackend {
         // `VersionInfo.prerelease` based on the current tool opts.
         let tags_with_timestamps = match get_tags_with_created_at(&pkg).await {
             Ok(tags) => tags,
+            Err(e) if github::is_empty_releases_error(&e) => return Err(e),
             Err(e) => {
                 warn!("Remote versions cannot be fetched: {}", e);
                 return Ok(vec![]);
@@ -2402,9 +2403,7 @@ async fn get_tags_with_created_at(
     let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
     let releases = github::list_releases_including_prereleases(&repo).await?;
     if releases.is_empty() {
-        // Fall back to tags (no timestamps, no prerelease flag)
-        let versions = github::list_tags(&repo).await?;
-        return Ok(versions.into_iter().map(|v| (v, None, false)).collect());
+        bail!("GitHub returned no releases for {repo}");
     }
     Ok(releases
         .into_iter()

@@ -1512,6 +1512,13 @@ Show all installed plugins and versions
 \fB\-J, \-\-json\fR
 Output in JSON format (includes version metadata like created_at timestamps when available)
 .TP
+\fB\-\-strict\-metadata\fR
+Fail instead of falling back when version metadata sources are unavailable
+
+This is intended for automation that writes canonical version metadata.
+It requires \-\-json and prevents metadata source failures from silently
+degrading to less\-authoritative fallback data.
+.TP
 \fB\-\-prerelease\fR
 Include pre\-release versions in the output for backends that report
 an upstream prerelease flag (currently github + aqua). Equivalent to
