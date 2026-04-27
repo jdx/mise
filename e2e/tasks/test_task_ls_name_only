@@ -48,3 +48,4 @@ test"
 # Conflicts with other output formats
 assert_fail "mise tasks ls --name-only --json"
 assert_fail "mise tasks ls --name-only -x"
+assert_fail "mise tasks ls --name-only --usage"

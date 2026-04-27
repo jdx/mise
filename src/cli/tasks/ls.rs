@@ -70,8 +70,9 @@ pub struct TasksLs {
     /// Only show task names, one per line. Useful for piping to fzf and similar tools.
     #[clap(
         long,
+        global = true,
         verbatim_doc_comment,
-        conflicts_with_all = ["json", "extended", "complete", "usage"]
+        conflicts_with_all = ["json", "extended", "usage"]
     )]
     pub name_only: bool,
 
