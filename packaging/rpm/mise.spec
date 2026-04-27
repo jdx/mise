@@ -1,6 +1,6 @@
 Summary: Dev tools, env vars, and tasks in one CLI
 Name: mise
-Version: 2026.4.23
+Version: 2026.4.24
 Release: 1
 URL: https://github.com/jdx/mise/
 Group: System
