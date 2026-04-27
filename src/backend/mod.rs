@@ -99,7 +99,7 @@ pub struct VersionInfo {
     pub release_url: Option<String>,
     /// If true, this is a rolling release (like "nightly") that should always
     /// be considered potentially outdated for `mise up` purposes
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub rolling: bool,
     /// Checksum of the release asset, used to detect changes in rolling releases
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -108,8 +108,12 @@ pub struct VersionInfo {
     /// reliable signal (e.g. GitHub releases' `prerelease: true`) populate this
     /// so the shared remote-versions cache can store the superset and apply the
     /// `prerelease` tool option as a read-time filter.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub prerelease: bool,
+}
+
+fn is_false(v: &bool) -> bool {
+    !v
 }
 
 impl VersionInfo {
