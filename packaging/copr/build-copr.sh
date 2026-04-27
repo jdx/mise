@@ -178,7 +178,7 @@ cat >"SPECS/${PACKAGE_NAME}.spec" <<'EOF'
 Name:           __PACKAGE_NAME__
 Version:        __VERSION__
 Release:        1%{?dist}
-Summary:        The front-end to your dev env
+Summary:        Dev tools, env vars, and tasks in one CLI
 
 License:        MIT
 URL:            https://mise.en.dev
@@ -192,9 +192,9 @@ BuildRequires:  git
 BuildRequires:  openssl-devel
 
 %description
-mise is a development environment setup tool that manages runtime versions,
-environment variables, and tasks. It's a replacement for tools like nvm, rbenv,
-pyenv, etc. and works with any language.
+mise prepares your development environment before each command runs. It installs
+and switches between project tools, loads environment variables, and runs tasks
+from the same configuration.
 
 %prep
 %autosetup -n %{name}-%{version}

@@ -10,13 +10,13 @@
 name: mise
 title: mise-en-place
 version: "2026.4.23"
-summary: The front-end to your dev env
+summary: Dev tools, env vars, and tasks in one CLI
 description: |
-  mise-en-place is a command line tool to manage your development environment.
+  mise-en-place prepares your development environment before each command runs.
 
-  - Like asdf (or nvm or pyenv but for any language) it manages [dev tools](https://mise.en.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.en.dev/registry.html).
-  - Like direnv it manages [environment variables](https://mise.en.dev/environments/) for different project directories.
-  - Like make it manages [tasks](https://mise.en.dev/tasks/) used to build and test projects.
+  - Install and switch between [dev tools](https://mise.en.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.en.dev/registry.html).
+  - Load [environment variables](https://mise.en.dev/environments/) for each project directory.
+  - Define and run [tasks](https://mise.en.dev/tasks/) used to build, test, lint, and deploy projects.
 
   See the [documentation](https://mise.en.dev/getting-started.html) to learn more.
 

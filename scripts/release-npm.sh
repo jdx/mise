@@ -41,7 +41,7 @@ for platform in "${platforms[@]}"; do
 {
   "name": "$NPM_PREFIX-$os-$arch",
   "version": "$MISE_VERSION",
-  "description": "polyglot runtime manager",
+  "description": "Dev tools, env vars, and tasks in one CLI",
   "bin": {
     "mise": "bin/mise"
   },
@@ -140,7 +140,7 @@ EOF
 cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
   "name": "$NPM_PREFIX",
-  "description": "polyglot runtime manager",
+  "description": "Dev tools, env vars, and tasks in one CLI",
   "version": "$MISE_VERSION",
   "repository": {
     "type": "git",

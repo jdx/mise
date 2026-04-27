@@ -744,8 +744,7 @@ impl Cli {
     }
 }
 
-const LONG_ABOUT: &str =
-    "mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise";
+const LONG_ABOUT: &str = "mise prepares your development environment before each command runs. https://github.com/jdx/mise";
 
 const LONG_TASK_ABOUT: &str = r#"Task to run.
 
