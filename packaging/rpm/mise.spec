@@ -22,18 +22,10 @@ mise prepares your development environment before each command runs.
 
 %prep
 %autosetup -n %{name}-%{version}
+# Unpack vendor tarball (Source1) into the already-extracted source tree
 %setup -q -T -D -a 1
 
 %build
-mkdir -p .cargo
-cat > .cargo/config.toml << 'EOF'
-[source.crates-io]
-replace-with = "vendored-sources"
-
-[source.vendored-sources]
-directory = "vendor"
-EOF
-
 cargo build --release --frozen --bin mise
 
 %install
