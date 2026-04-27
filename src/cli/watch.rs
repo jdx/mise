@@ -185,12 +185,14 @@ impl Watch {
         } else if self.skip_deps {
             tasks
                 .iter()
-                .flat_map(|t| t.sources.clone())
+                .flat_map(|t| t.sources.iter().cloned())
+                .unique()
                 .collect::<Vec<_>>()
         } else {
             let deps = Deps::new(&config, tasks.clone()).await?;
             deps.all()
-                .flat_map(|t| t.sources.clone())
+                .flat_map(|t| t.sources.iter().cloned())
+                .unique()
                 .collect::<Vec<_>>()
         };
         if !globs.is_empty() {
