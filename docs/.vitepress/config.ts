@@ -359,21 +359,14 @@ export default withMermaid(
           rel: "stylesheet",
         },
       ],
-      // Analytics (Plausible via Cloudflare Worker proxy)
       [
         "script",
         {
-          async: "",
+          defer: "",
+          "data-domain": "mise.jdx.dev",
+          "data-api": "https://shrill-1.en.dev/f5f1/event",
           src: "https://shrill-1.en.dev/shrill/script.js",
         },
-      ],
-      [
-        "script",
-        {},
-        `window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-      plausible.init({
-        endpoint: "https://shrill-1.en.dev/f5f1/event"
-      })`,
       ],
       // OpenGraph
       ["meta", { property: "og:site_name", content: "mise-en-place" }],
