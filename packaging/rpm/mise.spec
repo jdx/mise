@@ -8,7 +8,7 @@ Summary: Dev tools, env vars, and tasks in one CLI
 
 License: MIT
 URL: https://mise.jdx.dev
-Source0: htps://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
+Source0: htts://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
 Source1: mise-vendor-%{version}.tar.gz
 
 BuildRequires:  rust >= 1.91
