@@ -92,3 +92,28 @@ output=$(mise run step3 hello 2>&1)
 assert_contains "echo \"$output\"" "step1 hello"
 assert_contains "echo \"$output\"" "step2 hello"
 assert_contains "echo \"$output\"" "step3 hello"
+
+# Test Tera statement tags and boolean usage values in dependency templates
+cat <<'EOF' >mise.toml
+[tasks.noop]
+run = 'echo "noop"'
+
+[tasks."postlint:check"]
+run = 'echo "postlint ran"'
+
+[tasks.lint]
+usage = 'flag "--run-post" default=#false'
+depends_post = ['''
+    {%- if usage.run_post -%}
+        postlint:**
+    {%- else -%}
+        noop
+    {%- endif -%}
+''']
+run = 'echo "lint ran"'
+EOF
+
+assert_contains "mise run lint" "noop"
+assert_not_contains "mise run lint" "postlint ran"
+assert_contains "mise run lint --run-post" "postlint ran"
+assert_not_contains "mise run lint --run-post" "noop"

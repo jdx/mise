@@ -12,6 +12,7 @@ use eyre::{Result, bail, eyre};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use globset::GlobBuilder;
+use heck::ToSnakeCase;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
@@ -1397,7 +1398,7 @@ impl Task {
     pub async fn render_depends_with_usage(
         &mut self,
         config: &Arc<Config>,
-        usage_values: &IndexMap<String, String>,
+        usage_values: &IndexMap<String, tera::Value>,
     ) -> Result<()> {
         if usage_values.is_empty() {
             return Ok(());
@@ -2020,25 +2021,49 @@ where
     }
 }
 
-/// Check if a TaskDep contains {{usage.*}} references that need deferred rendering.
-/// Strips whitespace before matching to handle Tera's `{{ usage.foo }}` syntax.
+/// Check if a TaskDep contains Tera `usage` references that need deferred rendering.
 pub(crate) fn dep_has_usage_ref(dep: &TaskDep) -> bool {
-    let has_ref = |s: &str| {
-        let s = s.replace(' ', "");
-        s.contains("{{usage.")
-    };
-    has_ref(&dep.task)
-        || dep.args.iter().any(|a| has_ref(a))
-        || dep.env.values().any(|v| has_ref(v))
+    tera_template_has_usage_ref(&dep.task)
+        || dep.args.iter().any(|a| tera_template_has_usage_ref(a))
+        || dep.env.values().any(|v| tera_template_has_usage_ref(v))
 }
 
-/// Parse a task's usage spec against its current args and return a map
-/// of named arg/flag values (e.g., {"app": "myapp", "verbose": "true"}).
+fn tera_template_has_usage_ref(s: &str) -> bool {
+    const TAGS: [(&str, &str); 2] = [("{{", "}}"), ("{%", "%}")];
+    for (open, close) in TAGS {
+        let mut rest = s;
+        while let Some(start) = rest.find(open) {
+            rest = &rest[start + open.len()..];
+            let Some(end) = rest.find(close) else {
+                break;
+            };
+            if tera_tag_has_usage_ref(&rest[..end]) {
+                return true;
+            }
+            rest = &rest[end + close.len()..];
+        }
+    }
+    false
+}
+
+fn tera_tag_has_usage_ref(tag: &str) -> bool {
+    ["usage.", "usage["].iter().any(|needle| {
+        tag.match_indices(needle).any(|(idx, _)| {
+            tag[..idx]
+                .chars()
+                .next_back()
+                .map_or(true, |c| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
+        })
+    })
+}
+
+/// Parse a task's usage spec against its current args and return a map of named
+/// arg/flag values preserving their Tera types (e.g., strings and booleans).
 /// Used to provide `{{usage.*}}` context when rendering dependency templates.
 pub async fn parse_usage_values_from_task(
     config: &Arc<Config>,
     task: &Task,
-) -> Result<IndexMap<String, String>> {
+) -> Result<IndexMap<String, tera::Value>> {
     let ts = config.get_toolset().await?;
     let env = ts.full_env(config).await?;
     let (spec, _) = task
@@ -2059,11 +2084,25 @@ pub async fn parse_usage_values_from_task(
         }
     };
     let mut values = IndexMap::new();
-    for (k, v) in po.as_env() {
-        // Strip "usage_" prefix to get the bare arg/flag name
-        if let Some(name) = k.strip_prefix("usage_") {
-            values.insert(name.to_string(), v);
+    let to_tera_value = |val: &usage::parse::ParseValue| -> tera::Value {
+        use tera::Value;
+        use usage::parse::ParseValue::*;
+        match val {
+            MultiBool(v) => Value::Number(serde_json::Number::from(v.len())),
+            MultiString(v) => Value::Array(v.iter().map(|s| Value::String(s.clone())).collect()),
+            Bool(v) => Value::Bool(*v),
+            String(v) => Value::String(v.clone()),
         }
+    };
+    for (arg, val) in &po.args {
+        values.insert(arg.name.to_snake_case(), to_tera_value(val));
+    }
+    for (flag, val) in &po.flags {
+        values.insert(flag.name.to_snake_case(), to_tera_value(val));
+    }
+    if !spec.cmd.subcommands.is_empty() {
+        let cmd = po.cmds.iter().skip(1).map(|c| c.name.clone()).join(" ");
+        values.insert("cmd".to_string(), tera::Value::String(cmd));
     }
     Ok(values)
 }
@@ -2079,7 +2118,7 @@ mod tests {
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
-    use super::{TaskConfirm, name_from_path};
+    use super::{TaskConfirm, name_from_path, tera_tag_has_usage_ref, tera_template_has_usage_ref};
 
     // Thread-local storage to capture parser state during tests
     thread_local! {
@@ -2094,6 +2133,22 @@ mod tests {
 
     fn take_captured_fields() -> Option<Vec<String>> {
         CAPTURED_PARSER_FIELDS.with(|captured| captured.lock().unwrap().take())
+    }
+
+    #[test]
+    fn test_tera_template_has_usage_ref() {
+        assert!(tera_template_has_usage_ref("{{ usage.app }}"));
+        assert!(tera_template_has_usage_ref(
+            "{%- if usage.run_post -%}post{%- endif -%}"
+        ));
+        assert!(tera_template_has_usage_ref("{{ usage['app'] }}"));
+        assert!(!tera_template_has_usage_ref(
+            "{{ env.DEPLOY_ENV }} usage.docs"
+        ));
+        assert!(!tera_template_has_usage_ref("{{ config.usage.something }}"));
+        assert!(!tera_template_has_usage_ref("{# usage.app #}"));
+        assert!(tera_tag_has_usage_ref("if(usage.run_post)"));
+        assert!(!tera_tag_has_usage_ref("ifusage.run_post"));
     }
 
     #[tokio::test]
