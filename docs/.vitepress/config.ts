@@ -379,8 +379,8 @@ export default withMermaid(
         {
           defer: "",
           "data-domain": "mise.en.dev",
-          "data-api": "https://shrill-1.en.dev/f5f1/event",
-          src: "https://shrill-1.en.dev/shrill/script.js",
+          "data-api": "https://shrill.en.dev/f5f1/event",
+          src: "https://shrill.en.dev/shrill/script.js",
         },
       ],
       // OpenGraph
