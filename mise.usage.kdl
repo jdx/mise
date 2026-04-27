@@ -1,8 +1,8 @@
 min_usage_version "2.11"
 name mise
 bin mise
-about "The front-end to your dev env"
-long_about "mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise"
+about "Dev tools, env vars, and tasks in one CLI"
+long_about "mise prepares your development environment before each command runs. https://github.com/jdx/mise"
 default_subcommand run
 usage "Usage: mise [OPTIONS] [TASK] [COMMAND]"
 flag "-c --continue-on-error" help="Continue running tasks even if one fails" hide=#true

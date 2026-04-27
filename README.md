@@ -18,7 +18,7 @@
   <a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?style=for-the-badge&color=8B2252"></a>
 </p>
 
-<p><b>The front-end to your dev env</b></p>
+<p><b>Dev tools, env vars, and tasks in one CLI</b></p>
 
 <p align="center">
   <a href="https://mise.en.dev/getting-started.html">Getting Started</a> •
@@ -34,9 +34,13 @@
 
 ## What is it?
 
-- Like [asdf](https://asdf-vm.com) (or [nvm](https://github.com/nvm-sh/nvm) or [pyenv](https://github.com/pyenv/pyenv) but for any language) it manages [dev tools](https://mise.en.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.en.dev/registry.html).
-- Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](https://mise.en.dev/environments/) for different project directories.
-- Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](https://mise.en.dev/tasks/) used to build and test projects.
+`mise` prepares your development environment before each command runs. It keeps
+project tools, environment variables, and tasks in one `mise.toml` file so new
+shells, checkouts, and CI jobs all start from the same setup.
+
+- Install and switch between [dev tools](https://mise.en.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.en.dev/registry.html).
+- Load [environment variables](https://mise.en.dev/environments/) per project directory, including values from `.env` files and other sources.
+- Define and run [tasks](https://mise.en.dev/tasks/) for building, testing, linting, and deploying projects.
 
 ## Demo
 

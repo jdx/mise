@@ -53,7 +53,7 @@ rustPlatform.buildRustPackage {
   '';
 
   meta = with lib; {
-    description = "The front-end to your dev env";
+    description = "Dev tools, env vars, and tasks in one CLI";
     homepage = "https://github.com/jdx/mise";
     license = licenses.mit;
     mainProgram = "mise";
