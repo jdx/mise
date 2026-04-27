@@ -359,29 +359,21 @@ export default withMermaid(
           rel: "stylesheet",
         },
       ],
-      // Analytics
+      // Analytics (Plausible via Cloudflare Worker proxy)
       [
         "script",
         {
           async: "",
-          src: "https://www.googletagmanager.com/gtag/js?id=G-B69G389C8T",
+          src: "https://shrill-1.en.dev/shrill/script.js",
         },
       ],
       [
         "script",
         {},
-        `window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-B69G389C8T');`,
-      ],
-      [
-        "script",
-        {
-          "data-goatcounter": "https://jdx.goatcounter.com/count",
-          async: "",
-          src: "//gc.zgo.at/count.js",
-        },
+        `window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+      plausible.init({
+        endpoint: "https://shrill-1.en.dev/f5f1/event"
+      })`,
       ],
       // OpenGraph
       ["meta", { property: "og:site_name", content: "mise-en-place" }],
