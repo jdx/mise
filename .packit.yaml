@@ -22,12 +22,12 @@ actions:
         mkdir -p .cargo
         cat > .cargo/config.toml << 'EOF'
 [source.crates-io]
-replace-with = \\\"vendored-sources\\\"
+replace-with = "vendored-sources"
 
 [source.vendored-sources]
-directory = \\\"vendor\\\"
+directory = "vendor"
 EOF
-        cargo vendor vendor/
+        cargo vendor --locked vendor/
         tar -czf vendor.tar.gz vendor/ .cargo/
         popd
         cp /tmp/vendor-src/mise-${VERSION}/vendor.tar.gz mise-vendor-${VERSION}.tar.gz
