@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Test that task.surface_tools = true makes task tools available in the project toolset
+
+# --- Scenario 1: tool only declared in task, surface_tools = true ---
+cat >mise.toml <<'EOF'
+[settings]
+task.surface_tools = true
+[task_config]
+includes = ["tasks.toml"]
+EOF
+cat >tasks.toml <<'EOF'
+[greet]
+run = "dummy --version"
+tools.dummy = "2.0.0"
+EOF
+
+mise install
+assert_contains "mise ls" "dummy"
+assert_contains "mise ls" "2.0.0"
+assert_contains "mise env" "dummy/2.0.0"
+
+# --- Scenario 2: conflict — [tools] in mise.toml wins ---
+cat >mise.toml <<'EOF'
+[settings]
+task.surface_tools = true
+[tools]
+dummy = "1.0.0"
+[task_config]
+includes = ["tasks.toml"]
+EOF
+
+mise install
+assert_contains "mise ls" "dummy"
+assert_contains "mise env" "dummy/1.0.0"
+assert_not_contains "mise env" "dummy/2.0.0"
+
+# --- Scenario 3: setting off (default) — task tools not in PATH ---
+cat >mise.toml <<'EOF'
+[settings]
+task.surface_tools = false
+[task_config]
+includes = ["tasks.toml"]
+EOF
+
+assert_not_contains "mise env" "dummy"
