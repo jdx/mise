@@ -2052,7 +2052,7 @@ fn tera_tag_has_usage_ref(tag: &str) -> bool {
             tag[..idx]
                 .chars()
                 .next_back()
-                .map_or(true, |c| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
+                .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
         })
     })
 }
