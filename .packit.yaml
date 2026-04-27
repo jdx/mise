@@ -1,0 +1,58 @@
+# Docs: https://packit.dev/docs
+specfile_path: packaging/rpm/mise.spec
+upstream_package_name: mise
+downstream_package_name: mise
+upstream_tag_template: "v{version}"
+
+files_to_sync:
+  - packaging/rpm/mise.spec
+  - .packit.yaml
+
+actions:
+  post-upstream-clone:
+    - "bash -c \"ver=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= //;s/\\\"//g'); sed -i \\\"s/^Version:.*/Version: $ver/\\\" packaging/rpm/mise.spec\""
+  create-archive:
+    - "bash -c \"
+        set -e
+        VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= //;s/\\\"//g')
+        git archive --format=tar --prefix=mise-${VERSION}/ HEAD | gzip > mise-${VERSION}.tar.gz
+        mkdir -p /tmp/vendor-src
+        tar -xzf mise-${VERSION}.tar.gz -C /tmp/vendor-src
+        pushd /tmp/vendor-src/mise-${VERSION}
+        mkdir -p .cargo
+        cat > .cargo/config.toml << 'EOF'
+[source.crates-io]
+replace-with = \\\"vendored-sources\\\"
+
+[source.vendored-sources]
+directory = \\\"vendor\\\"
+EOF
+        cargo vendor vendor/
+        tar -czf vendor.tar.gz vendor/ .cargo/
+        popd
+        cp /tmp/vendor-src/mise-${VERSION}/vendor.tar.gz mise-vendor-${VERSION}.tar.gz
+        echo mise-${VERSION}.tar.gz
+        echo mise-vendor-${VERSION}.tar.gz
+      \""
+  get-current-version:
+    - "bash -c \"grep '^version' Cargo.toml | head -1 | sed 's/.*= //;s/\\\"//g'\""
+
+jobs:
+  - job: copr_build
+    trigger: pull_request
+    targets:
+      - fedora-stable
+      - epel-stable
+
+  - job: copr_build
+    trigger: commit
+    branch: main
+    targets:
+      - fedora-stable
+      - epel-stable
+
+  - job: copr_build
+    trigger: release
+    targets:
+      - fedora-all
+      - epel-all

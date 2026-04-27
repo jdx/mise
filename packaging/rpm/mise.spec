@@ -1,21 +1,72 @@
-Summary: Dev tools, env vars, and tasks in one CLI
+%global debug_package %{nil}
+%global _missing_build_ids_terminate_build 0
+
 Name: mise
-Version: 2026.4.23
-Release: 1
-URL: https://github.com/jdx/mise/
-Group: System
+Version: 2026.4.22
+Release: 1%{?dist}
+Summary: Dev tools, env vars, and tasks in one CLI
+
 License: MIT
-Packager: @jdx
-BuildRoot: /root/mise
+URL: https://mise.jdx.dev
+Source0: ttps://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
+Source1: mise-vendor-%{version}.tar.gz
+
+BuildRequires:  rust >= 1.91
+BuildRequires:  cargo
+BuildRequires:  gcc
+BuildRequires:  git
+BuildRequires:  openssl-devel
 
 %description
 mise prepares your development environment before each command runs.
 
+%prep
+%autosetup -n %{name}-%{version}
+%setup -q -T -D -a 1
+
+%build
+mkdir -p .cargo
+cat > .cargo/config.toml << 'EOF'
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+EOF
+
+cargo build --release --frozen --bin mise
+
 %install
-mkdir -p %{buildroot}/usr/bin/
-cp /root/mise/target/release/mise %{buildroot}/usr/bin
-cp /root/mise/man/man1/mise.1 %{buildroot}/%{_mandir}/man1
+mkdir -p %{buildroot}%{_bindir}
+cp target/release/mise %{buildroot}%{_bindir}/
+
+mkdir -p %{buildroot}%{_mandir}/man1
+cp man/man1/mise.1 %{buildroot}%{_mandir}/man1/
+
+mkdir -p %{buildroot}%{_datadir}/bash-completion/completions
+cp completions/mise.bash %{buildroot}%{_datadir}/bash-completion/completions/mise
+
+mkdir -p %{buildroot}%{_datadir}/zsh/site-functions
+cp completions/_mise %{buildroot}%{_datadir}/zsh/site-functions/
+
+mkdir -p %{buildroot}%{_datadir}/fish/vendor_completions.d
+cp completions/mise.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/
+
+mkdir -p %{buildroot}%{_libdir}/mise
+cat > %{buildroot}%{_libdir}/mise/mise-self-update-instructions.toml << 'TOML'
+message = "To update mise from COPR, run:\n\n  sudo dnf upgrade mise\n"
+TOML
 
 %files
-/usr/bin/mise
-%{_mandir}/man1/mise.1
+%license LICENSE
+%doc README.md
+%{_bindir}/mise
+%{_mandir}/man1/mise.1*
+%{_datadir}/bash-completion/completions/mise
+%{_datadir}/zsh/site-functions/_mise
+%{_datadir}/fish/vendor_completions.d/mise.fish
+%{_libdir}/mise/mise-self-update-instructions.toml
+
+%changelog
+* __CHANGELOG_DATE__ __MAINTAINER_NAME__ <__MAINTAINER_EMAIL__> - %{version}-1
+- New upstream release %{version}
