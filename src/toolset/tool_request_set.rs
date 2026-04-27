@@ -225,55 +225,15 @@ impl ToolRequestSetBuilder {
                 continue;
             };
             let config_root = cf.config_root();
-            for include in includes {
-                if include.starts_with("git::") {
-                    continue;
-                }
-                let paths = expand_task_include(&config_root, include);
-                for path in paths {
-                    if !path.is_file()
-                        || path.extension().map(|e| e != "toml").unwrap_or(true)
-                    {
+            for include in includes.iter().filter(|i| !i.starts_with("git::")) {
+                for path in expand_task_include(&config_root, include) {
+                    if !path.is_file() || path.extension().map(|e| e != "toml").unwrap_or(true) {
                         continue;
                     }
-                    let raw = match file::read_to_string(&path) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            warn!("surface_tools: failed to read {}: {e}", path.display());
-                            continue;
-                        }
-                    };
-                    let tasks = match toml::from_str::<Tasks>(&raw) {
-                        Ok(t) => t.0,
-                        Err(e) => {
-                            warn!(
-                                "surface_tools: failed to parse {}: {e}",
-                                path.display()
-                            );
-                            continue;
-                        }
-                    };
-                    let source = ToolSource::MiseToml(path.clone());
-                    let mut tool_count = 0usize;
-                    for (_name, task) in tasks {
-                        for (tool, version) in &task.tools {
-                            let ba: Arc<BackendArg> = Arc::new(tool.as_str().into());
-                            match ToolRequest::new(ba.clone(), version, source.clone()) {
-                                Ok(tr) => {
-                                    task_trs.add_version(tr, &source);
-                                    tool_count += 1;
-                                }
-                                Err(e) => warn!(
-                                    "surface_tools: invalid tool {tool}@{version}: {e}"
-                                ),
-                            }
-                        }
+                    for tr in task_file_tool_requests(&path) {
+                        let source = tr.source().clone();
+                        task_trs.add_version(tr, &source);
                     }
-                    trace!(
-                        "surface_tools: {} tools from {}",
-                        tool_count,
-                        path.display()
-                    );
                 }
             }
         }
@@ -353,6 +313,43 @@ impl ToolRequestSetBuilder {
 
         Ok(trs)
     }
+}
+
+/// Parse a TOML task file and return all `ToolRequest`s found in task `tools` tables.
+/// Read/parse errors are warned about but do not abort the caller.
+pub(crate) fn task_file_tool_requests(path: &std::path::Path) -> Vec<ToolRequest> {
+    let raw = match file::read_to_string(path) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("surface_tools: failed to read {}: {e}", path.display());
+            return vec![];
+        }
+    };
+    let tasks = match toml::from_str::<Tasks>(&raw) {
+        Ok(t) => t.0,
+        Err(e) => {
+            warn!("surface_tools: failed to parse {}: {e}", path.display());
+            return vec![];
+        }
+    };
+    let source = ToolSource::MiseToml(path.to_path_buf());
+    let mut trs = vec![];
+    for (_name, task) in tasks {
+        for (tool, version) in &task.tools {
+            let spec = version.to_tool_spec(tool);
+            match spec.parse::<ToolArg>() {
+                Ok(ta) => {
+                    if let Some(mut tr) = ta.tvr {
+                        tr.set_source(source.clone());
+                        trs.push(tr);
+                    }
+                }
+                Err(e) => warn!("surface_tools: invalid tool {spec}: {e}"),
+            }
+        }
+    }
+    trace!("surface_tools: {} tools from {}", trs.len(), path.display());
+    trs
 }
 
 fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {

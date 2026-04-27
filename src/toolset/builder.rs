@@ -4,12 +4,12 @@ use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::config_file::mise_toml::Tasks;
 use crate::config::{Config, ConfigMap, Settings, expand_task_include};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
+use crate::toolset::tool_request_set::task_file_tool_requests;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset};
-use crate::{config, env, file};
+use crate::{config, env};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigScope {
@@ -115,43 +115,15 @@ impl ToolsetBuilder {
                 continue;
             }
             let config_root = cf.config_root();
-            for include in includes {
-                if include.starts_with("git::") {
-                    continue;
-                }
-                let paths = expand_task_include(&config_root, include);
-                for path in paths {
-                    if !path.is_file()
-                        || path.extension().map(|e| e != "toml").unwrap_or(true)
-                    {
+            for include in includes.iter().filter(|i| !i.starts_with("git::")) {
+                for path in expand_task_include(&config_root, include) {
+                    if !path.is_file() || path.extension().map(|e| e != "toml").unwrap_or(true) {
                         continue;
                     }
-                    let raw = match file::read_to_string(&path) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            warn!("surface_tools: failed to read {}: {e}", path.display());
-                            continue;
-                        }
-                    };
-                    let tasks = match toml::from_str::<Tasks>(&raw) {
-                        Ok(t) => t.0,
-                        Err(e) => {
-                            warn!("surface_tools: failed to parse {}: {e}", path.display());
-                            continue;
-                        }
-                    };
                     let source = ToolSource::MiseToml(path.clone());
-                    let mut file_ts = Toolset::new(source.clone());
-                    for (_name, task) in tasks {
-                        for (tool, version) in &task.tools {
-                            let ba: Arc<BackendArg> = Arc::new(tool.as_str().into());
-                            match ToolRequest::new(ba.clone(), version, source.clone()) {
-                                Ok(tr) => file_ts.add_version(tr),
-                                Err(e) => {
-                                    warn!("surface_tools: invalid tool {tool}@{version}: {e}")
-                                }
-                            }
-                        }
+                    let mut file_ts = Toolset::new(source);
+                    for tr in task_file_tool_requests(&path) {
+                        file_ts.add_version(tr);
                     }
                     ts.merge(file_ts);
                 }
