@@ -2401,11 +2401,6 @@ async fn get_tags_with_created_at(
     }
     let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
     let releases = github::list_releases_including_prereleases(&repo).await?;
-    if releases.is_empty() {
-        // Fall back to tags (no timestamps, no prerelease flag)
-        let versions = github::list_tags(&repo).await?;
-        return Ok(versions.into_iter().map(|v| (v, None, false)).collect());
-    }
     Ok(releases
         .into_iter()
         .map(|r| (r.tag_name, Some(r.created_at), r.prerelease))

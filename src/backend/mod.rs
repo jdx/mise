@@ -1755,12 +1755,8 @@ pub trait Backend: Debug + Send + Sync {
             .unwrap()
             .entry(self.ba().full())
             .or_insert_with(|| {
-                // Bumped from `remote_versions.msgpack.z` to invalidate caches written
-                // before `VersionInfo.prerelease` existed: github/aqua now store the
-                // pre-release superset, and stale stable-only caches would otherwise
-                // mask pre-releases for `prerelease = true` users until TTL expiry.
                 let mut cm = CacheManagerBuilder::new(
-                    self.ba().cache_path.join("remote_versions_v2.msgpack.z"),
+                    self.ba().cache_path.join("remote_versions.msgpack.z"),
                 )
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
