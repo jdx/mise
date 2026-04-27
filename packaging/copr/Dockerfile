@@ -16,7 +16,8 @@ RUN dnf update -y && \
     dnf clean all
 
 # Install copr-cli via dnf to ensure dependencies are properly managed and to avoid potential issues with manual installation
-RUN dnf install copr-cli
+RUN dnf install -y copr-cli && \
+    dnf clean all
 
 # Add mise to PATH
 ENV PATH="/root/.local/bin:${PATH}"
