@@ -6,7 +6,6 @@ upstream_tag_template: "v{version}"
 
 files_to_sync:
   - packaging/rpm/mise.spec
-  - .packit.yaml
 
 actions:
   post-upstream-clone:
@@ -16,6 +15,7 @@ actions:
         set -e
         VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= //;s/\\\"//g')
         git archive --format=tar --prefix=mise-${VERSION}/ HEAD | gzip > mise-${VERSION}.tar.gz
+        rm -rf /tmp/vendor-src
         mkdir -p /tmp/vendor-src
         tar -xzf mise-${VERSION}.tar.gz -C /tmp/vendor-src
         pushd /tmp/vendor-src/mise-${VERSION}
@@ -31,6 +31,7 @@ EOF
         tar -czf vendor.tar.gz vendor/ .cargo/
         popd
         cp /tmp/vendor-src/mise-${VERSION}/vendor.tar.gz mise-vendor-${VERSION}.tar.gz
+        rm -rf /tmp/vendor-src
         echo mise-${VERSION}.tar.gz
         echo mise-vendor-${VERSION}.tar.gz
       \""
