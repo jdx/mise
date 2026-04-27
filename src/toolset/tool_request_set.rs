@@ -6,8 +6,11 @@ use std::{
 
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
+use crate::config::config_file::mise_toml::Tasks;
+use crate::config::expand_task_include;
 use crate::config::{Config, Settings};
 use crate::env;
+use crate::file;
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
 use indexmap::IndexMap;
@@ -165,6 +168,7 @@ impl ToolRequestSetBuilder {
 
     pub async fn build(&self, config: &Arc<Config>) -> eyre::Result<ToolRequestSet> {
         let mut trs = ToolRequestSet::default();
+        trs = self.load_task_tools(config, trs).await?;
         trs = self.load_config_files(config, trs).await?;
         trs = self.load_runtime_env(trs)?;
         trs = self.load_runtime_args(trs)?;
@@ -201,6 +205,81 @@ impl ToolRequestSetBuilder {
             trs = merge(trs, cf.to_tool_request_set()?);
         }
         Ok(trs)
+    }
+
+    /// Collect tools from explicitly-included TOML task files and add them as the
+    /// lowest-priority layer. Only runs when `settings.task.surface_tools = true`.
+    /// Reads task files directly (no render/tera) to avoid a circular dependency:
+    /// task.render() → tera_ctx() → config.get_toolset() → get_tool_request_set().
+    async fn load_task_tools(
+        &self,
+        config: &Arc<Config>,
+        trs: ToolRequestSet,
+    ) -> eyre::Result<ToolRequestSet> {
+        if !Settings::get().task.surface_tools {
+            return Ok(trs);
+        }
+        let mut task_trs = ToolRequestSet::default();
+        for cf in config.config_files.values() {
+            let Some(includes) = cf.task_config().includes.as_ref() else {
+                continue;
+            };
+            let config_root = cf.config_root();
+            for include in includes {
+                if include.starts_with("git::") {
+                    continue;
+                }
+                let paths = expand_task_include(&config_root, include);
+                for path in paths {
+                    if !path.is_file()
+                        || path.extension().map(|e| e != "toml").unwrap_or(true)
+                    {
+                        continue;
+                    }
+                    let raw = match file::read_to_string(&path) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            warn!("surface_tools: failed to read {}: {e}", path.display());
+                            continue;
+                        }
+                    };
+                    let tasks = match toml::from_str::<Tasks>(&raw) {
+                        Ok(t) => t.0,
+                        Err(e) => {
+                            warn!(
+                                "surface_tools: failed to parse {}: {e}",
+                                path.display()
+                            );
+                            continue;
+                        }
+                    };
+                    let source = ToolSource::MiseToml(path.clone());
+                    let mut tool_count = 0usize;
+                    for (_name, task) in tasks {
+                        for (tool, version) in &task.tools {
+                            let ba: Arc<BackendArg> = Arc::new(tool.as_str().into());
+                            match ToolRequest::new(ba.clone(), version, source.clone()) {
+                                Ok(tr) => {
+                                    task_trs.add_version(tr, &source);
+                                    tool_count += 1;
+                                }
+                                Err(e) => warn!(
+                                    "surface_tools: invalid tool {tool}@{version}: {e}"
+                                ),
+                            }
+                        }
+                    }
+                    trace!(
+                        "surface_tools: {} tools from {}",
+                        tool_count,
+                        path.display()
+                    );
+                }
+            }
+        }
+        // task_trs is 'a' in merge(a, b); load_config_files will pass config
+        // tools as 'b', so config tools always override task tools.
+        Ok(merge(task_trs, trs))
     }
 
     fn load_runtime_env(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
