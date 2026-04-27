@@ -40,13 +40,13 @@ By default, only tasks from the current directory hierarchy are loaded.
 
 Show hidden tasks
 
-### `--no-header`
-
-Do not print table header
-
 ### `--name-only`
 
 Only show task names, one per line. Useful for piping to fzf and similar tools.
+
+### `--no-header`
+
+Do not print table header
 
 ### `--sort <COLUMN>`
 

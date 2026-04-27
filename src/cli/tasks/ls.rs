@@ -63,10 +63,6 @@ pub struct TasksLs {
     #[clap(long, global = true, verbatim_doc_comment)]
     pub hidden: bool,
 
-    /// Do not print table header
-    #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
-    pub no_header: bool,
-
     /// Only show task names, one per line. Useful for piping to fzf and similar tools.
     #[clap(
         long,
@@ -75,6 +71,10 @@ pub struct TasksLs {
         conflicts_with_all = ["json", "extended", "usage"]
     )]
     pub name_only: bool,
+
+    /// Do not print table header
+    #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
+    pub no_header: bool,
 
     /// Sort by column. Default is name.
     #[clap(long, global = true, value_name = "COLUMN", verbatim_doc_comment)]
