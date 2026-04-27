@@ -41,12 +41,16 @@ EOF
 jobs:
   - job: copr_build
     trigger: pull_request
+    owner: jdxcode
+    project: mise
     targets:
       - fedora-stable
       - epel-stable
 
   - job: copr_build
     trigger: commit
+    owner: jdxcode
+    project: mise
     branch: main
     targets:
       - fedora-stable
@@ -54,6 +58,8 @@ jobs:
 
   - job: copr_build
     trigger: release
+    owner: jdxcode
+    project: mise
     targets:
       - fedora-all
       - epel-all
