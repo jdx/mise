@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/9423
+#
+# Task-level allow_read/allow_write paths must resolve against the task's
+# `dir`, not the invocation cwd. Place both directories under /var/tmp so
+# they're outside the sandbox's always-writable paths and rules actually apply.
+
+SANDBOX_DIR="/var/tmp/mise_sandbox_taskdir_test_$$"
+mkdir -p "$SANDBOX_DIR/foo" "$SANDBOX_DIR/bar"
+trap 'rm -rf "$SANDBOX_DIR"' EXIT
+
+cat >"$SANDBOX_DIR/foo/mise.toml" <<TOML
+[settings]
+experimental = true
+
+[tasks.write_dot]
+dir = "../bar"
+run = "touch written && echo OK"
+allow_write = ["."]
+TOML
+
+cd "$SANDBOX_DIR/foo"
+
+# allow_write = ["."] resolves to the task's dir (../bar). Writing in bar/
+# must succeed even though it's outside the always-writable paths (/tmp, /dev).
+assert "mise run write_dot" "OK"
+assert "test -f $SANDBOX_DIR/bar/written && echo found" "found"
