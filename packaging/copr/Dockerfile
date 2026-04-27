@@ -15,8 +15,8 @@ RUN dnf update -y && \
         gzip && \
     dnf clean all
 
-# Install copr-cli
-RUN pip3 install copr-cli
+# Install copr-cli via dnf to ensure dependencies are properly managed and to avoid potential issues with manual installation
+RUN dnf install copr-cli
 
 # Add mise to PATH
 ENV PATH="/root/.local/bin:${PATH}"
