@@ -203,6 +203,7 @@ touch "$MISE_CONFIG_DIR/mise.lock"
 mise lock --global --platform linux-x64
 assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "1.0.0"
 mise upgrade dummy@2.0.0
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" '"latest"'
 assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "2.0.0"
 assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" "1.0.0"
 rm -f "$MISE_CONFIG_DIR/config.toml" "$MISE_CONFIG_DIR/mise.lock"

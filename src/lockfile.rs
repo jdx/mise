@@ -967,31 +967,39 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         }
 
         for new_version in new_versions {
-            let versions = tool_versions_by_short
-                .entry(new_version.short().to_string())
-                .or_default();
             if let Some(source_path) = new_version.request.source().path() {
                 if !configs.iter().any(|config| config == source_path) {
                     continue;
                 }
 
+                let versions = tool_versions_by_short
+                    .entry(new_version.short().to_string())
+                    .or_default();
                 versions.retain(|tv| {
                     tv.ba() != new_version.ba()
-                        || tv.request.version() != new_version.request.version()
                         || tv.request.source() != new_version.request.source()
                 });
                 versions.push(new_version.clone());
-            } else if let Some((idx, request)) = versions
-                .iter()
-                .enumerate()
-                .exactly_one()
-                .ok()
-                .map(|(idx, tv)| (idx, tv.request.clone()))
-            {
-                let mut new_version = new_version.clone();
-                new_version.request = request;
-                versions.remove(idx);
-                versions.push(new_version);
+            } else if let Some(versions) = tool_versions_by_short.get_mut(new_version.short()) {
+                if let Some((idx, request)) = versions
+                    .iter()
+                    .enumerate()
+                    .exactly_one()
+                    .ok()
+                    .map(|(idx, tv)| (idx, tv.request.clone()))
+                {
+                    let mut new_version = new_version.clone();
+                    new_version.request = request;
+                    versions.remove(idx);
+                    versions.push(new_version);
+                } else {
+                    trace!(
+                        "skipping lockfile update for {}@{} in {}: ambiguous config entries",
+                        new_version.short(),
+                        new_version.version,
+                        display_path(&lockfile_path)
+                    );
+                }
             }
         }
 
