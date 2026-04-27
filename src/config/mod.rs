@@ -2307,7 +2307,7 @@ fn is_glob_pattern(pattern: &str) -> bool {
 }
 
 /// Expand a task include pattern (which may be a glob) to a list of paths
-fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
+pub(crate) fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     if is_glob_pattern(pattern) {
         match glob(dir, pattern) {
             Ok(paths) => paths,
