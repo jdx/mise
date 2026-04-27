@@ -5,6 +5,12 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      chroots:
+        description: "COPR chroots to target (space-separated)"
+        required: false
+        default: ""
+        type: string
+
       use_serious_profile:
         description: 'Use the "serious" profile for optimized builds (LTO enabled)'
         required: false
@@ -32,9 +38,15 @@ jobs:
         run: |
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
 
+          if [ "${{ github.event_name }}" = "release" ]; then
+            CHROOTS="${{ env.DEFAULT_CHROOTS }}"
+          else
+            CHROOTS="${{ inputs.chroots || env.DEFAULT_CHROOTS }}"
+          fi
+
           {
             echo "VERSION=${VERSION}"
-            echo "CHROOTS=${{ env.DEFAULT_CHROOTS }}"
+            echo "CHROOTS=${CHROOTS}"
             echo "PACKAGE_NAME=${PACKAGE_NAME}"
             echo "MAINTAINER_NAME=${{ vars.COPR_MAINTAINER_NAME || 'mise Release Bot' }}"
             echo "MAINTAINER_EMAIL=${{ vars.COPR_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
