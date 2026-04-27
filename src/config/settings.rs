@@ -537,6 +537,22 @@ impl Settings {
         crate::config::config_file::config_root::reset();
     }
 
+    /// Merge an override into the CLI-level settings partial.
+    ///
+    /// `reset` replaces CLI_SETTINGS wholesale, which would clobber overrides
+    /// installed earlier in startup (`--offline`, `--quiet`, etc.). This
+    /// helper merges in-place so a subcommand flag (e.g. `mise ls-remote
+    /// --prerelease`) can layer on top of those without losing them. Clears
+    /// BASE_SETTINGS so the next `Settings::get()` rebuilds with the override
+    /// applied.
+    pub fn override_with(updater: impl FnOnce(&mut SettingsPartial)) {
+        let mut lock = CLI_SETTINGS.lock().unwrap();
+        let partial = lock.get_or_insert_with(SettingsPartial::empty);
+        updater(partial);
+        drop(lock);
+        *BASE_SETTINGS.write().unwrap() = None;
+    }
+
     pub fn lockfile_enabled(&self) -> bool {
         self.lockfile.unwrap_or(true)
     }

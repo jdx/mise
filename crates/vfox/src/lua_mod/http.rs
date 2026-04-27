@@ -1,49 +1,49 @@
 use mlua::{BorrowedStr, ExternalResult, Lua, MultiValue, Result, Table, Value};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
-use reqwest::{RequestBuilder, Response, StatusCode};
-use std::time::Duration;
+use reqwest::{RequestBuilder, Response};
 use url::Url;
 
-use crate::http::CLIENT;
-
-const HTTP_RETRY_ATTEMPTS: usize = 3;
-
-fn should_retry_status(status: StatusCode) -> bool {
-    matches!(
-        status,
-        StatusCode::REQUEST_TIMEOUT
-            | StatusCode::TOO_MANY_REQUESTS
-            | StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT
-    )
-}
-
-fn retry_delay(attempt: usize) -> Duration {
-    Duration::from_millis(200 * (attempt as u64 + 1))
-}
+use crate::http::{
+    CLIENT, http_retry_attempts, is_transient, retry_async, retry_delay, should_retry_status,
+};
 
 async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Response, reqwest::Error> {
+    let url = builder
+        .try_clone()
+        .and_then(|b| b.build().ok())
+        .map(|r| r.url().to_string())
+        .unwrap_or_default();
     let Some(template) = builder.try_clone() else {
         return builder.send().await;
     };
 
-    for attempt in 0..HTTP_RETRY_ATTEMPTS {
+    let attempts = http_retry_attempts().max(1);
+    for attempt in 0..attempts {
         let response = template
             .try_clone()
             .expect("cloned request builder should remain cloneable")
             .send()
             .await;
 
-        match response {
-            Ok(resp) if should_retry_status(resp.status()) && attempt + 1 < HTTP_RETRY_ATTEMPTS => {
-                tokio::time::sleep(retry_delay(attempt)).await;
+        let transient_err: Option<String> = match response {
+            Ok(resp) if should_retry_status(resp.status()) && attempt + 1 < attempts => {
+                Some(format!("HTTP {}", resp.status()))
             }
             Ok(resp) => return Ok(resp),
-            Err(err) if err.is_timeout() && attempt + 1 < HTTP_RETRY_ATTEMPTS => {
-                tokio::time::sleep(retry_delay(attempt)).await;
-            }
+            Err(err) if is_transient(&err) && attempt + 1 < attempts => Some(err.to_string()),
             Err(err) => return Err(err),
+        };
+
+        if let Some(msg) = transient_err {
+            let delay = retry_delay(attempt);
+            log::warn!(
+                "HTTP {} attempt {} failed (transient): {}; retrying in {:?}",
+                url,
+                attempt + 1,
+                msg,
+                delay
+            );
+            tokio::time::sleep(delay).await;
         }
     }
 
@@ -186,12 +186,16 @@ async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
     };
     let headers = add_default_headers(lua, &url, headers);
     let path: String = input.iter().nth(1).unwrap().to_string()?;
-    let resp = send_with_retry(CLIENT.get(&url).headers(headers))
-        .await
-        .into_lua_err()?;
-    resp.error_for_status_ref().into_lua_err()?;
+    // Retry the whole flow (request + body) so a mid-stream drop restarts the
+    // download instead of failing.
+    let bytes = retry_async(&url, || async {
+        let resp = CLIENT.get(&url).headers(headers.clone()).send().await?;
+        let resp = resp.error_for_status()?;
+        resp.bytes().await
+    })
+    .await
+    .into_lua_err()?;
     let mut file = tokio::fs::File::create(&path).await.into_lua_err()?;
-    let bytes = resp.bytes().await.into_lua_err()?;
     tokio::io::AsyncWriteExt::write_all(&mut file, &bytes)
         .await
         .into_lua_err()?;
@@ -292,22 +296,13 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
             ]));
         }
     };
-    let resp = match send_with_retry(CLIENT.get(&url).headers(headers)).await {
-        Ok(resp) => resp,
-        Err(e) => {
-            return Ok(MultiValue::from_vec(vec![
-                Value::Nil,
-                Value::String(lua.create_string(e.to_string())?),
-            ]));
-        }
-    };
-    if let Err(e) = resp.error_for_status_ref() {
-        return Ok(MultiValue::from_vec(vec![
-            Value::Nil,
-            Value::String(lua.create_string(e.to_string())?),
-        ]));
-    }
-    let bytes = match resp.bytes().await {
+    let bytes = match retry_async(&url, || async {
+        let resp = CLIENT.get(&url).headers(headers.clone()).send().await?;
+        let resp = resp.error_for_status()?;
+        resp.bytes().await
+    })
+    .await
+    {
         Ok(bytes) => bytes,
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![

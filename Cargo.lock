@@ -5647,7 +5647,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.4.22"
+version = "2026.4.23"
 dependencies = [
  "age",
  "aho-corasick",
@@ -5761,7 +5761,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.18",
  "tokio",
- "tokio-retry",
  "toml 1.1.2+spec-1.1.0",
  "toml_edit",
  "ubi",
@@ -9604,17 +9603,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2"
 dependencies = [
  "native-tls",
- "tokio",
-]
-
-[[package]]
-name = "tokio-retry"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40f644c762e9d396831ae2f8935c954b0d758c4532e924bead0f666d0c1c8640"
-dependencies = [
- "pin-project-lite",
- "rand 0.10.1",
  "tokio",
 ]
 

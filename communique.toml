@@ -1,4 +1,4 @@
-context = "mise is a polyglot runtime manager (like asdf, nvm, pyenv, etc), environment manager, and task runner."
+context = "mise prepares project dev environments by managing tools, environment variables, and tasks in one CLI."
 
 [defaults]
 emoji = false

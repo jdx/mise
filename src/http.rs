@@ -12,8 +12,6 @@ use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
 use tokio::sync::OnceCell;
-use tokio_retry::Retry;
-use tokio_retry::strategy::{ExponentialBackoff, jitter};
 use url::Url;
 
 use crate::cli::version;
@@ -331,31 +329,40 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
-        let mut resp = self.get_async_with_headers(url.clone(), headers).await?;
-        if let Some(length) = resp.content_length()
-            && let Some(pr) = pr
-        {
-            // Reset progress on each attempt
-            pr.set_length(length);
-            pr.set_position(0);
-        }
-
         let parent = path.parent().unwrap();
         file::create_dir_all(parent)?;
-        let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
-        while let Some(chunk) = resp.chunk().await? {
-            if crate::ui::ctrlc::is_cancelled() {
-                bail!("download cancelled by user");
+
+        // Retry the whole download so a mid-stream chunk failure restarts from
+        // byte 0 instead of failing the install. send_once_with_https_fallback
+        // (not send_with_https_fallback) is used inside to avoid retry-on-retry.
+        retry_async("GET", &url, || async {
+            let mut resp = self
+                .send_once_with_https_fallback(Method::GET, url.clone(), headers, "GET")
+                .await?;
+            if let Some(length) = resp.content_length()
+                && let Some(pr) = pr
+            {
+                // Reset progress on each attempt
+                pr.set_length(length);
+                pr.set_position(0);
             }
-            file.write_all(&chunk)?;
-            if let Some(pr) = pr {
-                pr.inc(chunk.len() as u64);
+            let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
+            while let Some(chunk) = resp.chunk().await? {
+                if crate::ui::ctrlc::is_cancelled() {
+                    bail!("download cancelled by user");
+                }
+                file.write_all(&chunk)?;
+                if let Some(pr) = pr {
+                    pr.inc(chunk.len() as u64);
+                }
             }
-        }
-        file.persist(path)?;
-        Ok(())
+            file.persist(path)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn send_with_https_fallback(
@@ -365,29 +372,39 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
     ) -> Result<Response> {
-        Retry::spawn(
-            default_backoff_strategy(Settings::get().http_retries),
-            || {
-                let method = method.clone();
-                let url = url.clone();
-                let headers = headers.clone();
-                async move {
-                    match self
-                        .send_once(method.clone(), url.clone(), &headers, verb_label)
-                        .await
-                    {
-                        Ok(resp) => Ok(resp),
-                        Err(_err) if url.scheme() == "http" => {
-                            let mut url = url;
-                            url.set_scheme("https").unwrap();
-                            self.send_once(method, url, &headers, verb_label).await
-                        }
-                        Err(err) => Err(err),
-                    }
-                }
-            },
-        )
+        retry_async(verb_label, &url, || async {
+            self.send_once_with_https_fallback(method.clone(), url.clone(), headers, verb_label)
+                .await
+        })
         .await
+    }
+
+    /// One attempt with http→https fallback, no retry. Used as the inner step
+    /// for both `send_with_https_fallback` (which adds retry) and
+    /// `download_file_with_headers` (which has its own outer retry covering the
+    /// chunk stream). Splitting this out avoids retry × retry blowup.
+    /// The fallback only fires on connection-level errors (corporate proxy
+    /// blocking plain http), not on HTTP status errors — falling back to https
+    /// after the server already returned a 4xx/5xx makes no sense.
+    async fn send_once_with_https_fallback(
+        &self,
+        method: Method,
+        url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+    ) -> Result<Response> {
+        match self
+            .send_once(method.clone(), url.clone(), headers, verb_label)
+            .await
+        {
+            Ok(resp) => Ok(resp),
+            Err(err) if url.scheme() == "http" && is_connection_error(&err) => {
+                let mut url = url;
+                url.set_scheme("https").unwrap();
+                self.send_once(method, url, headers, verb_label).await
+            }
+            Err(err) => Err(err),
+        }
     }
 
     async fn send_once(
@@ -433,7 +450,9 @@ impl Client {
                             env_var
                         )
                     };
-                    bail!(hint);
+                    // wrap_err preserves the underlying reqwest::Error in the chain so
+                    // is_transient() can still classify this as a retryable timeout.
+                    return Err(Report::new(err).wrap_err(hint));
                 }
                 return Err(err.into());
             }
@@ -587,10 +606,93 @@ fn display_github_rate_limit(resp: &Response) {
     }
 }
 
-fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = std::time::Duration> {
-    ExponentialBackoff::from_millis(10)
-        .map(jitter)
+fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = Duration> {
+    // Hand-rolled schedule (with jitter): ~200ms / ~1s / ~4s / ~15s, then 15s
+    // for every retry beyond the schedule. The trailing repeat matters because
+    // `MISE_HTTP_RETRIES` can be set arbitrarily high — a fixed-length array
+    // would silently cap retries at its length. tokio_retry's ExponentialBackoff
+    // ::from_millis is geometric in the base (base, base*base, …) so picking a
+    // base that gives nice human-scale delays is awkward; explicit is clearer.
+    [200u64, 1_000, 4_000, 15_000]
+        .into_iter()
+        .chain(std::iter::repeat(15_000))
+        .map(Duration::from_millis)
+        .map(equal_jitter)
         .take(retries.max(0) as usize)
+}
+
+/// Jitter the duration to a random value in `[d/2, d)` — "equal jitter" per
+/// AWS's backoff guidance. Avoids tokio_retry's `jitter` which can return
+/// near-zero (its range is `[0, d)`), defeating the point of backoff.
+fn equal_jitter(d: Duration) -> Duration {
+    let factor = 0.5 + rand::random::<f64>() * 0.5;
+    Duration::from_secs_f64(d.as_secs_f64() * factor)
+}
+
+/// True if the error is a network-layer connection problem (no status received).
+/// Used to decide when http→https fallback makes sense: only when the http
+/// attempt never reached the server, not when the server returned a status.
+fn is_connection_error(err: &Report) -> bool {
+    err.chain().any(|e| {
+        let Some(reqwest_err) = e.downcast_ref::<reqwest::Error>() else {
+            return false;
+        };
+        (reqwest_err.is_connect() || reqwest_err.is_timeout()) && reqwest_err.status().is_none()
+    })
+}
+
+/// Classifies an error as transient (should retry) vs permanent.
+/// Walks the error chain so wrapped errors (e.g. our timeout hint) still match.
+pub(crate) fn is_transient(err: &Report) -> bool {
+    err.chain().any(|e| {
+        let Some(reqwest_err) = e.downcast_ref::<reqwest::Error>() else {
+            return false;
+        };
+        // Network-layer failures: connect refused, timeout, mid-stream body drop.
+        if reqwest_err.is_timeout() || reqwest_err.is_connect() || reqwest_err.is_body() {
+            return true;
+        }
+        // Status errors: 5xx server errors plus 408 (Request Timeout) and
+        // 429 (Too Many Requests). Other 4xx are deterministic — don't retry.
+        if let Some(status) = reqwest_err.status() {
+            let code = status.as_u16();
+            return code == 408 || code == 429 || (500..600).contains(&code);
+        }
+        false
+    })
+}
+
+/// Retry an async operation on transient errors using `default_backoff_strategy`.
+/// Emits a warn! immediately on each transient failure so the user sees flaky
+/// infrastructure as it's happening, instead of waiting through the backoff
+/// schedule. Successful rescues and final exhaustion don't get extra warnings
+/// — the caller surfaces the outcome.
+pub(crate) async fn retry_async<F, Fut, T>(verb_label: &str, url: &Url, mut f: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let mut backoff = default_backoff_strategy(Settings::get().http_retries);
+    let mut attempt: usize = 1;
+    loop {
+        match f().await {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                if !is_transient(&err) {
+                    return Err(err);
+                }
+                let Some(delay) = backoff.next() else {
+                    return Err(err);
+                };
+                warn!(
+                    "HTTP {} {} attempt {} failed (transient): {}; retrying in {:?}",
+                    verb_label, url, attempt, err, delay
+                );
+                tokio::time::sleep(delay).await;
+                attempt += 1;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -670,6 +772,144 @@ mod tests {
 
         assert!(err.to_string().contains("Got non-HTML text from"));
         mock.assert();
+    // RAII guard that holds the global test lock and resets settings on drop.
+    // Use this in async tests so the mutex stays held across .await points
+    // without sync/async closure shenanigans.
+    struct SettingsGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for SettingsGuard {
+        fn drop(&mut self) {
+            crate::config::Settings::reset(None);
+        }
+    }
+    fn set_test_http_retries(retries: i64) -> SettingsGuard {
+        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.http_retries = Some(retries);
+        crate::config::Settings::reset(Some(settings));
+        SettingsGuard { _lock: lock }
+    }
+
+    // A tiny in-process HTTP/1.1 responder. Each accepted connection consumes
+    // the next response from `responses` and writes it back. Returns the bound
+    // port and an Arc counter of connections actually served.
+    async fn spawn_canned_server(
+        responses: Vec<&'static str>,
+    ) -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_inner = count.clone();
+        tokio::spawn(async move {
+            for resp in responses {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                count_inner.fetch_add(1, Ordering::SeqCst);
+                // Drain request headers (read until \r\n\r\n or EOF).
+                let mut buf = [0u8; 4096];
+                let mut total = Vec::new();
+                loop {
+                    match sock.read(&mut buf).await {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            total.extend_from_slice(&buf[..n]);
+                            if total.windows(4).any(|w| w == b"\r\n\r\n") {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+        (port, count)
+    }
+
+    fn ok_response() -> &'static str {
+        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
+    }
+    fn bad_gateway_response() -> &'static str {
+        "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    }
+    fn not_found_response() -> &'static str {
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    }
+    fn server_error_response() -> &'static str {
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_retry_succeeds_after_two_502s() {
+        // 2 retries is enough to verify the rescue path (2 failures + 1 success)
+        // without paying the third backoff (~12.5s).
+        let _guard = set_test_http_retries(2);
+        let (port, count) = spawn_canned_server(vec![
+            bad_gateway_response(),
+            bad_gateway_response(),
+            ok_response(),
+        ])
+        .await;
+        let url: Url = format!("http://127.0.0.1:{}/", port).parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let resp = client.get_async(url).await.unwrap();
+        assert!(resp.status().is_success());
+        // Should have served 3 connections: two 502s + one 200.
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_no_retry_on_404() {
+        let _guard = set_test_http_retries(3);
+        let (port, count) = spawn_canned_server(vec![not_found_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{}/", port).parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let err = client.get_async(url).await.unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("404"), "expected 404 in error: {msg}");
+        // Should not have retried — only one connection.
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_retry_exhausted_on_persistent_500() {
+        // Use 1 retry so the test doesn't pay the full backoff schedule;
+        // the behavior under test (exhaustion → final error) is the same.
+        let _guard = set_test_http_retries(1);
+        // 2 connections: initial + 1 retry.
+        let (port, count) =
+            spawn_canned_server(vec![server_error_response(), server_error_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{}/", port).parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let err = client.get_async(url).await.unwrap_err();
+        assert!(format!("{err:?}").contains("500"));
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_backoff_strategy_yields_requested_count_beyond_schedule() {
+        // Regression: a fixed-length schedule used to silently cap retries at 4.
+        // Now extra retries should fall back to the longest delay.
+        let delays: Vec<_> = default_backoff_strategy(7).collect();
+        assert_eq!(delays.len(), 7);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_retries_disabled_fails_immediately() {
+        let _guard = set_test_http_retries(0);
+        let (port, count) = spawn_canned_server(vec![bad_gateway_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{}/", port).parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let err = client.get_async(url).await.unwrap_err();
+        assert!(format!("{err:?}").contains("502"));
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[test]

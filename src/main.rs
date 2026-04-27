@@ -182,7 +182,7 @@ fn show_github_rate_limit_err(err: &Report) {
             warn!(indoc!(
                 r#"No GitHub token was found, so mise is making unauthenticated requests to GitHub which have a much lower rate limit.
                    Create a token at https://github.com/settings/tokens (no scopes required) and set it as GITHUB_TOKEN in your environment.
-                   See https://mise.jdx.dev/dev-tools/github-tokens.html for all supported token sources (env vars, gh CLI, credential_command, etc.)."#
+                   See https://mise.en.dev/dev-tools/github-tokens.html for all supported token sources (env vars, gh CLI, credential_command, etc.)."#
             ));
         }
     }

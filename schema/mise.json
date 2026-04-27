@@ -1,5 +1,5 @@
 {
-  "$id": "https://mise.jdx.dev/schema/mise.json",
+  "$id": "https://mise.en.dev/schema/mise.json",
   "$schema": "https://json-schema.org/draft/2019-09/schema#",
   "title": "mise",
   "type": "object",
@@ -971,8 +971,8 @@
           }
         },
         "http_retries": {
-          "default": 0,
-          "description": "Number of retries for HTTP requests in mise.",
+          "default": 3,
+          "description": "Number of retries for transient HTTP failures in mise.",
           "type": "number"
         },
         "http_timeout": {
@@ -1269,6 +1269,10 @@
         },
         "prefer_offline": {
           "description": "Prefer locally cached data over remote fetches when possible.",
+          "type": "boolean"
+        },
+        "prereleases": {
+          "description": "Include pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching for all tools.",
           "type": "boolean"
         },
         "profile": {

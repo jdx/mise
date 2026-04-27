@@ -2036,7 +2036,7 @@ fn discover_monorepo_subdirs(
         "monorepo_auto_discovery",
         "Automatic monorepo discovery is deprecated. \
          Please define [monorepo].config_roots in your root mise.toml. \
-         See https://mise.jdx.dev/tasks/monorepo.html#explicit-config-roots"
+         See https://mise.en.dev/tasks/monorepo.html#explicit-config-roots"
     );
     const DEFAULT_IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
     let has_task_includes = |dir: &Path| {

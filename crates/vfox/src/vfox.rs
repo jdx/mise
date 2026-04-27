@@ -19,7 +19,7 @@ use crate::hooks::mise_path::MisePathContext;
 use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
 use crate::hooks::pre_install::{PreInstall, PreInstallAttestation, VerifiedAttestation};
-use crate::http::CLIENT;
+use crate::http::{CLIENT, retry_async};
 use crate::metadata::Metadata;
 use crate::plugin::Plugin;
 use crate::registry;
@@ -414,11 +414,15 @@ impl Vfox {
             .download_dir
             .join(format!("{sdk}-{version}"))
             .join(filename);
-        let resp = CLIENT.get(url.clone()).send().await?;
-        resp.error_for_status_ref()?;
+        let url_str = url.to_string();
+        let bytes = retry_async(&url_str, || async {
+            let resp = CLIENT.get(url.clone()).send().await?;
+            let resp = resp.error_for_status()?;
+            resp.bytes().await
+        })
+        .await?;
         file::mkdirp(path.parent().unwrap())?;
         let mut file = tokio::fs::File::create(&path).await?;
-        let bytes = resp.bytes().await?;
         tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await?;
         file.sync_all().await?;
         Ok(path)

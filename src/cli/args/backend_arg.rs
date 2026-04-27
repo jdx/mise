@@ -714,10 +714,10 @@ mod tests {
         assert_str_eq!("npm:prettier[a=1,b=2]", fa.full_with_opts());
 
         fa = "http:hello-lock".into();
-        fa.set_opts(Some(parse_tool_options("url=https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin")));
+        fa.set_opts(Some(parse_tool_options("url=https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin")));
         // install_env should be filtered out, remaining order preserved
         assert_str_eq!(
-            "http:hello-lock[url=https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
+            "http:hello-lock[url=https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
             fa.full_with_opts()
         );
     }

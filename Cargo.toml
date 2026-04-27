@@ -8,12 +8,12 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.4.22"
+version = "2026.4.23"
 edition = "2024"
-description = "The front-end to your dev env"
+description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
-homepage = "https://mise.jdx.dev"
-documentation = "https://mise.jdx.dev"
+homepage = "https://mise.en.dev"
+documentation = "https://mise.en.dev"
 repository = "https://github.com/jdx/mise"
 readme = "README.md"
 license = "MIT"
@@ -183,7 +183,6 @@ tera = "1"
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-tokio-retry = "0.3"
 toml = { version = "1.0", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.9", default-features = false }
