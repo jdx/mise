@@ -2,13 +2,13 @@
 %global _missing_build_ids_terminate_build 0
 
 Name: mise
-Version: 2026.4.22
+Version: 2026.4.23
 Release: 1%{?dist}
 Summary: Dev tools, env vars, and tasks in one CLI
 
 License: MIT
 URL: https://mise.jdx.dev
-Source0: ttps://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
+Source0: htps://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
 Source1: mise-vendor-%{version}.tar.gz
 
 BuildRequires:  rust >= 1.91
@@ -68,5 +68,11 @@ TOML
 %{_libdir}/mise/mise-self-update-instructions.toml
 
 %changelog
-* __CHANGELOG_DATE__ __MAINTAINER_NAME__ <__MAINTAINER_EMAIL__> - %{version}-1
-- New upstream release %{version}
+%if 0%{?autochangelog}
+# Fedora 40+
+%autochangelog
+%else
+# EPEL9/10
+* %(date "+%a %b %d %Y") mise Release Bot <noreply@mise.jdx.dev> - 0-1
+- Initial Packit-managed build
+%endif
