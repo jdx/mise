@@ -3307,6 +3307,12 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--name-only",
+              description:
+                "Only show task names, one per line. Useful for piping to fzf and similar tools.",
+              isRepeatable: false,
+            },
+            {
               name: "--no-header",
               description: "Do not print table header",
               isRepeatable: false,
@@ -3597,6 +3603,12 @@ const completionSpec: Fig.Spec = {
         {
           name: "--hidden",
           description: "Show hidden tasks",
+          isRepeatable: false,
+        },
+        {
+          name: "--name-only",
+          description:
+            "Only show task names, one per line. Useful for piping to fzf and similar tools.",
           isRepeatable: false,
         },
         {
