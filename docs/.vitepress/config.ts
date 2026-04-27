@@ -422,6 +422,12 @@ export default withMermaid(
         },
       ]);
     },
+    async transformHtml(code) {
+      return code.replace(
+        '<script id="check-dark-mode">',
+        '<script id="check-dark-mode" data-cfasync="false">',
+      );
+    },
   }),
 );
 
