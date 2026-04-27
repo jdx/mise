@@ -132,15 +132,15 @@ impl TaskExecutor {
     /// Build a SandboxConfig for a task by merging task-level config with CLI overrides.
     ///
     /// Task-level relative `allow_read`/`allow_write` paths are resolved against the task's
-    /// effective working directory (`task.dir(config)`, falling back to `config_root`) so that
-    /// `allow_read = ["."]` means "the directory the task runs in", matching how `dir` itself
+    /// effective working directory (`task.dir(config)`, which itself falls back to `config_root`)
+    /// so that `allow_read = ["."]` means "the directory the task runs in", matching how `dir`
     /// resolves. CLI-supplied paths are left as-is and resolved against cwd by `resolve_paths()`.
     async fn build_sandbox_for_task(
         &self,
         task: &Task,
         config: &Arc<Config>,
     ) -> Result<SandboxConfig> {
-        let task_base = task.dir(config).await?.or_else(|| task.config_root.clone());
+        let task_base = task.dir(config).await?;
         let resolve_task_path = |p: &PathBuf| -> PathBuf {
             if p.is_absolute() {
                 p.clone()
@@ -150,7 +150,7 @@ impl TaskExecutor {
                 p.clone()
             }
         };
-        let mut config = SandboxConfig {
+        let mut sandbox = SandboxConfig {
             deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
             deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
@@ -180,8 +180,8 @@ impl TaskExecutor {
                 .cloned()
                 .collect(),
         };
-        config.resolve_paths();
-        Ok(config)
+        sandbox.resolve_paths();
+        Ok(sandbox)
     }
 
     pub fn task_timings(&self) -> bool {
