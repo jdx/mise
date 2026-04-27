@@ -921,9 +921,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         if !cf.source().is_mise_toml() {
             continue;
         }
-        if crate::config::is_global_config(config_path) {
-            continue;
-        }
         let (lockfile_path, _is_local) = lockfile_path_for_config(config_path);
         lockfile_configs
             .entry(lockfile_path)
@@ -951,20 +948,65 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         let mut existing_lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
-        // Collect all tools from all contributing configs
-        let mut tools_by_short: HashMap<String, Vec<LockfileTool>> = HashMap::new();
+        // Collect all tools from all contributing configs. This starts from the
+        // resolved toolset, then overlays newly installed versions because a
+        // fuzzy request may still resolve through the old lockfile entry until
+        // this update is written.
+        let mut tool_versions_by_short: HashMap<String, Vec<ToolVersion>> = HashMap::new();
 
         for config_path in &configs {
             let tool_source = ToolSource::MiseToml(config_path.clone());
             if let Some(tools) = tools_by_source.get(&tool_source) {
                 for (short, tvl) in tools {
-                    let lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
-                    for tool in lockfile_tools {
-                        tools_by_short.entry(short.clone()).or_default().push(tool);
-                    }
+                    tool_versions_by_short
+                        .entry(short.clone())
+                        .or_default()
+                        .extend(tvl.versions.clone());
                 }
             }
         }
+
+        for new_version in new_versions {
+            let versions = tool_versions_by_short
+                .entry(new_version.short().to_string())
+                .or_default();
+            if let Some(source_path) = new_version.request.source().path() {
+                if !configs.iter().any(|config| config == source_path) {
+                    continue;
+                }
+
+                versions.retain(|tv| {
+                    tv.ba() != new_version.ba()
+                        || tv.request.version() != new_version.request.version()
+                        || tv.request.source() != new_version.request.source()
+                });
+                versions.push(new_version.clone());
+            } else if let Some((idx, request)) = versions
+                .iter()
+                .enumerate()
+                .exactly_one()
+                .ok()
+                .map(|(idx, tv)| (idx, tv.request.clone()))
+            {
+                let mut new_version = new_version.clone();
+                new_version.request = request;
+                versions.remove(idx);
+                versions.push(new_version);
+            }
+        }
+
+        let tools_by_short: HashMap<String, Vec<LockfileTool>> = tool_versions_by_short
+            .into_iter()
+            .map(|(short, versions)| {
+                (
+                    short,
+                    versions
+                        .iter()
+                        .map(lockfile_tool_from_tool_version)
+                        .collect(),
+                )
+            })
+            .collect();
 
         // Check for provenance regression before merging (which drops old version entries).
         // For github backend tools, error if the highest prior version had provenance but
@@ -1755,34 +1797,34 @@ impl LockfileTool {
 
 impl From<ToolVersionList> for Vec<LockfileTool> {
     fn from(tvl: ToolVersionList) -> Self {
-        use crate::backend::platform_target::PlatformTarget;
-
         tvl.versions
             .iter()
-            .map(|tv| {
-                let mut platforms = BTreeMap::new();
-
-                // Convert tool version lock_platforms to lockfile platforms
-                for (platform, platform_info) in &tv.lock_platforms {
-                    platforms.insert(platform.clone(), platform_info.clone());
-                }
-
-                // Resolve lockfile options from the backend
-                let options = if let Ok(backend) = tv.request.backend() {
-                    let target = PlatformTarget::from_current();
-                    backend.resolve_lockfile_options(&tv.request, &target)
-                } else {
-                    BTreeMap::new()
-                };
-
-                LockfileTool {
-                    version: tv.version.clone(),
-                    backend: Some(tv.ba().stored_full()),
-                    options,
-                    platforms,
-                }
-            })
+            .map(lockfile_tool_from_tool_version)
             .collect()
+    }
+}
+
+fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> LockfileTool {
+    let mut platforms = BTreeMap::new();
+
+    // Convert tool version lock_platforms to lockfile platforms
+    for (platform, platform_info) in &tv.lock_platforms {
+        platforms.insert(platform.clone(), platform_info.clone());
+    }
+
+    // Resolve lockfile options from the backend
+    let options = if let Ok(backend) = tv.request.backend() {
+        let target = PlatformTarget::from_current();
+        backend.resolve_lockfile_options(&tv.request, &target)
+    } else {
+        BTreeMap::new()
+    };
+
+    LockfileTool {
+        version: tv.version.clone(),
+        backend: Some(tv.ba().stored_full()),
+        options,
+        platforms,
     }
 }
 
