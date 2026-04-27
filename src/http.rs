@@ -772,6 +772,8 @@ mod tests {
 
         assert!(err.to_string().contains("Got non-HTML text from"));
         mock.assert();
+    }
+
     // RAII guard that holds the global test lock and resets settings on drop.
     // Use this in async tests so the mutex stays held across .await points
     // without sync/async closure shenanigans.
