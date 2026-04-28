@@ -139,8 +139,22 @@ EOF
 assert_contains "mise deps --list" "bun"
 assert_contains "mise deps --list" "bun.lock"
 
-# Test go provider
+# Test aube provider
 rm -f bun.lock
+cat >aube-lock.yaml <<'EOF'
+lockfileVersion: 1
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.aube]
+EOF
+
+assert_contains "mise deps --list" "aube"
+assert_contains "mise deps --list" "aube-lock.yaml"
+assert_contains "mise deps --dry-run 2>&1" "aube"
+
+# Test go provider
+rm -f aube-lock.yaml
 cat >go.sum <<'EOF'
 github.com/foo/bar v1.0.0 h1:abc
 EOF

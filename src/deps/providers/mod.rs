@@ -1,3 +1,4 @@
+mod aube;
 mod bun;
 mod bundler;
 mod composer;
@@ -11,6 +12,7 @@ mod poetry;
 mod uv;
 mod yarn;
 
+pub use aube::AubeDepsProvider;
 pub use bun::BunDepsProvider;
 pub use bundler::BundlerDepsProvider;
 pub use composer::ComposerDepsProvider;

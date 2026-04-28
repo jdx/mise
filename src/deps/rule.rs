@@ -8,6 +8,7 @@ pub const BUILTIN_PROVIDERS: &[&str] = &[
     "yarn",
     "pnpm",
     "bun",           // Node.js
+    "aube",          // Node.js
     "go",            // Go
     "pip",           // Python (requirements.txt)
     "poetry",        // Python (poetry)
