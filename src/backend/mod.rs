@@ -679,7 +679,7 @@ pub trait Backend: Debug + Send + Sync {
         config: &Arc<Config>,
     ) -> eyre::Result<Vec<VersionInfo>> {
         let remote_versions = self.get_remote_version_cache();
-        let remote_versions = remote_versions.lock().await;
+        let mut remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
         let id = self.id();
 
@@ -828,11 +828,12 @@ pub trait Backend: Debug + Send + Sync {
                 }
                 Ok(versions)
             })
-            .await?;
-        Ok(filter_cached_prereleases(
-            versions.clone(),
-            want_prereleases,
-        ))
+            .await?
+            .clone();
+        if versions.is_empty() {
+            remote_versions.clear()?;
+        }
+        Ok(filter_cached_prereleases(versions, want_prereleases))
     }
 
     /// Backend implementation for fetching remote versions with metadata.

@@ -201,13 +201,14 @@ where
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn clear(&self) -> Result<()> {
+    pub fn clear(&mut self) -> Result<()> {
         let path = &self.cache_file_path;
         trace!("clearing cache {}", path.display());
         if path.exists() {
             file::remove_file(path)?;
         }
+        *self.cache = Default::default();
+        *self.cache_async = Default::default();
         Ok(())
     }
 
@@ -342,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache() {
         let _config = Config::get().await.unwrap();
-        let cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
+        let mut cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
         cache.clear().unwrap();
         let val = cache.get_or_try_init(|| Ok(1)).unwrap();
         assert_eq!(val, &1);
