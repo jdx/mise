@@ -26,6 +26,7 @@
 //! break that file's per-host mental model or warp the wings shape
 //! to fit it. Separate module, shared file conventions.
 
+pub mod ci;
 pub mod client;
 pub mod credentials;
 pub mod http_hooks;
