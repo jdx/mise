@@ -29,16 +29,16 @@ Show all installed plugins and versions
 
 Output in JSON format (includes version metadata like created_at timestamps when available)
 
+### `--no-versions-host`
+
+Disable checking the mise-versions host
+
 ### `--prerelease`
 
 Include pre-release versions in the output for backends that report
 an upstream prerelease flag (currently github + aqua). Equivalent to
 setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
 duration of this command.
-
-### `--no-versions-host`
-
-Disable checking the mise-versions host
 
 ### `--strict-metadata`
 

@@ -47,16 +47,16 @@ pub struct LsRemote {
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
+    /// Disable checking the mise-versions host
+    #[clap(long, verbatim_doc_comment)]
+    pub no_versions_host: bool,
+
     /// Include pre-release versions in the output for backends that report
     /// an upstream prerelease flag (currently github + aqua). Equivalent to
     /// setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
     /// duration of this command.
     #[clap(long, verbatim_doc_comment)]
     pub prerelease: bool,
-
-    /// Disable checking the mise-versions host
-    #[clap(long, verbatim_doc_comment)]
-    pub no_versions_host: bool,
 
     /// Fail if release metadata fetches fail
     ///
