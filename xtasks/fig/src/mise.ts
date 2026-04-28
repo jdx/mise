@@ -1757,8 +1757,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--strict-metadata",
-          description:
-            "Fail if --json output cannot include complete version metadata",
+          description: "Fail if release metadata fetches fail",
           isRepeatable: false,
         },
       ],
