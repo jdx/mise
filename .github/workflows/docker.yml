@@ -3,10 +3,6 @@ name: docker
 on:
   push:
     tags: ["v[0-9]*"]
-    paths:
-      - "packaging/copr/Dockerfile"
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:

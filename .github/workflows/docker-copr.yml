@@ -1,0 +1,41 @@
+name: docker-copr
+
+# Rebuilds ghcr.io/jdx/mise:copr whenever its Dockerfile changes on main.
+# Kept separate from docker.yml to avoid triggering the dockerhub/merge jobs
+# (which would overwrite :latest with a non-release build).
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packaging/copr/Dockerfile"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-copr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ghcr.io/jdx/mise:copr
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/jdx/mise:copr
+          file: packaging/copr/Dockerfile
