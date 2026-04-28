@@ -302,6 +302,7 @@ impl Vfox {
         sdk: &str,
         opts: T,
         env: &indexmap::IndexMap<String, String>,
+        config_root: Option<&str>,
     ) -> Result<MiseEnvResult> {
         let plugin = self.get_sdk(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("mise_env") {
@@ -319,6 +320,7 @@ impl Vfox {
         let ctx = MiseEnvContext {
             args: vec![],
             options: opts,
+            config_root: config_root.map(|s| s.to_string()),
         };
         plugin.mise_env(ctx).await
     }
@@ -381,6 +383,7 @@ impl Vfox {
         sdk: &str,
         opts: T,
         env: &indexmap::IndexMap<String, String>,
+        config_root: Option<&str>,
     ) -> Result<Vec<String>> {
         let plugin = self.get_sdk(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("mise_path") {
@@ -391,6 +394,7 @@ impl Vfox {
         let ctx = MisePathContext {
             args: vec![],
             options: opts,
+            config_root: config_root.map(|s| s.to_string()),
         };
         plugin.mise_path(ctx).await
     }

@@ -10,6 +10,7 @@ use crate::hooks::env_keys::EnvKey;
 pub struct MiseEnvContext<T: serde::Serialize> {
     pub args: Vec<String>,
     pub options: T,
+    pub config_root: Option<String>,
 }
 
 /// Result from a mise_env hook call
@@ -50,6 +51,7 @@ impl<T: serde::Serialize> IntoLua for MiseEnvContext<T> {
     fn into_lua(self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.set("options", lua.to_value(&self.options)?)?;
+        table.set("config_root", self.config_root)?;
         Ok(Value::Table(table))
     }
 }
