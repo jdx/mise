@@ -22,10 +22,10 @@ use crate::{
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
-use crate::{backend::Backend, config::Config};
+use crate::{backend::Backend, backend::strict_metadata, config::Config};
 use crate::{file, github, minisign};
 use async_trait::async_trait;
-use eyre::{ContextCompat, Result, bail, eyre};
+use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
@@ -213,6 +213,11 @@ impl Backend for AquaBackend {
         let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(e) => {
+                if strict_metadata() {
+                    return Err(e).wrap_err_with(|| {
+                        format!("failed to fetch aqua package metadata for {}", self.id)
+                    });
+                }
                 warn!("Remote versions cannot be fetched: {}", e);
                 return Ok(vec![]);
             }
@@ -232,6 +237,11 @@ impl Backend for AquaBackend {
         let tags_with_timestamps = match get_tags_with_created_at(&pkg).await {
             Ok(tags) => tags,
             Err(e) => {
+                if strict_metadata() {
+                    return Err(e).wrap_err_with(|| {
+                        format!("failed to fetch aqua release metadata for {}", self.id)
+                    });
+                }
                 warn!("Remote versions cannot be fetched: {}", e);
                 return Ok(vec![]);
             }

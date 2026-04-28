@@ -5,7 +5,10 @@ use std::fs::File;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
@@ -37,7 +40,7 @@ use crate::{
 use crate::{dirs, env, file, hash, lock_file, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use platform_target::PlatformTarget;
@@ -72,6 +75,16 @@ pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
+
+static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
+
+pub fn set_strict_metadata(strict: bool) {
+    STRICT_METADATA.store(strict, Ordering::Relaxed);
+}
+
+pub fn strict_metadata() -> bool {
+    STRICT_METADATA.load(Ordering::Relaxed)
+}
 
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
@@ -790,6 +803,14 @@ pub trait Backend: Debug + Send + Sync {
                         }
                         Ok(None) => {}
                         Err(e) => {
+                            if strict_metadata() {
+                                return Err(e).wrap_err_with(|| {
+                                    eyre!(
+                                        "failed to fetch version metadata from versions host for {}",
+                                        ba.to_string()
+                                    )
+                                });
+                            }
                             debug!("Error getting versions from versions host: {:#}", e);
                         }
                     }

@@ -596,6 +596,9 @@ cmd ls-remote help="List runtime versions available for install." {
     flag --all help="Show all installed plugins and versions"
     flag "-J --json" help="Output in JSON format (includes version metadata like created_at timestamps when available)"
     flag --prerelease help="Include pre-release versions in the output for backends that report\nan upstream prerelease flag (currently github + aqua). Equivalent to\nsetting `MISE_PRERELEASES=1` or the `prereleases` setting for the\nduration of this command."
+    flag --strict-metadata help="Fail if --json output cannot include complete version metadata" {
+        long_help "Fail if --json output cannot include complete version metadata\n\nThis prevents metadata consumers from accepting fallback lists that are\nmissing created_at timestamps."
+    }
     arg "[TOOL@VERSION]" help="Tool to get versions for" required=#false
     arg "[PREFIX]" help="The version prefix to use when querying the latest version\nsame as the first argument after the \"@\"" required=#false
 }

@@ -36,6 +36,13 @@ an upstream prerelease flag (currently github + aqua). Equivalent to
 setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
 duration of this command.
 
+### `--strict-metadata`
+
+Fail if --json output cannot include complete version metadata
+
+This prevents metadata consumers from accepting fallback lists that are
+missing created_at timestamps.
+
 Examples:
 
 ```
