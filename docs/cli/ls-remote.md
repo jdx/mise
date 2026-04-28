@@ -29,12 +29,25 @@ Show all installed plugins and versions
 
 Output in JSON format (includes version metadata like created_at timestamps when available)
 
+### `--no-versions-host`
+
+Disable checking the mise-versions host
+
 ### `--prerelease`
 
 Include pre-release versions in the output for backends that report
 an upstream prerelease flag (currently github + aqua). Equivalent to
 setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
 duration of this command.
+
+### `--strict-metadata`
+
+Fail if release metadata fetches fail
+
+Requires --json and --no-versions-host.
+
+This prevents metadata consumers from accepting empty fallback results
+when a backend's metadata-producing upstream request fails.
 
 Examples:
 

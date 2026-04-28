@@ -1512,11 +1512,22 @@ Show all installed plugins and versions
 \fB\-J, \-\-json\fR
 Output in JSON format (includes version metadata like created_at timestamps when available)
 .TP
+\fB\-\-no\-versions\-host\fR
+Disable checking the mise\-versions host
+.TP
 \fB\-\-prerelease\fR
 Include pre\-release versions in the output for backends that report
 an upstream prerelease flag (currently github + aqua). Equivalent to
 setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
 duration of this command.
+.TP
+\fB\-\-strict\-metadata\fR
+Fail if release metadata fetches fail
+
+Requires \-\-json and \-\-no\-versions\-host.
+
+This prevents metadata consumers from accepting empty fallback results
+when a backend's metadata\-producing upstream request fails.
 \fBArguments:\fR
 .PP
 .TP

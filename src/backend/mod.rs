@@ -5,7 +5,10 @@ use std::fs::File;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
@@ -72,6 +75,16 @@ pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
+
+static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
+
+pub fn set_strict_metadata(strict: bool) {
+    STRICT_METADATA.store(strict, Ordering::Relaxed);
+}
+
+pub fn strict_metadata() -> bool {
+    STRICT_METADATA.load(Ordering::Relaxed)
+}
 
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]

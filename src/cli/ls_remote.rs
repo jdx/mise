@@ -47,12 +47,25 @@ pub struct LsRemote {
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
+    /// Disable checking the mise-versions host
+    #[clap(long, verbatim_doc_comment)]
+    pub no_versions_host: bool,
+
     /// Include pre-release versions in the output for backends that report
     /// an upstream prerelease flag (currently github + aqua). Equivalent to
     /// setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
     /// duration of this command.
     #[clap(long, verbatim_doc_comment)]
     pub prerelease: bool,
+
+    /// Fail if release metadata fetches fail
+    ///
+    /// Requires --json and --no-versions-host.
+    ///
+    /// This prevents metadata consumers from accepting empty fallback results
+    /// when a backend's metadata-producing upstream request fails.
+    #[clap(long, verbatim_doc_comment, requires_all = ["json", "no_versions_host"])]
+    pub strict_metadata: bool,
 }
 
 impl LsRemote {
@@ -60,6 +73,10 @@ impl LsRemote {
         if self.prerelease {
             Settings::override_with(|s| s.prereleases = Some(true));
         }
+        if self.no_versions_host {
+            Settings::override_with(|s| s.use_versions_host = Some(false));
+        }
+        backend::set_strict_metadata(self.strict_metadata);
         let config = Config::get().await?;
         if let Some(plugin) = self.get_plugin(&config).await? {
             self.run_single(&config, plugin).await
@@ -102,7 +119,8 @@ impl LsRemote {
         let mut versions = vec![];
         for b in backend::list() {
             let tool = b.id().to_string();
-            for v in b.list_remote_versions_with_info(config).await? {
+            let tool_versions = b.list_remote_versions_with_info(config).await?;
+            for v in tool_versions {
                 versions.push(VersionOutputAll {
                     tool: tool.clone(),
                     version: v.version,
