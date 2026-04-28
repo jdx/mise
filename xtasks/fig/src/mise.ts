@@ -1756,6 +1756,11 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--no-versions-host",
+          description: "Disable checking the mise-versions host",
+          isRepeatable: false,
+        },
+        {
           name: "--strict-metadata",
           description: "Fail if release metadata fetches fail",
           isRepeatable: false,

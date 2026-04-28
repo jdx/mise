@@ -36,6 +36,10 @@ an upstream prerelease flag (currently github + aqua). Equivalent to
 setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
 duration of this command.
 
+### `--no-versions-host`
+
+Disable checking the mise-versions host
+
 ### `--strict-metadata`
 
 Fail if release metadata fetches fail

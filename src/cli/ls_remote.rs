@@ -54,11 +54,15 @@ pub struct LsRemote {
     #[clap(long, verbatim_doc_comment)]
     pub prerelease: bool,
 
+    /// Disable checking the mise-versions host
+    #[clap(long, verbatim_doc_comment)]
+    pub no_versions_host: bool,
+
     /// Fail if release metadata fetches fail
     ///
     /// This prevents metadata consumers from accepting empty fallback results
     /// when a backend's metadata-producing upstream request fails.
-    #[clap(long, verbatim_doc_comment, requires = "json")]
+    #[clap(long, verbatim_doc_comment, requires_all = ["json", "no_versions_host"])]
     pub strict_metadata: bool,
 }
 
@@ -66,6 +70,9 @@ impl LsRemote {
     pub async fn run(self) -> Result<()> {
         if self.prerelease {
             Settings::override_with(|s| s.prereleases = Some(true));
+        }
+        if self.no_versions_host {
+            Settings::override_with(|s| s.use_versions_host = Some(false));
         }
         backend::set_strict_metadata(self.strict_metadata);
         let config = Config::get().await?;
