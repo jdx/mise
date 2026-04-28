@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026.4.24](https://github.com/jdx/mise/compare/v2026.4.23..v2026.4.24) - 2026-04-27
+
+### 🚀 Features
+
+- **(ls-remote)** add `prereleases` setting and `--prerelease` flag by @jdx in [#9415](https://github.com/jdx/mise/pull/9415)
+
+### 🐛 Bug Fixes
+
+- **(http)** retry transient HTTP failures with backoff and warn on rescue by @jdx in [#9414](https://github.com/jdx/mise/pull/9414)
+- **(release)** purge mise.en.dev CDN zone after each S3 publish by @jdx in [#9416](https://github.com/jdx/mise/pull/9416)
+
+### 📚 Documentation
+
+- prefix GitHub star count with ★ glyph by @jdx in [#9417](https://github.com/jdx/mise/pull/9417)
+- update intro messaging by @jdx in [#9418](https://github.com/jdx/mise/pull/9418)
+
 ## [2026.4.23](https://github.com/jdx/mise/compare/v2026.4.22..v2026.4.23) - 2026-04-26
 
 ### 🚀 Features

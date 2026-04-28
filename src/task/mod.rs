@@ -1397,7 +1397,7 @@ impl Task {
     pub async fn render_depends_with_usage(
         &mut self,
         config: &Arc<Config>,
-        usage_values: &IndexMap<String, String>,
+        usage_values: &IndexMap<String, tera::Value>,
     ) -> Result<()> {
         if usage_values.is_empty() {
             return Ok(());
@@ -2020,31 +2020,55 @@ where
     }
 }
 
-/// Check if a TaskDep contains {{usage.*}} references that need deferred rendering.
-/// Strips whitespace before matching to handle Tera's `{{ usage.foo }}` syntax.
+/// Check if a TaskDep contains Tera `usage` references that need deferred rendering.
 pub(crate) fn dep_has_usage_ref(dep: &TaskDep) -> bool {
-    let has_ref = |s: &str| {
-        let s = s.replace(' ', "");
-        s.contains("{{usage.")
-    };
-    has_ref(&dep.task)
-        || dep.args.iter().any(|a| has_ref(a))
-        || dep.env.values().any(|v| has_ref(v))
+    tera_template_has_usage_ref(&dep.task)
+        || dep.args.iter().any(|a| tera_template_has_usage_ref(a))
+        || dep.env.values().any(|v| tera_template_has_usage_ref(v))
 }
 
-/// Parse a task's usage spec against its current args and return a map
-/// of named arg/flag values (e.g., {"app": "myapp", "verbose": "true"}).
+fn tera_template_has_usage_ref(s: &str) -> bool {
+    const TAGS: [(&str, &str); 2] = [("{{", "}}"), ("{%", "%}")];
+    for (open, close) in TAGS {
+        let mut rest = s;
+        while let Some(start) = rest.find(open) {
+            rest = &rest[start + open.len()..];
+            let Some(end) = rest.find(close) else {
+                break;
+            };
+            if tera_tag_has_usage_ref(&rest[..end]) {
+                return true;
+            }
+            rest = &rest[end + close.len()..];
+        }
+    }
+    false
+}
+
+fn tera_tag_has_usage_ref(tag: &str) -> bool {
+    ["usage.", "usage["].iter().any(|needle| {
+        tag.match_indices(needle).any(|(idx, _)| {
+            tag[..idx]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
+        })
+    })
+}
+
+/// Parse a task's usage spec against its current args and return a map of named
+/// arg/flag values preserving their Tera types (e.g., strings and booleans).
 /// Used to provide `{{usage.*}}` context when rendering dependency templates.
 pub async fn parse_usage_values_from_task(
     config: &Arc<Config>,
     task: &Task,
-) -> Result<IndexMap<String, String>> {
+) -> Result<IndexMap<String, tera::Value>> {
     let ts = config.get_toolset().await?;
     let env = ts.full_env(config).await?;
     let (spec, _) = task
         .parse_usage_spec_with_vars(config, None, &env, None)
         .await?;
-    if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() {
+    if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() && spec.cmd.subcommands.is_empty() {
         return Ok(IndexMap::new());
     }
     // Build args list with empty first element (usage parser expects argv[0] to be the command)
@@ -2058,12 +2082,13 @@ pub async fn parse_usage_values_from_task(
             return Ok(IndexMap::new());
         }
     };
-    let mut values = IndexMap::new();
-    for (k, v) in po.as_env() {
-        // Strip "usage_" prefix to get the bare arg/flag name
-        if let Some(name) = k.strip_prefix("usage_") {
-            values.insert(name.to_string(), v);
-        }
+    let mut values: IndexMap<String, tera::Value> =
+        TaskScriptParser::make_usage_ctx(&po).into_iter().collect();
+    // `make_usage_ctx` only inserts `cmd` when a subcommand was actually selected.
+    // Templates referencing `{{ usage.cmd }}` should still resolve (to "") when
+    // subcommands are defined in the spec but none was selected.
+    if !spec.cmd.subcommands.is_empty() && !values.contains_key("cmd") {
+        values.insert("cmd".to_string(), tera::Value::String(String::new()));
     }
     Ok(values)
 }
@@ -2079,7 +2104,7 @@ mod tests {
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
-    use super::{TaskConfirm, name_from_path};
+    use super::{TaskConfirm, name_from_path, tera_tag_has_usage_ref, tera_template_has_usage_ref};
 
     // Thread-local storage to capture parser state during tests
     thread_local! {
@@ -2094,6 +2119,22 @@ mod tests {
 
     fn take_captured_fields() -> Option<Vec<String>> {
         CAPTURED_PARSER_FIELDS.with(|captured| captured.lock().unwrap().take())
+    }
+
+    #[test]
+    fn test_tera_template_has_usage_ref() {
+        assert!(tera_template_has_usage_ref("{{ usage.app }}"));
+        assert!(tera_template_has_usage_ref(
+            "{%- if usage.run_post -%}post{%- endif -%}"
+        ));
+        assert!(tera_template_has_usage_ref("{{ usage['app'] }}"));
+        assert!(!tera_template_has_usage_ref(
+            "{{ env.DEPLOY_ENV }} usage.docs"
+        ));
+        assert!(!tera_template_has_usage_ref("{{ config.usage.something }}"));
+        assert!(!tera_template_has_usage_ref("{# usage.app #}"));
+        assert!(tera_tag_has_usage_ref("if(usage.run_post)"));
+        assert!(!tera_tag_has_usage_ref("ifusage.run_post"));
     }
 
     #[tokio::test]

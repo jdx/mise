@@ -359,7 +359,6 @@ export default withMermaid(
           rel: "stylesheet",
         },
       ],
-      // Analytics
       [
         "script",
         {
@@ -378,9 +377,10 @@ export default withMermaid(
       [
         "script",
         {
-          "data-goatcounter": "https://jdx.goatcounter.com/count",
-          async: "",
-          src: "//gc.zgo.at/count.js",
+          defer: "",
+          "data-domain": "mise.en.dev",
+          "data-api": "https://shrill.en.dev/f5f1/event",
+          src: "https://shrill.en.dev/shrill/script.js",
         },
       ],
       // OpenGraph
@@ -421,6 +421,12 @@ export default withMermaid(
           title: "Sitemap",
         },
       ]);
+    },
+    transformHtml(code) {
+      return code.replace(
+        /<script id="check-dark-mode">/,
+        '<script id="check-dark-mode" data-cfasync="false">',
+      );
     },
   }),
 );

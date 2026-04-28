@@ -32,6 +32,9 @@
 
 </div>
 
+> [!TIP]
+> My latest project, [aube](https://aube.en.dev) just hit stable! It's the fastest Node.js package manager with strong security defaults and is compatible with npm/pnpm/yarn lockfiles!
+
 ## What is it?
 
 `mise` prepares your development environment before each command runs. It keeps
@@ -68,7 +71,7 @@ $ ~/.local/bin/mise --version
  / / / / / / (__  )  __/_____/  __/ / / /_____/ /_/ / / /_/ / /__/  __/
 /_/ /_/ /_/_/____/\___/      \___/_/ /_/     / .___/_/\__,_/\___/\___/
                                             /_/                 by @jdx
-2026.4.23 macos-arm64 (2026-04-26)
+2026.4.24 macos-arm64 (2026-04-27)
 ```
 
 Hook mise into your shell (pick the right one for your shell):

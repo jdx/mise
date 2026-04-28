@@ -92,3 +92,67 @@ output=$(mise run step3 hello 2>&1)
 assert_contains "echo \"$output\"" "step1 hello"
 assert_contains "echo \"$output\"" "step2 hello"
 assert_contains "echo \"$output\"" "step3 hello"
+
+# Test Tera statement tags and boolean usage values in dependency templates
+cat <<'EOF' >mise.toml
+[tasks.noop]
+run = 'echo "noop"'
+
+[tasks."postlint:check"]
+run = 'echo "postlint ran"'
+
+[tasks.lint]
+usage = 'flag "--run-post" default=#false'
+depends_post = ['''
+    {%- if usage.run_post -%}
+        postlint:**
+    {%- else -%}
+        noop
+    {%- endif -%}
+''']
+run = 'echo "lint ran"'
+EOF
+
+assert_contains "mise run lint" "noop"
+assert_not_contains "mise run lint" "postlint ran"
+assert_contains "mise run lint --run-post" "postlint ran"
+assert_not_contains "mise run lint --run-post" "noop"
+
+# Test usage.cmd in dependency templates with subcommand-only spec
+# (regression test: previously the early-return for empty root args/flags meant
+# usage.cmd was never populated for tasks that only define subcommands)
+cat <<'EOF' >mise.toml
+[tasks.noop]
+run = 'echo "noop ran"'
+
+[tasks."deploy-staging"]
+run = 'echo "staging deploy"'
+
+[tasks."deploy-production"]
+run = 'echo "prod deploy"'
+
+[tasks.dispatch]
+usage = '''
+cmd "staging" {
+    arg "<version>"
+}
+cmd "production" {
+    arg "<version>"
+}
+'''
+depends = ['''
+    {%- if usage.cmd == "staging" -%}
+        deploy-staging
+    {%- elif usage.cmd == "production" -%}
+        deploy-production
+    {%- else -%}
+        noop
+    {%- endif -%}
+''']
+run = 'echo "dispatched"'
+EOF
+
+assert_contains "mise run dispatch staging v1" "staging deploy"
+assert_not_contains "mise run dispatch staging v1" "prod deploy"
+assert_contains "mise run dispatch production v2" "prod deploy"
+assert_not_contains "mise run dispatch production v2" "staging deploy"
