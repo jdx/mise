@@ -1750,6 +1750,26 @@
           "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
           "type": "string"
         },
+        "wings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "clerk_publishable_key": {
+              "description": "[experimental] Clerk publishable key for `mise wings login`.",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "[experimental] Route asset fetches through the mise-wings cache (paid).",
+              "type": "boolean"
+            },
+            "host": {
+              "default": "mise-wings.en.dev",
+              "description": "[experimental] Apex host for the mise-wings service.",
+              "type": "string"
+            }
+          }
+        },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"

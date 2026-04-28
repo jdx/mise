@@ -409,4 +409,21 @@ export const commands: { [key: string]: Command } = {
   which: {
     hide: false,
   },
+  wings: {
+    hide: false,
+    subcommands: {
+      login: {
+        hide: false,
+      },
+      logout: {
+        hide: false,
+      },
+      status: {
+        hide: false,
+      },
+      whoami: {
+        hide: false,
+      },
+    },
+  },
 };
