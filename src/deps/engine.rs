@@ -763,10 +763,17 @@ impl DepsEngine {
         {
             let stdout_prefix = stdout_prefix.to_string();
             let stderr_prefix = stderr_prefix.to_string();
+            // Suppress provider command stream output when -q/--quiet is set,
+            // matching `mise install -q` behavior. The progress indicator and
+            // logger-routed status messages still respect the quiet level.
+            let quiet = Settings::get().quiet;
             runner = runner
                 .with_on_stdout(move |line| {
                     if let Some(progress) = progress {
                         progress.set_message(line.clone());
+                    }
+                    if quiet {
+                        return;
                     }
                     if console::colors_enabled() {
                         prefix_println!(stdout_prefix, "{line}\x1b[0m");
@@ -775,6 +782,9 @@ impl DepsEngine {
                     }
                 })
                 .with_on_stderr(move |line| {
+                    if quiet {
+                        return;
+                    }
                     if console::colors_enabled_stderr() {
                         prefix_eprintln!(stderr_prefix, "{line}\x1b[0m");
                     } else {
