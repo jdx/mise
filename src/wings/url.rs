@@ -49,18 +49,23 @@ const GH_BLOB_ORIGIN: &str = "objects.githubusercontent.com";
 const GH_API_ORIGIN: &str = "api.github.com";
 
 /// True iff `host` is one of the wings cache subdomains for
-/// the configured `wings.host`. Used by the HTTP layer to
-/// decide whether to attach the wings Bearer token to an
-/// outbound request — host-membership check is cheaper than
-/// re-parsing the cache prefix list per call.
+/// the configured `wings.host`. Used by the HTTP layer on
+/// every outbound request to decide whether to attach the
+/// wings Bearer token, so the implementation is allocation-
+/// free: strip the apex suffix + the `.` separator, then
+/// check the leftover prefix against the static set.
+///
+/// Gemini flagged the previous shape — three `format!`
+/// allocations per call — as a perf hit on `mise install`
+/// runs that fetch many tarballs.
 pub fn is_wings_cache_host(host: &str) -> bool {
     let apex = &Settings::get().wings.host;
     if apex.is_empty() {
         return false;
     }
-    [NPM_PREFIX, GH_PREFIX, GH_API_PREFIX]
-        .iter()
-        .any(|p| host == format!("{p}.{apex}"))
+    host.strip_suffix(apex.as_str())
+        .and_then(|s| s.strip_suffix('.'))
+        .is_some_and(|prefix| matches!(prefix, NPM_PREFIX | GH_PREFIX | GH_API_PREFIX))
 }
 
 /// Rewrite `url` in place to point at the appropriate wings

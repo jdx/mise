@@ -40,13 +40,13 @@ impl Whoami {
             )
         };
 
-        let access_remaining = humanize_remaining(creds.expires_at);
-        let refresh_remaining = humanize_remaining(creds.refresh_expires_at);
+        let access_line = expiry_phrase(creds.expires_at);
+        let refresh_line = expiry_phrase(creds.refresh_expires_at);
 
         miseprintln!(
             "Signed in to mise-wings\n\
              \n  user:    {}\n  org:     {}\n  host:    {}{host_note}\n\
-             \n  access:  expires in {access_remaining}\n  refresh: expires in {refresh_remaining}\
+             \n  access:  {access_line}\n  refresh: {refresh_line}\
              ",
             creds.user_id,
             creds.org,
@@ -56,20 +56,21 @@ impl Whoami {
     }
 }
 
-/// Format a unix-seconds expiry as a human-readable
-/// "in 23 minutes" / "in 4 days" / "expired Xs ago" string.
-/// Approximate by design — `whoami` is a status surface, not
-/// an audit log, so 23 m vs 23 m 17 s noise isn't useful.
-fn humanize_remaining(expires_at: i64) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let delta = expires_at - now;
+/// Format a unix-seconds expiry as a complete human-readable
+/// phrase: `"expires in 23m"` for live tokens,
+/// `"expired 45s ago"` for lapsed ones. The phrase is
+/// self-describing so the caller can drop it into a sentence
+/// without an outer `"expires in {…}"` template — Cursor
+/// Bugbot flagged the previous shape, which produced garbled
+/// "expires in expired 45s ago" output once a token lapsed
+/// (a 24 h-TTL access token does this every overnight).
+fn expiry_phrase(expires_at: i64) -> String {
+    let delta = expires_at - crate::wings::now_unix();
     if delta < 0 {
-        return format!("expired {} ago", humanize_duration(-delta));
+        format!("expired {} ago", humanize_duration(-delta))
+    } else {
+        format!("expires in {}", humanize_duration(delta))
     }
-    humanize_duration(delta)
 }
 
 fn humanize_duration(secs: i64) -> String {

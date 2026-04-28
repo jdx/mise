@@ -34,6 +34,7 @@
 
 use eyre::{Context, Result, bail};
 
+use crate::cli::wings::read_token_from_stdin;
 use crate::config::Settings;
 use crate::wings::{client, credentials};
 
@@ -63,9 +64,14 @@ pub struct Login {
 
 impl Login {
     pub async fn run(self) -> Result<()> {
+        // `clap`'s `conflicts_with` rejects `--token` +
+        // `--token-stdin` before we ever reach `run()`, so
+        // the only three reachable shapes are: token only,
+        // stdin only, neither. Greptile flagged the previous
+        // unreachable `(Some(_), true)` arm on PR review.
         let host = &Settings::get().wings.host;
         let token = match (self.token, self.token_stdin) {
-            (Some(t), false) => t,
+            (Some(t), _) => t,
             (None, true) => read_token_from_stdin()?,
             (None, false) => {
                 miseprintln!(
@@ -78,7 +84,6 @@ impl Login {
                 );
                 return Ok(());
             }
-            (Some(_), true) => bail!("--token and --token-stdin are mutually exclusive"),
         };
 
         let token = token.trim();
@@ -113,20 +118,4 @@ impl Login {
         );
         Ok(())
     }
-}
-
-/// Read one line from stdin, trim trailing newline + spaces.
-/// Used by `--token-stdin` so secrets don't land in shell
-/// history. Returns `Err` only on stdin read failure (EOF
-/// returns an empty string, which the caller rejects with a
-/// clearer message than "stdin closed unexpectedly").
-fn read_token_from_stdin() -> Result<String> {
-    use std::io::BufRead;
-    let stdin = std::io::stdin();
-    let mut line = String::new();
-    stdin
-        .lock()
-        .read_line(&mut line)
-        .wrap_err("reading stdin")?;
-    Ok(line.trim().to_owned())
 }

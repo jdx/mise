@@ -2471,10 +2471,15 @@ type = "Bool"
 default = "mise-wings.en.dev"
 description = "[experimental] Apex host for the mise-wings service."
 docs = """
-The cache subdomains (`npm.<host>`, `gh.<host>`, `dl.<host>`, `gh-api.<host>`)
-and control plane (`api.<host>`, `app.<host>`) all derive from this single
+The cache subdomains (`npm.<host>`, `gh.<host>`, `gh-api.<host>`) and
+control plane (`api.<host>`, `app.<host>`) all derive from this single
 value. Override only when pointing at a private/staging deployment — the
 default targets the production service at `mise-wings.en.dev`.
+
+The proxy serves a `dl.<host>` subdomain too (generic per-URL caching)
+but mise's URL rewriter doesn't yet use it — `dl` covers arbitrary
+download URLs that don't fit the npm/GitHub origin pattern. Wiring it
+requires a per-URL allowlist on the proxy side; deferred to a follow-up.
 """
 env = "MISE_WINGS_HOST"
 type = "String"
