@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use eyre::{Result, bail};
+use eyre::Result;
 use serde::Serialize;
 
-use crate::backend::{Backend, VersionInfo};
+use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::config::Settings;
 use crate::toolset::{ToolRequest, tool_request};
@@ -54,10 +54,10 @@ pub struct LsRemote {
     #[clap(long, verbatim_doc_comment)]
     pub prerelease: bool,
 
-    /// Fail if --json output cannot include complete version metadata
+    /// Fail if release metadata fetches fail
     ///
-    /// This prevents metadata consumers from accepting fallback lists that are
-    /// missing created_at timestamps.
+    /// This prevents metadata consumers from accepting empty fallback results
+    /// when a backend's metadata-producing upstream request fails.
     #[clap(long, verbatim_doc_comment, requires = "json")]
     pub strict_metadata: bool,
 }
@@ -97,9 +97,6 @@ impl LsRemote {
             .collect();
 
         if self.json {
-            if self.strict_metadata {
-                ensure_complete_metadata(plugin.id(), &versions)?;
-            }
             miseprintln!("{}", serde_json::to_string(&versions)?);
         } else {
             for v in versions {
@@ -114,9 +111,6 @@ impl LsRemote {
         for b in backend::list() {
             let tool = b.id().to_string();
             let tool_versions = b.list_remote_versions_with_info(config).await?;
-            if self.strict_metadata {
-                ensure_complete_metadata(&tool, &tool_versions)?;
-            }
             for v in tool_versions {
                 versions.push(VersionOutputAll {
                     tool: tool.clone(),
@@ -150,44 +144,6 @@ impl LsRemote {
             }
             None => Ok(None),
         }
-    }
-}
-
-fn ensure_complete_metadata(tool: &str, versions: &[VersionInfo]) -> Result<()> {
-    if let Some(version) = versions.iter().find(|v| v.created_at.is_none()) {
-        bail!(
-            "{}@{} is missing created_at metadata; rerun without --strict-metadata to allow incomplete metadata",
-            tool,
-            version.version
-        );
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ensure_complete_metadata_accepts_created_at() {
-        let versions = vec![VersionInfo {
-            version: "1.0.0".into(),
-            created_at: Some("2024-01-01T00:00:00Z".into()),
-            ..Default::default()
-        }];
-
-        assert!(ensure_complete_metadata("test", &versions).is_ok());
-    }
-
-    #[test]
-    fn test_ensure_complete_metadata_rejects_missing_created_at() {
-        let versions = vec![VersionInfo {
-            version: "1.0.0".into(),
-            ..Default::default()
-        }];
-
-        let err = ensure_complete_metadata("test", &versions).unwrap_err();
-        assert!(err.to_string().contains("test@1.0.0"));
     }
 }
 

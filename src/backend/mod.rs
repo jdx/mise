@@ -40,7 +40,7 @@ use crate::{
 use crate::{dirs, env, file, hash, lock_file, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
-use eyre::{Result, WrapErr, bail, eyre};
+use eyre::{Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use platform_target::PlatformTarget;
@@ -803,14 +803,6 @@ pub trait Backend: Debug + Send + Sync {
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            if strict_metadata() {
-                                return Err(e).wrap_err_with(|| {
-                                    eyre!(
-                                        "failed to fetch version metadata from versions host for {}",
-                                        ba.to_string()
-                                    )
-                                });
-                            }
                             debug!("Error getting versions from versions host: {:#}", e);
                         }
                     }

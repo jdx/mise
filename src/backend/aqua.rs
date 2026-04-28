@@ -213,11 +213,6 @@ impl Backend for AquaBackend {
         let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(e) => {
-                if strict_metadata() {
-                    return Err(e).wrap_err_with(|| {
-                        format!("failed to fetch aqua package metadata for {}", self.id)
-                    });
-                }
                 warn!("Remote versions cannot be fetched: {}", e);
                 return Ok(vec![]);
             }

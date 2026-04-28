@@ -38,10 +38,10 @@ duration of this command.
 
 ### `--strict-metadata`
 
-Fail if --json output cannot include complete version metadata
+Fail if release metadata fetches fail
 
-This prevents metadata consumers from accepting fallback lists that are
-missing created_at timestamps.
+This prevents metadata consumers from accepting empty fallback results
+when a backend's metadata-producing upstream request fails.
 
 Examples:
 
