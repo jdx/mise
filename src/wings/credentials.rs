@@ -118,13 +118,20 @@ impl Credentials {
     /// file exists yet (the user hasn't logged in); `Err(...)`
     /// for files that exist but can't be decoded — the caller
     /// surfaces the distinction to the user.
+    ///
+    /// I/O errors (permission denied, mid-read disk failure)
+    /// propagate as-is rather than being wrapped in
+    /// [`CredentialsError::Malformed`] — Gemini flagged the
+    /// previous wrap as misleading: "wings credentials file
+    /// is malformed: permission denied" hides the real cause.
+    /// Only JSON-shape failures + version mismatches surface
+    /// as the typed errors.
     pub fn load() -> Result<Option<Self>> {
         let path = Self::path();
         if !path.exists() {
             return Ok(None);
         }
-        let raw = crate::file::read_to_string(&path)
-            .map_err(|e| eyre::eyre!(CredentialsError::Malformed(e.to_string())))?;
+        let raw = crate::file::read_to_string(&path)?;
         let creds: Self = serde_json::from_str(&raw)
             .map_err(|e| eyre::eyre!(CredentialsError::Malformed(e.to_string())))?;
         if creds.version != SCHEMA_VERSION {
@@ -139,21 +146,41 @@ impl Credentials {
     /// Write the credentials file with mode 0600 on Unix.
     /// `mkdir -p` the parent directory; idempotent re-saves
     /// (e.g. on every refresh) overwrite cleanly.
+    ///
+    /// On Unix the file is opened with `mode(0o600)` from the
+    /// start via `OpenOptions` — a `write` + later
+    /// `set_permissions(0o600)` would create a TOCTOU window
+    /// in which the file is briefly readable by other users
+    /// at the umask default (commonly 0644). Greptile P1 +
+    /// Gemini High both flagged the previous shape; the
+    /// `OpenOptions` form closes the window.
+    ///
+    /// On Windows we fall back to `crate::file::write`. ACLs
+    /// inherit from the parent directory (under
+    /// `MISE_STATE_DIR`, which is the user's profile), so a
+    /// fresh credential file is private to the same user
+    /// without an explicit chmod equivalent.
     pub fn save(&self) -> Result<()> {
         let path = Self::path();
         if let Some(parent) = path.parent() {
             crate::file::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(self)?;
-        crate::file::write(&path, json)?;
-        // 0600 on Unix so a process running as the same user is
-        // the only thing that can read it. No-op on Windows;
-        // ACL'd by user inheritance from the parent directory
-        // there.
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)?;
+            f.write_all(json.as_bytes())?;
+        }
+        #[cfg(not(unix))]
+        {
+            crate::file::write(&path, json)?;
         }
         Ok(())
     }
@@ -236,13 +263,10 @@ impl Credentials {
     }
 }
 
-/// Current unix timestamp. Wrapped so tests can swap in a
-/// fixed `now` without touching the system clock.
+/// Re-export of the module-level shared helper. The local
+/// alias keeps the call sites inside this file short.
 fn now_unix() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+    super::now_unix()
 }
 
 /// Best-effort `exp` claim extraction from an unverified JWT.

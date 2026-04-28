@@ -130,6 +130,16 @@ pub async fn prepare_request(url: &mut Url) -> Result<HeaderMap> {
 /// Re-checks `should_refresh` after acquiring the lock so
 /// that the first holder does the rotation and subsequent
 /// holders find a fresh token already in cache.
+///
+/// Critically, when this task *is* the first holder and
+/// needs to call `client::refresh`, it uses the *latest*
+/// cached credentials — not the stale snapshot the caller
+/// passed in. Without this re-read, a task that waited on
+/// the lock could end up POSTing the previous token to
+/// `/auth/dev/refresh` after another task already rotated
+/// it; the proxy's rotation tripwire would 401 the replay,
+/// defeating the lock's purpose. Cursor Bugbot Medium
+/// flagged the prior shape on PR review.
 async fn maybe_refresh(stale: &credentials::Credentials) -> Result<credentials::Credentials> {
     if stale.refresh_token_expired() {
         // Refresh token itself is expired — no rotation can
@@ -138,20 +148,36 @@ async fn maybe_refresh(stale: &credentials::Credentials) -> Result<credentials::
         // and re-logs in.
         eyre::bail!(
             "wings refresh token expired ({}s ago); run `mise wings login`",
-            now_unix() - stale.refresh_expires_at,
+            crate::wings::now_unix() - stale.refresh_expires_at,
         );
     }
     let _guard = credentials::lock_refresh().await;
 
-    // Double-check after acquiring the lock. A different
-    // task may have rotated under us while we waited.
-    if let Some(fresh) = credentials::cached()
-        && !fresh.should_refresh(REFRESH_LEEWAY_SECS)
-    {
-        return Ok(fresh);
+    // Re-read the cache under the lock. Two things this
+    // covers:
+    //
+    //   1. A different task already rotated while we waited
+    //      on the lock — the cache holds the rotated tokens
+    //      and we can return immediately.
+    //   2. We *are* the first holder, but the on-disk
+    //      credentials were updated by a separate `mise`
+    //      process (e.g. the user just ran `mise wings
+    //      login` in another terminal). The latest cache
+    //      read picks that up; the original `stale` pointer
+    //      could otherwise be a tab-back-from-history value
+    //      no longer current.
+    let current = credentials::cached().unwrap_or_else(|| stale.clone());
+    if !current.should_refresh(REFRESH_LEEWAY_SECS) {
+        return Ok(current);
+    }
+    if current.refresh_token_expired() {
+        eyre::bail!(
+            "wings refresh token expired ({}s ago); run `mise wings login`",
+            crate::wings::now_unix() - current.refresh_expires_at,
+        );
     }
 
-    let next = client::refresh(stale).await?;
+    let next = client::refresh(&current).await?;
     credentials::store(next.clone())?;
     Ok(next)
 }
@@ -165,13 +191,6 @@ fn is_upstream_origin(host: &str) -> bool {
         host,
         "registry.npmjs.org" | "github.com" | "objects.githubusercontent.com" | "api.github.com"
     )
-}
-
-fn now_unix() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

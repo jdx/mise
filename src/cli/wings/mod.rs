@@ -19,12 +19,33 @@
 //! user opts in (typically in `mise.toml`).
 
 use clap::Subcommand;
-use eyre::Result;
+use eyre::{Context, Result};
 
 mod login;
 mod logout;
 mod status;
 mod whoami;
+
+/// Read one line from stdin, trim trailing whitespace.
+/// Shared between `wings login --token-stdin` and
+/// `wings logout --token-stdin` so secrets don't land in
+/// shell history. Returns `Err` only on read failure (EOF
+/// returns `""`, which the caller rejects with a clearer
+/// message than "stdin closed unexpectedly").
+///
+/// Lifted to the parent module so the two subcommands don't
+/// each carry their own copy. Greptile flagged the
+/// duplication on PR review.
+pub(super) fn read_token_from_stdin() -> Result<String> {
+    use std::io::BufRead;
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    stdin
+        .lock()
+        .read_line(&mut line)
+        .wrap_err("reading stdin")?;
+    Ok(line.trim().to_owned())
+}
 
 /// Manage `mise wings` authentication
 ///

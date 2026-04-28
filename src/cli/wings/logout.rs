@@ -29,6 +29,7 @@
 
 use eyre::{Result, bail};
 
+use crate::cli::wings::read_token_from_stdin;
 use crate::wings::{client, credentials};
 
 /// Sign out of mise-wings.
@@ -74,10 +75,13 @@ impl Logout {
             return Ok(());
         }
 
+        // `clap`'s `conflicts_with` rejects `--token` +
+        // `--token-stdin` before `run()` — same shape as the
+        // login subcommand. Greptile flagged the unreachable
+        // `(Some(_), true)` arm on PR review.
         let token = match (self.token, self.token_stdin) {
-            (Some(t), false) => t,
+            (Some(t), _) => t,
             (None, true) => read_token_from_stdin()?,
-            (Some(_), true) => bail!("--token and --token-stdin are mutually exclusive"),
             (None, false) => {
                 // No token supplied → can't do server revoke.
                 // Treat as `--local-only`. Print a hint so the
@@ -116,20 +120,4 @@ impl Logout {
         }
         Ok(())
     }
-}
-
-/// Same stdin reader used by login. Duplicated rather than
-/// shared because the two commands are very small and
-/// hoisting it into a helper module just for this would add
-/// indirection without saving real code.
-fn read_token_from_stdin() -> Result<String> {
-    use eyre::WrapErr;
-    use std::io::BufRead;
-    let stdin = std::io::stdin();
-    let mut line = String::new();
-    stdin
-        .lock()
-        .read_line(&mut line)
-        .wrap_err("reading stdin")?;
-    Ok(line.trim().to_owned())
 }

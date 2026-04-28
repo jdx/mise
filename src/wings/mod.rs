@@ -30,3 +30,16 @@ pub mod client;
 pub mod credentials;
 pub mod http_hooks;
 pub mod url;
+
+/// Current unix timestamp (whole seconds). Single shared
+/// helper so the credential expiry math (`should_refresh`,
+/// `refresh_token_expired`) and the HTTP hook's "how long
+/// since refresh expired" log line agree on the clock.
+/// Greptile flagged the prior duplicate definitions across
+/// `credentials.rs` and `http_hooks.rs` on PR review.
+pub(crate) fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
