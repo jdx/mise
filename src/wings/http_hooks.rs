@@ -78,34 +78,57 @@ pub async fn prepare_request(url: &mut Url) -> Result<HeaderMap> {
         return Ok(HeaderMap::new());
     }
 
-    // Need credentials. If `cached()` returns `None` here
-    // (user hasn't logged in), we leave the request alone —
-    // the upstream URL is unmodified, no Authorization
-    // header is added, and the request proceeds as if wings
-    // weren't enabled. The user sees the normal failure path
-    // (e.g. the cache subdomain returns 401 / 404 if they
-    // hand-rewrote the URL without logging in).
-    let Some(creds) = credentials::cached() else {
-        return Ok(HeaderMap::new());
-    };
-
-    // Auto-refresh path: if the access token is close to
-    // expiry, take the refresh-coordination lock and rotate.
-    // The loser of the lock race re-reads the cache and
-    // typically finds a fresh token already swapped in.
-    let creds = if creds.should_refresh(REFRESH_LEEWAY_SECS) {
-        match maybe_refresh(&creds).await {
-            Ok(fresh) => fresh,
+    // Two ways to obtain an access token:
+    //
+    //   - **Dev** (interactive): load from
+    //     `credentials.json` (populated by
+    //     `mise wings login`), auto-refresh inside the
+    //     leeway window using the rotated refresh token.
+    //   - **CI** (GHA): exchange the runner's OIDC JWT for
+    //     a short-lived wings session via `POST /auth`. No
+    //     refresh token — each `mise` process re-mints
+    //     once per invocation and caches the result for
+    //     the duration of the process.
+    //
+    // The dev path takes priority if both apply (a
+    // developer running `mise install` on their laptop
+    // who happens to also have GHA env vars from some
+    // local act-style emulator wants to use their own
+    // credentials, not the runner's identity). CI is the
+    // fallback when no on-disk credentials exist.
+    let access_token = if let Some(creds) = credentials::cached() {
+        if creds.should_refresh(REFRESH_LEEWAY_SECS) {
+            match maybe_refresh(&creds).await {
+                Ok(fresh) => fresh.access_token,
+                Err(e) => {
+                    log::warn!(
+                        "wings: auto-refresh failed; falling back to \
+                         original token. Error: {e:#}",
+                    );
+                    creds.access_token
+                }
+            }
+        } else {
+            creds.access_token
+        }
+    } else if crate::wings::ci::gha_runner_present() {
+        match crate::wings::ci::cached_ci_token().await {
+            Ok(token) => token,
             Err(e) => {
                 log::warn!(
-                    "wings: auto-refresh failed; falling back to original token. \
-                     Error: {e:#}",
+                    "wings: CI OIDC exchange failed; request will pass \
+                     through without auth. Error: {e:#}",
                 );
-                creds
+                return Ok(HeaderMap::new());
             }
         }
     } else {
-        creds
+        // No dev credentials, no GHA runner → wings is
+        // enabled but there's nothing to authenticate with.
+        // Pass through unchanged; the proxy will 401 if the
+        // user hand-rewrote the URL, otherwise the original
+        // host is hit directly.
+        return Ok(HeaderMap::new());
     };
 
     // Apply the URL rewrite for upstream origins. Cache-host
@@ -116,7 +139,7 @@ pub async fn prepare_request(url: &mut Url) -> Result<HeaderMap> {
     }
 
     let mut headers = HeaderMap::new();
-    let bearer = format!("Bearer {}", creds.access_token);
+    let bearer = format!("Bearer {access_token}");
     if let Ok(value) = HeaderValue::from_str(&bearer) {
         // `from_str` shouldn't fail for a JWT (only ASCII), but
         // guard anyway: a malformed token shouldn't panic the
