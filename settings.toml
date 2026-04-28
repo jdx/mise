@@ -2447,6 +2447,54 @@ docs = """
 env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 
+[wings.clerk_publishable_key]
+description = "[experimental] Clerk publishable key for `mise wings login`."
+docs = """
+Identifies the Clerk frontend application used by `mise wings login` for
+user-facing sign-in. The publishable key is non-secret (Clerk's term: it
+ships in any browser that loads the dashboard) but it must match the Clerk
+app the proxy verifies against.
+
+Defaults to the production-tenant publishable key once we ship one; for now,
+either set explicitly to a development tenant key, or rely on `mise wings
+login --token <clerk-session-jwt>` which doesn't need this set.
+"""
+env = "MISE_WINGS_CLERK_PUBLISHABLE_KEY"
+optional = true
+type = "String"
+
+[wings.enabled]
+default = false
+description = "[experimental] Route asset fetches through the mise-wings cache (paid)."
+docs = """
+When true and the user is logged in via `mise wings login`, mise transparently
+rewrites tool-install URLs (npm registry, GitHub releases, generic downloads)
+to the per-org wings cache subdomains and attaches the wings session JWT as
+a Bearer token. Cache hits return precompressed payloads from a regional
+Front Door; misses fall through to the upstream origin and seed the cache.
+
+Requires an active wings subscription on your Clerk organization. Sign up at
+<https://mise-wings.en.dev>.
+
+This setting has no effect until you've run `mise wings login`. With
+credentials missing, mise fetches from upstream origins as usual — the gate
+is "wings enabled AND credentials present", not just "wings enabled".
+"""
+env = "MISE_WINGS_ENABLED"
+type = "Bool"
+
+[wings.host]
+default = "mise-wings.en.dev"
+description = "[experimental] Apex host for the mise-wings service."
+docs = """
+The cache subdomains (`npm.<host>`, `gh.<host>`, `dl.<host>`, `gh-api.<host>`)
+and control plane (`api.<host>`, `app.<host>`) all derive from this single
+value. Override only when pointing at a private/staging deployment — the
+default targets the production service at `mise-wings.en.dev`.
+"""
+env = "MISE_WINGS_HOST"
+type = "String"
+
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
 env = "MISE_YES"

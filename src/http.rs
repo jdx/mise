@@ -415,11 +415,27 @@ impl Client {
         verb_label: &str,
     ) -> Result<Response> {
         apply_url_replacements(&mut url);
+        // Wings hook: when `wings.enabled` and the user is
+        // signed in, rewrites the URL to the matching cache
+        // subdomain and returns the `Authorization: Bearer
+        // <wings-jwt>` header. Auto-refreshes the access
+        // token when it's within 5 min of expiry. No-op
+        // (returns empty headers, leaves URL alone) when
+        // wings isn't activated. See `wings::http_hooks` for
+        // the gate logic + refresh coordination.
+        let wings_headers = match crate::wings::http_hooks::prepare_request(&mut url).await {
+            Ok(h) => h,
+            Err(e) => {
+                log::warn!("wings: pre-request hook errored, proceeding without wings: {e:#}");
+                HeaderMap::new()
+            }
+        };
         debug!("{} {}", verb_label, &url);
 
         // Apply netrc credentials after URL replacement
         let mut final_headers = headers.clone();
         final_headers.extend(netrc_headers(&url));
+        final_headers.extend(wings_headers);
 
         let mut req = self.reqwest.request(method, url.clone());
         req = req.headers(final_headers);
