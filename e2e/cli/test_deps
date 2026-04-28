@@ -55,6 +55,12 @@ assert_contains "mise deps --dry-run --only codegen 2>&1" "codegen"
 assert_not_contains "mise deps --dry-run --only codegen 2>&1" "npm"
 assert_contains "mise deps --force --only codegen 2>&1" "[deps.codegen] codegen"
 
+# Test -q/--quiet suppresses provider stream output and status messages.
+# Without -q the previous assertion proved "[deps.codegen] codegen" appears;
+# with -q neither the prefix-tagged echo nor the "Installed:" status should leak.
+assert_not_contains "mise deps --force --only codegen -q 2>&1" "[deps.codegen]"
+assert_not_contains "mise deps --force --only codegen -q 2>&1" "Installed:"
+
 # Test --skip flag
 assert_not_contains "mise deps --dry-run --skip npm 2>&1" "npm install"
 
