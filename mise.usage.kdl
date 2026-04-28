@@ -598,7 +598,7 @@ cmd ls-remote help="List runtime versions available for install." {
     flag --prerelease help="Include pre-release versions in the output for backends that report\nan upstream prerelease flag (currently github + aqua). Equivalent to\nsetting `MISE_PRERELEASES=1` or the `prereleases` setting for the\nduration of this command."
     flag --no-versions-host help="Disable checking the mise-versions host"
     flag --strict-metadata help="Fail if release metadata fetches fail" {
-        long_help "Fail if release metadata fetches fail\n\nThis prevents metadata consumers from accepting empty fallback results\nwhen a backend's metadata-producing upstream request fails."
+        long_help "Fail if release metadata fetches fail\n\nRequires --json and --no-versions-host.\n\nThis prevents metadata consumers from accepting empty fallback results\nwhen a backend's metadata-producing upstream request fails."
     }
     arg "[TOOL@VERSION]" help="Tool to get versions for" required=#false
     arg "[PREFIX]" help="The version prefix to use when querying the latest version\nsame as the first argument after the \"@\"" required=#false

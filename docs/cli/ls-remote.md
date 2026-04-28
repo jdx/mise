@@ -44,6 +44,8 @@ Disable checking the mise-versions host
 
 Fail if release metadata fetches fail
 
+Requires --json and --no-versions-host.
+
 This prevents metadata consumers from accepting empty fallback results
 when a backend's metadata-producing upstream request fails.
 

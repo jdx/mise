@@ -60,6 +60,8 @@ pub struct LsRemote {
 
     /// Fail if release metadata fetches fail
     ///
+    /// Requires --json and --no-versions-host.
+    ///
     /// This prevents metadata consumers from accepting empty fallback results
     /// when a backend's metadata-producing upstream request fails.
     #[clap(long, verbatim_doc_comment, requires_all = ["json", "no_versions_host"])]
