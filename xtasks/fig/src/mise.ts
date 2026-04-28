@@ -1755,6 +1755,12 @@ const completionSpec: Fig.Spec = {
             "Include pre-release versions in the output for backends that report\nan upstream prerelease flag (currently github + aqua). Equivalent to\nsetting `MISE_PRERELEASES=1` or the `prereleases` setting for the\nduration of this command.",
           isRepeatable: false,
         },
+        {
+          name: "--strict-metadata",
+          description:
+            "Fail if --json output cannot include complete version metadata",
+          isRepeatable: false,
+        },
       ],
       args: [
         {
