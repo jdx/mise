@@ -32,6 +32,9 @@
 
 </div>
 
+> [!TIP]
+> My latest project, [aube](https://aube.en.dev) just hit stable! It's the fastest Node.js package manager with strong security defaults and is compatible with npm/pnpm/yarn lockfiles!
+
 ## What is it?
 
 `mise` prepares your development environment before each command runs. It keeps
