@@ -110,18 +110,14 @@ async fn tasks_for_missing_task_error(
     // In monorepos, users usually need `tasks ls --all` after a miss. Load that
     // same view for the error so sibling package tasks can be suggested.
     // Also if --all flag is used, show all tasks in the error message.
-    if all
-        || name.starts_with("//")
-        || config.is_monorepo()
-    {
-        if let Ok(all_tasks) = config
+    if (all || name.starts_with("//") || config.is_monorepo())
+        && let Ok(all_tasks) = config
             .tasks_with_context(Some(&TaskLoadContext::all()))
             .await
-        && !all_tasks.is_empty()
+            && !all_tasks.is_empty()
         {
             return Ok((all_tasks, true));
         }
-    }
 
     let tasks = config.tasks().await?;
     Ok((tasks, false))
@@ -198,7 +194,8 @@ fn append_available_tasks(
 async fn err_no_task(config: &Config, name: &str, all: bool) -> Result<()> {
     // Check early if the name looks like a mistyped CLI subcommand
     let similar_cmds = suggest_similar_commands(name);
-    let (tasks_for_error, showing_all_tasks) = tasks_for_missing_task_error(config, name, all).await?;
+    let (tasks_for_error, showing_all_tasks) =
+        tasks_for_missing_task_error(config, name, all).await?;
 
     if tasks_for_error.is_empty() {
         // If the name matches a CLI subcommand closely, suggest that instead of
@@ -326,10 +323,7 @@ async fn err_no_task(config: &Config, name: &str, all: bool) -> Result<()> {
 async fn prompt_for_task(ctx: Option<&TaskLoadContext>) -> Result<Task> {
     let config = Config::get().await?;
     let all_tasks = config.tasks_with_context(ctx).await?;
-    let visible_tasks: Vec<_> = all_tasks
-        .values()
-        .filter(|t| !t.hide)
-        .collect_vec();
+    let visible_tasks: Vec<_> = all_tasks.values().filter(|t| !t.hide).collect_vec();
     ensure!(
         !visible_tasks.is_empty(),
         "no tasks defined. see {url}",

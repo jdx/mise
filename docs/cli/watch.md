@@ -31,6 +31,15 @@ Task and arguments to run
 
 Run only the specified tasks skipping all dependencies
 
+### `--skip-tools`
+
+Skip installing tools before running tasks
+
+### `--all`
+
+Include tasks from all subdirectories in a monorepo
+Similar to `mise tasks ls --all`, loads tasks from entire monorepo
+
 ### `-w --watch… <PATH>`
 
 Watch a specific file or directory

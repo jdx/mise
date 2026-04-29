@@ -2611,6 +2611,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--all",
+          description:
+            "Include tasks from all subdirectories in a monorepo\nSimilar to `mise tasks ls --all`, loads tasks from entire monorepo",
+          isRepeatable: false,
+        },
+        {
           name: "--timeout",
           description: "Timeout for the task to complete\ne.g.: 30s, 5m",
           isRepeatable: false,
@@ -3529,6 +3535,12 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--all",
+              description:
+                "Include tasks from all subdirectories in a monorepo\nSimilar to `mise tasks ls --all`, loads tasks from entire monorepo",
+              isRepeatable: false,
+            },
+            {
               name: "--timeout",
               description: "Timeout for the task to complete\ne.g.: 30s, 5m",
               isRepeatable: false,
@@ -4159,6 +4171,17 @@ const completionSpec: Fig.Spec = {
         {
           name: "--skip-deps",
           description: "Run only the specified tasks skipping all dependencies",
+          isRepeatable: false,
+        },
+        {
+          name: "--skip-tools",
+          description: "Skip installing tools before running tasks",
+          isRepeatable: false,
+        },
+        {
+          name: "--all",
+          description:
+            "Include tasks from all subdirectories in a monorepo\nSimilar to `mise tasks ls --all`, loads tasks from entire monorepo",
           isRepeatable: false,
         },
         {

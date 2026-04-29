@@ -11,6 +11,10 @@ mise prepares your development environment before each command runs. https://git
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails
 .TP
+\fB\-\-all\fR
+Include tasks from all subdirectories in a monorepo
+Similar to `mise tasks ls \-\-all`, loads tasks from entire monorepo
+.TP
 \fB\-C, \-\-cd\fR \fI<DIR>\fR
 Change directory before running command
 .TP
@@ -2209,6 +2213,10 @@ Skip installing tools before running tasks
 Can also be set persistently with the `task.run_auto_install` setting
 or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
 .TP
+\fB\-\-all\fR
+Include tasks from all subdirectories in a monorepo
+Similar to `mise tasks ls \-\-all`, loads tasks from entire monorepo
+.TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Timeout for the task to complete
 e.g.: 30s, 5m
@@ -2970,6 +2978,10 @@ Skip installing tools before running tasks
 Can also be set persistently with the `task.run_auto_install` setting
 or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
 .TP
+\fB\-\-all\fR
+Include tasks from all subdirectories in a monorepo
+Similar to `mise tasks ls \-\-all`, loads tasks from entire monorepo
+.TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Timeout for the task to complete
 e.g.: 30s, 5m
@@ -3479,6 +3491,13 @@ Defaults to sources from the task(s)
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
+.TP
+\fB\-\-skip\-tools\fR
+Skip installing tools before running tasks
+.TP
+\fB\-\-all\fR
+Include tasks from all subdirectories in a monorepo
+Similar to `mise tasks ls \-\-all`, loads tasks from entire monorepo
 .TP
 \fB\-w, \-\-watch\fR \fI<PATH>\fR
 Watch a specific file or directory

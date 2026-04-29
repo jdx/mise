@@ -91,7 +91,8 @@ impl Watch {
         if args.is_empty() {
             bail!("No tasks specified");
         }
-        let tasks = crate::task::task_list::get_task_lists(&config, &args, false, false, self.all).await?;
+        let tasks =
+            crate::task::task_list::get_task_lists(&config, &args, false, false, self.all).await?;
         let mut args = vec![];
         if let Some(delay_run) = self.watchexec.delay_run {
             args.push("--delay-run".to_string());
