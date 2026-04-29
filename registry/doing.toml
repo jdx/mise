@@ -1,0 +1,4 @@
+backends = ["github:aaronmallen/doing", "cargo:doing"]
+description = "A Rust clone of doing by Brett Terpstra — a command line tool for remembering what you were doing and tracking what you've done."
+os = ["linux", "macos"]
+test = { cmd = "doing --version", expected = "{{version}}" }

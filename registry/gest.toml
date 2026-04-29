@@ -1,0 +1,4 @@
+backends = ["github:aaronmallen/gest", "cargo:gest"]
+description = "Manage agent-generated artifacts and task backlogs alongside your project"
+os = ["linux", "macos"]
+test = { cmd = "gest --version", expected = "{{version}}" }
