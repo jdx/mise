@@ -45,15 +45,20 @@ jobs:
     if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     # `id-token: write` lets the runner mint the OIDC token mise
-    # exchanges for a wings session. With this permission, mise
-    # auto-routes tool installs through the wings cache when the
-    # repo's Clerk org has an active subscription; without it,
-    # mise falls through to direct-origin fetches transparently.
-    # Either way the workflow still works — the cache is purely
-    # an acceleration.
+    # exchanges for a wings session at `POST /auth`. Combined
+    # with the explicit `MISE_WINGS_ENABLED=1` opt-in below,
+    # mise routes tool installs through the wings cache for this
+    # workflow. Without an active wings subscription on the org,
+    # the proxy 402s and mise falls through to direct-origin
+    # fetches — the workflow still works, just unaccelerated.
     permissions:
       contents: read
       id-token: write
+    env:
+      # Opt in to wings caching for this workflow. Required for
+      # the auto-OIDC exchange to fire; without it mise leaves
+      # the cache off entirely (no identity data sent to wings).
+      MISE_WINGS_ENABLED: "1"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
