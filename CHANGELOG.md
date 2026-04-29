@@ -1,5 +1,49 @@
 # Changelog
 
+## [2026.4.27](https://github.com/jdx/mise/compare/v2026.4.26..v2026.4.27) - 2026-04-29
+
+### 🚀 Features
+
+- **(backend)** add npm package-manager install options by @risu729 in [#9109](https://github.com/jdx/mise/pull/9109)
+- **(release)** list aqua package additions/updates in changelog by @jdx in [#9471](https://github.com/jdx/mise/pull/9471)
+- Make `config_root` available to environment plugins for relative path resolution by @hisaac in [#9465](https://github.com/jdx/mise/pull/9465)
+- watch sources of dependencies by @43081j in [#9437](https://github.com/jdx/mise/pull/9437)
+
+### 🐛 Bug Fixes
+
+- **(backend)** Don't cache empty version lists by @c22 in [#9444](https://github.com/jdx/mise/pull/9444)
+- **(shims)** compare PATH entries case-insensitively on macOS by @jdx in [#9468](https://github.com/jdx/mise/pull/9468)
+- **(task)** preserve essential env vars under deny_env on Linux by @jdx in [#9467](https://github.com/jdx/mise/pull/9467)
+
+### Chore
+
+- **(ci)** make vendored-file-warning a failing check by @jdx in [#9469](https://github.com/jdx/mise/pull/9469)
+
+### New Contributors
+
+- @43081j made their first contribution in [#9437](https://github.com/jdx/mise/pull/9437)
+- @hisaac made their first contribution in [#9465](https://github.com/jdx/mise/pull/9465)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (7)
+
+- [`IohannRabeson/tmignore-rs`](https://github.com/IohannRabeson/tmignore-rs)
+- [`endevco/pitchfork`](https://github.com/endevco/pitchfork)
+- [`google/google-java-format`](https://github.com/google/google-java-format)
+- [`jonwiggins/xmloxide`](https://github.com/jonwiggins/xmloxide)
+- [`matthart1983/netwatch`](https://github.com/matthart1983/netwatch)
+- [`solarwinds/swo-cli`](https://github.com/solarwinds/swo-cli)
+- [`versity/versitygw`](https://github.com/versity/versitygw)
+
+#### Updated Packages (5)
+
+- [`WebAssembly/wabt`](https://github.com/WebAssembly/wabt)
+- [`bmf-san/ggc`](https://github.com/bmf-san/ggc)
+- [`lycheeverse/lychee`](https://github.com/lycheeverse/lychee)
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+- [`tstack/lnav`](https://github.com/tstack/lnav)
+
 ## [2026.4.26](https://github.com/jdx/mise/compare/v2026.4.25..v2026.4.26) - 2026-04-28
 
 ### 🚀 Features
