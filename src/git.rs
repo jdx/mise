@@ -145,10 +145,12 @@ impl Git {
                 .arg(&self.dir)
                 .args(["fetch", "--depth", "1", "origin", sha])
                 .execute()
-                .wrap_err_with(|| format!(
-                    "failed to fetch SHA {sha} from {url}; \
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to fetch SHA {sha} from {url}; \
                      self-hosted servers may need `uploadpack.allowReachableSHA1InWant=true`"
-                ))?;
+                    )
+                })?;
             CmdLineRunner::new("git")
                 .args(["-C"])
                 .arg(&self.dir)
@@ -388,24 +390,22 @@ mod tests {
     #[test]
     fn test_looks_like_git_sha() {
         assert!(looks_like_git_sha("abc1234")); // 7 chars — minimum short SHA
-        assert!(looks_like_git_sha("abc1234def5678901234567890123456789012ab")); // 40 chars — full SHA
+        assert!(looks_like_git_sha(
+            "abc1234def5678901234567890123456789012ab"
+        )); // 40 chars — full SHA
         assert!(looks_like_git_sha("deadbeef1234567")); // mid-length
         assert!(!looks_like_git_sha("abc123")); // 6 chars — too short
-        assert!(!looks_like_git_sha("abc1234def5678901234567890123456789012abc")); // 41 chars — too long
+        assert!(!looks_like_git_sha(
+            "abc1234def5678901234567890123456789012abc"
+        )); // 41 chars — too long
         assert!(!looks_like_git_sha("abc1234g")); // non-hex char
         assert!(!looks_like_git_sha("main")); // branch name
         assert!(!looks_like_git_sha("refs/heads/main")); // full ref
         assert!(!looks_like_git_sha("v1.0.0")); // tag
         assert!(!looks_like_git_sha("")); // empty
         // SHA-256 (64 hex chars) — used by git's new object format
-        assert!(looks_like_git_sha(
-            "a".repeat(64).as_str()
-        ));
-        assert!(!looks_like_git_sha(
-            "a".repeat(63).as_str()
-        )); // 63 chars — not a valid SHA-256
-        assert!(!looks_like_git_sha(
-            "a".repeat(65).as_str()
-        )); // 65 chars — too long
+        assert!(looks_like_git_sha("a".repeat(64).as_str()));
+        assert!(!looks_like_git_sha("a".repeat(63).as_str())); // 63 chars — not a valid SHA-256
+        assert!(!looks_like_git_sha("a".repeat(65).as_str())); // 65 chars — too long
     }
 }
