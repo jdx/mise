@@ -390,6 +390,7 @@ pub async fn get_task_lists(
     // For monorepo patterns, we need to load tasks from relevant parts of the monorepo
     let task_context = if all {
         // --all flag: load all tasks from the entire monorepo
+        validate_monorepo_setup(config)?;
         Some(TaskLoadContext::all())
     } else if args.is_empty() {
         None
