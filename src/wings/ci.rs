@@ -66,12 +66,12 @@ const ID_TOKEN_REQUEST_TOKEN_ENV: &str = "ACTIONS_ID_TOKEN_REQUEST_TOKEN";
 /// `Some(token)` if the OIDC → `/auth` exchange succeeded.
 /// `None` if it failed for any reason (including
 /// "no subscription" 402 on the proxy side). The negative
-/// cache is the important half: with auto-activation by
-/// default, every workflow run on a non-subscribed repo
-/// would otherwise re-attempt the exchange on every cache
-/// request. Caching the failure as `None` means we pay the
-/// network RTT exactly once per process, then fall through
-/// silently for the rest of the run.
+/// cache is the important half: after an explicit wings
+/// opt-in, a workflow on a non-subscribed repo would
+/// otherwise re-attempt the exchange on every cache request.
+/// Caching the failure as `None` means we pay the network RTT
+/// exactly once per process, then fall through silently for
+/// the rest of the run.
 ///
 /// `OnceCell` coordinates concurrent first-callers (only
 /// one runs the exchange; the others await its result).
@@ -92,10 +92,9 @@ pub fn gha_runner_present() -> bool {
 /// `None` covers any failure in the exchange chain — OIDC
 /// fetch, proxy POST, JSON decode, 402 (no subscription),
 /// 503, etc. Logged at `debug!` so a non-subscribed CI run
-/// doesn't pollute the workflow logs; auto-activation is
-/// supposed to be silent on the unhappy path. The HTTP
-/// hook treats `None` the same as "no credentials" and
-/// passes the request through unchanged.
+/// doesn't pollute the workflow logs after the user opted in.
+/// The HTTP hook treats `None` the same as "no credentials"
+/// and passes the request through unchanged.
 pub async fn cached_ci_token() -> Option<String> {
     CI_TOKEN
         .get_or_init(|| async {

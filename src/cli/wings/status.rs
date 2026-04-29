@@ -2,7 +2,7 @@
 //!
 //! Three things printed in order:
 //!
-//!   1. **Setting:** is `wings.enabled` true (default), and
+//!   1. **Setting:** is `wings.enabled` true (opt-in), and
 //!      which deployment is mise pointed at (prod / staging)?
 //!   2. **Credentials:** are local credentials present?
 //!      Expired? Refresh window expired? Or is this a CI run
@@ -106,8 +106,8 @@ impl Status {
         } else {
             miseprintln!(
                 "connectivity:  skipped (wings.enabled = false). \
-                 Unset `MISE_WINGS_ENABLED` (or remove `wings.enabled = false` \
-                 from `mise.toml`) to activate."
+                 Set `MISE_WINGS_ENABLED=1` (or `wings.enabled = true` \
+                 in `mise.toml`) to activate."
             );
         }
 

@@ -9,9 +9,9 @@
 //!     wings cache subdomain, and returns the
 //!     `Authorization: Bearer <wings-jwt>` header to attach.
 //!
-//!     Returns `Ok(None)` for the no-op case (wings disabled,
-//!     no credentials, or URL host isn't an upstream we
-//!     rewrite). The HTTP layer then proceeds as if wings
+//!     Returns an empty header map for the no-op case (wings
+//!     disabled, no credentials, or URL host isn't an upstream
+//!     we rewrite). The HTTP layer then proceeds as if wings
 //!     wasn't here.
 //!
 //! Splitting this into its own module keeps `crate::http`

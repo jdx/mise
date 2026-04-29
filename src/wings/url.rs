@@ -123,42 +123,77 @@ pub fn rewrite(url: &mut Url) -> bool {
 mod tests {
     use super::*;
 
-    /// `rewrite` runs against `Settings::get().wings.host`,
-    /// which in tests is the default `"mise-wings.en.dev"`.
-    /// We don't override the setting from a test (the
-    /// generated `Settings` struct doesn't expose mutators);
-    /// the assertions below pin the *transformation* shape
-    /// against that default, which is the production case.
+    use confique::Layer;
+
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_wings_enabled<F>(enabled: bool, test_fn: F)
+    where
+        F: FnOnce(),
+    {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.wings.enabled = Some(enabled);
+        crate::config::Settings::reset(Some(settings));
+        test_fn();
+        crate::config::Settings::reset(None);
+    }
 
     #[test]
-    fn rewrites_npm_registry_when_enabled() {
-        // `wings.enabled` defaults to true now — the assertion
-        // below pins the post-rewrite shape against the
-        // default-prod deployment.
+    fn no_rewrite_by_default() {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        crate::config::Settings::reset(None);
+
         let mut url = Url::parse("https://registry.npmjs.org/lodash").unwrap();
-        let _ = rewrite(&mut url);
-        let host = url.host_str().unwrap_or("");
-        assert!(
-            host == "registry.npmjs.org" || host.starts_with(&format!("{NPM_PREFIX}.")),
-            "unexpected host after rewrite: {host}",
-        );
+        let rewrote = rewrite(&mut url);
+
+        assert!(!rewrote);
+        assert_eq!(url.host_str(), Some("registry.npmjs.org"));
+        crate::config::Settings::reset(None);
+    }
+
+    #[test]
+    fn rewrites_npm_registry_only_when_enabled() {
+        with_wings_enabled(true, || {
+            let mut url = Url::parse("https://registry.npmjs.org/lodash").unwrap();
+            let rewrote = rewrite(&mut url);
+
+            assert!(rewrote);
+            let expected = format!("{NPM_PREFIX}.{}", crate::wings::host());
+            assert_eq!(url.host_str(), Some(expected.as_str()));
+        });
+    }
+
+    #[test]
+    fn no_rewrite_when_explicitly_disabled() {
+        with_wings_enabled(false, || {
+            let mut url = Url::parse("https://registry.npmjs.org/lodash").unwrap();
+            let rewrote = rewrite(&mut url);
+
+            assert!(!rewrote);
+            assert_eq!(url.host_str(), Some("registry.npmjs.org"));
+        });
     }
 
     #[test]
     fn no_rewrite_for_unknown_origin() {
-        let mut url = Url::parse("https://example.com/x").unwrap();
-        let rewrote = rewrite(&mut url);
-        assert!(!rewrote);
-        assert_eq!(url.host_str(), Some("example.com"));
+        with_wings_enabled(true, || {
+            let mut url = Url::parse("https://example.com/x").unwrap();
+            let rewrote = rewrite(&mut url);
+            assert!(!rewrote);
+            assert_eq!(url.host_str(), Some("example.com"));
+        });
     }
 
     #[test]
     fn no_rewrite_when_url_has_no_host() {
-        // file:// URLs have no host — the rewriter should
-        // bail rather than panic.
-        let mut url = Url::parse("file:///tmp/x").unwrap();
-        let rewrote = rewrite(&mut url);
-        assert!(!rewrote);
+        with_wings_enabled(true, || {
+            // file:// URLs have no host — the rewriter should
+            // bail rather than panic.
+            let mut url = Url::parse("file:///tmp/x").unwrap();
+            let rewrote = rewrite(&mut url);
+            assert!(!rewrote);
+        });
     }
 
     #[test]
