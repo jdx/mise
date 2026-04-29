@@ -14,34 +14,8 @@ use versions::Versioning;
 
 pub async fn rebuild(config: &Config) -> Result<()> {
     for backend in backend::list() {
-        let ba = backend.ba();
-        // Collect all install directories for this backend: user dir + shared/system dirs
-        let mut installs_dirs = vec![ba.installs_path.clone()];
-        let tool_dir_name = ba.tool_dir_name();
-        for shared_dir in env::shared_install_dirs() {
-            let dir = shared_dir.join(&tool_dir_name);
-            if dir.is_dir() && !installs_dirs.contains(&dir) {
-                installs_dirs.push(dir);
-            }
-        }
-
-        // Process user dir (first entry) with normal error propagation
-        if let Some(installs_dir) = installs_dirs.first() {
-            rebuild_symlinks_in_dir(config, &backend, installs_dir)?;
-        }
-        // Process shared/system dirs with permission error tolerance
-        for installs_dir in installs_dirs.iter().skip(1) {
-            if let Err(e) = rebuild_symlinks_in_dir(config, &backend, installs_dir) {
-                if is_permission_error(&e) {
-                    warn!(
-                        "skipping symlink update for {}: {}",
-                        installs_dir.display(),
-                        e
-                    );
-                } else {
-                    return Err(e);
-                }
-            }
+        for installs_dir in install_dirs_for(&backend) {
+            rebuild_symlinks_in_dir(config, &backend, &installs_dir)?;
         }
     }
     Ok(())
@@ -49,34 +23,29 @@ pub async fn rebuild(config: &Config) -> Result<()> {
 
 pub async fn migrate_real_dirs(config: &Config) -> Result<()> {
     for backend in backend::list() {
-        let ba = backend.ba();
-        let mut installs_dirs = vec![ba.installs_path.clone()];
-        let tool_dir_name = ba.tool_dir_name();
-        for shared_dir in env::shared_install_dirs() {
-            let dir = shared_dir.join(&tool_dir_name);
-            if dir.is_dir() && !installs_dirs.contains(&dir) {
-                installs_dirs.push(dir);
-            }
-        }
-
-        if let Some(installs_dir) = installs_dirs.first() {
-            migrate_real_dirs_in_dir(config, &backend, installs_dir)?;
-        }
-        for installs_dir in installs_dirs.iter().skip(1) {
-            if let Err(e) = migrate_real_dirs_in_dir(config, &backend, installs_dir) {
-                if is_permission_error(&e) {
-                    warn!(
-                        "skipping runtime symlink migration for {}: {}",
-                        installs_dir.display(),
-                        e
-                    );
-                } else {
-                    return Err(e);
-                }
-            }
+        for installs_dir in install_dirs_for(&backend) {
+            migrate_real_dirs_in_dir(config, &backend, &installs_dir)?;
         }
     }
     Ok(())
+}
+
+/// All install directories to consider for a backend: the backend's primary
+/// installs_path plus any shared/system dirs that contain the tool. Per-dir
+/// rebuilds are no-ops when desired state already matches actual state, so
+/// dirs we have no write access to (read-only system installs) only error
+/// out when we actually need to change something there.
+fn install_dirs_for(backend: &Arc<dyn Backend>) -> Vec<PathBuf> {
+    let ba = backend.ba();
+    let mut dirs = vec![ba.installs_path.clone()];
+    let tool_dir_name = ba.tool_dir_name();
+    for shared_dir in env::shared_install_dirs() {
+        let dir = shared_dir.join(&tool_dir_name);
+        if dir.is_dir() && !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    dirs
 }
 
 fn rebuild_symlinks_in_dir(
@@ -93,16 +62,21 @@ fn rebuild_symlinks_in_dir(
         let from_name = from.clone();
         let from = installs_dir.join(from);
         if from.exists() {
-            if is_runtime_symlink(&from) && file::resolve_symlink(&from)?.unwrap_or_default() != to
-            {
+            if is_runtime_symlink(&from) {
+                // Existing runtime symlink: only rewrite if the target changed.
+                if file::resolve_symlink(&from)?.unwrap_or_default() == to {
+                    continue;
+                }
                 trace!("Removing existing symlink: {}", from.display());
                 file::remove_file(&from)?;
             } else if from
                 .file_name()
                 .zip(to.file_name())
-                .is_some_and(|(from_name, to_name)| from_name != to_name)
+                .is_some_and(|(f, t)| f != t)
                 && !concrete_installs.contains(&from_name)
             {
+                // Real (non-symlink) directory at a runtime-symlink slot —
+                // legacy stale state from the 2026.4 regression. Replace it.
                 trace!("Replacing stale runtime dir: {}", from.display());
                 file::remove_all(&from)?;
             } else {
@@ -131,23 +105,11 @@ fn migrate_real_dirs_in_dir(
         if !from.exists() || is_runtime_symlink(&from) || concrete_installs.contains(&from_name) {
             continue;
         }
+        trace!("Replacing stale runtime dir: {}", from.display());
         file::remove_all(&from)?;
         make_symlink_or_file(&to, &from)?;
     }
     Ok(())
-}
-
-fn is_permission_error(e: &eyre::Report) -> bool {
-    e.chain().any(|cause| {
-        cause
-            .downcast_ref::<std::io::Error>()
-            .is_some_and(|io_err| {
-                matches!(
-                    io_err.kind(),
-                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem
-                )
-            })
-    })
 }
 
 /// Build symlinks for versions found in a specific install directory.
@@ -159,8 +121,13 @@ fn list_symlinks_for_dir(
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
     for v in installed_versions_in_dir(installs_dir) {
+        if is_temporary_runtime_label(&v) {
+            continue;
+        }
         let (prefix, version) = split_version_prefix(&v);
-        let versions = Versioning::new(version).unwrap_or_default();
+        let Some(versions) = Versioning::new(version) else {
+            continue;
+        };
         let mut partial = vec![];
         while versions.nth(partial.len()).is_some() && versions.nth(partial.len() + 1).is_some() {
             let version = versions.nth(partial.len()).unwrap();
@@ -209,7 +176,21 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
 
 fn is_concrete_install(v: &str) -> bool {
     let (_, version) = split_version_prefix(v);
-    Versioning::new(version).is_some()
+    version.chars().any(|c| c.is_ascii_digit()) && Versioning::new(version).is_some()
+}
+
+fn is_temporary_runtime_label(v: &str) -> bool {
+    debug_assert!(
+        {
+            let remove_version = Versioning::new("2026.10.0").unwrap();
+            *crate::cli::version::V < remove_version
+        },
+        "Temporary runtime symlink migration guard should be removed in version 2026.10.0."
+    );
+    // The 2026.4 runtime symlink regression created real "latest" dirs. Treat
+    // only that literal label as generated state: numeric prefixes like "25"
+    // may be concrete installs requested by users and must not be migrated.
+    v == "latest"
 }
 
 pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {

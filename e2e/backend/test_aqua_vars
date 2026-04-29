@@ -16,7 +16,7 @@ packages:
       - darwin
       - linux
       - windows
-    url: https://mise.jdx.dev/test-fixtures/hello-world-{{.Vars.fixture_version}}.tar.gz
+    url: https://mise.en.dev/test-fixtures/hello-world-{{.Vars.fixture_version}}.tar.gz
     files:
       - name: hello-world
         src: hello-world-{{.Vars.fixture_version}}/bin/hello-world
@@ -58,7 +58,7 @@ EOF_MISE
 
 mise lock --platform "$MISE_PLATFORM"
 assert_contains "cat mise.lock" '"vars.fixture_version" = "2.0.0"'
-assert_contains "cat mise.lock" 'url = "https://mise.jdx.dev/test-fixtures/hello-world-2.0.0.tar.gz"'
+assert_contains "cat mise.lock" 'url = "https://mise.en.dev/test-fixtures/hello-world-2.0.0.tar.gz"'
 cp mise.lock nested-vars.lock
 
 cat <<'EOF_MISE' >mise.toml

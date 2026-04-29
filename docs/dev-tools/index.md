@@ -1,8 +1,7 @@
 # Dev Tools
 
-> _Like [asdf](https://asdf-vm.com) (or [nvm](https://github.com/nvm-sh/nvm)
-> or [pyenv](https://github.com/pyenv/pyenv) but for any language), it manages dev tools like node,
-> python, cmake, terraform, and [hundreds more](/registry.html)._
+> _Install and switch between dev tools like node, python, cmake, terraform,
+> and [hundreds more](/registry.html), all from the same project config._
 
 `mise` is a tool that manages installations of programming language runtimes and other tools for local development. For example, it can be used to manage multiple versions of Node.js, Python, Ruby, Go, etc. on the same machine.
 
@@ -27,9 +26,9 @@ including values produced by env directives like `_.source`, `_.file`, or env mo
 before tool version templates are rendered.
 
 ::: info
-mise is inspired by [asdf](https://asdf-vm.com) and can leverage asdf's
-vast [plugin ecosystem](https://github.com/mise-plugins/registry)
-under the hood. However, [it is _much_ faster than asdf and has a more friendly user experience](./comparison-to-asdf).
+mise is compatible with asdf `.tool-versions` files and can still use asdf
+plugins when needed. If you're migrating from asdf, see the
+[comparison guide](./comparison-to-asdf).
 :::
 
 ## How it works

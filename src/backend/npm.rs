@@ -24,7 +24,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 /// Tolerance applied when converting an absolute `before_date` back to a
 /// relative duration for CLI flags. This ensures that a user-supplied
-/// `install_before = "3d"` never gets rounded up to `4d` due to small amounts
+/// `minimum_release_age = "3d"` never gets rounded up to `4d` due to small amounts
 /// of elapsed time between when mise resolved the cutoff and when it invoked
 /// the package manager.
 const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
@@ -187,7 +187,7 @@ impl Backend for NPMBackend {
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
                             Value::String(ref s) => Ok(Some(s.clone())),
-                            _ => this.latest_version_for_query(config, "latest", None).await,
+                            _ => Ok(None),
                         }
                     })
                     .await
@@ -424,7 +424,7 @@ impl NPMBackend {
 
         if semver_is_older_than(&version, required_version).unwrap_or(false) {
             warn!(
-                "install_before is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/npm.html",
+                "minimum_release_age is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.en.dev/dev-tools/backends/npm.html",
                 self.tool_name(),
                 tool,
                 version,

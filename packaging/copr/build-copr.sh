@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Default values
 PACKAGE_NAME="${PACKAGE_NAME:-mise}"
-CHROOTS="${CHROOTS:-fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64}"
+CHROOTS="${CHROOTS:-fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64}"
 BUILD_PROFILE="${BUILD_PROFILE:-release}"
 MAINTAINER_NAME="${MAINTAINER_NAME:-mise Release Bot}"
 MAINTAINER_EMAIL="${MAINTAINER_EMAIL:-noreply@mise.jdx.dev}"
@@ -22,7 +22,7 @@ usage() {
 	echo "Options:"
 	echo "  -v, --version VERSION        Package version (required)"
 	echo "  -p, --profile PROFILE        Build profile (default: release)"
-	echo "  -c, --chroots CHROOTS        COPR chroots (default: fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64)"
+	echo "  -c, --chroots CHROOTS        COPR chroots (default: fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64)"
 	echo "  -o, --owner OWNER            COPR owner (default: jdxcode)"
 	echo "  -j, --project PROJECT        COPR project (default: mise)"
 	echo "  -n, --name NAME              Package name (default: mise)"
@@ -178,10 +178,10 @@ cat >"SPECS/${PACKAGE_NAME}.spec" <<'EOF'
 Name:           __PACKAGE_NAME__
 Version:        __VERSION__
 Release:        1%{?dist}
-Summary:        The front-end to your dev env
+Summary:        Dev tools, env vars, and tasks in one CLI
 
 License:        MIT
-URL:            https://mise.jdx.dev
+URL:            https://mise.en.dev
 Source0:        https://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
 Source1:        mise-vendor-%{version}.tar.gz
 
@@ -192,9 +192,9 @@ BuildRequires:  git
 BuildRequires:  openssl-devel
 
 %description
-mise is a development environment setup tool that manages runtime versions,
-environment variables, and tasks. It's a replacement for tools like nvm, rbenv,
-pyenv, etc. and works with any language.
+mise prepares your development environment before each command runs. It installs
+and switches between project tools, loads environment variables, and runs tasks
+from the same configuration.
 
 %prep
 %autosetup -n %{name}-%{version}

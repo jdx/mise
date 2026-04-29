@@ -3,7 +3,7 @@ use indoc::indoc;
 
 /// Output direnv function to use mise inside direnv
 ///
-/// See https://mise.jdx.dev/direnv.html for more information
+/// See https://mise.en.dev/direnv.html for more information
 ///
 /// Because this generates the idiomatic files based on currently installed plugins,
 /// you should run this command after installing new plugins. Otherwise

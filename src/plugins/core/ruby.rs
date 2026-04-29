@@ -9,12 +9,12 @@ use itertools::Itertools;
 use xx::regex;
 
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
+use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
-use crate::env::{self, PATH_KEY};
+use crate::env::PATH_KEY;
 use crate::git::{CloneOptions, Git};
 use crate::github::{self, GithubRelease};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -651,7 +651,7 @@ impl RubyPlugin {
     }
 
     /// Fetch created_at timestamps for Ruby versions from GitHub releases
-    async fn fetch_ruby_release_dates(&self) -> HashMap<String, String> {
+    async fn fetch_ruby_release_dates(&self) -> Result<HashMap<String, String>> {
         let mut dates = HashMap::new();
         match github::list_releases("ruby/ruby").await {
             Ok(releases) => {
@@ -662,10 +662,13 @@ impl RubyPlugin {
                 }
             }
             Err(err) => {
+                if strict_metadata() {
+                    return Err(err).wrap_err("failed to fetch Ruby release metadata");
+                }
                 debug!("Failed to fetch Ruby release dates: {err}");
             }
         }
-        dates
+        Ok(dates)
     }
 
     /// Try to install from precompiled binary
@@ -802,12 +805,12 @@ impl RubyPlugin {
         ctx.pr
             .set_message("verify GitHub artifact attestations".to_string());
 
-        match sigstore_verification::verify_github_attestation(
+        match crate::github::sigstore::verify_attestation(
             tarball_path,
             owner,
             repo,
-            env::GITHUB_TOKEN.as_deref(),
             None, // Accept any workflow from repo
+            None,
         )
         .await
         {
@@ -823,7 +826,7 @@ impl RubyPlugin {
             Ok(false) => Err(eyre!(
                 "GitHub artifact attestations verification failed for ruby@{version}\n{ATTESTATION_HELP}"
             )),
-            Err(sigstore_verification::AttestationError::NoAttestations) => Err(eyre!(
+            Err(crate::github::sigstore::AttestationError::NoAttestations) => Err(eyre!(
                 "No GitHub artifact attestations found for ruby@{version}\n{ATTESTATION_HELP}"
             )),
             Err(e) => Err(eyre!(
@@ -869,7 +872,7 @@ impl Backend for RubyPlugin {
                 }
 
                 // Fetch Ruby release dates from GitHub in parallel with version list
-                let release_dates = self.fetch_ruby_release_dates().await;
+                let release_dates = self.fetch_ruby_release_dates().await?;
 
                 let ruby_build_bin = self.ruby_build_bin();
                 let ruby_build_str = ruby_build_bin.to_string_lossy().to_string();
@@ -946,7 +949,7 @@ impl Backend for RubyPlugin {
                 "ruby_precompiled",
                 "installing precompiled ruby from jdx/ruby\n\
                     if you experience issues, switch to ruby-build by running",
-                "mise settings ruby.compile=1"
+                "mise settings ruby.compile=true"
             );
             self.install_rubygems_hook(&installed_tv)?;
             if let Err(err) = self

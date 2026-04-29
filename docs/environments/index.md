@@ -1,8 +1,7 @@
 # Environments
 
-> Like [direnv](https://github.com/direnv/direnv) it
-> manages _environment variables_ for
-> different project directories.
+> Load the right _environment variables_ automatically for each project
+> directory.
 
 Use mise to specify environment variables used for different projects.
 

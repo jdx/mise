@@ -1,6 +1,6 @@
-Summary: The front-end to your dev env
+Summary: Dev tools, env vars, and tasks in one CLI
 Name: mise
-Version: 2026.4.18
+Version: 2026.4.26
 Release: 1
 URL: https://github.com/jdx/mise/
 Group: System
@@ -9,7 +9,7 @@ Packager: @jdx
 BuildRoot: /root/mise
 
 %description
-mise is a polyglot runtime manager
+mise prepares your development environment before each command runs.
 
 %install
 mkdir -p %{buildroot}/usr/bin/

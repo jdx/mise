@@ -1,3 +1,3 @@
 # Contributing
 
-Please read the full contribution guide at: <https://mise.jdx.dev/contributing.html>
+Please read the full contribution guide at: <https://mise.en.dev/contributing.html>

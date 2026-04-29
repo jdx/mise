@@ -36,6 +36,7 @@ auto = true  # Auto-run before mise x/run
 [deps.yarn]
 [deps.pnpm]
 [deps.bun]
+[deps.aube]
 [deps.go]
 [deps.pip]
 [deps.poetry]
@@ -65,6 +66,7 @@ mise includes built-in providers for common package managers:
 | `yarn`     | `package.json`, `yarn.lock`             | `node_modules/`       | `yarn install`                       |
 | `pnpm`     | `package.json`, `pnpm-lock.yaml`        | `node_modules/`       | `pnpm install`                       |
 | `bun`      | `package.json`, `bun.lock`, `bun.lockb` | `node_modules/`       | `bun install`                        |
+| `aube`     | `package.json`, `aube-lock.yaml`        | `node_modules/`       | `aube install`                       |
 | `go`       | `go.mod`                                | `vendor/` or `go.sum` | `go mod vendor` or `go mod download` |
 | `pip`      | `requirements.txt`                      | `.venv/`              | `pip install -r requirements.txt`    |
 | `poetry`   | `pyproject.toml`, `poetry.lock`         | `.venv/`              | `poetry install`                     |
@@ -90,7 +92,7 @@ mise deps remove npm:lodash
 ```
 
 The ecosystem prefix tells mise which package manager to use. Currently supported
-ecosystems for add/remove: `npm`, `yarn`, `pnpm`, `bun`.
+ecosystems for add/remove: `npm`, `yarn`, `pnpm`, `bun`, `aube`.
 
 ## Custom Providers
 

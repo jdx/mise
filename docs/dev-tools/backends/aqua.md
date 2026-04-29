@@ -5,8 +5,8 @@ to use for new tools since they don't require plugins, they work on windows, the
 features in addition to checksums. aqua installs also show more progress bars, which is nice.
 
 You do not need to separately install aqua. The aqua CLI is not used in mise at all. What is used is
-the [aqua registry](https://github.com/aquaproj/aqua-registry) which is a bunch of yaml files that get compiled into the mise binary on release.
-Here's an example of one of these files: [`aqua:hashicorp/terraform`](https://github.com/aquaproj/aqua-registry/blob/main/pkgs/hashicorp/terraform/registry.yaml).
+the [aqua registry](https://github.com/aquaproj/aqua-registry) that gets compiled into the mise binary on release.
+Here's an example package entry: [`aqua:hashicorp/terraform`](https://github.com/aquaproj/aqua-registry/blob/main/pkgs/hashicorp/terraform/registry.yaml).
 mise has a reimplementation of aqua that knows how to work with these files to install tools.
 
 As of this writing, aqua is relatively new to mise and because a lot of tools are being converted from
@@ -77,6 +77,17 @@ Set them via tool options using either top-level keys or a nested `vars` table:
 
 Vars with defaults are filled automatically. Vars marked as required in the aqua registry must be set
 unless the registry also provides a default.
+
+### `prerelease`
+
+By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:
+
+```toml
+[tools]
+"aqua:owner/tool" = { version = "latest", prerelease = true }
+```
+
+When set, pre-release tags (e.g. `v1.0.0-rc1`, `v0.1.2-dev.86`) appear in `mise ls-remote`, `latest` resolves against the full list including pre-releases, and fuzzy version queries match pre-release tags. Has no effect when a package uses the `github_tag` version source (git tags don't carry a prerelease flag). Draft releases are always excluded. See the [github backend docs](/dev-tools/backends/github.html#prerelease) for more detail.
 
 ## Settings
 

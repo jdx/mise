@@ -15,7 +15,7 @@ fi
 echo "Test 1: Installing first tool and checking cache creation"
 cat <<EOF >mise.toml
 [tools]
-"http:hello-cache1" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+"http:hello-cache1" = { version = "1.0.0", url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
 EOF
 
 mise install
@@ -40,7 +40,7 @@ fi
 echo "Test 2: Installing second tool with same tarball and checking cache reuse"
 cat <<EOF >mise.toml
 [tools]
-"http:hello-cache2" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+"http:hello-cache2" = { version = "1.0.0", url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
 EOF
 
 mise install
@@ -59,7 +59,7 @@ fi
 echo "Test 3: Installing tool with different tarball and checking new cache entry"
 cat <<EOF >mise.toml
 [tools]
-"http:hello-cache3" = { version = "2.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-2.0.0.tar.gz", bin_path = "hello-world-2.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-2.0.0/bin/hello-world" }
+"http:hello-cache3" = { version = "2.0.0", url = "https://mise.en.dev/test-fixtures/hello-world-2.0.0.tar.gz", bin_path = "hello-world-2.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-2.0.0/bin/hello-world" }
 EOF
 
 mise install
@@ -78,7 +78,7 @@ fi
 echo "Test 4: Installing tool with checksum and checking cache key"
 cat <<EOF >mise.toml
 [tools]
-"http:hello-cache4" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+"http:hello-cache4" = { version = "1.0.0", url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
 EOF
 
 mise install

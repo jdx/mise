@@ -11,10 +11,11 @@ use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
-use crate::{dirs, env, file, plugins, sysconfig};
+use crate::{dirs, file, plugins, sysconfig};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
@@ -625,12 +626,12 @@ impl PythonPlugin {
         ctx.pr
             .set_message("verify GitHub artifact attestations".to_string());
 
-        match sigstore_verification::verify_github_attestation(
+        match crate::github::sigstore::verify_attestation(
             tarball_path,
             "astral-sh",
             "python-build-standalone",
-            env::GITHUB_TOKEN.as_deref(),
             None, // Accept any workflow from repo
+            None,
         )
         .await
         {
@@ -646,7 +647,7 @@ impl PythonPlugin {
             Ok(false) => Err(eyre!(
                 "GitHub artifact attestations verification failed for python@{version}\n{ATTESTATION_HELP}"
             )),
-            Err(sigstore_verification::AttestationError::NoAttestations) => Err(eyre!(
+            Err(crate::github::sigstore::AttestationError::NoAttestations) => Err(eyre!(
                 "No GitHub artifact attestations found for python@{version}\n{ATTESTATION_HELP}"
             )),
             Err(e) => Err(eyre!(
@@ -885,7 +886,9 @@ fn python_os(settings: &Settings) -> String {
     } else if cfg!(target_os = "macos") {
         "apple-darwin".into()
     } else {
-        ["unknown", built_info::CFG_OS, built_info::CFG_ENV]
+        let current = Platform::current();
+        let libc = current.libc().unwrap_or("gnu");
+        ["unknown", built_info::CFG_OS, libc]
             .iter()
             .filter(|s| !s.is_empty())
             .join("-")
@@ -935,11 +938,11 @@ fn python_precompiled_platform() -> String {
 }
 
 /// Map a PlatformTarget OS to the python-build-standalone OS string.
-fn python_os_for_target(target: &PlatformTarget) -> &'static str {
+fn python_os_for_target(target: &PlatformTarget) -> String {
     match target.os_name() {
-        "macos" => "apple-darwin",
-        "windows" => "pc-windows-msvc",
-        _ => "unknown-linux-gnu",
+        "macos" => "apple-darwin".to_string(),
+        "windows" => "pc-windows-msvc".to_string(),
+        _ => format!("unknown-linux-{}", target.libc().unwrap_or("gnu")),
     }
 }
 
@@ -996,5 +999,17 @@ mod tests {
     fn test_resolve_python_arch_macos() {
         assert_eq!(resolve_python_arch("macos", "arm64"), "aarch64");
         assert_eq!(resolve_python_arch("macos", "x64"), "x86_64");
+    }
+
+    #[test]
+    fn test_python_os_for_target_linux_libc() {
+        use crate::backend::platform_target::PlatformTarget;
+        use crate::platform::Platform;
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        assert_eq!(python_os_for_target(&target), "unknown-linux-gnu");
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64-musl").unwrap());
+        assert_eq!(python_os_for_target(&target), "unknown-linux-musl");
     }
 }

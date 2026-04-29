@@ -1,2 +1,0 @@
-backends = ["asdf:mise-plugins/mise-openshift-install"]
-description = "Install an OpenShift 4.x cluster"

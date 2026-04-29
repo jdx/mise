@@ -27,7 +27,7 @@ This relies on having `uv` (recommended) or `pipx` installed.
 
 If you have `uv` installed, mise will use `uv tool install` under the hood and you don't need to install `pipx` to run the commands containing "pipx:".
 
-When [`install_before`](/configuration/settings.html#install_before) is set, mise forwards the cutoff
+When [`minimum_release_age`](/configuration/settings.html#minimum_release_age) is set, mise forwards the cutoff
 to transitive Python dependency resolution during install. The uv install path uses uv's
 `--exclude-newer` flag, and the `pipx` fallback passes pip's `--uploaded-prior-to` flag.
 

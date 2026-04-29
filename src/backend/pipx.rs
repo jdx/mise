@@ -7,7 +7,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::file;
-use crate::github;
+use crate::github::{self, GithubRelease};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::timeout;
@@ -122,24 +122,13 @@ impl Backend for PIPXBackend {
             PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
                 let repo = url.strip_prefix("https://github.com/").unwrap();
                 let data = github::list_releases(repo).await?;
-                Ok(data
-                    .into_iter()
-                    .rev()
-                    .map(|r| VersionInfo {
-                        version: r.tag_name,
-                        created_at: Some(r.created_at),
-                        ..Default::default()
-                    })
-                    .collect())
+                Ok(Self::versions_from_github_releases(data))
             }
-            PipxRequest::Git { .. } => Ok(vec![VersionInfo {
-                version: "latest".to_string(),
-                ..Default::default()
-            }]),
+            PipxRequest::Git { .. } => Ok(vec![]),
         }
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+    async fn latest_stable_version(&self, _config: &Arc<Config>) -> eyre::Result<Option<String>> {
         let this = self;
         timeout::run_with_timeout_async(
             async || {
@@ -185,7 +174,7 @@ impl Backend for PIPXBackend {
                                 Ok(version)
                             }
                         }
-                        _ => this.latest_version_for_query(config, "latest", None).await,
+                        _ => Ok(None),
                     })
                     .await
             },
@@ -193,6 +182,13 @@ impl Backend for PIPXBackend {
         )
         .await
         .cloned()
+    }
+
+    fn unresolved_latest_version(&self) -> Option<String> {
+        match self.tool_name().parse() {
+            Ok(PipxRequest::Git(_)) => Some("latest".to_string()),
+            _ => None,
+        }
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
@@ -292,6 +288,18 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 impl PIPXBackend {
+    fn versions_from_github_releases(releases: Vec<GithubRelease>) -> Vec<VersionInfo> {
+        releases
+            .into_iter()
+            .rev()
+            .map(|r| VersionInfo {
+                version: r.tag_name,
+                created_at: Some(r.created_at),
+                ..Default::default()
+            })
+            .collect()
+    }
+
     fn uv_exclude_newer_args(before_date: Option<Timestamp>) -> Vec<OsString> {
         match before_date {
             Some(before_date) => vec!["--exclude-newer".into(), before_date.to_string().into()],
@@ -666,8 +674,35 @@ fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::PIPXBackend;
+    use crate::github::GithubRelease;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;
+
+    #[test]
+    fn test_versions_from_empty_github_releases_stays_empty() {
+        let versions = PIPXBackend::versions_from_github_releases(vec![]);
+
+        assert!(versions.is_empty());
+    }
+
+    #[test]
+    fn test_versions_from_github_releases_preserves_tags() {
+        let versions = PIPXBackend::versions_from_github_releases(vec![
+            github_release("2.0.0", "2024-02-01T00:00:00Z"),
+            github_release("1.0.0", "2024-01-01T00:00:00Z"),
+        ]);
+
+        assert_eq!(
+            versions
+                .iter()
+                .map(|v| (v.version.as_str(), v.created_at.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("1.0.0", Some("2024-01-01T00:00:00Z")),
+                ("2.0.0", Some("2024-02-01T00:00:00Z")),
+            ]
+        );
+    }
 
     #[test]
     fn test_uv_exclude_newer_args_with_cutoff() {
@@ -711,5 +746,15 @@ mod tests {
             PIPXBackend::pip_uploaded_prior_to_args(None),
             Vec::<OsString>::new()
         );
+    }
+
+    fn github_release(tag_name: &str, created_at: &str) -> GithubRelease {
+        GithubRelease {
+            tag_name: tag_name.to_string(),
+            draft: false,
+            prerelease: false,
+            created_at: created_at.to_string(),
+            assets: vec![],
+        }
     }
 }

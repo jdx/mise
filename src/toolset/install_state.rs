@@ -211,7 +211,12 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     let mut tools = BTreeMap::new();
     for dir_name in subdirs {
         let dir = dirs::INSTALLS.join(&dir_name);
-
+        let manifest_tool = manifest.get(&dir_name);
+        let legacy_meta = if manifest_tool.is_none() {
+            read_legacy_backend_meta(&dir_name)
+        } else {
+            None
+        };
         // Read versions from filesystem (1 syscall per tool — unavoidable)
         let versions: Vec<String> = file::dir_subdirs(&dir)
             .unwrap_or_else(|err| {
@@ -233,7 +238,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         }
 
         // Get metadata: prefer manifest, fall back to legacy .mise.backend
-        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest.get(&dir_name) {
+        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
             let mut full = mt.full.clone();
             let mut opts = mt.opts.clone();
             // Backward compat: if opts is empty but full contains [...], extract opts
@@ -263,7 +268,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 );
             }
             (mt.short.clone(), full, mt.explicit_backend, opts)
-        } else if let Some((s, full, explicit)) = read_legacy_backend_meta(&dir_name) {
+        } else if let Some((s, full, explicit)) = legacy_meta {
             // Migration: absorb into manifest (clone on first migration)
             let m = updated_manifest.get_or_insert_with(|| manifest.clone());
             m.insert(
@@ -319,6 +324,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         };
         for dir_name in shared_subdirs {
             let dir = shared_dir.join(&dir_name);
+            let manifest_tool = shared_manifest.get(&dir_name);
             let versions: Vec<String> = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
                     warn!("reading versions in {} failed: {err:?}", display_path(&dir));
@@ -338,17 +344,16 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 continue;
             }
 
-            let (short, full, explicit_backend, opts) =
-                if let Some(mt) = shared_manifest.get(&dir_name) {
-                    (
-                        mt.short.clone(),
-                        mt.full.clone(),
-                        mt.explicit_backend,
-                        mt.opts.clone(),
-                    )
-                } else {
-                    (dir_name.clone(), None, true, BTreeMap::new())
-                };
+            let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
+                (
+                    mt.short.clone(),
+                    mt.full.clone(),
+                    mt.explicit_backend,
+                    mt.opts.clone(),
+                )
+            } else {
+                (dir_name.clone(), None, true, BTreeMap::new())
+            };
 
             // Merge with existing tool entry or create new one
             let tool = tools

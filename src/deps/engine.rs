@@ -11,15 +11,17 @@ use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
 use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
+use crate::ui::style;
 
 type StepOutput = (DepsStepResult, Vec<PathBuf>);
 type JobOutput = Result<(String, DepsStepResult, Vec<PathBuf>), (String, eyre::Report)>;
 
 use super::deps_ordering::DepsOrdering;
 use super::providers::{
-    BunDepsProvider, BundlerDepsProvider, ComposerDepsProvider, CustomDepsProvider,
-    GitSubmoduleDepsProvider, GoDepsProvider, NpmDepsProvider, PipDepsProvider, PnpmDepsProvider,
-    PoetryDepsProvider, UvDepsProvider, YarnDepsProvider,
+    AubeDepsProvider, BunDepsProvider, BundlerDepsProvider, ComposerDepsProvider,
+    CustomDepsProvider, GitSubmoduleDepsProvider, GoDepsProvider, NpmDepsProvider, PipDepsProvider,
+    PnpmDepsProvider, PoetryDepsProvider, UvDepsProvider, YarnDepsProvider,
 };
 use super::rule::BUILTIN_PROVIDERS;
 use super::state::{self, DepsState};
@@ -174,6 +176,10 @@ impl DepsEngine {
                     provider_config,
                 ))),
                 "bun" => Some(Box::new(BunDepsProvider::new(config_root, provider_config))),
+                "aube" => Some(Box::new(AubeDepsProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
                 "go" => Some(Box::new(GoDepsProvider::new(config_root, provider_config))),
                 "pip" => Some(Box::new(PipDepsProvider::new(config_root, provider_config))),
                 "poetry" => Some(Box::new(PoetryDepsProvider::new(
@@ -405,14 +411,21 @@ impl DepsEngine {
             .collect();
 
         crate::parallel::parallel(to_run_with_context, |(job, mpr, toolset_env)| async move {
-            let pr = mpr.add(&job.cmd.description);
-            match Self::execute_command(&job.cmd, &toolset_env, job.timeout) {
+            let (stdout_prefix, stderr_prefix) = Self::deps_prefixes(&job.id);
+            let pr = mpr.add(&stderr_prefix);
+            match Self::execute_command(
+                &job.cmd,
+                &toolset_env,
+                job.timeout,
+                Some((&stdout_prefix, &stderr_prefix)),
+                Some(pr.as_ref()),
+            ) {
                 Ok(()) => {
-                    pr.finish_with_message(format!("{} done", job.cmd.description));
+                    pr.finish_with_message("done".to_string());
                     Ok((DepsStepResult::Ran(job.id), job.outputs))
                 }
                 Err(e) => {
-                    pr.finish_with_message(format!("{} failed: {}", job.cmd.description, e));
+                    pr.finish_with_message(format!("failed: {e}"));
                     Err(e)
                 }
             }
@@ -550,31 +563,32 @@ impl DepsEngine {
                     let toolset_env = toolset_env.clone();
 
                     let handle = join_set.spawn(async move {
-                        let pr = mpr.add(&job.cmd.description);
                         let id = job.id;
+                        let (stdout_prefix, stderr_prefix) = Self::deps_prefixes(&id);
+                        let pr = mpr.add(&stderr_prefix);
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            Self::execute_command(&job.cmd, &toolset_env, job.timeout)
+                            Self::execute_command(
+                                &job.cmd,
+                                &toolset_env,
+                                job.timeout,
+                                Some((&stdout_prefix, &stderr_prefix)),
+                                Some(pr.as_ref()),
+                            )
                         }));
                         drop(permit);
 
                         match result {
                             Ok(Ok(())) => {
-                                pr.finish_with_message(format!("{} done", job.cmd.description));
+                                pr.finish_with_message("done".to_string());
                                 let step = DepsStepResult::Ran(id.clone());
                                 Ok((id, step, job.outputs))
                             }
                             Ok(Err(e)) => {
-                                pr.finish_with_message(format!(
-                                    "{} failed: {}",
-                                    job.cmd.description, e
-                                ));
+                                pr.finish_with_message(format!("failed: {e}"));
                                 Err((id, e))
                             }
                             Err(_) => {
-                                pr.finish_with_message(format!(
-                                    "{} panicked",
-                                    job.cmd.description
-                                ));
+                                pr.finish_with_message("panicked".to_string());
                                 Err((id, eyre::eyre!("task panicked")))
                             }
                         }
@@ -696,6 +710,8 @@ impl DepsEngine {
         cmd: &super::DepsCommand,
         toolset_env: &BTreeMap<String, String>,
         timeout: Option<std::time::Duration>,
+        prefixes: Option<(&str, &str)>,
+        progress: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let cwd = match cmd.cwd.clone() {
             Some(dir) => dir,
@@ -742,7 +758,51 @@ impl DepsEngine {
             runner = runner.raw(true);
         }
 
+        if let Some((stdout_prefix, stderr_prefix)) = prefixes
+            && !Settings::get().raw
+        {
+            let stdout_prefix = stdout_prefix.to_string();
+            let stderr_prefix = stderr_prefix.to_string();
+            // Suppress provider command stream output when -q/--quiet is set,
+            // matching `mise install -q` behavior. The progress indicator and
+            // logger-routed status messages still respect the quiet level.
+            let quiet = Settings::get().quiet;
+            runner = runner
+                .with_on_stdout(move |line| {
+                    if let Some(progress) = progress {
+                        progress.set_message(line.clone());
+                    }
+                    if quiet {
+                        return;
+                    }
+                    if console::colors_enabled() {
+                        prefix_println!(stdout_prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_println!(stdout_prefix, "{line}");
+                    }
+                })
+                .with_on_stderr(move |line| {
+                    if quiet {
+                        return;
+                    }
+                    if console::colors_enabled_stderr() {
+                        prefix_eprintln!(stderr_prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_eprintln!(stderr_prefix, "{line}");
+                    }
+                });
+        }
+
         runner.execute()?;
         Ok(())
+    }
+
+    fn deps_prefixes(id: &str) -> (String, String) {
+        let name = format!("deps.{id}");
+        let prefix = format!("[{name}]");
+        (
+            style::prefix(&prefix, &name, false),
+            style::prefix(prefix, name, true),
+        )
     }
 }

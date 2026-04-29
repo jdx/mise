@@ -1,20 +1,21 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{
     fmt::{Display, Formatter},
     sync::Arc,
 };
 
 use eyre::{Result, bail};
-use jiff::Timestamp;
 use versions::{Chunk, Version};
 use xx::file;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
-use crate::config::settings::Settings;
+use crate::config::config_file::config_root;
+use crate::dirs;
 use crate::env;
 use crate::lockfile::LockfileTool;
+use crate::path::PathExt;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
@@ -82,12 +83,15 @@ impl ToolRequest {
                 backend,
                 source,
             },
-            Some(("path", p)) => Self::Path {
-                path: PathBuf::from(p),
-                options: backend.opts(),
-                backend,
-                source,
-            },
+            Some(("path", p)) => {
+                let path = resolve_path(p, &source);
+                Self::Path {
+                    path,
+                    options: backend.opts(),
+                    backend,
+                    source,
+                }
+            }
             Some((p, v)) if p.starts_with("sub-") => Self::Sub {
                 sub: p.split_once('-').unwrap().1.to_string(),
                 options: backend.opts(),
@@ -191,7 +195,7 @@ impl ToolRequest {
             Self::Ref {
                 ref_: r, ref_type, ..
             } => format!("{ref_type}:{r}"),
-            Self::Path { path: p, .. } => format!("path:{}", p.display()),
+            Self::Path { path: p, .. } => format!("path:{}", p.display_user()),
             Self::Sub {
                 sub, orig_version, ..
             } => format!("sub-{sub}:{orig_version}"),
@@ -352,9 +356,7 @@ impl ToolRequest {
         config: &Arc<Config>,
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
-        let mut opts = opts.clone();
-        opts.before_date = effective_before_date(Some(self), &opts)?;
-        ToolVersion::resolve(config, self.clone(), &opts).await
+        ToolVersion::resolve(config, self.clone(), opts).await
     }
 
     pub fn is_os_supported(&self) -> bool {
@@ -377,6 +379,33 @@ impl ToolRequest {
     }
 }
 
+/// Resolve a `path:` tool version request value against the config file's directory.
+///
+/// - `~/` is expanded to `$HOME`
+/// - a leading `./` is stripped
+/// - remaining relative paths are joined with `config_root(source)` when the
+///   source is a file-based config; otherwise they fall back to the current
+///   working directory so CLI usage (e.g. `mise use tool@path:./x`) behaves
+///   the way users expect.
+fn resolve_path(p: &str, source: &ToolSource) -> PathBuf {
+    let p = Path::new(p);
+    if let Ok(rest) = p.strip_prefix("~/") {
+        return dirs::HOME.join(rest);
+    }
+    if p.is_absolute() {
+        return p.to_path_buf();
+    }
+    let p = p.strip_prefix("./").unwrap_or(p);
+    let base = match source.path() {
+        Some(src) => config_root::config_root(src),
+        None => dirs::CWD
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| PathBuf::from(".")),
+    };
+    base.join(p)
+}
+
 /// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
 fn normalize_os(os: &str) -> &str {
     match os {
@@ -393,38 +422,6 @@ fn normalize_arch(arch: &str) -> &str {
         "aarch64" | "arm64" => "arm64",
         other => other,
     }
-}
-
-/// Resolve the effective `install_before` cutoff to an absolute [`Timestamp`]
-/// in one canonical place.
-///
-/// Precedence (highest to lowest):
-/// 1. `opts.before_date` — typically the pre-resolved `--before` CLI flag.
-/// 2. The per-tool `install_before` option on `request`.
-/// 3. The global `install_before` setting.
-///
-/// All string-based durations (e.g. `"3d"`) are resolved against
-/// [`crate::duration::process_now`] so that every call within a single mise
-/// invocation produces the same absolute timestamp. Downstream code can then
-/// use this timestamp both to resolve which version to install *and* to build
-/// the corresponding package-manager CLI flag (e.g. `--min-release-age`)
-/// without the two drifting apart.
-pub fn effective_before_date(
-    request: Option<&ToolRequest>,
-    opts: &ResolveOptions,
-) -> Result<Option<Timestamp>> {
-    if let Some(before_date) = opts.before_date {
-        return Ok(Some(before_date));
-    }
-    if let Some(request) = request
-        && let Some(before) = request.options().get("install_before")
-    {
-        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
-    }
-    if let Some(before) = &Settings::get().install_before {
-        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
-    }
-    Ok(None)
 }
 
 /// subtracts sub from orig and removes suffix
@@ -467,110 +464,9 @@ impl Display for ToolRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::{ToolRequest, effective_before_date, version_sub};
-    use crate::cli::args::{BackendArg, BackendResolution};
-    use crate::config::settings::{Settings, SettingsPartial};
-    use crate::toolset::{ResolveOptions, ToolSource, parse_tool_options};
-    use confique::Layer;
+    use super::version_sub;
     use pretty_assertions::assert_str_eq;
-    use std::sync::Arc;
     use test_log::test;
-
-    fn make_request(opts: Option<&str>) -> ToolRequest {
-        let backend = Arc::new(BackendArg::new_raw(
-            "core:dummy".to_string(),
-            Some("core:dummy".to_string()),
-            "dummy".to_string(),
-            opts.map(parse_tool_options),
-            BackendResolution::new(true),
-        ));
-        ToolRequest::Version {
-            backend: backend.clone(),
-            version: "latest".to_string(),
-            options: backend.opts(),
-            source: ToolSource::Argument,
-        }
-    }
-
-    #[test]
-    fn test_effective_before_date_prefers_cli() {
-        Settings::reset(None);
-        let request = make_request(Some("install_before='7d'"));
-        let cli_before = "2024-01-02T03:04:05Z".parse().unwrap();
-        let opts = ResolveOptions {
-            before_date: Some(cli_before),
-            ..Default::default()
-        };
-        assert_eq!(
-            effective_before_date(Some(&request), &opts).unwrap(),
-            Some(cli_before)
-        );
-        Settings::reset(None);
-    }
-
-    #[test]
-    fn test_effective_before_date_prefers_tool_option() {
-        Settings::reset(None);
-        let request = make_request(Some("install_before='2024-01-02'"));
-        let opts = ResolveOptions::default();
-        assert_eq!(
-            effective_before_date(Some(&request), &opts).unwrap(),
-            Some(crate::duration::parse_into_timestamp("2024-01-02").unwrap())
-        );
-        Settings::reset(None);
-    }
-
-    #[test]
-    fn test_effective_before_date_falls_back_to_global_setting() {
-        let mut partial = SettingsPartial::empty();
-        partial.install_before = Some("2024-01-03".to_string());
-        Settings::reset(Some(partial));
-        let request = make_request(None);
-        let opts = ResolveOptions::default();
-        assert_eq!(
-            effective_before_date(Some(&request), &opts).unwrap(),
-            Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap())
-        );
-        Settings::reset(None);
-    }
-
-    #[test]
-    fn test_effective_before_date_none_when_unset() {
-        Settings::reset(None);
-        let request = make_request(None);
-        let opts = ResolveOptions::default();
-        assert_eq!(effective_before_date(Some(&request), &opts).unwrap(), None);
-        Settings::reset(None);
-    }
-
-    #[test]
-    fn test_effective_before_date_handles_missing_request() {
-        let mut partial = SettingsPartial::empty();
-        partial.install_before = Some("2024-01-03".to_string());
-        Settings::reset(Some(partial));
-        let opts = ResolveOptions::default();
-        assert_eq!(
-            effective_before_date(None, &opts).unwrap(),
-            Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap())
-        );
-        Settings::reset(None);
-    }
-
-    #[test]
-    fn test_effective_before_date_stable_within_process() {
-        // Covers the invariant behind #9156: relative durations resolve
-        // identically across calls within one invocation.
-        Settings::reset(None);
-        let mut partial = SettingsPartial::empty();
-        partial.install_before = Some("3d".to_string());
-        Settings::reset(Some(partial));
-        let request = make_request(None);
-        let opts = ResolveOptions::default();
-        let a = effective_before_date(Some(&request), &opts).unwrap();
-        let b = effective_before_date(Some(&request), &opts).unwrap();
-        assert_eq!(a, b);
-        Settings::reset(None);
-    }
 
     #[test]
     fn test_version_sub() {

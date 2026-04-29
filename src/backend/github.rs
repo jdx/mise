@@ -15,7 +15,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
-use crate::{backend::Backend, forgejo, github, gitlab};
+use crate::{backend::Backend, backend::include_prereleases, forgejo, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
@@ -51,10 +51,10 @@ enum VerificationStatus {
 /// Check if an SLSA verification error indicates a format/parsing issue rather than
 /// an actual verification failure. Some provenance files (e.g., BuildKit raw provenance)
 /// exist but aren't in a sigstore-verifiable format.
-fn is_slsa_format_issue(e: &sigstore_verification::AttestationError) -> bool {
+fn is_slsa_format_issue(e: &crate::github::sigstore::AttestationError) -> bool {
     match e {
-        sigstore_verification::AttestationError::NoAttestations => true,
-        sigstore_verification::AttestationError::Verification(msg) => {
+        crate::github::sigstore::AttestationError::NoAttestations => true,
+        crate::github::sigstore::AttestationError::Verification(msg) => {
             msg.contains("does not contain valid attestations")
                 || msg.contains("No certificate found")
                 || msg.contains("neither DSSE envelope nor message signature")
@@ -214,7 +214,12 @@ impl Backend for UnifiedGitBackend {
                 })
                 .collect()
         } else {
-            github::list_releases_from_url(api_url.as_str(), &repo)
+            // Always fetch the pre-release superset and stamp `prerelease` on
+            // each entry. The shared remote-versions cache stores the superset
+            // so flipping the `prerelease` tool option (e.g. via a project
+            // override) is correct without invalidating the cache; the read
+            // path filters on `prerelease` according to the current opts.
+            github::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
@@ -222,6 +227,7 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
                     created_at: Some(r.created_at),
                     release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                    prerelease: r.prerelease,
                     ..Default::default()
                 })
                 .collect()
@@ -257,9 +263,18 @@ impl Backend for UnifiedGitBackend {
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
 
+        // When `prerelease = true`, skip the `/releases/latest` shortcut
+        // (which returns whichever release the repo owner marked as "Latest",
+        // defaulting to the newest non-prerelease). Returning `None` lets the
+        // trait's `latest_version` fall through to `latest_version_for_query`,
+        // which resolves against the full list — now including pre-releases.
+        if include_prereleases(&opts) {
+            return Ok(None);
+        }
+
         let latest_tag = if self.is_gitlab() {
             // GitLab doesn't have a "latest" endpoint
-            return self.latest_version_for_query(config, "latest", None).await;
+            return Ok(None);
         } else if self.is_forgejo() {
             match forgejo::get_release_for_url(&api_url, &repo, "latest").await {
                 Ok(r) => Some(r.tag_name),
@@ -284,7 +299,7 @@ impl Backend for UnifiedGitBackend {
 
         match latest_version {
             Some(version) => Ok(Some(version)),
-            None => self.latest_version_for_query(config, "latest", None).await,
+            None => Ok(None),
         }
     }
 
@@ -474,31 +489,22 @@ impl UnifiedGitBackend {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
-                match sigstore_verification::sources::github::GitHubSource::with_base_url(
-                    owner,
-                    repo_name,
-                    github::resolve_token_for_api_url(api_url).as_deref(),
-                    api_url,
-                ) {
-                    Ok(source) => {
-                        use sigstore_verification::AttestationSource;
-                        let artifact_ref = sigstore_verification::ArtifactRef::from_digest(digest);
-                        match source.fetch_attestations(&artifact_ref).await {
-                            Ok(attestations) if !attestations.is_empty() => {
-                                return Some(ProvenanceType::GithubAttestations);
-                            }
-                            Ok(_) => {}
-                            Err(e) => {
-                                warn!(
-                                    "GitHub attestation API query failed for {owner}/{repo_name}: {e}. \
-                                     Lockfile may not record github-attestations provenance."
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
+                match crate::github::sigstore::detect_attestations(
+                    owner, repo_name, api_url, digest,
+                )
+                .await
+                {
+                    Ok(true) => return Some(ProvenanceType::GithubAttestations),
+                    Ok(false) => {}
+                    Err(crate::github::sigstore::DetectError::SourceCreation(e)) => {
                         warn!(
                             "Failed to create GitHub attestation source for {owner}/{repo_name}: {e}. \
+                             Lockfile may not record github-attestations provenance."
+                        );
+                    }
+                    Err(crate::github::sigstore::DetectError::Fetch(e)) => {
+                        warn!(
+                            "GitHub attestation API query failed for {owner}/{repo_name}: {e}. \
                              Lockfile may not record github-attestations provenance."
                         );
                     }
@@ -572,13 +578,12 @@ impl UnifiedGitBackend {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
-                match sigstore_verification::verify_github_attestation_with_base_url(
+                match crate::github::sigstore::verify_attestation(
                     &artifact_path,
                     owner,
                     repo_name,
-                    github::resolve_token_for_api_url(api_url).as_deref(),
                     None,
-                    api_url,
+                    Some(api_url),
                 )
                 .await
                 {
@@ -591,7 +596,7 @@ impl UnifiedGitBackend {
                             "GitHub artifact attestations verification returned false"
                         ));
                     }
-                    Err(sigstore_verification::AttestationError::NoAttestations) => {
+                    Err(crate::github::sigstore::AttestationError::NoAttestations) => {
                         debug!("no GitHub attestations found at lock time, trying SLSA");
                     }
                     Err(e) => {
@@ -639,7 +644,7 @@ impl UnifiedGitBackend {
                 .await?;
 
                 let provenance_url = provenance_asset.browser_download_url.clone();
-                match sigstore_verification::verify_slsa_provenance(
+                match crate::github::sigstore::verify_slsa_provenance(
                     &artifact_path,
                     &provenance_path,
                     1u8,
@@ -1567,13 +1572,12 @@ impl UnifiedGitBackend {
         let (owner, repo_name) = (parts[0], parts[1]);
         let api_url = self.get_api_url(&tv.request.options());
 
-        match sigstore_verification::verify_github_attestation_with_base_url(
+        match crate::github::sigstore::verify_attestation(
             file_path,
             owner,
             repo_name,
-            github::resolve_token_for_api_url(&api_url).as_deref(),
             None, // We don't know the expected workflow
-            &api_url,
+            Some(&api_url),
         )
         .await
         {
@@ -1585,7 +1589,7 @@ impl UnifiedGitBackend {
                 }
                 Ok(verified)
             }
-            Err(sigstore_verification::AttestationError::NoAttestations) => {
+            Err(crate::github::sigstore::AttestationError::NoAttestations) => {
                 Err(VerificationStatus::NoAttestations)
             }
             Err(e) => Err(VerificationStatus::Error(e.to_string())),
@@ -1676,7 +1680,7 @@ impl UnifiedGitBackend {
 
         // Verify the provenance
         let provenance_download_url = provenance_asset.browser_download_url.clone();
-        match sigstore_verification::verify_slsa_provenance(
+        match crate::github::sigstore::verify_slsa_provenance(
             file_path,
             &provenance_path,
             1, // Minimum SLSA level
@@ -1921,14 +1925,14 @@ mod tests {
 
     #[test]
     fn test_is_slsa_format_issue_no_attestations() {
-        let err = sigstore_verification::AttestationError::NoAttestations;
+        let err = crate::github::sigstore::AttestationError::NoAttestations;
         assert!(is_slsa_format_issue(&err));
     }
 
     #[test]
     fn test_is_slsa_format_issue_invalid_format() {
         // This is the exact error from BuildKit raw provenance files parsed line-by-line
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = crate::github::sigstore::AttestationError::Verification(
             "File does not contain valid attestations or SLSA provenance".to_string(),
         );
         assert!(is_slsa_format_issue(&err));
@@ -1936,7 +1940,7 @@ mod tests {
 
     #[test]
     fn test_is_slsa_format_issue_no_certificate() {
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = crate::github::sigstore::AttestationError::Verification(
             "No certificate found in attestation bundle".to_string(),
         );
         assert!(is_slsa_format_issue(&err));
@@ -1944,7 +1948,7 @@ mod tests {
 
     #[test]
     fn test_is_slsa_format_issue_no_dsse_envelope() {
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = crate::github::sigstore::AttestationError::Verification(
             "Bundle has neither DSSE envelope nor message signature".to_string(),
         );
         assert!(is_slsa_format_issue(&err));
@@ -1953,7 +1957,7 @@ mod tests {
     #[test]
     fn test_is_slsa_format_issue_real_verification_failure() {
         // Digest mismatch = real verification failure, NOT a format issue
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = crate::github::sigstore::AttestationError::Verification(
             "Artifact digest mismatch: expected abc123".to_string(),
         );
         assert!(!is_slsa_format_issue(&err));
@@ -1962,7 +1966,7 @@ mod tests {
     #[test]
     fn test_is_slsa_format_issue_signature_failure() {
         // Signature verification failure = real failure, NOT a format issue
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = crate::github::sigstore::AttestationError::Verification(
             "P-256 signature verification failed: invalid signature".to_string(),
         );
         assert!(!is_slsa_format_issue(&err));
@@ -1970,7 +1974,7 @@ mod tests {
 
     #[test]
     fn test_is_slsa_format_issue_api_error() {
-        let err = sigstore_verification::AttestationError::Api("connection refused".to_string());
+        let err = crate::github::sigstore::AttestationError::Api("connection refused".to_string());
         assert!(!is_slsa_format_issue(&err));
     }
 }

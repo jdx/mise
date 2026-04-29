@@ -291,25 +291,6 @@ impl Run {
             }
         }
 
-        // Build and install toolset so tools like npm are available for deps
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .with_default_to_latest(true)
-            .build(&config)
-            .await?;
-
-        let opts = InstallOptions {
-            jobs: self.jobs,
-            raw: self.raw,
-            missing_args_only: !Settings::get().task.run_auto_install,
-            skip_auto_install: !Settings::get().task.run_auto_install
-                || !Settings::get().auto_install,
-            ..Default::default()
-        };
-        if !self.skip_tools {
-            let _ = ts.install_missing_versions(&mut config, &opts).await?;
-        }
-
         if !self.skip_deps {
             self.skip_deps = Settings::get().task.skip_depends;
         }
@@ -362,19 +343,54 @@ impl Run {
 
         // Resolve transitive dependencies once upfront so we can:
         // 1. Discover deps providers from monorepo subdirectory configs
-        // 2. Reuse the resolved list for execution (avoiding duplicate work)
+        // 2. Include monorepo subdirectory tools in the toolset before installing
+        // 3. Reuse the resolved list for execution (avoiding duplicate work)
         let resolved_tasks = resolve_depends(&config, task_list).await?;
+
+        // Collect subdirectory config files from all resolved tasks. In
+        // monorepos these come from sub mise.toml files referenced via the
+        // `//sub:taskname` syntax — they aren't in `config.config_files`.
+        let subdir_configs: Vec<_> = resolved_tasks
+            .iter()
+            .filter_map(|task| task.cf.clone())
+            .collect();
+
+        // Build the toolset using root config files plus subdir configs from
+        // resolved tasks, so tools declared in monorepo subdirs are installed
+        // before deps (e.g. `[deps.bun] auto=true`) try to use them.
+        let mut combined_configs = config.config_files.clone();
+        for cf in &subdir_configs {
+            combined_configs
+                .entry(cf.get_path().to_path_buf())
+                .or_insert_with(|| cf.clone());
+        }
+
+        // Build and install toolset only after tasks resolve. A naked run that
+        // does not match any task should fail without installing project tools.
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .with_default_to_latest(true)
+            .with_config_files(combined_configs)
+            .build(&config)
+            .await?;
+
+        let opts = InstallOptions {
+            jobs: self.jobs,
+            raw: self.raw,
+            missing_args_only: !Settings::get().task.run_auto_install,
+            skip_auto_install: !Settings::get().task.run_auto_install
+                || !Settings::get().auto_install,
+            ..Default::default()
+        };
+        if !self.skip_tools {
+            let _ = ts.install_missing_versions(&mut config, &opts).await?;
+        }
 
         // Run auto-enabled deps steps (unless --no-deps)
         if !self.no_deps {
             let env = ts.env_with_path(&config).await?;
             let mut engine = DepsEngine::new(&config)?;
 
-            // Collect subdirectory config files from all resolved tasks
-            let subdir_configs: Vec<_> = resolved_tasks
-                .iter()
-                .filter_map(|task| task.cf.clone())
-                .collect();
             if !subdir_configs.is_empty() {
                 engine.add_config_files(subdir_configs);
             }
@@ -816,7 +832,7 @@ fn display_task_help(task: &Task) -> Result<()> {
         "To define arguments, add a `usage` field to the task definition in the config file."
     };
     miseprintln!("{hint}");
-    miseprintln!("See https://mise.jdx.dev/tasks/task-configuration.html for more information.");
+    miseprintln!("See https://mise.en.dev/tasks/task-configuration.html for more information.");
     Ok(())
 }
 

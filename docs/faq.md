@@ -2,7 +2,7 @@
 
 ## I don't want to put a `mise.toml`/`.tool-versions` file into my project since git shows it as an untracked file
 
-Use [`mise.local.toml`](https://mise.jdx.dev/configuration.html#mise-toml) and put that into your global gitignore file. This file should never be committed.
+Use [`mise.local.toml`](https://mise.en.dev/configuration.html#mise-toml) and put that into your global gitignore file. This file should never be committed.
 
 If you really want to use a `mise.toml` or `.tool-versions`, here are 3 ways to make git ignore these files:
 
@@ -202,7 +202,7 @@ It handles daemon management with features like automatic restarts on failure, s
 
 In VSCode, many extensions will throw an "error spawn EINVAL" due to a [Node.js security fix](https://nodejs.org/en/blog/vulnerability/april-2024-security-releases-2#command-injection-via-args-parameter-of-child_processspawn-without-shell-option-enabled-on-windows-cve-2024-27980---high).
 
-The default `exe` shim mode should resolve this. If you're using an older mode, you can change [windows_shim_mode](https://mise.jdx.dev/configuration/settings.html#windows_shim_mode) to `exe`, `hardlink`, or `symlink`.
+The default `exe` shim mode should resolve this. If you're using an older mode, you can change [windows_shim_mode](https://mise.en.dev/configuration/settings.html#windows_shim_mode) to `exe`, `hardlink`, or `symlink`.
 
 ## What is the difference between `mise install` and `mise use`?
 

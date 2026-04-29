@@ -22,10 +22,10 @@ use crate::{
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
-use crate::{backend::Backend, config::Config};
-use crate::{env, file, github, minisign};
+use crate::{backend::Backend, backend::strict_metadata, config::Config};
+use crate::{file, github, minisign};
 use async_trait::async_trait;
-use eyre::{ContextCompat, Result, bail, eyre};
+use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
@@ -226,16 +226,24 @@ impl Backend for AquaBackend {
             return Ok(vec![]);
         }
 
+        // Always fetch the pre-release superset; the shared remote-versions
+        // cache stores it untouched and the trait's read path filters on
+        // `VersionInfo.prerelease` based on the current tool opts.
         let tags_with_timestamps = match get_tags_with_created_at(&pkg).await {
             Ok(tags) => tags,
             Err(e) => {
+                if strict_metadata() {
+                    return Err(e).wrap_err_with(|| {
+                        format!("failed to fetch aqua release metadata for {}", self.id)
+                    });
+                }
                 warn!("Remote versions cannot be fetched: {}", e);
                 return Ok(vec![]);
             }
         };
 
         let mut versions = Vec::new();
-        for (tag, created_at) in tags_with_timestamps.into_iter().rev() {
+        for (tag, created_at, prerelease) in tags_with_timestamps.into_iter().rev() {
             let mut version = tag.as_str();
             match pkg.version_filter_ok(version) {
                 Ok(true) => {}
@@ -269,6 +277,7 @@ impl Backend for AquaBackend {
                     version: version.to_string(),
                     created_at,
                     release_url: Some(release_url),
+                    prerelease,
                     ..Default::default()
                 });
             }
@@ -504,10 +513,7 @@ impl Backend for AquaBackend {
 
         let paths = cache
             .get_or_try_init_async(async || {
-                let pkg = AQUA_REGISTRY
-                    .package_with_version(&self.id, &[&tv.version])
-                    .await?;
-                let pkg = Self::apply_var_options(pkg, &request_options)?;
+                let pkg = self.package_with_options(tv, &[&tv.version]).await?;
 
                 let srcs = self.srcs(&pkg, tv)?;
                 let paths = if srcs.is_empty() {
@@ -539,7 +545,12 @@ impl Backend for AquaBackend {
         Self::lockfile_options(&request.options())
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
             "\\D*[0-9].*"
@@ -553,7 +564,7 @@ impl Backend for AquaBackend {
                 if query == v {
                     return true;
                 }
-                if VERSION_REGEX.is_match(v) {
+                if filter_prereleases && VERSION_REGEX.is_match(v) {
                     return false;
                 }
                 query_regex.is_match(v)
@@ -568,15 +579,7 @@ impl Backend for AquaBackend {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        // Map Platform to Aqua's os/arch conventions
-        let target_os = match target.os_name() {
-            "macos" => "darwin",
-            other => other,
-        };
-        let target_arch = match target.arch_name() {
-            "x64" => "amd64",
-            other => other,
-        };
+        let (target_os, target_arch) = Self::to_aqua_platform(target);
 
         // Get version tag
         let tag = match self.get_version_tags().await {
@@ -611,8 +614,9 @@ impl Backend for AquaBackend {
         // platform first, which can leak host-specific overrides into cross-platform lock.
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let opts = tv.request.options();
-        let pkg =
-            Self::apply_var_options(pkg.with_version(&versions, target_os, target_arch), &opts)?;
+        let pkg = pkg.with_version(&versions, target_os, target_arch);
+        let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(target));
+        let pkg = Self::apply_var_options(pkg, &opts)?;
 
         // Apply version prefix if present
         if let Some(prefix) = &pkg.version_prefix
@@ -651,7 +655,10 @@ impl Backend for AquaBackend {
                 let mut result = (None, None);
                 for candidate in &candidates {
                     let asset_strs = pkg.asset_strs(candidate, target_os, target_arch)?;
-                    match self.github_release_asset(&pkg, candidate, asset_strs).await {
+                    match self
+                        .github_release_asset_for_target(&pkg, candidate, asset_strs, target)
+                        .await
+                    {
                         Ok((url, digest)) => {
                             v = candidate.to_string();
                             result = (Some(url), digest);
@@ -759,10 +766,59 @@ impl AquaBackend {
         tv: &ToolVersion,
         versions: &[&str],
     ) -> Result<AquaPackage> {
-        let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, versions)
-            .await?;
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        let pkg = pkg.with_version(versions, target_os, target_arch);
+        let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(&target));
         Self::apply_var_options(pkg, &tv.request.options())
+    }
+
+    fn to_aqua_platform(target: &PlatformTarget) -> (&str, &str) {
+        let target_os = match target.os_name() {
+            "macos" => "darwin",
+            other => other,
+        };
+        let target_arch = match target.arch_name() {
+            "x64" => "amd64",
+            other => other,
+        };
+        (target_os, target_arch)
+    }
+
+    fn target_libc(target: &PlatformTarget) -> Option<String> {
+        target.libc().map(str::to_string).or_else(|| {
+            if target.is_current() {
+                Settings::get().libc().map(str::to_string)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn apply_aqua_libc_replacement(
+        mut pkg: AquaPackage,
+        target_os: &str,
+        libc: Option<String>,
+    ) -> AquaPackage {
+        let Some(libc) = libc else {
+            return pkg;
+        };
+        if target_os != "linux" {
+            return pkg;
+        }
+        let Some(linux) = pkg.replacements.get_mut("linux") else {
+            return pkg;
+        };
+        if is_aqua_linux_libc_replacement(linux) {
+            let libc = if libc == "musl" { "musl" } else { "gnu" };
+            let prefix = linux
+                .strip_suffix("-gnu")
+                .or_else(|| linux.strip_suffix("-musl"))
+                .unwrap_or("unknown-linux");
+            *linux = format!("{prefix}-{libc}");
+        }
+        pkg
     }
 
     fn apply_var_options(pkg: AquaPackage, opts: &ToolVersionOptions) -> Result<AquaPackage> {
@@ -931,17 +987,20 @@ impl AquaBackend {
         artifact_path: &Path,
         pkg: &AquaPackage,
     ) -> Result<()> {
+        // The aqua registry stores signer_workflow as a regex pattern (e.g. `\.github/workflows/release\.yaml`).
+        // sigstore-verification's verify_attestations() uses plain str::contains(), not regex, so we must
+        // unescape regex metacharacter escapes (e.g. `\.` → `.`) before passing the value through.
         let signer_workflow = pkg
             .github_artifact_attestations
             .as_ref()
-            .and_then(|att| att.signer_workflow.clone());
+            .and_then(|att| att.signer_workflow.as_deref().map(unescape_regex_literal));
 
-        match sigstore_verification::verify_github_attestation(
+        match crate::github::sigstore::verify_attestation(
             artifact_path,
             &pkg.repo_owner,
             &pkg.repo_name,
-            env::GITHUB_TOKEN.as_deref(),
             signer_workflow.as_deref(),
+            None,
         )
         .await
         {
@@ -1005,7 +1064,7 @@ impl AquaBackend {
         HTTP.download_file(&provenance_url, &provenance_path, pr)
             .await?;
 
-        match sigstore_verification::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
+        match crate::github::sigstore::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
             .await
         {
             Ok(true) => {
@@ -1122,7 +1181,7 @@ impl AquaBackend {
                 checksum_path.with_extension("sig")
             };
 
-            match sigstore_verification::verify_cosign_signature_with_key(
+            match crate::github::sigstore::verify_cosign_signature_with_key(
                 checksum_path,
                 &sig_path,
                 &key_path,
@@ -1153,7 +1212,8 @@ impl AquaBackend {
             let bundle_path = download_dir.join(get_filename_from_url(&bundle_url));
             HTTP.download_file(&bundle_url, &bundle_path, pr).await?;
 
-            match sigstore_verification::verify_cosign_signature(checksum_path, &bundle_path).await
+            match crate::github::sigstore::verify_cosign_signature(checksum_path, &bundle_path)
+                .await
             {
                 Ok(true) => {
                     debug!("cosign (bundle) verified");
@@ -1204,9 +1264,15 @@ impl AquaBackend {
         Self {
             id: id.to_string(),
             ba: Arc::new(ba),
-            version_tags_cache: CacheManagerBuilder::new(cache_path.join("version_tags.msgpack.z"))
-                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                .build(),
+            // Bumped from `version_tags.msgpack.z`: this cache used to be filtered
+            // by the inline `prerelease` opt, so previously cached lists could be
+            // missing pre-release tags needed at install/lock time. The new cache
+            // always stores the superset.
+            version_tags_cache: CacheManagerBuilder::new(
+                cache_path.join("version_tags_v2.msgpack.z"),
+            )
+            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+            .build(),
         }
     }
 
@@ -1216,6 +1282,10 @@ impl AquaBackend {
                 let pkg = AQUA_REGISTRY.package(&self.id).await?;
                 let mut versions = Vec::new();
                 if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
+                    // Always fetch the superset; install/lock resolution needs
+                    // every tag (including pre-releases) regardless of the
+                    // current `prerelease` opt, since the user may have pinned
+                    // a pre-release version under a project-local override.
                     let tags = get_tags(&pkg).await?;
                     for tag in tags.into_iter().rev() {
                         let mut version = tag.as_str();
@@ -1273,8 +1343,10 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
     ) -> Result<(String, Option<String>)> {
+        let target = PlatformTarget::from_current();
         let asset_strs = pkg.asset_strs(v, os(), arch())?;
-        self.github_release_asset(pkg, v, asset_strs).await
+        self.github_release_asset_for_target(pkg, v, asset_strs, &target)
+            .await
     }
 
     async fn github_release_asset(
@@ -1283,17 +1355,38 @@ impl AquaBackend {
         v: &str,
         asset_strs: IndexSet<String>,
     ) -> Result<(String, Option<String>)> {
+        self.github_release_asset_matching(pkg, v, asset_strs, false)
+            .await
+    }
+
+    async fn github_release_asset_for_target(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        asset_strs: IndexSet<String>,
+        target: &PlatformTarget,
+    ) -> Result<(String, Option<String>)> {
+        // TODO: remove this when aqua supports musl variants natively.
+        // For now aqua templates only see linux/amd64 or linux/arm64, so a
+        // linux-*-musl lock target would otherwise choose the glibc asset even
+        // when a release also publishes the same asset name with an added musl
+        // token.
+        self.github_release_asset_matching(pkg, v, asset_strs, target_prefers_musl(target))
+            .await
+    }
+
+    async fn github_release_asset_matching(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        asset_strs: IndexSet<String>,
+        prefer_musl: bool,
+    ) -> Result<(String, Option<String>)> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let gh_release = github::get_release(&gh_id, v).await?;
 
         // Prioritize order of asset_strs
-        let asset = asset_strs
-            .iter()
-            .find_map(|expected| {
-                gh_release.assets.iter().find(|a| {
-                    a.name == *expected || a.name.to_lowercase() == expected.to_lowercase()
-                })
-            })
+        let asset = select_github_release_asset(&gh_release.assets, &asset_strs, prefer_musl)
             .wrap_err_with(|| {
                 format!(
                     "no asset found: {}\nAvailable assets:\n{}",
@@ -2007,6 +2100,34 @@ impl AquaBackend {
     }
 }
 
+fn unescape_regex_literal(pattern: &str) -> Cow<'_, str> {
+    // Fast path: If there are no backslashes, we return the original slice.
+    // .contains() is highly optimized and avoids any heap allocation.
+    if !pattern.contains('\\') {
+        return Cow::Borrowed(pattern);
+    }
+
+    // Slow path: We have escapes to process, so we must allocate a new String.
+    // Capacity is set to pattern.len() to ensure exactly one allocation.
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            // If there's a character after the backslash, push it (unescaping).
+            if let Some(next) = chars.next() {
+                out.push(next);
+            } else {
+                // Handle trailing backslash: push the backslash itself.
+                out.push(c);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
+}
+
 fn toml_value_to_string(value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::String(s) => Some(s.clone()),
@@ -2215,33 +2336,79 @@ mod tests {
         assert!(is_install_time_option_key("vars"));
         assert!(!is_install_time_option_key("symlink_bins"));
     }
+
+    #[test]
+    fn test_unescape_regex_literal_no_backslash_is_borrowed() {
+        let result = unescape_regex_literal("astral-sh/ruff/.github/workflows/release.yml");
+        assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(result, "astral-sh/ruff/.github/workflows/release.yml");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_escaped_dot() {
+        assert_eq!(unescape_regex_literal(r"\."), ".");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_updatecli_signer_workflow() {
+        assert_eq!(
+            unescape_regex_literal(r"updatecli/updatecli/\.github/workflows/release\.yaml"),
+            "updatecli/updatecli/.github/workflows/release.yaml"
+        );
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_escaped_backslash() {
+        assert_eq!(unescape_regex_literal(r"\\"), "\\");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_trailing_backslash() {
+        assert_eq!(unescape_regex_literal("foo\\"), "foo\\");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_empty_string() {
+        let result = unescape_regex_literal("");
+        assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_unescape_regex_literal_only_backslash() {
+        assert_eq!(unescape_regex_literal("\\"), "\\");
+    }
 }
 
 async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
     Ok(get_tags_with_created_at(pkg)
         .await?
         .into_iter()
-        .map(|(tag, _)| tag)
+        .map(|(tag, _, _)| tag)
         .collect())
 }
 
-/// Get tags with optional created_at timestamps.
-/// Returns (tag_name, Option<created_at>) pairs.
-async fn get_tags_with_created_at(pkg: &AquaPackage) -> Result<Vec<(String, Option<String>)>> {
+/// Get tags with optional created_at timestamps and a pre-release flag.
+/// Returns `(tag_name, Option<created_at>, prerelease)` triples.
+///
+/// Always fetches the pre-release superset so the shared remote-versions cache
+/// is independent of the `prerelease` tool option; callers filter on the
+/// returned `prerelease` bit at read time. Git tags (the `github_tag` version
+/// source) carry no pre-release flag, so those entries are reported as
+/// `prerelease = false` and rely on the shared regex-based fuzzy-match filter.
+async fn get_tags_with_created_at(
+    pkg: &AquaPackage,
+) -> Result<Vec<(String, Option<String>, bool)>> {
     if let Some("github_tag") = pkg.version_source.as_deref() {
-        // Tags don't have created_at timestamps
+        // Tags don't have created_at timestamps or a prerelease flag
         let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
-        return Ok(versions.into_iter().map(|v| (v, None)).collect());
+        return Ok(versions.into_iter().map(|v| (v, None, false)).collect());
     }
-    let releases = github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
-    if releases.is_empty() {
-        // Fall back to tags (no timestamps)
-        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
-        return Ok(versions.into_iter().map(|v| (v, None)).collect());
-    }
+    let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+    let releases = github::list_releases_including_prereleases(&repo).await?;
     Ok(releases
         .into_iter()
-        .map(|r| (r.tag_name, Some(r.created_at)))
+        .map(|r| (r.tag_name, Some(r.created_at), r.prerelease))
         .collect())
 }
 
@@ -2328,6 +2495,68 @@ fn is_platform_supported(supported_envs: &[String], os: &str, arch: &str) -> boo
     !envs.is_disjoint(&myself)
 }
 
+fn target_prefers_musl(target: &PlatformTarget) -> bool {
+    target.os_name() == "linux" && AquaBackend::target_libc(target).as_deref() == Some("musl")
+}
+
+fn is_aqua_linux_libc_replacement(replacement: &str) -> bool {
+    matches!(
+        replacement,
+        "unknown-linux-gnu" | "unknown-linux-musl" | "linux-gnu" | "linux-musl"
+    )
+}
+
+fn select_github_release_asset<'a>(
+    assets: &'a [github::GithubAsset],
+    asset_strs: &IndexSet<String>,
+    prefer_musl: bool,
+) -> Option<&'a github::GithubAsset> {
+    let assets_with_tokens = if prefer_musl {
+        assets
+            .iter()
+            .map(|asset| (asset, asset_name_tokens(&asset.name)))
+            .collect_vec()
+    } else {
+        vec![]
+    };
+    asset_strs.iter().find_map(|expected| {
+        let exact = assets
+            .iter()
+            .find(|a| a.name == *expected || a.name.to_lowercase() == expected.to_lowercase());
+
+        let expected_tokens = asset_name_tokens(expected);
+        if prefer_musl
+            && let Some(musl_asset) = assets_with_tokens.iter().find_map(|(asset, tokens)| {
+                is_musl_variant_of_expected_asset(tokens, &expected_tokens).then_some(*asset)
+            })
+        {
+            return Some(musl_asset);
+        }
+
+        exact
+    })
+}
+
+fn is_musl_variant_of_expected_asset(asset_tokens: &[String], expected_tokens: &[String]) -> bool {
+    asset_tokens.iter().any(|token| token == "musl")
+        && !expected_tokens.iter().any(|token| token == "musl")
+        && itertools::equal(
+            asset_tokens
+                .iter()
+                .filter(|token| !matches!(token.as_str(), "musl" | "gnu" | "glibc")),
+            expected_tokens
+                .iter()
+                .filter(|token| !matches!(token.as_str(), "musl" | "gnu" | "glibc")),
+        )
+}
+
+fn asset_name_tokens(name: &str) -> Vec<String> {
+    name.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_lowercase())
+        .collect()
+}
+
 pub fn os() -> &'static str {
     if cfg!(target_os = "macos") {
         "darwin"
@@ -2350,6 +2579,10 @@ pub fn arch() -> &'static str {
 
 #[cfg(test)]
 mod lock_candidate_tests {
+    use crate::github::GithubAsset;
+
+    use super::*;
+
     fn build_lock_candidates(
         version: &str,
         tag: Option<&str>,
@@ -2392,5 +2625,103 @@ mod lock_candidate_tests {
         let (v, candidates) = build_lock_candidates("1.7.1", None, Some("jq-"));
         assert_eq!(v, "jq-1.7.1");
         assert_eq!(candidates, vec!["jq-v1.7.1", "jq-1.7.1"]);
+    }
+
+    fn asset(name: &str) -> GithubAsset {
+        GithubAsset {
+            name: name.to_string(),
+            browser_download_url: format!("https://example.com/{name}"),
+            url: format!("https://api.example.com/{name}"),
+            digest: None,
+        }
+    }
+
+    #[test]
+    fn test_select_github_release_asset_prefers_musl_variant() {
+        let assets = vec![
+            asset("tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz"),
+            asset("tool-1.0.0-x86_64-unknown-linux-musl.tar.gz"),
+        ];
+        let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
+
+        let selected = select_github_release_asset(&assets, &asset_strs, true).unwrap();
+
+        assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz");
+    }
+
+    #[test]
+    fn test_select_github_release_asset_keeps_exact_without_musl_preference() {
+        let assets = vec![
+            asset("tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz"),
+            asset("tool-1.0.0-x86_64-unknown-linux-musl.tar.gz"),
+        ];
+        let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
+
+        let selected = select_github_release_asset(&assets, &asset_strs, false).unwrap();
+
+        assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz");
+    }
+
+    #[test]
+    fn test_select_github_release_asset_uses_musl_when_exact_missing() {
+        let assets = vec![asset("tool-1.0.0-linux-amd64-musl.tar.gz")];
+        let asset_strs = IndexSet::from(["tool-1.0.0-linux-amd64.tar.gz".to_string()]);
+
+        let selected = select_github_release_asset(&assets, &asset_strs, true).unwrap();
+
+        assert_eq!(selected.name, "tool-1.0.0-linux-amd64-musl.tar.gz");
+    }
+
+    #[test]
+    fn test_musl_variant_match_requires_standalone_token() {
+        let asset_tokens = asset_name_tokens("tool-1.0.0-linux-amd64-muslvariant.tar.gz");
+        let expected_tokens = asset_name_tokens("tool-1.0.0-linux-amd64.tar.gz");
+
+        assert!(!is_musl_variant_of_expected_asset(
+            &asset_tokens,
+            &expected_tokens,
+        ));
+    }
+
+    #[test]
+    fn test_apply_aqua_libc_replacement_switches_target_triples() {
+        let mut pkg = AquaPackage::default();
+        pkg.replacements
+            .insert("linux".to_string(), "unknown-linux-gnu".to_string());
+
+        let pkg = AquaBackend::apply_aqua_libc_replacement(pkg, "linux", Some("musl".to_string()));
+
+        assert_eq!(
+            pkg.replacements.get("linux").map(String::as_str),
+            Some("unknown-linux-musl")
+        );
+    }
+
+    #[test]
+    fn test_apply_aqua_libc_replacement_preserves_linux_prefix() {
+        let mut pkg = AquaPackage::default();
+        pkg.replacements
+            .insert("linux".to_string(), "linux-gnu".to_string());
+
+        let pkg = AquaBackend::apply_aqua_libc_replacement(pkg, "linux", Some("musl".to_string()));
+
+        assert_eq!(
+            pkg.replacements.get("linux").map(String::as_str),
+            Some("linux-musl")
+        );
+    }
+
+    #[test]
+    fn test_apply_aqua_libc_replacement_keeps_non_libc_replacements() {
+        let mut pkg = AquaPackage::default();
+        pkg.replacements
+            .insert("linux".to_string(), "Linux".to_string());
+
+        let pkg = AquaBackend::apply_aqua_libc_replacement(pkg, "linux", Some("musl".to_string()));
+
+        assert_eq!(
+            pkg.replacements.get("linux").map(String::as_str),
+            Some("Linux")
+        );
     }
 }

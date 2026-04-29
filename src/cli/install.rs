@@ -233,6 +233,7 @@ impl Install {
                 use_locked_version: true,
                 latest_versions: true,
                 before_date: self.get_before_date()?,
+                offline: false,
             },
             dry_run: self.is_dry_run(),
             locked: Settings::get().locked,

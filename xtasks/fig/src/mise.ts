@@ -1749,6 +1749,22 @@ const completionSpec: Fig.Spec = {
             "Output in JSON format (includes version metadata like created_at timestamps when available)",
           isRepeatable: false,
         },
+        {
+          name: "--no-versions-host",
+          description: "Disable checking the mise-versions host",
+          isRepeatable: false,
+        },
+        {
+          name: "--prerelease",
+          description:
+            "Include pre-release versions in the output for backends that report\nan upstream prerelease flag (currently github + aqua). Equivalent to\nsetting `MISE_PRERELEASES=1` or the `prereleases` setting for the\nduration of this command.",
+          isRepeatable: false,
+        },
+        {
+          name: "--strict-metadata",
+          description: "Fail if release metadata fetches fail",
+          isRepeatable: false,
+        },
       ],
       args: [
         {
@@ -2389,6 +2405,12 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-J", "--json"],
           description: "Output in JSON format",
+          isRepeatable: false,
+        },
+        {
+          name: "--security",
+          description:
+            "Include security features for each tool's backends in JSON output",
           isRepeatable: false,
         },
       ],
@@ -3295,6 +3317,12 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--name-only",
+              description:
+                "Only show task names, one per line. Useful for piping to fzf and similar tools.",
+              isRepeatable: false,
+            },
+            {
               name: "--no-header",
               description: "Do not print table header",
               isRepeatable: false,
@@ -3588,6 +3616,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--name-only",
+          description:
+            "Only show task names, one per line. Useful for piping to fzf and similar tools.",
+          isRepeatable: false,
+        },
+        {
           name: "--no-header",
           description: "Do not print table header",
           isRepeatable: false,
@@ -3875,6 +3909,18 @@ const completionSpec: Fig.Spec = {
         isOptional: true,
         isVariadic: true,
         generators: completionGeneratorTemplate(`mise set --complete`),
+        debounce: true,
+      },
+    },
+    {
+      name: "untrust",
+      description: "No longer trust a config, will prompt in the future",
+      args: {
+        name: "config_file",
+        description: "The config file to untrust",
+        isOptional: true,
+        template: "filepaths",
+        generators: configPathGenerator,
         debounce: true,
       },
     },
