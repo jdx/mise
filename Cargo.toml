@@ -199,6 +199,20 @@ xx = { version = "2.5", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 zstd = "0.13"
+opentelemetry = { version = "0.29", features = ["trace", "logs"] }
+opentelemetry_sdk = { version = "0.29", features = [
+  "trace",
+  "logs",
+  "rt-tokio",
+  "experimental_logs_batch_log_processor_with_async_runtime",
+  "experimental_trace_batch_span_processor_with_async_runtime",
+] }
+opentelemetry-otlp = { version = "0.29", default-features = false, features = [
+  "http-proto",
+  "trace",
+  "logs",
+  "reqwest-client",
+] }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
@@ -240,6 +254,7 @@ clap-sort = "1"
 ctor = "0.10"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
+opentelemetry_sdk = { version = "0.29", features = ["testing"] }
 pretty_assertions = "1"
 test-log = "0.2"
 

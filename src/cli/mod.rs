@@ -724,6 +724,7 @@ impl Cli {
                         allow_write: vec![],
                         allow_net: vec![],
                         allow_env: vec![],
+                        trace_context: None,
                     })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
