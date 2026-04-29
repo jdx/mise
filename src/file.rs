@@ -304,6 +304,36 @@ pub fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
     }
 }
 
+/// Compare two paths for filesystem equivalence, taking platform conventions
+/// into account. macOS volumes (HFS+/APFS) and Windows volumes are
+/// case-insensitive by default, so a byte-equal comparison can fail when
+/// inputs differ only by case (e.g. `/Users/Foo/...` vs `/Users/foo/...`
+/// when `$HOME` is mixed-case in the user's environment but the resolved
+/// path uses a different case).
+///
+/// On case-insensitive platforms, comparison is done over `Path::components()`
+/// with each component lowercased — this also folds trailing slashes,
+/// redundant separators, and (on Windows) `/` vs `\` since `Path::components`
+/// treats both as separators.
+///
+/// This is the right comparator for "is this PATH entry the shims
+/// directory?" checks, where a false negative leads to mise's shim being
+/// inherited by a child process and recursing infinitely.
+pub fn paths_eq(a: &Path, b: &Path) -> bool {
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let normalize =
+            |c: std::path::Component<'_>| c.as_os_str().to_string_lossy().to_lowercase();
+        a.components()
+            .map(normalize)
+            .eq(b.components().map(normalize))
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    {
+        a == b
+    }
+}
+
 pub fn touch_file(file: &Path) -> Result<()> {
     if !file.exists() {
         create(file)?;
@@ -719,7 +749,7 @@ pub fn path_env_without_shims() -> std::ffi::OsString {
     let shim_dir = &*dirs::SHIMS;
     let filtered: Vec<_> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| p.as_path() != *shim_dir)
+        .filter(|p| !paths_eq(&replace_path(p), shim_dir))
         .cloned()
         .collect();
     std::env::join_paths(filtered)
@@ -731,7 +761,7 @@ pub fn path_env_without_shims() -> std::ffi::OsString {
 /// than inheriting the current process's PATH.
 pub fn strip_shims_from_path(path_val: &str) -> String {
     let shim_dir = &*dirs::SHIMS;
-    let filtered = env::split_paths(path_val).filter(|p| p.as_path() != *shim_dir);
+    let filtered = env::split_paths(path_val).filter(|p| !paths_eq(&replace_path(p), shim_dir));
     std::env::join_paths(filtered)
         .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
         .to_string_lossy()
@@ -745,7 +775,7 @@ pub fn which_no_shims<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     let shim_dir = &*dirs::SHIMS;
     let paths: Vec<PathBuf> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| p.as_path() != *shim_dir)
+        .filter(|p| !paths_eq(&replace_path(p), shim_dir))
         .cloned()
         .collect();
     _which(name, &paths)
@@ -1370,6 +1400,52 @@ mod tests {
         let _config = Config::get().await.unwrap();
         assert_eq!(replace_path(Path::new("~/cwd")), dirs::HOME.join("cwd"));
         assert_eq!(replace_path(Path::new("/cwd")), Path::new("/cwd"));
+    }
+
+    #[test]
+    fn test_paths_eq_exact() {
+        assert!(paths_eq(Path::new("/foo/bar"), Path::new("/foo/bar")));
+        assert!(!paths_eq(Path::new("/foo/bar"), Path::new("/foo/baz")));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn test_paths_eq_case_insensitive() {
+        // macOS volumes (HFS+/APFS) and Windows volumes are case-insensitive by
+        // default. The comparator must treat `/Users/Foo` and `/Users/foo` as
+        // equal so that PATH stripping doesn't miss the shims dir when `$HOME`
+        // is mixed-case in the user's environment but the resolved shims path
+        // uses a different case (the cause of the npm-shim recursion bug).
+        assert!(paths_eq(
+            Path::new("/Users/Olfway/.local/share/mise/shims"),
+            Path::new("/Users/olfway/.local/share/mise/shims"),
+        ));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn test_paths_eq_trailing_separator() {
+        // Component-based comparison should fold trailing separators and
+        // redundant double-separators so PATH entries like `/foo/shims/`
+        // still match `/foo/shims`.
+        assert!(paths_eq(Path::new("/foo/shims"), Path::new("/foo/shims/")));
+        assert!(paths_eq(Path::new("/foo/shims"), Path::new("/foo//shims"),));
+    }
+
+    #[test]
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    fn test_paths_eq_case_sensitive_on_linux() {
+        // Linux paths are case-sensitive; `/foo` and `/Foo` are distinct files.
+        assert!(!paths_eq(Path::new("/foo/bar"), Path::new("/Foo/bar")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_paths_eq_separator_normalization() {
+        assert!(paths_eq(
+            Path::new("C:/Users/foo/shims"),
+            Path::new("C:\\Users\\foo\\shims"),
+        ));
     }
 
     #[test]

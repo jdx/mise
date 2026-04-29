@@ -277,7 +277,11 @@ where
             // The child process still inherits the full unmodified PATH.
             let user_shims = &*crate::dirs::SHIMS;
             let sys_shims = crate::env::MISE_SYSTEM_DATA_DIR.join("shims");
-            let is_shims_dir = |p: &std::path::PathBuf| p == user_shims || p == &sys_shims;
+            let is_shims_dir = |p: &std::path::PathBuf| {
+                let expanded = crate::file::replace_path(p);
+                crate::file::paths_eq(&expanded, user_shims)
+                    || crate::file::paths_eq(&expanded, &sys_shims)
+            };
             let pristine: std::collections::HashSet<_> = crate::env::PATH.iter().collect();
             let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
             // Mise-added paths first (preserving relative order)
@@ -339,19 +343,12 @@ where
     // Reorder PATH for program resolution: mise-added paths first, then
     // original system paths (minus shims). See Unix version for full rationale.
     let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
-        let shims_normalized = crate::dirs::SHIMS
-            .to_string_lossy()
-            .to_lowercase()
-            .replace('/', "\\");
-        let sys_shims_normalized = crate::env::MISE_SYSTEM_DATA_DIR
-            .join("shims")
-            .to_string_lossy()
-            .to_lowercase()
-            .replace('/', "\\");
+        let user_shims = &*crate::dirs::SHIMS;
+        let sys_shims = crate::env::MISE_SYSTEM_DATA_DIR.join("shims");
         let is_shims = |p: &std::path::PathBuf| {
             let expanded = crate::file::replace_path(p);
-            let normalized = expanded.to_string_lossy().to_lowercase().replace('/', "\\");
-            normalized == shims_normalized || normalized == sys_shims_normalized
+            crate::file::paths_eq(&expanded, user_shims)
+                || crate::file::paths_eq(&expanded, &sys_shims)
         };
         let pristine: std::collections::HashSet<_> = crate::env::PATH
             .iter()
