@@ -711,11 +711,15 @@ fn verify_bundle(
         policy = policy.skip_tlog();
     }
     // GitHub-internal leaf certs don't carry an SCT extension (GitHub's CA
-    // doesn't log to public CT), so sigstore-verify's certificate-chain
-    // verification — which always checks SCT — would reject them. Trust still
-    // comes from TSA timestamp validation against the GitHub trust root and
-    // signer-workflow identity matching, both performed below.
+    // doesn't log to public CT), and sigstore-verify gates certificate-chain
+    // verification and SCT verification behind the same `verify_certificate`
+    // flag, so we have to skip both there. We compensate by walking the chain
+    // manually with `webpki` against the GitHub trust root's CA certs before
+    // delegating to sigstore-verify. TSA timestamp validation (against the
+    // GitHub TSA cert in the trust root) and signer-workflow identity
+    // matching still gate acceptance further down.
     if is_github_internal_certificate(bundle) {
+        verify_github_internal_chain(bundle, trusted_root)?;
         policy = policy.skip_certificate_chain();
     }
     let result = sigstore_verify::verify(artifact, bundle, &policy, trusted_root)?;
@@ -735,6 +739,99 @@ fn is_github_internal_certificate(bundle: &Bundle) -> bool {
         .signing_certificate()
         .map(|cert| cert_issuer_organization(cert.as_bytes()).as_deref() == Some("GitHub, Inc."))
         .unwrap_or(false)
+}
+
+/// Verify that the bundle's signing certificate chains to the GitHub trust
+/// root's CA certs, using the leaf cert's `notBefore` as the validation time.
+///
+/// We can't go through `sigstore_verify::verify`'s `verify_certificate` step
+/// for this — that step also requires an SCT extension, which GitHub's CA
+/// doesn't issue. webpki performs the same chain-building, signature, and EKU
+/// (CODE_SIGNING) checks without the SCT requirement.
+fn verify_github_internal_chain(bundle: &Bundle, trusted_root: &TrustedRoot) -> Result<()> {
+    use rustls_pki_types::{CertificateDer, UnixTime};
+    use webpki::{ALL_VERIFICATION_ALGS, EndEntityCert, KeyUsage, anchor_from_trusted_cert};
+    use x509_cert::Certificate;
+    use x509_cert::der::Decode;
+
+    let leaf_der = bundle
+        .signing_certificate()
+        .ok_or_else(|| {
+            AttestationError::Verification(
+                "GitHub bundle is missing a signing certificate".to_string(),
+            )
+        })?
+        .as_bytes()
+        .to_vec();
+
+    // Use the leaf cert's notBefore as the validation time. The leaf is
+    // short-lived (~10 minutes) so by `now()` it's expired, and we don't have
+    // a verified TSA-derived time at this point in the flow. At notBefore the
+    // chain is by definition valid; this still catches forged certs whose
+    // issuer doesn't match any CA in the trust root.
+    let leaf = Certificate::from_der(&leaf_der).map_err(|e| {
+        AttestationError::Verification(format!("failed to parse leaf certificate: {e}"))
+    })?;
+    let not_before = leaf
+        .tbs_certificate
+        .validity
+        .not_before
+        .to_unix_duration()
+        .as_secs();
+    let validation_time = UnixTime::since_unix_epoch(std::time::Duration::from_secs(not_before));
+
+    let all_certs = trusted_root.fulcio_certs().map_err(|e| {
+        AttestationError::Verification(format!("failed to load CA certs from trust root: {e}"))
+    })?;
+    if all_certs.is_empty() {
+        return Err(AttestationError::Verification(
+            "GitHub trust root contains no CA certificates".to_string(),
+        ));
+    }
+    // Self-signed certs become trust anchors; the rest are intermediates that
+    // webpki uses to chain-build from the leaf upward.
+    let trust_anchors: Vec<_> = all_certs
+        .iter()
+        .filter_map(|der| {
+            anchor_from_trusted_cert(&CertificateDer::from(der.as_ref()))
+                .map(|a| a.to_owned())
+                .ok()
+        })
+        .collect();
+    if trust_anchors.is_empty() {
+        return Err(AttestationError::Verification(
+            "GitHub trust root contains no self-signed root certificates".to_string(),
+        ));
+    }
+    let intermediate_certs: Vec<CertificateDer<'static>> = all_certs
+        .iter()
+        .map(|der| CertificateDer::from(der.as_ref()).into_owned())
+        .collect();
+
+    let leaf_der_ref = CertificateDer::from(leaf_der.as_slice());
+    let leaf_cert = EndEntityCert::try_from(&leaf_der_ref).map_err(|e| {
+        AttestationError::Verification(format!("failed to parse leaf for chain check: {e}"))
+    })?;
+
+    // 1.3.6.1.5.5.7.3.3 — id-kp-codeSigning, raw OID bytes (no DER tag/length).
+    const ID_KP_CODE_SIGNING: &[u8] = &[0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x03];
+
+    leaf_cert
+        .verify_for_usage(
+            ALL_VERIFICATION_ALGS,
+            &trust_anchors,
+            &intermediate_certs,
+            validation_time,
+            KeyUsage::required(ID_KP_CODE_SIGNING),
+            None,
+            None,
+        )
+        .map_err(|e| {
+            AttestationError::Verification(format!(
+                "GitHub certificate chain validation failed: {e}"
+            ))
+        })?;
+    Ok(())
 }
 
 /// Return the X.509 Issuer's `O` (organizationName) attribute, if present.
