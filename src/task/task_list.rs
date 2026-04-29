@@ -351,13 +351,10 @@ async fn prompt_for_task(ctx: Option<&TaskLoadContext>) -> Result<Task> {
     }
     ctrlc::show_cursor_after_ctrl_c();
     match s.run() {
-        Ok(name) => {
-            // Find the task by name - the prompt uses t.name as the value,
-            // so a direct map lookup is sufficient and more efficient
-            .get(&name)
+        Ok(name) => all_tasks
+            .get(name.as_str())
             .cloned()
             .ok_or_else(|| eyre!("no tasks {} found", style::ered(name))),
-        }
         Err(err) => {
             Term::stderr().show_cursor()?;
             Err(eyre!(err))
