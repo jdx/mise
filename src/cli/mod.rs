@@ -697,6 +697,7 @@ impl Cli {
                         force: self.force,
                         is_linear: false,
                         jobs: self.jobs,
+                        all: self.all,
                         no_timings: self.no_timings,
                         output: self.output,
                         shell: self.shell,
