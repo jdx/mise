@@ -20,4 +20,4 @@ Clerk frontend session JWT, pasted from the dashboard's "CLI sign-in" page. Use 
 
 ### `--token-stdin`
 
-Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history.
+Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history

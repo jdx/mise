@@ -4571,7 +4571,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--token-stdin",
               description:
-                "Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history.",
+                "Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history",
               isRepeatable: false,
             },
           ],

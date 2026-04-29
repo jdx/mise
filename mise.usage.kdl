@@ -1609,7 +1609,7 @@ cmd wings help="Manage `mise wings` authentication" {
         flag --token help="Clerk frontend session JWT, pasted from the dashboard's \"CLI sign-in\" page. Use `--token-stdin` to read from stdin instead of the command line — important so a secret token doesn't land in shell history" {
             arg <TOKEN>
         }
-        flag --token-stdin help="Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history."
+        flag --token-stdin help="Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history"
     }
     cmd logout help="Sign out of mise-wings." {
         long_help "Sign out of mise-wings.\n\nDeletes the local credentials file. With `--token-stdin`\nor `--token`, also POSTs to `/auth/dev/revoke` to invalidate\nevery wings session belonging to the calling user\n(including ones on other machines)."
