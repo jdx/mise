@@ -35,7 +35,6 @@
 use eyre::{Context, Result, bail};
 
 use crate::cli::wings::read_token_from_stdin;
-use crate::config::Settings;
 use crate::wings::{client, credentials};
 
 /// Authenticate with mise-wings
@@ -69,7 +68,7 @@ impl Login {
         // the only three reachable shapes are: token only,
         // stdin only, neither. Greptile flagged the previous
         // unreachable `(Some(_), true)` arm on PR review.
-        let host = &Settings::get().wings.host;
+        let host = crate::wings::host();
         let token = match (self.token, self.token_stdin) {
             (Some(t), _) => t,
             (None, true) => read_token_from_stdin()?,

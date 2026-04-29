@@ -323,10 +323,22 @@ fn ensure_loaded() {
             *CACHE.write().expect("wings cache poisoned") = creds;
         }
         Err(e) => {
-            // Best-effort load: a malformed file leaves the
-            // cache empty (caller sees "not signed in") and
-            // logs the parse error for debugging.
-            log::debug!("wings: failed to load credentials: {e:?}");
+            // Surface load failures at warn so the user sees
+            // them with default log settings — Greptile P1
+            // flagged debug-level as silently degrading the
+            // schema-mismatch path: a user upgrades mise,
+            // their on-disk credentials don't match the new
+            // schema, every subsequent `wings status` /
+            // `whoami` / `logout` says "not signed in"
+            // instead of the actionable
+            // `CredentialsError::SchemaMismatch` message.
+            // The error chain (schema-mismatch / malformed /
+            // I/O) carries the actionable text already; just
+            // make sure it's visible.
+            log::warn!(
+                "wings: failed to load credentials — treating as not signed in. \
+                 Error: {e:#}"
+            );
         }
     });
 }

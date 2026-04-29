@@ -61,11 +61,21 @@ use crate::config::Settings;
 const ID_TOKEN_REQUEST_URL_ENV: &str = "ACTIONS_ID_TOKEN_REQUEST_URL";
 const ID_TOKEN_REQUEST_TOKEN_ENV: &str = "ACTIONS_ID_TOKEN_REQUEST_TOKEN";
 
-/// Lazy-initialized cache for the CI session JWT. Computed
-/// on first access; reused for the rest of the process. The
-/// `OnceCell` form coordinates concurrent first-callers
-/// (only one wins the exchange; the others await its result).
-static CI_TOKEN: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+/// Lazy-initialized cache for the CI session JWT.
+///
+/// `Some(token)` if the OIDC → `/auth` exchange succeeded.
+/// `None` if it failed for any reason (including
+/// "no subscription" 402 on the proxy side). The negative
+/// cache is the important half: with auto-activation by
+/// default, every workflow run on a non-subscribed repo
+/// would otherwise re-attempt the exchange on every cache
+/// request. Caching the failure as `None` means we pay the
+/// network RTT exactly once per process, then fall through
+/// silently for the rest of the run.
+///
+/// `OnceCell` coordinates concurrent first-callers (only
+/// one runs the exchange; the others await its result).
+static CI_TOKEN: tokio::sync::OnceCell<Option<String>> = tokio::sync::OnceCell::const_new();
 
 /// True iff the GHA OIDC env vars are both set. The HTTP
 /// hook calls this *before* attempting an exchange so the
@@ -77,20 +87,28 @@ pub fn gha_runner_present() -> bool {
 
 /// Get the wings CI session JWT, exchanging the runner's
 /// OIDC token for one on first call. Subsequent callers
-/// share the cached value.
+/// share the cached value (including negative results).
 ///
-/// Returns `Err` on any failure in the exchange chain
-/// (OIDC fetch, proxy POST, JSON decode). The HTTP-hook
-/// caller logs the error and falls through to no-auth —
-/// the wings cache will return whatever it returns to an
-/// unauthenticated request, which is the same thing a
-/// user with `wings.enabled = true` and no creds gets in
-/// the dev path. Best-effort, fail-open.
-pub async fn cached_ci_token() -> Result<String> {
+/// `None` covers any failure in the exchange chain — OIDC
+/// fetch, proxy POST, JSON decode, 402 (no subscription),
+/// 503, etc. Logged at `debug!` so a non-subscribed CI run
+/// doesn't pollute the workflow logs; auto-activation is
+/// supposed to be silent on the unhappy path. The HTTP
+/// hook treats `None` the same as "no credentials" and
+/// passes the request through unchanged.
+pub async fn cached_ci_token() -> Option<String> {
     CI_TOKEN
-        .get_or_try_init(exchange_runner_oidc)
+        .get_or_init(|| async {
+            match exchange_runner_oidc().await {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    log::debug!("wings: CI OIDC exchange failed (proceeding without wings): {e:#}");
+                    None
+                }
+            }
+        })
         .await
-        .cloned()
+        .clone()
 }
 
 /// Run the OIDC → wings session exchange end-to-end. Two
@@ -114,10 +132,7 @@ async fn exchange_runner_oidc() -> Result<String> {
         .wrap_err_with(|| format!("env var {ID_TOKEN_REQUEST_URL_ENV} not set"))?;
     let request_token = env::var(ID_TOKEN_REQUEST_TOKEN_ENV)
         .wrap_err_with(|| format!("env var {ID_TOKEN_REQUEST_TOKEN_ENV} not set"))?;
-    let host = Settings::get().wings.host.clone();
-    if host.is_empty() {
-        eyre::bail!("wings.host is empty — set MISE_WINGS_HOST or unset MISE_WINGS_ENABLED");
-    }
+    let host = crate::wings::host();
 
     let client = reqwest::Client::builder()
         .timeout(Settings::get().http_timeout())

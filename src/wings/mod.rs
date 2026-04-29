@@ -32,6 +32,29 @@ pub mod credentials;
 pub mod http_hooks;
 pub mod url;
 
+/// Production wings deployment.
+const PROD_HOST: &str = "mise-wings.en.dev";
+
+/// Staging wings deployment. Toggled via the hidden
+/// `wings.staging` setting (`MISE_WINGS_STAGING=1`).
+const STAGING_HOST: &str = "mise-wings-staging.en.dev";
+
+/// The wings apex host this `mise` will talk to. Two values
+/// only — production or staging — chosen by the
+/// `wings.staging` boolean. Deliberately *not* a free-form
+/// string the user can override: a typo in
+/// `MISE_WINGS_HOST=evilcorp.example.com` would otherwise
+/// leak the runner's OIDC token + the user's wings session
+/// JWT to whatever the typo pointed at. Pinning to two
+/// hardcoded deployments closes that footgun.
+pub fn host() -> &'static str {
+    if crate::config::Settings::get().wings.staging {
+        STAGING_HOST
+    } else {
+        PROD_HOST
+    }
+}
+
 /// Current unix timestamp (whole seconds). Single shared
 /// helper so the credential expiry math (`should_refresh`,
 /// `refresh_token_expired`) and the HTTP hook's "how long

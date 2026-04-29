@@ -2,14 +2,15 @@
 //!
 //! Three things printed in order:
 //!
-//!   1. **Setting:** is `wings.enabled` true? Is `wings.host`
-//!      the production default or an override?
+//!   1. **Setting:** is `wings.enabled` true (default), and
+//!      which deployment is mise pointed at (prod / staging)?
 //!   2. **Credentials:** are local credentials present?
-//!      Expired? Refresh window expired?
-//!   3. **Connectivity (best-effort):** if credentials and
-//!      `wings.enabled`, hit `https://api.<host>/health` and
-//!      report status. No 401 surface here — the health
-//!      endpoint is unauthenticated.
+//!      Expired? Refresh window expired? Or is this a CI run
+//!      with GHA OIDC auto-detection in play?
+//!   3. **Connectivity (best-effort):** hit
+//!      `https://api.<host>/health` and report status. No
+//!      401 surface here — the health endpoint is
+//!      unauthenticated.
 //!
 //! The checks are read-only — running `status` doesn't trigger
 //! a refresh or any other state mutation. A user troubleshooting
@@ -19,7 +20,7 @@
 use eyre::Result;
 
 use crate::config::Settings;
-use crate::wings::credentials;
+use crate::wings::{ci, credentials};
 
 /// Show the current mise-wings configuration + auth state.
 #[derive(Debug, Default, clap::Args)]
@@ -33,18 +34,21 @@ impl Status {
 
         // 1. Setting
         let enabled = if wings.enabled { "yes" } else { "no" };
+        let host = crate::wings::host();
+        let env_label = if wings.staging { " (staging)" } else { "" };
         miseprintln!("wings.enabled: {enabled}");
-        miseprintln!("wings.host:    {}", wings.host);
+        miseprintln!("host:          {host}{env_label}");
 
         // 2. Credentials
-        match credentials::cached() {
-            None => {
-                miseprintln!("credentials:   not signed in");
-                miseprintln!("\nRun `mise wings login` to sign in.");
-                return Ok(());
-            }
-            Some(creds) => {
-                miseprintln!("credentials:   user={} org={}", creds.user_id, creds.org);
+        let dev_creds = credentials::cached();
+        let ci_runner = ci::gha_runner_present();
+        match (&dev_creds, ci_runner) {
+            (Some(creds), _) => {
+                miseprintln!(
+                    "credentials:   user={} org={} (dev login)",
+                    creds.user_id,
+                    creds.org
+                );
                 if creds.refresh_token_expired() {
                     miseprintln!("               refresh token expired — re-login required");
                 } else if creds.should_refresh(0) {
@@ -65,11 +69,24 @@ impl Status {
                     }
                 }
             }
+            (None, true) => {
+                miseprintln!(
+                    "credentials:   GHA OIDC available (will auto-mint a CI session on first request)"
+                );
+            }
+            (None, false) => {
+                miseprintln!("credentials:   none");
+                miseprintln!(
+                    "\nRun `mise wings login` to sign in for local dev, or run \
+                     this from a GitHub Actions workflow with \
+                     `permissions: id-token: write` for CI auth."
+                );
+                return Ok(());
+            }
         }
 
-        // 3. Connectivity (best-effort, only when "wings is on")
+        // 3. Connectivity (best-effort)
         if wings.enabled {
-            let host = &wings.host;
             let url = format!("https://api.{host}/health");
             let client = reqwest::Client::builder()
                 .timeout(settings.http_timeout())
@@ -89,7 +106,8 @@ impl Status {
         } else {
             miseprintln!(
                 "connectivity:  skipped (wings.enabled = false). \
-                 Set `wings.enabled = true` or `MISE_WINGS_ENABLED=1` to activate."
+                 Unset `MISE_WINGS_ENABLED` (or remove `wings.enabled = false` \
+                 from `mise.toml`) to activate."
             );
         }
 
