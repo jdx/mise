@@ -37,7 +37,10 @@ old_path, new_path, heading = sys.argv[1:4]
 
 
 def strip_quotes(v: str) -> str:
-	v = v.strip()
+	# Strip an unquoted YAML inline comment (` #...`) before quote handling.
+	# A bare `#` with no leading space is part of the value (e.g. aqua names
+	# like `_go/sigsum.org/sigsum-go#cmd/sigsum-key`).
+	v = v.split(' #', 1)[0].strip()
 	if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
 		return v[1:-1]
 	return v
