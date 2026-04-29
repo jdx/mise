@@ -188,3 +188,8 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise watch [FLAGS] [TASK] [ARGS]…`](/cli/watch.md)
 - [`mise where <TOOL@VERSION>`](/cli/where.md)
 - [`mise which [FLAGS] [BIN_NAME]`](/cli/which.md)
+- [`mise wings <SUBCOMMAND>`](/cli/wings.md)
+- [`mise wings login [--token <TOKEN>] [--token-stdin]`](/cli/wings/login.md)
+- [`mise wings logout [FLAGS]`](/cli/wings/logout.md)
+- [`mise wings status`](/cli/wings/status.md)
+- [`mise wings whoami`](/cli/wings/whoami.md)

@@ -1750,6 +1750,22 @@
           "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
           "type": "string"
         },
+        "wings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "[experimental] Route asset fetches through the mise-wings cache (paid).",
+              "type": "boolean"
+            },
+            "staging": {
+              "default": false,
+              "description": "[experimental] Use the mise-wings staging deployment.",
+              "type": "boolean"
+            }
+          }
+        },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"

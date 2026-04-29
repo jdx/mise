@@ -2447,6 +2447,58 @@ docs = """
 env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 
+[wings.enabled]
+default = false
+description = "[experimental] Route asset fetches through the mise-wings cache (paid)."
+docs = """
+Opt-in: defaults to `false`. Set to `true` (or `MISE_WINGS_ENABLED=1`)
+to route tool-install URLs (npm registry, GitHub releases) through the
+per-org wings cache subdomains. Cache hits return precompressed payloads
+from a regional Front Door; misses fall through to the upstream origin
+and seed the cache.
+
+Once enabled, two ways credentials get acquired:
+
+  - **Local dev**: `mise wings login` once; the rotated session JWT lives
+    in `MISE_STATE_DIR/wings/credentials.json` and auto-refreshes.
+  - **GitHub Actions**: when the runner has `permissions: id-token: write`,
+    mise exchanges the runner's OIDC token for a wings session
+    automatically. No `mise wings login` step needed; no long-lived
+    secret to rotate.
+
+Without either, the activation is a no-op. Requires an active wings
+subscription on the Clerk org linked to your GitHub account / repo for
+the proxy to issue a session; absent a subscription, the proxy 402s
+and mise falls through silently. Sign up at <https://mise-wings.en.dev>.
+
+The opt-in default is deliberate. If `wings.enabled` were `true` by
+default, any workflow with `id-token: write` (used for SLSA / AWS-OIDC
+/ Sigstore / etc.) would silently send the runner's OIDC token to
+mise-wings on every `mise` invocation — a behavior change for users
+who never signed up for wings. Keeping the gate explicit means no
+identity data leaves the runner without consent.
+"""
+env = "MISE_WINGS_ENABLED"
+type = "Bool"
+
+[wings.staging]
+default = false
+description = "[experimental] Use the mise-wings staging deployment."
+docs = """
+When `true`, mise routes wings traffic through `mise-wings-staging.en.dev`
+instead of the production `mise-wings.en.dev`. Hidden setting — internal
+testing only; production users should leave this unset.
+
+Boolean (rather than a free-form host string) so the set of hosts the
+CLI will send OIDC tokens / wings session JWTs to is hardcoded to two
+known-good deployments. A typo'd `MISE_WINGS_HOST=evilcorp.example.com`
+would otherwise leak credentials to whatever the user typed; pinning
+the host list at compile time closes that footgun.
+"""
+env = "MISE_WINGS_STAGING"
+hide = true
+type = "Bool"
+
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
 env = "MISE_YES"
