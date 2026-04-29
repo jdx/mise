@@ -416,13 +416,14 @@ pub async fn verify_cosign_signature_with_key(
 ) -> Result<bool> {
     let key_pem = tokio::fs::read_to_string(public_key_path).await?;
     let public_key = DerPublicKey::from_pem(&key_pem)?;
-    let trusted_root = production_trusted_root().await?;
 
     let bundle = tokio::fs::read_to_string(sig_or_bundle_path)
         .await
         .ok()
         .and_then(|content| Bundle::from_json(&content).ok());
     if let Some(bundle) = bundle {
+        // Bundle path: needs the trust root for tlog (Rekor) verification.
+        let trusted_root = production_trusted_root().await?;
         let artifact = tokio::fs::read(artifact_path).await?;
         let result = sigstore_verify::verify_with_key(
             artifact.as_slice(),
@@ -438,6 +439,7 @@ pub async fn verify_cosign_signature_with_key(
         return Ok(true);
     }
 
+    // Raw `.sig` path: only needs the local public key — no network access.
     let artifact = tokio::fs::read(artifact_path).await?;
     let signature = read_cosign_signature(sig_or_bundle_path).await?;
     verify_raw_signature(&artifact, &signature, &public_key)?;
