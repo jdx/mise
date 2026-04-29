@@ -1,7 +1,7 @@
 name: vendored-file-warning
 
 on:
-  pull_request_target:
+  pull_request:
     paths:
       - "crates/aqua-registry/aqua-registry/**"
 
@@ -9,21 +9,19 @@ permissions: {}
 
 jobs:
   warn:
-    if: github.actor != 'jdx' && github.actor != 'mise-en-dev'
+    if: github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'
     runs-on: ubuntu-latest
     steps:
-      - name: Comment on PR
-        env:
-          GH_TOKEN: ${{ secrets.MISE_PR_COMMENT_TOKEN }}
+      - name: Fail on vendored file changes
         run: |
-          existing=$(gh pr view "${{ github.event.pull_request.number }}" \
-            -R "${{ github.repository }}" \
-            --json comments --jq '.comments[].body' \
-            | grep -c "vendored from the upstream" || true)
-          if [ "$existing" = "0" ]; then
-            gh pr comment "${{ github.event.pull_request.number }}" \
-              -R "${{ github.repository }}" \
-              --body "The aqua registry files under \`crates/aqua-registry/aqua-registry/\` are vendored from the upstream [aqua-registry](https://github.com/aquaproj/aqua-registry) and should not be modified directly in this repo. Please submit package definition changes to the upstream aqua-registry instead, and they will be picked up here when we next update the vendored copy.
+          cat <<'EOF'
+          The aqua registry files under `crates/aqua-registry/aqua-registry/` are vendored
+          from the upstream aqua-registry (https://github.com/aquaproj/aqua-registry) and
+          should not be modified directly in this repo. Please submit package definition
+          changes to the upstream aqua-registry instead, and they will be picked up here
+          when we next update the vendored copy.
 
-          The \`registry/*.toml\` files are fine to add here, but the backend should reference the package after it's been accepted upstream."
-          fi
+          The `registry/*.toml` files are fine to add here, but the backend should
+          reference the package after it's been accepted upstream.
+          EOF
+          exit 1
