@@ -98,16 +98,17 @@ def link(pkg: str, github_repo: str) -> str:
 	return f'`{pkg}`'
 
 
+sub = heading + '#'
 out: list[str] = []
 out.append(f'{heading} 📦 Aqua Registry Updates')
 out.append('')
 if added:
-	out.append(f'#### New Packages ({len(added)})')
+	out.append(f'{sub} New Packages ({len(added)})')
 	out.append('')
 	out.extend(f'- {link(p, new[p][0])}' for p in added)
 	out.append('')
 if updated:
-	out.append(f'#### Updated Packages ({len(updated)})')
+	out.append(f'{sub} Updated Packages ({len(updated)})')
 	out.append('')
 	out.extend(f'- {link(p, new[p][0])}' for p in updated)
 	out.append('')
