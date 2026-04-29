@@ -107,6 +107,10 @@ pub struct Cli {
     /// Continue running tasks even if one fails
     #[clap(long, short = 'c', hide = true, verbatim_doc_comment)]
     pub continue_on_error: bool,
+    /// Include tasks from all subdirectories in a monorepo
+    /// Similar to `mise tasks ls --all`, loads tasks from entire monorepo
+    #[clap(long, hide = true, verbatim_doc_comment)]
+    pub all: bool,
     /// Change directory before running command
     #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
