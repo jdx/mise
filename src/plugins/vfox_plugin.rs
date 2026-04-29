@@ -85,7 +85,14 @@ impl VfoxPlugin {
         config_root: Option<&Path>,
     ) -> Result<Option<MiseEnvResponse>> {
         let (vfox, _) = self.vfox();
-        let result = vfox.mise_env(&self.name, opts, env, config_root.map(|p| p.to_str().unwrap_or_default())).await?;
+        let result = vfox
+            .mise_env(
+                &self.name,
+                opts,
+                env,
+                config_root.map(|p| p.to_str().unwrap_or_default()),
+            )
+            .await?;
         let mut result_env = indexmap!();
         for ek in result.env {
             result_env.insert(ek.key, ek.value);
@@ -106,7 +113,14 @@ impl VfoxPlugin {
     ) -> Result<Option<Vec<String>>> {
         let (vfox, _) = self.vfox();
         let mut out = vec![];
-        let results = vfox.mise_path(&self.name, opts, env, config_root.map(|p| p.to_str().unwrap_or_default())).await?;
+        let results = vfox
+            .mise_path(
+                &self.name,
+                opts,
+                env,
+                config_root.map(|p| p.to_str().unwrap_or_default()),
+            )
+            .await?;
         for entry in results {
             out.push(entry);
         }
