@@ -5,6 +5,7 @@ use crate::cmd;
 use crate::config::Config;
 use crate::env;
 use crate::exit::exit;
+use crate::task::Deps;
 use crate::toolset::ToolsetBuilder;
 use clap::{CommandFactory, ValueEnum, ValueHint};
 use console::style;
@@ -179,13 +180,20 @@ impl Watch {
             args.push("--watch-file".to_string());
             args.push(watch_file.to_string_lossy().to_string());
         }
-        let globs = if self.glob.is_empty() {
+        let globs = if !self.glob.is_empty() {
+            self.glob.clone()
+        } else if self.skip_deps {
             tasks
                 .iter()
-                .flat_map(|t| t.sources.clone())
+                .flat_map(|t| t.sources.iter().cloned())
+                .unique()
                 .collect::<Vec<_>>()
         } else {
-            self.glob.clone()
+            let deps = Deps::new(&config, tasks.clone()).await?;
+            deps.all()
+                .flat_map(|t| t.sources.iter().cloned())
+                .unique()
+                .collect::<Vec<_>>()
         };
         if !globs.is_empty() {
             args.push("-f".to_string());
