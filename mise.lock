@@ -146,6 +146,7 @@ url_api = "https://api.github.com/repos/endevco/aube/releases/assets/404654425"
 checksum = "sha256:4d77b4f54c78297e6aef6da4ccb8a2327c31297f1a9f37b84fb746928129c4b2"
 url = "https://github.com/endevco/aube/releases/download/v1.1.0/aube-v1.1.0-aarch64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/endevco/aube/releases/assets/404655454"
+provenance = "github-attestations"
 
 [tools.aube."platforms.windows-x64"]
 checksum = "sha256:41f7d31e35bf7e21d32221ad74fb535bca3fc2fde9da80aee6061cc061f5e0f7"
@@ -315,6 +316,7 @@ url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964691
 checksum = "sha256:459993e31a6c4ccbd09882f5679a2bc1ea5d9068701ecefc411a00fb69ce82e6"
 url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-aarch64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964098"
+provenance = "github-attestations"
 
 [tools.communique."platforms.windows-x64"]
 checksum = "sha256:3cc0e880ac2168aed3163223627bbd1eee62e07a9901cb85cb507c6c8927bc93"
