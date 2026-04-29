@@ -28,6 +28,11 @@ x509-cert = { version = "0.2", default-features = false, features = [
   "std",
   "pem",
 ] }
+rustls-webpki = { version = "0.103", default-features = false, features = [
+  "std",
+  "aws-lc-rs",
+] }
+rustls-pki-types = "1"
 
 [features]
 default = ["rustls"]
