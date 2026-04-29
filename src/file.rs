@@ -309,21 +309,24 @@ pub fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
 /// case-insensitive by default, so a byte-equal comparison can fail when
 /// inputs differ only by case (e.g. `/Users/Foo/...` vs `/Users/foo/...`
 /// when `$HOME` is mixed-case in the user's environment but the resolved
-/// path uses a different case). Windows additionally normalises `/` to `\`.
+/// path uses a different case).
+///
+/// On case-insensitive platforms, comparison is done over `Path::components()`
+/// with each component lowercased — this also folds trailing slashes,
+/// redundant separators, and (on Windows) `/` vs `\` since `Path::components`
+/// treats both as separators.
 ///
 /// This is the right comparator for "is this PATH entry the shims
 /// directory?" checks, where a false negative leads to mise's shim being
 /// inherited by a child process and recursing infinitely.
 pub fn paths_eq(a: &Path, b: &Path) -> bool {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
-        let normalize = |p: &Path| p.to_string_lossy().to_lowercase().replace('/', "\\");
-        normalize(a) == normalize(b)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        a.as_os_str().to_string_lossy().to_lowercase()
-            == b.as_os_str().to_string_lossy().to_lowercase()
+        let normalize =
+            |c: std::path::Component<'_>| c.as_os_str().to_string_lossy().to_lowercase();
+        a.components()
+            .map(normalize)
+            .eq(b.components().map(normalize))
     }
     #[cfg(all(not(windows), not(target_os = "macos")))]
     {
@@ -1417,6 +1420,16 @@ mod tests {
             Path::new("/Users/Olfway/.local/share/mise/shims"),
             Path::new("/Users/olfway/.local/share/mise/shims"),
         ));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn test_paths_eq_trailing_separator() {
+        // Component-based comparison should fold trailing separators and
+        // redundant double-separators so PATH entries like `/foo/shims/`
+        // still match `/foo/shims`.
+        assert!(paths_eq(Path::new("/foo/shims"), Path::new("/foo/shims/")));
+        assert!(paths_eq(Path::new("/foo/shims"), Path::new("/foo//shims"),));
     }
 
     #[test]
