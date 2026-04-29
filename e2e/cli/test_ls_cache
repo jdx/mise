@@ -7,3 +7,14 @@ export MISE_USE_VERSIONS_HOST=1
 assert_contains "mise -v use bat 2>&1" "GET https://mise-versions.jdx.dev/tools/bat.toml 200 OK"
 touch -t 202001010000 "$MISE_CACHE_DIR/bat/"*
 assert_not_contains "mise -v ls bat 2>&1" "GET https://mise-versions.jdx.dev/tools/bat.toml 200 OK"
+
+# Registry tools with config options that change remote version listing must skip
+# the versions host because it cannot account for per-config backend options.
+cat >mise.toml <<EOF
+[tools.wait-for-gh-rate-limit]
+version = "latest"
+version_prefix = ""
+EOF
+
+assert_not_contains "mise -v ls-remote wait-for-gh-rate-limit 2>&1" "mise-versions.jdx.dev/tools/wait-for-gh-rate-limit.toml"
+assert_contains "mise ls-remote wait-for-gh-rate-limit" "1.1.1"

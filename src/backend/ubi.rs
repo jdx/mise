@@ -406,6 +406,16 @@ pub fn install_time_option_keys() -> Vec<String> {
     ]
 }
 
+/// Returns options that affect UBI remote version listing.
+pub fn list_remote_versions_option_keys() -> Vec<String> {
+    vec![
+        "api_url".into(),
+        "provider".into(),
+        "tag_regex".into(),
+        "prerelease".into(),
+    ]
+}
+
 impl UbiBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }

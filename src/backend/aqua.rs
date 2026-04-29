@@ -2179,6 +2179,11 @@ pub fn install_time_option_keys() -> Vec<String> {
     vec!["vars".into()]
 }
 
+/// Returns options that affect Aqua remote version listing.
+pub fn list_remote_versions_option_keys() -> Vec<String> {
+    vec!["prerelease".into()]
+}
+
 pub fn is_install_time_option_key(key: &str) -> bool {
     key != "symlink_bins"
 }

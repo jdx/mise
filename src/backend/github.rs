@@ -73,6 +73,15 @@ pub fn install_time_option_keys() -> Vec<String> {
     ]
 }
 
+/// Returns options that affect GitHub/GitLab/Forgejo remote version listing.
+pub fn list_remote_versions_option_keys() -> Vec<String> {
+    vec![
+        "api_url".into(),
+        "version_prefix".into(),
+        "prerelease".into(),
+    ]
+}
+
 #[async_trait]
 impl Backend for UnifiedGitBackend {
     fn get_type(&self) -> BackendType {

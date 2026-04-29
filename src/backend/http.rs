@@ -597,6 +597,16 @@ pub fn install_time_option_keys() -> Vec<String> {
     ]
 }
 
+/// Returns options that affect HTTP remote version listing.
+pub fn list_remote_versions_option_keys() -> Vec<String> {
+    vec![
+        "version_list_url".into(),
+        "version_regex".into(),
+        "version_json_path".into(),
+        "version_expr".into(),
+    ]
+}
+
 #[async_trait]
 impl Backend for HttpBackend {
     fn get_type(&self) -> BackendType {

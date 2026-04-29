@@ -30,7 +30,8 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::tera::get_tera;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ResolveOptions, ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version,
+    ResolveOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset, install_state,
+    is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -311,7 +312,9 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
     match backend_type {
         BackendType::Http => http::install_time_option_keys(),
         BackendType::S3 => s3::install_time_option_keys(),
-        BackendType::Github | BackendType::Gitlab => github::install_time_option_keys(),
+        BackendType::Github | BackendType::Gitlab | BackendType::Forgejo => {
+            github::install_time_option_keys()
+        }
         BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
@@ -333,6 +336,54 @@ pub fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str
         || install_time_keys
             .iter()
             .any(|itk| key.starts_with("platforms.") && key.ends_with(&format!(".{itk}")))
+}
+
+/// Returns option keys that change the remote version list for a backend type.
+/// When these are customized, the versions host must be skipped because it is
+/// keyed only by tool short name and cannot account for per-config options.
+pub fn list_remote_versions_option_keys_for_type(backend_type: &BackendType) -> Vec<String> {
+    match backend_type {
+        BackendType::Http => http::list_remote_versions_option_keys(),
+        BackendType::S3 => s3::list_remote_versions_option_keys(),
+        BackendType::Github | BackendType::Gitlab | BackendType::Forgejo => {
+            github::list_remote_versions_option_keys()
+        }
+        BackendType::Ubi => ubi::list_remote_versions_option_keys(),
+        BackendType::Aqua => aqua::list_remote_versions_option_keys(),
+        _ => vec![],
+    }
+}
+
+fn has_custom_list_remote_versions_options(
+    ba: &BackendArg,
+    backend_type: &BackendType,
+    opts: &ToolVersionOptions,
+) -> bool {
+    let option_keys = list_remote_versions_option_keys_for_type(backend_type);
+    if option_keys.is_empty() {
+        return false;
+    }
+
+    let default_opts = default_list_remote_versions_options(ba);
+    option_keys.into_iter().any(|key| {
+        let configured = opts.opts.get(&key);
+        configured.is_some() && configured != default_opts.opts.get(&key)
+    })
+}
+
+fn default_list_remote_versions_options(ba: &BackendArg) -> ToolVersionOptions {
+    let Some(rt) = REGISTRY.get(ba.short.as_str()) else {
+        return ToolVersionOptions::default();
+    };
+
+    let full_without_opts = ba.full_without_opts();
+    rt.backends()
+        .into_iter()
+        .find_map(|full| {
+            let registry_ba = BackendArg::new(ba.short.clone(), Some(full.to_string()));
+            (registry_ba.full_without_opts() == full_without_opts).then(|| registry_ba.opts())
+        })
+        .unwrap_or_default()
 }
 
 /// Normalize idiomatic file contents by removing comments and empty lines.
@@ -693,12 +744,15 @@ pub trait Backend: Debug + Send + Sync {
         // setting can still disable the host globally, but cannot re-enable
         // it for backends that are not on this allowlist.
         let backend_type = self.get_type();
+        let config_tool_opts = config.get_tool_opts(&ba).await?;
         let has_version_list_url = matches!(backend_type, BackendType::Http | BackendType::S3)
             && (ba.opts().contains_key("version_list_url")
-                || config
-                    .get_tool_opts(&ba)
-                    .await?
+                || config_tool_opts
+                    .as_ref()
                     .is_some_and(|o| o.contains_key("version_list_url")));
+        let customized_list_remote_versions_options = config_tool_opts
+            .as_ref()
+            .is_some_and(|opts| has_custom_list_remote_versions_options(&ba, &backend_type, opts));
         let versions_host_applies = match backend_type {
             BackendType::Github
             | BackendType::Gitlab
@@ -718,6 +772,12 @@ pub trait Backend: Debug + Send + Sync {
             trace!(
                 "Skipping versions host for {} because {} backend has a direct source",
                 ba.short, backend_type
+            );
+            false
+        } else if customized_list_remote_versions_options {
+            trace!(
+                "Skipping versions host for {} because remote version options are customized",
+                ba.short
             );
             false
         } else if let Some(plugin) = self.plugin()
