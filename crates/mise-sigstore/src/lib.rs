@@ -453,57 +453,115 @@ pub async fn verify_slsa_provenance(
 ) -> Result<bool> {
     let artifact = tokio::fs::read(artifact_path).await?;
     let content = tokio::fs::read_to_string(provenance_path).await?;
-    let trust_roots = TrustRoots::load().await?;
     let mut errors = Vec::new();
+    let mut trust_roots: Option<TrustRoots> = None;
 
-    for line in content
+    let mut candidates: Vec<&str> = content
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
-    {
-        match Bundle::from_json(line) {
-            Ok(bundle) => {
-                match verify_bundle(
-                    &artifact,
-                    &bundle,
-                    None,
-                    true,
-                    trust_roots.for_bundle(&bundle),
-                ) {
-                    Ok(()) => match verify_min_slsa_level(&bundle, min_level) {
-                        Ok(()) => return Ok(true),
-                        Err(e) => errors.push(e),
-                    },
-                    Err(e) => errors.push(e),
-                }
-            }
-            Err(e) => errors.push(AttestationError::UnsupportedFormat(e.to_string())),
-        }
+        .collect();
+    let trimmed = content.trim();
+    if !trimmed.is_empty() && !candidates.iter().any(|c| *c == trimmed) {
+        candidates.push(trimmed);
     }
 
-    if content.trim_start().starts_with('{') {
-        match Bundle::from_json(content.trim()) {
+    for candidate in candidates {
+        match Bundle::from_json(candidate) {
             Ok(bundle) => {
-                match verify_bundle(
-                    &artifact,
-                    &bundle,
-                    None,
-                    true,
-                    trust_roots.for_bundle(&bundle),
-                )
-                .and_then(|_| verify_min_slsa_level(&bundle, min_level))
+                if trust_roots.is_none() {
+                    trust_roots = Some(TrustRoots::load().await?);
+                }
+                let roots = trust_roots.as_ref().unwrap();
+                match verify_bundle(&artifact, &bundle, None, true, roots.for_bundle(&bundle))
+                    .and_then(|_| verify_min_slsa_level(&bundle, min_level))
                 {
                     Ok(()) => return Ok(true),
                     Err(e) => errors.push(e),
                 }
+                continue;
             }
-            Err(e) => errors.push(AttestationError::UnsupportedFormat(e.to_string())),
+            Err(_) => {} // fall through to DSSE envelope path
+        }
+        // slsa-github-generator and goreleaser write the provenance as a raw
+        // DSSE envelope (`*.intoto.jsonl`) rather than a sigstore bundle —
+        // there is no `verificationMaterial`, so `Bundle::from_json` rejects
+        // it. Match the in-toto payload manually and check artifact digest +
+        // SLSA predicate without going through sigstore-verify.
+        match verify_intoto_envelope(candidate, &artifact, min_level) {
+            Ok(()) => return Ok(true),
+            Err(e) => errors.push(e),
         }
     }
 
     collapse_slsa_errors(errors, || {
         "File does not contain valid attestations or SLSA provenance".to_string()
     })
+}
+
+fn verify_intoto_envelope(line: &str, artifact: &[u8], min_level: u8) -> Result<()> {
+    let envelope: serde_json::Value = serde_json::from_str(line).map_err(|e| {
+        AttestationError::UnsupportedFormat(format!("not a JSON DSSE envelope: {e}"))
+    })?;
+    let payload_type = envelope
+        .get("payloadType")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    if payload_type != "application/vnd.in-toto+json" {
+        return Err(AttestationError::UnsupportedFormat(format!(
+            "unsupported DSSE payloadType: {payload_type}"
+        )));
+    }
+    let payload_b64 = envelope
+        .get("payload")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            AttestationError::UnsupportedFormat("DSSE envelope missing payload".to_string())
+        })?;
+    let payload = base64::engine::general_purpose::STANDARD
+        .decode(payload_b64.as_bytes())
+        .map_err(|e| AttestationError::Verification(format!("invalid base64 payload: {e}")))?;
+    verify_intoto_payload(&payload, artifact, min_level)
+}
+
+fn verify_intoto_payload(payload: &[u8], artifact: &[u8], min_level: u8) -> Result<()> {
+    let statement: serde_json::Value = serde_json::from_slice(payload).map_err(|e| {
+        AttestationError::Verification(format!("Failed to parse SLSA payload: {e}"))
+    })?;
+    let predicate_type = statement
+        .get("predicateType")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    if !predicate_type.starts_with("https://slsa.dev/provenance/") {
+        return Err(AttestationError::UnsupportedFormat(format!(
+            "Not an SLSA provenance predicate: {predicate_type}"
+        )));
+    }
+    if min_level > 1 {
+        return Err(AttestationError::Verification(format!(
+            "SLSA level {min_level} verification is not supported by the native adapter"
+        )));
+    }
+    let artifact_digest = hex::encode(Sha256::digest(artifact));
+    let subjects = statement
+        .get("subject")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| {
+            AttestationError::Verification("SLSA statement missing subject array".to_string())
+        })?;
+    let matches_subject = subjects.iter().any(|subject| {
+        subject
+            .get("digest")
+            .and_then(|d| d.get("sha256"))
+            .and_then(|v| v.as_str())
+            .is_some_and(|sha| sha.eq_ignore_ascii_case(&artifact_digest))
+    });
+    if !matches_subject {
+        return Err(AttestationError::Verification(format!(
+            "artifact sha256 {artifact_digest} not found in SLSA statement subjects"
+        )));
+    }
+    Ok(())
 }
 
 fn collapse_slsa_errors(
