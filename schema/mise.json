@@ -1755,7 +1755,7 @@
           "additionalProperties": false,
           "properties": {
             "enabled": {
-              "default": true,
+              "default": false,
               "description": "[experimental] Route asset fetches through the mise-wings cache (paid).",
               "type": "boolean"
             },
