@@ -21,8 +21,8 @@ fi
 # Ensure pnpm is available
 if ! command -v pnpm >/dev/null 2>&1; then
 	echo "pnpm not available in test environment, installing..."
-	# Install pnpm using corepack or npm if needed, or just use mise
-	assert_succeed "mise use pnpm@latest"
+	assert_succeed "npm install --prefix .npm-tools pnpm@10.16.0 >/dev/null"
+	export PATH="$PWD/.npm-tools/node_modules/.bin:$PATH"
 fi
 
 # Test 1: Default behavior (npm) - checks npm.package_manager="npm" implicitly
