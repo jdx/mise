@@ -119,11 +119,22 @@ impl Git {
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
+        // gix's `with_ref_name` and git CLI's `-b` only accept branch/tag names.
+        // If the caller passed a commit SHA, clone without a ref and then
+        // fetch + checkout the SHA explicitly. gix in particular panics
+        // ("we map by name only and have no object-id in refspec") if a SHA
+        // is fed to `with_ref_name`.
+        let sha_branch = options
+            .branch
+            .as_deref()
+            .filter(|b| looks_like_sha(b))
+            .map(str::to_string);
+        let named_branch = options.branch.as_deref().filter(|b| !looks_like_sha(b));
         if Settings::get().libgit2 || Settings::get().gix {
             debug!("cloning {} to {} with gix", url, self.dir.display());
             let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
 
-            if let Some(branch) = &options.branch {
+            if let Some(branch) = named_branch {
                 prepare_clone = prepare_clone.with_ref_name(Some(branch))?;
             }
 
@@ -133,6 +144,9 @@ impl Git {
             prepare_checkout
                 .main_worktree(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
 
+            if let Some(sha) = sha_branch {
+                self.update_ref(sha, false)?;
+            }
             return Ok(());
         }
         debug!("cloning {} to {} with git", url, self.dir.display());
@@ -154,13 +168,15 @@ impl Git {
             .arg("-o")
             .arg("origin")
             .arg("-c")
-            .arg("core.autocrlf=false")
-            .arg("--depth")
-            .arg("1")
-            .arg(url)
-            .arg(&self.dir);
+            .arg("core.autocrlf=false");
+        // `--depth 1` is incompatible with checking out an arbitrary SHA later,
+        // so do a full clone when the caller passed a SHA.
+        if sha_branch.is_none() {
+            cmd = cmd.arg("--depth").arg("1");
+        }
+        cmd = cmd.arg(url).arg(&self.dir);
 
-        if let Some(branch) = &options.branch {
+        if let Some(branch) = named_branch {
             cmd = cmd.args([
                 "-b",
                 branch,
@@ -171,6 +187,10 @@ impl Git {
         }
 
         cmd.execute()?;
+
+        if let Some(sha) = sha_branch {
+            self.update_ref(sha, false)?;
+        }
         Ok(())
     }
 
@@ -314,6 +334,17 @@ fn get_git_version() -> Result<String> {
     Ok(version.trim().into())
 }
 
+/// Heuristic for whether a ref string is a commit SHA (full SHA-1 or SHA-256).
+///
+/// Branch and tag names that happen to be all-hex would also match, but git
+/// disallows refs that are valid object IDs anyway (see `git check-ref-format`),
+/// so the heuristic is safe in practice. Abbreviated SHAs are intentionally not
+/// matched — they are ambiguous with short branch names and need server-side
+/// resolution before they can be checked out.
+fn looks_like_sha(s: &str) -> bool {
+    matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 impl Debug for Git {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Git").field("dir", &self.dir).finish()
@@ -335,5 +366,83 @@ impl<'a> CloneOptions<'a> {
     pub fn branch(mut self, branch: &str) -> Self {
         self.branch = Some(branch.to_string());
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CloneOptions, Git, looks_like_sha};
+    use std::process::Command;
+
+    #[test]
+    fn sha_detection() {
+        assert!(looks_like_sha("0123456789abcdef0123456789abcdef01234567"));
+        assert!(looks_like_sha(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        ));
+        assert!(!looks_like_sha("main"));
+        assert!(!looks_like_sha("v1.2.3"));
+        assert!(!looks_like_sha("abcdef1")); // short SHA not supported
+        assert!(!looks_like_sha(""));
+        assert!(!looks_like_sha("g123456789abcdef0123456789abcdef01234567")); // non-hex
+    }
+
+    /// Regression test for https://github.com/jdx/mise/discussions/9472:
+    /// gix's `with_ref_name` panics ("we map by name only and have no
+    /// object-id in refspec") when given a commit SHA. Our `clone()` must
+    /// detect that case and fall back to a plain clone + checkout.
+    #[test]
+    fn clone_by_sha_does_not_panic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dst = tmp.path().join("dst");
+        std::fs::create_dir_all(&src).unwrap();
+
+        let git_in_src = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&src)
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            out
+        };
+        git_in_src(&["-c", "init.defaultBranch=main", "init", "-q"]);
+        git_in_src(&[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "first",
+        ]);
+        let sha = String::from_utf8(git_in_src(&["rev-parse", "HEAD"]).stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        assert_eq!(sha.len(), 40);
+
+        let url = format!("file://{}", src.display());
+        Git::new(&dst)
+            .clone(&url, CloneOptions::default().branch(&sha))
+            .expect("clone with SHA must not panic and must succeed");
+
+        let head = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dst)
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(head.stdout).unwrap().trim(),
+            sha,
+            "worktree should be checked out at the requested SHA"
+        );
     }
 }
