@@ -1,0 +1,3 @@
+backends = ["aqua:go-delve/delve"]
+description = "Debugger for the Go programming language"
+test = { cmd = "dlv version", expected = "Version: {{version}}" }
