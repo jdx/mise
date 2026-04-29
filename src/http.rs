@@ -415,26 +415,49 @@ impl Client {
         verb_label: &str,
     ) -> Result<Response> {
         apply_url_replacements(&mut url);
+
+        // Compute netrc credentials against the *original* URL
+        // (pre-wings-rewrite) so a user with `~/.netrc` entries
+        // for `github.com` keeps their credentials when wings
+        // would otherwise rewrite to `gh.<wings.host>`. Cursor
+        // Bugbot flagged the previous shape (netrc against the
+        // rewritten URL) as silently dropping upstream creds.
+        let netrc = netrc_headers(&url);
+
         // Wings hook: when `wings.enabled` and the user is
         // signed in, rewrites the URL to the matching cache
         // subdomain and returns the `Authorization: Bearer
-        // <wings-jwt>` header. Auto-refreshes the access
-        // token when it's within 5 min of expiry. No-op
-        // (returns empty headers, leaves URL alone) when
-        // wings isn't activated. See `wings::http_hooks` for
-        // the gate logic + refresh coordination.
-        let wings_headers = match crate::wings::http_hooks::prepare_request(&mut url).await {
-            Ok(h) => h,
-            Err(e) => {
-                log::warn!("wings: pre-request hook errored, proceeding without wings: {e:#}");
-                HeaderMap::new()
+        // <wings-jwt>` header. Skipped entirely when the
+        // caller already has an `Authorization` (from
+        // `host_auth_headers` — e.g. a GitHub PAT) or netrc
+        // has populated one — wings shouldn't clobber an
+        // explicit upstream credential. Cursor Bugbot Medium
+        // flagged the previous unconditional `extend()` as
+        // silently overwriting the caller's auth. Wings is
+        // best-effort acceleration for unauthenticated public
+        // reads; private/authenticated traffic falls through
+        // to the upstream as before.
+        let caller_authed = headers.contains_key(reqwest::header::AUTHORIZATION)
+            || netrc.contains_key(reqwest::header::AUTHORIZATION);
+        let wings_headers = if caller_authed {
+            log::debug!(
+                "wings: skipping rewrite + auth injection (caller has Authorization for {})",
+                url.host_str().unwrap_or(""),
+            );
+            HeaderMap::new()
+        } else {
+            match crate::wings::http_hooks::prepare_request(&mut url).await {
+                Ok(h) => h,
+                Err(e) => {
+                    log::warn!("wings: pre-request hook errored, proceeding without wings: {e:#}");
+                    HeaderMap::new()
+                }
             }
         };
         debug!("{} {}", verb_label, &url);
 
-        // Apply netrc credentials after URL replacement
         let mut final_headers = headers.clone();
-        final_headers.extend(netrc_headers(&url));
+        final_headers.extend(netrc);
         final_headers.extend(wings_headers);
 
         let mut req = self.reqwest.request(method, url.clone());

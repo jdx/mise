@@ -9,7 +9,6 @@
 
 use eyre::Result;
 
-use crate::config::Settings;
 use crate::wings::credentials;
 
 /// Print the active mise-wings identity.
@@ -24,18 +23,18 @@ impl Whoami {
             return Ok(());
         };
 
-        let host_setting = &Settings::get().wings.host;
-        let host_note = if &creds.host == host_setting {
+        let host_setting = crate::wings::host();
+        let host_note = if creds.host == host_setting {
             String::new()
         } else {
             // Stamped credentials don't match the configured
-            // wings host — typically because the user changed
-            // `wings.host` between login and now. The token
-            // won't validate against the new host's signing
-            // key; surface this prominently so the user knows
-            // to re-login.
+            // wings deployment — typically because the user
+            // toggled `wings.staging` between login and now.
+            // The token was signed by a different deployment's
+            // key and won't validate; surface this prominently
+            // so the user knows to re-login.
             format!(
-                "  (stamped against {}, but `wings.host` is now {} — re-login to refresh)",
+                "  (stamped against {}, but wings is now pointed at {} — re-login to refresh)",
                 creds.host, host_setting,
             )
         };

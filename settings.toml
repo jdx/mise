@@ -2448,41 +2448,53 @@ env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 
 [wings.enabled]
-default = false
+default = true
 description = "[experimental] Route asset fetches through the mise-wings cache (paid)."
 docs = """
-When true and the user is logged in via `mise wings login`, mise transparently
-rewrites tool-install URLs (npm registry, GitHub releases, generic downloads)
-to the per-org wings cache subdomains and attaches the wings session JWT as
+Defaults to `true`: when credentials are available, mise transparently
+routes tool-install URLs (npm registry, GitHub releases) through the
+per-org wings cache subdomains and attaches the wings session JWT as
 a Bearer token. Cache hits return precompressed payloads from a regional
 Front Door; misses fall through to the upstream origin and seed the cache.
 
-Requires an active wings subscription on your Clerk organization. Sign up at
-<https://mise-wings.en.dev>.
+Two ways credentials get acquired automatically:
 
-This setting has no effect until you've run `mise wings login`. With
-credentials missing, mise fetches from upstream origins as usual — the gate
-is "wings enabled AND credentials present", not just "wings enabled".
+  - **Local dev**: `mise wings login` once; the rotated session JWT lives
+    in `MISE_STATE_DIR/wings/credentials.json` and auto-refreshes.
+  - **GitHub Actions**: when the runner has `permissions: id-token: write`,
+    mise exchanges the runner's OIDC token for a wings session
+    automatically. No `mise wings login` step needed; no long-lived
+    secret to rotate.
+
+Without either, the activation is a no-op — mise fetches from upstream
+origins as usual. Requires an active wings subscription on the Clerk
+org linked to your GitHub account / repo for the proxy to issue a
+session; absent a subscription, the proxy 402s the exchange and mise
+falls through silently. Sign up at <https://mise-wings.en.dev>.
+
+Set `MISE_WINGS_ENABLED=0` (or `wings.enabled = false` in `mise.toml`)
+to force-disable.
 """
 env = "MISE_WINGS_ENABLED"
 type = "Bool"
 
-[wings.host]
-default = "mise-wings.en.dev"
-description = "[experimental] Apex host for the mise-wings service."
+[wings.staging]
+default = false
+description = "[experimental] Use the mise-wings staging deployment."
 docs = """
-The cache subdomains (`npm.<host>`, `gh.<host>`, `gh-api.<host>`) and
-control plane (`api.<host>`, `app.<host>`) all derive from this single
-value. Override only when pointing at a private/staging deployment — the
-default targets the production service at `mise-wings.en.dev`.
+When `true`, mise routes wings traffic through `mise-wings-staging.en.dev`
+instead of the production `mise-wings.en.dev`. Hidden setting — internal
+testing only; production users should leave this unset.
 
-The proxy serves a `dl.<host>` subdomain too (generic per-URL caching)
-but mise's URL rewriter doesn't yet use it — `dl` covers arbitrary
-download URLs that don't fit the npm/GitHub origin pattern. Wiring it
-requires a per-URL allowlist on the proxy side; deferred to a follow-up.
+Boolean (rather than a free-form host string) so the set of hosts the
+CLI will send OIDC tokens / wings session JWTs to is hardcoded to two
+known-good deployments. A typo'd `MISE_WINGS_HOST=evilcorp.example.com`
+would otherwise leak credentials to whatever the user typed; pinning
+the host list at compile time closes that footgun.
 """
-env = "MISE_WINGS_HOST"
-type = "String"
+env = "MISE_WINGS_STAGING"
+hide = true
+type = "Bool"
 
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."

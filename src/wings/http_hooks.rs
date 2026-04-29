@@ -72,7 +72,7 @@ pub async fn prepare_request(url: &mut Url) -> Result<HeaderMap> {
     let Some(host) = url.host_str().map(str::to_owned) else {
         return Ok(HeaderMap::new());
     };
-    let upstream_match = is_upstream_origin(&host);
+    let upstream_match = wings_url::is_upstream_origin(&host);
     let cache_match = wings_url::is_wings_cache_host(&host);
     if !upstream_match && !cache_match {
         return Ok(HeaderMap::new());
@@ -112,15 +112,13 @@ pub async fn prepare_request(url: &mut Url) -> Result<HeaderMap> {
             creds.access_token
         }
     } else if crate::wings::ci::gha_runner_present() {
+        // Negative result is cached as `None` so a non-
+        // subscribed CI run doesn't keep retrying the
+        // exchange on every cache request. See `wings::ci`
+        // for the cache shape + log-level rationale.
         match crate::wings::ci::cached_ci_token().await {
-            Ok(token) => token,
-            Err(e) => {
-                log::warn!(
-                    "wings: CI OIDC exchange failed; request will pass \
-                     through without auth. Error: {e:#}",
-                );
-                return Ok(HeaderMap::new());
-            }
+            Some(token) => token,
+            None => return Ok(HeaderMap::new()),
         }
     } else {
         // No dev credentials, no GHA runner → wings is
@@ -135,7 +133,7 @@ pub async fn prepare_request(url: &mut Url) -> Result<HeaderMap> {
     // requests skip the rewrite (already pointing at the
     // wings subdomain).
     if upstream_match {
-        wings_url::rewrite(url, /* creds_present */ true);
+        wings_url::rewrite(url);
     }
 
     let mut headers = HeaderMap::new();
@@ -176,19 +174,23 @@ async fn maybe_refresh(stale: &credentials::Credentials) -> Result<credentials::
     }
     let _guard = credentials::lock_refresh().await;
 
-    // Re-read the cache under the lock. Two things this
-    // covers:
+    // Re-read the cache under the lock. If a different task
+    // in this process already rotated while we waited on
+    // the lock, the cache holds the rotated tokens and we
+    // can return immediately.
     //
-    //   1. A different task already rotated while we waited
-    //      on the lock — the cache holds the rotated tokens
-    //      and we can return immediately.
-    //   2. We *are* the first holder, but the on-disk
-    //      credentials were updated by a separate `mise`
-    //      process (e.g. the user just ran `mise wings
-    //      login` in another terminal). The latest cache
-    //      read picks that up; the original `stale` pointer
-    //      could otherwise be a tab-back-from-history value
-    //      no longer current.
+    // Cross-process visibility is *not* covered: `LOAD_ONCE`
+    // in `credentials.rs` only reads the on-disk file once
+    // per process, so a separate `mise` process running
+    // `mise wings login` in another terminal won't be seen
+    // here. Two `mise install` runs racing on the same
+    // refresh would both POST `/auth/dev/refresh` with the
+    // same starting token; the second one trips the
+    // proxy's rotation tripwire and 401s. That's a known
+    // limitation; cross-process refresh coordination would
+    // need a flock on the credentials file or similar.
+    // Cursor Bugbot Low flagged the previous comment as
+    // overstating the cache behavior.
     let current = credentials::cached().unwrap_or_else(|| stale.clone());
     if !current.should_refresh(REFRESH_LEEWAY_SECS) {
         return Ok(current);
@@ -203,33 +205,4 @@ async fn maybe_refresh(stale: &credentials::Credentials) -> Result<credentials::
     let next = client::refresh(&current).await?;
     credentials::store(next.clone())?;
     Ok(next)
-}
-
-/// True iff `host` is one of the upstream origins the wings
-/// rewriter knows about. Mirrors the match arms in
-/// [`crate::wings::url::rewrite`]; a future origin added
-/// there must also land here.
-fn is_upstream_origin(host: &str) -> bool {
-    matches!(
-        host,
-        "registry.npmjs.org" | "github.com" | "objects.githubusercontent.com" | "api.github.com"
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn upstream_origin_set_pins_the_match_arms() {
-        assert!(is_upstream_origin("registry.npmjs.org"));
-        assert!(is_upstream_origin("github.com"));
-        assert!(is_upstream_origin("api.github.com"));
-        assert!(is_upstream_origin("objects.githubusercontent.com"));
-
-        assert!(!is_upstream_origin("registry.npmjs.org.evil.com"));
-        assert!(!is_upstream_origin("subdomain.github.com"));
-        assert!(!is_upstream_origin("example.com"));
-        assert!(!is_upstream_origin(""));
-    }
 }

@@ -44,11 +44,13 @@ jobs:
   docs:
     if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
-    # `id-token: write` is required so mise-action can mint the GHA
-    # OIDC token mise exchanges for a wings session. Without this
-    # permission the wings activation falls through to direct-origin
-    # fetches (the action emits a warning) — opt-in dogfood, not a
-    # build break.
+    # `id-token: write` lets the runner mint the OIDC token mise
+    # exchanges for a wings session. With this permission, mise
+    # auto-routes tool installs through the wings cache when the
+    # repo's Clerk org has an active subscription; without it,
+    # mise falls through to direct-origin fetches transparently.
+    # Either way the workflow still works — the cache is purely
+    # an acceleration.
     permissions:
       contents: read
       id-token: write
@@ -56,19 +58,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0 # for lastUpdated
-      # Pinned to the wings-cli SHA on jdx/mise-action's `feat/wings`
-      # branch (PR #454) which adds `wings_enabled` / `wings_host`
-      # inputs. Once that PR merges, bump to the next official tag.
-      - uses: jdx/mise-action@6c0eaa61572c1c14f118042f6edd3d707d69aaf1 # feat/wings
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
         with:
           install_args: bun
-          # Dogfood mise-wings caching for tool installs in this
-          # workflow — npm tarballs (bun) and any GitHub release
-          # downloads route through the wings cache. Authentication
-          # uses the runner's OIDC identity automatically (no secret
-          # to rotate). Default-off elsewhere; this workflow is the
-          # canary.
-          wings_enabled: true
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: bun i
       - run: mise run docs:release

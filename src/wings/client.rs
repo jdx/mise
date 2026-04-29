@@ -17,11 +17,11 @@ use crate::config::Settings;
 use crate::result::Result;
 use crate::wings::credentials::Credentials;
 
-/// Build the apex API URL `https://api.<wings.host>/<path>`.
-/// Centralized so a `wings.host` setting change re-routes every
+/// Build the apex API URL `https://api.<wings-host>/<path>`.
+/// Centralized so the `wings.staging` toggle re-routes every
 /// call without per-callsite host stitching.
 fn api_url(path: &str) -> String {
-    let host = &Settings::get().wings.host;
+    let host = crate::wings::host();
     format!("https://api.{host}{path}")
 }
 
@@ -95,7 +95,7 @@ pub async fn exchange_clerk_session(clerk_session_jwt: &str) -> Result<Credentia
         .unwrap_or_else(|| extract_identity_from_wings_jwt(&resp.token));
 
     Credentials::from_dev_auth(
-        Settings::get().wings.host.clone(),
+        crate::wings::host().to_string(),
         resp.token,
         resp.expires_in,
         resp.refresh_token,
