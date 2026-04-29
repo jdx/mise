@@ -387,8 +387,8 @@ async fn verify_github_attestation_inner(
     }
 
     let artifact = tokio::fs::read(artifact_path).await?;
-    let trust_roots = TrustRoots::load().await?;
-    verify_attestation_bundles(&attestations, &artifact, signer_workflow, &trust_roots)
+    let mut trust_roots = TrustRoots::default();
+    verify_attestation_bundles(&attestations, &artifact, signer_workflow, &mut trust_roots).await
 }
 
 pub async fn verify_cosign_signature(
@@ -398,8 +398,9 @@ pub async fn verify_cosign_signature(
     let content = tokio::fs::read_to_string(sig_or_bundle_path).await?;
     let bundle = Bundle::from_json(&content)?;
     let artifact = tokio::fs::read(artifact_path).await?;
-    let trust_roots = TrustRoots::load().await?;
-    verify_bundle(&artifact, &bundle, None, trust_roots.for_bundle(&bundle))?;
+    let mut trust_roots = TrustRoots::default();
+    let trusted_root = trust_roots.for_bundle(&bundle).await?;
+    verify_bundle(&artifact, &bundle, None, trusted_root)?;
     Ok(true)
 }
 
@@ -448,7 +449,7 @@ pub async fn verify_slsa_provenance(
     let artifact = tokio::fs::read(artifact_path).await?;
     let content = tokio::fs::read_to_string(provenance_path).await?;
     let mut errors = Vec::new();
-    let mut trust_roots: Option<TrustRoots> = None;
+    let mut trust_roots = TrustRoots::default();
 
     let mut candidates: Vec<&str> = content
         .lines()
@@ -463,13 +464,12 @@ pub async fn verify_slsa_provenance(
     for candidate in candidates {
         // Bundle::from_json failure falls through to the DSSE envelope path.
         if let Ok(bundle) = Bundle::from_json(candidate) {
-            if trust_roots.is_none() {
-                trust_roots = Some(TrustRoots::load().await?);
-            }
-            let roots = trust_roots.as_ref().unwrap();
-            match verify_bundle(&artifact, &bundle, None, roots.for_bundle(&bundle))
-                .and_then(|_| verify_min_slsa_level(&bundle, min_level))
-            {
+            let result = match trust_roots.for_bundle(&bundle).await {
+                Ok(root) => verify_bundle(&artifact, &bundle, None, root)
+                    .and_then(|_| verify_min_slsa_level(&bundle, min_level)),
+                Err(e) => Err(e),
+            };
+            match result {
                 Ok(()) => return Ok(true),
                 Err(e) => errors.push(e),
             }
@@ -482,11 +482,11 @@ pub async fn verify_slsa_provenance(
         // SLSA predicate without going through sigstore-verify. Use the public
         // Sigstore trust root since slsa-github-generator certs are issued by
         // Sigstore Fulcio.
-        if trust_roots.is_none() {
-            trust_roots = Some(TrustRoots::load().await?);
-        }
-        let sigstore_root = &trust_roots.as_ref().unwrap().sigstore;
-        match verify_intoto_envelope(candidate, &artifact, min_level, sigstore_root) {
+        let result = match trust_roots.sigstore_root().await {
+            Ok(root) => verify_intoto_envelope(candidate, &artifact, min_level, root),
+            Err(e) => Err(e),
+        };
+        match result {
             Ok(()) => return Ok(true),
             Err(e) => errors.push(e),
         }
@@ -663,11 +663,11 @@ fn join_error_strings(errors: Vec<String>, default: impl FnOnce() -> String) -> 
     }
 }
 
-fn verify_attestation_bundles(
+async fn verify_attestation_bundles(
     attestations: &[Attestation],
     artifact: &[u8],
     signer_workflow: Option<&str>,
-    trust_roots: &TrustRoots,
+    trust_roots: &mut TrustRoots,
 ) -> Result<bool> {
     let mut errors = Vec::new();
     for attestation in attestations {
@@ -681,12 +681,14 @@ fn verify_attestation_bundles(
                 continue;
             }
         };
-        match verify_bundle(
-            artifact,
-            &bundle,
-            signer_workflow,
-            trust_roots.for_bundle(&bundle),
-        ) {
+        let trusted_root = match trust_roots.for_bundle(&bundle).await {
+            Ok(root) => root,
+            Err(e) => {
+                errors.push(e.to_string());
+                continue;
+            }
+        };
+        match verify_bundle(artifact, &bundle, signer_workflow, trusted_root) {
             Ok(()) => return Ok(true),
             Err(e) => errors.push(e.to_string()),
         }
@@ -911,24 +913,37 @@ fn github_trusted_root() -> Result<TrustedRoot> {
     Ok(TrustedRoot::from_json(json)?)
 }
 
+/// Per-process cache so we only fetch the Sigstore TUF root or parse the
+/// embedded GitHub trusted root once per `verify_*` invocation. Each is
+/// loaded lazily — a verification flow that only ever sees GitHub bundles
+/// never triggers a network call to the Sigstore TUF CDN, and vice versa.
+#[derive(Default)]
 struct TrustRoots {
-    sigstore: TrustedRoot,
-    github: TrustedRoot,
+    sigstore: Option<TrustedRoot>,
+    github: Option<TrustedRoot>,
 }
 
 impl TrustRoots {
-    async fn load() -> Result<Self> {
-        let sigstore = production_trusted_root().await?;
-        let github = github_trusted_root()?;
-        Ok(Self { sigstore, github })
+    async fn for_bundle(&mut self, bundle: &Bundle) -> Result<&TrustedRoot> {
+        if is_github_internal_certificate(bundle) {
+            self.github_root()
+        } else {
+            self.sigstore_root().await
+        }
     }
 
-    fn for_bundle(&self, bundle: &Bundle) -> &TrustedRoot {
-        if is_github_internal_certificate(bundle) {
-            &self.github
-        } else {
-            &self.sigstore
+    async fn sigstore_root(&mut self) -> Result<&TrustedRoot> {
+        if self.sigstore.is_none() {
+            self.sigstore = Some(production_trusted_root().await?);
         }
+        Ok(self.sigstore.as_ref().unwrap())
+    }
+
+    fn github_root(&mut self) -> Result<&TrustedRoot> {
+        if self.github.is_none() {
+            self.github = Some(github_trusted_root()?);
+        }
+        Ok(self.github.as_ref().unwrap())
     }
 }
 
