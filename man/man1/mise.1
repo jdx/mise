@@ -4081,7 +4081,7 @@ dashboard's `/cli\-auth` page ships.
 Clerk frontend session JWT, pasted from the dashboard's "CLI sign\-in" page. Use `\-\-token\-stdin` to read from stdin instead of the command line — important so a secret token doesn't land in shell history
 .TP
 \fB\-\-token\-stdin\fR
-Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `\-\-token` for scripts and for hands\-on use — keeps the secret out of the shell's history file
+Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `\-\-token` because the secret won't show up in shell history.
 .SH "MISE WINGS LOGOUT"
 Sign out of mise\-wings.
 

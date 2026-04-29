@@ -54,9 +54,8 @@ pub struct Login {
     #[clap(long, conflicts_with = "token_stdin")]
     token: Option<String>,
     /// Read the Clerk session JWT from stdin (one line, no
-    /// surrounding whitespace). Preferred over `--token` for
-    /// scripts and for hands-on use — keeps the secret out of
-    /// the shell's history file.
+    /// surrounding whitespace). Preferred over `--token` because
+    /// the secret won't show up in shell history.
     #[clap(long)]
     token_stdin: bool,
 }
