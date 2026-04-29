@@ -138,6 +138,7 @@ def create_test_repo(repo_path):
     # Configure repo for HTTP serving
     subprocess.run(['git', 'config', 'http.receivepack', 'true'], cwd=repo_path, check=True)
     subprocess.run(['git', 'config', 'http.uploadpack', 'true'], cwd=repo_path, check=True)
+    subprocess.run(['git', 'config', 'uploadpack.allowReachableSHA1InWant', 'true'], cwd=repo_path, check=True)
     subprocess.run(['git', 'update-server-info'], cwd=repo_path, check=True)
 
 def start_server(port=0):
@@ -167,9 +168,14 @@ def start_server(port=0):
         ready_file = Path('/tmp/mise_git_http_ready')
         ready_file.write_text('ready')
 
-        # Save cleanup info
+        # Save cleanup info (temp_dir path and HEAD SHA for tests)
+        head_sha = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=str(repo_path),
+            capture_output=True, text=True, check=True
+        ).stdout.strip()
         with open('/tmp/mise_git_http_info', 'w') as f:
-            f.write(f"{temp_dir}\n")
+            f.write(f"{temp_dir}\n{head_sha}\n")
 
         try:
             httpd.serve_forever()

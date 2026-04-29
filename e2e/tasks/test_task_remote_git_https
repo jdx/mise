@@ -132,3 +132,16 @@ assert_contains "mise tasks info remote_lint_https_ref --json" "remote-git-tasks
 
 # Validate should work with remote tasks
 assert_succeed "mise tasks validate remote_lint_https_ref"
+
+#################################################################################
+# Test remote tasks with SHA ref (regression: gix panicked on SHA refs)
+#################################################################################
+
+HEAD_SHA=$(sed -n '2p' /tmp/mise_git_http_info)
+
+cat <<EOF >mise.toml
+[tasks.remote_lint_https_sha]
+file  = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep?ref=${HEAD_SHA}"
+EOF
+
+assert_succeed "mise run remote_lint_https_sha"
