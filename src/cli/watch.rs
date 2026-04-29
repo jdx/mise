@@ -208,6 +208,12 @@ impl Watch {
         if self.skip_deps {
             args.push("--skip-deps".to_string());
         }
+        if self.all {
+            args.push("--all".to_string());
+        }
+        if self.skip_tools {
+            args.push("--skip-tools".to_string());
+        }
         let task_args = itertools::intersperse(
             tasks.iter().map(|t| {
                 let mut args = vec![t.name.to_string()];
