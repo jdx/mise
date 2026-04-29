@@ -114,10 +114,10 @@ async fn tasks_for_missing_task_error(
         && let Ok(all_tasks) = config
             .tasks_with_context(Some(&TaskLoadContext::all()))
             .await
-            && !all_tasks.is_empty()
-        {
-            return Ok((all_tasks, true));
-        }
+        && !all_tasks.is_empty()
+    {
+        return Ok((all_tasks, true));
+    }
 
     let tasks = config.tasks().await?;
     Ok((tasks, false))
