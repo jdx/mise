@@ -571,7 +571,10 @@ impl Doctor {
 }
 
 fn shims_on_path() -> bool {
-    env::PATH.contains(&dirs::SHIMS.to_path_buf())
+    let shims = &*dirs::SHIMS;
+    env::PATH
+        .iter()
+        .any(|p| crate::file::paths_eq(&crate::file::replace_path(p), shims))
 }
 
 fn yn(b: bool) -> String {

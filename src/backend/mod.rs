@@ -1708,32 +1708,18 @@ pub trait Backend: Debug + Send + Sync {
         // dependency tool (e.g., go) is configured but not installed. Without this,
         // the shim for the dependency would call `mise exec` which would call the
         // shim again infinitely.
+        //
+        // `paths_eq` handles case-insensitive matching on macOS/Windows: e.g. if
+        // `$HOME` is mixed-case in PATH (`/Users/Foo`) but lowercase in the
+        // resolved shims path, byte-equal comparison would miss it and the shim
+        // would survive in the child env.
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
             let paths: Vec<_> = env::split_paths(path_val).collect();
             let original_len = paths.len();
-            #[cfg(not(windows))]
             let filtered: Vec<_> = paths
                 .into_iter()
-                .filter(|p| p.as_path() != *dirs::SHIMS)
+                .filter(|p| !file::paths_eq(&file::replace_path(p), &dirs::SHIMS))
                 .collect();
-            #[cfg(windows)]
-            let filtered: Vec<_> = {
-                // Pre-compute once; case-insensitive + separator-normalised to handle
-                // path variations such as ~/.local/share/mise\shims vs
-                // C:\Users\user\.local\share\mise\shims
-                let shims_normalized = dirs::SHIMS
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .replace('/', "\\");
-                paths
-                    .into_iter()
-                    .filter(|p| {
-                        let expanded = file::replace_path(p);
-                        expanded.to_string_lossy().to_lowercase().replace('/', "\\")
-                            != shims_normalized
-                    })
-                    .collect()
-            };
             if filtered.len() != original_len {
                 let joined = env::join_paths(&filtered)?;
                 env.insert(
