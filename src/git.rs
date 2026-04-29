@@ -400,6 +400,7 @@ impl<'a> CloneOptions<'a> {
 #[cfg(test)]
 mod tests {
     use super::{CloneOptions, Git, looks_like_sha};
+    use crate::config::Settings;
     use std::process::Command;
 
     #[test]
@@ -419,17 +420,20 @@ mod tests {
     /// gix's `with_ref_name` panics ("we map by name only and have no
     /// object-id in refspec") when given a commit SHA. Our `clone()` must
     /// detect that case and fall back to a plain clone + checkout.
+    ///
+    /// Covers both the gix backend (where the panic originates) and a SHA
+    /// reachable only from a non-default branch (so the clone must be full,
+    /// not shallow, for the checkout to find the object).
     #[test]
     fn clone_by_sha_does_not_panic() {
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join("src");
-        let dst = tmp.path().join("dst");
         std::fs::create_dir_all(&src).unwrap();
 
-        let git_in_src = |args: &[&str]| {
+        let git_in = |dir: &std::path::Path, args: &[&str]| {
             let out = Command::new("git")
                 .args(args)
-                .current_dir(&src)
+                .current_dir(dir)
                 .output()
                 .expect("spawn git");
             assert!(
@@ -439,38 +443,79 @@ mod tests {
             );
             out
         };
-        git_in_src(&["-c", "init.defaultBranch=main", "init", "-q"]);
-        git_in_src(&[
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "user.name=t",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "first",
-        ]);
-        let sha = String::from_utf8(git_in_src(&["rev-parse", "HEAD"]).stdout)
+        git_in(&src, &["-c", "init.defaultBranch=main", "init", "-q"]);
+        git_in(
+            &src,
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "main",
+            ],
+        );
+        // Park the SHA we want to check out on a non-default branch, so the
+        // test would fail if `clone()` did a shallow / single-branch clone.
+        git_in(&src, &["checkout", "-q", "-b", "feature"]);
+        git_in(
+            &src,
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "feature",
+            ],
+        );
+        let sha = String::from_utf8(git_in(&src, &["rev-parse", "HEAD"]).stdout)
             .unwrap()
             .trim()
             .to_string();
         assert_eq!(sha.len(), 40);
+        // Move feature off HEAD so the SHA isn't on the default branch.
+        git_in(&src, &["checkout", "-q", "main"]);
 
         let url = format!("file://{}", src.display());
-        Git::new(&dst)
-            .clone(&url, CloneOptions::default().branch(&sha))
-            .expect("clone with SHA must not panic and must succeed");
 
-        let head = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(&dst)
-            .output()
-            .unwrap();
-        assert_eq!(
-            String::from_utf8(head.stdout).unwrap().trim(),
-            sha,
-            "worktree should be checked out at the requested SHA"
-        );
+        // gix path — the panic site. Settings::gix defaults to true, but make
+        // it explicit so the test is robust to future default changes.
+        let backups = (Settings::get().gix, Settings::get().libgit2);
+        Settings::override_with(|s| {
+            s.gix = Some(true);
+            s.libgit2 = Some(false);
+        });
+        let dst_gix = tmp.path().join("dst-gix");
+        Git::new(&dst_gix)
+            .clone(&url, CloneOptions::default().branch(&sha))
+            .expect("gix clone with SHA must not panic and must succeed");
+        let head = git_in(&dst_gix, &["rev-parse", "HEAD"]);
+        assert_eq!(String::from_utf8(head.stdout).unwrap().trim(), sha);
+
+        // CLI path — `git clone -b <sha>` is rejected; verify the SHA
+        // bypass works there too.
+        Settings::override_with(|s| {
+            s.gix = Some(false);
+            s.libgit2 = Some(false);
+        });
+        let dst_cli = tmp.path().join("dst-cli");
+        Git::new(&dst_cli)
+            .clone(&url, CloneOptions::default().branch(&sha))
+            .expect("CLI clone with SHA must succeed");
+        let head = git_in(&dst_cli, &["rev-parse", "HEAD"]);
+        assert_eq!(String::from_utf8(head.stdout).unwrap().trim(), sha);
+
+        // Restore so we don't leak settings into other tests.
+        Settings::override_with(|s| {
+            s.gix = Some(backups.0);
+            s.libgit2 = Some(backups.1);
+        });
     }
 }
