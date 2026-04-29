@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sigstore_verify::VerificationPolicy;
 use sigstore_verify::trust_root::{DEFAULT_TUF_URL, TrustedRoot, TufConfig};
-use sigstore_verify::types::{Bundle, DerPublicKey, SignatureBytes};
+use sigstore_verify::types::{Bundle, DerCertificate, DerPublicKey, SignatureBytes};
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
 
@@ -521,7 +521,68 @@ fn verify_intoto_envelope(line: &str, artifact: &[u8], min_level: u8) -> Result<
     let payload = base64::engine::general_purpose::STANDARD
         .decode(payload_b64.as_bytes())
         .map_err(|e| AttestationError::Verification(format!("invalid base64 payload: {e}")))?;
+
+    // DSSE signature verification. The envelope's signatures sign the
+    // Pre-Authentication Encoding of the payload, not the payload itself.
+    // Without this check, anyone able to substitute the provenance file could
+    // forge a passing attestation just by including the artifact's digest in
+    // the in-toto subject list.
+    //
+    // Each signature embeds the Sigstore Fulcio leaf cert that signed it
+    // (slsa-github-generator format). We extract the cert's public key and
+    // verify the signature against the PAE. Cert chain validation is not
+    // performed here — Fulcio leaf certs expire ~10 minutes after issuance,
+    // and these intoto.jsonl files carry no TSA timestamp or tlog inclusion,
+    // so we have no way to establish a verified time for chain validation.
+    // Bundles in the modern sigstore format (which carry tlog/TSA) take the
+    // strict `verify_bundle` path above.
+    let signatures = envelope
+        .get("signatures")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| {
+            AttestationError::Verification("DSSE envelope missing signatures".to_string())
+        })?;
+    if signatures.is_empty() {
+        return Err(AttestationError::Verification(
+            "DSSE envelope has no signatures".to_string(),
+        ));
+    }
+    let pae = sigstore_verify::types::pae(payload_type, &payload);
+    let mut sig_errors = Vec::new();
+    let mut verified = false;
+    for sig in signatures {
+        match verify_dsse_signature(sig, &pae) {
+            Ok(()) => {
+                verified = true;
+                break;
+            }
+            Err(e) => sig_errors.push(e.to_string()),
+        }
+    }
+    if !verified {
+        return Err(AttestationError::Verification(format!(
+            "no valid DSSE signature: {}",
+            join_error_strings(sig_errors, || "no signatures could be verified".to_string())
+        )));
+    }
+
     verify_intoto_payload(&payload, artifact, min_level)
+}
+
+fn verify_dsse_signature(sig: &serde_json::Value, pae: &[u8]) -> Result<()> {
+    let cert_pem = sig.get("cert").and_then(|v| v.as_str()).ok_or_else(|| {
+        AttestationError::Verification("DSSE signature missing cert field".to_string())
+    })?;
+    let sig_b64 = sig.get("sig").and_then(|v| v.as_str()).ok_or_else(|| {
+        AttestationError::Verification("DSSE signature missing sig field".to_string())
+    })?;
+    let sig_bytes = base64::engine::general_purpose::STANDARD
+        .decode(sig_b64.as_bytes())
+        .map_err(|e| AttestationError::Verification(format!("invalid base64 signature: {e}")))?;
+    let cert = DerCertificate::from_pem(cert_pem)?;
+    let spki_der = extract_spki_der(cert.as_bytes())?;
+    let public_key = DerPublicKey::new(spki_der);
+    verify_raw_signature(pae, &sig_bytes, &public_key)
 }
 
 fn verify_intoto_payload(payload: &[u8], artifact: &[u8], min_level: u8) -> Result<()> {
@@ -672,13 +733,57 @@ fn verify_bundle(
 }
 
 fn is_github_internal_certificate(bundle: &Bundle) -> bool {
-    let Some(cert) = bundle.signing_certificate() else {
-        return false;
-    };
-    let needle = b"GitHub, Inc.";
-    cert.as_bytes()
-        .windows(needle.len())
-        .any(|window| window == needle)
+    bundle
+        .signing_certificate()
+        .map(|cert| cert_issuer_organization(cert.as_bytes()).as_deref() == Some("GitHub, Inc."))
+        .unwrap_or(false)
+}
+
+/// Return the X.509 Issuer's `O` (organizationName) attribute, if present.
+///
+/// Used to dispatch verification policy: certs issued by GitHub's internal
+/// Fulcio (`O=GitHub, Inc.`) need a separate trust root and a relaxed policy.
+/// Parses the cert with x509-cert rather than byte-searching the DER, so we
+/// only match the actual issuer organization field — not arbitrary substrings
+/// elsewhere in the certificate.
+fn cert_issuer_organization(cert_der: &[u8]) -> Option<String> {
+    use x509_cert::Certificate;
+    use x509_cert::der::Decode;
+    let cert = Certificate::from_der(cert_der).ok()?;
+    for rdn in cert.tbs_certificate.issuer.0.iter() {
+        for atv in rdn.0.iter() {
+            // 2.5.4.10 = id-at-organizationName
+            if atv.oid.to_string() == "2.5.4.10" {
+                if let Ok(s) = atv.value.decode_as::<String>() {
+                    return Some(s);
+                }
+                if let Ok(s) = atv
+                    .value
+                    .decode_as::<x509_cert::der::asn1::PrintableStringRef>()
+                {
+                    return Some(s.as_str().to_string());
+                }
+                if let Ok(s) = atv.value.decode_as::<x509_cert::der::asn1::Utf8StringRef>() {
+                    return Some(s.as_str().to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Extract the SubjectPublicKeyInfo bytes (DER) from an X.509 certificate.
+fn extract_spki_der(cert_der: &[u8]) -> Result<Vec<u8>> {
+    use x509_cert::Certificate;
+    use x509_cert::der::{Decode, Encode};
+    let cert = Certificate::from_der(cert_der)
+        .map_err(|e| AttestationError::Verification(format!("failed to parse certificate: {e}")))?;
+    cert.tbs_certificate
+        .subject_public_key_info
+        .to_der()
+        .map_err(|e| {
+            AttestationError::Verification(format!("failed to encode SubjectPublicKeyInfo: {e}"))
+        })
 }
 
 async fn production_trusted_root() -> Result<TrustedRoot> {
@@ -858,5 +963,58 @@ mod tests {
         .to_string();
 
         assert!(err.contains("Workflow verification failed"));
+    }
+
+    /// A genuine `*.intoto.jsonl` produced by slsa-github-generator (sops
+    /// v3.9.0 release). Signed by Sigstore Fulcio. Tests that don't need a
+    /// matching artifact can run against this fixture alone.
+    const GENUINE_INTOTO_ENVELOPE: &str =
+        include_str!("../tests/fixtures/sops_v3_9_0.intoto.jsonl");
+
+    #[test]
+    fn intoto_envelope_rejects_tampered_signature() {
+        let mut env: serde_json::Value =
+            serde_json::from_str(GENUINE_INTOTO_ENVELOPE.trim()).unwrap();
+        env["signatures"][0]["sig"] =
+            serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(b"forged"));
+        let tampered = serde_json::to_string(&env).unwrap();
+
+        // Signature verification happens before the subject digest check, so a
+        // forged sig fails regardless of which artifact bytes we pass.
+        let err = verify_intoto_envelope(&tampered, b"any artifact bytes", 1)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("DSSE signature") || err.contains("signature verification failed"),
+            "expected signature failure, got {err}"
+        );
+    }
+
+    #[test]
+    fn intoto_envelope_rejects_missing_signatures() {
+        let mut env: serde_json::Value =
+            serde_json::from_str(GENUINE_INTOTO_ENVELOPE.trim()).unwrap();
+        env["signatures"] = serde_json::json!([]);
+        let stripped = serde_json::to_string(&env).unwrap();
+        let err = verify_intoto_envelope(&stripped, b"any artifact bytes", 1)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no signatures"), "got {err}");
+    }
+
+    #[test]
+    fn intoto_envelope_rejects_unknown_artifact() {
+        // Genuine signature verifies, but a foreign artifact is not in subjects.
+        let err = verify_intoto_envelope(
+            GENUINE_INTOTO_ENVELOPE.trim(),
+            b"different artifact contents",
+            1,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("not found in SLSA statement subjects"),
+            "expected subject mismatch, got {err}"
+        );
     }
 }

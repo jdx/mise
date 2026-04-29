@@ -24,6 +24,10 @@ sigstore-verify = { version = "0.6.6", default-features = false }
 snap = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["fs", "io-util"] }
+x509-cert = { version = "0.2", default-features = false, features = [
+  "std",
+  "pem",
+] }
 
 [features]
 default = ["rustls"]
