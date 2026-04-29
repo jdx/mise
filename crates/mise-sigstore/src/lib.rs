@@ -16,11 +16,12 @@ const USER_AGENT_VALUE: &str = "mise-sigstore/0.1.0";
 
 // Embedded Sigstore TUF root used to bootstrap trust. We bundle a recent root
 // (v12) instead of relying on `sigstore_verify::trust_root::TrustedRoot::production()`,
-// because the upstream embedded v1 root fails signature verification under
-// `tough` (the timezone-offset `expires` field is normalized to UTC `Z` on
-// re-serialization, so the canonical JSON the signature was computed over no
-// longer matches). Bundling v12 lets the TUF chain walk forward to whatever
-// root version the CDN currently serves.
+// because the upstream embedded v1 root (still shipped as of
+// sigstore-trust-root 0.6.6) fails signature verification under `tough` — the
+// timezone-offset `expires` field is normalized to UTC `Z` on re-serialization,
+// so the canonical JSON the signature was computed over no longer matches.
+// Bundling v12 lets the TUF chain walk forward to whatever root version the
+// CDN currently serves.
 const EMBEDDED_TUF_ROOT: &[u8] = include_bytes!("../data/tuf_root.json");
 
 #[derive(Debug, Error)]
