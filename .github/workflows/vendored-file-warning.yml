@@ -9,7 +9,7 @@ permissions: {}
 
 jobs:
   warn:
-    if: github.actor != 'jdx' && github.actor != 'mise-en-dev'
+    if: github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'
     runs-on: ubuntu-latest
     steps:
       - name: Comment on PR
