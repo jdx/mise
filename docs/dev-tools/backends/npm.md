@@ -68,3 +68,35 @@ Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environm
 import Settings from '/components/settings.vue';
 </script>
 <Settings child="npm" :level="3" />
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `npm` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `npm_args`
+
+Additional arguments to pass to `npm` installs when `settings.npm.package_manager = "npm"`.
+
+### `pnpm_args`
+
+Additional arguments to pass to `pnpm` installs when `settings.npm.package_manager = "pnpm"`.
+
+### `bun_args`
+
+Additional arguments to pass to `bun` installs when `settings.npm.package_manager = "bun"`.
+
+### `aube_args`
+
+Additional arguments to pass to `aube add --global` when
+`settings.npm.package_manager = "aube"`.
+
+For example, to install `npm` with aube's append-only reporter mode:
+
+```toml
+[tools]
+"npm:npm" = {
+  version = "latest",
+  aube_args = "--reporter append-only",
+}
+```
