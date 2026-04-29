@@ -105,10 +105,12 @@ fn suggest_similar_commands(name: &str) -> Vec<String> {
 async fn tasks_for_missing_task_error(
     config: &Config,
     name: &str,
+    all: bool,
 ) -> Result<(Arc<BTreeMap<String, Task>>, bool)> {
     // In monorepos, users usually need `tasks ls --all` after a miss. Load that
     // same view for the error so sibling package tasks can be suggested.
-    if (name.starts_with("//") || config.is_monorepo())
+    // Also if --all flag is used, show all tasks in the error message.
+    if (all || name.starts_with("//") || config.is_monorepo())
         && let Ok(all_tasks) = config
             .tasks_with_context(Some(&TaskLoadContext::all()))
             .await
@@ -189,10 +191,11 @@ fn append_available_tasks(
 }
 
 /// Show an error when a task is not found, with helpful suggestions
-async fn err_no_task(config: &Config, name: &str) -> Result<()> {
+async fn err_no_task(config: &Config, name: &str, all: bool) -> Result<()> {
     // Check early if the name looks like a mistyped CLI subcommand
     let similar_cmds = suggest_similar_commands(name);
-    let (tasks_for_error, showing_all_tasks) = tasks_for_missing_task_error(config, name).await?;
+    let (tasks_for_error, showing_all_tasks) =
+        tasks_for_missing_task_error(config, name, all).await?;
 
     if tasks_for_error.is_empty() {
         // If the name matches a CLI subcommand closely, suggest that instead of
@@ -317,11 +320,12 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
 }
 
 /// Prompt the user to select a task interactively
-async fn prompt_for_task() -> Result<Task> {
+async fn prompt_for_task(ctx: Option<&TaskLoadContext>) -> Result<Task> {
     let config = Config::get().await?;
-    let tasks = config.tasks().await?;
+    let all_tasks = config.tasks_with_context(ctx).await?;
+    let visible_tasks: Vec<_> = all_tasks.values().filter(|t| !t.hide).collect_vec();
     ensure!(
-        !tasks.is_empty(),
+        !visible_tasks.is_empty(),
         "no tasks defined. see {url}",
         url = style::eunderline("https://mise.en.dev/tasks/")
     );
@@ -331,8 +335,7 @@ async fn prompt_for_task() -> Result<Task> {
         .filtering(true)
         .filterable(true)
         .theme(&theme);
-    for t in tasks.values().filter(|t| !t.hide) {
-        // Truncate description to first line only, like tasks ls does
+    for t in &visible_tasks {
         let desc = t.description.lines().next().unwrap_or_default();
         s = s.option(
             DemandOption::new(&t.name)
@@ -342,10 +345,10 @@ async fn prompt_for_task() -> Result<Task> {
     }
     ctrlc::show_cursor_after_ctrl_c();
     match s.run() {
-        Ok(name) => match tasks.get(name) {
-            Some(task) => Ok(task.clone()),
-            None => bail!("no tasks {} found", style::ered(name)),
-        },
+        Ok(name) => all_tasks
+            .get(name.as_str())
+            .cloned()
+            .ok_or_else(|| eyre!("no tasks {} found", style::ered(name))),
         Err(err) => {
             Term::stderr().show_cursor()?;
             Err(eyre!(err))
@@ -360,6 +363,7 @@ pub async fn get_task_lists(
     args: &[String],
     prompt: bool,
     only: bool,
+    all: bool,
 ) -> Result<Vec<Task>> {
     let args = args
         .iter()
@@ -377,8 +381,12 @@ pub async fn get_task_lists(
         .collect::<Vec<_>>();
 
     // Determine the appropriate task loading context based on patterns
-    // For monorepo patterns, we need to load tasks from the relevant parts of the monorepo
-    let task_context = if args.is_empty() {
+    // For monorepo patterns, we need to load tasks from relevant parts of the monorepo
+    let task_context = if all {
+        // --all flag: load all tasks from the entire monorepo
+        validate_monorepo_setup(config)?;
+        Some(TaskLoadContext::all())
+    } else if args.is_empty() {
         None
     } else {
         // Collect all monorepo patterns
@@ -487,9 +495,9 @@ pub async fn get_task_lists(
                 t.starts_with("//") && t.ends_with(":default") && t[2..].matches(':').count() == 1
             };
             if !is_default_task || !prompt || !console::user_attended_stderr() {
-                err_no_task(config, &t).await?;
+                err_no_task(config, &t, all).await?;
             }
-            tasks.push(prompt_for_task().await?);
+            tasks.push(prompt_for_task(effective_context.as_ref()).await?);
         } else {
             cur_tasks
                 .into_iter()

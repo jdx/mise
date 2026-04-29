@@ -47,6 +47,15 @@ pub struct Watch {
     #[clap(long, verbatim_doc_comment)]
     pub skip_deps: bool,
 
+    /// Skip installing tools before running tasks
+    #[clap(long, verbatim_doc_comment)]
+    pub skip_tools: bool,
+
+    /// Include tasks from all subdirectories in a monorepo
+    /// Similar to `mise tasks ls --all`, loads tasks from entire monorepo
+    #[clap(long, verbatim_doc_comment)]
+    pub all: bool,
+
     #[clap(flatten)]
     watchexec: WatchexecArgs,
 }
@@ -82,7 +91,8 @@ impl Watch {
         if args.is_empty() {
             bail!("No tasks specified");
         }
-        let tasks = crate::task::task_list::get_task_lists(&config, &args, false, false).await?;
+        let tasks =
+            crate::task::task_list::get_task_lists(&config, &args, false, false, self.all).await?;
         let mut args = vec![];
         if let Some(delay_run) = self.watchexec.delay_run {
             args.push("--delay-run".to_string());
@@ -198,6 +208,12 @@ impl Watch {
         ]);
         if self.skip_deps {
             args.push("--skip-deps".to_string());
+        }
+        if self.all {
+            args.push("--all".to_string());
+        }
+        if self.skip_tools {
+            args.push("--skip-tools".to_string());
         }
         let task_args = itertools::intersperse(
             tasks.iter().map(|t| {

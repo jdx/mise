@@ -200,6 +200,11 @@ pub struct Run {
     #[clap(long, verbatim_doc_comment)]
     pub skip_tools: bool,
 
+    /// Include tasks from all subdirectories in a monorepo
+    /// Similar to `mise tasks ls --all`, loads tasks from entire monorepo
+    #[clap(long, verbatim_doc_comment)]
+    pub all: bool,
+
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
     #[clap(long, verbatim_doc_comment)]
@@ -265,7 +270,7 @@ impl Run {
                 )
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false, false).await?;
+            let task_list = get_task_lists(&config, &args, false, false, self.all).await?;
 
             if let Some(task) = task_list.first() {
                 // raw_args tasks act as proxies for tools that handle their
@@ -304,7 +309,7 @@ impl Run {
             .chain(self.args.clone())
             .collect_vec();
 
-        let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
+        let mut task_list = get_task_lists(&config, &args, true, self.skip_deps, self.all).await?;
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect

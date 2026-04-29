@@ -163,6 +163,11 @@ Skip installing tools before running tasks
 Can also be set persistently with the `task.run_auto_install` setting
 or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
 
+### `--all`
+
+Include tasks from all subdirectories in a monorepo
+Similar to `mise tasks ls --all`, loads tasks from entire monorepo
+
 ### `--timeout <TIMEOUT>`
 
 Timeout for the task to complete
