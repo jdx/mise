@@ -15,14 +15,24 @@ const GITHUB_API_URL: &str = "https://api.github.com";
 const USER_AGENT_VALUE: &str = "mise-sigstore/0.1.0";
 
 // Embedded Sigstore TUF root used to bootstrap trust. We bundle a recent root
-// (v12) instead of relying on `sigstore_verify::trust_root::TrustedRoot::production()`,
+// instead of relying on `sigstore_verify::trust_root::TrustedRoot::production()`,
 // because the upstream embedded v1 root (still shipped as of
 // sigstore-trust-root 0.6.6) fails signature verification under `tough` — the
 // timezone-offset `expires` field is normalized to UTC `Z` on re-serialization,
 // so the canonical JSON the signature was computed over no longer matches.
-// Bundling v12 lets the TUF chain walk forward to whatever root version the
-// CDN currently serves.
+// Refresh by fetching https://tuf-repo-cdn.sigstore.dev/<n>.root.json well
+// before its `expires` date.
 const EMBEDDED_TUF_ROOT: &[u8] = include_bytes!("../data/tuf_root.json");
+
+// Embedded GitHub trusted_root.json. GitHub artifact attestations are signed
+// by GitHub's internal Fulcio (`O=GitHub, Inc.`) and timestamped by GitHub's
+// internal TSA. Neither is in Sigstore's public trust root, so verifying these
+// bundles requires GitHub's separate trust material, published via TUF at
+// https://tuf-repo.github.com/. We embed the trusted_root.json target
+// directly rather than fetching via TUF: GitHub's TUF spec version (1.0.31)
+// uses a keyid scheme that current `tough` doesn't validate. Refresh by
+// fetching the latest target listed in https://tuf-repo.github.com/<n>.targets.json.
+const EMBEDDED_GITHUB_TRUSTED_ROOT: &[u8] = include_bytes!("../data/github_trusted_root.json");
 
 #[derive(Debug, Error)]
 pub enum AttestationError {
@@ -377,8 +387,8 @@ async fn verify_github_attestation_inner(
     }
 
     let artifact = tokio::fs::read(artifact_path).await?;
-    let trusted_root = production_trusted_root().await?;
-    verify_attestation_bundles(&attestations, &artifact, signer_workflow, &trusted_root)
+    let trust_roots = TrustRoots::load().await?;
+    verify_attestation_bundles(&attestations, &artifact, signer_workflow, &trust_roots)
 }
 
 pub async fn verify_cosign_signature(
@@ -388,8 +398,14 @@ pub async fn verify_cosign_signature(
     let content = tokio::fs::read_to_string(sig_or_bundle_path).await?;
     let bundle = Bundle::from_json(&content)?;
     let artifact = tokio::fs::read(artifact_path).await?;
-    let trusted_root = production_trusted_root().await?;
-    verify_bundle(&artifact, &bundle, None, true, &trusted_root)?;
+    let trust_roots = TrustRoots::load().await?;
+    verify_bundle(
+        &artifact,
+        &bundle,
+        None,
+        true,
+        trust_roots.for_bundle(&bundle),
+    )?;
     Ok(true)
 }
 
@@ -435,7 +451,7 @@ pub async fn verify_slsa_provenance(
 ) -> Result<bool> {
     let artifact = tokio::fs::read(artifact_path).await?;
     let content = tokio::fs::read_to_string(provenance_path).await?;
-    let trusted_root = production_trusted_root().await?;
+    let trust_roots = TrustRoots::load().await?;
     let mut errors = Vec::new();
 
     for line in content
@@ -444,13 +460,21 @@ pub async fn verify_slsa_provenance(
         .filter(|line| !line.is_empty())
     {
         match Bundle::from_json(line) {
-            Ok(bundle) => match verify_bundle(&artifact, &bundle, None, true, &trusted_root) {
-                Ok(()) => match verify_min_slsa_level(&bundle, min_level) {
-                    Ok(()) => return Ok(true),
+            Ok(bundle) => {
+                match verify_bundle(
+                    &artifact,
+                    &bundle,
+                    None,
+                    true,
+                    trust_roots.for_bundle(&bundle),
+                ) {
+                    Ok(()) => match verify_min_slsa_level(&bundle, min_level) {
+                        Ok(()) => return Ok(true),
+                        Err(e) => errors.push(e),
+                    },
                     Err(e) => errors.push(e),
-                },
-                Err(e) => errors.push(e),
-            },
+                }
+            }
             Err(e) => errors.push(AttestationError::UnsupportedFormat(e.to_string())),
         }
     }
@@ -458,8 +482,14 @@ pub async fn verify_slsa_provenance(
     if content.trim_start().starts_with('{') {
         match Bundle::from_json(content.trim()) {
             Ok(bundle) => {
-                match verify_bundle(&artifact, &bundle, None, true, &trusted_root)
-                    .and_then(|_| verify_min_slsa_level(&bundle, min_level))
+                match verify_bundle(
+                    &artifact,
+                    &bundle,
+                    None,
+                    true,
+                    trust_roots.for_bundle(&bundle),
+                )
+                .and_then(|_| verify_min_slsa_level(&bundle, min_level))
                 {
                     Ok(()) => return Ok(true),
                     Err(e) => errors.push(e),
@@ -509,7 +539,7 @@ fn verify_attestation_bundles(
     attestations: &[Attestation],
     artifact: &[u8],
     signer_workflow: Option<&str>,
-    trusted_root: &TrustedRoot,
+    trust_roots: &TrustRoots,
 ) -> Result<bool> {
     let mut errors = Vec::new();
     for attestation in attestations {
@@ -523,7 +553,13 @@ fn verify_attestation_bundles(
                 continue;
             }
         };
-        match verify_bundle(artifact, &bundle, signer_workflow, true, trusted_root) {
+        match verify_bundle(
+            artifact,
+            &bundle,
+            signer_workflow,
+            true,
+            trust_roots.for_bundle(&bundle),
+        ) {
             Ok(()) => return Ok(true),
             Err(e) => errors.push(e.to_string()),
         }
@@ -555,6 +591,14 @@ fn verify_bundle(
     if skip_tlog {
         policy = policy.skip_tlog();
     }
+    // GitHub-internal leaf certs don't carry an SCT extension (GitHub's CA
+    // doesn't log to public CT), so sigstore-verify's certificate-chain
+    // verification — which always checks SCT — would reject them. Trust still
+    // comes from TSA timestamp validation against the GitHub trust root and
+    // signer-workflow identity matching, both performed below.
+    if is_github_internal_certificate(bundle) {
+        policy = policy.skip_certificate_chain();
+    }
     let result = sigstore_verify::verify(artifact, bundle, &policy, trusted_root)?;
     if !result.success {
         return Err(AttestationError::Verification(
@@ -567,9 +611,49 @@ fn verify_bundle(
     Ok(())
 }
 
+fn is_github_internal_certificate(bundle: &Bundle) -> bool {
+    let Some(cert) = bundle.signing_certificate() else {
+        return false;
+    };
+    let needle = b"GitHub, Inc.";
+    cert.as_bytes()
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
 async fn production_trusted_root() -> Result<TrustedRoot> {
     let config = TufConfig::custom(DEFAULT_TUF_URL, EMBEDDED_TUF_ROOT);
     Ok(TrustedRoot::from_tuf(config).await?)
+}
+
+fn github_trusted_root() -> Result<TrustedRoot> {
+    let json = std::str::from_utf8(EMBEDDED_GITHUB_TRUSTED_ROOT).map_err(|e| {
+        AttestationError::Sigstore(format!(
+            "embedded GitHub trusted root is not valid UTF-8: {e}"
+        ))
+    })?;
+    Ok(TrustedRoot::from_json(json)?)
+}
+
+struct TrustRoots {
+    sigstore: TrustedRoot,
+    github: TrustedRoot,
+}
+
+impl TrustRoots {
+    async fn load() -> Result<Self> {
+        let sigstore = production_trusted_root().await?;
+        let github = github_trusted_root()?;
+        Ok(Self { sigstore, github })
+    }
+
+    fn for_bundle(&self, bundle: &Bundle) -> &TrustedRoot {
+        if is_github_internal_certificate(bundle) {
+            &self.github
+        } else {
+            &self.sigstore
+        }
+    }
 }
 
 fn verify_signer_workflow_identity(
