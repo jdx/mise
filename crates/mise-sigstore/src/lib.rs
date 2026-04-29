@@ -399,13 +399,7 @@ pub async fn verify_cosign_signature(
     let bundle = Bundle::from_json(&content)?;
     let artifact = tokio::fs::read(artifact_path).await?;
     let trust_roots = TrustRoots::load().await?;
-    verify_bundle(
-        &artifact,
-        &bundle,
-        None,
-        true,
-        trust_roots.for_bundle(&bundle),
-    )?;
+    verify_bundle(&artifact, &bundle, None, trust_roots.for_bundle(&bundle))?;
     Ok(true)
 }
 
@@ -473,7 +467,7 @@ pub async fn verify_slsa_provenance(
                     trust_roots = Some(TrustRoots::load().await?);
                 }
                 let roots = trust_roots.as_ref().unwrap();
-                match verify_bundle(&artifact, &bundle, None, true, roots.for_bundle(&bundle))
+                match verify_bundle(&artifact, &bundle, None, roots.for_bundle(&bundle))
                     .and_then(|_| verify_min_slsa_level(&bundle, min_level))
                 {
                     Ok(()) => return Ok(true),
@@ -678,7 +672,6 @@ fn verify_attestation_bundles(
             artifact,
             &bundle,
             signer_workflow,
-            true,
             trust_roots.for_bundle(&bundle),
         ) {
             Ok(()) => return Ok(true),
@@ -705,11 +698,16 @@ fn verify_bundle(
     artifact: &[u8],
     bundle: &Bundle,
     signer_workflow: Option<&str>,
-    skip_tlog: bool,
     trusted_root: &TrustedRoot,
 ) -> Result<()> {
     let mut policy = VerificationPolicy::default();
-    if skip_tlog {
+    // sigstore-verify's default policy *requires* an inclusion proof when
+    // `verify_tlog` is on. GitHub artifact attestations and TSA-only bundles
+    // never carry one, so we'd reject them outright. Skip tlog only when the
+    // bundle has no inclusion proof — public-Sigstore cosign bundles, which do
+    // ship a Rekor inclusion proof, still get full tlog verification (Rekor
+    // checkpoint signature, SET, inclusion-proof Merkle path).
+    if !bundle.has_inclusion_proof() {
         policy = policy.skip_tlog();
     }
     // GitHub-internal leaf certs don't carry an SCT extension (GitHub's CA
