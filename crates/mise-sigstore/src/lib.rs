@@ -462,7 +462,7 @@ pub async fn verify_slsa_provenance(
         .filter(|line| !line.is_empty())
         .collect();
     let trimmed = content.trim();
-    if !trimmed.is_empty() && !candidates.iter().any(|c| *c == trimmed) {
+    if !trimmed.is_empty() && !candidates.contains(&trimmed) {
         candidates.push(trimmed);
     }
 
