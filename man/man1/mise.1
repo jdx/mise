@@ -1,10 +1,10 @@
 .TH MISE 1
 .SH NAME
-mise \- The front\-end to your dev env
+mise \- Dev tools, env vars, and tasks in one CLI
 .SH SYNOPSIS
 \fBmise\fR [OPTIONS] [<TASK>] [<TASK_ARGS>] ... [<TASK_ARGS_LAST>] ... [COMMAND]
 .SH DESCRIPTION
-mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise
+mise prepares your development environment before each command runs. https://github.com/jdx/mise
 .PP
 .SH OPTIONS
 .TP
@@ -286,6 +286,18 @@ List runtime versions available for install.
 \fBmcp\fR
 [experimental] Run Model Context Protocol (MCP) server
 .TP
+\fBoci\fR
+[experimental] Build OCI container images from a mise.toml
+.TP
+\fBoci build\fR
+[experimental] Build an OCI image from the current mise.toml
+.TP
+\fBoci push\fR
+[experimental] Build an OCI image and push it to a registry
+.TP
+\fBoci run\fR
+[experimental] Build an OCI image from the current mise.toml and run a command in it
+.TP
 \fBoutdated\fR
 Shows outdated tool versions
 .TP
@@ -499,6 +511,9 @@ Removes installed tool versions
 \fBunset\fR
 Remove environment variable(s) from the config file.
 .TP
+\fBuntrust\fR
+No longer trust a config, will prompt in the future
+.TP
 \fBunuse\fR
 Removes installed tool versions from mise.toml
 .RS
@@ -575,7 +590,7 @@ Effectively the same as:
     PATH="$HOME/.local/share/mise/shims:$PATH"
 
 `mise activate \-\-shims` does not support all the features of `mise activate`.
-See https://mise.jdx.dev/dev\-tools/shims.html#shims\-vs\-path for more information
+See https://mise.en.dev/dev\-tools/shims.html#shims\-vs\-path for more information
 .TP
 \fB\-\-status\fR
 Show "mise: <PLUGIN>@<VERSION>" message when changing directories
@@ -1357,7 +1372,7 @@ Show latest installed instead of available version
 Only consider versions released before this date
 
 Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
-Overrides per\-tool `install_before` options and the global `install_before` setting.
+Overrides per\-tool `minimum_release_age` options and the global `minimum_release_age` setting.
 \fBArguments:\fR
 .PP
 .TP
@@ -1496,6 +1511,23 @@ Show all installed plugins and versions
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format (includes version metadata like created_at timestamps when available)
+.TP
+\fB\-\-no\-versions\-host\fR
+Disable checking the mise\-versions host
+.TP
+\fB\-\-prerelease\fR
+Include pre\-release versions in the output for backends that report
+an upstream prerelease flag (currently github + aqua). Equivalent to
+setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
+duration of this command.
+.TP
+\fB\-\-strict\-metadata\fR
+Fail if release metadata fetches fail
+
+Requires \-\-json and \-\-no\-versions\-host.
+
+This prevents metadata consumers from accepting empty fallback results
+when a backend's metadata\-producing upstream request fails.
 \fBArguments:\fR
 .PP
 .TP
@@ -1505,6 +1537,138 @@ Tool to get versions for
 \fB<PREFIX>\fR
 The version prefix to use when querying the latest version
 same as the first argument after the "@"
+.SH "MISE OCI BUILD"
+[experimental] Build an OCI image from the current mise.toml
+
+Each tool version becomes its own content\-addressable OCI layer. Bumping a
+tool version only invalidates that tool's layer — other tools, the base
+image, and config are reused unchanged. The output directory conforms to
+the OCI image\-layout spec and can be consumed by `skopeo`, `crane`, or
+`podman load`.
+
+Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
+.PP
+\fBUsage:\fR mise oci build [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-o, \-\-output\fR \fI<OUTPUT>\fR
+Output directory for the OCI image layout
+.RS
+\fIDefault: \fR./mise\-oci
+.RE
+.TP
+\fB\-\-from\fR \fI<FROM>\fR
+Base image reference (overrides [oci].from and the oci.default_from setting)
+.TP
+\fB\-t, \-\-tag\fR \fI<TAG>\fR
+Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
+.TP
+\fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
+Where to place tool installs inside the image (default: /mise)
+.TP
+\fB\-\-no\-mise\fR
+Do not embed the currently\-running mise binary at /usr/local/bin/mise
+.SH "MISE OCI PUSH"
+[experimental] Build an OCI image and push it to a registry
+
+Requires `skopeo` (or `crane`) on PATH. If `\-\-image\-dir` is not passed,
+builds fresh from the current mise.toml first, then shells out to
+`skopeo copy oci:<dir> docker://<ref>` (or `crane push <dir> <ref>`).
+Authentication is handled by the underlying tool — configure it the same
+way you would for a plain `skopeo` / `crane` push (e.g. `docker login`,
+`REGISTRY_AUTH_FILE`, `~/.config/containers/auth.json`).
+
+Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
+.PP
+\fBUsage:\fR mise oci push [OPTIONS] <REF>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-from\fR \fI<FROM>\fR
+Base image for the build (ignored with \-\-image\-dir)
+.TP
+\fB\-\-image\-dir\fR \fI<IMAGE_DIR>\fR
+Push an already\-built OCI image layout (skip the build step)
+.TP
+\fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
+Override in\-image mount point (ignored with \-\-image\-dir)
+.TP
+\fB\-\-no\-mise\fR
+Don't embed the mise binary (ignored with \-\-image\-dir)
+.TP
+\fB\-\-tool\fR \fI<TOOL>\fR
+Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`
+.RS
+\fIDefault: \fRauto
+.RE
+\fBArguments:\fR
+.PP
+.TP
+\fB<REF>\fR
+Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
+.SH "MISE OCI RUN"
+[experimental] Build an OCI image from the current mise.toml and run a command in it
+
+Equivalent to `mise oci build` followed by `docker run` / `podman run`.
+The built image is loaded into the local container engine (podman is
+preferred; docker works via skopeo) and the given command is executed
+inside it with stdin/stdout/stderr inherited.
+
+Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and
+one of: `podman`, `docker+skopeo`.
+.PP
+\fBUsage:\fR mise oci run [OPTIONS] [<CMD>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-engine\fR \fI<ENGINE>\fR
+Container engine to use (`auto`, `podman`, or `docker`)
+.RS
+\fIDefault: \fRauto
+.RE
+.TP
+\fB\-\-from\fR \fI<FROM>\fR
+Base image reference for the build (ignored with \-\-image\-dir)
+.TP
+\fB\-\-image\-dir\fR \fI<IMAGE_DIR>\fR
+Use an already\-built OCI image layout instead of building fresh
+.TP
+\fB\-\-keep\fR
+Keep the loaded image in the engine's storage after the run
+
+By default, both the container (`\-\-rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `\-\-keep` to retain the image under the tag mise used (`mise\-oci:run\-*` for docker; the pulled image ID for podman).
+.TP
+\fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
+Override in\-image mount point (ignored with \-\-image\-dir)
+.TP
+\fB\-\-no\-mise\fR
+Don't embed the mise binary (ignored with \-\-image\-dir)
+.TP
+\fB\-\-volume\fR \fI<HOST:CONTAINER>\fR
+Bind\-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
+
+Note: unlike `docker run \-v`, there's no `\-v` short flag here because mise reserves `\-v` for \-\-verbose. Use `\-\-volume` or `\-\-mount`.
+.TP
+\fB\-e, \-\-env\fR \fI<KEY=VAL>\fR
+Set environment variable in the container (repeatable, `KEY=VAL`)
+.TP
+\fB\-i, \-\-interactive\fR
+Run interactively (pass `\-i` to the engine)
+.TP
+\fB\-t, \-\-tty\fR
+Allocate a TTY (pass `\-t` to the engine)
+.TP
+\fB\-w, \-\-workdir\fR \fI<WORKDIR>\fR
+Working directory inside the container
+\fBArguments:\fR
+.PP
+.TP
+\fB<CMD>\fR
+Command and arguments to run inside the container (after `\-\-`)
 .SH "MISE OUTDATED"
 Shows outdated tool versions
 
@@ -1876,6 +2040,11 @@ Hide aliased tools
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format
+.TP
+\fB\-\-security\fR
+Include security features for each tool's backends in JSON output.
+
+Requires \-\-json. Security info is de\-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually.
 \fBArguments:\fR
 .PP
 .TP
@@ -2110,7 +2279,7 @@ Set environment variables in mise.toml
 By default, this command modifies `mise.toml` in the current directory.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
-See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
 
 Use `\-E <env>` to create/modify environment\-specific config files like `mise.<env>.toml`.
 .PP
@@ -2292,7 +2461,7 @@ Add/update a setting
 
 This modifies the contents of ~/.config/mise/config.toml by default.
 With `\-\-local`, modifies the local config file instead.
-See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
 .PP
 \fBUsage:\fR mise settings set [OPTIONS] <SETTING> [<VALUE>]
 .PP
@@ -2490,6 +2659,9 @@ Display tasks for usage completion
 \fB\-\-hidden\fR
 Show hidden tasks
 .TP
+\fB\-\-name\-only\fR
+Only show task names, one per line. Useful for piping to fzf and similar tools.
+.TP
 \fB\-\-no\-header\fR
 Do not print table header
 .TP
@@ -2509,7 +2681,7 @@ Task name to get info of
 Create a new task
 
 Adds a task to the local mise.toml file.
-See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
 .PP
 \fBUsage:\fR mise tasks add [OPTIONS] <TASK> [<RUN>] ...
 .PP
@@ -2652,6 +2824,9 @@ Display tasks for usage completion
 .TP
 \fB\-\-hidden\fR
 Show hidden tasks
+.TP
+\fB\-\-name\-only\fR
+Only show task names, one per line. Useful for piping to fzf and similar tools.
 .TP
 \fB\-\-no\-header\fR
 Do not print table header
@@ -2969,7 +3144,7 @@ tool = "node" version = "20.0.0" bin = "node"
 
 The stub will automatically install the specified tool version if missing and execute it with any arguments passed to the stub.
 
-For more information, see: https://mise.jdx.dev/dev\-tools/tool\-stubs.html
+For more information, see: https://mise.en.dev/dev\-tools/tool\-stubs.html
 .PP
 \fBUsage:\fR mise tool\-stub <FILE> [<ARGS>] ...
 .PP
@@ -3064,13 +3239,23 @@ Use the global config file
 \fB<ENV_KEY>\fR
 Environment variable(s) to remove
 e.g.: NODE_ENV
+.SH "MISE UNTRUST"
+No longer trust a config, will prompt in the future
+.PP
+\fBUsage:\fR mise untrust [<CONFIG_FILE>]
+.PP
+\fBArguments:\fR
+.PP
+.TP
+\fB<CONFIG_FILE>\fR
+The config file to untrust
 .SH "MISE UNUSE"
 Removes installed tool versions from mise.toml
 
 By default, this will use the `mise.toml` file that has the tool defined.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
-See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
 
 In the following order:
   \- If `\-\-global` is set, it will use the global config file.
@@ -3112,7 +3297,7 @@ By default, this keeps the range specified in mise.toml. So if you have node@20 
 upgrade to the latest 20.x.x version available. See the `\-\-bump` flag to use the latest version
 and bump the version in mise.toml.
 
-This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
+This will update mise.lock if it is enabled, see https://mise.en.dev/configuration/settings.html#lockfile
 .PP
 \fBUsage:\fR mise upgrade [OPTIONS] [<INSTALLED_TOOL@VERSION>] ...
 .PP
@@ -3178,7 +3363,7 @@ This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
-See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
 
 In the following order:
   \- If `\-\-global` is set, it will use the global config file.
@@ -3238,7 +3423,7 @@ e.g.: `mise use \-\-pin node@20` will save 20.0.0 as the version
 Set `MISE_PIN=1` to make this the default behavior
 
 Consider using mise.lock as a better alternative to pinning in mise.toml:
-https://mise.jdx.dev/configuration/settings.html#lockfile
+https://mise.en.dev/configuration/settings.html#lockfile
 .TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets `\-\-jobs=1`

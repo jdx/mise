@@ -24,7 +24,7 @@ use jiff::Timestamp;
 /// upgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version
 /// and bump the version in mise.toml.
 ///
-/// This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
+/// This will update mise.lock if it is enabled, see https://mise.en.dev/configuration/settings.html#lockfile
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Upgrade {
@@ -117,6 +117,7 @@ impl Upgrade {
             use_locked_version: false,
             latest_versions: true,
             before_date,
+            offline: false,
         };
         // Filter tools to check before doing expensive version lookups
         let filter_tools = if !self.interactive && !self.tool.is_empty() {
@@ -260,6 +261,7 @@ impl Upgrade {
                 use_locked_version: false,
                 latest_versions: true,
                 before_date,
+                offline: false,
             },
             ..Default::default()
         };
@@ -337,7 +339,8 @@ impl Upgrade {
 
         // Get versions needed by tracked configs AFTER upgrade
         // This ensures we don't uninstall versions still needed by other projects
-        let versions_needed_by_tracked = get_versions_needed_by_tracked_configs(config).await?;
+        let versions_needed_by_tracked =
+            get_versions_needed_by_tracked_configs(config, false, false).await?;
 
         // Only uninstall old versions of tools that were successfully upgraded
         // and are not needed by any tracked config

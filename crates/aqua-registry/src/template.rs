@@ -144,26 +144,22 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
                 }
             }
         } else if code.starts_with(".") {
-            // Check if this is a property access (after ) or identifier)
-            let next_char = code.chars().nth(1);
-            if next_char.is_some_and(|c| c.is_alphabetic()) {
-                // This could be .Key or .Property
-                let end = code[1..]
-                    .chars()
-                    .enumerate()
-                    .find(|(_, c)| !c.is_alphanumeric() && *c != '_')
-                    .map(|(i, _)| i + 1)
-                    .unwrap_or(code.len());
-
-                // If preceded by RParen, it's a property access
+            if let Some(first_end) = dotted_identifier_end(code) {
+                // This could be .Key or .Property, and can also include chained fields
+                // like .Vars.channel.
                 if tokens.last().is_some_and(|t| t.is_r_paren()) {
                     tokens.push(Token::Dot);
-                    tokens.push(Token::Ident(&code[1..end]));
+                    tokens.push(Token::Ident(&code[1..first_end]));
                 } else {
-                    // Otherwise it's a key reference
-                    tokens.push(Token::Key(&code[1..end]));
+                    tokens.push(Token::Key(&code[1..first_end]));
                 }
-                code = &code[end..];
+                code = &code[first_end..];
+
+                while let Some(end) = dotted_identifier_end(code) {
+                    tokens.push(Token::Dot);
+                    tokens.push(Token::Ident(&code[1..end]));
+                    code = &code[end..];
+                }
             } else {
                 tokens.push(Token::Dot);
                 code = &code[1..];
@@ -188,6 +184,22 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
         }
     }
     Ok(tokens)
+}
+
+fn dotted_identifier_end(code: &str) -> Option<usize> {
+    let rest = code.strip_prefix('.')?;
+    let first = rest.chars().next()?;
+    if !first.is_alphabetic() {
+        return None;
+    }
+    Some(1 + identifier_len(rest))
+}
+
+fn identifier_len(code: &str) -> usize {
+    code.char_indices()
+        .find(|(_, c)| !c.is_alphanumeric() && *c != '_')
+        .map(|(i, _)| i)
+        .unwrap_or(code.len())
 }
 
 /// Parse tokens into an AST
@@ -220,7 +232,7 @@ fn parse_primary(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> R
 
     let token = tokens.next().wrap_err("unexpected end of expression")?;
 
-    let mut expr = match token {
+    let expr = match token {
         Token::Key(k) => Expr::Var(k.to_string()),
         Token::String(s) => Expr::Literal(s.to_string()),
         Token::LParen => {
@@ -256,19 +268,7 @@ fn parse_primary(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> R
         _ => bail!("unexpected token: {token:?}"),
     };
 
-    // Handle property access: expr.Property
-    while matches!(tokens.peek(), Some(Token::Dot)) {
-        tokens.next(); // consume dot
-        skip_whitespace(tokens);
-
-        if let Some(Token::Ident(prop)) = tokens.next() {
-            expr = Expr::PropertyAccess(Box::new(expr), prop.to_string());
-        } else {
-            bail!("expected identifier after dot");
-        }
-    }
-
-    Ok(expr)
+    parse_property_chain(tokens, expr)
 }
 
 /// Parse a function argument
@@ -284,23 +284,11 @@ fn parse_arg(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Resul
             if !matches!(tokens.next(), Some(Token::RParen)) {
                 bail!("expected closing parenthesis");
             }
-
-            // Check for property access after paren
-            let mut result = expr;
-            while matches!(tokens.peek(), Some(Token::Dot)) {
-                tokens.next(); // consume dot
-                skip_whitespace(tokens);
-                if let Some(Token::Ident(prop)) = tokens.next() {
-                    result = Expr::PropertyAccess(Box::new(result), prop.to_string());
-                } else {
-                    bail!("expected identifier after dot");
-                }
-            }
-            Ok(result)
+            parse_property_chain(tokens, expr)
         }
         Some(Token::Key(k)) => {
             tokens.next();
-            Ok(Expr::Var(k.to_string()))
+            parse_property_chain(tokens, Expr::Var(k.to_string()))
         }
         Some(Token::String(s)) => {
             tokens.next();
@@ -308,6 +296,24 @@ fn parse_arg(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Resul
         }
         _ => bail!("expected argument"),
     }
+}
+
+fn parse_property_chain(
+    tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>,
+    mut expr: Expr,
+) -> Result<Expr> {
+    while matches!(tokens.peek(), Some(Token::Dot)) {
+        tokens.next(); // consume dot
+        skip_whitespace(tokens);
+
+        if let Some(Token::Ident(prop)) = tokens.next() {
+            expr = Expr::PropertyAccess(Box::new(expr), prop.to_string());
+        } else {
+            bail!("expected identifier after dot");
+        }
+    }
+
+    Ok(expr)
 }
 
 fn skip_whitespace(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) {
@@ -442,6 +448,12 @@ impl<'a> Evaluator<'a> {
 
     /// Evaluate property access
     fn eval_property(&self, expr: &Expr, prop: &str) -> Result<Box<dyn Value>> {
+        if let Expr::Var(name) = expr {
+            let key = format!("{name}.{prop}");
+            if let Some(value) = self.ctx.get(&key) {
+                return Ok(Box::new(StringValue(value.clone())) as Box<dyn Value>);
+            }
+        }
         let value = self.eval_value(expr)?;
         let prop_value = value.get_property(prop)?;
         Ok(Box::new(StringValue(prop_value)) as Box<dyn Value>)
@@ -682,5 +694,19 @@ mod tests {
         let tmpl = r#"{{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle"#;
         let ctx = hashmap(vec![("AssetWithoutExt", "gradle-8.14.3-bin")]);
         assert_eq!(render(tmpl, &ctx).unwrap(), "gradle-8.14.3/bin/gradle");
+    }
+
+    #[test]
+    fn test_render_vars_property_access() {
+        let tmpl = "{{.Vars.channel}}";
+        let ctx = hashmap(vec![("Vars.channel", "stable")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "stable");
+    }
+
+    #[test]
+    fn test_render_vars_property_in_function_arg() {
+        let tmpl = "{{title .Vars.channel}}";
+        let ctx = hashmap(vec![("Vars.channel", "stable")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "Stable");
     }
 }

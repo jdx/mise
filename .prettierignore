@@ -20,6 +20,8 @@ docs/registry.md
 docs/plugin-usage.md
 docs/plugin-publishing.md
 docs/contributing.md
+docs/backend-plugin-development.md
+docs/url-replacements.md
 CLAUDE.md
 AGENTS.md
 CRUSH.md

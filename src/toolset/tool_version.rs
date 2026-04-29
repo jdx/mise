@@ -12,6 +12,7 @@ use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
+use crate::install_before::resolve_before_date;
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
@@ -35,6 +36,8 @@ pub fn reset_install_path_cache() {
 pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
+    /// Effective install-before cutoff used to resolve this version.
+    pub before_date: Option<Timestamp>,
     locked: bool,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
@@ -43,10 +46,23 @@ pub struct ToolVersion {
 }
 
 impl ToolVersion {
+    fn no_versions_found(backend: &ABackend, before_date: Option<Timestamp>) -> eyre::Report {
+        let msg = if before_date.is_some() {
+            format!(
+                "no versions found for {} matching date filter",
+                backend.id()
+            )
+        } else {
+            format!("no versions found for {}", backend.id())
+        };
+        eyre::eyre!(msg)
+    }
+
     pub fn new(request: ToolRequest, version: String) -> Self {
         ToolVersion {
             request,
             version,
+            before_date: None,
             locked: false,
             lock_platforms: Default::default(),
             install_path: None,
@@ -59,37 +75,47 @@ impl ToolVersion {
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        let minimum_release_age = request.options().minimum_release_age().map(str::to_string);
+        let mut opts = opts.clone();
+        opts.before_date = resolve_before_date(opts.before_date, minimum_release_age.as_deref())?;
+
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
             && !has_linked_version(request.ba())
             && let Some(lt) = request.lockfile_resolve(config)?
         {
-            return Ok(Self::from_lockfile(request.clone(), lt));
+            return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
         }
         let backend = request.ba().backend()?;
         if let Some(plugin) = backend.plugin()
             && !plugin.is_installed()
         {
             let tv = Self::new(request.clone(), request.version());
-            return Ok(tv);
+            return Ok(tv.with_before_date(opts.before_date));
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
-                Self::resolve_version(config, request, &v, opts).await?
+                Self::resolve_version(config, request, &v, &opts).await?
             }
             ToolRequest::Prefix { prefix, .. } => {
-                Self::resolve_prefix(config, request, &prefix, opts).await?
+                Self::resolve_prefix(config, request, &prefix, &opts).await?
             }
             ToolRequest::Sub {
                 sub, orig_version, ..
-            } => Self::resolve_sub(config, request, &sub, &orig_version, opts).await?,
+            } => Self::resolve_sub(config, request, &sub, &orig_version, &opts).await?,
             _ => {
                 let version = request.version();
                 Self::new(request, version)
             }
         };
+        let tv = tv.with_before_date(opts.before_date);
         trace!("resolved: {tv}");
         Ok(tv)
+    }
+
+    fn with_before_date(mut self, before_date: Option<Timestamp>) -> Self {
+        self.before_date = before_date;
+        self
     }
 
     fn from_lockfile(request: ToolRequest, lt: LockfileTool) -> Self {
@@ -201,6 +227,7 @@ impl ToolVersion {
             latest_versions: true,
             use_locked_version: false,
             before_date: base_opts.before_date,
+            offline: base_opts.offline,
         };
         let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref
@@ -313,7 +340,7 @@ impl ToolVersion {
         }
 
         let settings = Settings::get();
-        let is_offline = settings.offline();
+        let is_offline = settings.offline() || opts.offline;
 
         if v == "latest" {
             if !opts.latest_versions
@@ -328,6 +355,22 @@ impl ToolVersion {
             {
                 return build(v);
             }
+            if !is_offline {
+                let versions = backend.list_remote_versions(config).await?;
+                if versions.is_empty()
+                    && let Some(v) = backend.unresolved_latest_version()
+                {
+                    return build(v);
+                }
+            }
+            // Prune-style offline (opts.offline) wants a non-erroring no-op
+            // when nothing is installed — the literal "latest" can't match
+            // any installed pathname so it's safe. Global MISE_OFFLINE keeps
+            // the original error to avoid surprising upgrade/outdated callers.
+            if opts.offline {
+                return build(v);
+            }
+            return Err(Self::no_versions_found(&backend, opts.before_date));
         }
         if !opts.latest_versions {
             let matches = backend.list_installed_versions_matching(&v);
@@ -390,6 +433,9 @@ impl ToolVersion {
         if matches.contains(&v) {
             return build(v);
         }
+        if let Some(v) = matches.last() {
+            return build(v.clone());
+        }
         // If date filter is active and exact version not found, check without filter.
         // Explicit pinned versions like "22.5.0" should not be filtered by date.
         if opts.before_date.is_some() {
@@ -399,7 +445,7 @@ impl ToolVersion {
                 return build(v);
             }
         }
-        Self::resolve_prefix(config, request, &v, opts).await
+        build(v)
     }
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
@@ -411,21 +457,20 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
+        if v == "latest" && opts.offline {
+            // Can't resolve sub-N:latest offline (no remote latest, and
+            // applying version_sub to latest_installed_version would shift
+            // one step too low). Return the raw spec; callers that care
+            // (`get_versions_needed_by_tracked_configs`) over-protect by
+            // keeping all installed versions of this backend.
+            let version = request.version();
+            return Ok(Self::new(request, version));
+        }
         let v = match v {
             "latest" => backend
                 .latest_version(config, None, opts.before_date)
                 .await?
-                .ok_or_else(|| {
-                    let msg = if opts.before_date.is_some() {
-                        format!(
-                            "no versions found for {} matching date filter",
-                            backend.id()
-                        )
-                    } else {
-                        format!("no versions found for {}", backend.id())
-                    };
-                    eyre::eyre!(msg)
-                })?,
+                .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?,
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
@@ -444,14 +489,15 @@ impl ToolVersion {
         {
             return Ok(Self::new(request, v.to_string()));
         }
+        if opts.offline {
+            return Ok(Self::new(request, prefix.to_string()));
+        }
         let matches = backend
             .list_versions_matching_with_opts(config, prefix, opts.before_date)
             .await?;
-        let v = match matches.last() {
-            Some(v) => v,
-            None => prefix,
-            // None => Err(VersionNotFound(plugin.name.clone(), prefix.to_string()))?,
-        };
+        let v = matches
+            .last()
+            .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?;
         Ok(Self::new(request, v.to_string()))
     }
 
@@ -527,6 +573,8 @@ pub struct ResolveOptions {
     pub use_locked_version: bool,
     /// Only consider versions released before this timestamp
     pub before_date: Option<Timestamp>,
+    /// Additive to `Settings::offline()` — either being true skips remote version listing.
+    pub offline: bool,
 }
 
 impl Default for ResolveOptions {
@@ -535,6 +583,7 @@ impl Default for ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
             before_date: None,
+            offline: false,
         }
     }
 }
@@ -571,6 +620,9 @@ impl Display for ResolveOptions {
         }
         if let Some(ts) = &self.before_date {
             opts.push(format!("before_date={ts}"));
+        }
+        if self.offline {
+            opts.push("offline".to_string());
         }
         write!(f, "({})", opts.join(", "))
     }

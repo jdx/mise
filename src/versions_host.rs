@@ -55,6 +55,14 @@ struct VersionEntry {
     created_at: toml::value::Datetime,
     #[serde(default)]
     release_url: Option<String>,
+    /// Upstream pre-release flag, when the producing source can distinguish
+    /// it (currently github + aqua releases). Defaults to false so old
+    /// host data — and entries from sources that don't track prereleases —
+    /// stay correct without any schema upgrade. Old mise clients that don't
+    /// know about this field ignore it (toml-rs accepts unknown fields by
+    /// default), so populating it in mise-versions is forward-compatible.
+    #[serde(default)]
+    prerelease: bool,
 }
 
 /// List versions from the versions host (mise-versions.jdx.dev).
@@ -95,6 +103,7 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
                     version,
                     created_at: Some(entry.created_at.to_string()),
                     release_url: entry.release_url,
+                    prerelease: entry.prerelease,
                     ..Default::default()
                 })
                 .collect()

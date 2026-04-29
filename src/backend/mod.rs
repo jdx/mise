@@ -5,7 +5,10 @@ use std::fs::File;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
@@ -15,6 +18,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
+use crate::install_before::resolve_before_date;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -42,6 +46,7 @@ use itertools::Itertools;
 use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
+use versions::Versioning;
 
 pub mod aqua;
 pub mod asdf;
@@ -71,6 +76,16 @@ pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
+static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
+
+pub fn set_strict_metadata(strict: bool) {
+    STRICT_METADATA.store(strict, Ordering::Relaxed);
+}
+
+pub fn strict_metadata() -> bool {
+    STRICT_METADATA.load(Ordering::Relaxed)
+}
+
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
 pub struct GitHubReleaseInfo {
@@ -97,11 +112,21 @@ pub struct VersionInfo {
     pub release_url: Option<String>,
     /// If true, this is a rolling release (like "nightly") that should always
     /// be considered potentially outdated for `mise up` purposes
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub rolling: bool,
     /// Checksum of the release asset, used to detect changes in rolling releases
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub checksum: Option<String>,
+    /// Whether the upstream flagged this as a pre-release. Backends that have a
+    /// reliable signal (e.g. GitHub releases' `prerelease: true`) populate this
+    /// so the shared remote-versions cache can store the superset and apply the
+    /// `prerelease` tool option as a read-time filter.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub prerelease: bool,
+}
+
+fn is_false(v: &bool) -> bool {
+    !v
 }
 
 impl VersionInfo {
@@ -134,7 +159,7 @@ impl VersionInfo {
 }
 
 /// Security feature information for a tool
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SecurityFeature {
     Checksum {
@@ -290,9 +315,25 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
+        BackendType::Npm => npm::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
+        BackendType::Aqua => aqua::install_time_option_keys(),
         _ => vec![],
     }
+}
+
+/// Returns true if a backend option only affects installation/download.
+/// Used to filter cached options when config provides its own options.
+pub fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str) -> bool {
+    if matches!(backend_type, BackendType::Aqua) {
+        return aqua::is_install_time_option_key(key);
+    }
+
+    let install_time_keys = install_time_option_keys_for_type(backend_type);
+    install_time_keys.iter().any(|itk| itk == key)
+        || install_time_keys
+            .iter()
+            .any(|itk| key.starts_with("platforms.") && key.ends_with(&format!(".{itk}")))
 }
 
 /// Normalize idiomatic file contents by removing comments and empty lines.
@@ -360,6 +401,151 @@ mod tests {
             normalize_idiomatic_contents("# full line comment\n3.14.2 # inline comment\n   \n\n"),
             "3.14.2"
         );
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_filters_prereleases_by_default() {
+        let versions = vec![
+            "1.0.0".to_string(),
+            "1.1.0-rc1".to_string(),
+            "1.1.0".to_string(),
+            "1.2.0-dev.5".to_string(),
+        ];
+        let got = fuzzy_match_versions(versions, "latest", true);
+        assert_eq!(got, vec!["1.0.0".to_string(), "1.1.0".to_string()]);
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_includes_prereleases_when_opted_in() {
+        let versions = vec![
+            "1.0.0".to_string(),
+            "1.1.0-rc1".to_string(),
+            "1.1.0".to_string(),
+            "1.2.0-dev.5".to_string(),
+            "0.1.2-dev.86".to_string(),
+        ];
+        let got = fuzzy_match_versions(versions.clone(), "latest", false);
+        assert_eq!(got, versions);
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_partial_query_respects_prerelease_flag() {
+        let versions = vec![
+            "1.2.0".to_string(),
+            "1.2.1-rc1".to_string(),
+            "1.2.1".to_string(),
+        ];
+        assert_eq!(
+            fuzzy_match_versions(versions.clone(), "1.2", true),
+            vec!["1.2.0".to_string(), "1.2.1".to_string()]
+        );
+        assert_eq!(
+            fuzzy_match_versions(versions.clone(), "1.2", false),
+            versions
+        );
+    }
+
+    #[test]
+    fn test_filter_cached_prereleases_drops_flagged_entries_by_default() {
+        // The cache stores the pre-release superset; `prerelease = false` (the
+        // default) must filter out entries flagged by the upstream so the user
+        // sees the same list whether or not pre-releases were ever fetched.
+        let cached = vec![
+            VersionInfo {
+                version: "1.0.0".into(),
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0-rc1".into(),
+                prerelease: true,
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0".into(),
+                ..Default::default()
+            },
+        ];
+
+        // Default opt: pre-releases dropped.
+        let stable = filter_cached_prereleases(cached.clone(), false);
+        let stable_versions: Vec<_> = stable.iter().map(|v| v.version.as_str()).collect();
+        assert_eq!(stable_versions, vec!["1.0.0", "1.1.0"]);
+
+        // Opted in: same cache, full list returned without refetch.
+        let all = filter_cached_prereleases(cached, true);
+        let all_versions: Vec<_> = all.iter().map(|v| v.version.as_str()).collect();
+        assert_eq!(all_versions, vec!["1.0.0", "1.1.0-rc1", "1.1.0"]);
+    }
+
+    #[test]
+    fn test_filter_cached_prereleases_leaves_unflagged_backends_alone() {
+        // Backends that don't populate `VersionInfo.prerelease` (e.g. node,
+        // ruby, aqua's `github_tag` source) keep the legacy regex-based filter
+        // in `fuzzy_match_versions` for pre-release-shaped strings. The
+        // cache-layer filter must not strip those entries on its own.
+        let cached = vec![
+            VersionInfo {
+                version: "1.0.0".into(),
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0-rc1".into(),
+                ..Default::default()
+            },
+        ];
+        let filtered = filter_cached_prereleases(cached.clone(), false);
+        let versions: Vec<_> = filtered.iter().map(|v| v.version.as_str()).collect();
+        assert_eq!(versions, vec!["1.0.0", "1.1.0-rc1"]);
+    }
+
+    #[test]
+    fn test_include_prereleases_accepts_bool_and_string_values() {
+        use crate::toolset::ToolVersionOptions;
+
+        let mut opts = ToolVersionOptions::default();
+        assert!(!include_prereleases(&opts));
+
+        // Inline backend args normalize scalars to strings — cover that shape.
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("true".into()));
+        assert!(include_prereleases(&opts));
+
+        opts.opts.insert(
+            "prerelease".to_string(),
+            toml::Value::String("false".into()),
+        );
+        assert!(!include_prereleases(&opts));
+
+        // Defense-in-depth: also accept a native TOML boolean, in case a future
+        // config path stores the value without string normalization.
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(true));
+        assert!(include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(false));
+        assert!(!include_prereleases(&opts));
+    }
+
+    #[test]
+    fn test_include_prereleases_global_setting_overrides_per_tool_default() {
+        use crate::config::settings::SettingsPartial;
+        use crate::toolset::ToolVersionOptions;
+        use confique::Layer;
+
+        let opts = ToolVersionOptions::default();
+        // Sanity: with no per-tool opt and no setting, prereleases stay filtered.
+        assert!(!include_prereleases(&opts));
+
+        // Flipping the global setting takes effect without any per-tool config —
+        // this is the path `MISE_PRERELEASES=1` and `mise ls-remote --prerelease`
+        // both ride on.
+        let mut partial = SettingsPartial::empty();
+        partial.prereleases = Some(true);
+        Settings::reset(Some(partial));
+        let res = include_prereleases(&opts);
+        Settings::reset(None);
+        assert!(res);
     }
 }
 
@@ -486,12 +672,15 @@ pub trait Backend: Debug + Send + Sync {
     /// method first tries the versions host (mise-versions.jdx.dev) which provides
     /// version info with created_at timestamps, and falls back to the backend's
     /// `_list_remote_versions_with_info` implementation on failure.
+    ///
+    /// In offline mode, this reads the existing remote-versions cache without
+    /// fetching or writing. If no cache exists, it returns an empty list.
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
     ) -> eyre::Result<Vec<VersionInfo>> {
         let remote_versions = self.get_remote_version_cache();
-        let remote_versions = remote_versions.lock().await;
+        let mut remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
         let id = self.id();
 
@@ -515,8 +704,8 @@ pub trait Backend: Debug + Send + Sync {
             BackendType::Github
             | BackendType::Gitlab
             | BackendType::Forgejo
-            | BackendType::Aqua
             | BackendType::Ubi
+            | BackendType::Aqua
             | BackendType::Core
             | BackendType::Asdf
             | BackendType::Vfox
@@ -571,11 +760,31 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
 
+        // Read-time filter: cache stores the pre-release superset for backends
+        // that honor `prerelease`. When the current opts don't opt in, drop
+        // entries with `prerelease = true` before returning so flipping the
+        // tool option takes effect without invalidating the cache.
+        let opts = config
+            .get_tool_opts(&ba)
+            .await?
+            .unwrap_or_else(|| ba.opts());
+        let want_prereleases = include_prereleases(&opts);
+
         if Settings::get().offline() {
             trace!(
                 "Skipping remote version listing for {} due to offline mode",
                 ba.to_string()
             );
+            match remote_versions.get_cached() {
+                Ok(versions) => return Ok(filter_cached_prereleases(versions, want_prereleases)),
+                Err(err) => {
+                    debug!(
+                        "No cached remote versions available for {} while offline: {:#}",
+                        ba.to_string(),
+                        err
+                    );
+                }
+            }
             return Ok(vec![]);
         }
 
@@ -620,8 +829,12 @@ pub trait Backend: Debug + Send + Sync {
                 }
                 Ok(versions)
             })
-            .await?;
-        Ok(versions.clone())
+            .await?
+            .clone();
+        if versions.is_empty() {
+            remote_versions.clear()?;
+        }
+        Ok(filter_cached_prereleases(versions, want_prereleases))
     }
 
     /// Backend implementation for fetching remote versions with metadata.
@@ -632,10 +845,28 @@ pub trait Backend: Debug + Send + Sync {
     /// Backend-specific fast path for the absolute latest stable version.
     ///
     /// Do not call this from CLI/toolset code. Use `latest_version` instead so
-    /// `install_before` / `--before` cutoffs are resolved before this fast path
+    /// `minimum_release_age` / `--before` cutoffs are resolved before this fast path
     /// is used.
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        self.latest_version_for_query(config, "latest", None).await
+    ///
+    /// Return `Ok(None)` when the backend does not have a fast path result.
+    /// `latest_version` centrally falls back to the shared version-list path,
+    /// which can use the remote versions cache in offline mode.
+    async fn latest_stable_version(&self, _config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// Backend opt-in for installing an unresolved `latest` request.
+    ///
+    /// Most backends must resolve `latest` to a concrete version before install.
+    /// Override this only when the backend can pass an unresolved selector through
+    /// to its installer, and only for requests where the selector is meaningful.
+    ///
+    /// `ToolVersion::resolve_version` uses this as a last resort after normal
+    /// latest resolution fails, and only when the backend's unfiltered remote
+    /// version list is empty. If remote versions exist but are all filtered out by
+    /// `minimum_release_age` / `--before`, this hook is not used.
+    fn unresolved_latest_version(&self) -> Option<String> {
+        None
     }
     fn list_installed_versions(&self) -> Vec<String> {
         install_state::list_versions(&self.ba().short)
@@ -677,14 +908,21 @@ pub trait Backend: Debug + Send + Sync {
                 if let Some(install_path) = tv.request.install_path(config)
                     && check_path(&install_path, true)
                 {
-                    // For Prefix requests, install_path finds any installed dir
-                    // matching the prefix (e.g., "1.0.0" for prefix "1"), but if
-                    // the ToolVersion resolved to a different version (e.g., "1.1.0"),
-                    // we must not treat it as installed.
-                    if let ToolRequest::Prefix { .. } = &tv.request
-                        && install_path
-                            .file_name()
-                            .is_some_and(|f| f.to_string_lossy() != tv.version)
+                    // The request's install_path is derived from the REQUEST version
+                    // (e.g., "latest" or prefix "1"), which may differ from the resolved
+                    // concrete version. If they differ, the request path can refer to a
+                    // stale install dir — for channel pins like `@latest` the dir is named
+                    // after the channel (`installs/<id>/latest/`) from a prior install that
+                    // never got a symlink (e.g., first install ran offline or remote resolution
+                    // transiently returned None, leaving tv.version="latest"). We must check
+                    // the RESOLVED path instead so that `mise upgrade` re-runs the backend's
+                    // install hook and writes the new version to `installs/<id>/<new-version>/`.
+                    if matches!(
+                        &tv.request,
+                        ToolRequest::Version { .. } | ToolRequest::Prefix { .. }
+                    ) && install_path
+                        .file_name()
+                        .is_some_and(|f| f.to_string_lossy() != tv.version)
                     {
                         return check_path(&tv.install_path(), check_symlink);
                     }
@@ -755,7 +993,10 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
-        self.fuzzy_match_filter(versions, query)
+        // No async config lookup available here; fall back to inline/registry
+        // opts, which is the best we have for a sync path.
+        let filter = !include_prereleases(&self.ba().opts());
+        self.fuzzy_match_filter(versions, query, filter)
     }
     async fn list_versions_matching(
         &self,
@@ -763,7 +1004,12 @@ pub trait Backend: Debug + Send + Sync {
         query: &str,
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query))
+        let opts = config
+            .get_tool_opts(self.ba())
+            .await?
+            .unwrap_or_else(|| self.ba().opts());
+        let filter = !include_prereleases(&opts);
+        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     /// List versions matching a query, optionally filtered by release date.
@@ -790,7 +1036,12 @@ pub trait Backend: Debug + Send + Sync {
             }
             None => self.list_remote_versions(config).await?,
         };
-        Ok(self.fuzzy_match_filter(versions, query))
+        let opts = config
+            .get_tool_opts(self.ba())
+            .await?
+            .unwrap_or_else(|| self.ba().opts());
+        let filter = !include_prereleases(&opts);
+        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     async fn latest_version_for_query(
@@ -823,7 +1074,9 @@ pub trait Backend: Debug + Send + Sync {
     /// `latest_stable_version` may use backend-specific fast paths (dist tags,
     /// latest release endpoints, plugin scripts). Those fast paths return the
     /// absolute latest stable version, so only use them when no install-before
-    /// cutoff is active.
+    /// cutoff is active. If the fast path returns `None`, fall back to the
+    /// shared version-list path here instead of duplicating that fallback in
+    /// each backend.
     async fn latest_version(
         &self,
         config: &Arc<Config>,
@@ -837,7 +1090,10 @@ pub trait Backend: Debug + Send + Sync {
                     self.latest_version_for_query(config, "latest", Some(before))
                         .await
                 }
-                None => self.latest_stable_version(config).await,
+                None => match self.latest_stable_version(config).await? {
+                    Some(version) => Ok(Some(version)),
+                    None => self.latest_version_for_query(config, "latest", None).await,
+                },
             },
             Some(query) => {
                 self.latest_version_for_query(config, query, before_date)
@@ -853,19 +1109,25 @@ pub trait Backend: Debug + Send + Sync {
             }
             None => {
                 let installed_symlink = self.ba().installs_path.join("latest");
-                if installed_symlink.exists() {
-                    let Some(target) = file::resolve_symlink(&installed_symlink)? else {
-                        return Ok(Some("latest".to_string()));
-                    };
+                if installed_symlink.exists()
+                    && let Some(target) = file::resolve_symlink(&installed_symlink)?
+                {
                     let version = target
                         .file_name()
                         .ok_or_else(|| eyre!("Invalid symlink target"))?
                         .to_string_lossy()
                         .to_string();
-                    Ok(Some(version))
-                } else {
-                    Ok(None)
+                    return Ok(Some(version));
                 }
+                Ok(file::dir_subdirs(&self.ba().installs_path)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|v| !v.starts_with('.'))
+                    .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
+                    .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
+                    .filter(|v| v != "latest")
+                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+                    .last())
             }
         }
     }
@@ -1446,32 +1708,18 @@ pub trait Backend: Debug + Send + Sync {
         // dependency tool (e.g., go) is configured but not installed. Without this,
         // the shim for the dependency would call `mise exec` which would call the
         // shim again infinitely.
+        //
+        // `paths_eq` handles case-insensitive matching on macOS/Windows: e.g. if
+        // `$HOME` is mixed-case in PATH (`/Users/Foo`) but lowercase in the
+        // resolved shims path, byte-equal comparison would miss it and the shim
+        // would survive in the child env.
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
             let paths: Vec<_> = env::split_paths(path_val).collect();
             let original_len = paths.len();
-            #[cfg(not(windows))]
             let filtered: Vec<_> = paths
                 .into_iter()
-                .filter(|p| p.as_path() != *dirs::SHIMS)
+                .filter(|p| !file::paths_eq(&file::replace_path(p), &dirs::SHIMS))
                 .collect();
-            #[cfg(windows)]
-            let filtered: Vec<_> = {
-                // Pre-compute once; case-insensitive + separator-normalised to handle
-                // path variations such as ~/.local/share/mise\shims vs
-                // C:\Users\user\.local\share\mise\shims
-                let shims_normalized = dirs::SHIMS
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .replace('/', "\\");
-                paths
-                    .into_iter()
-                    .filter(|p| {
-                        let expanded = file::replace_path(p);
-                        expanded.to_string_lossy().to_lowercase().replace('/', "\\")
-                            != shims_normalized
-                    })
-                    .collect()
-            };
             if filtered.len() != original_len {
                 let joined = env::join_paths(&filtered)?;
                 env.insert(
@@ -1484,58 +1732,17 @@ pub trait Backend: Debug + Send + Sync {
         Ok(env)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
-        let escaped_query = regex::escape(query);
-        let query_pattern = if query == "latest" {
-            "v?[0-9].*"
-        } else {
-            &escaped_query
-        };
-        // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
-        // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
-        // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
-        // the prefix (e.g. "temurin-25.0.1").
-        let query_regex = if query != "latest" && query.ends_with('-') {
-            Regex::new(&format!("^{query_pattern}.*$")).unwrap()
-        } else {
-            Regex::new(&format!("^{query_pattern}([+\\-.].+)?$")).unwrap()
-        };
-
-        // Also create a regex without the 'v' prefix if query starts with 'v'
-        // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
-        let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
-            let without_v = regex::escape(&query[1..]);
-            let re = if query.ends_with('-') {
-                Regex::new(&format!("^{without_v}.*$")).unwrap()
-            } else {
-                Regex::new(&format!("^{without_v}([+\\-.].+)?$")).unwrap()
-            };
-            Some(re)
-        } else {
-            None
-        };
-
-        versions
-            .into_iter()
-            .filter(|v| {
-                if query == v {
-                    return true;
-                }
-                if VERSION_REGEX.is_match(v) {
-                    return false;
-                }
-                if query_regex.is_match(v) {
-                    return true;
-                }
-                // Try matching without the 'v' prefix
-                if let Some(ref re) = query_without_v_regex
-                    && re.is_match(v)
-                {
-                    return true;
-                }
-                false
-            })
-            .collect()
+    /// Default fuzzy-match. `filter_prereleases = true` applies the historical
+    /// behavior of dropping versions that look like pre-releases
+    /// (`1.0.0-rc1`, `1.0.0-dev.5`, ...). Callers that have opted into
+    /// pre-releases pass `false` to keep those tags in the match set.
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
+        fuzzy_match_versions(versions, query, filter_prereleases)
     }
 
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
@@ -1753,31 +1960,33 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
     if before_date.is_some() {
         return Ok(before_date);
     }
-    if let Some(before) = backend.ba().opts().get("install_before") {
-        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
+
+    let backend_opts = backend.ba().opts();
+    if let Some(before) = backend_opts.minimum_release_age() {
+        return resolve_before_date(None, Some(before));
     }
-    if let Some(before) = config
+
+    let config_install_before = config
         .get_tool_opts(backend.ba())
         .await?
-        .and_then(|opts| opts.get("install_before").map(str::to_string))
-    {
-        return Ok(Some(crate::duration::parse_into_timestamp(&before)?));
-    }
-    if let Some(before) = &Settings::get().install_before {
-        return Ok(Some(crate::duration::parse_into_timestamp(before)?));
-    }
-    Ok(None)
+        .and_then(|opts| opts.minimum_release_age().map(str::to_string));
+    resolve_before_date(None, config_install_before.as_deref())
 }
 
 #[cfg(test)]
 mod latest_version_tests {
     use super::*;
+    use crate::cli::args::BackendResolution;
+    use crate::config::settings::SettingsPartial;
+    use confique::Layer;
     use pretty_assertions::assert_eq;
+    use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Debug)]
     struct LatestBackend {
         ba: Arc<BackendArg>,
+        stable_result: Option<String>,
         stable_calls: AtomicUsize,
         list_calls: AtomicUsize,
     }
@@ -1786,9 +1995,15 @@ mod latest_version_tests {
         fn new(name: &str) -> Self {
             Self {
                 ba: Arc::new(name.into()),
+                stable_result: Some("9.9.9".to_string()),
                 stable_calls: AtomicUsize::new(0),
                 list_calls: AtomicUsize::new(0),
             }
+        }
+
+        fn with_stable_result(mut self, stable_result: Option<&str>) -> Self {
+            self.stable_result = stable_result.map(str::to_string);
+            self
         }
 
         fn stable_calls(&self) -> usize {
@@ -1804,13 +2019,6 @@ mod latest_version_tests {
     impl Backend for LatestBackend {
         fn ba(&self) -> &Arc<BackendArg> {
             &self.ba
-        }
-
-        async fn list_remote_versions_with_info(
-            &self,
-            _config: &Arc<Config>,
-        ) -> eyre::Result<Vec<VersionInfo>> {
-            self._list_remote_versions(_config).await
         }
 
         async fn _list_remote_versions(
@@ -1837,7 +2045,7 @@ mod latest_version_tests {
             _config: &Arc<Config>,
         ) -> eyre::Result<Option<String>> {
             self.stable_calls.fetch_add(1, Ordering::SeqCst);
-            Ok(Some("9.9.9".to_string()))
+            Ok(self.stable_result.clone())
         }
 
         async fn install_version_(
@@ -1881,11 +2089,178 @@ mod latest_version_tests {
     async fn test_date_filtered_latest_bypasses_latest_stable_version() {
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-before-date");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
         let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
 
         assert_eq!(
             backend
                 .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_offline_remote_versions_use_cache_without_fetching() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-offline-cache");
+        let cache = backend.get_remote_version_cache();
+        {
+            let cache = cache.lock().await;
+            cache
+                .write(&vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "2.0.0".to_string(),
+                        ..Default::default()
+                    },
+                ])
+                .unwrap();
+        }
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let versions = backend.list_remote_versions(&config).await.unwrap();
+        Settings::reset(None);
+
+        assert_eq!(versions, vec!["1.0.0".to_string(), "2.0.0".to_string()]);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_offline_latest_uses_fast_path_when_available() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-offline-latest-cache");
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let latest = backend.latest_version(&config, None, None).await.unwrap();
+        Settings::reset(None);
+
+        assert_eq!(latest.as_deref(), Some("9.9.9"));
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_offline_latest_falls_back_to_cached_versions_when_fast_path_has_no_result() {
+        let config = Config::get().await.unwrap();
+        let backend =
+            LatestBackend::new("test-offline-latest-cache-fallback").with_stable_result(None);
+        let cache = backend.get_remote_version_cache();
+        {
+            let cache = cache.lock().await;
+            cache
+                .write(&vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "2.0.0".to_string(),
+                        ..Default::default()
+                    },
+                ])
+                .unwrap();
+        }
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let latest = backend.latest_version(&config, None, None).await.unwrap();
+        Settings::reset(None);
+
+        assert_eq!(latest.as_deref(), Some("2.0.0"));
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_latest_falls_back_to_cached_versions_when_fast_path_has_no_result() {
+        Settings::reset(None);
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-latest-fast-path-none").with_stable_result(None);
+        let cache = backend.get_remote_version_cache();
+        {
+            let cache = cache.lock().await;
+            cache
+                .write(&vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "2.0.0".to_string(),
+                        ..Default::default()
+                    },
+                ])
+                .unwrap();
+        }
+
+        let latest = backend.latest_version(&config, None, None).await.unwrap();
+
+        assert_eq!(latest.as_deref(), Some("2.0.0"));
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[test]
+    fn test_latest_installed_version_ignores_real_latest_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::new_raw(
+            "latest-real-dir".into(),
+            None,
+            "latest-real-dir".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        ba.installs_path = temp_dir.path().join("installs").join("latest-real-dir");
+        fs::create_dir_all(ba.installs_path.join("2.0.0")).unwrap();
+        fs::create_dir_all(ba.installs_path.join("latest")).unwrap();
+
+        let backend = LatestBackend {
+            ba: Arc::new(ba),
+            stable_result: Some("9.9.9".to_string()),
+            stable_calls: AtomicUsize::new(0),
+            list_calls: AtomicUsize::new(0),
+        };
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap(),
+            Some("2.0.0".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_inline_install_before_wins_over_config_entry() {
+        let config = Config::get().await.unwrap();
+        // The test fixture has a `tiny` config entry without install_before.
+        // Inline backend opts must still win when a config entry exists.
+        let backend = LatestBackend::new("tiny[install_before=2024-06-01]");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), None)
                 .await
                 .unwrap()
                 .as_deref(),
@@ -1950,6 +2325,104 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
     }
+}
+
+/// Apply the read-time `prerelease` filter to the cached remote-versions
+/// superset. Backends that honor `prerelease` (github, aqua) cache the full
+/// list and stamp `VersionInfo.prerelease` per entry; this helper drops
+/// pre-release entries when the current tool opts don't opt in. Backends that
+/// don't populate the flag are unaffected because their entries default to
+/// `prerelease = false`.
+pub(crate) fn filter_cached_prereleases(
+    versions: Vec<VersionInfo>,
+    want_prereleases: bool,
+) -> Vec<VersionInfo> {
+    if want_prereleases {
+        versions
+    } else {
+        versions.into_iter().filter(|v| !v.prerelease).collect()
+    }
+}
+
+/// Whether pre-release versions should be included for the current tool.
+///
+/// Returns true if either the global `prereleases` setting (`MISE_PRERELEASES=1`,
+/// or `--prerelease` on `ls-remote`) is on, or the per-tool `prerelease = true`
+/// option is set. Accepts both TOML booleans (`prerelease = true`) and the
+/// string form (`prerelease = "true"`), since inline backend args normalize
+/// scalars to strings before they reach here. Used by `github:` and `aqua:`
+/// backends to opt in to pre-release versions in `ls-remote`, `latest`
+/// resolution, and fuzzy matching.
+pub(crate) fn include_prereleases(opts: &crate::toolset::ToolVersionOptions) -> bool {
+    if Settings::get().prereleases {
+        return true;
+    }
+    opts.opts.get("prerelease").is_some_and(|v| match v {
+        toml::Value::Boolean(b) => *b,
+        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
+        _ => false,
+    })
+}
+
+/// Fuzzy-match `versions` against `query`. When `filter_prereleases` is true,
+/// drop strings matching [`VERSION_REGEX`] (e.g. `1.0.0-rc1`, `1.0.0-dev`) —
+/// the historical behavior. Backends opting into pre-releases call this with
+/// `false` to keep those tags in the match set.
+pub(crate) fn fuzzy_match_versions(
+    versions: Vec<String>,
+    query: &str,
+    filter_prereleases: bool,
+) -> Vec<String> {
+    let escaped_query = regex::escape(query);
+    let query_pattern = if query == "latest" {
+        "v?[0-9].*"
+    } else {
+        &escaped_query
+    };
+    // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
+    // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
+    // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
+    // the prefix (e.g. "temurin-25.0.1").
+    let query_regex = if query != "latest" && query.ends_with('-') {
+        Regex::new(&format!("^{query_pattern}.*$")).unwrap()
+    } else {
+        Regex::new(&format!("^{query_pattern}([+\\-.].+)?$")).unwrap()
+    };
+
+    // Also create a regex without the 'v' prefix if query starts with 'v'
+    // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
+    let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
+        let without_v = regex::escape(&query[1..]);
+        let re = if query.ends_with('-') {
+            Regex::new(&format!("^{without_v}.*$")).unwrap()
+        } else {
+            Regex::new(&format!("^{without_v}([+\\-.].+)?$")).unwrap()
+        };
+        Some(re)
+    } else {
+        None
+    };
+
+    versions
+        .into_iter()
+        .filter(|v| {
+            if query == v {
+                return true;
+            }
+            if filter_prereleases && VERSION_REGEX.is_match(v) {
+                return false;
+            }
+            if query_regex.is_match(v) {
+                return true;
+            }
+            if let Some(ref re) = query_without_v_regex
+                && re.is_match(v)
+            {
+                return true;
+            }
+            false
+        })
+        .collect()
 }
 
 pub fn unalias_backend(backend: &str) -> &str {

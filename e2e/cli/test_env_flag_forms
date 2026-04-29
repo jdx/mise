@@ -43,6 +43,13 @@ assert_contains "mise --env dev env" "TTT_DEV=dev-value"
 assert_contains "mise -E dev,staging env" "TTT_DEV=dev-value"
 assert_contains "mise -E dev,staging env" "TTT_STG=staging-value"
 
+# === Concatenated short-flag forms ===
+
+assert_contains "mise -Edev env" "TTT_DEV=dev-value"
+assert_contains "mise -Edev,staging env" "TTT_DEV=dev-value"
+assert_contains "mise -Edev,staging env" "TTT_STG=staging-value"
+assert_contains "mise -Pdev env" "TTT_DEV=dev-value"
+
 # === With `mise run`: -E BEFORE task name works ===
 
 assert_contains "mise -E dev run show-env" "TTT_DEV=dev-value"

@@ -265,11 +265,11 @@ impl Backend for AsdfBackend {
             .collect())
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
+    async fn latest_stable_version(&self, _config: &Arc<Config>) -> Result<Option<String>> {
         timeout::run_with_timeout_async(
             || async {
                 if !self.plugin.has_latest_stable_script() {
-                    return self.latest_version_for_query(config, "latest", None).await;
+                    return Ok(None);
                 }
                 self.latest_stable_cache
                     .get_or_try_init(|| self.plugin.fetch_latest_stable())

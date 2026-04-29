@@ -8,12 +8,12 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.4.18"
+version = "2026.4.26"
 edition = "2024"
-description = "The front-end to your dev env"
+description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
-homepage = "https://mise.jdx.dev"
-documentation = "https://mise.jdx.dev"
+homepage = "https://mise.en.dev"
+documentation = "https://mise.en.dev"
 repository = "https://github.com/jdx/mise"
 readme = "README.md"
 license = "MIT"
@@ -34,7 +34,7 @@ include = [
   "/src/plugins/core/assets/**",
 ]
 build = "build.rs"
-rust-version = "1.88"
+rust-version = "1.91"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -64,7 +64,7 @@ async-backtrace = "0.2"
 async-trait = "0.1"
 aws-config = { version = "1.5", default-features = false, features = [
   "behavior-version-latest",
-  "rustls",
+  "default-https-client",
   "rt-tokio",
 ] }
 aws-lc-rs = { version = "1", optional = true, features = [
@@ -72,7 +72,7 @@ aws-lc-rs = { version = "1", optional = true, features = [
 ] } # TODO: this is only for armv7 currently
 aws-sdk-s3 = { version = "1", default-features = false, features = [
   "behavior-version-latest",
-  "rustls",
+  "default-https-client",
 ] }
 base64 = "0.22"
 bzip2 = "0.6"
@@ -183,7 +183,6 @@ tera = "1"
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-tokio-retry = "0.3"
 toml = { version = "1.0", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.9", default-features = false }

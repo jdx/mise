@@ -78,7 +78,7 @@ If you want to verify the install script hasn't been tampered with:
 
 ```sh
 gpg --keyserver hkps://keys.openpgp.org --recv-keys 24853EC9F655CE80B48E6C3A8B81C9D17413A06D
-curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt > install.sh
+curl https://mise.en.dev/install.sh.sig | gpg --decrypt > install.sh
 # ensure the above is signed with the mise release key
 sh ./install.sh
 ```
@@ -130,8 +130,8 @@ For older Ubuntu/Debian versions:
 ```sh
 sudo apt update -y && sudo apt install -y curl
 sudo install -dm 755 /etc/apt/keyrings
-curl -fSs https://mise.jdx.dev/gpg-key.pub | sudo tee /etc/apt/keyrings/mise-archive-keyring.asc 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
+curl -fSs https://mise.en.dev/gpg-key.pub | sudo tee /etc/apt/keyrings/mise-archive-keyring.asc 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.en.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
 sudo apt update -y
 sudo apt install -y mise
 ```
@@ -273,14 +273,14 @@ For precompiled binaries, enable [nix-ld](https://github.com/Mic92/nix-ld) and d
 
 ```sh
 yum install -y yum-utils
-yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+yum-config-manager --add-repo https://mise.en.dev/rpm/mise.repo
 yum install -y mise
 ```
 
 ### zypper
 
 ```sh
-sudo wget https://mise.jdx.dev/rpm/mise.repo -O /etc/zypp/repos.d/mise.repo
+sudo wget https://mise.en.dev/rpm/mise.repo -O /etc/zypp/repos.d/mise.repo
 sudo zypper refresh
 sudo zypper install mise
 ```

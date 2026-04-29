@@ -1,6 +1,7 @@
 import type { Theme } from "vitepress";
 import DefaultTheme from "vitepress/theme";
 import { enhanceAppWithTabs } from "vitepress-plugin-tabs/client";
+import { initBanner } from "./banner";
 import "virtual:group-icons.css";
 import "./custom.css";
 import Layout from "./Layout.vue";
@@ -12,6 +13,7 @@ export default {
   Layout,
   enhanceApp({ app }) {
     enhanceAppWithTabs(app);
+    initBanner();
   },
   setup() {
     onMounted(() => {
@@ -23,8 +25,12 @@ export default {
         if (githubLink && !githubLink.querySelector(".star-count")) {
           const starBadge = document.createElement("span");
           starBadge.className = "star-count";
-          starBadge.innerHTML = starsData.stars;
           starBadge.title = "GitHub Stars";
+          const glyph = document.createElement("span");
+          glyph.className = "star-glyph";
+          glyph.textContent = "★";
+          glyph.setAttribute("aria-hidden", "true");
+          starBadge.append(glyph, starsData.stars);
           githubLink.appendChild(starBadge);
         }
       };

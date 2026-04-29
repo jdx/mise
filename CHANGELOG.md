@@ -1,5 +1,304 @@
 # Changelog
 
+## [2026.4.26](https://github.com/jdx/mise/compare/v2026.4.25..v2026.4.26) - 2026-04-28
+
+### 🚀 Features
+
+- **(deps)** add aube provider by @jdx in [#9452](https://github.com/jdx/mise/pull/9452)
+- **(ls-remote)** add strict metadata mode by @jdx in [#9448](https://github.com/jdx/mise/pull/9448)
+
+### 🐛 Bug Fixes
+
+- **(env)** parse concatenated short form `-Eval` correctly by @bts in [#9456](https://github.com/jdx/mise/pull/9456)
+- **(http)** improve HTML detection by using Content-Type header by @phateffect in [#9407](https://github.com/jdx/mise/pull/9407)
+- **(task)** install monorepo subdir tools before running deps by @jdx in [#9454](https://github.com/jdx/mise/pull/9454)
+
+### 📦️ Dependency Updates
+
+- update astral-tokio-tar advisory by @jdx in [#9449](https://github.com/jdx/mise/pull/9449)
+- respect -q flag for provider command stream by @JamBalaya56562 in [#9457](https://github.com/jdx/mise/pull/9457)
+
+### New Contributors
+
+- @JamBalaya56562 made their first contribution in [#9457](https://github.com/jdx/mise/pull/9457)
+- @bts made their first contribution in [#9456](https://github.com/jdx/mise/pull/9456)
+- @phateffect made their first contribution in [#9407](https://github.com/jdx/mise/pull/9407)
+
+## [2026.4.25](https://github.com/jdx/mise/compare/v2026.4.24..v2026.4.25) - 2026-04-28
+
+### 🚀 Features
+
+- **(task)** add --name-only flag to mise tasks ls by @jdx in [#9435](https://github.com/jdx/mise/pull/9435)
+
+### 🐛 Bug Fixes
+
+- **(Dockerfile)** install copr-cli via dnf for better dependency management by @bestagi in [#9421](https://github.com/jdx/mise/pull/9421)
+- **(aqua)** drop empty-releases fallback to tags by @jdx in [#9443](https://github.com/jdx/mise/pull/9443)
+- **(docs)** fix theme flicker on docs by @vhespanha in [#9427](https://github.com/jdx/mise/pull/9427)
+- **(lockfile)** update global lockfile on upgrade by @jdx in [#9442](https://github.com/jdx/mise/pull/9442)
+- **(ls-remote)** omit rolling/prerelease from JSON when false by @jdx in [#9439](https://github.com/jdx/mise/pull/9439)
+- **(task)** support usage refs in dependency template tags by @jdx in [#9424](https://github.com/jdx/mise/pull/9424)
+- **(task)** populate usage.cmd for subcommand-only tasks; share make_usage_ctx by @jdx in [#9431](https://github.com/jdx/mise/pull/9431)
+- **(task)** resolve sandbox allow_read/allow_write against task dir by @jdx in [#9428](https://github.com/jdx/mise/pull/9428)
+
+### 📚 Documentation
+
+- **(site)** add self-hosted page tracker via Cloudflare Worker, drop GoatCounter by @jdx in [#9430](https://github.com/jdx/mise/pull/9430)
+
+### New Contributors
+
+- @vhespanha made their first contribution in [#9427](https://github.com/jdx/mise/pull/9427)
+
+## [2026.4.24](https://github.com/jdx/mise/compare/v2026.4.23..v2026.4.24) - 2026-04-27
+
+### 🚀 Features
+
+- **(ls-remote)** add `prereleases` setting and `--prerelease` flag by @jdx in [#9415](https://github.com/jdx/mise/pull/9415)
+
+### 🐛 Bug Fixes
+
+- **(http)** retry transient HTTP failures with backoff and warn on rescue by @jdx in [#9414](https://github.com/jdx/mise/pull/9414)
+- **(release)** purge mise.en.dev CDN zone after each S3 publish by @jdx in [#9416](https://github.com/jdx/mise/pull/9416)
+
+### 📚 Documentation
+
+- prefix GitHub star count with ★ glyph by @jdx in [#9417](https://github.com/jdx/mise/pull/9417)
+- update intro messaging by @jdx in [#9418](https://github.com/jdx/mise/pull/9418)
+
+## [2026.4.23](https://github.com/jdx/mise/compare/v2026.4.22..v2026.4.23) - 2026-04-26
+
+### 🚀 Features
+
+- **(backend)** add global libc preference by @jdx in [#9404](https://github.com/jdx/mise/pull/9404)
+- opt-in to pre-release versions for github and aqua backends by @jakedgy in [#9329](https://github.com/jdx/mise/pull/9329)
+
+### 🐛 Bug Fixes
+
+- **(backend)** allow unresolved latest opt-in by @jdx in [#9401](https://github.com/jdx/mise/pull/9401)
+- **(install)** stop rewriting healthy runtime symlinks by @jdx in [#9410](https://github.com/jdx/mise/pull/9410)
+- **(node)** route musl tarball URLs to unofficial-builds by @jdx in [#9409](https://github.com/jdx/mise/pull/9409)
+- **(prune)** skip remote version resolution for tracked configs by @jdx in [#9406](https://github.com/jdx/mise/pull/9406)
+- **(schema)** allow array values in tool additionalProperties by @JP-Ellis in [#9400](https://github.com/jdx/mise/pull/9400)
+
+### 📦️ Dependency Updates
+
+- bump communique to 1.1.2 by @jdx in [#9402](https://github.com/jdx/mise/pull/9402)
+
+### 📦 Registry
+
+- use aqua for rumdl by @scop in [#9397](https://github.com/jdx/mise/pull/9397)
+
+### Chore
+
+- **(ci)** improve pr-closer workflow by @jdx in [#9403](https://github.com/jdx/mise/pull/9403)
+- **(docs)** switch canonical domain to mise.en.dev by @jdx in [#9411](https://github.com/jdx/mise/pull/9411)
+- **(release)** stop appending sponsor blurb when communique succeeds by @jdx in [#9395](https://github.com/jdx/mise/pull/9395)
+
+### New Contributors
+
+- @JP-Ellis made their first contribution in [#9400](https://github.com/jdx/mise/pull/9400)
+
+## [2026.4.22](https://github.com/jdx/mise/compare/v2026.4.21..v2026.4.22) - 2026-04-25
+
+### 🚀 Features
+
+- **(copr)** add Fedora 44 & Rawhide support by @bestagi in [#9391](https://github.com/jdx/mise/pull/9391)
+
+### 🐛 Bug Fixes
+
+- **(backend)** repair latest runtime labels and go resolution by @jdx in [#9383](https://github.com/jdx/mise/pull/9383)
+- **(task)** label deps output by provider by @jdx in [#9385](https://github.com/jdx/mise/pull/9385)
+
+### 🚜 Refactor
+
+- **(config)** rename install_before setting by @jdx in [#9384](https://github.com/jdx/mise/pull/9384)
+
+### 📚 Documentation
+
+- **(site)** show release version in nav by @jdx in [#9388](https://github.com/jdx/mise/pull/9388)
+- **(site)** address release nav feedback by @jdx in [#9389](https://github.com/jdx/mise/pull/9389)
+
+### 🧪 Testing
+
+- **(config)** pin tombi schema test version by @jdx in [#9386](https://github.com/jdx/mise/pull/9386)
+
+### 📦 Aqua Registry
+
+Updated [aqua-registry](https://github.com/aquaproj/aqua-registry): [v4.498.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.498.0) -> [v4.499.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.499.0).
+
+Included aqua-registry releases:
+
+- [v4.499.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.499.0)
+
+## [2026.4.21](https://github.com/jdx/mise/compare/v2026.4.20..v2026.4.21) - 2026-04-25
+
+### 🚀 Features
+
+- **(registry)** add --security flag to include security info in JSON output by @jdx in [#9364](https://github.com/jdx/mise/pull/9364)
+
+### 🐛 Bug Fixes
+
+- **(config)** limit resolved backend opts to aliases by @risu729 in [#9315](https://github.com/jdx/mise/pull/9315)
+- **(docs)** stack banner message and link on mobile by @jdx in [#9362](https://github.com/jdx/mise/pull/9362)
+- **(github)** prefer shortest asset name as tiebreaker in auto-detection by @jdx in [#9361](https://github.com/jdx/mise/pull/9361)
+- **(java)** newer zulu versions use a different directory structure by @roele in [#9365](https://github.com/jdx/mise/pull/9365)
+- **(prune)** respect tracked lockfiles by @jdx in [#9373](https://github.com/jdx/mise/pull/9373)
+- **(task)** skip tool install for missing naked tasks by @jdx in [#9374](https://github.com/jdx/mise/pull/9374)
+- **(trust)** add untrust command by @jdx in [#9370](https://github.com/jdx/mise/pull/9370)
+- fix - flux-operator-mcp aqua path by @monotek in [#9357](https://github.com/jdx/mise/pull/9357)
+
+### 📚 Documentation
+
+- update ruby compile msg by @fladson in [#9338](https://github.com/jdx/mise/pull/9338)
+
+### 📦️ Dependency Updates
+
+- update ubuntu docker tag to v26 by @renovate[bot] in [#9347](https://github.com/jdx/mise/pull/9347)
+- update ghcr.io/jdx/mise:deb docker digest to 1af5a69 by @renovate[bot] in [#9352](https://github.com/jdx/mise/pull/9352)
+- update taiki-e/install-action digest to 787505c by @renovate[bot] in [#9354](https://github.com/jdx/mise/pull/9354)
+- update ghcr.io/jdx/mise:rpm docker digest to 7015ff3 by @renovate[bot] in [#9353](https://github.com/jdx/mise/pull/9353)
+- update ghcr.io/jdx/mise:copr docker digest to da63a0f by @renovate[bot] in [#9351](https://github.com/jdx/mise/pull/9351)
+- update ghcr.io/jdx/mise:alpine docker digest to 461700f by @renovate[bot] in [#9350](https://github.com/jdx/mise/pull/9350)
+- bump communique 1.0.3 → 1.0.4 by @jdx in [#9378](https://github.com/jdx/mise/pull/9378)
+
+### 📦 Registry
+
+- remove openshift-install by @jdx in [#9372](https://github.com/jdx/mise/pull/9372)
+- remove go-sdk by @jdx in [#9371](https://github.com/jdx/mise/pull/9371)
+
+### Chore
+
+- **(npm-publish)** use aube publish instead of npm publish by @jdx in [#9328](https://github.com/jdx/mise/pull/9328)
+
+### New Contributors
+
+- @fladson made their first contribution in [#9338](https://github.com/jdx/mise/pull/9338)
+
+## [2026.4.20](https://github.com/jdx/mise/compare/v2026.4.19..v2026.4.20) - 2026-04-24
+
+### 🐛 Bug Fixes
+
+- **(config)** resolve relative path: tool versions against config root by @jdx in [#9320](https://github.com/jdx/mise/pull/9320)
+- **(lock)** resolve @latest and prune poisoned lockfile entries by @jdx in [#9321](https://github.com/jdx/mise/pull/9321)
+- fix - be able to work with regex in attestation check by @monotek in [#9327](https://github.com/jdx/mise/pull/9327)
+
+### 🚜 Refactor
+
+- **(aqua)** bake aqua registry from merged yaml by @risu729 in [#9043](https://github.com/jdx/mise/pull/9043)
+
+### 📚 Documentation
+
+- add cross-site announcement banner by @jdx in [#9326](https://github.com/jdx/mise/pull/9326)
+- keep banner height in sync via ResizeObserver by @jdx in [#9330](https://github.com/jdx/mise/pull/9330)
+- respect banner expires field by @jdx in [#9334](https://github.com/jdx/mise/pull/9334)
+
+### 📦️ Dependency Updates
+
+- bump communique to 1.0.2 by @jdx in [#9313](https://github.com/jdx/mise/pull/9313)
+- bump communique to 1.0.3 by @jdx in [#9332](https://github.com/jdx/mise/pull/9332)
+- update actions/setup-node digest to 48b55a0 by @renovate[bot] in [#9339](https://github.com/jdx/mise/pull/9339)
+- update ghcr.io/jdx/mise:alpine docker digest to a92efa5 by @renovate[bot] in [#9340](https://github.com/jdx/mise/pull/9340)
+- update ghcr.io/jdx/mise:rpm docker digest to 5c24f69 by @renovate[bot] in [#9343](https://github.com/jdx/mise/pull/9343)
+- update rust docker digest to e4f09e8 by @renovate[bot] in [#9345](https://github.com/jdx/mise/pull/9345)
+- update rui314/setup-mold digest to 9c9c13b by @renovate[bot] in [#9344](https://github.com/jdx/mise/pull/9344)
+- update ghcr.io/jdx/mise:deb docker digest to a3afe3e by @renovate[bot] in [#9342](https://github.com/jdx/mise/pull/9342)
+- update ghcr.io/jdx/mise:copr docker digest to 4098d5a by @renovate[bot] in [#9341](https://github.com/jdx/mise/pull/9341)
+- update taiki-e/install-action digest to 74e87cb by @renovate[bot] in [#9346](https://github.com/jdx/mise/pull/9346)
+
+### Chore
+
+- **(ci)** remove cargo-vendor install from ppa publish by @jdx in [#9312](https://github.com/jdx/mise/pull/9312)
+- **(release)** publish snap to stable channel by @jdx in [#9318](https://github.com/jdx/mise/pull/9318)
+- remove FUNDING.yml in favor of jdx/.github default by @jdx in [#9331](https://github.com/jdx/mise/pull/9331)
+
+### 📦 Aqua Registry
+
+Updated [aqua-registry](https://github.com/aquaproj/aqua-registry): [v4.492.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.492.0) -> [v4.498.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.498.0).
+
+Included aqua-registry releases:
+
+- [v4.493.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.493.0)
+- [v4.494.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.494.0)
+- [v4.494.1](https://github.com/aquaproj/aqua-registry/releases/tag/v4.494.1)
+- [v4.495.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.495.0)
+- [v4.496.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.496.0)
+- [v4.497.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.497.0)
+- [v4.498.0](https://github.com/aquaproj/aqua-registry/releases/tag/v4.498.0)
+
+## [2026.4.19](https://github.com/jdx/mise/compare/v2026.4.18..v2026.4.19) - 2026-04-22
+
+### 🚀 Features
+
+- **(backend)** support aqua vars templates by @risu729 in [#9110](https://github.com/jdx/mise/pull/9110)
+- **(oci)** build OCI images from mise.toml with per-tool layers by @jdx in [#9273](https://github.com/jdx/mise/pull/9273)
+- add gsudo (Sudo for Windows) to registry by @matracey in [#9281](https://github.com/jdx/mise/pull/9281)
+
+### 🐛 Bug Fixes
+
+- **(backend)** stop fuzzy requests installing literal dirs by @AsgardMuninn in [#9276](https://github.com/jdx/mise/pull/9276)
+- **(backend)** use full token chain for all sigstore attestation calls by @cameronbrill in [#9307](https://github.com/jdx/mise/pull/9307)
+- **(backend)** use remote version cache offline by @risu729 in [#9304](https://github.com/jdx/mise/pull/9304)
+- **(cli)** retrieve token from github helper for `self-update` command by @sushichan044 in [#9259](https://github.com/jdx/mise/pull/9259)
+- **(cli)** suppress error output after interactive cancel by @jdx in [#9294](https://github.com/jdx/mise/pull/9294)
+- **(conda)** avoid temp file collisions during parallel package downloads by @salim-b in [#9293](https://github.com/jdx/mise/pull/9293)
+- **(github)** scope auth headers to API URLs by @risu729 in [#9271](https://github.com/jdx/mise/pull/9271)
+- **(go)** treat empty GOPROXY as default by @jdx in [#9310](https://github.com/jdx/mise/pull/9310)
+- **(vfox)** use github token for lua http requests by @jdx in [#9257](https://github.com/jdx/mise/pull/9257)
+- **(vfox)** avoid auth on release asset downloads by @jdx in [#9299](https://github.com/jdx/mise/pull/9299)
+- **(vfox)** scope github auth to API URLs only by @jdx in [#9309](https://github.com/jdx/mise/pull/9309)
+
+### 🚜 Refactor
+
+- **(core)** centralize install_before resolution by @risu729 in [#9286](https://github.com/jdx/mise/pull/9286)
+- **(deps)** store deps state under $MISE_STATE_DIR by @jdx in [#9301](https://github.com/jdx/mise/pull/9301)
+
+### 📚 Documentation
+
+- add aube hero banner by @jdx in [#9265](https://github.com/jdx/mise/pull/9265)
+- add en.dev footer by @jdx in [#9267](https://github.com/jdx/mise/pull/9267)
+- implement landing page design by @jdx in [#9266](https://github.com/jdx/mise/pull/9266)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#9268](https://github.com/jdx/mise/pull/9268)
+- bump msrv for aws smithy updates by @jdx in [#9295](https://github.com/jdx/mise/pull/9295)
+- bump sigstore-verification to 0.2.7 by @jdx in [#9302](https://github.com/jdx/mise/pull/9302)
+
+### 📦 Registry
+
+- add llama.cpp ([github:ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)) by @igor-makarov in [#9282](https://github.com/jdx/mise/pull/9282)
+- add kiro-cli by @shalk in [#9274](https://github.com/jdx/mise/pull/9274)
+- add flux-operator & flux-operator-mcp by @monotek in [#8852](https://github.com/jdx/mise/pull/8852)
+
+### Chore
+
+- **(ci)** increase autofix timeout by @jdx in [#9296](https://github.com/jdx/mise/pull/9296)
+- **(ci)** stop release-plz from saving build cache by @jdx in [#9297](https://github.com/jdx/mise/pull/9297)
+- **(ci)** stop lint from saving build cache by @jdx in [#9298](https://github.com/jdx/mise/pull/9298)
+- **(ci)** restore lint as Linux build cache writer by @jdx in [#9305](https://github.com/jdx/mise/pull/9305)
+- **(release)** add en.dev sponsor blurb to release notes by @jdx in [#9272](https://github.com/jdx/mise/pull/9272)
+- bump communique to 1.0.1 by @jdx in [#9264](https://github.com/jdx/mise/pull/9264)
+
+### New Contributors
+
+- @AsgardMuninn made their first contribution in [#9276](https://github.com/jdx/mise/pull/9276)
+- @monotek made their first contribution in [#8852](https://github.com/jdx/mise/pull/8852)
+- @igor-makarov made their first contribution in [#9282](https://github.com/jdx/mise/pull/9282)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`controlplaneio-fluxcd/flux-operator/flux-operator-mcp`](https://github.com/controlplaneio-fluxcd/flux-operator/flux-operator-mcp)
+- [`endevco/aube`](https://github.com/endevco/aube)
+- [`ricoberger/grafana-kubernetes-plugin`](https://github.com/ricoberger/grafana-kubernetes-plugin)
+
+#### Updated Packages (3)
+
+- [`controlplaneio-fluxcd/flux-operator`](https://github.com/controlplaneio-fluxcd/flux-operator)
+- [`go-delve/delve`](https://github.com/go-delve/delve)
+- [`graelo/pumas`](https://github.com/graelo/pumas)
+
 ## [2026.4.18](https://github.com/jdx/mise/compare/v2026.4.17..v2026.4.18) - 2026-04-19
 
 ### 🚀 Features

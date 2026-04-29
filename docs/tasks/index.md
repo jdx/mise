@@ -1,7 +1,7 @@
 # Tasks
 
-> Like [make](https://www.gnu.org/software/make/manual/make.html) it manages _tasks_ used
-> to build and test projects.
+> Define and run project _tasks_ for building, testing, linting, deploying, and
+> everyday development workflows.
 
 You can define tasks in `mise.toml` files or as standalone shell scripts. These are useful for
 things like running linters, tests, builders, servers, and other tasks that are specific to a

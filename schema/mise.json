@@ -1,5 +1,5 @@
 {
-  "$id": "https://mise.jdx.dev/schema/mise.json",
+  "$id": "https://mise.en.dev/schema/mise.json",
   "$schema": "https://json-schema.org/draft/2019-09/schema#",
   "title": "mise",
   "type": "object",
@@ -971,8 +971,8 @@
           }
         },
         "http_retries": {
-          "default": 0,
-          "description": "Number of retries for HTTP requests in mise.",
+          "default": 3,
+          "description": "Number of retries for transient HTTP failures in mise.",
           "type": "number"
         },
         "http_timeout": {
@@ -1012,7 +1012,8 @@
         },
         "install_before": {
           "description": "Minimum release age / supply chain protection — only install versions released before this date",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "java": {
           "type": "object",
@@ -1045,6 +1046,11 @@
             "type": "string"
           }
         },
+        "libc": {
+          "description": "Libc implementation to use for precompiled Linux binaries.",
+          "type": "string",
+          "enum": ["glibc", "gnu", "musl"]
+        },
         "libgit2": {
           "default": true,
           "description": "Use libgit2 for git operations, set to false to shell out to git.",
@@ -1076,6 +1082,10 @@
           "description": "Show more/less output.",
           "type": "string",
           "enum": ["trace", "debug", "info", "warn", "error"]
+        },
+        "minimum_release_age": {
+          "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
+          "type": "string"
         },
         "netrc": {
           "default": true,
@@ -1189,6 +1199,22 @@
             }
           }
         },
+        "oci": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default_from": {
+              "default": "debian:bookworm-slim",
+              "description": "Default base image for `mise oci build` when [oci].from is not set.",
+              "type": "string"
+            },
+            "default_mount_point": {
+              "default": "/mise",
+              "description": "Path inside OCI images where mise tools are installed.",
+              "type": "string"
+            }
+          }
+        },
         "offline": {
           "description": "Disable all HTTP requests. Tools will only use locally cached data.",
           "type": "boolean"
@@ -1243,6 +1269,10 @@
         },
         "prefer_offline": {
           "description": "Prefer locally cached data over remote fetches when possible.",
+          "type": "boolean"
+        },
+        "prereleases": {
+          "description": "Include pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching for all tools.",
           "type": "boolean"
         },
         "profile": {
@@ -2271,6 +2301,9 @@
               },
               {
                 "type": "boolean"
+              },
+              {
+                "type": "array"
               },
               {
                 "type": "object",
@@ -3303,6 +3336,61 @@
         "$ref": "#/$defs/deps_provider"
       },
       "description": "configure deps providers"
+    },
+    "oci": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "configuration for `mise oci build`",
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Base image reference (overrides the oci.default_from setting)"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Default tag applied to the built image"
+        },
+        "workdir": {
+          "type": "string",
+          "description": "Working directory baked into the image config"
+        },
+        "entrypoint": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Entrypoint baked into the image config"
+        },
+        "cmd": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Cmd baked into the image config"
+        },
+        "user": {
+          "type": "string",
+          "description": "User baked into the image config"
+        },
+        "mount_point": {
+          "type": "string",
+          "description": "Override where mise installs go in the image (default /mise)"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Extra env vars baked into the image config"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels baked into the image config"
+        }
+      }
     },
     "settings": {
       "$ref": "#/$defs/settings",

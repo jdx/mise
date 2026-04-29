@@ -3,9 +3,9 @@
 ## What is mise?
 
 mise (pronounced "meez") is a development environment setup tool that manages:
-1. **Dev Tools**: Version management for programming languages and tools (like asdf, nvm, pyenv, rbenv)
-2. **Environments**: Environment variable management (can replace direnv)
-3. **Tasks**: Task runner for project automation (can replace make, npm scripts)
+1. **Dev Tools**: Installing, pinning, and switching programming languages and tools
+2. **Environments**: Loading project-specific environment variables
+3. **Tasks**: Running project automation for build, test, lint, deploy, and everyday workflows
 
 mise supports hundreds of development tools and can automatically switch between different versions based on your project directory.
 

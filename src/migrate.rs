@@ -1,8 +1,11 @@
 use std::fs;
 use std::path::Path;
 
+use crate::config::Config;
 use crate::dirs::*;
 use crate::file;
+use crate::runtime_symlinks;
+use crate::toolset::install_state;
 use eyre::Result;
 
 pub async fn run() {
@@ -14,6 +17,7 @@ pub async fn run() {
         task(|| remove_deprecated_plugin("java", "rtx-java")),
         task(|| remove_deprecated_plugin("python", "rtx-python")),
         task(|| remove_deprecated_plugin("ruby", "rtx-ruby")),
+        migrate_runtime_symlink_dirs(),
     );
 }
 
@@ -56,5 +60,32 @@ fn remove_deprecated_plugin(name: &str, plugin_name: &str) -> Result<()> {
     }
     eprintln!("removing deprecated plugin {plugin_name}, will use core {name} plugin from now on");
     file::remove_all(plugin_root)?;
+    Ok(())
+}
+
+async fn migrate_runtime_symlink_dirs() {
+    const MARKER: &str = "runtime-symlink-dirs-v2";
+    let marker = DATA.join("migrations").join(MARKER);
+    if marker.exists() {
+        return;
+    }
+
+    if let Err(err) = migrate_runtime_symlink_dirs_impl(&marker).await {
+        eprintln!("[WARN] migrate: {err}");
+    }
+}
+
+async fn migrate_runtime_symlink_dirs_impl(marker: &Path) -> Result<()> {
+    // One-time cleanup for stale fuzzy-version directories like `latest`, `24`,
+    // and `24.0` that should be runtime symlinks. Remove after 2026.10.0.
+    let config = Config::get().await?;
+    runtime_symlinks::migrate_real_dirs(&config).await?;
+    // `backend::load_tools()` initializes install_state before migrations run in
+    // normal CLI startup. Refresh only install_state after rewriting stale dirs
+    // so config alias removals in the already-loaded backend map are preserved.
+    install_state::reset();
+    install_state::init().await?;
+    file::create_dir_all(marker.parent().unwrap())?;
+    file::write(marker, "ok\n")?;
     Ok(())
 }

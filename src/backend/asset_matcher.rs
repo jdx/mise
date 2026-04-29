@@ -71,11 +71,11 @@ impl AssetArch {
 
 impl AssetLibc {
     pub fn matches_target(&self, target: &str) -> bool {
-        match self {
-            AssetLibc::Gnu => target == "gnu",
-            AssetLibc::Musl => target == "musl",
-            AssetLibc::Msvc => target == "msvc",
-        }
+        target.split('-').any(|part| match self {
+            AssetLibc::Gnu => part == "gnu" || part == "glibc",
+            AssetLibc::Musl => part == "musl",
+            AssetLibc::Msvc => part == "msvc",
+        })
     }
 }
 
@@ -204,14 +204,25 @@ impl AssetPicker {
         self
     }
 
-    /// Picks the best asset from available options
+    /// Picks the best asset from available options.
+    ///
+    /// When multiple assets tie on score, prefers the shortest name. This handles
+    /// the common case where a repo ships several binaries per platform (e.g.
+    /// `tool-x64.tar.gz`, `tool-lsp-x64.tar.gz`, `tool-mcp-x64.tar.gz`) — the
+    /// canonical binary's name is almost always the shortest.
+    /// See: https://github.com/jdx/mise/discussions/9358
     pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
-        let mut scored_assets = self.score_all_assets(assets);
-        scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
+        let scored_assets = self.score_all_assets(assets);
         scored_assets
-            .first()
+            .into_iter()
             .filter(|(score, _)| *score > 0)
-            .map(|(_, asset)| asset.clone())
+            .min_by(|(score_a, name_a), (score_b, name_b)| {
+                score_b
+                    .cmp(score_a)
+                    .then_with(|| name_a.len().cmp(&name_b.len()))
+                    .then_with(|| name_a.cmp(name_b))
+            })
+            .map(|(_, asset)| asset)
     }
 
     /// Picks the best provenance file for the current platform from available assets.
@@ -241,7 +252,7 @@ impl AssetPicker {
             })
             .collect();
 
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_by_key(|item| std::cmp::Reverse(item.0));
         scored.first().map(|(_, asset)| (*asset).clone())
     }
 
@@ -1085,6 +1096,48 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
     }
 
     #[test]
+    fn test_shortest_name_tiebreak_picks_canonical_binary() {
+        // Repos like agent-sh/agnix ship multiple binaries per platform
+        // (agnix, agnix-lsp, agnix-mcp). All score identically — the tiebreak
+        // should prefer the shortest name, which is the canonical tool.
+        // See: https://github.com/jdx/mise/discussions/9358
+        let assets = vec![
+            "agnix-lsp-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "agnix-mcp-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "agnix-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+        ];
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "agnix-x86_64-unknown-linux-gnu.tar.gz");
+
+        // Should be order-independent: shuffle and confirm the same winner.
+        let assets_reordered = vec![
+            "agnix-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "agnix-lsp-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "agnix-mcp-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+        ];
+        let picked = picker.pick_best_asset(&assets_reordered).unwrap();
+        assert_eq!(picked, "agnix-x86_64-unknown-linux-gnu.tar.gz");
+    }
+
+    #[test]
+    fn test_shortest_name_tiebreak_picks_plain_bun() {
+        // bun ships baseline/profile variants alongside the canonical build.
+        // All tar.gz, all matching platform — shortest should win.
+        let assets = vec![
+            "bun-linux-x64-baseline-profile.zip".to_string(),
+            "bun-linux-x64-baseline.zip".to_string(),
+            "bun-linux-x64-profile.zip".to_string(),
+            "bun-linux-x64.zip".to_string(),
+        ];
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "bun-linux-x64.zip");
+    }
+
+    #[test]
     fn test_for_target_with_libc_qualifier() {
         use crate::backend::platform_target::PlatformTarget;
         use crate::platform::Platform;
@@ -1111,6 +1164,15 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             .pick_from(&assets)
             .unwrap();
         assert_eq!(result.name, "tool-1.0.0-linux-x86_64-gnu.tar.gz");
+
+        // Compound qualifier still carries the libc preference.
+        let platform = Platform::parse("linux-x64-musl-baseline").unwrap();
+        let target = PlatformTarget::new(platform);
+        let result = AssetMatcher::new()
+            .for_target(&target)
+            .pick_from(&assets)
+            .unwrap();
+        assert_eq!(result.name, "tool-1.0.0-linux-x86_64-musl.tar.gz");
     }
 
     #[test]

@@ -256,7 +256,8 @@ impl PickerState {
                 .collect();
 
             // Sort by score (highest first)
-            self.filtered.sort_by(|a, b| b.score.cmp(&a.score));
+            self.filtered
+                .sort_by_key(|item| std::cmp::Reverse(item.score));
         }
 
         // Reset cursor to start

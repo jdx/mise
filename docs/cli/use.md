@@ -11,7 +11,7 @@ This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
-See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
+See <https://mise.en.dev/configuration.html#target-file-for-write-operations>
 
 In the following order:
 - If `--global` is set, it will use the global config file.
@@ -93,7 +93,7 @@ e.g.: `mise use --pin node@20` will save 20.0.0 as the version
 Set `MISE_PIN=1` to make this the default behavior
 
 Consider using mise.lock as a better alternative to pinning in mise.toml:
-<https://mise.jdx.dev/configuration/settings.html#lockfile>
+<https://mise.en.dev/configuration/settings.html#lockfile>
 
 ### `--raw`
 

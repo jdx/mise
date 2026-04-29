@@ -61,7 +61,7 @@ impl DepsRemove {
 
             let pkg_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
             let cmd = provider.remove_command(&pkg_refs)?;
-            DepsEngine::execute_command(&cmd, &env, provider.timeout())?;
+            DepsEngine::execute_command(&cmd, &env, provider.timeout(), None, None)?;
         }
 
         Ok(())

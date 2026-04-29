@@ -15,7 +15,7 @@ use console::style;
 use contracts::requires;
 use eyre::{Context, bail, eyre};
 use indexmap::{IndexMap, indexmap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use url::Url;
 use vfox::Vfox;
@@ -82,9 +82,12 @@ impl VfoxPlugin {
         &self,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
+        config_root: Option<&Path>,
     ) -> Result<Option<MiseEnvResponse>> {
         let (vfox, _) = self.vfox();
-        let result = vfox.mise_env(&self.name, opts, env).await?;
+        let result = vfox
+            .mise_env(&self.name, opts, env, config_root.and_then(|p| p.to_str()))
+            .await?;
         let mut result_env = indexmap!();
         for ek in result.env {
             result_env.insert(ek.key, ek.value);
@@ -101,10 +104,13 @@ impl VfoxPlugin {
         &self,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
+        config_root: Option<&Path>,
     ) -> Result<Option<Vec<String>>> {
         let (vfox, _) = self.vfox();
         let mut out = vec![];
-        let results = vfox.mise_path(&self.name, opts, env).await?;
+        let results = vfox
+            .mise_path(&self.name, opts, env, config_root.and_then(|p| p.to_str()))
+            .await?;
         for entry in results {
             out.push(entry);
         }
@@ -112,7 +118,14 @@ impl VfoxPlugin {
     }
 
     pub fn vfox(&self) -> (Vfox, mpsc::Receiver<String>) {
+        let settings = Settings::get();
+        let env_type = if settings.os() == "linux" {
+            settings.libc().map(str::to_string)
+        } else {
+            None
+        };
         let mut vfox = Vfox::new();
+        vfox.runtime_env_type = env_type;
         vfox.plugin_dir = dirs::PLUGINS.to_path_buf();
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();

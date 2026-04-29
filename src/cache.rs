@@ -18,6 +18,7 @@ use crate::build_time::built_info;
 use crate::config::Settings;
 use crate::file::{display_path, modified_duration};
 use crate::hash::hash_to_str;
+use crate::platform::Platform;
 use crate::rand::random_string;
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, file};
@@ -46,7 +47,11 @@ impl CacheManagerBuilder {
     pub fn new(cache_file_path: impl AsRef<Path>) -> Self {
         let settings = Settings::get();
         let mut cache_keys = BASE_CACHE_KEYS.clone();
-        cache_keys.extend([settings.os().to_string(), settings.arch().to_string()]);
+        cache_keys.extend([
+            settings.os().to_string(),
+            settings.arch().to_string(),
+            Platform::current().libc().unwrap_or_default().to_string(),
+        ]);
         Self {
             cache_file_path: cache_file_path.as_ref().to_path_buf(),
             cache_keys,
@@ -158,6 +163,20 @@ where
         Ok(val)
     }
 
+    /// Read the cache file without checking freshness and without fetching or writing.
+    pub fn get_cached(&self) -> Result<T>
+    where
+        T: Clone,
+    {
+        if let Some(val) = self.cache_async.get() {
+            return Ok(val.clone());
+        }
+        if let Some(val) = self.cache.get() {
+            return Ok(val.clone());
+        }
+        self.parse()
+    }
+
     fn parse(&self) -> Result<T> {
         let path = &self.cache_file_path;
         trace!("reading {}", display_path(path));
@@ -182,13 +201,14 @@ where
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn clear(&self) -> Result<()> {
+    pub fn clear(&mut self) -> Result<()> {
         let path = &self.cache_file_path;
         trace!("clearing cache {}", path.display());
         if path.exists() {
             file::remove_file(path)?;
         }
+        *self.cache = Default::default();
+        *self.cache_async = Default::default();
         Ok(())
     }
 
@@ -323,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache() {
         let _config = Config::get().await.unwrap();
-        let cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
+        let mut cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
         cache.clear().unwrap();
         let val = cache.get_or_try_init(|| Ok(1)).unwrap();
         assert_eq!(val, &1);

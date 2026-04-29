@@ -4,8 +4,13 @@ use indexmap::IndexMap;
 /// be persisted in the manifest or included in `full_with_opts()`.
 // install_env is a named field on ToolVersionOptions (serde puts it in self.install_env),
 // but parse_tool_options() can still place it in opts, so we filter it here as well.
-pub const EPHEMERAL_OPT_KEYS: &[&str] =
-    &["postinstall", "install_env", "depends", "install_before"];
+pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
+    "postinstall",
+    "install_env",
+    "depends",
+    "install_before",
+    "minimum_release_age",
+];
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
@@ -72,6 +77,27 @@ impl ToolVersionOptions {
     /// or None for non-string values.
     pub fn get(&self, key: &str) -> Option<&str> {
         self.opts.get(key).and_then(|v| v.as_str())
+    }
+
+    pub fn minimum_release_age(&self) -> Option<&str> {
+        if let Some(value) = self.get("minimum_release_age") {
+            return Some(value);
+        }
+        if let Some(value) = self.get("install_before") {
+            deprecated_at!(
+                "2026.10.0",
+                "2027.10.0",
+                "tool_option.install_before",
+                "`install_before` tool option is deprecated. Use `minimum_release_age` instead."
+            );
+            return Some(value);
+        }
+        None
+    }
+
+    /// Get a scalar value for a key as an owned string.
+    pub fn get_string(&self, key: &str) -> Option<String> {
+        self.opts.get(key).and_then(Self::value_to_string)
     }
 
     /// Convert opts to string values, extracting inner strings from
@@ -164,13 +190,7 @@ impl ToolVersionOptions {
 
     fn get_string_at_path(value: &toml::Value, path: &[&str]) -> Option<String> {
         if path.is_empty() {
-            return match value {
-                toml::Value::String(s) => Some(s.clone()),
-                toml::Value::Integer(i) => Some(i.to_string()),
-                toml::Value::Boolean(b) => Some(b.to_string()),
-                toml::Value::Float(f) => Some(f.to_string()),
-                _ => None,
-            };
+            return Self::value_to_string(value);
         }
 
         match value {
@@ -181,6 +201,16 @@ impl ToolVersionOptions {
                     None
                 }
             }
+            _ => None,
+        }
+    }
+
+    fn value_to_string(value: &toml::Value) -> Option<String> {
+        match value {
+            toml::Value::String(s) => Some(s.clone()),
+            toml::Value::Integer(i) => Some(i.to_string()),
+            toml::Value::Boolean(b) => Some(b.to_string()),
+            toml::Value::Float(f) => Some(f.to_string()),
             _ => None,
         }
     }
@@ -462,6 +492,18 @@ mod tests {
         let opts = parse_tool_options(input);
         assert_eq!(opts.get("bin_path"), Some("bin"));
         assert_eq!(opts.get("strip_components"), Some("1"));
+    }
+
+    #[test]
+    fn test_get_string_handles_scalar_values() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("integer".to_string(), toml::Value::Integer(124));
+        opts.opts
+            .insert("boolean".to_string(), toml::Value::Boolean(true));
+
+        assert_eq!(opts.get_string("integer"), Some("124".to_string()));
+        assert_eq!(opts.get_string("boolean"), Some("true".to_string()));
     }
 
     #[test]

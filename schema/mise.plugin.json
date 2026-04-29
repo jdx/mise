@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mise.jdx.dev/schema/mise.plugin.json",
+  "$id": "https://mise.en.dev/schema/mise.plugin.json",
   "title": "mise-plugin",
   "description": "config file for a mise plugin",
   "type": "object",

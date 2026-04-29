@@ -947,10 +947,19 @@ env = "MISE_HOOK_ENV_CHPWD_ONLY"
 type = "Bool"
 
 [http_retries]
-default = 0
-description = "Number of retries for HTTP requests in mise."
+default = 3
+description = "Number of retries for transient HTTP failures in mise."
 docs = """
-Uses an exponential backoff strategy. The duration is calculated by taking the base (10ms) to the n-th power.
+Retries are attempted only on transient errors: HTTP 5xx (server errors), 408
+(Request Timeout), 429 (Too Many Requests), and network-layer failures (connect
+refused, timeout, mid-stream body drops). Other 4xx responses (e.g. 404) are
+treated as permanent and not retried.
+
+Backoff schedule with jitter: ~200ms / ~1s / ~4s / ~15s. Set to 0 to disable
+retries entirely.
+
+When a retry rescues a request, a warning is logged with the original error so
+flaky infrastructure doesn't silently mask itself.
 """
 env = "MISE_HTTP_RETRIES"
 type = "Integer"
@@ -1025,45 +1034,12 @@ rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
 [install_before]
+deprecated = "Use minimum_release_age instead."
+deprecated_remove_at = "2027.10.0"
+deprecated_warn_at = "2026.10.0"
 description = "Minimum release age / supply chain protection — only install versions released before this date"
-docs = """
-Filter tool versions by release date to limit supply chain risk. Similar to Renovate's
-[minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/),
-this ensures newly published versions are ignored until they've been available for a
-configurable amount of time — giving the community time to discover compromised releases.
-
-Supports:
-
-- Relative durations: `7d` (7 days ago), `90d` (90 days ago), `6m` (6 months ago), `1y` (1 year ago)
-- Absolute dates: `2024-06-01`, `2024-06-01T12:00:00Z`
-
-Example:
-
-```toml
-[settings]
-install_before = "7d"  # only install versions released more than 7 days ago
-```
-
-Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
-Versions without timestamps are included by default.
-
-**Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
-like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
-allowing you to selectively use newer versions for specific tools while keeping others behind the
-cutoff date.
-
-Some package-manager backends also forward the cutoff to transitive dependency resolution during
-install. This includes `npm:` and `pipx:` tools.
-
-Can be overridden with the `--before` CLI flag or per-tool with the `install_before` tool option.
-
-```toml
-[tools.trivy]
-version = "latest"
-install_before = "7d"  # override for this tool only
-```
-"""
 env = "MISE_INSTALL_BEFORE"
+hide = true
 optional = true
 type = "String"
 
@@ -1097,6 +1073,20 @@ hide = true
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
+
+[libc]
+default_docs = '"glibc" | "musl"'
+description = "Libc implementation to use for precompiled Linux binaries."
+docs = """
+Libc implementation to use for precompiled Linux binaries. This is used by backends that publish
+separate glibc and musl builds. If unset, mise will detect the current system's libc.
+
+`gnu` is accepted as an alias for `glibc`.
+"""
+enum = ["glibc", "gnu", "musl"]
+env = "MISE_LIBC"
+optional = true
+type = "String"
 
 [libgit2]
 default = true
@@ -1224,6 +1214,51 @@ description = "Show more/less output."
 enum = ["trace", "debug", "info", "warn", "error"]
 env = "MISE_LOG_LEVEL"
 hide = true
+type = "String"
+
+[minimum_release_age]
+description = "Minimum release age / supply chain protection — only install versions older than this threshold"
+docs = """
+Filter tool versions by release date to limit supply chain risk. Similar to Renovate's
+[minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/),
+this ensures newly published versions are ignored until they've been available for a
+configurable amount of time — giving the community time to discover compromised releases.
+This name matches pnpm's `minimumReleaseAge` setting, though mise accepts both relative
+durations and absolute cutoff dates.
+
+Supports:
+
+- Relative durations: `7d` (7 days ago), `90d` (90 days ago), `6m` (6 months ago), `1y` (1 year ago)
+- Absolute dates: `2024-06-01`, `2024-06-01T12:00:00Z`
+
+Example:
+
+```toml
+[settings]
+minimum_release_age = "7d"  # only install versions released more than 7 days ago
+```
+
+Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
+Versions without timestamps are included by default.
+
+**Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
+like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
+allowing you to selectively use newer versions for specific tools while keeping others behind the
+cutoff date.
+
+Some package-manager backends also forward the cutoff to transitive dependency resolution during
+install. This includes `npm:` and `pipx:` tools.
+
+Can be overridden with the `--before` CLI flag or per-tool with the `minimum_release_age` tool option.
+
+```toml
+[tools.trivy]
+version = "latest"
+minimum_release_age = "7d"  # override for this tool only
+```
+"""
+env = "MISE_MINIMUM_RELEASE_AGE"
+optional = true
 type = "String"
 
 [netrc]
@@ -1439,6 +1474,35 @@ env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
 type = "String"
 
+[oci.default_from]
+default = "debian:bookworm-slim"
+description = "Default base image for `mise oci build` when [oci].from is not set."
+docs = """
+Default base image reference used by `mise oci build` when the `mise.toml` does
+not set `[oci].from` and `--from` is not passed on the CLI. Must be a glibc-based
+image for most mise tool installs (Node, Python, Ruby prebuilt binaries) to work.
+
+Common overrides:
+- `debian:bookworm-slim` (default) — glibc, ~30MB compressed
+- `ubuntu:24.04` — glibc, slightly larger, familiar
+- `gcr.io/distroless/cc-debian12` — glibc, no shell (not recommended for dev)
+
+Alpine-based images are **not** recommended because their musl libc breaks
+glibc-linked prebuilt binaries that most tools ship.
+"""
+env = "MISE_OCI_DEFAULT_FROM"
+type = "String"
+
+[oci.default_mount_point]
+default = "/mise"
+description = "Path inside OCI images where mise tools are installed."
+docs = """
+Path inside the built image where mise tool installs and shims are placed.
+Defaults to `/mise`. The resulting image sets `MISE_DATA_DIR` to this path.
+"""
+env = "MISE_OCI_DEFAULT_MOUNT_POINT"
+type = "String"
+
 [offline]
 description = "Disable all HTTP requests. Tools will only use locally cached data."
 docs = """
@@ -1560,6 +1624,26 @@ This is automatically enabled for fast commands like `hook-env`, `activate`, `ex
 `ls`, `current`, `where`, and shims.
 """
 env = "MISE_PREFER_OFFLINE"
+type = "Bool"
+
+[prereleases]
+description = "Include pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching for all tools."
+docs = """
+By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote`,
+`latest` resolution, and fuzzy version matching. Per-tool opt-in is available via the
+`prerelease = true` tool option (currently honored by the `github:` and `aqua:` backends).
+
+Set `prereleases = true` (or `MISE_PRERELEASES=1`) to opt in globally for every tool —
+equivalent to setting `prerelease = true` on each one. Useful for build pipelines that
+mirror the full release catalog (e.g. https://github.com/jdx/mise-versions) and for users
+who want pre-release tags to surface in `mise ls-remote` without per-tool config.
+
+Can also be set with the `--prerelease` flag on `mise ls-remote`.
+
+Has no effect on backends that don't carry an upstream pre-release flag (e.g. `github_tag`
+version source). Draft releases are always excluded.
+"""
+env = "MISE_PRERELEASES"
 type = "Bool"
 
 [profile]

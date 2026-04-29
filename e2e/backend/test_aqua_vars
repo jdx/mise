@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+export MISE_AQUA_BAKED_REGISTRY=0
+
+detect_platform
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR/pkgs/example/vars-tool"
+
+cat <<'EOF_REGISTRY' >"$REGISTRY_DIR/pkgs/example/vars-tool/registry.yaml"
+packages:
+  - type: http
+    supported_envs:
+      - darwin
+      - linux
+      - windows
+    url: https://mise.en.dev/test-fixtures/hello-world-{{.Vars.fixture_version}}.tar.gz
+    files:
+      - name: hello-world
+        src: hello-world-{{.Vars.fixture_version}}/bin/hello-world
+    vars:
+      - name: fixture_version
+        required: true
+EOF_REGISTRY
+
+(
+	cd "$REGISTRY_DIR"
+	git init -q
+	git add pkgs/example/vars-tool/registry.yaml
+	git commit -qm "init local aqua registry"
+)
+
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/vars-tool" = { version = "1.0.0", fixture_version = "1.0.0" }
+EOF_MISE
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/vars-tool" = { version = "1.0.0", fixture_version = "2.0.0" }
+EOF_MISE
+
+mise install --force aqua:example/vars-tool@1.0.0
+assert_contains "mise x -- hello-world" "hello world 2.0.0"
+
+rm -f mise.lock
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/vars-tool" = { version = "1.0.0", vars = { fixture_version = "2.0.0" } }
+EOF_MISE
+
+mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" '"vars.fixture_version" = "2.0.0"'
+assert_contains "cat mise.lock" 'url = "https://mise.en.dev/test-fixtures/hello-world-2.0.0.tar.gz"'
+cp mise.lock nested-vars.lock
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/vars-tool" = { version = "1.0.0", fixture_version = "2.0.0" }
+EOF_MISE
+
+mise lock --platform "$MISE_PLATFORM"
+assert_succeed "cmp mise.lock nested-vars.lock"
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/vars-tool" = { version = "1.0.0", vars = { fixture_version = ["2.0.0"] } }
+EOF_MISE
+
+# shellcheck disable=SC2016
+assert_fail "mise install --force aqua:example/vars-tool@1.0.0" 'aqua var `vars.fixture_version` must be a string, got array'

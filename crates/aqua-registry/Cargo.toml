@@ -1,12 +1,12 @@
 [package]
 name = "aqua-registry"
-version = "2026.4.7"
+version = "2026.4.10"
 edition = "2024"
 description = "Aqua registry backend for mise"
 authors = ["Jeff Dickey (@jdx)"]
 license = "MIT"
 repository = "https://github.com/jdx/mise"
-homepage = "https://mise.jdx.dev"
+homepage = "https://mise.en.dev"
 readme = "README.md"
 keywords = ["mise", "aqua", "registry", "package-manager"]
 categories = ["development-tools"]
@@ -15,7 +15,9 @@ include = [
   "/README.md",
   "/build.rs",
   "/src/**/*.rs",
-  "/aqua-registry/pkgs/**/registry.yaml",
+  "/aqua-registry/LICENSE",
+  "/aqua-registry/metadata.json",
+  "/aqua-registry/registry.yaml",
 ]
 
 [package.metadata.cargo-machete]
@@ -51,4 +53,5 @@ log = "0.4"
 tokio = { version = "1", features = ["rt", "macros"] }
 
 [build-dependencies]
+eyre = "0.6"
 serde_yaml = "0.9"

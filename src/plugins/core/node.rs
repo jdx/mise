@@ -13,6 +13,7 @@ use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, gpg, hash, http, plugins};
@@ -259,13 +260,14 @@ impl NodePlugin {
         let tarball_name = tarball.file_name().unwrap().to_string_lossy().to_string();
         let shasums_file = tarball.parent().unwrap().join("SHASUMS256.txt");
         HTTP.download_file(
-            self.shasums_url(version)?,
+            self.shasums_url(version, &tarball_name)?,
             &shasums_file,
             Some(ctx.pr.as_ref()),
         )
         .await?;
         if Settings::get().node.gpg_verify != Some(false) && version.starts_with("2") {
-            self.verify_with_gpg(ctx, &shasums_file, version).await?;
+            self.verify_with_gpg(ctx, &shasums_file, version, &tarball_name)
+                .await?;
         }
         let shasums = file::read_to_string(&shasums_file)?;
         let shasums = hash::parse_shasums(&shasums);
@@ -278,13 +280,14 @@ impl NodePlugin {
         ctx: &InstallContext,
         shasums_file: &Path,
         v: &str,
+        tarball_name: &str,
     ) -> Result<()> {
         if file::which_non_pristine("gpg").is_none() && Settings::get().node.gpg_verify.is_none() {
             warn!("gpg not found, skipping verification");
             return Ok(());
         }
         let sig_file = shasums_file.with_extension("asc");
-        let sig_url = format!("{}.sig", self.shasums_url(v)?);
+        let sig_url = format!("{}.sig", self.shasums_url(v, tarball_name)?);
         if let Err(e) = HTTP
             .download_file(sig_url, &sig_file, Some(ctx.pr.as_ref()))
             .await
@@ -407,13 +410,11 @@ impl NodePlugin {
             .execute()
     }
 
-    fn shasums_url(&self, v: &str) -> Result<Url> {
+    fn shasums_url(&self, v: &str, tarball_name: &str) -> Result<Url> {
         // let url = MISE_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt.asc"))?;
         let settings = Settings::get();
-        let url = settings
-            .node
-            .mirror_url()
-            .join(&format!("v{v}/SHASUMS256.txt"))?;
+        let url =
+            mirror_url_for(&settings.node, tarball_name).join(&format!("v{v}/SHASUMS256.txt"))?;
         Ok(url)
     }
 
@@ -670,10 +671,9 @@ impl Backend for NodePlugin {
             format!("{slug}.tar.gz")
         };
 
-        // Use Node.js mirror URL to construct download URL
-        let url = settings
-            .node
-            .mirror_url()
+        // Use Node.js mirror URL to construct download URL.
+        // Musl tarballs live on unofficial-builds, not nodejs.org/dist.
+        let url = mirror_url_for(&settings.node, &filename)
             .join(&format!("v{version}/{filename}"))
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
@@ -724,18 +724,16 @@ impl Backend for NodePlugin {
             format!("{slug}.tar.gz")
         };
 
-        // Build download URL
-        let url = settings
-            .node
-            .mirror_url()
+        // Build download URL. Musl tarballs live on unofficial-builds; pick the
+        // mirror once and use it for both the tarball URL and SHASUMS so the
+        // recorded checksum matches the recorded URL.
+        let mirror = mirror_url_for(&settings.node, &filename);
+        let url = mirror
             .join(&format!("v{version}/{filename}"))
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
         // Fetch SHASUMS256.txt to get checksum without downloading the tarball
-        let shasums_url = settings
-            .node
-            .mirror_url()
-            .join(&format!("v{version}/SHASUMS256.txt"))?;
+        let shasums_url = mirror.join(&format!("v{version}/SHASUMS256.txt"))?;
         let checksum = fetch_checksum_from_shasums(shasums_url.as_str(), &filename).await;
 
         Ok(PlatformInfo {
@@ -782,12 +780,18 @@ impl NodePlugin {
         let os = Self::map_os(target.os_name());
         let arch = Self::map_arch(target.arch_name());
 
-        // Flavor (like "glibc") only applies to the current Linux platform
-        // Don't apply it to non-current platforms during cross-platform locking
-        if target.is_current()
-            && target.os_name() == "linux"
-            && let Some(flavor) = &settings.node.flavor
-        {
+        // Only Linux has Node flavors. The node-specific flavor is for the
+        // current host; lock targets use their own libc qualifier.
+        let flavor = match (target.os_name(), target.is_current()) {
+            ("linux", true) => settings
+                .node
+                .flavor
+                .as_deref()
+                .or_else(|| target.libc().filter(|libc| *libc == "musl")),
+            ("linux", false) => target.libc().filter(|libc| *libc == "musl"),
+            _ => None,
+        };
+        if let Some(flavor) = flavor {
             return format!("node-v{version}-{os}-{arch}-{flavor}");
         }
         format!("node-v{version}-{os}-{arch}")
@@ -838,14 +842,26 @@ impl BuildOpts {
                 .join(&format!("v{v}/{source_tarball_name}"))?,
             source_tarball_name,
             binary_tarball_path: tv.download_path().join(&binary_tarball_name),
-            binary_tarball_url: settings
-                .node
-                .mirror_url()
+            binary_tarball_url: mirror_url_for(&settings.node, &binary_tarball_name)
                 .join(&format!("v{v}/{binary_tarball_name}"))?,
             binary_tarball_name,
             install_path,
         })
     }
+}
+
+/// `nodejs.org/dist` does not host musl tarballs; they live at unofficial-builds.
+/// When a filename references a musl artifact and the user has not explicitly set
+/// `node.mirror_url`, route URL construction (and the matching `SHASUMS256.txt`)
+/// to the unofficial-builds host so the URL and checksum stay consistent.
+const UNOFFICIAL_NODE_MIRROR_URL: &str = "https://unofficial-builds.nodejs.org/download/release/";
+
+fn mirror_url_for(node: &crate::config::settings::SettingsNode, filename: &str) -> Url {
+    let mirror = node.mirror_url();
+    if filename.contains("-musl") && mirror.as_str() == DEFAULT_NODE_MIRROR_URL {
+        return Url::parse(UNOFFICIAL_NODE_MIRROR_URL).unwrap();
+    }
+    mirror
 }
 
 fn os() -> &'static str {
@@ -863,7 +879,17 @@ fn arch(settings: &Settings) -> &str {
 
 fn slug(v: &str) -> String {
     let settings = Settings::get();
-    if let Some(flavor) = &settings.node.flavor {
+    let current = Platform::current();
+    let flavor = if current.os == "linux" {
+        settings
+            .node
+            .flavor
+            .as_deref()
+            .or_else(|| current.libc().filter(|libc| *libc == "musl"))
+    } else {
+        None
+    };
+    if let Some(flavor) = flavor {
         format!("node-v{v}-{}-{}-{flavor}", os(), arch(&settings))
     } else {
         format!("node-v{v}-{}-{}", os(), arch(&settings))
@@ -875,4 +901,38 @@ struct NodeVersion {
     version: String,
     date: Option<String>,
     files: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::settings::SettingsNode;
+
+    #[test]
+    fn test_mirror_url_for_routes_musl_to_unofficial_builds() {
+        let node = SettingsNode::default();
+        let url = mirror_url_for(&node, "node-v24.14.0-linux-x64-musl.tar.gz");
+        assert_eq!(url.as_str(), UNOFFICIAL_NODE_MIRROR_URL);
+    }
+
+    #[test]
+    fn test_mirror_url_for_keeps_default_for_glibc() {
+        let node = SettingsNode::default();
+        let url = mirror_url_for(&node, "node-v24.14.0-linux-x64.tar.gz");
+        assert_eq!(url.as_str(), DEFAULT_NODE_MIRROR_URL);
+    }
+
+    #[test]
+    fn test_mirror_url_for_respects_explicit_mirror() {
+        // If the user has a custom mirror, route everything through it —
+        // they may be using a corporate mirror that does host musl builds.
+        let node = SettingsNode {
+            mirror_url: Some("https://corp.example/node/".to_string()),
+            ..Default::default()
+        };
+        let glibc = mirror_url_for(&node, "node-v24.14.0-linux-x64.tar.gz");
+        let musl = mirror_url_for(&node, "node-v24.14.0-linux-x64-musl.tar.gz");
+        assert_eq!(glibc.as_str(), "https://corp.example/node/");
+        assert_eq!(musl.as_str(), "https://corp.example/node/");
+    }
 }

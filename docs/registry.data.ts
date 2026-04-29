@@ -58,7 +58,7 @@ export default {
       conda: (slug, options) =>
         `https://anaconda.org/${options.channel ?? "conda-forge"}/${slug}`,
       cargo: (slug) => `https://crates.io/crates/${slug}`,
-      core: (slug) => `https://mise.jdx.dev/lang/${slug}.html`,
+      core: (slug) => `https://mise.en.dev/lang/${slug}.html`,
       dotnet: (slug) => `https://www.nuget.org/packages/${slug}`,
       gem: (slug) => `https://rubygems.org/gems/${slug}`,
       github: (slug) => `https://github.com/${slug}`,

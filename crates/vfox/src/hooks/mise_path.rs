@@ -7,6 +7,7 @@ use crate::error::Result;
 pub struct MisePathContext<T: serde::Serialize> {
     pub args: Vec<String>,
     pub options: T,
+    pub config_root: Option<String>,
 }
 
 impl Plugin {
@@ -30,6 +31,7 @@ impl<T: serde::Serialize> IntoLua for MisePathContext<T> {
     fn into_lua(self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.set("options", lua.to_value(&self.options)?)?;
+        table.set("config_root", self.config_root)?;
         Ok(Value::Table(table))
     }
 }
