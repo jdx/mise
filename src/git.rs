@@ -67,6 +67,38 @@ impl Git {
         self.update_ref(gitref, true)
     }
 
+    /// Detached `git checkout --force <ref>` with no fetch. Used after `clone`
+    /// when the caller asked to land on a specific SHA — the clone has already
+    /// pulled all reachable objects, so a fetch with a `<sha>:<sha>` refspec
+    /// would be redundant (and on servers without
+    /// `uploadpack.allowReachableSHA1InWant`, would fail).
+    fn checkout(&self, gitref: &str) -> Result<()> {
+        let cmd = git_cmd!(
+            &self.dir,
+            "-c",
+            "advice.detachedHead=false",
+            "-c",
+            "advice.objectNameWarning=false",
+            "checkout",
+            "--force",
+            gitref,
+        );
+        let res = cmd
+            .stderr_to_stdout()
+            .stdout_capture()
+            .unchecked()
+            .run()
+            .map_err(|err| eyre!("git failed: {cmd:?} {err:#}"))?;
+        if !res.status.success() {
+            return Err(eyre!(
+                "git failed: {cmd:?} {}",
+                String::from_utf8_lossy(&res.stdout)
+            ));
+        }
+        touch_dir(&self.dir)?;
+        Ok(())
+    }
+
     fn update_ref(&self, gitref: String, is_tag_ref: bool) -> Result<(String, String)> {
         debug!("updating {} to {}", self.dir.display(), gitref);
         let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
@@ -121,14 +153,10 @@ impl Git {
         }
         // gix's `with_ref_name` and git CLI's `-b` only accept branch/tag names.
         // If the caller passed a commit SHA, clone without a ref and then
-        // fetch + checkout the SHA explicitly. gix in particular panics
+        // check out the SHA explicitly. gix in particular panics
         // ("we map by name only and have no object-id in refspec") if a SHA
         // is fed to `with_ref_name`.
-        let sha_branch = options
-            .branch
-            .as_deref()
-            .filter(|b| looks_like_sha(b))
-            .map(str::to_string);
+        let sha_branch = options.branch.as_deref().filter(|b| looks_like_sha(b));
         let named_branch = options.branch.as_deref().filter(|b| !looks_like_sha(b));
         if Settings::get().libgit2 || Settings::get().gix {
             debug!("cloning {} to {} with gix", url, self.dir.display());
@@ -145,7 +173,7 @@ impl Git {
                 .main_worktree(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
 
             if let Some(sha) = sha_branch {
-                self.update_ref(sha, false)?;
+                self.checkout(sha)?;
             }
             return Ok(());
         }
@@ -189,7 +217,7 @@ impl Git {
         cmd.execute()?;
 
         if let Some(sha) = sha_branch {
-            self.update_ref(sha, false)?;
+            self.checkout(sha)?;
         }
         Ok(())
     }
