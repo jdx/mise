@@ -1755,14 +1755,14 @@
           "additionalProperties": false,
           "properties": {
             "enabled": {
-              "default": false,
+              "default": true,
               "description": "[experimental] Route asset fetches through the mise-wings cache (paid).",
               "type": "boolean"
             },
-            "host": {
-              "default": "mise-wings.en.dev",
-              "description": "[experimental] Apex host for the mise-wings service.",
-              "type": "string"
+            "staging": {
+              "default": false,
+              "description": "[experimental] Use the mise-wings staging deployment.",
+              "type": "boolean"
             }
           }
         },
