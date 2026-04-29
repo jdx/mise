@@ -3809,6 +3809,22 @@ packages:
               - name: redli
                 src: redli_{{.Arch}}.exe
   - type: github_release
+    repo_owner: IohannRabeson
+    repo_name: tmignore-rs
+    description: Makes Time Machine respect .gitignore files
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.5") or Version == "0.3.1"
+        no_asset: true
+      - version_constraint: "true"
+        asset: tmignore-rs_{{trimV .Version}}_{{.Arch}}.zip
+        format: zip
+        replacements:
+          amd64: x86-64
+          arm64: aarch64
+        supported_envs:
+          - darwin
+  - type: github_release
     repo_owner: IvanIsCoding
     repo_name: celq
     description: "celq - A Common Expression Language (CEL) CLI Tool"
@@ -8773,6 +8789,22 @@ packages:
         src: wabt-{{.Version}}/bin/wat2wasm
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver(">= 1.0.39")
+        asset: wabt-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: false
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+          amd64: x64
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
       - version_constraint: semver(">= 1.0.35")
         asset: wabt-{{.Version}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -8793,7 +8825,7 @@ packages:
           algorithm: sha256
       - version_constraint: Version == "1.0.34"
       - version_constraint: Version == "1.0.33"
-        files: &wabt_files_1
+        files:
           - name: spectest-interp
             src: wabt-{{.Version}}/bin/spectest-interp
           - name: wasm-interp
@@ -8815,7 +8847,27 @@ packages:
           - name: wat2wasm
             src: wabt-{{.Version}}/bin/wat2wasm
       - version_constraint: semver(">= 1.0.17")
-        files: *wabt_files_1
+        files:
+          - name: spectest-interp
+            src: wabt-{{.Version}}/bin/spectest-interp
+          - name: wasm-interp
+            src: wabt-{{.Version}}/bin/wasm-interp
+          - name: wasm-objdump
+            src: wabt-{{.Version}}/bin/wasm-objdump
+          - name: wasm-opcodecnt
+            src: wabt-{{.Version}}/bin/wasm-opcodecnt
+          - name: wasm-validate
+            src: wabt-{{.Version}}/bin/wasm-validate
+          - name: wasm2c
+            src: wabt-{{.Version}}/bin/wasm2c
+          - name: wasm2wat
+            src: wabt-{{.Version}}/bin/wasm2wat
+          - name: wast2json
+            src: wabt-{{.Version}}/bin/wast2json
+          - name: wat-desugar
+            src: wabt-{{.Version}}/bin/wat-desugar
+          - name: wat2wasm
+            src: wabt-{{.Version}}/bin/wat2wasm
         replacements:
           darwin: macos
           linux: ubuntu
@@ -19414,13 +19466,43 @@ packages:
     version_overrides:
       - version_constraint: semver("<= 3.2.1")
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("< 8.3.0")
         asset: ggc_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
           type: github_release
           asset: ggc_{{trimV .Version}}_checksums.txt
           algorithm: sha256
+      - version_constraint: semver("< 8.4.0")
+        asset: ggc_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: ggc_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/bmf-san/ggc/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - "https://github.com/bmf-san/ggc/.github/workflows/release.yml@refs/tags/{{.Version}}"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/bmf-san/ggc/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: bodaay
     repo_name: HuggingFaceModelDownloader
@@ -34196,6 +34278,49 @@ packages:
       - darwin/arm64
       - windows
   - type: github_release
+    repo_owner: endevco
+    repo_name: pitchfork
+    aliases:
+      - name: jdx/pitchfork
+    description: Daemons with DX
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.1"
+        no_asset: true
+      - version_constraint: semver("<= 0.1.3")
+        asset: pitchfork-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: "true"
+        asset: pitchfork-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+  - type: github_release
     repo_owner: enokawa
     repo_name: taskdiff
     description: Diff tool for ECS Task Definition
@@ -42776,6 +42901,36 @@ packages:
       - version_constraint: "true"
   - type: github_release
     repo_owner: google
+    repo_name: google-java-format
+    description: Reformats Java source code to comply with Google Java Style
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.19.2")
+        asset: google-java-format-{{trimV .Version}}-all-deps.jar
+        format: raw
+        complete_windows_ext: false
+      - version_constraint: semver("<= 1.25.2")
+        asset: google-java-format_{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86-64
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+          - windows
+      - version_constraint: "true"
+        asset: google-java-format_{{.OS}}-{{.Arch}}
+        windows_arm_emulation: true
+        format: raw
+        replacements:
+          amd64: x86-64
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+  - type: github_release
+    repo_owner: google
     repo_name: jsonnet
     asset: jsonnet-bin-{{.Version}}-linux.tar.gz
     supported_envs:
@@ -49369,47 +49524,6 @@ packages:
         github_immutable_release: true
   - type: github_release
     repo_owner: jdx
-    repo_name: pitchfork
-    description: Daemons with DX
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: Version == "v0.1.1"
-        no_asset: true
-      - version_constraint: semver("<= 0.1.3")
-        asset: pitchfork-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-        overrides:
-          - goos: linux
-            replacements:
-              amd64: x86_64
-        supported_envs:
-          - linux
-          - darwin/arm64
-      - version_constraint: "true"
-        asset: pitchfork-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-  - type: github_release
-    repo_owner: jdx
     repo_name: usage
     description: A specification for CLIs
     version_constraint: "false"
@@ -50738,6 +50852,27 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: jonwiggins
+    repo_name: xmloxide
+    description: A pure Rust reimplementation of libxml2
+    files:
+      - name: xmllint
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: xmllint_{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          arm64: aarch64
+          amd64: x86-64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
   - type: github_release
     repo_owner: jorgelbg
     repo_name: pinentry-touchid
@@ -59471,8 +59606,8 @@ packages:
           - goos: windows
             format: raw
             asset: lychee-{{.Version}}-{{.OS}}-{{.Arch}}
-      - version_constraint: "true"
-        version_prefix: lychee-
+      - version_constraint: semver("< 0.19.0")
+        version_prefix: lychee-v
         asset: lychee-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
@@ -59498,6 +59633,65 @@ packages:
           - linux
           - windows/amd64
           - darwin/arm64
+      - version_constraint: semver("< 0.24.0")
+        version_prefix: lychee-v
+        asset: lychee-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: raw
+            asset: lychee-{{.Arch}}-{{.OS}}
+        supported_envs:
+          - linux
+          - windows
+          - darwin/arm64
+      - version_constraint: Version == "lychee-v0.24.0"
+        version_prefix: lychee-v
+        asset: lychee-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: lychee
+            src: "{{.AssetWithoutExt}}/lychee"
+      - version_constraint: "true"
+        version_prefix: lychee-v
+        asset: lychee-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: lychee
+            src: "{{.AssetWithoutExt}}/lychee"
   - type: github_release
     repo_owner: m7medVision
     repo_name: lazycommit
@@ -60374,6 +60568,45 @@ packages:
       type: github_release
       asset: "{{.Asset}}.md5.txt"
       algorithm: md5
+  - type: github_release
+    repo_owner: matthart1983
+    repo_name: netwatch
+    description: Real-time network diagnostics in your terminal. One command, zero config, instant visibility
+    version_constraint: "false"
+    files:
+      - name: netwatch
+        src: "{{.AssetWithoutExt}}"
+    version_overrides:
+      - version_constraint: Version == "v0.8.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.11.0")
+        asset: netwatch-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            asset: netwatch-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+            replacements: {}
+      - version_constraint: "true"
+        asset: netwatch-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: netwatch-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: netwatch-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+            replacements: {}
   - type: github_release
     repo_owner: mattn
     repo_name: algia
@@ -71287,7 +71520,7 @@ packages:
           amd64: x64
           darwin: macos
           windows: win
-      - version_constraint: "true"
+      - version_constraint: semver("<= 10.33.2")
         asset: pnpm-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
@@ -71299,6 +71532,18 @@ packages:
           amd64: x64
           darwin: macos
           windows: win
+        github_immutable_release: true
+      - version_constraint: "true"
+        asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: pnpm
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: windows
+            format: zip
         github_immutable_release: true
   - type: github_release
     repo_owner: po3rin
@@ -80819,6 +81064,40 @@ packages:
           - linux
           - darwin
   - type: github_release
+    repo_owner: solarwinds
+    repo_name: swo-cli
+    description: SolarWinds Observability Command-Line Interface
+    files:
+      - name: swo
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.3.0")
+        asset: swo-cli_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: swo
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: swo-cli_{{.OS}}_all.{{.Format}}
+      - version_constraint: "true"
+        asset: swo-cli_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: swo
+        checksum:
+          type: github_release
+          asset: swo-cli_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: swo-cli_{{.OS}}_all.{{.Format}}
+  - type: github_release
     repo_owner: solidiquis
     repo_name: erdtree
     description: A modern, cross-platform, multi-threaded, and general purpose filesystem and disk-usage utility that is aware of .gitignore and hidden file rules
@@ -90060,7 +90339,7 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("< 0.14.0")
         asset: lnav-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
         format: zip
         rosetta2: true
@@ -90078,7 +90357,31 @@ packages:
             asset: lnav-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
             files:
               - name: lnav
-                src: lnav-{{trimV .Version}}/bin/lnav.exe
+                src: lnav-{{trimV .Version}}/bin/lnav
+      - version_constraint: "true"
+        asset: lnav-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: lnav-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            asset: lnav-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+            files:
+              - name: lnav
+                src: lnav-{{trimV .Version}}/bin/lnav
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
   - type: github_release
     repo_owner: tuist
     repo_name: tuist
@@ -91915,6 +92218,118 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: github_release
+    repo_owner: versity
+    repo_name: versitygw
+    description: A simple to deploy but feature rich S3 object storage server for your filesystem
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1"
+        asset: versitygw.{{.OS}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.4"
+        asset: versitygw.{{.OS}}_{{.Arch}}.linux
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            asset: versitygw.{{.OS}}_{{.Arch}}.darwin
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.5"
+        asset: versitygw.{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.14"
+        asset: versitygw_.{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: versitygw
+            src: cmd/versitygw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          enabled: false # checksums.txt has broken asset names for v0.14
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.0")
+        asset: versitygw.{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.13.0")
+        asset: versitygw_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: versitygw
+            src: cmd/versitygw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.3.0")
+        asset: versitygw_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: versitygw
+            src: versitygw_{{.Version}}_{{.OS}}_{{.Arch}}/versitygw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: versitygw_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: versitygw
+            src: versitygw_{{.Version}}_{{.OS}}_{{.Arch}}/versitygw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: versitygw
+                src: versitygw_{{.Version}}_{{.OS}}_{{.Arch}}/versitygw
   - type: github_release
     repo_owner: vi
     repo_name: websocat
