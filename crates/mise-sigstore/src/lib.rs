@@ -775,10 +775,12 @@ fn is_github_internal_certificate(bundle: &Bundle) -> bool {
 ///
 /// webpki performs the same chain-building, ECDSA/RSA signature checks, and
 /// CODE_SIGNING EKU enforcement as sigstore-verify, just without the SCT step.
-/// Validation time is the leaf cert's `notBefore` since Fulcio leaves are
-/// short-lived (~10 min) and we have no independently verified time source
-/// here. At `notBefore` the chain is by definition valid; this still rejects
-/// any leaf cert that doesn't chain to a CA in the trust root.
+///
+/// Validation time is the leaf cert's `notAfter`. Fulcio leaves are
+/// short-lived (~10 min) so by `now()` they're already expired and we have no
+/// independently verified time source here. Using `notAfter` rather than
+/// `notBefore` is the stricter choice: it catches any intermediate CA whose
+/// own validity ends before the leaf's, which would otherwise slip through.
 fn verify_cert_chain(leaf_der: &[u8], trusted_root: &TrustedRoot) -> Result<()> {
     use rustls_pki_types::{CertificateDer, UnixTime};
     use webpki::{ALL_VERIFICATION_ALGS, EndEntityCert, KeyUsage, anchor_from_trusted_cert};
@@ -788,13 +790,13 @@ fn verify_cert_chain(leaf_der: &[u8], trusted_root: &TrustedRoot) -> Result<()> 
     let leaf = Certificate::from_der(leaf_der).map_err(|e| {
         AttestationError::Verification(format!("failed to parse leaf certificate: {e}"))
     })?;
-    let not_before = leaf
+    let not_after = leaf
         .tbs_certificate
         .validity
-        .not_before
+        .not_after
         .to_unix_duration()
         .as_secs();
-    let validation_time = UnixTime::since_unix_epoch(std::time::Duration::from_secs(not_before));
+    let validation_time = UnixTime::since_unix_epoch(std::time::Duration::from_secs(not_after));
 
     let all_certs = trusted_root.fulcio_certs().map_err(|e| {
         AttestationError::Verification(format!("failed to load CA certs from trust root: {e}"))
