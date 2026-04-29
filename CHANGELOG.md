@@ -1,5 +1,29 @@
 # Changelog
 
+## [2026.4.26](https://github.com/jdx/mise/compare/v2026.4.25..v2026.4.26) - 2026-04-28
+
+### 🚀 Features
+
+- **(deps)** add aube provider by @jdx in [#9452](https://github.com/jdx/mise/pull/9452)
+- **(ls-remote)** add strict metadata mode by @jdx in [#9448](https://github.com/jdx/mise/pull/9448)
+
+### 🐛 Bug Fixes
+
+- **(env)** parse concatenated short form `-Eval` correctly by @bts in [#9456](https://github.com/jdx/mise/pull/9456)
+- **(http)** improve HTML detection by using Content-Type header by @phateffect in [#9407](https://github.com/jdx/mise/pull/9407)
+- **(task)** install monorepo subdir tools before running deps by @jdx in [#9454](https://github.com/jdx/mise/pull/9454)
+
+### 📦️ Dependency Updates
+
+- update astral-tokio-tar advisory by @jdx in [#9449](https://github.com/jdx/mise/pull/9449)
+- respect -q flag for provider command stream by @JamBalaya56562 in [#9457](https://github.com/jdx/mise/pull/9457)
+
+### New Contributors
+
+- @JamBalaya56562 made their first contribution in [#9457](https://github.com/jdx/mise/pull/9457)
+- @bts made their first contribution in [#9456](https://github.com/jdx/mise/pull/9456)
+- @phateffect made their first contribution in [#9407](https://github.com/jdx/mise/pull/9407)
+
 ## [2026.4.25](https://github.com/jdx/mise/compare/v2026.4.24..v2026.4.25) - 2026-04-28
 
 ### 🚀 Features
