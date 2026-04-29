@@ -119,6 +119,46 @@ impl Git {
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
+
+        // gix's with_ref_name panics on SHA hashes; use init+fetch+checkout instead
+        if let Some(sha) = options.branch.as_deref().filter(|b| looks_like_git_sha(b)) {
+            debug!(
+                "cloning {} to {} at SHA {} via init+fetch",
+                url,
+                self.dir.display(),
+                sha
+            );
+            if let Some(pr) = &options.pr {
+                pr.abandon();
+            }
+            CmdLineRunner::new("git")
+                .args(["-c", "core.autocrlf=false", "init", "-q"])
+                .arg(&self.dir)
+                .execute()?;
+            CmdLineRunner::new("git")
+                .args(["-C"])
+                .arg(&self.dir)
+                .args(["remote", "add", "origin", url])
+                .execute()?;
+            CmdLineRunner::new("git")
+                .args(["-C"])
+                .arg(&self.dir)
+                .args(["fetch", "--depth", "1", "origin", sha])
+                .execute()
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to fetch SHA {sha} from {url}; \
+                     self-hosted servers may need `uploadpack.allowReachableSHA1InWant=true`"
+                    )
+                })?;
+            CmdLineRunner::new("git")
+                .args(["-C"])
+                .arg(&self.dir)
+                .args(["-c", "advice.detachedHead=false", "checkout", "FETCH_HEAD"])
+                .execute()?;
+            return Ok(());
+        }
+
         if Settings::get().libgit2 || Settings::get().gix {
             debug!("cloning {} to {} with gix", url, self.dir.display());
             let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
@@ -314,6 +354,11 @@ fn get_git_version() -> Result<String> {
     Ok(version.trim().into())
 }
 
+fn looks_like_git_sha(s: &str) -> bool {
+    // SHA-1: 7–40 hex chars; SHA-256 (new-format git): exactly 64 hex chars
+    ((s.len() >= 7 && s.len() <= 40) || s.len() == 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 impl Debug for Git {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Git").field("dir", &self.dir).finish()
@@ -335,5 +380,32 @@ impl<'a> CloneOptions<'a> {
     pub fn branch(mut self, branch: &str) -> Self {
         self.branch = Some(branch.to_string());
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_looks_like_git_sha() {
+        assert!(looks_like_git_sha("abc1234")); // 7 chars — minimum short SHA
+        assert!(looks_like_git_sha(
+            "abc1234def5678901234567890123456789012ab"
+        )); // 40 chars — full SHA
+        assert!(looks_like_git_sha("deadbeef1234567")); // mid-length
+        assert!(!looks_like_git_sha("abc123")); // 6 chars — too short
+        assert!(!looks_like_git_sha(
+            "abc1234def5678901234567890123456789012abc"
+        )); // 41 chars — too long
+        assert!(!looks_like_git_sha("abc1234g")); // non-hex char
+        assert!(!looks_like_git_sha("main")); // branch name
+        assert!(!looks_like_git_sha("refs/heads/main")); // full ref
+        assert!(!looks_like_git_sha("v1.0.0")); // tag
+        assert!(!looks_like_git_sha("")); // empty
+        // SHA-256 (64 hex chars) — used by git's new object format
+        assert!(looks_like_git_sha("a".repeat(64).as_str()));
+        assert!(!looks_like_git_sha("a".repeat(63).as_str())); // 63 chars — not a valid SHA-256
+        assert!(!looks_like_git_sha("a".repeat(65).as_str())); // 65 chars — too long
     }
 }
