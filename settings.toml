@@ -2448,16 +2448,16 @@ env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 
 [wings.enabled]
-default = true
+default = false
 description = "[experimental] Route asset fetches through the mise-wings cache (paid)."
 docs = """
-Defaults to `true`: when credentials are available, mise transparently
-routes tool-install URLs (npm registry, GitHub releases) through the
-per-org wings cache subdomains and attaches the wings session JWT as
-a Bearer token. Cache hits return precompressed payloads from a regional
-Front Door; misses fall through to the upstream origin and seed the cache.
+Opt-in: defaults to `false`. Set to `true` (or `MISE_WINGS_ENABLED=1`)
+to route tool-install URLs (npm registry, GitHub releases) through the
+per-org wings cache subdomains. Cache hits return precompressed payloads
+from a regional Front Door; misses fall through to the upstream origin
+and seed the cache.
 
-Two ways credentials get acquired automatically:
+Once enabled, two ways credentials get acquired:
 
   - **Local dev**: `mise wings login` once; the rotated session JWT lives
     in `MISE_STATE_DIR/wings/credentials.json` and auto-refreshes.
@@ -2466,14 +2466,17 @@ Two ways credentials get acquired automatically:
     automatically. No `mise wings login` step needed; no long-lived
     secret to rotate.
 
-Without either, the activation is a no-op — mise fetches from upstream
-origins as usual. Requires an active wings subscription on the Clerk
-org linked to your GitHub account / repo for the proxy to issue a
-session; absent a subscription, the proxy 402s the exchange and mise
-falls through silently. Sign up at <https://mise-wings.en.dev>.
+Without either, the activation is a no-op. Requires an active wings
+subscription on the Clerk org linked to your GitHub account / repo for
+the proxy to issue a session; absent a subscription, the proxy 402s
+and mise falls through silently. Sign up at <https://mise-wings.en.dev>.
 
-Set `MISE_WINGS_ENABLED=0` (or `wings.enabled = false` in `mise.toml`)
-to force-disable.
+The opt-in default is deliberate. If `wings.enabled` were `true` by
+default, any workflow with `id-token: write` (used for SLSA / AWS-OIDC
+/ Sigstore / etc.) would silently send the runner's OIDC token to
+mise-wings on every `mise` invocation — a behavior change for users
+who never signed up for wings. Keeping the gate explicit means no
+identity data leaves the runner without consent.
 """
 env = "MISE_WINGS_ENABLED"
 type = "Bool"
