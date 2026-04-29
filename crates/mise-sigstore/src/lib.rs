@@ -479,8 +479,14 @@ pub async fn verify_slsa_provenance(
         // DSSE envelope (`*.intoto.jsonl`) rather than a sigstore bundle —
         // there is no `verificationMaterial`, so `Bundle::from_json` rejects
         // it. Match the in-toto payload manually and check artifact digest +
-        // SLSA predicate without going through sigstore-verify.
-        match verify_intoto_envelope(candidate, &artifact, min_level) {
+        // SLSA predicate without going through sigstore-verify. Use the public
+        // Sigstore trust root since slsa-github-generator certs are issued by
+        // Sigstore Fulcio.
+        if trust_roots.is_none() {
+            trust_roots = Some(TrustRoots::load().await?);
+        }
+        let sigstore_root = &trust_roots.as_ref().unwrap().sigstore;
+        match verify_intoto_envelope(candidate, &artifact, min_level, sigstore_root) {
             Ok(()) => return Ok(true),
             Err(e) => errors.push(e),
         }
@@ -491,7 +497,12 @@ pub async fn verify_slsa_provenance(
     })
 }
 
-fn verify_intoto_envelope(line: &str, artifact: &[u8], min_level: u8) -> Result<()> {
+fn verify_intoto_envelope(
+    line: &str,
+    artifact: &[u8],
+    min_level: u8,
+    trusted_root: &TrustedRoot,
+) -> Result<()> {
     let envelope: serde_json::Value = serde_json::from_str(line).map_err(|e| {
         AttestationError::UnsupportedFormat(format!("not a JSON DSSE envelope: {e}"))
     })?;
@@ -521,13 +532,11 @@ fn verify_intoto_envelope(line: &str, artifact: &[u8], min_level: u8) -> Result<
     // the in-toto subject list.
     //
     // Each signature embeds the Sigstore Fulcio leaf cert that signed it
-    // (slsa-github-generator format). We extract the cert's public key and
-    // verify the signature against the PAE. Cert chain validation is not
-    // performed here — Fulcio leaf certs expire ~10 minutes after issuance,
-    // and these intoto.jsonl files carry no TSA timestamp or tlog inclusion,
-    // so we have no way to establish a verified time for chain validation.
-    // Bundles in the modern sigstore format (which carry tlog/TSA) take the
-    // strict `verify_bundle` path above.
+    // (slsa-github-generator format). We chain-validate that cert against the
+    // public Sigstore trust root, then verify the signature against the PAE
+    // using the cert's public key. A self-signed forged cert would be
+    // rejected at the chain step. Bundles in the modern sigstore format
+    // (which carry tlog/TSA) take the strict `verify_bundle` path above.
     let signatures = envelope
         .get("signatures")
         .and_then(|v| v.as_array())
@@ -543,7 +552,7 @@ fn verify_intoto_envelope(line: &str, artifact: &[u8], min_level: u8) -> Result<
     let mut sig_errors = Vec::new();
     let mut verified = false;
     for sig in signatures {
-        match verify_dsse_signature(sig, &pae) {
+        match verify_dsse_signature(sig, &pae, trusted_root) {
             Ok(()) => {
                 verified = true;
                 break;
@@ -561,7 +570,11 @@ fn verify_intoto_envelope(line: &str, artifact: &[u8], min_level: u8) -> Result<
     verify_intoto_payload(&payload, artifact, min_level)
 }
 
-fn verify_dsse_signature(sig: &serde_json::Value, pae: &[u8]) -> Result<()> {
+fn verify_dsse_signature(
+    sig: &serde_json::Value,
+    pae: &[u8],
+    trusted_root: &TrustedRoot,
+) -> Result<()> {
     let cert_pem = sig.get("cert").and_then(|v| v.as_str()).ok_or_else(|| {
         AttestationError::Verification("DSSE signature missing cert field".to_string())
     })?;
@@ -572,6 +585,8 @@ fn verify_dsse_signature(sig: &serde_json::Value, pae: &[u8]) -> Result<()> {
         .decode(sig_b64.as_bytes())
         .map_err(|e| AttestationError::Verification(format!("invalid base64 signature: {e}")))?;
     let cert = DerCertificate::from_pem(cert_pem)?;
+    // Chain-validate the embedded cert before trusting its public key.
+    verify_cert_chain(cert.as_bytes(), trusted_root)?;
     let spki_der = extract_spki_der(cert.as_bytes())?;
     let public_key = DerPublicKey::new(spki_der);
     verify_raw_signature(pae, &sig_bytes, &public_key)
@@ -717,7 +732,16 @@ fn verify_bundle(
     // GitHub TSA cert in the trust root) and signer-workflow identity
     // matching still gate acceptance further down.
     if is_github_internal_certificate(bundle) {
-        verify_github_internal_chain(bundle, trusted_root)?;
+        let leaf_der = bundle
+            .signing_certificate()
+            .ok_or_else(|| {
+                AttestationError::Verification(
+                    "GitHub bundle is missing a signing certificate".to_string(),
+                )
+            })?
+            .as_bytes()
+            .to_vec();
+        verify_cert_chain(&leaf_der, trusted_root)?;
         policy = policy.skip_certificate_chain();
     }
     let result = sigstore_verify::verify(artifact, bundle, &policy, trusted_root)?;
@@ -739,35 +763,29 @@ fn is_github_internal_certificate(bundle: &Bundle) -> bool {
         .unwrap_or(false)
 }
 
-/// Verify that the bundle's signing certificate chains to the GitHub trust
-/// root's CA certs, using the leaf cert's `notBefore` as the validation time.
+/// Verify that a leaf certificate chains to one of the trust root's CA certs.
 ///
-/// We can't go through `sigstore_verify::verify`'s `verify_certificate` step
-/// for this — that step also requires an SCT extension, which GitHub's CA
-/// doesn't issue. webpki performs the same chain-building, signature, and EKU
-/// (CODE_SIGNING) checks without the SCT requirement.
-fn verify_github_internal_chain(bundle: &Bundle, trusted_root: &TrustedRoot) -> Result<()> {
+/// Used in two places where we can't go through `sigstore_verify::verify`'s
+/// built-in `verify_certificate` step:
+///
+/// - GitHub-internal bundles, whose leaf certs lack the SCT extension that
+///   sigstore-verify always requires under `verify_certificate`.
+/// - Raw DSSE envelopes (`*.intoto.jsonl` from slsa-github-generator), which
+///   don't have the bundle structure sigstore-verify expects.
+///
+/// webpki performs the same chain-building, ECDSA/RSA signature checks, and
+/// CODE_SIGNING EKU enforcement as sigstore-verify, just without the SCT step.
+/// Validation time is the leaf cert's `notBefore` since Fulcio leaves are
+/// short-lived (~10 min) and we have no independently verified time source
+/// here. At `notBefore` the chain is by definition valid; this still rejects
+/// any leaf cert that doesn't chain to a CA in the trust root.
+fn verify_cert_chain(leaf_der: &[u8], trusted_root: &TrustedRoot) -> Result<()> {
     use rustls_pki_types::{CertificateDer, UnixTime};
     use webpki::{ALL_VERIFICATION_ALGS, EndEntityCert, KeyUsage, anchor_from_trusted_cert};
     use x509_cert::Certificate;
     use x509_cert::der::Decode;
 
-    let leaf_der = bundle
-        .signing_certificate()
-        .ok_or_else(|| {
-            AttestationError::Verification(
-                "GitHub bundle is missing a signing certificate".to_string(),
-            )
-        })?
-        .as_bytes()
-        .to_vec();
-
-    // Use the leaf cert's notBefore as the validation time. The leaf is
-    // short-lived (~10 minutes) so by `now()` it's expired, and we don't have
-    // a verified TSA-derived time at this point in the flow. At notBefore the
-    // chain is by definition valid; this still catches forged certs whose
-    // issuer doesn't match any CA in the trust root.
-    let leaf = Certificate::from_der(&leaf_der).map_err(|e| {
+    let leaf = Certificate::from_der(leaf_der).map_err(|e| {
         AttestationError::Verification(format!("failed to parse leaf certificate: {e}"))
     })?;
     let not_before = leaf
@@ -783,7 +801,7 @@ fn verify_github_internal_chain(bundle: &Bundle, trusted_root: &TrustedRoot) -> 
     })?;
     if all_certs.is_empty() {
         return Err(AttestationError::Verification(
-            "GitHub trust root contains no CA certificates".to_string(),
+            "trust root contains no CA certificates".to_string(),
         ));
     }
     // Self-signed certs become trust anchors; the rest are intermediates that
@@ -798,7 +816,7 @@ fn verify_github_internal_chain(bundle: &Bundle, trusted_root: &TrustedRoot) -> 
         .collect();
     if trust_anchors.is_empty() {
         return Err(AttestationError::Verification(
-            "GitHub trust root contains no self-signed root certificates".to_string(),
+            "trust root contains no self-signed root certificates".to_string(),
         ));
     }
     let intermediate_certs: Vec<CertificateDer<'static>> = all_certs
@@ -806,7 +824,7 @@ fn verify_github_internal_chain(bundle: &Bundle, trusted_root: &TrustedRoot) -> 
         .map(|der| CertificateDer::from(der.as_ref()).into_owned())
         .collect();
 
-    let leaf_der_ref = CertificateDer::from(leaf_der.as_slice());
+    let leaf_der_ref = CertificateDer::from(leaf_der);
     let leaf_cert = EndEntityCert::try_from(&leaf_der_ref).map_err(|e| {
         AttestationError::Verification(format!("failed to parse leaf for chain check: {e}"))
     })?;
@@ -825,9 +843,7 @@ fn verify_github_internal_chain(bundle: &Bundle, trusted_root: &TrustedRoot) -> 
             None,
         )
         .map_err(|e| {
-            AttestationError::Verification(format!(
-                "GitHub certificate chain validation failed: {e}"
-            ))
+            AttestationError::Verification(format!("certificate chain validation failed: {e}"))
         })?;
     Ok(())
 }
@@ -1064,8 +1080,14 @@ mod tests {
     const GENUINE_INTOTO_ENVELOPE: &str =
         include_str!("../tests/fixtures/sops_v3_9_0.intoto.jsonl");
 
+    fn embedded_sigstore_root() -> TrustedRoot {
+        TrustedRoot::from_json(sigstore_verify::trust_root::SIGSTORE_PRODUCTION_TRUSTED_ROOT)
+            .expect("embedded production trusted_root.json parses")
+    }
+
     #[test]
     fn intoto_envelope_rejects_tampered_signature() {
+        let root = embedded_sigstore_root();
         let mut env: serde_json::Value =
             serde_json::from_str(GENUINE_INTOTO_ENVELOPE.trim()).unwrap();
         env["signatures"][0]["sig"] =
@@ -1074,7 +1096,7 @@ mod tests {
 
         // Signature verification happens before the subject digest check, so a
         // forged sig fails regardless of which artifact bytes we pass.
-        let err = verify_intoto_envelope(&tampered, b"any artifact bytes", 1)
+        let err = verify_intoto_envelope(&tampered, b"any artifact bytes", 1, &root)
             .unwrap_err()
             .to_string();
         assert!(
@@ -1085,11 +1107,12 @@ mod tests {
 
     #[test]
     fn intoto_envelope_rejects_missing_signatures() {
+        let root = embedded_sigstore_root();
         let mut env: serde_json::Value =
             serde_json::from_str(GENUINE_INTOTO_ENVELOPE.trim()).unwrap();
         env["signatures"] = serde_json::json!([]);
         let stripped = serde_json::to_string(&env).unwrap();
-        let err = verify_intoto_envelope(&stripped, b"any artifact bytes", 1)
+        let err = verify_intoto_envelope(&stripped, b"any artifact bytes", 1, &root)
             .unwrap_err()
             .to_string();
         assert!(err.contains("no signatures"), "got {err}");
@@ -1098,16 +1121,51 @@ mod tests {
     #[test]
     fn intoto_envelope_rejects_unknown_artifact() {
         // Genuine signature verifies, but a foreign artifact is not in subjects.
+        let root = embedded_sigstore_root();
         let err = verify_intoto_envelope(
             GENUINE_INTOTO_ENVELOPE.trim(),
             b"different artifact contents",
             1,
+            &root,
         )
         .unwrap_err()
         .to_string();
         assert!(
             err.contains("not found in SLSA statement subjects"),
             "expected subject mismatch, got {err}"
+        );
+    }
+
+    #[test]
+    fn intoto_envelope_rejects_self_signed_cert() {
+        // Replace the embedded Fulcio cert with an unrelated self-signed cert
+        // and a recomputed signature. Chain validation must reject it.
+        let root = embedded_sigstore_root();
+        let mut env: serde_json::Value =
+            serde_json::from_str(GENUINE_INTOTO_ENVELOPE.trim()).unwrap();
+        // A self-signed P-256 cert (any will do — the issuer doesn't chain to
+        // the Sigstore trust root).
+        const SELF_SIGNED: &str = "-----BEGIN CERTIFICATE-----\n\
+MIIBhTCCASugAwIBAgIUExample0AAAAAAAAAAAAAAAAAAAAwCgYIKoZIzj0EAwIw\n\
+EzERMA8GA1UEAwwIc2VsZi1jYTAeFw0yNTAxMDEwMDAwMDBaFw0zNTAxMDEwMDAw\n\
+MDBaMBMxETAPBgNVBAMMCHNlbGYtY2EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC\n\
+AAQX9YJlbpFy0FmCXn7gC8m/qAh3wZw9w0CIxample/Random/dataABCDEFGHIJ\n\
+KLMNOPQRSTUVWXYZabcdefghijklmnopo1MwUTAdBgNVHQ4EFgQUExampleHandle\n\
+00000000000000000000003wHwYDVR0jBBgwFoAUExampleHandle00000000000\n\
+00000000003wDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNJADBGAiEAExam\n\
+pleSignature1234567890123456789012345678901234567890CIQDExampleS\n\
+ignature1234567890123456789012345678901234567890Aa==\n\
+-----END CERTIFICATE-----\n";
+        env["signatures"][0]["cert"] = serde_json::Value::String(SELF_SIGNED.to_string());
+        let forged = serde_json::to_string(&env).unwrap();
+        let err = verify_intoto_envelope(&forged, b"any artifact bytes", 1, &root)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.to_lowercase().contains("chain")
+                || err.to_lowercase().contains("trust")
+                || err.to_lowercase().contains("invalid"),
+            "expected chain validation failure, got {err}"
         );
     }
 }
