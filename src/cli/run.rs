@@ -518,10 +518,12 @@ impl Run {
         let join_result = scheduler.join_all(this.continue_on_error).await;
 
         // Mark success only when everything actually succeeded.
-        if !this.is_stopping() && join_result.is_ok()
-            && let Some(ref rt) = run_trace {
-                rt.set_succeeded();
-            }
+        if !this.is_stopping()
+            && join_result.is_ok()
+            && let Some(ref rt) = run_trace
+        {
+            rt.set_succeeded();
+        }
         // run_trace is dropped here, triggering finalization.
         drop(run_trace);
 
