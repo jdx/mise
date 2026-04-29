@@ -622,9 +622,18 @@ impl<'a> CmdLineRunner<'a> {
 
         #[cfg(target_os = "linux")]
         {
-            // On Linux, clear inherited env before pre_exec so child only sees filtered vars
+            // On Linux, clear inherited env before pre_exec so child only sees filtered vars.
+            // env_clear() also wipes envs explicitly set via .envs(), so save and restore them.
             if sandbox.effective_deny_env() {
+                let saved: Vec<(std::ffi::OsString, std::ffi::OsString)> = self
+                    .cmd
+                    .get_envs()
+                    .filter_map(|(k, v)| v.map(|v| (k.to_os_string(), v.to_os_string())))
+                    .collect();
                 self.cmd.env_clear();
+                for (k, v) in saved {
+                    self.cmd.env(k, v);
+                }
             }
             // Use pre_exec to apply Landlock/seccomp in the child process
             // before it execs the target program. This avoids restricting the mise process.
