@@ -461,21 +461,19 @@ pub async fn verify_slsa_provenance(
     }
 
     for candidate in candidates {
-        match Bundle::from_json(candidate) {
-            Ok(bundle) => {
-                if trust_roots.is_none() {
-                    trust_roots = Some(TrustRoots::load().await?);
-                }
-                let roots = trust_roots.as_ref().unwrap();
-                match verify_bundle(&artifact, &bundle, None, roots.for_bundle(&bundle))
-                    .and_then(|_| verify_min_slsa_level(&bundle, min_level))
-                {
-                    Ok(()) => return Ok(true),
-                    Err(e) => errors.push(e),
-                }
-                continue;
+        // Bundle::from_json failure falls through to the DSSE envelope path.
+        if let Ok(bundle) = Bundle::from_json(candidate) {
+            if trust_roots.is_none() {
+                trust_roots = Some(TrustRoots::load().await?);
             }
-            Err(_) => {} // fall through to DSSE envelope path
+            let roots = trust_roots.as_ref().unwrap();
+            match verify_bundle(&artifact, &bundle, None, roots.for_bundle(&bundle))
+                .and_then(|_| verify_min_slsa_level(&bundle, min_level))
+            {
+                Ok(()) => return Ok(true),
+                Err(e) => errors.push(e),
+            }
+            continue;
         }
         // slsa-github-generator and goreleaser write the provenance as a raw
         // DSSE envelope (`*.intoto.jsonl`) rather than a sigstore bundle —
