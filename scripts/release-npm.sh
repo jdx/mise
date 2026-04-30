@@ -62,10 +62,10 @@ EOF
 	tree || true
 	if [ "${DRY_RUN:-1}" != "0" ]; then
 		echo DRY_RUN
-		echo aube publish --access public --tag "$dist_tag" --provenance
+		echo aube publish --access public --tag "$dist_tag" --provenance --no-git-checks
 		echo DRY_RUN
 	else
-		if ! aube publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
+		if ! aube publish --access public --tag "$dist_tag" --provenance --no-git-checks 2>&1 | tee /tmp/npm-publish.log; then
 			if grep -qE "already (on|published)|previously published" /tmp/npm-publish.log; then
 				echo "Version already published, skipping..."
 			else
@@ -166,10 +166,10 @@ EOF
 pushd "$RELEASE_DIR/npm"
 if [ "${DRY_RUN:-1}" != "0" ]; then
 	echo DRY_RUN
-	echo aube publish --access public --tag "$dist_tag" --provenance
+	echo aube publish --access public --tag "$dist_tag" --provenance --no-git-checks
 	echo DRY_RUN
 else
-	if ! aube publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
+	if ! aube publish --access public --tag "$dist_tag" --provenance --no-git-checks 2>&1 | tee /tmp/npm-publish.log; then
 		if grep -qE "already (on|published)|previously published" /tmp/npm-publish.log; then
 			echo "Version already published, skipping..."
 		else
