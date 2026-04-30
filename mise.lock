@@ -583,8 +583,12 @@ checksum = "sha256:795670a80d35b23e7ecf932ede742609f2267314f2df64054b020698fcc8a
 url = "https://github.com/LuaLS/lua-language-server/releases/download/3.17.1/lua-language-server-3.17.1-win32-x64.zip"
 
 [[tools.node]]
-version = "24.15.0"
+version = "25.9.0"
 backend = "core:node"
+
+[tools.node."platforms.linux-x64"]
+checksum = "sha256:134e55b2408448a219760fe04dc44d6851f9de8a79549021ffd870e9082d9e7b"
+url = "https://nodejs.org/dist/v25.9.0/node-v25.9.0-linux-x64.tar.gz"
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"

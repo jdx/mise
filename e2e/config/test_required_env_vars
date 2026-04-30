@@ -42,8 +42,8 @@ unset REQUIRED_VAR3
 
 # This should fail with a clear error message
 if mise env 2>error.log; then
-	echo "ERROR: Expected mise env to fail but it succeeded"
-	exit 1
+  echo "ERROR: Expected mise env to fail but it succeeded"
+  exit 1
 fi
 
 assert_contains "cat error.log" "Required environment variable 'REQUIRED_VAR3' is not defined"
@@ -61,8 +61,8 @@ EOF
 unset REQUIRED_VAR5
 
 if mise env 2>error2.log; then
-	echo "ERROR: Expected mise env to fail but it succeeded"
-	exit 1
+  echo "ERROR: Expected mise env to fail but it succeeded"
+  exit 1
 fi
 
 assert_contains "cat error2.log" "Required environment variable 'REQUIRED_VAR5' is not defined"

@@ -34,12 +34,12 @@ MISE_DEBUG=1 mise x dummy@latest -- dummy 2>&1 | tee /tmp/exec_latest_output.txt
 grep -q "2.0.0" /tmp/exec_latest_output.txt
 # Should NOT call list-all or latest-stable again since versions are cached
 if grep -q "bin/list-all" /tmp/exec_latest_output.txt; then
-	echo "ERROR: Expected cache hit but got bin/list-all call"
-	exit 1
+  echo "ERROR: Expected cache hit but got bin/list-all call"
+  exit 1
 fi
 if grep -q "latest-stable" /tmp/exec_latest_output.txt; then
-	echo "ERROR: Expected cache hit but got latest-stable call"
-	exit 1
+  echo "ERROR: Expected cache hit but got latest-stable call"
+  exit 1
 fi
 
 # Now clear cache and verify that latest-stable IS called (to re-resolve @latest)
@@ -48,8 +48,8 @@ MISE_DEBUG=1 mise x dummy@latest -- dummy 2>&1 | tee /tmp/exec_latest_output2.tx
 grep -q "2.0.0" /tmp/exec_latest_output2.txt
 # After cache clear, latest-stable SHOULD be called to resolve @latest
 if ! grep -q "latest-stable" /tmp/exec_latest_output2.txt; then
-	echo "ERROR: Expected cache miss but latest-stable was not called"
-	exit 1
+  echo "ERROR: Expected cache miss but latest-stable was not called"
+  exit 1
 fi
 
 # Test that @latest only affects the tool it's specified for, not other tools

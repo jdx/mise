@@ -19,21 +19,21 @@ echo "$output"
 
 # Verify the native GitHub artifact attestations verification was used
 if echo "$output" | grep -q "verify GitHub artifact attestations"; then
-	echo "✅ Native GitHub artifact attestations verification was used"
+  echo "✅ Native GitHub artifact attestations verification was used"
 else
-	echo "❌ ERROR: GitHub artifact attestations verification message not found in output"
-	echo "Output was:"
-	echo "$output"
-	exit 1
+  echo "❌ ERROR: GitHub artifact attestations verification message not found in output"
+  echo "Output was:"
+  echo "$output"
+  exit 1
 fi
 
 # Check if installation succeeded (it may fail due to async runtime issues but we still want to verify the verification step was called)
 if echo "$output" | grep -q "✓ installed"; then
-	echo "✓ goreleaser installed successfully"
-	# Cleanup
-	mise uninstall aqua:goreleaser/goreleaser@2.14.1 || true
+  echo "✓ goreleaser installed successfully"
+  # Cleanup
+  mise uninstall aqua:goreleaser/goreleaser@2.14.1 || true
 else
-	echo "⚠️ Installation failed (expected due to async runtime issue) but verification step was called"
+  echo "⚠️ Installation failed (expected due to async runtime issue) but verification step was called"
 fi
 
 echo ""

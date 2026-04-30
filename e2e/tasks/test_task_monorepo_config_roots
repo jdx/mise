@@ -72,12 +72,12 @@ echo "$output" | grep -q "//services/worker:process" || (echo "FAIL: services/wo
 # Test 3: Unlisted paths are NOT discovered
 echo "=== Test 3: Unlisted paths are not discovered ==="
 if echo "$output" | grep -q "//packages/ignored:hidden"; then
-	echo "FAIL: packages/ignored should NOT be discovered"
-	exit 1
+  echo "FAIL: packages/ignored should NOT be discovered"
+  exit 1
 fi
 if echo "$output" | grep -q "//libs/common:test"; then
-	echo "FAIL: libs/common should NOT be discovered"
-	exit 1
+  echo "FAIL: libs/common should NOT be discovered"
+  exit 1
 fi
 
 # Test 4: Tasks can still be run

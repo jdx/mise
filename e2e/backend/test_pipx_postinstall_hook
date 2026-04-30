@@ -44,9 +44,9 @@ assert_contains "mise x -- mkdocs --version" "1.6.0"
 # Verify the minor version symlink was created early (before runtime_symlinks::rebuild)
 MINOR_VERSION_DIR="$MISE_DATA_DIR/installs/python/3.12"
 if [[ -L $MINOR_VERSION_DIR ]]; then
-	ok "Minor version symlink 3.12 was created"
+  ok "Minor version symlink 3.12 was created"
 elif [[ -d $MINOR_VERSION_DIR ]]; then
-	ok "Minor version directory 3.12 exists"
+  ok "Minor version directory 3.12 exists"
 else
-	fail "Minor version symlink/directory 3.12 does not exist"
+  fail "Minor version symlink/directory 3.12 does not exist"
 fi

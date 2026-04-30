@@ -27,7 +27,7 @@ echo "updated value" >dynamic.txt
 # only mise.toml mtime is checked, not dynamic.txt
 output=$(mise hook-env -s bash)
 if [[ $output == *"updated value"* ]]; then
-	ok "alias updated after referenced file changed"
+  ok "alias updated after referenced file changed"
 else
-	fail "expected alias with 'updated value' but got: '$output'"
+  fail "expected alias with 'updated value' but got: '$output'"
 fi

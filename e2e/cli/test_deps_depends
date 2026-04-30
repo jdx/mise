@@ -74,8 +74,8 @@ assert_contains "echo '$output'" "INDEPENDENT"
 dep_first_line=$(grep -n "DEP-FIRST" prepare2.log | head -1 | cut -d: -f1)
 dep_second_line=$(grep -n "DEP-SECOND" prepare2.log | head -1 | cut -d: -f1)
 if [[ $dep_first_line -ge $dep_second_line ]]; then
-	echo "ERROR: DEP-FIRST (line $dep_first_line) should appear before DEP-SECOND (line $dep_second_line)"
-	exit 1
+  echo "ERROR: DEP-FIRST (line $dep_first_line) should appear before DEP-SECOND (line $dep_second_line)"
+  exit 1
 fi
 
 rm -f prepare2.log

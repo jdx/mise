@@ -32,16 +32,16 @@ assert_fail "mise oci run --image-dir ./not-a-layout -- true" "OCI image layout"
 # podman/docker in the test image). We don't assert a specific message
 # because the output differs based on what's available.
 if ! command -v podman >/dev/null 2>&1; then
-	assert_fail "mise oci run --engine podman -- true" "podman"
+  assert_fail "mise oci run --engine podman -- true" "podman"
 fi
 if ! command -v docker >/dev/null 2>&1; then
-	assert_fail "mise oci run --engine docker -- true" "docker"
+  assert_fail "mise oci run --engine docker -- true" "docker"
 fi
 
 # --- push: --tool forces the same way ---
 if ! command -v skopeo >/dev/null 2>&1; then
-	assert_fail "mise oci push --tool skopeo ghcr.io/x/y:z" "skopeo"
+  assert_fail "mise oci push --tool skopeo ghcr.io/x/y:z" "skopeo"
 fi
 if ! command -v crane >/dev/null 2>&1; then
-	assert_fail "mise oci push --tool crane ghcr.io/x/y:z" "crane"
+  assert_fail "mise oci push --tool crane ghcr.io/x/y:z" "crane"
 fi

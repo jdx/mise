@@ -16,8 +16,8 @@ EOF
 echo "Testing global timeout via CLI flag..."
 output="$(mise run --timeout=3s task1 ::: task2 ::: task3 2>&1 || true)"
 if [[ $output != *"timed out"* ]]; then
-	echo "ERROR: Expected 'timed out' in output, got: $output"
-	exit 1
+  echo "ERROR: Expected 'timed out' in output, got: $output"
+  exit 1
 fi
 echo "✓ CLI flag global timeout works"
 
@@ -39,8 +39,8 @@ EOF
 echo "Testing individual task timeout (too_slow should time out)..."
 output="$(mise run too_slow 2>&1 || true)"
 if [[ $output != *"timed out"* ]]; then
-	echo "ERROR: Expected 'timed out' in output, got: $output"
-	exit 1
+  echo "ERROR: Expected 'timed out' in output, got: $output"
+  exit 1
 fi
 echo "✓ Individual task timeout works"
 
@@ -61,8 +61,8 @@ EOF
 echo "Testing global timeout via environment variable..."
 output="$(MISE_TASK_TIMEOUT=2s mise run env_test1 ::: env_test2 2>&1 || true)"
 if [[ $output != *"timed out"* ]]; then
-	echo "ERROR: Expected 'timed out' in output, got: $output"
-	exit 1
+  echo "ERROR: Expected 'timed out' in output, got: $output"
+  exit 1
 fi
 echo "✓ Environment variable global timeout works"
 
@@ -109,12 +109,12 @@ EOF
 echo "Testing global + per-task timeout interaction..."
 output="$(mise run quick_task ::: slow_task 2>&1 || true)"
 if [[ $output != *"timed out"* ]]; then
-	echo "ERROR: Expected per-task timeout to fire, got: $output"
-	exit 1
+  echo "ERROR: Expected per-task timeout to fire, got: $output"
+  exit 1
 fi
 if [[ $output != *"Quick done"* ]]; then
-	echo "ERROR: quick_task should have completed, got: $output"
-	exit 1
+  echo "ERROR: quick_task should have completed, got: $output"
+  exit 1
 fi
 echo "✓ Global + per-task timeout interaction works"
 

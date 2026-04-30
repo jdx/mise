@@ -52,15 +52,15 @@ mv mise.toml mise.toml.tmp
 mise x age -- age-keygen -o age2.txt 2>/dev/null
 mv mise.toml.tmp mise.toml
 if [ ! -f age2.txt ]; then
-	echo "age2.txt not found after generation"
-	exit 1
+  echo "age2.txt not found after generation"
+  exit 1
 fi
 AGE_PUBLIC_KEY2=$(grep "# public key:" age2.txt | cut -d: -f2 | tr -d ' ')
 AGE_SECRET_KEY2=$(grep "AGE-SECRET-KEY-" age2.txt)
 
 MISE_EXPERIMENTAL=true mise set MULTI_SECRET="multi-recipient-secret" --age-encrypt \
-	--age-recipient "$AGE_PUBLIC_KEY" \
-	--age-recipient "$AGE_PUBLIC_KEY2"
+  --age-recipient "$AGE_PUBLIC_KEY" \
+  --age-recipient "$AGE_PUBLIC_KEY2"
 
 # Both keys should be able to decrypt via mise set
 RESULT=$(MISE_EXPERIMENTAL=true MISE_AGE_KEY="$AGE_SECRET_KEY" mise set MULTI_SECRET)
@@ -75,8 +75,8 @@ assert_contains "MISE_EXPERIMENTAL=true MISE_AGE_KEY=\"$AGE_SECRET_KEY\" mise en
 # Test second key with clean environment (only multi-recipient variable)
 rm -f mise.toml
 MISE_EXPERIMENTAL=true mise set MULTI_SECRET="multi-recipient-secret" --age-encrypt \
-	--age-recipient "$AGE_PUBLIC_KEY" \
-	--age-recipient "$AGE_PUBLIC_KEY2"
+  --age-recipient "$AGE_PUBLIC_KEY" \
+  --age-recipient "$AGE_PUBLIC_KEY2"
 assert_contains "MISE_EXPERIMENTAL=true MISE_AGE_KEY=\"$AGE_SECRET_KEY2\" mise env | grep MULTI_SECRET" "MULTI_SECRET=multi-recipient-secret"
 
 # Test with age key file
@@ -93,17 +93,17 @@ assert_contains "MISE_EXPERIMENTAL=true mise env | grep KEY_FILE_SECRET" "KEY_FI
 
 # Test SSH recipient (if SSH key exists)
 if [ -f ~/.ssh/id_ed25519.pub ]; then
-	MISE_EXPERIMENTAL=true mise set SSH_SECRET="ssh-encrypted-secret" --age-encrypt --age-ssh-recipient ~/.ssh/id_ed25519.pub
+  MISE_EXPERIMENTAL=true mise set SSH_SECRET="ssh-encrypted-secret" --age-encrypt --age-ssh-recipient ~/.ssh/id_ed25519.pub
 
-	# Decrypt with SSH key via mise set
-	if command -v age >/dev/null 2>&1; then
-		# Only test if age CLI is available
-		RESULT=$(MISE_EXPERIMENTAL=true mise set SSH_SECRET)
-		assert_contains "echo $RESULT" "ssh-encrypted-secret"
+  # Decrypt with SSH key via mise set
+  if command -v age >/dev/null 2>&1; then
+    # Only test if age CLI is available
+    RESULT=$(MISE_EXPERIMENTAL=true mise set SSH_SECRET)
+    assert_contains "echo $RESULT" "ssh-encrypted-secret"
 
-		# Test SSH key decryption in mise env
-		assert_contains "MISE_EXPERIMENTAL=true mise env | grep SSH_SECRET" "SSH_SECRET=ssh-encrypted-secret"
-	fi
+    # Test SSH key decryption in mise env
+    assert_contains "MISE_EXPERIMENTAL=true mise env | grep SSH_SECRET" "SSH_SECRET=ssh-encrypted-secret"
+  fi
 fi
 
 # Test default recipient behavior (uses age.txt if available)

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 mise g tool-stub ./bin/jq \
-	--platform-url https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64 \
-	--platform-url linux-x64:https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64
+  --platform-url https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64 \
+  --platform-url linux-x64:https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64
 
 assert "./bin/jq -V" "jq-1.8.1"
 assert "cat ./bin/jq" '#!/usr/bin/env -S mise tool-stub

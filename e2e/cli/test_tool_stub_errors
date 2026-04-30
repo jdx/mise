@@ -21,12 +21,12 @@ chmod +x test_http_default_bin
 output=$(mise tool-stub ./test_http_default_bin 2>&1 || true)
 # Simple check that the key parts of the error message are present
 if [[ $output == *"does not have an executable named 'test_http_default_bin'"* ]] &&
-	[[ $output == *"Available executables: hello-world-1.0.0/bin/hello-world"* ]]; then
-	echo "✓ Test 1 passed: Error message contains expected content"
+  [[ $output == *"Available executables: hello-world-1.0.0/bin/hello-world"* ]]; then
+  echo "✓ Test 1 passed: Error message contains expected content"
 else
-	echo "✗ Test 1 failed: Expected error message not found"
-	echo "Output: $output"
-	exit 1
+  echo "✗ Test 1 failed: Expected error message not found"
+  echo "Output: $output"
+  exit 1
 fi
 
 # Clean up (skip uninstall for speed in testing)
@@ -44,12 +44,12 @@ chmod +x test_hidden_files
 
 output=$(mise tool-stub ./test_hidden_files 2>&1 || true)
 if [[ $output == *"does not have an executable named 'nonexistent'"* ]] &&
-	[[ $output == *"Available executables: hello-world-1.0.0/bin/hello-world"* ]]; then
-	echo "✓ Test 2 passed: Error message contains expected content"
+  [[ $output == *"Available executables: hello-world-1.0.0/bin/hello-world"* ]]; then
+  echo "✓ Test 2 passed: Error message contains expected content"
 else
-	echo "✗ Test 2 failed: Expected error message not found"
-	echo "Output: $output"
-	exit 1
+  echo "✗ Test 2 failed: Expected error message not found"
+  echo "Output: $output"
+  exit 1
 fi
 
 # Clean up
@@ -67,12 +67,12 @@ chmod +x test_bin_path
 
 output=$(mise tool-stub ./test_bin_path 2>&1 || true)
 if [[ $output == *"does not have an executable named 'bin/nonexistent'"* ]] &&
-	[[ $output == *"Available executables: hello-world-1.0.0/bin/hello-world"* ]]; then
-	echo "✓ Test 3 passed: Error message contains expected content"
+  [[ $output == *"Available executables: hello-world-1.0.0/bin/hello-world"* ]]; then
+  echo "✓ Test 3 passed: Error message contains expected content"
 else
-	echo "✗ Test 3 failed: Expected error message not found"
-	echo "Output: $output"
-	exit 1
+  echo "✗ Test 3 failed: Expected error message not found"
+  echo "Output: $output"
+  exit 1
 fi
 
 # Clean up
@@ -88,9 +88,9 @@ chmod +x test_tool_notfound
 output=$(mise tool-stub ./test_tool_notfound 2>&1 || true)
 # The error for non-existent tools shows up as a toolset resolution error
 if [[ $output == *"No current versions found after resolving toolset"* ]]; then
-	echo "✓ Test 4 passed: Non-existent tool error handled correctly"
+  echo "✓ Test 4 passed: Non-existent tool error handled correctly"
 else
-	echo "✗ Test 4 failed: Expected toolset resolution error"
-	echo "Output: $output"
-	exit 1
+  echo "✗ Test 4 failed: Expected toolset resolution error"
+  echo "Output: $output"
+  exit 1
 fi

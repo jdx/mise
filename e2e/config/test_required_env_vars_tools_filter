@@ -4,25 +4,25 @@
 set -euo pipefail
 
 assert_contains() {
-	local output
-	output="${1}"
-	shift
-	if ! echo "${output}" | grep -q "$@"; then
-		echo "Expected to find '$*' in:"
-		echo "${output}"
-		exit 1
-	fi
+  local output
+  output="${1}"
+  shift
+  if ! echo "${output}" | grep -q "$@"; then
+    echo "Expected to find '$*' in:"
+    echo "${output}"
+    exit 1
+  fi
 }
 
 assert_not_contains() {
-	local output
-	output="${1}"
-	shift
-	if echo "${output}" | grep -q "$@"; then
-		echo "Did not expect to find '$*' in:"
-		echo "${output}"
-		exit 1
-	fi
+  local output
+  output="${1}"
+  shift
+  if echo "${output}" | grep -q "$@"; then
+    echo "Did not expect to find '$*' in:"
+    echo "${output}"
+    exit 1
+  fi
 }
 
 # Test 1: env command should NOT check tool-specific required vars
@@ -36,8 +36,8 @@ unset TOOL_REQUIRED NORMAL_REQUIRED || true
 
 # This should fail only on NORMAL_REQUIRED, not TOOL_REQUIRED
 if mise env 2>error.log; then
-	echo "ERROR: Expected mise env to fail but it succeeded"
-	exit 1
+  echo "ERROR: Expected mise env to fail but it succeeded"
+  exit 1
 fi
 
 assert_contains "$(cat error.log)" "NORMAL_REQUIRED"
@@ -49,8 +49,8 @@ export NORMAL_REQUIRED="set"
 unset TOOL_REQUIRED || true
 
 if mise exec -- echo test 2>error.log; then
-	echo "ERROR: Expected mise exec to fail but it succeeded"
-	exit 1
+  echo "ERROR: Expected mise exec to fail but it succeeded"
+  exit 1
 fi
 
 assert_contains "$(cat error.log)" "TOOL_REQUIRED"
@@ -73,8 +73,8 @@ EOF
 unset NON_TOOL_VAR || true
 
 if mise env 2>error.log; then
-	echo "ERROR: Expected mise env to fail but it succeeded"
-	exit 1
+  echo "ERROR: Expected mise env to fail but it succeeded"
+  exit 1
 fi
 
 assert_contains "$(cat error.log)" "NON_TOOL_VAR"

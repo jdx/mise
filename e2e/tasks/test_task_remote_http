@@ -5,7 +5,7 @@
 #################################################################################
 
 find_available_port() {
-	python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"
+  python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"
 }
 
 # Start HTTP test server
@@ -15,7 +15,7 @@ HTTP_SERVER_PID=$!
 
 # Ensure cleanup on exit
 cleanup() {
-	kill "$HTTP_SERVER_PID" 2>/dev/null || true
+  kill "$HTTP_SERVER_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 

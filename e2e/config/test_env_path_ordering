@@ -60,8 +60,8 @@ echo "DEBUG: which test-tool = $WHICH_OUTPUT"
 
 # The path should be custom/bin (not system/bin)
 if [[ $WHICH_OUTPUT == *"/custom/bin/test-tool" ]]; then
-	echo "SUCCESS: custom/bin comes before system/bin in PATH"
+  echo "SUCCESS: custom/bin comes before system/bin in PATH"
 else
-	echo "FAIL: Expected custom/bin/test-tool but got $WHICH_OUTPUT"
-	exit 1
+  echo "FAIL: Expected custom/bin/test-tool but got $WHICH_OUTPUT"
+  exit 1
 fi

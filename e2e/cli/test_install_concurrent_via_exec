@@ -13,7 +13,7 @@ mise uninstall dummy --all 2>/dev/null || true
 
 # Launch multiple processes trying to install the same tool concurrently
 for _ in {1..4}; do
-	mise x -- dummy --version &
+  mise x -- dummy --version &
 done
 
 # Wait for all background processes to complete

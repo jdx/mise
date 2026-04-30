@@ -24,8 +24,8 @@ assert_contains "cat hook_error.log" "Required environment variable 'REQUIRED_VA
 
 # Verify that regular mise env still fails
 if mise env 2>env_error.log; then
-	echo "ERROR: Expected mise env to fail but it succeeded"
-	exit 1
+  echo "ERROR: Expected mise env to fail but it succeeded"
+  exit 1
 fi
 
 assert_contains "cat env_error.log" "Required environment variable 'REQUIRED_VAR_HOOK' is not defined"

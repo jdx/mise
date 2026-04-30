@@ -9,13 +9,13 @@ set -eu
 eval "$(mise activate zsh --status)"
 
 if [[ ${__MISE_ZSH_PRECMD_RUN:-unset} != "0" ]]; then
-	echo "expected __MISE_ZSH_PRECMD_RUN=0 after activation"
-	exit 1
+  echo "expected __MISE_ZSH_PRECMD_RUN=0 after activation"
+  exit 1
 fi
 
 _mise_hook_precmd >/dev/null 2>&1
 
 if [[ ${__MISE_ZSH_PRECMD_RUN:-unset} != "1" ]]; then
-	echo "expected first precmd after activation to run hook-env"
-	exit 1
+  echo "expected first precmd after activation to run hook-env"
+  exit 1
 fi

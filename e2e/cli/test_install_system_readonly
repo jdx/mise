@@ -25,15 +25,15 @@ chmod -R a-w "$SYSTEM_INSTALLS"
 trap 'chmod -R u+w "$SYSTEM_INSTALLS" 2>/dev/null || true' EXIT
 
 assert_silent_install() {
-	local out
-	if ! out="$($1 2>&1)"; then
-		echo "$out"
-		fail "[$1] command failed"
-	fi
-	echo "$out"
-	if [[ $out == *"skipping symlink update"* || $out == *"Permission denied"* || $out == *"failed rm"* ]]; then
-		fail "[$1] unexpected system-dir warning during install"
-	fi
+  local out
+  if ! out="$($1 2>&1)"; then
+    echo "$out"
+    fail "[$1] command failed"
+  fi
+  echo "$out"
+  if [[ $out == *"skipping symlink update"* || $out == *"Permission denied"* || $out == *"failed rm"* ]]; then
+    fail "[$1] unexpected system-dir warning during install"
+  fi
 }
 
 # Re-installing a tool that lives only in the user dir must succeed without

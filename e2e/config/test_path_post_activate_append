@@ -56,8 +56,8 @@ APPENDED_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "appended/bin" | head -1 | c
 echo "DEBUG: system/bin at position $SYSTEM_POS, appended/bin at position $APPENDED_POS"
 
 if [[ $APPENDED_POS -gt $SYSTEM_POS ]]; then
-	echo "SUCCESS: appended/bin stays after system/bin in PATH"
+  echo "SUCCESS: appended/bin stays after system/bin in PATH"
 else
-	echo "FAIL: appended/bin ($APPENDED_POS) was moved before system/bin ($SYSTEM_POS)"
-	exit 1
+  echo "FAIL: appended/bin ($APPENDED_POS) was moved before system/bin ($SYSTEM_POS)"
+  exit 1
 fi

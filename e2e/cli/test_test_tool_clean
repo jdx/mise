@@ -24,8 +24,8 @@ mise test-tool shellcheck
 
 # Verify the marker files are gone (directories were cleaned)
 if [ -f "$MISE_DATA_DIR/installs/shellcheck/marker.txt" ]; then
-	echo "ERROR: installs directory was not cleaned"
-	exit 1
+  echo "ERROR: installs directory was not cleaned"
+  exit 1
 fi
 
 # Verify test-tool installed the latest version
@@ -45,8 +45,8 @@ mise test-tool shellcheck
 # Verify cache was cleaned and recreated
 [ -d "$MISE_CACHE_DIR/shellcheck" ]
 if [ -f "$MISE_CACHE_DIR/shellcheck/test.cache" ]; then
-	echo "ERROR: cache directory was not cleaned"
-	exit 1
+  echo "ERROR: cache directory was not cleaned"
+  exit 1
 fi
 
 echo "Test passed: test-tool correctly cleans all directories before installing"

@@ -38,19 +38,19 @@ SYSTEM_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "system-bin" | head -1 | cut -
 echo "DEBUG: mytool/bin at position $MYTOOL_POS, system-bin at position $SYSTEM_POS"
 
 if [[ -z $MYTOOL_POS ]]; then
-	echo "FAIL: mytool/bin not found in PATH"
-	exit 1
+  echo "FAIL: mytool/bin not found in PATH"
+  exit 1
 fi
 
 if [[ -z $SYSTEM_POS ]]; then
-	echo "FAIL: system-bin not found in PATH"
-	exit 1
+  echo "FAIL: system-bin not found in PATH"
+  exit 1
 fi
 
 if [[ $MYTOOL_POS -lt $SYSTEM_POS ]]; then
-	echo "SUCCESS: mytool/bin stays before system-bin (reorder preserved)"
+  echo "SUCCESS: mytool/bin stays before system-bin (reorder preserved)"
 else
-	echo "FAIL: mytool/bin ($MYTOOL_POS) was moved after system-bin ($SYSTEM_POS)"
-	echo "hook-env restored the original __MISE_ORIG_PATH order instead of the current order"
-	exit 1
+  echo "FAIL: mytool/bin ($MYTOOL_POS) was moved after system-bin ($SYSTEM_POS)"
+  echo "hook-env restored the original __MISE_ORIG_PATH order instead of the current order"
+  exit 1
 fi

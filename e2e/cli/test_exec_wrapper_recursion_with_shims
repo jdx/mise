@@ -37,8 +37,8 @@ mkdir -p "$shimdir"
 export PATH="$wrapperdir:$shimdir:$PATH"
 
 output="$(run_with_timeout 10 mise x -- dummy)" || {
-	echo "ERROR: mise x -- dummy timed out or failed (likely infinite recursion)"
-	exit 1
+  echo "ERROR: mise x -- dummy timed out or failed (likely infinite recursion)"
+  exit 1
 }
 
 # Should get real dummy output, not hang
