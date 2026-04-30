@@ -60,12 +60,13 @@ for platform in "${platforms[@]}"; do
 EOF
 	pushd "$RELEASE_DIR/npm"
 	tree || true
+	aube_publish_args=(--access public --tag "$dist_tag" --provenance --no-git-checks)
 	if [ "${DRY_RUN:-1}" != "0" ]; then
 		echo DRY_RUN
-		echo aube publish --access public --tag "$dist_tag" --provenance
+		echo aube publish "${aube_publish_args[@]}"
 		echo DRY_RUN
 	else
-		if ! aube publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
+		if ! aube publish "${aube_publish_args[@]}" 2>&1 | tee /tmp/npm-publish.log; then
 			if grep -qE "already (on|published)|previously published" /tmp/npm-publish.log; then
 				echo "Version already published, skipping..."
 			else
@@ -164,12 +165,13 @@ cat <<EOF >"$RELEASE_DIR/npm/package.json"
 }
 EOF
 pushd "$RELEASE_DIR/npm"
+aube_publish_args=(--access public --tag "$dist_tag" --provenance --no-git-checks)
 if [ "${DRY_RUN:-1}" != "0" ]; then
 	echo DRY_RUN
-	echo aube publish --access public --tag "$dist_tag" --provenance
+	echo aube publish "${aube_publish_args[@]}"
 	echo DRY_RUN
 else
-	if ! aube publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
+	if ! aube publish "${aube_publish_args[@]}" 2>&1 | tee /tmp/npm-publish.log; then
 		if grep -qE "already (on|published)|previously published" /tmp/npm-publish.log; then
 			echo "Version already published, skipping..."
 		else
