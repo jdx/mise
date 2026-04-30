@@ -1,0 +1,2 @@
+backends = ["aqua:jonwiggins/xmloxide"]
+description = "A pure Rust reimplementation of libxml2"
