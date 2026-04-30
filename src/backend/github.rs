@@ -1500,7 +1500,7 @@ impl UnifiedGitBackend {
             && attestations_supported(&api_url)
         {
             match self
-                .try_verify_github_attestations(ctx, tv, file_path)
+                .try_verify_github_attestations(ctx, tv, file_path, &api_url)
                 .await
             {
                 Ok(true) => {
@@ -1536,7 +1536,7 @@ impl UnifiedGitBackend {
 
         // Fall back to SLSA provenance (if enabled globally and for github backend)
         if !skip_slsa && settings.slsa && settings.github.slsa {
-            match self.try_verify_slsa(ctx, tv, file_path).await {
+            match self.try_verify_slsa(ctx, tv, file_path, &api_url).await {
                 Ok((true, provenance_url)) => {
                     // Defense-in-depth: verify the result matches the lockfile expectation
                     if let Some(ref expected) = locked_provenance
@@ -1588,6 +1588,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
+        api_url: &str,
     ) -> std::result::Result<bool, VerificationStatus> {
         ctx.pr
             .set_message("verify GitHub artifact attestations".to_string());
@@ -1601,14 +1602,13 @@ impl UnifiedGitBackend {
             )));
         }
         let (owner, repo_name) = (parts[0], parts[1]);
-        let api_url = self.get_api_url(&tv.request.options());
 
         match crate::github::sigstore::verify_attestation(
             file_path,
             owner,
             repo_name,
             None, // We don't know the expected workflow
-            Some(&api_url),
+            Some(api_url),
         )
         .await
         {
@@ -1637,6 +1637,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
+        api_url: &str,
     ) -> std::result::Result<(bool, Option<String>), VerificationStatus> {
         if self.is_gitlab() || self.is_forgejo() {
             return Err(VerificationStatus::NoAttestations);
@@ -1647,14 +1648,13 @@ impl UnifiedGitBackend {
         // Get the release to find provenance assets
         let repo = self.repo();
         let opts = tv.request.options();
-        let api_url = self.get_api_url(&opts);
         let version = &tv.version;
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.get("version_prefix");
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-                let api_url = api_url.clone();
+                let api_url = api_url.to_string();
                 let repo = repo.clone();
                 async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
             })
