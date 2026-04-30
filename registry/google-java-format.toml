@@ -1,4 +1,4 @@
 backends = ["aqua:google/google-java-format"]
 depends = ["java"]
 description = "Reformats Java source code to comply with Google Java Style"
-test = { cmd = "google-java-format --version", expected = "google-java-format" }
+test = { cmd = "google-java-format --version", expected = "google-java-format: Version {{version}}" }
