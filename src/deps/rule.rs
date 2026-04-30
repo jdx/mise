@@ -15,6 +15,8 @@ pub const BUILTIN_PROVIDERS: &[&str] = &[
     "uv",            // Python (uv)
     "bundler",       // Ruby
     "composer",      // PHP
+    "dart",          // Dart
+    "flutter",       // Flutter
     "git-submodule", // Git
 ];
 

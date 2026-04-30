@@ -73,6 +73,8 @@ mise includes built-in providers for common package managers:
 | `uv`       | `pyproject.toml`, `uv.lock`             | `.venv/`              | `uv sync`                            |
 | `bundler`  | `Gemfile`, `Gemfile.lock`               | `vendor/bundle/`      | `bundle install`                     |
 | `composer` | `composer.json`, `composer.lock`        | `vendor/`             | `composer install`                   |
+| `dart`     | `pubspec.yaml`, `pubspec.lock`          | `.dart_tool/`         | `dart pub get`                       |
+| `flutter`  | `pubspec.yaml`, `pubspec.lock`          | `.dart_tool/`         | `flutter pub get`                    |
 
 Built-in providers are only active when explicitly configured in `mise.toml` and their lockfile exists.
 
@@ -92,7 +94,7 @@ mise deps remove npm:lodash
 ```
 
 The ecosystem prefix tells mise which package manager to use. Currently supported
-ecosystems for add/remove: `npm`, `yarn`, `pnpm`, `bun`, `aube`.
+ecosystems for add/remove: `npm`, `yarn`, `pnpm`, `bun`, `aube`, `dart`, `flutter`.
 
 ## Custom Providers
 

@@ -20,8 +20,9 @@ type JobOutput = Result<(String, DepsStepResult, Vec<PathBuf>), (String, eyre::R
 use super::deps_ordering::DepsOrdering;
 use super::providers::{
     AubeDepsProvider, BunDepsProvider, BundlerDepsProvider, ComposerDepsProvider,
-    CustomDepsProvider, GitSubmoduleDepsProvider, GoDepsProvider, NpmDepsProvider, PipDepsProvider,
-    PnpmDepsProvider, PoetryDepsProvider, UvDepsProvider, YarnDepsProvider,
+    CustomDepsProvider, DartDepsProvider, GitSubmoduleDepsProvider, GoDepsProvider,
+    NpmDepsProvider, PipDepsProvider, PnpmDepsProvider, PoetryDepsProvider, UvDepsProvider,
+    YarnDepsProvider,
 };
 use super::rule::BUILTIN_PROVIDERS;
 use super::state::{self, DepsState};
@@ -192,6 +193,16 @@ impl DepsEngine {
                     provider_config,
                 ))),
                 "composer" => Some(Box::new(ComposerDepsProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "dart" => Some(Box::new(DartDepsProvider::new(
+                    "dart",
+                    config_root,
+                    provider_config,
+                ))),
+                "flutter" => Some(Box::new(DartDepsProvider::new(
+                    "flutter",
                     config_root,
                     provider_config,
                 ))),
