@@ -288,15 +288,15 @@
             "sources": {
               "oneOf": [
                 {
-                  "description": "files that this task depends on",
+                  "description": "files that this task depends on (entries starting with `!` are excluded; use `\\!` to escape a literal `!` prefix)",
                   "items": {
-                    "description": "glob pattern or path to files that this task depends on",
+                    "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)",
                     "type": "string"
                   },
                   "type": "array"
                 },
                 {
-                  "description": "glob pattern or path to files that this task depends on",
+                  "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)",
                   "type": "string"
                 }
               ]
@@ -1072,15 +1072,15 @@
         "sources": {
           "oneOf": [
             {
-              "description": "files that this task depends on",
+              "description": "files that this task depends on (entries starting with `!` are excluded; use `\\!` to escape a literal `!` prefix)",
               "items": {
-                "description": "glob pattern or path to files that this task depends on",
+                "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)",
                 "type": "string"
               },
               "type": "array"
             },
             {
-              "description": "glob pattern or path to files that this task depends on",
+              "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)",
               "type": "string"
             }
           ]

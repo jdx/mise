@@ -377,6 +377,27 @@ has changed since the last build.
 The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
 `sources` within its template context.
 
+#### Excluding sources
+
+Entries in `sources` prefixed with `!` are excluded, matching the convention
+used by gitignore, watchexec, and rsync. Exclusions affect the freshness
+check, the `task_source_files` template function, and which files
+`mise watch` watches for changes.
+
+```mise-toml
+[tasks.build]
+sources = ["src/**/*.ts", "!src/**/*.test.ts", "!src/**/*.spec.ts", "tsconfig.json"]
+run = "npm run build"
+```
+
+Entries are evaluated in order, and the latest matching entry wins. A later
+non-negated entry can re-include a file an earlier `!` excluded — for example,
+`["src/**/*.ts", "!src/**/*.test.ts", "src/keep.test.ts"]` excludes all
+`*.test.ts` files except `src/keep.test.ts`.
+
+To include a literal path that begins with `!`, escape the prefix as `\!`
+(e.g. `"\\!important.txt"` in TOML).
+
 #### Dependency invalidation
 
 When a task depends on another task that also has `sources` defined, and the dependency runs because

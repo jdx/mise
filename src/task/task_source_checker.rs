@@ -5,6 +5,7 @@ use crate::hash;
 use crate::task::Task;
 use eyre::{Result, eyre};
 use glob::glob;
+use ignore::overrides::{Override, OverrideBuilder};
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::fs;
@@ -18,6 +19,91 @@ pub fn is_glob_pattern(path: &str) -> bool {
     // This is the character set used for glob detection by glob
     let glob_chars = ['*', '{', '}'];
     path.chars().any(|c| glob_chars.contains(&c))
+}
+
+/// Build an [`Override`] matcher for a task's `sources` patterns.
+///
+/// Patterns use gitignore syntax with `!` inverted (the [`Override`] convention,
+/// see `ignore::overrides`): a non-negated entry marks a file as a *source*,
+/// and a `!`-prefixed entry *excludes* it. `\!` escapes a literal leading `!`,
+/// and order matters — a later non-negated entry can re-include a file an
+/// earlier `!` excluded.
+///
+/// Patterns that are absolute paths under `root` are rewritten to be relative,
+/// matching the convention used by `Override` itself (see its tests) and the
+/// `ignore::WalkBuilder`: matchers receive root-relative patterns and let
+/// `matched()` strip the root from incoming paths automatically.
+pub(crate) fn build_source_matcher(root: &Path, sources: &[String]) -> Override {
+    let mut builder = OverrideBuilder::new(root);
+    for s in sources {
+        let normalized = relativize_pattern(root, s);
+        if let Err(e) = builder.add(&normalized) {
+            warn!("invalid source pattern {s:?}: {e}");
+        }
+    }
+    builder.build().unwrap_or_else(|e| {
+        warn!("failed to build source matcher: {e}");
+        Override::empty()
+    })
+}
+
+/// If `pattern`'s body is an absolute path under `root`, rewrite it as a
+/// root-relative path so the matcher can use gitignore's relative-path
+/// semantics. The `!` / `\!` prefix is preserved as-is.
+fn relativize_pattern(root: &Path, pattern: &str) -> String {
+    let (prefix, body) = if pattern.starts_with("\\!") {
+        // `\!body` is a literal include of a path beginning with `!`. Don't
+        // peek past the escape — `OverrideBuilder::add` handles it.
+        return pattern.to_string();
+    } else if let Some(rest) = pattern.strip_prefix('!') {
+        ("!", rest)
+    } else {
+        ("", pattern)
+    };
+    let body_path = Path::new(body);
+    if body_path.is_absolute()
+        && let Ok(rel) = body_path.strip_prefix(root)
+        && let Some(rel_str) = rel.to_str()
+    {
+        return format!("{prefix}{rel_str}");
+    }
+    pattern.to_string()
+}
+
+/// Returns true iff `path` is selected as a source by `matcher`. With
+/// [`Override`]'s inverted semantics, a non-negated user pattern produces
+/// `Match::Whitelist` for matching paths.
+///
+/// Absolute paths that don't fall under the matcher's root are out of
+/// gitignore's domain — `Override::matched` would return `Match::None` and,
+/// when positive patterns are present, promote that to `Match::Ignore`,
+/// silently dropping a file the glob legitimately included. Trust the glob
+/// in that case (matching pre-PR behavior for workspace-root paths
+/// referenced from sub-package tasks, etc.).
+pub(crate) fn is_source(matcher: &Override, path: &Path) -> bool {
+    if path.is_absolute() && !path.starts_with(matcher.path()) {
+        return true;
+    }
+    matcher.matched(path, false).is_whitelist()
+}
+
+/// Returns the include-side glob patterns from `sources`, suitable for file
+/// enumeration via `glob`. `!`-prefixed entries are dropped (they only
+/// constrain matching, not enumeration); `\!`-prefixed entries have the
+/// escape removed so they can be globbed as literal `!`-prefixed paths.
+pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
+    sources
+        .iter()
+        .filter_map(|s| {
+            if s.starts_with('!') {
+                None
+            } else if let Some(rest) = s.strip_prefix("\\!") {
+                Some(format!("!{rest}"))
+            } else {
+                Some(s.clone())
+            }
+        })
+        .collect()
 }
 
 /// Get the last modified time from a list of paths
@@ -42,11 +128,12 @@ pub(crate) fn last_modified_glob_match(
     if patterns.is_empty() {
         return Ok(None);
     }
+    let root_ref = root.as_ref();
     let files = patterns
         .iter()
         .flat_map(|pattern| {
             glob(
-                root.as_ref()
+                root_ref
                     .join(pattern)
                     .to_str()
                     .expect("Conversion to string path failed"),
@@ -110,9 +197,22 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
     // perhaps using some manifest in a state directory or something, maybe leveraging atime?
     let run = async || -> Result<bool> {
         let root = task_cwd(task, config).await?;
-        let mut sources = task.sources.clone();
-        sources.push(task.config_source.to_string_lossy().to_string());
-        let source_metadatas = get_file_metadatas(&root, &sources)?;
+        let matcher = build_source_matcher(&root, &task.sources);
+        let glob_patterns = source_glob_patterns(&task.sources);
+        let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher)?;
+        // Always include the task's own config file as a source, regardless of
+        // any excludes — a stray `!mise.toml` must not silently disable invalidation.
+        let config_path = if task.config_source.is_absolute() {
+            task.config_source.clone()
+        } else {
+            root.join(&task.config_source)
+        };
+        if let Ok(meta) = config_path.metadata()
+            && meta.is_file()
+            && !source_metadatas.iter().any(|(p, _)| p == &config_path)
+        {
+            source_metadatas.push((config_path, meta));
+        }
 
         // Check if sources resolved to no files (likely a config mistake)
         if source_metadatas.is_empty() {
@@ -246,10 +346,12 @@ fn source_existing_hash(task: &Task, root: &Path, content_hash: bool) -> Option<
     }
 }
 
-/// Get file metadata for a list of patterns or paths
+/// Get file metadata for a list of include-side patterns or paths, retaining
+/// only files that `matcher` selects as a source.
 fn get_file_metadatas(
     root: &Path,
     patterns_or_paths: &[String],
+    matcher: &Override,
 ) -> Result<Vec<(PathBuf, fs::Metadata)>> {
     if patterns_or_paths.is_empty() {
         return Ok(vec![]);
@@ -277,6 +379,7 @@ fn get_file_metadatas(
     let metadatas = metadatas
         .into_iter()
         .filter(|(_, m)| m.is_file())
+        .filter(|(p, _)| is_source(matcher, p))
         .collect_vec();
 
     Ok(metadatas)
@@ -305,7 +408,8 @@ fn get_last_modified_from_metadatas(metadatas: &[(PathBuf, fs::Metadata)]) -> Op
     metadatas.iter().flat_map(|(_, m)| m.modified()).max()
 }
 
-/// Get the last modified time from a list of patterns or paths
+/// Get the last modified time from a list of patterns or paths. Used for
+/// task *outputs*, which do not support exclusion patterns.
 fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option<SystemTime>> {
     if patterns_or_paths.is_empty() {
         return Ok(None);
@@ -323,4 +427,102 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
         patterns_or_paths.iter().join(" ")
     );
     Ok(last_mod)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn matches(sources: &[&str], path: &str) -> bool {
+        let sources: Vec<String> = sources.iter().map(|s| s.to_string()).collect();
+        let matcher = build_source_matcher(Path::new("."), &sources);
+        is_source(&matcher, Path::new(path))
+    }
+
+    #[test]
+    fn glob_patterns_drops_excludes_and_unescapes() {
+        let inputs = vec![
+            "src/**/*.ts".to_string(),
+            "!src/**/*.test.ts".to_string(),
+            "\\!literal.txt".to_string(),
+            "tsconfig.json".to_string(),
+        ];
+        assert_eq!(
+            source_glob_patterns(&inputs),
+            vec!["src/**/*.ts", "!literal.txt", "tsconfig.json"],
+        );
+    }
+
+    #[test]
+    fn matcher_includes_plain_pattern() {
+        assert!(matches(&["src/**/*.ts"], "src/foo.ts"));
+        assert!(matches(&["src/**/*.ts"], "src/sub/foo.ts"));
+        assert!(!matches(&["src/**/*.ts"], "lib/foo.ts"));
+    }
+
+    #[test]
+    fn matcher_negation_excludes() {
+        let pats = &["src/**/*.ts", "!src/**/*.test.ts"];
+        assert!(matches(pats, "src/foo.ts"));
+        assert!(!matches(pats, "src/foo.test.ts"));
+    }
+
+    #[test]
+    fn matcher_reincludes_after_negation() {
+        // Re-inclusion semantics: a later non-negated entry wins over an
+        // earlier `!`-negation, just like a gitignore whitelist.
+        let pats = &["src/**/*.ts", "!src/**/*.test.ts", "src/keep.test.ts"];
+        assert!(matches(pats, "src/foo.ts"));
+        assert!(!matches(pats, "src/foo.test.ts"));
+        assert!(matches(pats, "src/keep.test.ts"));
+    }
+
+    #[test]
+    fn matcher_escaped_literal_bang() {
+        let pats = &["\\!important.txt", "!ignored.txt"];
+        assert!(matches(pats, "!important.txt"));
+        assert!(!matches(pats, "ignored.txt"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn matcher_absolute_pattern_under_root() {
+        // Patterns that resolve to absolute paths under the matcher root
+        // (e.g. from `{{cwd}}/input` after templating) are normalized to
+        // root-relative so gitignore semantics work correctly.
+        // Unix-only because Windows uses `C:\...` for absolute paths and
+        // `Path::is_absolute` returns false for `/proj` there.
+        let root = Path::new("/proj");
+        let sources = vec!["/proj/input".to_string()];
+        let matcher = build_source_matcher(root, &sources);
+        assert!(is_source(&matcher, Path::new("/proj/input")));
+        assert!(!is_source(&matcher, Path::new("/proj/other")));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn matcher_absolute_negation_under_root() {
+        let root = Path::new("/proj");
+        let sources = vec![
+            "/proj/src/**/*.ts".to_string(),
+            "!/proj/src/**/*.test.ts".to_string(),
+        ];
+        let matcher = build_source_matcher(root, &sources);
+        assert!(is_source(&matcher, Path::new("/proj/src/foo.ts")));
+        assert!(!is_source(&matcher, Path::new("/proj/src/foo.test.ts")));
+    }
+
+    /// Regression: an absolute path outside the matcher's root must not be
+    /// silently dropped. `Override::matched` returns `Match::None` for such
+    /// paths and (with positive patterns present) promotes them to
+    /// `Match::Ignore`, which would silently exclude legitimate sources
+    /// (e.g. a workspace-root file referenced from a sub-package task).
+    #[test]
+    #[cfg(unix)]
+    fn matcher_absolute_path_outside_root_passes_through() {
+        let root = Path::new("/proj");
+        let sources = vec!["/elsewhere/Cargo.toml".to_string()];
+        let matcher = build_source_matcher(root, &sources);
+        assert!(is_source(&matcher, Path::new("/elsewhere/Cargo.toml")));
+    }
 }

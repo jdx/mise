@@ -500,17 +500,30 @@ impl TaskScriptParser {
         });
 
         tera.register_function("task_source_files", {
-            let sources = Arc::new(task.sources.clone());
+            let glob_patterns = Arc::new(
+                crate::task::task_source_checker::source_glob_patterns(&task.sources),
+            );
+            // Anchor the matcher at the process cwd. `is_source` handles
+            // absolute paths outside this root by trusting the glob result,
+            // so absolute outside-cwd patterns (e.g. workspace-root paths)
+            // still flow through.
+            let cwd = crate::dirs::CWD
+                .clone()
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let matcher = Arc::new(crate::task::task_source_checker::build_source_matcher(
+                &cwd,
+                &task.sources,
+            ));
 
             move |_: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
-               if sources.is_empty() {
+               if glob_patterns.is_empty() {
                    trace!("tera::render::resolve_task_sources `task_source_files` called in task with empty sources array");
                    return Ok(tera::Value::Array(Default::default()));
                };
 
-                let mut resolved = Vec::with_capacity(sources.len());
+                let mut resolved = Vec::with_capacity(glob_patterns.len());
 
-                for pattern in sources.iter() {
+                for pattern in glob_patterns.iter() {
                     // pattern is considered a tera template string if it contains opening tags:
                     // - "{#" for comments
                     // - "{{" for expressions
@@ -545,6 +558,15 @@ impl TaskScriptParser {
 
                                 match path {
                                     Ok(path) => {
+                                        if !crate::task::task_source_checker::is_source(
+                                            &matcher, &path,
+                                        ) {
+                                            trace!(
+                                                "tera::render::resolve_task_sources excluded '{}' due to !-pattern",
+                                                path.display()
+                                            );
+                                            continue;
+                                        }
                                         let source = path.display();
                                         trace!(
                                             "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
@@ -1254,6 +1276,12 @@ mod tests {
                     env!("CARGO_MANIFEST_DIR"),
                     "/README.md; ",
                 ),
+            ),
+            // `!` excludes a previously matched file
+            (
+                &["**/filetask", "!**/filetask"],
+                "echo {{ task_source_files() }}",
+                "echo []",
             ),
         ];
 
