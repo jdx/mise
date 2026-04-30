@@ -45,7 +45,7 @@ const DEFAULT_FORGEJO_API_BASE_URL: &str = "https://codeberg.org/api/v1";
 /// attempt against a custom api_url will fail. Callers gate on this so users
 /// don't have to disable `MISE_GITHUB_ATTESTATIONS` globally for GHE tools.
 fn attestations_supported(api_url: &str) -> bool {
-    api_url == DEFAULT_GITHUB_API_BASE_URL
+    api_url.trim_end_matches('/') == DEFAULT_GITHUB_API_BASE_URL
 }
 
 /// Status returned from verification attempts
@@ -1477,8 +1477,23 @@ impl UnifiedGitBackend {
             .is_some_and(|l| !l.is_github_attestations());
         let skip_slsa = locked_provenance.as_ref().is_some_and(|l| !l.is_slsa());
 
-        // Try GitHub artifact attestations first (if enabled globally and for github backend)
+        // If the lockfile expects github-attestations but the configured api_url
+        // doesn't support them (e.g. GHE Server), surface a clear, actionable
+        // error rather than falling through to the generic "downgrade attack"
+        // path below.
         let api_url = self.get_api_url(&tv.request.options());
+        if !attestations_supported(&api_url)
+            && let Some(ref expected) = locked_provenance
+            && expected.is_github_attestations()
+        {
+            return Err(eyre::eyre!(
+                "Lockfile requires github-attestations provenance for {tv} but the \
+                 configured api_url ({api_url}) does not serve attestations. \
+                 Re-run `mise lock` to refresh the lockfile, or remove the custom api_url."
+            ));
+        }
+
+        // Try GitHub artifact attestations first (if enabled globally and for github backend)
         if !skip_attestations
             && settings.github_attestations
             && settings.github.github_attestations
@@ -1997,6 +2012,8 @@ mod tests {
     #[test]
     fn test_attestations_supported_default_api() {
         assert!(attestations_supported("https://api.github.com"));
+        // Trailing slashes are common when users hand-write api_url
+        assert!(attestations_supported("https://api.github.com/"));
     }
 
     #[test]
