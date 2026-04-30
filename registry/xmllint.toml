@@ -1,2 +1,3 @@
 backends = ["aqua:jonwiggins/xmloxide"]
-description = "A pure Rust reimplementation of libxml2"
+description = "A Rust reimplementation of the xmllint command-line XML tool"
+test = { cmd = "xmllint --version", expected = "xmllint" }
