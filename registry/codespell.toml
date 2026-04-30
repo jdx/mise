@@ -1,0 +1,3 @@
+backends = ["pipx:codespell"]
+description = "Check code for common misspellings"
+test = { cmd = "codespell --version", expected = "{{version}}" }

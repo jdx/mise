@@ -1,0 +1,3 @@
+backends = ["npm:renovate"]
+description = "Automate dependency updates across repositories"
+test = { cmd = "renovate --version", expected = "{{version}}" }
