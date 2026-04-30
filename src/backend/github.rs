@@ -40,6 +40,14 @@ const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
 const DEFAULT_FORGEJO_API_BASE_URL: &str = "https://codeberg.org/api/v1";
 
+/// GitHub artifact attestations are only served by https://api.github.com. GHE
+/// Server doesn't implement the attestations endpoint, so any verification
+/// attempt against a custom api_url will fail. Callers gate on this so users
+/// don't have to disable `MISE_GITHUB_ATTESTATIONS` globally for GHE tools.
+fn attestations_supported(api_url: &str) -> bool {
+    api_url.trim_end_matches('/') == DEFAULT_GITHUB_API_BASE_URL
+}
+
 /// Status returned from verification attempts
 enum VerificationStatus {
     /// No attestations or provenance found (not an error, tool may not have them)
@@ -484,6 +492,7 @@ impl UnifiedGitBackend {
         // Uses the asset digest from the GitHub API to query attestations without downloading
         if settings.github_attestations
             && settings.github.github_attestations
+            && attestations_supported(api_url)
             && let Some(digest) = asset_digest
         {
             let parts: Vec<&str> = repo.split('/').collect();
@@ -574,7 +583,10 @@ impl UnifiedGitBackend {
         let settings = Settings::get();
 
         // Try GitHub artifact attestations first (highest priority)
-        if settings.github_attestations && settings.github.github_attestations {
+        if settings.github_attestations
+            && settings.github.github_attestations
+            && attestations_supported(api_url)
+        {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
@@ -1465,11 +1477,30 @@ impl UnifiedGitBackend {
             .is_some_and(|l| !l.is_github_attestations());
         let skip_slsa = locked_provenance.as_ref().is_some_and(|l| !l.is_slsa());
 
+        // If the lockfile expects github-attestations but the configured api_url
+        // doesn't support them (e.g. GHE Server), surface a clear, actionable
+        // error rather than falling through to the generic "downgrade attack"
+        // path below.
+        let api_url = self.get_api_url(&tv.request.options());
+        if !attestations_supported(&api_url)
+            && let Some(ref expected) = locked_provenance
+            && expected.is_github_attestations()
+        {
+            return Err(eyre::eyre!(
+                "Lockfile requires github-attestations provenance for {tv} but the \
+                 configured api_url ({api_url}) does not serve attestations. \
+                 Re-run `mise lock` to refresh the lockfile, or remove the custom api_url."
+            ));
+        }
+
         // Try GitHub artifact attestations first (if enabled globally and for github backend)
-        if !skip_attestations && settings.github_attestations && settings.github.github_attestations
+        if !skip_attestations
+            && settings.github_attestations
+            && settings.github.github_attestations
+            && attestations_supported(&api_url)
         {
             match self
-                .try_verify_github_attestations(ctx, tv, file_path)
+                .try_verify_github_attestations(ctx, tv, file_path, &api_url)
                 .await
             {
                 Ok(true) => {
@@ -1505,7 +1536,7 @@ impl UnifiedGitBackend {
 
         // Fall back to SLSA provenance (if enabled globally and for github backend)
         if !skip_slsa && settings.slsa && settings.github.slsa {
-            match self.try_verify_slsa(ctx, tv, file_path).await {
+            match self.try_verify_slsa(ctx, tv, file_path, &api_url).await {
                 Ok((true, provenance_url)) => {
                     // Defense-in-depth: verify the result matches the lockfile expectation
                     if let Some(ref expected) = locked_provenance
@@ -1557,6 +1588,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
+        api_url: &str,
     ) -> std::result::Result<bool, VerificationStatus> {
         ctx.pr
             .set_message("verify GitHub artifact attestations".to_string());
@@ -1570,14 +1602,13 @@ impl UnifiedGitBackend {
             )));
         }
         let (owner, repo_name) = (parts[0], parts[1]);
-        let api_url = self.get_api_url(&tv.request.options());
 
         match crate::github::sigstore::verify_attestation(
             file_path,
             owner,
             repo_name,
             None, // We don't know the expected workflow
-            Some(&api_url),
+            Some(api_url),
         )
         .await
         {
@@ -1606,6 +1637,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
+        api_url: &str,
     ) -> std::result::Result<(bool, Option<String>), VerificationStatus> {
         if self.is_gitlab() || self.is_forgejo() {
             return Err(VerificationStatus::NoAttestations);
@@ -1616,14 +1648,13 @@ impl UnifiedGitBackend {
         // Get the release to find provenance assets
         let repo = self.repo();
         let opts = tv.request.options();
-        let api_url = self.get_api_url(&opts);
         let version = &tv.version;
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.get("version_prefix");
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-                let api_url = api_url.clone();
+                let api_url = api_url.to_string();
                 let repo = repo.clone();
                 async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
             })
@@ -1976,5 +2007,19 @@ mod tests {
     fn test_is_slsa_format_issue_api_error() {
         let err = crate::github::sigstore::AttestationError::Api("connection refused".to_string());
         assert!(!is_slsa_format_issue(&err));
+    }
+
+    #[test]
+    fn test_attestations_supported_default_api() {
+        assert!(attestations_supported("https://api.github.com"));
+        // Trailing slashes are common when users hand-write api_url
+        assert!(attestations_supported("https://api.github.com/"));
+    }
+
+    #[test]
+    fn test_attestations_supported_custom_api_url() {
+        assert!(!attestations_supported("https://ghe.example.com/api/v3"));
+        assert!(!attestations_supported("https://gitlab.com/api/v4"));
+        assert!(!attestations_supported("https://codeberg.org/api/v1"));
     }
 }

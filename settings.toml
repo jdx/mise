@@ -691,6 +691,11 @@ docs = """
 Enable/disable GitHub Artifact Attestations verification for github backend tools.
 When enabled, mise will verify the authenticity and integrity of downloaded tools
 using GitHub's artifact attestation system.
+
+Attestations are only verified when the tool resolves to the public GitHub API
+(`https://api.github.com`). Tools that set a custom `api_url` (e.g. GitHub
+Enterprise Server) skip attestation verification automatically since GHE Server
+does not implement the attestations endpoint.
 """
 env = "MISE_GITHUB_GITHUB_ATTESTATIONS"
 type = "Bool"
