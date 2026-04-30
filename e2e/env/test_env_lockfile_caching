@@ -16,9 +16,9 @@ eval "$(mise activate bash)"
 # With no lockfile present, hook-env should be stable.
 output=$(mise hook-env -s bash)
 if [[ -z $output ]]; then
-	ok "no lockfile does not destabilize hook-env"
+  ok "no lockfile does not destabilize hook-env"
 else
-	fail "no lockfile should not destabilize hook-env but got: '$output'"
+  fail "no lockfile should not destabilize hook-env but got: '$output'"
 fi
 
 # Creating a lockfile should invalidate once.
@@ -26,18 +26,18 @@ sleep 1
 touch mise.lock
 output=$(mise hook-env -s bash)
 if [[ $output == *"__MISE_SESSION"* ]]; then
-	ok "creating mise.lock invalidates session"
+  ok "creating mise.lock invalidates session"
 else
-	fail "creating mise.lock should invalidate session but got: '$output'"
+  fail "creating mise.lock should invalidate session but got: '$output'"
 fi
 eval "$output"
 
 # Should stabilize after picking up the new lockfile.
 output=$(mise hook-env -s bash)
 if [[ -z $output ]]; then
-	ok "hook-env stabilizes after mise.lock creation"
+  ok "hook-env stabilizes after mise.lock creation"
 else
-	fail "hook-env should stabilize after mise.lock creation but got: '$output'"
+  fail "hook-env should stabilize after mise.lock creation but got: '$output'"
 fi
 
 # Removing the lockfile should also invalidate once.
@@ -45,16 +45,16 @@ sleep 1
 rm mise.lock
 output=$(mise hook-env -s bash)
 if [[ $output == *"__MISE_SESSION"* ]]; then
-	ok "removing mise.lock invalidates session"
+  ok "removing mise.lock invalidates session"
 else
-	fail "removing mise.lock should invalidate session but got: '$output'"
+  fail "removing mise.lock should invalidate session but got: '$output'"
 fi
 eval "$output"
 
 # And then stabilize again.
 output=$(mise hook-env -s bash)
 if [[ -z $output ]]; then
-	ok "hook-env stabilizes after mise.lock removal"
+  ok "hook-env stabilizes after mise.lock removal"
 else
-	fail "hook-env should stabilize after mise.lock removal but got: '$output'"
+  fail "hook-env should stabilize after mise.lock removal but got: '$output'"
 fi

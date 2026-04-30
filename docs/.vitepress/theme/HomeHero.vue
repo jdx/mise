@@ -110,7 +110,7 @@
 .orb-1 {
   width: 600px;
   height: 600px;
-  background: linear-gradient(135deg, #8B2252, #C75B7A);
+  background: linear-gradient(135deg, #8b2252, #c75b7a);
   top: -200px;
   left: -100px;
   animation-delay: 0s;
@@ -119,7 +119,7 @@
 .orb-2 {
   width: 500px;
   height: 500px;
-  background: linear-gradient(135deg, #C5975B, #D4A76A);
+  background: linear-gradient(135deg, #c5975b, #d4a76a);
   bottom: -150px;
   right: -150px;
   animation-delay: 5s;
@@ -128,7 +128,7 @@
 .orb-3 {
   width: 400px;
   height: 400px;
-  background: linear-gradient(135deg, #8FA86E, #6B7F4E);
+  background: linear-gradient(135deg, #8fa86e, #6b7f4e);
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -268,7 +268,7 @@
 }
 
 .action-button.primary {
-  background: linear-gradient(135deg, #8B2252, #722F37);
+  background: linear-gradient(135deg, #8b2252, #722f37);
   color: white;
   box-shadow: 0 4px 20px rgba(139, 34, 82, 0.3);
 }
@@ -315,7 +315,7 @@
 .stat-value {
   font-size: 1.75rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #8B2252, #C5975B);
+  background: linear-gradient(135deg, #8b2252, #c5975b);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -387,7 +387,7 @@
 }
 
 .dark .stat-value {
-  background: linear-gradient(135deg, #C75B7A, #D4A76A);
+  background: linear-gradient(135deg, #c75b7a, #d4a76a);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;

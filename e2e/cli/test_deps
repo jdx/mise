@@ -405,9 +405,9 @@ assert_not_contains "mise deps --list" "custom_sub"
 
 # From subdirectory: only subdirectory provider should be visible, not inherited root
 (
-	cd subproject
-	assert_contains "mise deps --list" "custom_sub"
-	assert_not_contains "mise deps --list" "custom_root"
+  cd subproject
+  assert_contains "mise deps --list" "custom_sub"
+  assert_not_contains "mise deps --list" "custom_root"
 )
 
 # Clean up previous test

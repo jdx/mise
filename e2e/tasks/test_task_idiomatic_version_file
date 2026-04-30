@@ -6,8 +6,8 @@
 # First disable the parent /tmp/mise.toml experimental monorepo setting
 # to avoid interference with this test
 if [ -f /tmp/mise.toml ]; then
-	mv /tmp/mise.toml /tmp/mise.toml.bak
-	trap "mv /tmp/mise.toml.bak /tmp/mise.toml" EXIT
+  mv /tmp/mise.toml /tmp/mise.toml.bak
+  trap "mv /tmp/mise.toml.bak /tmp/mise.toml" EXIT
 fi
 
 # Create a .node-version file

@@ -28,21 +28,21 @@ assert_contains "mise run test-file" "Task executed successfully"
 # Test 2: Run the task from a subdirectory (the fix - should work)
 mkdir -p subdir
 (
-	cd subdir
-	assert_contains "mise run test-file" "Task executed successfully"
+  cd subdir
+  assert_contains "mise run test-file" "Task executed successfully"
 )
 
 # Test 3: Run from a nested subdirectory
 mkdir -p subdir/nested
 (
-	cd subdir/nested
-	assert_contains "mise run test-file" "Task executed successfully"
+  cd subdir/nested
+  assert_contains "mise run test-file" "Task executed successfully"
 )
 
 # Test 4: Verify the task shows up in task list from subdirectory
 (
-	cd subdir
-	assert_contains "mise tasks ls" "test-file"
+  cd subdir
+  assert_contains "mise tasks ls" "test-file"
 )
 
 # Test 5: Test with absolute path (should work from anywhere)
@@ -57,8 +57,8 @@ mise trust
 assert_contains "mise run test-absolute" "Task executed successfully"
 
 (
-	cd subdir
-	assert_contains "mise run test-absolute" "Task executed successfully"
+  cd subdir
+  assert_contains "mise run test-absolute" "Task executed successfully"
 )
 
 # Test 6: Test with templated path
@@ -72,8 +72,8 @@ mise trust
 assert_contains "mise run test-template" "Task executed successfully"
 
 (
-	cd subdir
-	assert_contains "mise run test-template" "Task executed successfully"
+  cd subdir
+  assert_contains "mise run test-template" "Task executed successfully"
 )
 
 echo "All task file resolution tests passed!"

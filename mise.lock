@@ -436,44 +436,44 @@ url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_windows_am
 provenance = "github-attestations"
 
 [[tools.hk]]
-version = "1.44.0"
+version = "1.44.3"
 backend = "aqua:jdx/hk"
 
 [tools.hk."platforms.linux-arm64"]
-checksum = "sha256:0dbca69b6d2141bf60aa9b5cd54e59232ba5b10855a9c7b52426a9645211809f"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:85e0f8b7c3107f5b7853390bf8201d3d9839021e3f2d7629f5457f7569218fcc"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-aarch64-unknown-linux-gnu.tar.gz"
 
 [tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:0f6bf44d490a17cc57c04738e28ccd89e9784fd4047d10b9f19dfe2405fe9270"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:1794def830f7bea3e1ab162ea8eb0cef91f9292bb3ce660385f761048cca8599"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-aarch64-unknown-linux-musl.tar.gz"
 
 [tools.hk."platforms.linux-x64"]
-checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2270"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:8ff22722b831acae2ac61eddbe349497f9538ac7ac28f4b1a2e3dd7c0e43ee8c"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.hk."platforms.linux-x64-baseline"]
-checksum = "sha256:cb093bf2d31f0d21c3166b143fe671ddb22cd2cad5069596bfa22d7a541f2270"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:8ff22722b831acae2ac61eddbe349497f9538ac7ac28f4b1a2e3dd7c0e43ee8c"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:f96f5f9eb99fa21ab0de8389722bd3eb05c003b9c46fcc75c3fccbe155f33b8b"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:41b0fbe9ddec1bf0879b56d05abb9177a8a2fb98a2a6fa3d279576fbc4da5eac"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.hk."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:f96f5f9eb99fa21ab0de8389722bd3eb05c003b9c46fcc75c3fccbe155f33b8b"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:41b0fbe9ddec1bf0879b56d05abb9177a8a2fb98a2a6fa3d279576fbc4da5eac"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.hk."platforms.macos-arm64"]
-checksum = "sha256:6a1de3c576487983e46d0458b3c9f20af51c4c785d22b96e3396be5c164a1e04"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:e9000438928e7c66fd7790f0b47ca9b1c0b971c834238c1fa5faffae7fd92625"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-aarch64-apple-darwin.tar.gz"
 
 [tools.hk."platforms.windows-x64"]
-checksum = "sha256:8a0fb733ccae1e83234be60998e1de7df64c728cc9d1e4ebd40c9642fc8b0b3c"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:c59c6bf1c45157903ce58a5572257a959ca5e3895b6b9cbfb808a744d4858fb9"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-x86_64-pc-windows-msvc.zip"
 
 [tools.hk."platforms.windows-x64-baseline"]
-checksum = "sha256:8a0fb733ccae1e83234be60998e1de7df64c728cc9d1e4ebd40c9642fc8b0b3c"
-url = "https://github.com/jdx/hk/releases/download/v1.44.0/hk-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:c59c6bf1c45157903ce58a5572257a959ca5e3895b6b9cbfb808a744d4858fb9"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-x86_64-pc-windows-msvc.zip"
 
 [[tools.jq]]
 version = "1.8.1"

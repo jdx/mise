@@ -34,8 +34,8 @@ assert "mise x go:github.com/jdx/go-example@e16a340 -- go-example" "hello world"
 # Deep sub-module with no tagged versions; proxy resolves a pseudo-version via @latest.
 assert_contains "mise x go:github.com/go-kratos/kratos/cmd/kratos/v2@latest -- bash -c 'kratos --help 2>&1'" "Kratos: An elegant toolkit for Go microservices."
 assert_matches \
-	"GOPROXY=direct mise install --dry-run 'go:github.com/go-kratos/kratos/cmd/kratos/v2@latest' 2>&1" \
-	'go:github.com/go-kratos/kratos/cmd/kratos/v2@2\.0\.0-[0-9]{14}-[0-9a-f]+'
+  "GOPROXY=direct mise install --dry-run 'go:github.com/go-kratos/kratos/cmd/kratos/v2@latest' 2>&1" \
+  'go:github.com/go-kratos/kratos/cmd/kratos/v2@2\.0\.0-[0-9]{14}-[0-9a-f]+'
 
 assert_contains "mise x go:github.com/golang-migrate/migrate/v4/cmd/migrate[tags=postgres]@4.18.2 -- bash -c 'migrate --help 2>&1'" "postgres"
 

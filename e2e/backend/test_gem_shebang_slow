@@ -14,7 +14,7 @@ shebang=$(awk '/^=end$/{found=1; next} found && /^#!/{print; exit}' "$gem_exec")
 
 # If no polyglot format found, check first line
 if [[ -z $shebang ]]; then
-	shebang=$(head -n1 "$gem_exec")
+  shebang=$(head -n1 "$gem_exec")
 fi
 
 # Should use minor version symlink (3.3) not full version (3.3.x)

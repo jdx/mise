@@ -18,16 +18,16 @@ output=$(MISE_YES=0 MISE_PARANOID=1 mise ls 2>&1 || true)
 
 # The exec command should NOT have run
 if [[ -f /tmp/mise-trust-test-marker ]]; then
-	echo "FAIL: Tera exec() ran in untrusted .tool-versions file"
-	exit 1
+  echo "FAIL: Tera exec() ran in untrusted .tool-versions file"
+  exit 1
 fi
 
 # Should get a trust-related error
 if echo "$output" | grep -qi "trust"; then
-	echo "PASS: Untrusted .tool-versions with templates is blocked"
+  echo "PASS: Untrusted .tool-versions with templates is blocked"
 else
-	echo "FAIL: Expected trust-related error, got: $output"
-	exit 1
+  echo "FAIL: Expected trust-related error, got: $output"
+  exit 1
 fi
 
 # Also test that plain .tool-versions (no templates) still works without trust

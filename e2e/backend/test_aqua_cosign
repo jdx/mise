@@ -21,12 +21,12 @@ echo "$output"
 
 # Verify the native Cosign verification was used
 if echo "$output" | grep -q "Cosign"; then
-	echo "✅ Native Cosign verification was used"
+  echo "✅ Native Cosign verification was used"
 else
-	echo "❌ ERROR: Cosign verification message not found in output"
-	echo "Output was:"
-	echo "$output"
-	exit 1
+  echo "❌ ERROR: Cosign verification message not found in output"
+  echo "Output was:"
+  echo "$output"
+  exit 1
 fi
 
 # Verify the tool works

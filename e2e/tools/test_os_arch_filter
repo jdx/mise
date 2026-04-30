@@ -23,14 +23,14 @@ mise uninstall --all tiny
 # Tool with matching os/arch should install on this platform.
 # Detect current platform to construct a matching entry.
 case "$(uname -s)" in
-Darwin) _os="macos" ;;
-Linux) _os="linux" ;;
-*) _os="windows" ;;
+  Darwin) _os="macos" ;;
+  Linux) _os="linux" ;;
+  *) _os="windows" ;;
 esac
 case "$(uname -m)" in
-x86_64) _arch="x64" ;;
-aarch64 | arm64) _arch="arm64" ;;
-*) _arch="$(uname -m)" ;;
+  x86_64) _arch="x64" ;;
+  aarch64 | arm64) _arch="arm64" ;;
+  *) _arch="$(uname -m)" ;;
 esac
 
 cat >mise.toml <<EOF
@@ -52,11 +52,11 @@ mise uninstall --all tiny
 
 # darwin alias should work in compound syntax.
 if [ "$_os" = "macos" ]; then
-	cat >mise.toml <<EOF
+  cat >mise.toml <<EOF
 [tools]
 tiny = { version = "latest", os = ["darwin/${_arch}"] }
 EOF
-	mise i
-	assert_contains "mise ls --installed tiny" "tiny"
-	mise uninstall --all tiny
+  mise i
+  assert_contains "mise ls --installed tiny" "tiny"
+  mise uninstall --all tiny
 fi

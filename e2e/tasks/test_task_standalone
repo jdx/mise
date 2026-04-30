@@ -2,7 +2,7 @@
 
 # Find available port
 find_available_port() {
-	python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"
+  python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"
 }
 
 # Start local HTTP test server
@@ -15,8 +15,8 @@ sleep 1
 
 # Ensure cleanup on exit
 cleanup() {
-	kill "$SERVER_PID" 2>/dev/null || true
-	rm -f /tmp/mise_http_test_port
+  kill "$SERVER_PID" 2>/dev/null || true
+  rm -f /tmp/mise_http_test_port
 }
 trap cleanup EXIT
 

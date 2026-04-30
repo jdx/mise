@@ -4,8 +4,8 @@
 # rename_exe should rename the binary matching tool_name, not the first one found
 
 if [[ "$(uname -s)" != "Linux" ]]; then
-	echo "Skipping Linux-specific test on non-Linux OS"
-	exit 0
+  echo "Skipping Linux-specific test on non-Linux OS"
+  exit 0
 fi
 
 export MISE_EXPERIMENTAL=1

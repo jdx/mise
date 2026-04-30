@@ -27,8 +27,8 @@ export PATH="$shimdir:$sys_shimdir:$PATH"
 # dummy is not in any config file. The shim must fail fast with a clear
 # error rather than looping forever.
 output="$(run_with_timeout 10 dummy 2>&1)" && {
-	echo "ERROR: dummy should have failed but exited 0"
-	exit 1
+  echo "ERROR: dummy should have failed but exited 0"
+  exit 1
 } || true
 
 # Should contain a helpful error, not be empty (which would indicate a hang

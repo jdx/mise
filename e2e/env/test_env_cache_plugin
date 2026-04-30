@@ -73,11 +73,11 @@ THIRD_COUNT=$(cat "$COUNTER_FILE")
 # The counter should only be 1 (first run only)
 # If caching is broken, it would be 3
 if [ "$FIRST_COUNT" -eq 1 ] && [ "$SECOND_COUNT" -eq 1 ] && [ "$THIRD_COUNT" -eq 1 ]; then
-	echo "SUCCESS: Plugin was only executed once (counter=$THIRD_COUNT), caching is working"
+  echo "SUCCESS: Plugin was only executed once (counter=$THIRD_COUNT), caching is working"
 else
-	echo "FAILURE: Plugin was executed multiple times (first=$FIRST_COUNT, second=$SECOND_COUNT, third=$THIRD_COUNT)"
-	echo "Expected counter to remain at 1 after first execution"
-	exit 1
+  echo "FAILURE: Plugin was executed multiple times (first=$FIRST_COUNT, second=$SECOND_COUNT, third=$THIRD_COUNT)"
+  echo "Expected counter to remain at 1 after first execution"
+  exit 1
 fi
 
 # Now modify the config to invalidate cache
@@ -92,8 +92,8 @@ mise env -s bash >/dev/null 2>&1
 FOURTH_COUNT=$(cat "$COUNTER_FILE")
 
 if [ "$FOURTH_COUNT" -eq 2 ]; then
-	echo "SUCCESS: Plugin was re-executed after config change (counter=$FOURTH_COUNT)"
+  echo "SUCCESS: Plugin was re-executed after config change (counter=$FOURTH_COUNT)"
 else
-	echo "FAILURE: Expected counter to be 2 after config change, got $FOURTH_COUNT"
-	exit 1
+  echo "FAILURE: Expected counter to be 2 after config change, got $FOURTH_COUNT"
+  exit 1
 fi

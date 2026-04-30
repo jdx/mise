@@ -30,9 +30,9 @@ sleep 1
 output=$(cat "$LOG_FILE")
 
 if [[ $output != *"[b] $ echo b"* ]]; then
-	fail "Expected output to contain '[b] $ echo b', got: $output"
+  fail "Expected output to contain '[b] $ echo b', got: $output"
 fi
 if [[ $output == *"[a] $ echo a"* ]]; then
-	fail "Expected output to not contain '[a] $ echo a', got: $output"
+  fail "Expected output to not contain '[a] $ echo a', got: $output"
 fi
 ok "mise watch b --skip-deps"

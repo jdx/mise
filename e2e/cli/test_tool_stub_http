@@ -15,21 +15,21 @@ cd tool_stub_http_test
 # Function to create and test a tool stub
 # Usage: test_tool_stub <stub_name> <toml_content>
 test_tool_stub() {
-	local stub_name="$1"
-	local toml_content="$2"
+  local stub_name="$1"
+  local toml_content="$2"
 
-	# Create the tool stub file
-	cat >"bin/$stub_name" <<EOF
+  # Create the tool stub file
+  cat >"bin/$stub_name" <<EOF
 #!/usr/bin/env -S mise tool-stub
 $toml_content
 EOF
-	chmod +x "bin/$stub_name"
+  chmod +x "bin/$stub_name"
 
-	# Test the tool stub
-	assert_succeed "mise tool-stub bin/$stub_name"
+  # Test the tool stub
+  assert_succeed "mise tool-stub bin/$stub_name"
 
-	# Clean up for next test
-	mise uninstall --all && mise cache clear
+  # Clean up for next test
+  mise uninstall --all && mise cache clear
 }
 
 # Test 1: Basic HTTP backend with bin_path

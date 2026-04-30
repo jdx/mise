@@ -13,20 +13,20 @@ SERVER_PID=$!
 
 # Wait for server to be ready (with timeout)
 wait_for_server() {
-	local max_attempts=30 # 30 seconds timeout
-	local attempt=1
+  local max_attempts=30 # 30 seconds timeout
+  local attempt=1
 
-	while [ $attempt -le $max_attempts ]; do
-		if [ -f /tmp/mise_git_http_ready ] && [ -f /tmp/mise_git_http_port ]; then
-			return 0
-		fi
-		sleep 1
-		attempt=$((attempt + 1))
-	done
+  while [ $attempt -le $max_attempts ]; do
+    if [ -f /tmp/mise_git_http_ready ] && [ -f /tmp/mise_git_http_port ]; then
+      return 0
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
 
-	echo "ERROR: Git HTTP server failed to start within 30 seconds"
-	kill "$SERVER_PID" 2>/dev/null || true
-	exit 1
+  echo "ERROR: Git HTTP server failed to start within 30 seconds"
+  kill "$SERVER_PID" 2>/dev/null || true
+  exit 1
 }
 
 wait_for_server
@@ -45,8 +45,8 @@ git init
 
 # Ensure cleanup on exit
 cleanup() {
-	kill "$SERVER_PID" 2>/dev/null || true
-	rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
+  kill "$SERVER_PID" 2>/dev/null || true
+  rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
 }
 trap cleanup EXIT
 

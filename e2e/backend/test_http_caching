@@ -7,8 +7,8 @@
 # Note: http-tarballs is stored in DATA dir (not CACHE) to survive `mise cache clear`
 CACHE_DIR="$HOME/.local/share/mise/http-tarballs"
 if [ -d "$CACHE_DIR" ]; then
-	echo "Clearing existing HTTP cache..."
-	rm -rf "$CACHE_DIR"
+  echo "Clearing existing HTTP cache..."
+  rm -rf "$CACHE_DIR"
 fi
 
 # Test 1: Install a tool and verify cache is created
@@ -23,8 +23,8 @@ assert_contains "mise x -- hello-world" "hello world"
 
 # Check that cache directory was created
 if [ ! -d "$CACHE_DIR" ]; then
-	echo "ERROR: Cache directory was not created"
-	exit 1
+  echo "ERROR: Cache directory was not created"
+  exit 1
 fi
 
 # Count cache entries (should be 1)
@@ -32,8 +32,8 @@ CACHE_COUNT=$(find "$CACHE_DIR" -maxdepth 1 -type d | wc -l)
 CACHE_COUNT=$((CACHE_COUNT - 1)) # Subtract 1 for the cache directory itself
 echo "Cache entries after first install: $CACHE_COUNT"
 if [ "$CACHE_COUNT" -ne 1 ]; then
-	echo "ERROR: Expected 1 cache entry, found $CACHE_COUNT"
-	exit 1
+  echo "ERROR: Expected 1 cache entry, found $CACHE_COUNT"
+  exit 1
 fi
 
 # Test 2: Install another tool with the same tarball and verify cache is reused
@@ -51,8 +51,8 @@ CACHE_COUNT=$(find "$CACHE_DIR" -maxdepth 1 -type d | wc -l)
 CACHE_COUNT=$((CACHE_COUNT - 1)) # Subtract 1 for the cache directory itself
 echo "Cache entries after second install: $CACHE_COUNT"
 if [ "$CACHE_COUNT" -ne 1 ]; then
-	echo "ERROR: Expected 1 cache entry, found $CACHE_COUNT"
-	exit 1
+  echo "ERROR: Expected 1 cache entry, found $CACHE_COUNT"
+  exit 1
 fi
 
 # Test 3: Install a tool with a different tarball and verify new cache entry
@@ -70,8 +70,8 @@ CACHE_COUNT=$(find "$CACHE_DIR" -maxdepth 1 -type d | wc -l)
 CACHE_COUNT=$((CACHE_COUNT - 1)) # Subtract 1 for the cache directory itself
 echo "Cache entries after third install: $CACHE_COUNT"
 if [ "$CACHE_COUNT" -ne 2 ]; then
-	echo "ERROR: Expected 2 cache entries, found $CACHE_COUNT"
-	exit 1
+  echo "ERROR: Expected 2 cache entries, found $CACHE_COUNT"
+  exit 1
 fi
 
 # Test 4: Install a tool with checksum and verify cache key uses checksum
@@ -89,23 +89,23 @@ CACHE_COUNT=$(find "$CACHE_DIR" -maxdepth 1 -type d | wc -l)
 CACHE_COUNT=$((CACHE_COUNT - 1)) # Subtract 1 for the cache directory itself
 echo "Cache entries after fourth install: $CACHE_COUNT"
 if [ "$CACHE_COUNT" -ne 2 ]; then
-	echo "ERROR: Expected 2 cache entries, found $CACHE_COUNT"
-	exit 1
+  echo "ERROR: Expected 2 cache entries, found $CACHE_COUNT"
+  exit 1
 fi
 
 # Test 5: Verify that install directories are symlinks to cache
 echo "Test 5: Verifying install directories are symlinks to cache"
 INSTALL_DIR="$HOME/.local/share/mise/installs/http-hello-cache1/1.0.0"
 if [ ! -L "$INSTALL_DIR" ]; then
-	echo "ERROR: Install directory is not a symlink: $INSTALL_DIR"
-	exit 1
+  echo "ERROR: Install directory is not a symlink: $INSTALL_DIR"
+  exit 1
 fi
 
 # Check that the symlink points to the cache
 LINK_TARGET=$(readlink "$INSTALL_DIR")
 if [[ ! $LINK_TARGET =~ /http-tarballs/ ]]; then
-	echo "ERROR: Symlink does not point to cache directory: $LINK_TARGET"
-	exit 1
+  echo "ERROR: Symlink does not point to cache directory: $LINK_TARGET"
+  exit 1
 fi
 
 echo "SUCCESS: All HTTP backend caching tests passed!"

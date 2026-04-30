@@ -6,22 +6,22 @@ export MISE_MINIMUM_RELEASE_AGE=1d
 
 # Ensure npm is available by installing node if needed
 if ! command -v npm >/dev/null 2>&1; then
-	echo "npm not available in test environment, installing node..."
-	# Disable GPG verification for faster test
-	export MISE_GPG_VERIFY=false
-	assert_succeed "mise use node@20"
+  echo "npm not available in test environment, installing node..."
+  # Disable GPG verification for faster test
+  export MISE_GPG_VERIFY=false
+  assert_succeed "mise use node@20"
 fi
 
 # Ensure bun is available
 if ! command -v bun >/dev/null 2>&1; then
-	echo "bun not available in test environment, installing..."
-	assert_succeed "mise use bun@latest"
+  echo "bun not available in test environment, installing..."
+  assert_succeed "mise use bun@latest"
 fi
 
 # Ensure pnpm is available
 if ! command -v pnpm >/dev/null 2>&1; then
-	echo "pnpm not available in test environment, installing..."
-	assert_succeed "mise use pnpm@10.16.0"
+  echo "pnpm not available in test environment, installing..."
+  assert_succeed "mise use pnpm@10.16.0"
 fi
 
 # Test 1: Default behavior (npm) - checks npm.package_manager="npm" implicitly
@@ -68,9 +68,9 @@ cat >.mise.toml <<EOF
 "npm:tiny" = { version = "latest", pnpm_args = "--loglevel=warn" }
 EOF
 if ! MISE_DEBUG=1 mise install >/tmp/pnpm_debug.log 2>&1; then
-	echo "Command failed. Output:"
-	cat /tmp/pnpm_debug.log
-	exit 1
+  echo "Command failed. Output:"
+  cat /tmp/pnpm_debug.log
+  exit 1
 fi
 assert_contains "cat /tmp/pnpm_debug.log" "--config.minimumReleaseAge="
 assert_contains "cat /tmp/pnpm_debug.log" "--loglevel=warn"
@@ -84,8 +84,8 @@ export MISE_NPM_PACKAGE_MANAGER=aube
 # Ensure aube is available after the default package manager test, since
 # npm.package_manager=auto uses aube when it is already installed.
 if ! command -v aube >/dev/null 2>&1; then
-	echo "aube not available in test environment, installing..."
-	assert_succeed "mise use aube@latest"
+  echo "aube not available in test environment, installing..."
+  assert_succeed "mise use aube@latest"
 fi
 
 cat >.mise.toml <<EOF

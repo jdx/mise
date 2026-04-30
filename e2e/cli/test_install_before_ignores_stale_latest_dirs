@@ -17,8 +17,8 @@ assert "test '$link_target' = ./1.0.0"
 assert "test -d '$MISE_DATA_DIR/installs/node/latest'"
 assert "test ! -L '$MISE_DATA_DIR/installs/node/latest'"
 if [[ $output == *latest* ]]; then
-	fail "mise ls included stale latest entry: $output"
+  fail "mise ls included stale latest entry: $output"
 fi
 if [[ $output != *1.0.0* ]]; then
-	fail "mise ls did not include concrete version: $output"
+  fail "mise ls did not include concrete version: $output"
 fi

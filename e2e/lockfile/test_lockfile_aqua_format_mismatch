@@ -10,14 +10,14 @@ detect_platform
 
 # Map platform to aqua asset naming
 case "$MISE_PLATFORM_OS" in
-macos) ASSET_OS="darwin" ;;
-linux) ASSET_OS="linux" ;;
-*) ASSET_OS="unknown" ;;
+  macos) ASSET_OS="darwin" ;;
+  linux) ASSET_OS="linux" ;;
+  *) ASSET_OS="unknown" ;;
 esac
 
 case "$MISE_PLATFORM_ARCH" in
-arm64) ASSET_ARCH="arm64" ;;
-*) ASSET_ARCH="amd64" ;;
+  arm64) ASSET_ARCH="arm64" ;;
+  *) ASSET_ARCH="amd64" ;;
 esac
 
 # Use a tool that has tar.gz format (terragrunt >= 0.93.6)

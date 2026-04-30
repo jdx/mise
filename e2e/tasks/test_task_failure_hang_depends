@@ -40,14 +40,14 @@ timeout 5s mise run --jobs 1 ci:check 2>&1 && exit_code=0 || exit_code=$?
 
 # Check if it was a timeout (exit code 124)
 if [ "$exit_code" -eq 124 ]; then
-	echo "FAIL: Task hung after dependency failure (timeout reached)"
-	exit 1
+  echo "FAIL: Task hung after dependency failure (timeout reached)"
+  exit 1
 fi
 
 # The command should fail with exit code 1
 if [ "$exit_code" -ne 1 ]; then
-	echo "Expected exit code 1, got $exit_code"
-	exit 1
+  echo "Expected exit code 1, got $exit_code"
+  exit 1
 fi
 
 echo "Test passed: task with failing dependency did not hang"

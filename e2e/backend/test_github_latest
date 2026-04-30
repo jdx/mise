@@ -16,12 +16,12 @@ assert_contains "mise x -- hello-world" "hello world"
 # The version column should contain a semver-like string (e.g. "1.0.0"), not "latest".
 mise_ls_output=$(mise ls github:jdx/mise-test-fixtures)
 if echo "$mise_ls_output" | awk '{print $2}' | grep -qx "latest"; then
-	echo "FAIL: 'latest' was not resolved to a concrete version"
-	echo "Output: $mise_ls_output"
-	exit 1
+  echo "FAIL: 'latest' was not resolved to a concrete version"
+  echo "Output: $mise_ls_output"
+  exit 1
 fi
 if ! echo "$mise_ls_output" | awk '{print $2}' | grep -qE '[0-9]+\.[0-9]+'; then
-	echo "FAIL: version column does not contain a semver-like version"
-	echo "Output: $mise_ls_output"
-	exit 1
+  echo "FAIL: version column does not contain a semver-like version"
+  echo "Output: $mise_ls_output"
+  exit 1
 fi

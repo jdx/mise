@@ -26,10 +26,10 @@ packages:
 EOF_REGISTRY
 
 (
-	cd "$REGISTRY_DIR"
-	git init -q
-	git add pkgs/example/vars-tool/registry.yaml
-	git commit -qm "init local aqua registry"
+  cd "$REGISTRY_DIR"
+  git init -q
+  git add pkgs/example/vars-tool/registry.yaml
+  git commit -qm "init local aqua registry"
 )
 
 export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"

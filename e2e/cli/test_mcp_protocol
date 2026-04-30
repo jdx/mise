@@ -41,10 +41,10 @@ echo "Testing MCP server startup and error handling..."
 # Test that MCP server rejects invalid JSON
 output=$(echo "not json" | mise mcp 2>&1 || true)
 if [[ $output == *"Failed to create service"* ]]; then
-	echo "SUCCESS: MCP server correctly rejected invalid JSON"
+  echo "SUCCESS: MCP server correctly rejected invalid JSON"
 else
-	echo "ERROR: Expected 'Failed to create service' in output, got: $output"
-	exit 1
+  echo "ERROR: Expected 'Failed to create service' in output, got: $output"
+  exit 1
 fi
 
 echo -e "\nTesting MCP protocol with actual requests..."

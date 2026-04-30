@@ -15,18 +15,18 @@ python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
 SERVER_PID=$!
 
 wait_for_server() {
-	local max_attempts=30
-	local attempt=1
-	while [ $attempt -le $max_attempts ]; do
-		if [ -f /tmp/mise_git_http_ready ] && [ -f /tmp/mise_git_http_port ]; then
-			return 0
-		fi
-		sleep 1
-		attempt=$((attempt + 1))
-	done
-	echo "ERROR: Git HTTP server failed to start within 30 seconds"
-	kill "$SERVER_PID" 2>/dev/null || true
-	exit 1
+  local max_attempts=30
+  local attempt=1
+  while [ $attempt -le $max_attempts ]; do
+    if [ -f /tmp/mise_git_http_ready ] && [ -f /tmp/mise_git_http_port ]; then
+      return 0
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+  echo "ERROR: Git HTTP server failed to start within 30 seconds"
+  kill "$SERVER_PID" 2>/dev/null || true
+  exit 1
 }
 
 wait_for_server
@@ -36,8 +36,8 @@ LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
 git init
 
 cleanup() {
-	kill "$SERVER_PID" 2>/dev/null || true
-	rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
+  kill "$SERVER_PID" 2>/dev/null || true
+  rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
 }
 trap cleanup EXIT
 
@@ -56,12 +56,12 @@ output=$(mise run remote_lint -- extraarg 2>&1)
 exit_code=$?
 
 if [[ $exit_code -ne 0 ]]; then
-	fail "mise run remote_lint failed with exit code $exit_code: $output"
+  fail "mise run remote_lint failed with exit code $exit_code: $output"
 fi
 ok "remote task with args ran successfully"
 
 # There should be no "failed to parse task file" warning
 if echo "$output" | grep -q "failed to parse task file"; then
-	fail "Unexpected warning about failed to parse task file in output: $output"
+  fail "Unexpected warning about failed to parse task file in output: $output"
 fi
 ok "No spurious 'failed to parse task file' warning for remote task with args"

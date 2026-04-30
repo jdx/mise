@@ -10,11 +10,11 @@ SERVER_PID=""
 
 # Cleanup function
 cleanup() {
-	if [ -n "$SERVER_PID" ]; then
-		kill "$SERVER_PID" 2>/dev/null || true
-	fi
-	rm -rf "$TEST_DIR"
-	rm -f mise.toml
+  if [ -n "$SERVER_PID" ]; then
+    kill "$SERVER_PID" 2>/dev/null || true
+  fi
+  rm -rf "$TEST_DIR"
+  rm -f mise.toml
 }
 trap cleanup EXIT
 
@@ -33,7 +33,7 @@ bzip2 -c "$TEST_DIR/test-tool" >"$TEST_DIR/test-tool-linux-x64.bz2"
 
 # Also test with zst if available
 if command -v zstd >/dev/null 2>&1; then
-	zstd -c "$TEST_DIR/test-tool" >"$TEST_DIR/test-tool-linux-x64.zst"
+  zstd -c "$TEST_DIR/test-tool" >"$TEST_DIR/test-tool-linux-x64.zst"
 fi
 
 # Start a simple HTTP server
@@ -77,14 +77,14 @@ assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
 mise uninstall --all
 
 if [ -f "$TEST_DIR/test-tool-linux-x64.zst" ]; then
-	echo "Testing .zst compressed binary..."
-	cat <<EOF >mise.toml
+  echo "Testing .zst compressed binary..."
+  cat <<EOF >mise.toml
 [tools]
 "http:test-tool-zst" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/test-tool-linux-x64.zst", bin = "test-tool" }
 EOF
-	mise install
-	assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
-	mise uninstall --all
+  mise install
+  assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
+  mise uninstall --all
 fi
 
 # Test with a tar.gz archive for comparison
