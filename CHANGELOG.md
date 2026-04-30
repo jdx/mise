@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026.4.28](https://github.com/jdx/mise/compare/v2026.4.27..v2026.4.28) - 2026-04-30
+
+### 🐛 Bug Fixes
+
+- **(copr)** remove stale pinned image digest and rebuild copr image on Dockerfile changes by @bestagi in [#9451](https://github.com/jdx/mise/pull/9451)
+- **(task)** avoid gix panic when cloning a remote task by commit SHA by @jdx in [#9473](https://github.com/jdx/mise/pull/9473)
+
 ## [2026.4.27](https://github.com/jdx/mise/compare/v2026.4.26..v2026.4.27) - 2026-04-29
 
 ### 🚀 Features
