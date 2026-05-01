@@ -607,6 +607,10 @@ impl Backend for HttpBackend {
         &self.ba
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let opts = tv.request.options();
         super::http_install_operation_count(

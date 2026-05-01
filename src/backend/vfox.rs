@@ -63,6 +63,10 @@ impl Backend for VfoxBackend {
         Ok(deps.iter().map(|s| s.as_str()).collect())
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     fn supports_lockfile_url(&self) -> bool {
         // TODO: expose a plugin hook (e.g. BackendLockInfo) so custom Lua backends
         // can surface a download URL + checksum, and flip this back on for them.

@@ -596,7 +596,7 @@ cmd ls-remote help="List runtime versions available for install." {
     flag --all help="Show all installed plugins and versions"
     flag "-J --json" help="Output in JSON format (includes version metadata like created_at timestamps when available)"
     flag --no-versions-host help="Disable checking the mise-versions host"
-    flag --prerelease help="Include pre-release versions in the output for backends that report\nan upstream prerelease flag (currently github + aqua). Equivalent to\nsetting `MISE_PRERELEASES=1` or the `prereleases` setting for the\nduration of this command."
+    flag --prerelease help="Include pre-release versions in the output for backends that report\nupstream prerelease metadata or opt in to regex-based prerelease\ndetection. Equivalent to setting `MISE_PRERELEASES=1` or the\n`prereleases` setting for the duration of this command."
     flag --strict-metadata help="Fail if release metadata fetches fail" {
         long_help "Fail if release metadata fetches fail\n\nRequires --json and --no-versions-host.\n\nThis prevents metadata consumers from accepting empty fallback results\nwhen a backend's metadata-producing upstream request fails."
     }

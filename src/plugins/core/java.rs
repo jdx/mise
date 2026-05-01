@@ -350,6 +350,7 @@ impl Backend for JavaPlugin {
             .map(|(v, m)| VersionInfo {
                 version: v.clone(),
                 created_at: m.created_at.clone(),
+                prerelease: VERSION_REGEX.is_match(v),
                 ..Default::default()
             })
             .unique_by(|v| v.version.clone())

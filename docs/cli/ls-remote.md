@@ -36,9 +36,9 @@ Disable checking the mise-versions host
 ### `--prerelease`
 
 Include pre-release versions in the output for backends that report
-an upstream prerelease flag (currently github + aqua). Equivalent to
-setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
-duration of this command.
+upstream prerelease metadata or opt in to regex-based prerelease
+detection. Equivalent to setting `MISE_PRERELEASES=1` or the
+`prereleases` setting for the duration of this command.
 
 ### `--strict-metadata`
 

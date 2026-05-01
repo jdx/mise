@@ -117,10 +117,10 @@ pub struct VersionInfo {
     /// Checksum of the release asset, used to detect changes in rolling releases
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub checksum: Option<String>,
-    /// Whether the upstream flagged this as a pre-release. Backends that have a
-    /// reliable signal (e.g. GitHub releases' `prerelease: true`) populate this
-    /// so the shared remote-versions cache can store the superset and apply the
-    /// `prerelease` tool option as a read-time filter.
+    /// Whether this is a pre-release. Backends with a reliable upstream signal
+    /// (e.g. GitHub releases' `prerelease: true`) populate this directly.
+    /// Metadata-free listing backends can opt in to stamping this from mise's
+    /// legacy pre-release pattern before caching.
     #[serde(default, skip_serializing_if = "is_false")]
     pub prerelease: bool,
 }
@@ -479,10 +479,8 @@ mod tests {
 
     #[test]
     fn test_filter_cached_prereleases_leaves_unflagged_backends_alone() {
-        // Backends that don't populate `VersionInfo.prerelease` (e.g. node,
-        // ruby, aqua's `github_tag` source) keep the legacy regex-based filter
-        // in `fuzzy_match_versions` for pre-release-shaped strings. The
-        // cache-layer filter must not strip those entries on its own.
+        // The cache-layer filter only trusts the metadata bit. Regex-shaped
+        // versions are stamped before they enter the cache.
         let cached = vec![
             VersionInfo {
                 version: "1.0.0".into(),
@@ -496,6 +494,28 @@ mod tests {
         let filtered = filter_cached_prereleases(cached.clone(), false);
         let versions: Vec<_> = filtered.iter().map(|v| v.version.as_str()).collect();
         assert_eq!(versions, vec!["1.0.0", "1.1.0-rc1"]);
+    }
+
+    #[test]
+    fn test_mark_prerelease_flags_regex_matches() {
+        let stable = mark_prerelease(VersionInfo {
+            version: "1.0.0".into(),
+            ..Default::default()
+        });
+        assert!(!stable.prerelease);
+
+        let rc = mark_prerelease(VersionInfo {
+            version: "1.1.0-rc1".into(),
+            ..Default::default()
+        });
+        assert!(rc.prerelease);
+
+        let already_flagged = mark_prerelease(VersionInfo {
+            version: "2.0.0".into(),
+            prerelease: true,
+            ..Default::default()
+        });
+        assert!(already_flagged.prerelease);
     }
 
     #[test]
@@ -622,6 +642,12 @@ pub trait Backend: Debug + Send + Sync {
     /// before installing this tool.
     fn get_dependencies(&self) -> Result<Vec<&str>> {
         Ok(vec![])
+    }
+
+    /// Whether this backend's version source lacks an upstream prerelease flag
+    /// and should mark regex-shaped versions as prereleases before caching.
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        false
     }
     /// dependencies which wait for install but do not warn, like cargo-binstall
     fn get_optional_dependencies(&self) -> Result<Vec<&str>> {
@@ -816,6 +842,10 @@ pub trait Backend: Debug + Send + Sync {
                     ._list_remote_versions(config)
                     .await?
                     .into_iter()
+                    .map(|v| match self.mark_prereleases_from_version_pattern() {
+                        true => mark_prerelease(v),
+                        false => v,
+                    })
                     .filter(|v| match v.version.parse::<ToolVersionType>() {
                         Ok(ToolVersionType::Version(_)) => true,
                         _ => {
@@ -2328,11 +2358,10 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
 }
 
 /// Apply the read-time `prerelease` filter to the cached remote-versions
-/// superset. Backends that honor `prerelease` (github, aqua) cache the full
-/// list and stamp `VersionInfo.prerelease` per entry; this helper drops
-/// pre-release entries when the current tool opts don't opt in. Backends that
-/// don't populate the flag are unaffected because their entries default to
-/// `prerelease = false`.
+/// superset. Backends cache the full list and stamp `VersionInfo.prerelease`
+/// either from upstream metadata or, for metadata-free listing backends, mise's
+/// legacy pre-release pattern. This helper drops pre-release entries when the
+/// current tool opts don't opt in.
 pub(crate) fn filter_cached_prereleases(
     versions: Vec<VersionInfo>,
     want_prereleases: bool,
@@ -2342,6 +2371,13 @@ pub(crate) fn filter_cached_prereleases(
     } else {
         versions.into_iter().filter(|v| !v.prerelease).collect()
     }
+}
+
+pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
+    if !version.prerelease && VERSION_REGEX.is_match(&version.version) {
+        version.prerelease = true;
+    }
+    version
 }
 
 /// Whether pre-release versions should be included for the current tool.

@@ -32,6 +32,10 @@ impl Backend for DotnetBackend {
         Ok(vec!["dotnet"])
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let feed_url = self.get_search_url().await?;
 

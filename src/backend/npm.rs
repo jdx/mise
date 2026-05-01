@@ -52,6 +52,10 @@ impl Backend for NPMBackend {
         &self.ba
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
         // npm CLI is always needed for version queries (npm view), plus the configured
         // package manager for installation. We avoid listing all package managers to

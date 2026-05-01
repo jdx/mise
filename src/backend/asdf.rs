@@ -248,6 +248,10 @@ impl Backend for AsdfBackend {
         Some(PluginType::Asdf)
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     /// ASDF plugins handle their own downloads through plugin scripts.
     /// Lockfile URLs are not applicable since installation is delegated to plugin scripts.
     fn supports_lockfile_url(&self) -> bool {

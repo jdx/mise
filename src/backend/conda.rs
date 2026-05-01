@@ -1,6 +1,6 @@
-use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::{VersionInfo, mark_prerelease};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
@@ -662,7 +662,12 @@ impl Backend for CondaBackend {
         &self,
         config: &Arc<Config>,
     ) -> Result<Vec<VersionInfo>> {
-        self._list_remote_versions(config).await
+        Ok(self
+            ._list_remote_versions(config)
+            .await?
+            .into_iter()
+            .map(mark_prerelease)
+            .collect())
     }
 
     async fn install_version_(

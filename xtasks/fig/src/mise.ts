@@ -1757,7 +1757,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--prerelease",
           description:
-            "Include pre-release versions in the output for backends that report\nan upstream prerelease flag (currently github + aqua). Equivalent to\nsetting `MISE_PRERELEASES=1` or the `prereleases` setting for the\nduration of this command.",
+            "Include pre-release versions in the output for backends that report\nupstream prerelease metadata or opt in to regex-based prerelease\ndetection. Equivalent to setting `MISE_PRERELEASES=1` or the\n`prereleases` setting for the duration of this command.",
           isRepeatable: false,
         },
         {
