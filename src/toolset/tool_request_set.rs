@@ -204,25 +204,15 @@ impl ToolRequestSetBuilder {
     }
 
     fn load_runtime_env(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
-        for (k, v) in env::vars_safe() {
-            if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
-                let plugin_name = k
-                    .trim_start_matches("MISE_")
-                    .trim_end_matches("_VERSION")
-                    .to_lowercase();
-                if plugin_name == "install" || plugin_name == "tool" {
-                    // ignore MISE_INSTALL_VERSION and MISE_TOOL_VERSION (set during hooks)
-                    continue;
-                }
-                let ba: Arc<BackendArg> = Arc::new(plugin_name.as_str().into());
-                let source = ToolSource::Environment(k, v.clone());
-                let mut env_ts = ToolRequestSet::new();
-                for v in v.split_whitespace() {
-                    let tvr = ToolRequest::new(ba.clone(), v, source.clone())?;
-                    env_ts.add_version(tvr, &source);
-                }
-                trs = merge(trs, env_ts);
+        for (short, k, v) in tool_env_vars() {
+            let ba: Arc<BackendArg> = Arc::new(short.as_str().into());
+            let source = ToolSource::Environment(k, v.clone());
+            let mut env_ts = ToolRequestSet::new();
+            for v in v.split_whitespace() {
+                let tvr = ToolRequest::new(ba.clone(), v, source.clone())?;
+                env_ts.add_version(tvr, &source);
             }
+            trs = merge(trs, env_ts);
         }
         Ok(trs)
     }
@@ -285,6 +275,27 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     b
 }
 
+/// Yields `(short, key, value)` for each `MISE_<TOOL>_VERSION` env var that
+/// maps to a tool. `short` is the unaliased backend short name (so
+/// `MISE_NODEJS_VERSION` yields `"node"`). Skips `MISE_VERSION` and the
+/// `MISE_INSTALL_VERSION` / `MISE_TOOL_VERSION` vars set during hooks.
+pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
+    env::vars_safe().filter_map(|(k, v)| {
+        if !k.starts_with("MISE_") || !k.ends_with("_VERSION") || k == "MISE_VERSION" {
+            return None;
+        }
+        let raw = k
+            .trim_start_matches("MISE_")
+            .trim_end_matches("_VERSION")
+            .to_lowercase();
+        if raw == "install" || raw == "tool" {
+            return None;
+        }
+        let short = crate::backend::unalias_backend(&raw).to_string();
+        Some((short, k, v))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,6 +319,58 @@ mod tests {
         unsafe {
             std::env::remove_var("MISE_NODE_VERSION");
             std::env::remove_var("MISE_PYTHON_VERSION");
+        }
+    }
+
+    #[test]
+    fn test_tool_env_vars_unaliases_backend() {
+        // MISE_NODEJS_VERSION should yield "node" (the unaliased backend
+        // short name), not "nodejs" — otherwise the install command's
+        // configured-tool check fails to match unaliased ToolArg shorts.
+        unsafe {
+            std::env::set_var("MISE_NODEJS_VERSION", "22.0.0");
+            std::env::set_var("MISE_GOLANG_VERSION", "1.22.0");
+        }
+
+        let entries: Vec<(String, String, String)> = tool_env_vars()
+            .filter(|(_, k, _)| k == "MISE_NODEJS_VERSION" || k == "MISE_GOLANG_VERSION")
+            .collect();
+
+        let nodejs = entries
+            .iter()
+            .find(|(_, k, _)| k == "MISE_NODEJS_VERSION")
+            .expect("MISE_NODEJS_VERSION should yield an entry");
+        assert_eq!(nodejs.0, "node");
+
+        let golang = entries
+            .iter()
+            .find(|(_, k, _)| k == "MISE_GOLANG_VERSION")
+            .expect("MISE_GOLANG_VERSION should yield an entry");
+        assert_eq!(golang.0, "go");
+
+        unsafe {
+            std::env::remove_var("MISE_NODEJS_VERSION");
+            std::env::remove_var("MISE_GOLANG_VERSION");
+        }
+    }
+
+    #[test]
+    fn test_tool_env_vars_skips_non_tool_vars() {
+        unsafe {
+            std::env::set_var("MISE_VERSION", "2026.4.28");
+            std::env::set_var("MISE_INSTALL_VERSION", "1.0.0");
+            std::env::set_var("MISE_TOOL_VERSION", "1.0.0");
+        }
+
+        let keys: HashSet<String> = tool_env_vars().map(|(_, k, _)| k).collect();
+        assert!(!keys.contains("MISE_VERSION"));
+        assert!(!keys.contains("MISE_INSTALL_VERSION"));
+        assert!(!keys.contains("MISE_TOOL_VERSION"));
+
+        unsafe {
+            std::env::remove_var("MISE_VERSION");
+            std::env::remove_var("MISE_INSTALL_VERSION");
+            std::env::remove_var("MISE_TOOL_VERSION");
         }
     }
 

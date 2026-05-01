@@ -7,7 +7,9 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
-use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
+use crate::toolset::{
+    InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset, tool_env_vars,
+};
 use crate::{config, env, exit, hooks};
 use clap::ValueHint;
 use eyre::Result;
@@ -147,15 +149,22 @@ impl Install {
             .iter()
             .map(|ta| ta.ba.short.clone())
             .collect();
-        // Collect inactive tool names before trs borrow is consumed
-        let inactive_tools: Vec<String> = expanded_runtimes
+        // Collect set of tools that appear in any config file or in a
+        // MISE_<TOOL>_VERSION env var. We can't use trs.sources here because
+        // load_runtime_args overrides the underlying source with
+        // ToolSource::Argument whenever the user passes TOOL@VERSION, so config-
+        // and env-sourced tools become indistinguishable from CLI-only ones.
+        let configured_tools: HashSet<String> = config
+            .config_files
+            .values()
+            .filter_map(|cf| cf.to_tool_request_set().ok())
+            .flat_map(|cf_trs| cf_trs.tools.into_keys().map(|ba| ba.short.clone()))
+            .chain(tool_env_vars().map(|(name, _, _)| name))
+            .collect();
+        let inactive_tools: Vec<String> = tools
             .iter()
-            .filter(|ta| {
-                trs.sources
-                    .get(ta.ba.as_ref())
-                    .is_none_or(|s| s.is_argument())
-            })
-            .map(|ta| ta.ba.short.clone())
+            .filter(|t| !configured_tools.contains(*t))
+            .cloned()
             .collect();
         let mut ts: Toolset = trs.filter_by_tool(tools).into();
         let tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;
