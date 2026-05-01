@@ -180,24 +180,26 @@ impl Watch {
             args.push("--watch-file".to_string());
             args.push(watch_file.to_string_lossy().to_string());
         }
-        let globs = if !self.glob.is_empty() {
-            self.glob.clone()
-        } else if self.skip_deps {
-            tasks
-                .iter()
-                .flat_map(|t| t.sources.iter().cloned())
-                .unique()
-                .collect::<Vec<_>>()
+        let (globs, ignores) = if !self.glob.is_empty() {
+            (self.glob.clone(), Vec::new())
         } else {
-            let deps = Deps::new(&config, tasks.clone()).await?;
-            deps.all()
-                .flat_map(|t| t.sources.iter().cloned())
-                .unique()
-                .collect::<Vec<_>>()
+            let collected: Vec<_> = if self.skip_deps {
+                tasks.to_vec()
+            } else {
+                let deps = Deps::new(&config, tasks.clone()).await?;
+                deps.all().cloned().collect()
+            };
+            merge_watch_patterns(collected.iter().map(|t| t.sources.as_slice()))
         };
         if !globs.is_empty() {
             args.push("-f".to_string());
             args.extend(itertools::intersperse(globs, "-f".to_string()).collect::<Vec<_>>());
+        }
+        if !ignores.is_empty() {
+            args.push("--ignore".to_string());
+            args.extend(
+                itertools::intersperse(ignores, "--ignore".to_string()).collect::<Vec<_>>(),
+            );
         }
         args.extend([
             "--".to_string(),
@@ -254,6 +256,40 @@ impl Watch {
             .unwrap()
             .clone()
     }
+}
+
+/// Merge each task's `sources` into the (filter, ignore) pair watchexec
+/// expects.
+///
+/// Watchexec doesn't model gitignore-style re-inclusion, so the per-task
+/// semantics from `task_source_checker` collapse here into a flat union.
+/// To avoid one task's `!pat` silently suppressing another task's literal
+/// positive `pat`, an exclude is dropped from the global ignore list when
+/// the same pattern appears as a positive include in any watched task.
+fn merge_watch_patterns<'a, I>(task_sources: I) -> (Vec<String>, Vec<String>)
+where
+    I: IntoIterator<Item = &'a [String]>,
+{
+    let mut inc = Vec::new();
+    let mut exc_candidates: Vec<String> = Vec::new();
+    for sources in task_sources {
+        for s in sources {
+            if let Some(rest) = s.strip_prefix('!') {
+                exc_candidates.push(rest.to_string());
+            } else if let Some(rest) = s.strip_prefix("\\!") {
+                inc.push(format!("!{rest}"));
+            } else {
+                inc.push(s.clone());
+            }
+        }
+    }
+    let inc: Vec<String> = inc.into_iter().unique().collect();
+    let exc: Vec<String> = exc_candidates
+        .into_iter()
+        .unique()
+        .filter(|pat| !inc.contains(pat))
+        .collect();
+    (inc, exc)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -1220,3 +1256,56 @@ pub enum ColourMode {
     Never,
 }
 //endregion
+
+#[cfg(test)]
+mod tests {
+    use super::merge_watch_patterns;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn merge_single_task_splits_pos_and_neg() {
+        let task = s(&["src/**/*.ts", "!src/**/*.test.ts"]);
+        let (inc, exc) = merge_watch_patterns(std::iter::once(task.as_slice()));
+        assert_eq!(inc, vec!["src/**/*.ts"]);
+        assert_eq!(exc, vec!["src/**/*.test.ts"]);
+    }
+
+    #[test]
+    fn merge_unescapes_literal_bang() {
+        let task = s(&["\\!keep.txt"]);
+        let (inc, exc) = merge_watch_patterns(std::iter::once(task.as_slice()));
+        assert_eq!(inc, vec!["!keep.txt"]);
+        assert!(exc.is_empty());
+    }
+
+    #[test]
+    fn merge_dedupes_across_tasks() {
+        let a = s(&["src/**/*.ts", "!src/**/*.test.ts"]);
+        let b = s(&["src/**/*.ts", "!src/**/*.test.ts"]);
+        let (inc, exc) = merge_watch_patterns([a.as_slice(), b.as_slice()]);
+        assert_eq!(inc, vec!["src/**/*.ts"]);
+        assert_eq!(exc, vec!["src/**/*.test.ts"]);
+    }
+
+    /// Regression: one task's `!pat` must not suppress another task's
+    /// positive `pat`. Watchexec's `--ignore` runs after `--filter`, so a
+    /// pattern that is positively wanted by any task is removed from the
+    /// global ignore list.
+    #[test]
+    fn merge_does_not_let_one_task_exclude_anothers_include() {
+        let a = s(&["src/**/*.ts", "!src/**/*.test.ts"]);
+        let b = s(&["src/**/*.test.ts"]);
+        let (inc, exc) = merge_watch_patterns([a.as_slice(), b.as_slice()]);
+        assert!(inc.contains(&"src/**/*.ts".to_string()));
+        assert!(inc.contains(&"src/**/*.test.ts".to_string()));
+        // `src/**/*.test.ts` is positively included by task B, so it must not
+        // appear in the ignore list — even though task A asks to exclude it.
+        assert!(
+            !exc.contains(&"src/**/*.test.ts".to_string()),
+            "exc should not contain a pattern that any task positively includes; got {exc:?}",
+        );
+    }
+}

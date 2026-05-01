@@ -488,17 +488,25 @@ impl TasksValidate {
     fn validate_source_patterns(&self, task: &Task) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
-        for source in &task.sources {
-            // Try to compile as glob pattern
-            if let Err(e) = globset::GlobBuilder::new(source).build() {
+        let validate = |raw: &str, issues: &mut Vec<ValidationIssue>| {
+            // Strip `!` prefix (negation) or `\!` escape before validating.
+            let pattern = raw
+                .strip_prefix('!')
+                .or_else(|| raw.strip_prefix("\\!"))
+                .unwrap_or(raw);
+            if let Err(e) = globset::GlobBuilder::new(pattern).build() {
                 issues.push(ValidationIssue {
                     task: task.name.clone(),
                     severity: Severity::Error,
                     category: "invalid-glob-pattern".to_string(),
-                    message: format!("Invalid source glob pattern: '{}'", source),
+                    message: format!("Invalid source glob pattern: '{}'", raw),
                     details: Some(format!("{}", e)),
                 });
             }
+        };
+
+        for source in &task.sources {
+            validate(source, &mut issues);
         }
 
         issues
