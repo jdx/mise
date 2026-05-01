@@ -3330,6 +3330,12 @@
         },
         "composer": {
           "$ref": "#/$defs/deps_provider"
+        },
+        "dart": {
+          "$ref": "#/$defs/deps_provider"
+        },
+        "flutter": {
+          "$ref": "#/$defs/deps_provider"
         }
       },
       "additionalProperties": {

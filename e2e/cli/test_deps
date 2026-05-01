@@ -267,6 +267,35 @@ assert_contains "mise deps --dry-run 2>&1" "composer"
 # Test freshness detection with content hashing
 rm -f composer.lock composer.json
 
+# Test dart provider
+cat >pubspec.yaml <<'EOF'
+name: demo
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  path: ^1.9.0
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.dart]
+EOF
+
+assert_contains "mise deps --list" "dart"
+assert_contains "mise deps --list" "pubspec.yaml"
+assert_contains "mise deps --dry-run 2>&1" "dart"
+
+# Test flutter provider - same pubspec as dart
+cat >mise.toml <<'EOF'
+[deps.flutter]
+EOF
+
+assert_contains "mise deps --list" "flutter"
+assert_contains "mise deps --list" "pubspec.yaml"
+assert_contains "mise deps --dry-run 2>&1" "flutter"
+
+# Clean up
+rm -f pubspec.yaml
+
 cat >mise.toml <<'EOF'
 [deps.custom_venv]
 sources = ["requirements.txt"]
