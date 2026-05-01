@@ -448,18 +448,28 @@ mod tests {
             "PEP 440 .dev suffix with build number should be filtered"
         );
 
-        // npm prerelease channels (GitHub discussion #9503)
+        // npm prerelease channels (GitHub discussion #9503).
+        // Use suffixes that don't accidentally match `([abc])[0-9]+`, so each
+        // assertion exercises only the channel-tag alternative it names.
         assert!(
             VERSION_REGEX.is_match("0.42.0-nightly.20260429.g6d9911393"),
             "npm -nightly tag should be filtered"
         );
         assert!(
-            VERSION_REGEX.is_match("13.0.0-canary.1"),
+            VERSION_REGEX.is_match("13.0.0-canary"),
             "npm -canary tag should be filtered"
         );
         assert!(
-            VERSION_REGEX.is_match("18.0.0-experimental-abc1234"),
+            VERSION_REGEX.is_match("18.0.0-experimental.1"),
             "npm -experimental tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("1.99.0-insider"),
+            "npm -insider tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("1.99.0-edge"),
+            "npm -edge tag should be filtered"
         );
 
         // Stable versions should NOT match
