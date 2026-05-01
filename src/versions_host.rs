@@ -207,4 +207,12 @@ mod tests {
             "https://mise-versions.jdx.dev/api/tools/ubi%3Ahttps%3A%2F%2Fexample.com%2Ffoo%2Fbar"
         );
     }
+
+    #[test]
+    fn test_track_install_url_for_registered_tool_name() {
+        assert_eq!(
+            track_install_url("node"),
+            "https://mise-versions.jdx.dev/api/tools/node"
+        );
+    }
 }
