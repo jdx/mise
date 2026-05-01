@@ -147,14 +147,24 @@ impl Install {
             .iter()
             .map(|ta| ta.ba.short.clone())
             .collect();
-        // Collect inactive tool names before trs borrow is consumed
+        // Collect set of tools that appear in any config file. We can't use
+        // trs.sources here because load_runtime_args overrides the config-derived
+        // source with ToolSource::Argument whenever the user passes TOOL@VERSION.
+        let configured_tools: HashSet<String> = config
+            .config_files
+            .values()
+            .filter_map(|cf| cf.to_tool_request_set().ok())
+            .flat_map(|cf_trs| {
+                cf_trs
+                    .tools
+                    .keys()
+                    .map(|ba| ba.short.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let inactive_tools: Vec<String> = expanded_runtimes
             .iter()
-            .filter(|ta| {
-                trs.sources
-                    .get(ta.ba.as_ref())
-                    .is_none_or(|s| s.is_argument())
-            })
+            .filter(|ta| !configured_tools.contains(&ta.ba.short))
             .map(|ta| ta.ba.short.clone())
             .collect();
         let mut ts: Toolset = trs.filter_by_tool(tools).into();

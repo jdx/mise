@@ -13,5 +13,12 @@ assert_contains "mise install tiny@3.1.0 2>&1" "mise use tiny"
 mise use dummy@1.0.0
 assert_not_contains "mise install dummy 2>&1" "not activated"
 
+# Test: Installing TOOL@VERSION for a tool that IS in config should NOT show
+# the hint (regression test for #9501 — CLI args were overriding the config
+# source in the merged tool request set, falsely flagging configured tools as
+# inactive).
+assert_not_contains "mise install dummy@1.0.0 2>&1" "not activated"
+assert_not_contains "mise install dummy@latest 2>&1" "not activated"
+
 # Clean up
 mise use --rm dummy
