@@ -8,7 +8,8 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use eyre::{Report, Result, bail, ensure};
 use regex::Regex;
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+use reqwest::StatusCode;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
 use tokio::sync::OnceCell;
@@ -421,8 +422,8 @@ impl Client {
         let mut final_headers = headers.clone();
         final_headers.extend(netrc_headers(&url));
 
-        let mut req = self.reqwest.request(method, url.clone());
-        req = req.headers(final_headers);
+        let mut req = self.reqwest.request(method.clone(), url.clone());
+        req = req.headers(final_headers.clone());
         let resp = match req.send().await {
             Ok(resp) => resp,
             Err(err) => {
@@ -462,9 +463,37 @@ impl Client {
         }
         debug!("{} {url} {}", verb_label, resp.status());
         display_github_rate_limit(&resp);
+        if is_authenticated_github_forbidden(&url, &final_headers, &resp) {
+            let status = resp.status();
+            let status_error = resp
+                .error_for_status_ref()
+                .expect_err("403 response should be an error");
+            let body = resp.text().await?;
+            // Retry without auth when the response mentions IP allow lists: GitHub App
+            // installation tokens (`ghs_*`) get 403 on public API resources for orgs with IP
+            // allow lists; stripping auth avoids that path.
+            // https://github.com/orgs/community/discussions/191185
+            // https://github.com/jdx/mise/discussions/9119
+            if body.contains("IP allow list") {
+                let mut headers = final_headers;
+                headers.remove(AUTHORIZATION);
+                debug!(
+                    "{} {} retrying without GitHub auth git after {}",
+                    verb_label, &url, status
+                );
+                return Box::pin(self.send_once(method, url, &headers, verb_label)).await;
+            }
+            return Err(status_error.into());
+        }
         resp.error_for_status_ref()?;
         Ok(resp)
     }
+}
+
+fn is_authenticated_github_forbidden(url: &Url, headers: &HeaderMap, resp: &Response) -> bool {
+    resp.status() == StatusCode::FORBIDDEN
+        && url.host_str() == Some("api.github.com")
+        && headers.contains_key(AUTHORIZATION)
 }
 
 pub fn error_code(e: &Report) -> Option<u16> {
