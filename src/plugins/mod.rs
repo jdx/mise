@@ -216,7 +216,7 @@ pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
+        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
     )
         .unwrap()
 });
@@ -446,6 +446,20 @@ mod tests {
         assert!(
             VERSION_REGEX.is_match("2026.3.3.162408.dev0"),
             "PEP 440 .dev suffix with build number should be filtered"
+        );
+
+        // npm prerelease channels (GitHub discussion #9503)
+        assert!(
+            VERSION_REGEX.is_match("0.42.0-nightly.20260429.g6d9911393"),
+            "npm -nightly tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("13.0.0-canary.1"),
+            "npm -canary tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("18.0.0-experimental-abc1234"),
+            "npm -experimental tag should be filtered"
         );
 
         // Stable versions should NOT match
