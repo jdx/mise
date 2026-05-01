@@ -17,9 +17,8 @@ struct VersionOutputAll {
     version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<String>,
-    /// Upstream pre-release flag, sourced from the versions host or the
-    /// backend (currently github + aqua report this). Always emitted so
-    /// JSON consumers can rely on its presence.
+    /// Pre-release flag, sourced from upstream metadata or backend opt-in
+    /// detection. Always emitted so JSON consumers can rely on its presence.
     prerelease: bool,
 }
 
@@ -52,9 +51,9 @@ pub struct LsRemote {
     pub no_versions_host: bool,
 
     /// Include pre-release versions in the output for backends that report
-    /// an upstream prerelease flag (currently github + aqua). Equivalent to
-    /// setting `MISE_PRERELEASES=1` or the `prereleases` setting for the
-    /// duration of this command.
+    /// upstream prerelease metadata or opt in to regex-based prerelease
+    /// detection. Equivalent to setting `MISE_PRERELEASES=1` or the
+    /// `prereleases` setting for the duration of this command.
     #[clap(long, verbatim_doc_comment)]
     pub prerelease: bool,
 

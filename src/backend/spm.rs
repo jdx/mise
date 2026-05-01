@@ -44,6 +44,10 @@ impl Backend for SPMBackend {
         Ok(vec!["swift"])
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let provider = GitProvider::from_ba(&self.ba);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;

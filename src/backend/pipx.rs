@@ -52,6 +52,10 @@ impl Backend for PIPXBackend {
         Ok(vec!["uv"])
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     /// Pipx installs packages from PyPI or Git using version specs (e.g., black==24.3.0).
     /// It doesn't support installing from direct URLs, so lockfile URLs are not applicable.
     fn supports_lockfile_url(&self) -> bool {
