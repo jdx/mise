@@ -204,25 +204,15 @@ impl ToolRequestSetBuilder {
     }
 
     fn load_runtime_env(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
-        for (k, v) in env::vars_safe() {
-            if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
-                let plugin_name = k
-                    .trim_start_matches("MISE_")
-                    .trim_end_matches("_VERSION")
-                    .to_lowercase();
-                if plugin_name == "install" || plugin_name == "tool" {
-                    // ignore MISE_INSTALL_VERSION and MISE_TOOL_VERSION (set during hooks)
-                    continue;
-                }
-                let ba: Arc<BackendArg> = Arc::new(plugin_name.as_str().into());
-                let source = ToolSource::Environment(k, v.clone());
-                let mut env_ts = ToolRequestSet::new();
-                for v in v.split_whitespace() {
-                    let tvr = ToolRequest::new(ba.clone(), v, source.clone())?;
-                    env_ts.add_version(tvr, &source);
-                }
-                trs = merge(trs, env_ts);
+        for (plugin_name, k, v) in tool_env_vars() {
+            let ba: Arc<BackendArg> = Arc::new(plugin_name.as_str().into());
+            let source = ToolSource::Environment(k, v.clone());
+            let mut env_ts = ToolRequestSet::new();
+            for v in v.split_whitespace() {
+                let tvr = ToolRequest::new(ba.clone(), v, source.clone())?;
+                env_ts.add_version(tvr, &source);
             }
+            trs = merge(trs, env_ts);
         }
         Ok(trs)
     }
@@ -283,6 +273,25 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     b.tools.extend(a.tools);
     b.sources.extend(a.sources);
     b
+}
+
+/// Yields `(plugin_name, key, value)` for each `MISE_<TOOL>_VERSION` env var
+/// that maps to a tool. Skips `MISE_VERSION` and the `MISE_INSTALL_VERSION` /
+/// `MISE_TOOL_VERSION` vars set during hooks.
+pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
+    env::vars_safe().filter_map(|(k, v)| {
+        if !k.starts_with("MISE_") || !k.ends_with("_VERSION") || k == "MISE_VERSION" {
+            return None;
+        }
+        let plugin_name = k
+            .trim_start_matches("MISE_")
+            .trim_end_matches("_VERSION")
+            .to_lowercase();
+        if plugin_name == "install" || plugin_name == "tool" {
+            return None;
+        }
+        Some((plugin_name, k, v))
+    })
 }
 
 #[cfg(test)]

@@ -30,7 +30,7 @@ use tokio::sync::OnceCell;
 
 pub use install_options::InstallOptions;
 pub use tool_request::ToolRequest;
-pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
+pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder, tool_env_vars};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;

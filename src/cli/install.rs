@@ -7,7 +7,9 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
-use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
+use crate::toolset::{
+    InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset, tool_env_vars,
+};
 use crate::{config, env, exit, hooks};
 use clap::ValueHint;
 use eyre::Result;
@@ -152,26 +154,12 @@ impl Install {
         // load_runtime_args overrides the underlying source with
         // ToolSource::Argument whenever the user passes TOOL@VERSION, so config-
         // and env-sourced tools become indistinguishable from CLI-only ones.
-        let env_configured = env::vars_safe().filter_map(|(k, _)| {
-            if !k.starts_with("MISE_") || !k.ends_with("_VERSION") || k == "MISE_VERSION" {
-                return None;
-            }
-            let plugin_name = k
-                .trim_start_matches("MISE_")
-                .trim_end_matches("_VERSION")
-                .to_lowercase();
-            // mirror load_runtime_env: ignore vars set during hooks
-            if plugin_name == "install" || plugin_name == "tool" {
-                return None;
-            }
-            Some(plugin_name)
-        });
         let configured_tools: HashSet<String> = config
             .config_files
             .values()
             .filter_map(|cf| cf.to_tool_request_set().ok())
             .flat_map(|cf_trs| cf_trs.tools.into_keys().map(|ba| ba.short.clone()))
-            .chain(env_configured)
+            .chain(tool_env_vars().map(|(name, _, _)| name))
             .collect();
         let inactive_tools: Vec<String> = tools
             .iter()
