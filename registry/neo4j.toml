@@ -3,6 +3,7 @@ test = { cmd = "neo4j --version", expected = "{{version}}" }
 
 [[backends]]
 full = "http:neo4j"
+platforms = ["linux", "macos"]
 
 [backends.options]
 url = "https://dist.neo4j.org/neo4j-community-{{ version }}-unix.tar.gz"
