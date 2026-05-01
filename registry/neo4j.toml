@@ -1,0 +1,10 @@
+description = "Neo4j is a high-performance, native graph database with full ACID transactions, Cypher query language, and a flexible property graph model"
+
+[[backends]]
+full = "http:neo4j"
+
+[backends.options]
+url = "https://dist.neo4j.org/neo4j-community-{{ version }}-unix.tar.gz"
+strip_components = 1
+version_list_url = "https://search.maven.org/solrsearch/select?q=g:org.neo4j+AND+a:neo4j&core=gav&rows=200&wt=json"
+version_json_path = ".response.docs[].v"
