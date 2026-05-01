@@ -154,18 +154,12 @@ impl Install {
             .config_files
             .values()
             .filter_map(|cf| cf.to_tool_request_set().ok())
-            .flat_map(|cf_trs| {
-                cf_trs
-                    .tools
-                    .keys()
-                    .map(|ba| ba.short.clone())
-                    .collect::<Vec<_>>()
-            })
+            .flat_map(|cf_trs| cf_trs.tools.into_keys().map(|ba| ba.short.clone()))
             .collect();
-        let inactive_tools: Vec<String> = expanded_runtimes
+        let inactive_tools: Vec<String> = tools
             .iter()
-            .filter(|ta| !configured_tools.contains(&ta.ba.short))
-            .map(|ta| ta.ba.short.clone())
+            .filter(|t| !configured_tools.contains(*t))
+            .cloned()
             .collect();
         let mut ts: Toolset = trs.filter_by_tool(tools).into();
         let tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;
