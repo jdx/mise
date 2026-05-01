@@ -1,0 +1,4 @@
+backends = ["aqua:remoteoss/dexter", "github:remoteoss/dexter"]
+description = "A fast, full-featured Elixir LSP optimized for large codebases."
+os = ["linux", "macos"]
+test = { cmd = "dexter version", expected = "{{version}}" }
