@@ -1,0 +1,3 @@
+backends = ["github:rustfs/rustfs"]
+description = "High-performance, distributed, S3-compatible object storage system written in Rust"
+test = { cmd = "rustfs -V", expected = "rustfs {{version}}" }
