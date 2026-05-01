@@ -168,10 +168,9 @@ pub fn track_install(tool: &str, full: &str, version: &str) {
 async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Result<()> {
     use crate::cli::version::{ARCH, OS};
 
-    let url = "https://mise-versions.jdx.dev/api/track";
+    let url = track_install_url(tool);
 
     let body = serde_json::json!({
-        "tool": tool,
         "full": full,
         "version": version,
         "os": *OS,
@@ -188,4 +187,32 @@ async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Res
     }
 
     Ok(())
+}
+
+fn track_install_url(tool: &str) -> String {
+    format!(
+        "https://mise-versions.jdx.dev/api/tools/{}",
+        urlencoding::encode(tool)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_track_install_url_encodes_tool_path_segment() {
+        assert_eq!(
+            track_install_url("ubi:https://example.com/foo/bar"),
+            "https://mise-versions.jdx.dev/api/tools/ubi%3Ahttps%3A%2F%2Fexample.com%2Ffoo%2Fbar"
+        );
+    }
+
+    #[test]
+    fn test_track_install_url_for_registered_tool_name() {
+        assert_eq!(
+            track_install_url("node"),
+            "https://mise-versions.jdx.dev/api/tools/node"
+        );
+    }
 }
