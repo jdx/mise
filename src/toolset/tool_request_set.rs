@@ -323,6 +323,58 @@ mod tests {
     }
 
     #[test]
+    fn test_tool_env_vars_unaliases_backend() {
+        // MISE_NODEJS_VERSION should yield "node" (the unaliased backend
+        // short name), not "nodejs" — otherwise the install command's
+        // configured-tool check fails to match unaliased ToolArg shorts.
+        unsafe {
+            std::env::set_var("MISE_NODEJS_VERSION", "22.0.0");
+            std::env::set_var("MISE_GOLANG_VERSION", "1.22.0");
+        }
+
+        let entries: Vec<(String, String, String)> = tool_env_vars()
+            .filter(|(_, k, _)| k == "MISE_NODEJS_VERSION" || k == "MISE_GOLANG_VERSION")
+            .collect();
+
+        let nodejs = entries
+            .iter()
+            .find(|(_, k, _)| k == "MISE_NODEJS_VERSION")
+            .expect("MISE_NODEJS_VERSION should yield an entry");
+        assert_eq!(nodejs.0, "node");
+
+        let golang = entries
+            .iter()
+            .find(|(_, k, _)| k == "MISE_GOLANG_VERSION")
+            .expect("MISE_GOLANG_VERSION should yield an entry");
+        assert_eq!(golang.0, "go");
+
+        unsafe {
+            std::env::remove_var("MISE_NODEJS_VERSION");
+            std::env::remove_var("MISE_GOLANG_VERSION");
+        }
+    }
+
+    #[test]
+    fn test_tool_env_vars_skips_non_tool_vars() {
+        unsafe {
+            std::env::set_var("MISE_VERSION", "2026.4.28");
+            std::env::set_var("MISE_INSTALL_VERSION", "1.0.0");
+            std::env::set_var("MISE_TOOL_VERSION", "1.0.0");
+        }
+
+        let keys: HashSet<String> = tool_env_vars().map(|(_, k, _)| k).collect();
+        assert!(!keys.contains("MISE_VERSION"));
+        assert!(!keys.contains("MISE_INSTALL_VERSION"));
+        assert!(!keys.contains("MISE_TOOL_VERSION"));
+
+        unsafe {
+            std::env::remove_var("MISE_VERSION");
+            std::env::remove_var("MISE_INSTALL_VERSION");
+            std::env::remove_var("MISE_TOOL_VERSION");
+        }
+    }
+
+    #[test]
     fn test_load_runtime_env_ignores_non_mise_vars() {
         // Non-MISE variables should be ignored, even with special characters
         unsafe {
