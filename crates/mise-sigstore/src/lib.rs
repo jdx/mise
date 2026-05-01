@@ -412,10 +412,12 @@ pub async fn verify_cosign_signature_with_key(
     let key_pem = tokio::fs::read_to_string(public_key_path).await?;
     let public_key = DerPublicKey::from_pem(&key_pem)?;
 
-    let bundle = tokio::fs::read_to_string(sig_or_bundle_path)
-        .await
+    // Read the file once, propagating real I/O errors. Only a JSON-parse
+    // failure means "this isn't a sigstore bundle, treat it as a raw `.sig`."
+    let raw_bytes = tokio::fs::read(sig_or_bundle_path).await?;
+    let bundle = std::str::from_utf8(&raw_bytes)
         .ok()
-        .and_then(|content| Bundle::from_json(&content).ok());
+        .and_then(|content| Bundle::from_json(content).ok());
     if let Some(bundle) = bundle {
         // Bundle path: needs the trust root for tlog (Rekor) verification.
         let trusted_root = production_trusted_root().await?;
@@ -436,7 +438,7 @@ pub async fn verify_cosign_signature_with_key(
 
     // Raw `.sig` path: only needs the local public key — no network access.
     let artifact = tokio::fs::read(artifact_path).await?;
-    let signature = read_cosign_signature(sig_or_bundle_path).await?;
+    let signature = decode_cosign_signature(&raw_bytes);
     verify_raw_signature(&artifact, &signature, &public_key)?;
     Ok(true)
 }
@@ -808,8 +810,13 @@ fn verify_cert_chain(leaf_der: &[u8], trusted_root: &TrustedRoot) -> Result<()> 
             "trust root contains no CA certificates".to_string(),
         ));
     }
-    // Self-signed certs become trust anchors; the rest are intermediates that
-    // webpki uses to chain-build from the leaf upward.
+    // Use every CA cert in the trust root as both a trust anchor and as a
+    // possible intermediate. `anchor_from_trusted_cert` accepts any parseable
+    // cert (not just self-signed roots), and that's intentional: we trust the
+    // whole CA bundle the trust root ships, so it's fine for chain validation
+    // to terminate at an intermediate rather than walk all the way up to the
+    // self-signed root. This matches what sigstore-verify does internally.
+    // The chain itself is still cryptographically verified end-to-end.
     let trust_anchors: Vec<_> = all_certs
         .iter()
         .filter_map(|der| {
@@ -820,7 +827,7 @@ fn verify_cert_chain(leaf_der: &[u8], trusted_root: &TrustedRoot) -> Result<()> 
         .collect();
     if trust_anchors.is_empty() {
         return Err(AttestationError::Verification(
-            "trust root contains no self-signed root certificates".to_string(),
+            "trust root CA certs are unparseable".to_string(),
         ));
     }
     let intermediate_certs: Vec<CertificateDer<'static>> = all_certs
@@ -998,17 +1005,16 @@ fn verify_min_slsa_level(bundle: &Bundle, min_level: u8) -> Result<()> {
     Ok(())
 }
 
-async fn read_cosign_signature(sig_path: &Path) -> Result<Vec<u8>> {
-    let bytes = tokio::fs::read(sig_path).await?;
-    let trimmed = String::from_utf8_lossy(&bytes).trim().to_string();
+fn decode_cosign_signature(bytes: &[u8]) -> Vec<u8> {
+    let trimmed = String::from_utf8_lossy(bytes).trim().to_string();
     if let Some(decoded) = base64::engine::general_purpose::STANDARD
         .decode(trimmed.as_bytes())
         .ok()
         .filter(|_| !trimmed.is_empty())
     {
-        return Ok(decoded);
+        return decoded;
     }
-    Ok(bytes)
+    bytes.to_vec()
 }
 
 fn verify_raw_signature(
