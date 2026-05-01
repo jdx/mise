@@ -2499,6 +2499,70 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_tool_opts_with_overrides_keeps_inline_opts_with_config_entry() -> Result<()> {
+        crate::toolset::install_state::init().await?;
+
+        let source = crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml"));
+        let resolved_ba = Arc::new(BackendArg::from("github:jdx/mise-test-fixtures"));
+        let config_opts =
+            crate::toolset::parse_tool_options("api_url=https://config.example/api/v3,foo=config");
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(
+            crate::toolset::ToolRequest::new_opts(
+                resolved_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
+            &source,
+        );
+
+        let mut repo_urls = HashMap::new();
+        repo_urls.insert(
+            "tiny".to_string(),
+            "github:jdx/mise-test-fixtures".to_string(),
+        );
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls,
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
+        };
+        config.tool_request_set.set(trs).ok();
+        let config = Arc::new(config);
+        let ba = Arc::new(BackendArg::new_raw(
+            "tiny".to_string(),
+            Some("github:jdx/mise-test-fixtures".to_string()),
+            "jdx/mise-test-fixtures".to_string(),
+            Some(crate::toolset::parse_tool_options(
+                "api_url=https://inline.example/api/v3",
+            )),
+            crate::cli::args::BackendResolution::new(true),
+        ));
+
+        let opts = config.get_tool_opts_with_overrides(&ba).await?;
+
+        assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
+        assert_eq!(opts.get("foo"), Some("config"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_tool_opts_with_overrides_keeps_inline_opts_without_config_entry() -> Result<()>
+    {
         let config = Config::reset().await?;
         let ba = Arc::new(BackendArg::from(
             "tiny[api_url=https://inline.example/api/v3]",

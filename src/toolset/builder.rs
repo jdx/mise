@@ -142,10 +142,13 @@ impl ToolsetBuilder {
                 .get(&args[0].ba)
                 .and_then(|tvl| tvl.requests.first())
                 .map(|tvr| tvr.options());
+            let apply_arg_options = |mut tvr: ToolRequest, ba: &BackendArg| {
+                tvr.set_options(ba.opts_with_config(config_options.clone()));
+                tvr
+            };
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
-                    let mut tvr = tvr.clone();
-                    tvr.set_options(arg.ba.opts_with_config(config_options.clone()));
+                    let tvr = apply_arg_options(tvr.clone(), arg.ba.as_ref());
                     arg_ts.add_version(tvr);
                 } else if self.default_to_latest {
                     // this logic is required for `mise x` because with that specific command mise
@@ -160,20 +163,18 @@ impl ToolsetBuilder {
 
                     if let Some(current_active) = current_active {
                         // active version, so don't set "latest"
-                        let mut tvr = ToolRequest::new(
+                        let tvr = ToolRequest::new(
                             arg.ba.clone(),
                             &current_active.version(),
                             ToolSource::Argument,
                         )?;
-                        tvr.set_options(arg.ba.opts_with_config(config_options.clone()));
+                        let tvr = apply_arg_options(tvr, arg.ba.as_ref());
                         arg_ts.add_version(tvr);
                     } else {
                         // no active version, so use "latest"
-                        arg_ts.add_version(ToolRequest::new(
-                            arg.ba.clone(),
-                            "latest",
-                            ToolSource::Argument,
-                        )?);
+                        let tvr = ToolRequest::new(arg.ba.clone(), "latest", ToolSource::Argument)?;
+                        let tvr = apply_arg_options(tvr, arg.ba.as_ref());
+                        arg_ts.add_version(tvr);
                     }
                 }
             }
