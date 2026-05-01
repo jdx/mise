@@ -1,4 +1,5 @@
 description = "Neo4j is a high-performance, native graph database with full ACID transactions, Cypher query language, and a flexible property graph model"
+test = { cmd = "neo4j --version", expected = "{{version}}" }
 
 [[backends]]
 full = "http:neo4j"
