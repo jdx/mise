@@ -411,16 +411,30 @@ impl Client {
     async fn send_once(
         &self,
         method: Method,
+        url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+    ) -> Result<Response> {
+        self.send_once_inner(method, url, headers, verb_label, true)
+            .await
+    }
+
+    async fn send_once_inner(
+        &self,
+        method: Method,
         mut url: Url,
         headers: &HeaderMap,
         verb_label: &str,
+        use_netrc: bool,
     ) -> Result<Response> {
         apply_url_replacements(&mut url);
         debug!("{} {}", verb_label, &url);
 
         // Apply netrc credentials after URL replacement
         let mut final_headers = headers.clone();
-        final_headers.extend(netrc_headers(&url));
+        if use_netrc {
+            final_headers.extend(netrc_headers(&url));
+        }
 
         let mut req = self.reqwest.request(method.clone(), url.clone());
         req = req.headers(final_headers.clone());
@@ -463,12 +477,12 @@ impl Client {
         }
         debug!("{} {url} {}", verb_label, resp.status());
         display_github_rate_limit(&resp);
-        if is_authenticated_github_forbidden(&url, &final_headers, &resp) {
+        if is_authenticated_github_forbidden(&url, headers, &resp) {
             let status = resp.status();
             let status_error = resp
                 .error_for_status_ref()
                 .expect_err("403 response should be an error");
-            let body = resp.text().await?;
+            let body = resp.text().await.unwrap_or_default();
             // Retry without auth when the response mentions IP allow lists: GitHub App
             // installation tokens (`ghs_*`) get 403 on public API resources for orgs with IP
             // allow lists; stripping auth avoids that path.
@@ -478,10 +492,11 @@ impl Client {
                 let mut headers = final_headers;
                 headers.remove(AUTHORIZATION);
                 debug!(
-                    "{} {} retrying without GitHub auth git after {}",
+                    "{} {} retrying without GitHub auth after {}",
                     verb_label, &url, status
                 );
-                return Box::pin(self.send_once(method, url, &headers, verb_label)).await;
+                return Box::pin(self.send_once_inner(method, url, &headers, verb_label, false))
+                    .await;
             }
             return Err(status_error.into());
         }
