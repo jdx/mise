@@ -6,7 +6,7 @@ full = "http:neo4j"
 platforms = ["linux", "macos"]
 
 [backends.options]
-strip_components = 1
+strip_components = "1"
 url = "https://dist.neo4j.org/neo4j-community-{{ version }}-unix.tar.gz"
 version_json_path = ".response.docs[].v"
 # Maven Central's solrsearch caps responses at 200 rows with no pagination,
