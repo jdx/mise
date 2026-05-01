@@ -477,7 +477,7 @@ impl Client {
         }
         debug!("{} {url} {}", verb_label, resp.status());
         display_github_rate_limit(&resp);
-        if is_authenticated_github_forbidden(&url, headers, &resp) {
+        if is_authenticated_github_forbidden(&url, &final_headers, &resp) {
             let status = resp.status();
             let status_error = resp
                 .error_for_status_ref()
