@@ -6,11 +6,11 @@ full = "http:neo4j"
 platforms = ["linux", "macos"]
 
 [backends.options]
-url = "https://dist.neo4j.org/neo4j-community-{{ version }}-unix.tar.gz"
 strip_components = 1
+url = "https://dist.neo4j.org/neo4j-community-{{ version }}-unix.tar.gz"
+version_json_path = ".response.docs[].v"
 # Maven Central's solrsearch caps responses at 200 rows with no pagination,
 # so this lists only the 200 most recent versions (currently down to 3.5.0-rc01).
 # All 4.x / 5.x / calver releases are covered; pre-3.5 versions can still be
 # installed by pinning explicitly.
 version_list_url = "https://search.maven.org/solrsearch/select?q=g:org.neo4j+AND+a:neo4j&core=gav&rows=200&wt=json"
-version_json_path = ".response.docs[].v"
