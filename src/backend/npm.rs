@@ -158,6 +158,7 @@ impl Backend for NPMBackend {
                         VersionInfo {
                             version: version.to_string(),
                             created_at,
+                            prerelease: is_semver_prerelease(version),
                             ..Default::default()
                         }
                     })
@@ -682,6 +683,21 @@ impl NPMBackend {
     }
 }
 
+/// Returns true if `version` is a semver pre-release.
+///
+/// npm enforces strict semver (rule 9): any hyphen-introduced identifier after
+/// the version core is a pre-release (`1.0.0-rc.1`, `0.42.0-nightly...`,
+/// `2.0.0-canary.1`, `3.0.0-foo`). Build metadata (`+...`) is stripped first so
+/// stable builds like `1.0.0+sha.abc` are not misclassified.
+///
+/// Stricter than the generic `VERSION_REGEX` channel-tag list — for npm it
+/// catches any pre-release tag the maintainer chooses, not just the well-known
+/// names mise happens to recognize.
+fn is_semver_prerelease(version: &str) -> bool {
+    let core_and_pre = version.split_once('+').map_or(version, |(v, _)| v);
+    core_and_pre.contains('-')
+}
+
 /// Returns install-time-only option keys for NPM backend.
 pub fn install_time_option_keys() -> Vec<String> {
     vec![
@@ -992,5 +1008,35 @@ mod tests {
             Some(&"--loglevel=warn".to_string())
         );
         assert!(!resolved.contains_key("install_env.NPM_CONFIG_REGISTRY"));
+    }
+
+    #[test]
+    fn test_is_semver_prerelease_flags_hyphen_suffix() {
+        // Per semver rule 9, any hyphen-introduced identifier is a pre-release.
+        // Covers GitHub discussion #9503 (-nightly slipping past channel-name regex).
+        assert!(is_semver_prerelease("0.42.0-nightly.20260429.g6d9911393"));
+        assert!(is_semver_prerelease("1.0.0-rc.1"));
+        assert!(is_semver_prerelease("2.0.0-canary"));
+        assert!(is_semver_prerelease("3.0.0-foo"));
+        // Maintainer-invented tag mise's regex doesn't know about — still flagged.
+        assert!(is_semver_prerelease("4.0.0-internal-build-7"));
+    }
+
+    #[test]
+    fn test_is_semver_prerelease_keeps_stable_versions() {
+        assert!(!is_semver_prerelease("1.0.0"));
+        assert!(!is_semver_prerelease("0.40.1"));
+        assert!(!is_semver_prerelease("v22.6.0"));
+        // Build metadata alone is not a pre-release.
+        assert!(!is_semver_prerelease("1.0.0+sha.abc1234"));
+    }
+
+    #[test]
+    fn test_is_semver_prerelease_strips_build_metadata_first() {
+        // `+build` after a `-pre` tag must still flag as pre-release.
+        assert!(is_semver_prerelease("1.0.0-rc.1+build.5"));
+        // Hyphen only inside build metadata (not legal semver, but be defensive)
+        // — we treat it as stable since the version core has no pre-release.
+        assert!(!is_semver_prerelease("1.0.0+build-5"));
     }
 }
