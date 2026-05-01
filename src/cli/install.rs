@@ -147,14 +147,31 @@ impl Install {
             .iter()
             .map(|ta| ta.ba.short.clone())
             .collect();
-        // Collect set of tools that appear in any config file. We can't use
-        // trs.sources here because load_runtime_args overrides the config-derived
-        // source with ToolSource::Argument whenever the user passes TOOL@VERSION.
+        // Collect set of tools that appear in any config file or in a
+        // MISE_<TOOL>_VERSION env var. We can't use trs.sources here because
+        // load_runtime_args overrides the underlying source with
+        // ToolSource::Argument whenever the user passes TOOL@VERSION, so config-
+        // and env-sourced tools become indistinguishable from CLI-only ones.
+        let env_configured = env::vars_safe().filter_map(|(k, _)| {
+            if !k.starts_with("MISE_") || !k.ends_with("_VERSION") || k == "MISE_VERSION" {
+                return None;
+            }
+            let plugin_name = k
+                .trim_start_matches("MISE_")
+                .trim_end_matches("_VERSION")
+                .to_lowercase();
+            // mirror load_runtime_env: ignore vars set during hooks
+            if plugin_name == "install" || plugin_name == "tool" {
+                return None;
+            }
+            Some(plugin_name)
+        });
         let configured_tools: HashSet<String> = config
             .config_files
             .values()
             .filter_map(|cf| cf.to_tool_request_set().ok())
             .flat_map(|cf_trs| cf_trs.tools.into_keys().map(|ba| ba.short.clone()))
+            .chain(env_configured)
             .collect();
         let inactive_tools: Vec<String> = tools
             .iter()
