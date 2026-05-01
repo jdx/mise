@@ -204,8 +204,8 @@ impl ToolRequestSetBuilder {
     }
 
     fn load_runtime_env(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
-        for (plugin_name, k, v) in tool_env_vars() {
-            let ba: Arc<BackendArg> = Arc::new(plugin_name.as_str().into());
+        for (short, k, v) in tool_env_vars() {
+            let ba: Arc<BackendArg> = Arc::new(short.as_str().into());
             let source = ToolSource::Environment(k, v.clone());
             let mut env_ts = ToolRequestSet::new();
             for v in v.split_whitespace() {
@@ -275,22 +275,24 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     b
 }
 
-/// Yields `(plugin_name, key, value)` for each `MISE_<TOOL>_VERSION` env var
-/// that maps to a tool. Skips `MISE_VERSION` and the `MISE_INSTALL_VERSION` /
-/// `MISE_TOOL_VERSION` vars set during hooks.
+/// Yields `(short, key, value)` for each `MISE_<TOOL>_VERSION` env var that
+/// maps to a tool. `short` is the unaliased backend short name (so
+/// `MISE_NODEJS_VERSION` yields `"node"`). Skips `MISE_VERSION` and the
+/// `MISE_INSTALL_VERSION` / `MISE_TOOL_VERSION` vars set during hooks.
 pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
     env::vars_safe().filter_map(|(k, v)| {
         if !k.starts_with("MISE_") || !k.ends_with("_VERSION") || k == "MISE_VERSION" {
             return None;
         }
-        let plugin_name = k
+        let raw = k
             .trim_start_matches("MISE_")
             .trim_end_matches("_VERSION")
             .to_lowercase();
-        if plugin_name == "install" || plugin_name == "tool" {
+        if raw == "install" || raw == "tool" {
             return None;
         }
-        Some((plugin_name, k, v))
+        let short = crate::backend::unalias_backend(&raw).to_string();
+        Some((short, k, v))
     })
 }
 
