@@ -1158,10 +1158,13 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Like `latest_version` but with explicit refresh control. Pass
-    /// `refresh = true` to bypass the cached remote-versions list. The
-    /// `latest_stable_version` fast path is skipped when refreshing — refresh
-    /// callers want the shared version-list path so they pick up new entries
-    /// the cached list (or backend-specific fast path) would miss.
+    /// `refresh = true` to bypass the cached remote-versions list when falling
+    /// back to the full version-list path. The `latest_stable_version` fast
+    /// path is still tried first — it queries canonical upstream endpoints
+    /// (e.g. GitHub's `/releases/latest`, npm dist tags) which are
+    /// authoritative and not subject to the local version-list cache, so
+    /// skipping it would actually return *older* results than refreshing the
+    /// list (which itself may go through a versions-host cache).
     async fn latest_version_with_refresh(
         &self,
         config: &Arc<Config>,
@@ -1171,8 +1174,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<Option<String>> {
         let before_date = effective_latest_before_date(self, config, before_date).await?;
         let resolved_query = query.as_deref().unwrap_or("latest");
-        if !refresh
-            && resolved_query == "latest"
+        if resolved_query == "latest"
             && before_date.is_none()
             && let Some(version) = self.latest_stable_version(config).await?
         {
