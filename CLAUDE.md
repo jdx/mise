@@ -40,15 +40,19 @@ Before touching `registry/`, ALWAYS do the following:
 
 ### Backend choice: aqua (preferred) or github
 
-For registry entries, **only `aqua:` and `github:` are routinely accepted.** Every other backend (`vfox:`, `asdf:`, `npm:`, `pipx:`, `cargo:`, `gem:`, `go:`, `ubi:`, etc.) has an **extremely high** bar — these are rarely accepted into the registry and submitting one without prior agreement from @jdx is almost certain to be rejected.
+For registry entries the backend tiers are:
 
-- **Prefer `aqua:`** when the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry). It has better UX, SLSA verification, and per-version logic. This is the recommended default.
-- **Use `github:`** when the tool isn't in the aqua registry but ships GitHub releases.
-- **New `asdf:` plugins are not accepted** — supply-chain security. Use aqua/github instead.
-- **New `vfox:` plugins are not accepted either** — same reason. Use aqua/github instead.
-- **`ubi:` is deprecated and will not be accepted** under any circumstances. Use aqua/github instead.
-- **Do not reach for `npm:`/`pipx:`/`cargo:`/`go:`/etc.** for a registry PR unless the user has explicitly confirmed @jdx wants it that way for this specific tool. Even very popular tools have been rejected when proposed with one of these backends.
-- Users can still install via any backend themselves with explicit syntax (`mise use vfox:...`, `mise use cargo:...`, etc.) — they just don't get a registry shorthand for it.
+- **Tier 1 — preferred:** `aqua:` and `github:`. These are the routinely accepted backends.
+  - **Prefer `aqua:`** when the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry). Better UX, SLSA verification, and per-version logic.
+  - **Use `github:`** when the tool isn't in aqua but ships GitHub releases.
+- **Tier 2 — high bar, but lower than tier 3:** `conda:`. Potentially acceptable when the tool genuinely can't be supported via aqua/github (e.g. it's a conda-native scientific package only distributed through conda-forge). Still requires a popular, well-maintained tool — but the bar is meaningfully lower than `npm:`/`cargo:`/etc., because for some ecosystems conda is the legitimate distribution channel.
+- **Tier 3 — extremely high bar, almost never accepted:** `npm:`, `pipx:`, `cargo:`, `gem:`, `go:`, `dotnet:`. Don't reach for these for a registry PR unless the user has explicitly confirmed @jdx wants it that way for this specific tool. Even very popular tools have been rejected when proposed with one of these backends.
+- **Not accepted at all:**
+  - **New `asdf:` plugins** — supply-chain security. Use aqua/github instead.
+  - **New `vfox:` plugins** — same reason. Use aqua/github instead.
+  - **`ubi:`** is deprecated and will not be accepted under any circumstances.
+
+Users can still install via any backend themselves with explicit syntax (`mise use vfox:...`, `mise use cargo:...`, etc.) — they just don't get a registry shorthand for it.
 
 ## Development Commands
 

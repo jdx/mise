@@ -629,6 +629,11 @@ enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.git
   security policy.
 - **The `ubi` backend is deprecated and will not be accepted** for new registry entries.
   Use aqua/github instead.
+- **The `conda` backend has a high bar but is potentially accepted** for tools that
+  genuinely cannot be supported via aqua/github — for example, conda-native scientific
+  packages that are only distributed through conda-forge. The bar is lower than
+  `npm`/`cargo`/etc. because for some ecosystems conda is the legitimate distribution
+  channel, but the tool still needs to be popular and well-maintained.
 - **Other backends (`npm`, `pipx`, `cargo`, `gem`, `go`, `dotnet`, etc.) have a very high
   bar** for new registry entries. They are accepted only when no aqua/github option exists
   and the tool is widely used. Discuss with @jdx before submitting.
