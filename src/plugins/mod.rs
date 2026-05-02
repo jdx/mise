@@ -189,6 +189,33 @@ impl PluginType {
         }
     }
 
+    pub fn from_plugin_config(key: &str) -> (Self, &str) {
+        if let Some(name) = key.strip_prefix("vfox:") {
+            (Self::Vfox, name)
+        } else if let Some(name) = key.strip_prefix("vfox-backend:") {
+            (Self::VfoxBackend, name)
+        } else if let Some(name) = key.strip_prefix("asdf:") {
+            (Self::Asdf, name)
+        } else {
+            let path = dirs::PLUGINS.join(key.to_kebab_case());
+            (Self::from_plugin_path(&path).unwrap_or(Self::Asdf), key)
+        }
+    }
+
+    pub fn from_plugin_path(path: &Path) -> Option<Self> {
+        if path.join("metadata.lua").exists() {
+            if path.join("hooks").join("backend_install.lua").exists() {
+                Some(Self::VfoxBackend)
+            } else {
+                Some(Self::Vfox)
+            }
+        } else if path.join("bin").join("list-all").exists() {
+            Some(Self::Asdf)
+        } else {
+            None
+        }
+    }
+
     pub fn plugin(&self, short: String) -> PluginEnum {
         let path = dirs::PLUGINS.join(short.to_kebab_case());
         match self {
@@ -425,6 +452,56 @@ mod tests {
             PluginSource::Git { .. } => {}
             _ => panic!("Expected a git plugin"),
         }
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_config() {
+        assert_eq!(
+            PluginType::from_plugin_config("vfox:node"),
+            (PluginType::Vfox, "node")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("vfox-backend:npm"),
+            (PluginType::VfoxBackend, "npm")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("asdf:node"),
+            (PluginType::Asdf, "node")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("missing-test-plugin"),
+            (PluginType::Asdf, "missing-test-plugin")
+        );
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_path() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(PluginType::from_plugin_path(dir.path()), None);
+
+        let asdf = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(asdf.path().join("bin")).unwrap();
+        std::fs::write(asdf.path().join("bin").join("list-all"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(asdf.path()),
+            Some(PluginType::Asdf)
+        );
+
+        let vfox = tempfile::tempdir().unwrap();
+        std::fs::write(vfox.path().join("metadata.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(vfox.path()),
+            Some(PluginType::Vfox)
+        );
+
+        let backend = tempfile::tempdir().unwrap();
+        std::fs::write(backend.path().join("metadata.lua"), "").unwrap();
+        std::fs::create_dir_all(backend.path().join("hooks")).unwrap();
+        std::fs::write(backend.path().join("hooks").join("backend_install.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(backend.path()),
+            Some(PluginType::VfoxBackend)
+        );
     }
 
     #[test]

@@ -212,8 +212,9 @@ node = "https://github.com/my-org/mise-node.git#DEADBEEF" # supports specific gi
 "vfox-backend:myplugin" = "https://github.com/jdx/vfox-npm"
 ```
 
-The plugin type prefix (e.g., `asdf:`, `vfox:` or `vfox-backend:`) is optional. If omitted, mise will fall back to
-either using `asdf` or `vfox` if the URL contains `vfox-` in the repo name.
+The plugin type prefix (e.g., `asdf:`, `vfox:` or `vfox-backend:`) is optional.
+If omitted, mise clones the plugin first and then detects the plugin type from
+the installed plugin files.
 
 If you simply want to install a plugin from a specific URL once, it's better to use
 `mise plugin install <NAME> <GIT_URL>`. Add this section to `mise.toml` if you want

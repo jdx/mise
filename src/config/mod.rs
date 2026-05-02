@@ -226,25 +226,8 @@ impl Config {
         time!("load done");
 
         measure!("config::load install_state", {
-            for (plugin, url) in &config.repo_urls {
-                // check plugin type, fallback to asdf
-                let (mut plugin_type, has_explicit_prefix) = match plugin {
-                    p if p.starts_with("vfox:") => (PluginType::Vfox, true),
-                    p if p.starts_with("vfox-backend:") => (PluginType::VfoxBackend, true),
-                    p if p.starts_with("asdf:") => (PluginType::Asdf, true),
-                    _ => (PluginType::Asdf, false),
-                };
-                // keep backward compatibility for vfox plugins, but only if no explicit prefix
-                if !has_explicit_prefix && url.contains("vfox-") {
-                    plugin_type = PluginType::Vfox;
-                }
-
-                let plugin = plugin
-                    .strip_prefix("vfox:")
-                    .or_else(|| plugin.strip_prefix("vfox-backend:"))
-                    .or_else(|| plugin.strip_prefix("asdf:"))
-                    .unwrap_or(plugin);
-
+            for plugin in config.repo_urls.keys() {
+                let (plugin_type, plugin) = PluginType::from_plugin_config(plugin);
                 install_state::add_plugin(plugin, plugin_type).await?;
             }
         });

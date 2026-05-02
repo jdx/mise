@@ -261,9 +261,11 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
 
 pub fn remove(short: &str) {
     let mut tools = TOOLS.lock().unwrap();
-    let mut tools_ = tools.as_ref().unwrap().deref().clone();
-    tools_.remove(short);
-    *tools = Some(Arc::new(tools_));
+    if let Some(current) = tools.as_ref() {
+        let mut tools_ = current.deref().clone();
+        tools_.remove(short);
+        *tools = Some(Arc::new(tools_));
+    }
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
@@ -854,7 +856,10 @@ pub trait Backend: Debug + Send + Sync {
                         }
                     })
                     .collect_vec();
-                if versions.is_empty() && self.get_type() != BackendType::Http {
+                if versions.is_empty()
+                    && self.get_type() != BackendType::Http
+                    && self.unresolved_latest_version().is_none()
+                {
                     warn!("No versions found for {id}");
                 }
                 Ok(versions)

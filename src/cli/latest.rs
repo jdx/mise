@@ -50,10 +50,11 @@ impl Latest {
             _ => bail!("invalid version: {}", tool.style()),
         };
 
-        let backend = tool.ba.backend()?;
+        let mut backend = tool.ba.backend()?;
         let mpr = MultiProgressReport::get();
         if let Some(plugin) = backend.plugin() {
             plugin.ensure_installed(&config, &mpr, false, false).await?;
+            backend = tool.ba.backend()?;
         }
         if let Some(v) = prefix {
             prefix = Some(config.resolve_alias(&backend, &v).await?);
