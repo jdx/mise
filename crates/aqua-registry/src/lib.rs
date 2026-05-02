@@ -67,6 +67,15 @@ impl Default for AquaRegistryConfig {
 pub trait RegistryFetcher {
     /// Fetch and parse a registry YAML file for the given package ID
     async fn fetch_registry(&self, package_id: &str) -> Result<crate::types::RegistryYaml>;
+
+    async fn fetch_package(&self, package_id: &str) -> Result<crate::types::AquaPackage> {
+        let registry = self.fetch_registry(package_id).await?;
+        registry
+            .packages
+            .into_iter()
+            .next()
+            .ok_or_else(|| AquaRegistryError::PackageNotFound(package_id.to_string()))
+    }
 }
 
 /// Trait for caching registry data

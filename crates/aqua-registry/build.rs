@@ -119,7 +119,7 @@ fn package_registries(packages: &[Value]) -> Result<Vec<PackageRegistry>> {
         let Some(id) = canonical_package_id(package) else {
             continue;
         };
-        let content = package_registry_msgpack_z(package)?;
+        let content = package_msgpack_z(package)?;
         let aliases = package_aliases(package);
         registries.push(PackageRegistry {
             id,
@@ -207,14 +207,8 @@ fn registry_string_map_code(entries: &[(String, String)]) -> String {
     code
 }
 
-fn package_registry_msgpack_z(package: &Value) -> Result<Vec<u8>> {
-    let mut registry = serde_yaml::Mapping::new();
-    registry.insert(
-        Value::String("packages".to_string()),
-        Value::Sequence(vec![package.clone()]),
-    );
-    let packed = rmp_serde::to_vec_named(&Value::Mapping(registry))
-        .wrap_err("Failed to serialize aqua package registry")?;
+fn package_msgpack_z(package: &Value) -> Result<Vec<u8>> {
+    let packed = rmp_serde::to_vec_named(package).wrap_err("Failed to serialize aqua package")?;
     let mut zlib = ZlibEncoder::new(Vec::new(), Compression::best());
     zlib.write_all(&packed)?;
     Ok(zlib.finish()?)

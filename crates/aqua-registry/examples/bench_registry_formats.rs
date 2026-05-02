@@ -2,7 +2,7 @@ use std::hint::black_box;
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
-use aqua_registry::RegistryYaml;
+use aqua_registry::AquaPackage;
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -36,20 +36,20 @@ fn main() {
     println!("format,size_bytes,total_ms,ns_per_decode");
     for fixture in &fixtures {
         let yaml = bench(ITERS, || {
-            let registry: RegistryYaml = serde_yaml::from_str(&fixture.yaml).unwrap();
-            black_box(registry.packages.len());
+            let package: AquaPackage = serde_yaml::from_str(&fixture.yaml).unwrap();
+            black_box(package.repo_name.len());
         });
         let json = bench(ITERS, || {
-            let registry: RegistryYaml = serde_json::from_slice(&fixture.json).unwrap();
-            black_box(registry.packages.len());
+            let package: AquaPackage = serde_json::from_slice(&fixture.json).unwrap();
+            black_box(package.repo_name.len());
         });
         let msgpack = bench(ITERS, || {
-            let registry: RegistryYaml = rmp_serde::from_slice(&fixture.msgpack).unwrap();
-            black_box(registry.packages.len());
+            let package: AquaPackage = rmp_serde::from_slice(&fixture.msgpack).unwrap();
+            black_box(package.repo_name.len());
         });
         let msgpack_z = bench(ITERS, || {
-            let registry = decode_msgpack_z(&fixture.msgpack_z);
-            black_box(registry.packages.len());
+            let package = decode_msgpack_z(&fixture.msgpack_z);
+            black_box(package.repo_name.len());
         });
 
         print_result(&format!("{} yaml", fixture.id), fixture.yaml.len(), yaml);
@@ -89,10 +89,9 @@ fn fixtures() -> Vec<PackageFixture> {
                 .iter()
                 .find(|package| canonical_package_id(package).as_deref() == Some(id))
                 .unwrap_or_else(|| panic!("missing fixture package {id}"));
-            let registry = one_package_registry(package);
-            let yaml = serde_yaml::to_string(&registry).unwrap();
-            let json = serde_json::to_vec(&registry).unwrap();
-            let msgpack = rmp_serde::to_vec_named(&registry).unwrap();
+            let yaml = serde_yaml::to_string(package).unwrap();
+            let json = serde_json::to_vec(package).unwrap();
+            let msgpack = rmp_serde::to_vec_named(package).unwrap();
             let msgpack_z = encode_msgpack_z(&msgpack);
             PackageFixture {
                 id,
@@ -103,15 +102,6 @@ fn fixtures() -> Vec<PackageFixture> {
             }
         })
         .collect()
-}
-
-fn one_package_registry(package: &Value) -> Value {
-    let mut registry = serde_yaml::Mapping::new();
-    registry.insert(
-        Value::String("packages".to_string()),
-        Value::Sequence(vec![package.clone()]),
-    );
-    Value::Mapping(registry)
 }
 
 fn canonical_package_id(package: &Value) -> Option<String> {
@@ -134,7 +124,7 @@ fn encode_msgpack_z(msgpack: &[u8]) -> Vec<u8> {
     zlib.finish().unwrap()
 }
 
-fn decode_msgpack_z(bytes: &[u8]) -> RegistryYaml {
+fn decode_msgpack_z(bytes: &[u8]) -> AquaPackage {
     let mut zlib = ZlibDecoder::new(bytes);
     let mut msgpack = Vec::new();
     zlib.read_to_end(&mut msgpack).unwrap();

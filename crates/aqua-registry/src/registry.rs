@@ -81,7 +81,7 @@ fn baked_registry_file(package_id: &str) -> Option<&'static [u8]> {
         .copied()
 }
 
-fn decode_baked_registry(package_id: &str, bytes: &[u8]) -> Result<RegistryYaml> {
+fn decode_baked_package(package_id: &str, bytes: &[u8]) -> Result<AquaPackage> {
     let mut zlib = ZlibDecoder::new(bytes);
     let mut packed = Vec::new();
     zlib.read_to_end(&mut packed).map_err(|err| {
@@ -91,7 +91,7 @@ fn decode_baked_registry(package_id: &str, bytes: &[u8]) -> Result<RegistryYaml>
     })?;
     rmp_serde::from_slice(&packed).map_err(|err| {
         AquaRegistryError::RegistryNotAvailable(format!(
-            "failed to decode baked aqua-registry package {package_id}: {err}"
+            "failed to decode baked aqua package {package_id}: {err}"
         ))
     })
 }
@@ -149,12 +149,7 @@ where
             return Ok(pkg.clone());
         }
 
-        let registry = self.fetcher.fetch_registry(id).await?;
-        let mut pkg = registry
-            .packages
-            .into_iter()
-            .next()
-            .ok_or_else(|| AquaRegistryError::PackageNotFound(id.to_string()))?;
+        let mut pkg = self.fetcher.fetch_package(id).await?;
 
         pkg.setup_version_filter()?;
         CACHE.lock().await.insert(id.to_string(), pkg.clone());
@@ -198,12 +193,31 @@ impl RegistryFetcher for DefaultRegistryFetcher {
             && let Some(content) = baked_registry_file(package_id)
         {
             log::trace!("reading baked-in aqua-registry for {package_id}");
-            return decode_baked_registry(package_id, content);
+            return Ok(RegistryYaml {
+                packages: vec![decode_baked_package(package_id, content)?],
+            });
         }
 
         Err(AquaRegistryError::RegistryNotAvailable(format!(
             "no aqua-registry found for {package_id}"
         )))
+    }
+
+    async fn fetch_package(&self, package_id: &str) -> Result<AquaPackage> {
+        if self.config.use_baked_registry
+            && !self.config.cache_dir.join(".git").exists()
+            && let Some(content) = baked_registry_file(package_id)
+        {
+            log::trace!("reading baked-in aqua package for {package_id}");
+            return decode_baked_package(package_id, content);
+        }
+
+        let registry = self.fetch_registry(package_id).await?;
+        registry
+            .packages
+            .into_iter()
+            .next()
+            .ok_or_else(|| AquaRegistryError::PackageNotFound(package_id.to_string()))
     }
 }
 
@@ -284,9 +298,8 @@ mod tests {
     #[test]
     fn test_baked_registry_package_lookup() {
         let registry = baked_registry_file("01mf02/jaq").unwrap();
-        let registry = decode_baked_registry("01mf02/jaq", registry).unwrap();
+        let package = decode_baked_package("01mf02/jaq", registry).unwrap();
 
-        let package = registry.packages.into_iter().next().unwrap();
         assert_eq!(package.repo_owner, "01mf02");
         assert_eq!(package.repo_name, "jaq");
     }
@@ -294,9 +307,8 @@ mod tests {
     #[test]
     fn test_baked_registry_path_only_package_lookup() {
         let registry = baked_registry_file("golang.org/x/perf/cmd/benchstat").unwrap();
-        let registry = decode_baked_registry("golang.org/x/perf/cmd/benchstat", registry).unwrap();
+        let package = decode_baked_package("golang.org/x/perf/cmd/benchstat", registry).unwrap();
 
-        let package = registry.packages.into_iter().next().unwrap();
         assert_eq!(
             package.path.as_deref(),
             Some("golang.org/x/perf/cmd/benchstat")
@@ -324,9 +336,8 @@ mod tests {
         );
 
         let registry = baked_registry_file(alias).unwrap();
-        let registry = decode_baked_registry(alias, registry).unwrap();
+        let package = decode_baked_package(alias, registry).unwrap();
 
-        let package = registry.packages.into_iter().next().unwrap();
         assert_eq!(package.name.as_deref(), Some("Automattic/harper/harper-ls"));
     }
 }
