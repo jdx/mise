@@ -68,4 +68,44 @@ echo "from-bash"
         $env:MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS = "true"
         mise run testtask | Select -Last 1 | Should -Be 'windows'
     }
+
+    It 'converts PATH to MSYS Unix form for bash subshell tasks' {
+        # Repro for the per-task `tools = {...}` + `shell = "bash -c"` case.
+        # When mise on Windows spawns bash for a task, PATH must be `:`-separated
+        # `/c/...` form, not `;`-separated `C:\...` form, or bash cannot resolve
+        # any command — including the one mise just installed for the task.
+        #
+        # We assert on the PATH the task observes, not on a tool install, so the
+        # test runs without depending on rust/cargo or any toolchain backend.
+
+        if (-not (Get-Command bash.exe -ErrorAction SilentlyContinue)) {
+            Set-ItResult -Skipped -Because "bash.exe (Git Bash / MSYS) not on PATH"
+            return
+        }
+
+        @'
+[tasks.path_repro]
+shell = "bash -c"
+run = '''
+case "$PATH" in
+  *\;*)
+    echo "PATH-still-windows-style"
+    ;;
+  *)
+    echo "PATH-unix-style"
+    ;;
+esac
+'''
+'@ | Out-File -FilePath "mise.path_repro.toml" -Encoding utf8NoBOM
+
+        $env:MISE_CONFIG_FILE = "$TestDrive\mise.path_repro.toml"
+        try {
+            $output = mise run path_repro 2>&1 | Select -Last 1
+            $output | Should -Be 'PATH-unix-style'
+        }
+        finally {
+            Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
+            Remove-Item -Path "$TestDrive\mise.path_repro.toml" -ErrorAction SilentlyContinue
+        }
+    }
 }
