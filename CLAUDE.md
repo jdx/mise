@@ -2,6 +2,44 @@
 
 This file provides guidance to AI coding agents when working with code in this repository. It keeps the `CLAUDE.md` filename for compatibility with existing tooling, and `AGENTS.md` symlinks to it for other agents.
 
+## Registry Submissions: READ THIS FIRST
+
+**Most registry PRs from agents get rejected.** Before adding anything to `registry/`, understand the rules:
+
+- **mise does not host self-written, personal, niche, or low-popularity tools.** The registry is curated for tools that are *already* widely used. "It works" or "it has tests" is not the bar.
+- **Tools that aren't VERY popular will be rejected without explanation.** Per [contributing.md](docs/contributing.md): "@jdx won't explain why a given tool wasn't accepted." There is no appeal, no checklist, no second chance — the PR is closed and that's it.
+- **Wasted PRs are the default outcome** for tools the agent or user has not vetted against this bar. Do not submit one speculatively.
+
+### Required pre-submission check
+
+Before touching `registry/`, ALWAYS do the following:
+
+1. **Ask the user:** "Is this tool already widely used outside your own projects?" — if it's the user's own tool, a fork, an internal/company tool, or something with a small audience, **stop and tell them the PR will be rejected.** Do not submit.
+2. **Actively check popularity for every registry PR — no exceptions.** Look up real numbers; do not guess. Useful sources:
+   - GitHub stars and fork count (`gh repo view owner/repo --json stargazerCount,forkCount`)
+   - Recent release activity / last commit date (`gh repo view owner/repo --json pushedAt,latestRelease`)
+   - Download counts on relevant package registries (npm `npmjs.com/package/x`, crates.io, PyPI, Homebrew analytics, etc.)
+   - Whether the project shows up in third-party docs, awesome-lists, or other tools
+3. **Apply the bar.** Rough signals — very low numbers are disqualifying:
+   - GitHub stars in the thousands, not hundreds
+   - Active maintenance (recent releases, not abandoned)
+   - Real third-party usage (referenced in docs, blog posts, other tools, package registries)
+   - Recognizable in its ecosystem
+4. **Include the popularity data in the PR description.** Every registry PR body MUST contain a short section like:
+
+   ```
+   ## Popularity
+   - GitHub: 12.3k stars, 480 forks, last release 2026-04-12
+   - crates.io: 1.2M downloads
+   - Used by: <project A>, <project B>
+   ```
+
+   This is non-negotiable — it lets the maintainer evaluate the submission without re-doing the research. PRs without it look speculative and are more likely to be rejected.
+5. **If the tool is borderline or numbers are low, warn the user clearly** that the PR is likely to be rejected without reason, and ask if they still want to proceed. Do not soften this — users have repeatedly been surprised when their PR was closed, and the agent should have warned them up front.
+6. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.en.dev/tool-plugin-development.html). The registry is *only* for shorthand convenience for popular tools — not for enabling installation.
+
+New asdf plugins are also not accepted; use aqua/github backends.
+
 ## Development Commands
 
 ### Building and Testing
