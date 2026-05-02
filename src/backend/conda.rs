@@ -656,10 +656,14 @@ impl Backend for CondaBackend {
     }
 
     /// Override to bypass the shared remote_versions cache since conda's
-    /// channel option affects which versions are available.
-    async fn list_remote_versions_with_info(
+    /// channel option affects which versions are available. The override is
+    /// on `_with_refresh` so it applies to both cached and refresh-enabled
+    /// resolution paths; conda always queries the channel directly so the
+    /// `_refresh` flag is irrelevant.
+    async fn list_remote_versions_with_info_with_refresh(
         &self,
         config: &Arc<Config>,
+        _refresh: bool,
     ) -> Result<Vec<VersionInfo>> {
         let opts = config
             .get_tool_opts(&self.ba)

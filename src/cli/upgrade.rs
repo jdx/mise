@@ -118,6 +118,7 @@ impl Upgrade {
             latest_versions: true,
             before_date,
             offline: false,
+            refresh_remote_versions: false,
         };
         // Filter tools to check before doing expensive version lookups
         let filter_tools = if !self.interactive && !self.tool.is_empty() {
@@ -262,6 +263,7 @@ impl Upgrade {
                 latest_versions: true,
                 before_date,
                 offline: false,
+                refresh_remote_versions: false,
             },
             ..Default::default()
         };

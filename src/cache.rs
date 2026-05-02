@@ -163,6 +163,29 @@ where
         Ok(val)
     }
 
+    /// Fetch fresh data, write it to disk, and return it without consulting
+    /// any cache. The in-memory cache cells are replaced with the fresh value
+    /// so future non-refresh reads observe it instead of a stale previously-
+    /// initialized one.
+    pub async fn refresh_async<F, Fut>(&mut self, fetch: F) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
+        T: Clone,
+    {
+        let val = fetch().await?;
+        if let Err(err) = self.write(&val) {
+            warn!(
+                "failed to write cache file: {} {:#}",
+                self.cache_file_path.display(),
+                err
+            );
+        }
+        *self.cache = OnceCell::with_value(val.clone());
+        *self.cache_async = tokio::sync::OnceCell::new_with(Some(val.clone()));
+        Ok(val)
+    }
+
     /// Read the cache file without checking freshness and without fetching or writing.
     pub fn get_cached(&self) -> Result<T>
     where
@@ -349,5 +372,31 @@ mod tests {
         assert_eq!(val, &1);
         let val = cache.get_or_try_init(|| Ok(2)).unwrap();
         assert_eq!(val, &1);
+    }
+
+    #[tokio::test]
+    async fn test_refresh_ignores_memory_and_file_cache() {
+        let _config = Config::get().await.unwrap();
+        let mut cache: CacheManager<i32> =
+            CacheManagerBuilder::new(dirs::CACHE.join("test-cache-refresh")).build();
+        cache.clear().unwrap();
+        let val = cache
+            .get_or_try_init_async(|| async { Ok(1) })
+            .await
+            .unwrap();
+        assert_eq!(val, &1);
+
+        let val = cache.refresh_async(|| async { Ok(2) }).await.unwrap();
+
+        assert_eq!(val, 2);
+
+        // After refresh, the in-memory cells must observe the fresh value too.
+        let val = cache
+            .get_or_try_init_async(|| async { Ok(3) })
+            .await
+            .unwrap();
+        assert_eq!(val, &2);
+        let val = cache.get_or_try_init(|| Ok(4)).unwrap();
+        assert_eq!(val, &2);
     }
 }
