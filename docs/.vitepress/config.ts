@@ -374,15 +374,6 @@ export default withMermaid(
       gtag('js', new Date());
       gtag('config', 'G-B69G389C8T');`,
       ],
-      [
-        "script",
-        {
-          defer: "",
-          "data-domain": "mise.en.dev",
-          "data-api": "https://shrill.en.dev/f5f1/event",
-          src: "https://shrill.en.dev/shrill/script.js",
-        },
-      ],
       // OpenGraph
       ["meta", { property: "og:site_name", content: "mise-en-place" }],
       ["meta", { property: "og:type", content: "website" }],

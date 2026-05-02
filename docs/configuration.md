@@ -219,9 +219,8 @@ If you simply want to install a plugin from a specific URL once, it's better to 
 `mise plugin install <NAME> <GIT_URL>`. Add this section to `mise.toml` if you want
 to share the plugin location/revision with other developers in your project.
 
-This is similar
-to [`MISE_SHORTHANDS`](https://github.com/jdx/mise#mise_shorthands_fileconfigmiseshorthandstoml)
-but doesn't require a separate file.
+This replaces the deprecated `settings.shorthands_file` / `MISE_SHORTHANDS_FILE` mechanism: put the
+same `shortname = "backend-or-url"` entries under `[plugins]` instead of a separate TOML file.
 
 ### `[tool_alias]` - Tool version aliases
 
@@ -345,7 +344,7 @@ not_found_auto_install = true # see MISE_NOT_FOUND_AUTO_INSTALL
 task.output = "prefix" # see Tasks Runner for more information
 paranoid = false       # see MISE_PARANOID
 
-shorthands_file = '~/.config/mise/shorthands.toml' # path to the shorthands file, see `MISE_SHORTHANDS_FILE`
+# shorthands_file is deprecated - use [plugins] in this file (see "plugins" above)
 disable_default_registry = false   # disable the default registry, see `MISE_DISABLE_DEFAULT_REGISTRY`
 disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
 

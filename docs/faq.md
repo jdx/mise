@@ -194,7 +194,7 @@ You can leverage usage in file tasks to get auto-completion working, see [file t
 
 ## What is pitchfork?
 
-pitchfork (<https://pitchfork.jdx.dev/>) is a process manager for developers.
+pitchfork (<https://pitchfork.en.dev/>) is a process manager for developers.
 
 It handles daemon management with features like automatic restarts on failure, smart readiness checks, shell-based auto-start/stop when entering project directories, and cron-style scheduling for periodic tasks.
 

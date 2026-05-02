@@ -1935,8 +1935,14 @@ rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
 [shorthands_file]
-description = "Path to a file containing custom tool shorthands."
+deprecated = "Use [plugins] in mise.toml or ~/.config/mise/config.toml instead (same shortname = \"backend-or-url\" rows; see https://mise.en.dev/configuration.html#plugins)."
+deprecated_remove_at = "2026.12.0"
+deprecated_warn_at = "2026.6.0"
+description = "[deprecated] Path to a file containing custom tool shorthands."
 docs = """
+Deprecated: use `[plugins]` in mise.toml or ~/.config/mise/config.toml with the same `name = "url"`
+rows instead of a separate file.
+
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
 an organization.
 
@@ -1954,6 +1960,7 @@ node = "https://github.com/my-org/mise-node.git"
 
 """
 env = "MISE_SHORTHANDS_FILE"
+hide = true
 optional = true
 type = "Path"
 
