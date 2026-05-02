@@ -1,0 +1,3 @@
+backends = ["npm:giget"]
+description = "Download templates and git repositories with pleasure!"
+test = { cmd = "giget --version", expected = "{{version}}" }
