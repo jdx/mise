@@ -189,6 +189,36 @@ impl PluginType {
         }
     }
 
+    pub fn from_plugin_config<'a>(key: &'a str, url: &str) -> (Self, &'a str) {
+        if let Some(name) = key.strip_prefix("vfox:") {
+            (Self::Vfox, name)
+        } else if let Some(name) = key.strip_prefix("vfox-backend:") {
+            (Self::VfoxBackend, name)
+        } else if let Some(name) = key.strip_prefix("asdf:") {
+            (Self::Asdf, name)
+        } else {
+            (Self::from_plugin_url(url), key)
+        }
+    }
+
+    pub fn from_plugin_url(url: &str) -> Self {
+        if url.starts_with("vfox-backend:") {
+            Self::VfoxBackend
+        } else if url.starts_with("vfox:") {
+            Self::Vfox
+        } else if url.starts_with("asdf:") {
+            Self::Asdf
+        } else if Self::looks_like_vfox_url(url) {
+            Self::Vfox
+        } else {
+            Self::Asdf
+        }
+    }
+
+    fn looks_like_vfox_url(url: &str) -> bool {
+        url.contains("vfox-")
+    }
+
     pub fn plugin(&self, short: String) -> PluginEnum {
         let path = dirs::PLUGINS.join(short.to_kebab_case());
         match self {
@@ -425,6 +455,51 @@ mod tests {
             PluginSource::Git { .. } => {}
             _ => panic!("Expected a git plugin"),
         }
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_config() {
+        assert_eq!(
+            PluginType::from_plugin_config("vfox:node", "https://github.com/foo/asdf-node.git"),
+            (PluginType::Vfox, "node")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config(
+                "vfox-backend:npm",
+                "https://github.com/foo/asdf-npm.git"
+            ),
+            (PluginType::VfoxBackend, "npm")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("asdf:node", "https://github.com/foo/vfox-node.git"),
+            (PluginType::Asdf, "node")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("node", "https://github.com/foo/vfox-node.git"),
+            (PluginType::Vfox, "node")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("node", "https://github.com/foo/asdf-node.git"),
+            (PluginType::Asdf, "node")
+        );
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_url() {
+        assert_eq!(
+            PluginType::from_plugin_url("vfox-backend:npm"),
+            PluginType::VfoxBackend
+        );
+        assert_eq!(PluginType::from_plugin_url("vfox:node"), PluginType::Vfox);
+        assert_eq!(PluginType::from_plugin_url("asdf:node"), PluginType::Asdf);
+        assert_eq!(
+            PluginType::from_plugin_url("https://github.com/jbox-web/vfox-crystalline.git"),
+            PluginType::Vfox
+        );
+        assert_eq!(
+            PluginType::from_plugin_url("https://github.com/mise-plugins/mise-tiny.git"),
+            PluginType::Asdf
+        );
     }
 
     #[test]

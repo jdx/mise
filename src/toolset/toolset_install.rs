@@ -573,17 +573,6 @@ impl Toolset {
     }
 
     fn parse_plugin_key<'a>(key: &'a str, url: &str) -> (PluginType, &'a str) {
-        if let Some(name) = key.strip_prefix("vfox:") {
-            (PluginType::Vfox, name)
-        } else if let Some(name) = key.strip_prefix("vfox-backend:") {
-            (PluginType::VfoxBackend, name)
-        } else if let Some(name) = key.strip_prefix("asdf:") {
-            (PluginType::Asdf, name)
-        } else if url.contains("vfox-") {
-            // Match existing behavior from config/mod.rs:226-228
-            (PluginType::Vfox, key)
-        } else {
-            (PluginType::Asdf, key)
-        }
+        PluginType::from_plugin_config(key, url)
     }
 }

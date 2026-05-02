@@ -62,6 +62,9 @@ impl VfoxPlugin {
     }
 
     fn get_repo_url(&self, config: &Config) -> eyre::Result<Url> {
+        if let Some(url) = self.repo_url.lock().unwrap().clone() {
+            return Ok(Url::parse(&url)?);
+        }
         if let Some(url) = self.repo().get_remote_url() {
             return Ok(Url::parse(&url)?);
         }
@@ -157,6 +160,10 @@ impl VfoxPlugin {
     pub fn is_embedded(&self) -> bool {
         embedded_plugins::get_embedded_plugin(&self.name).is_some()
     }
+
+    fn has_repo_url_override(&self) -> bool {
+        self.repo_url.lock().unwrap().is_some()
+    }
 }
 
 #[async_trait]
@@ -203,8 +210,9 @@ impl Plugin for VfoxPlugin {
     }
 
     fn is_installed(&self) -> bool {
-        // Embedded plugins are always "installed"
-        self.is_embedded() || self.plugin_path.exists()
+        // Embedded plugins are installed unless an explicit URL is being installed
+        // as a filesystem override.
+        (self.is_embedded() && !self.has_repo_url_override()) || self.plugin_path.exists()
     }
 
     fn is_installed_err(&self) -> eyre::Result<()> {
@@ -222,8 +230,9 @@ impl Plugin for VfoxPlugin {
         force: bool,
         dry_run: bool,
     ) -> Result<()> {
-        // Skip installation for embedded plugins
-        if self.is_embedded() {
+        // Skip installation for embedded plugins unless an explicit URL is being
+        // installed as a filesystem override.
+        if self.is_embedded() && !self.has_repo_url_override() {
             return Ok(());
         }
 

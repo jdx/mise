@@ -321,11 +321,10 @@ impl BackendArg {
         if config::is_loaded()
             && let Some(repo_url) = Config::get_().get_repo_url(&self.short)
         {
-            return if repo_url.contains("vfox-") {
-                BackendType::Vfox
-            } else {
-                // TODO: maybe something more intelligent?
-                BackendType::Asdf
+            return match PluginType::from_plugin_url(&repo_url) {
+                PluginType::Vfox => BackendType::Vfox,
+                PluginType::VfoxBackend => BackendType::VfoxBackend(self.short.to_string()),
+                PluginType::Asdf => BackendType::Asdf,
             };
         }
         BackendType::Unknown
