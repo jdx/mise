@@ -592,9 +592,14 @@ fn should_refresh_remote_versions(
     if opts.latest_versions {
         return true;
     }
+    // Only refresh for selectors whose result depends on the very latest
+    // upstream entry: `latest` and prefix queries (e.g. `node@20`). Fully-
+    // pinned exact versions (e.g. `node@20.15.1`) don't benefit — the
+    // cached list either contains that version or it doesn't, and a stale
+    // cache won't change the answer in a way the user cares about.
     match tr {
         ToolRequest::Version { version, .. } => {
-            backend.list_installed_versions_matching(version).is_empty()
+            version == "latest" && backend.list_installed_versions_matching(version).is_empty()
         }
         ToolRequest::Prefix { prefix, .. } => {
             backend.list_installed_versions_matching(prefix).is_empty()

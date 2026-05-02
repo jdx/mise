@@ -494,10 +494,18 @@ impl ToolVersion {
             return Ok(Self::new(request, version));
         }
         let v = match v {
-            "latest" => backend
-                .latest_version(config, None, opts.before_date)
-                .await?
-                .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?,
+            "latest" => {
+                let latest = if opts.refresh_remote_versions {
+                    backend
+                        .latest_version_refresh(config, None, opts.before_date)
+                        .await?
+                } else {
+                    backend
+                        .latest_version(config, None, opts.before_date)
+                        .await?
+                };
+                latest.ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?
+            }
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);

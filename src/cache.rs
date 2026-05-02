@@ -164,11 +164,14 @@ where
     }
 
     /// Fetch fresh data, write it to disk, and return it without consulting the
-    /// in-memory or on-disk cache.
-    pub async fn refresh_async<F, Fut>(&self, fetch: F) -> Result<T>
+    /// existing on-disk cache. The in-memory cache cells are reset so that
+    /// subsequent non-refresh reads see the fresh value rather than a stale
+    /// previously-cached one.
+    pub async fn refresh_async<F, Fut>(&mut self, fetch: F) -> Result<T>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T>>,
+        T: Clone,
     {
         let val = fetch().await?;
         if let Err(err) = self.write(&val) {
@@ -178,6 +181,13 @@ where
                 err
             );
         }
+        // Replace the in-memory cells so future non-refresh reads observe the
+        // fresh value instead of a stale previously-initialized one.
+        *self.cache = OnceCell::new();
+        let async_cell = tokio::sync::OnceCell::new();
+        let _ = async_cell.set(val.clone());
+        *self.cache_async = async_cell;
+        let _ = self.cache.set(val.clone());
         Ok(val)
     }
 
@@ -384,5 +394,14 @@ mod tests {
         let val = cache.refresh_async(|| async { Ok(2) }).await.unwrap();
 
         assert_eq!(val, 2);
+
+        // After refresh, the in-memory cells must observe the fresh value too.
+        let val = cache
+            .get_or_try_init_async(|| async { Ok(3) })
+            .await
+            .unwrap();
+        assert_eq!(val, &2);
+        let val = cache.get_or_try_init(|| Ok(4)).unwrap();
+        assert_eq!(val, &2);
     }
 }
