@@ -91,7 +91,6 @@ fn fixtures() -> Vec<PackageFixture> {
                 .unwrap_or_else(|| panic!("missing fixture package {id}"));
             let registry = one_package_registry(package);
             let yaml = serde_yaml::to_string(&registry).unwrap();
-            let registry: RegistryYaml = serde_yaml::from_value(registry).unwrap();
             let json = serde_json::to_vec(&registry).unwrap();
             let msgpack = rmp_serde::to_vec_named(&registry).unwrap();
             let msgpack_z = encode_msgpack_z(&msgpack);
@@ -130,7 +129,7 @@ fn string_field(value: &Value, key: &str) -> Option<String> {
 }
 
 fn encode_msgpack_z(msgpack: &[u8]) -> Vec<u8> {
-    let mut zlib = ZlibEncoder::new(Vec::new(), Compression::fast());
+    let mut zlib = ZlibEncoder::new(Vec::new(), Compression::best());
     zlib.write_all(msgpack).unwrap();
     zlib.finish().unwrap()
 }
