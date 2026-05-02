@@ -624,30 +624,53 @@ of the full backend specification.
 When adding a new tool, the following requirements apply (automatically
 enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.github/workflows/registry_comment.yml)):
 
-- **New asdf and vfox plugins are not accepted** - Use [aqua](dev-tools/backends/aqua.md)
-  (preferred) or [github](dev-tools/backends/github.md) instead. This is a supply-chain
-  security policy.
-- **The `ubi` backend is deprecated and will not be accepted** for new registry entries.
-  Use aqua/github instead.
-- **The `conda` backend has a high bar but is potentially accepted** for tools that
-  cannot be supported via aqua/github. The bar is lower than `npm`/`pipx`/`cargo`/etc.
-  because mise's conda backend downloads and extracts packages directly from
-  anaconda.org — it does not require conda/mamba/micromamba to be installed on the
-  user's PATH. The tool still needs to be popular and well-maintained.
-- **Other backends (`npm`, `pipx`, `gem`, `cargo`, `go`, `dotnet`, etc.) have a very
-  high bar** for new registry entries. These all depend on a separately-installed
-  runtime or toolchain being present on the user's PATH (`node`, `python`, `ruby`,
-  `cargo`, `go`, `dotnet`), which is fragile: tools installed via them silently bind
-  to whichever runtime happens to be on PATH at install time, breaking when versions
-  change or the runtime isn't installed. They are accepted only when no aqua/github
-  option exists and the tool is widely used. Discuss with @jdx before submitting.
 - **A test is required in `registry/`** - Must include a `test` field to
-  verify installation
+  verify installation.
 - **Tools may be rejected if they are not notable** - The tool should be
   reasonably popular and well-maintained. There are no specific guidelines for this and
   a lot of factors are taken into account. @jdx won't explain why a given tool wasn't
   accepted. Include a brief popularity summary (stars, downloads, recent release date) in
   the PR description so the policy can be applied without re-doing the research.
+
+#### Backend acceptance tiers
+
+Which backend you choose for a registry entry matters as much as which tool you
+add. Backends fall into the following tiers:
+
+**Tier 1 — preferred, routinely accepted:** [`aqua`](dev-tools/backends/aqua.md)
+and [`github`](dev-tools/backends/github.md).
+
+- Prefer `aqua` when the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry) —
+  it has better UX, SLSA verification, and per-version logic.
+- Use `github` when the tool isn't in aqua but ships GitHub releases.
+
+**Tier 2 — high bar, but lower than tier 3:** [`conda`](dev-tools/backends/conda.md).
+
+Potentially accepted for tools that can't reasonably be supported via aqua/github.
+The bar is lower than tier 3 because **mise's conda backend does not require a
+separately-installed package manager** — packages are downloaded and extracted
+directly from anaconda.org, with no `conda`/`mamba`/`micromamba` needed on the
+user's PATH. The tool still needs to be popular and well-maintained.
+
+**Tier 3 — very high bar, rarely accepted:** `npm`, `pipx`, `gem`, `cargo`, `go`,
+`dotnet`.
+
+These all depend on a separately-installed runtime or toolchain being present on
+the user's PATH (`node`, `python`, `ruby`, `cargo`, `go`, `dotnet`), which is
+fragile — `npm`/`pipx`/`gem` in particular silently bind tools to whichever
+`node`/`python`/`ruby` happened to be on PATH at install time, which breaks when
+versions change or the runtime isn't installed. Accepted only when no aqua/github
+option exists and the tool is widely used. Discuss with @jdx before submitting.
+
+**Not accepted:** `asdf`, `vfox`, `ubi`.
+
+- **New `asdf` plugins** — supply-chain security. Use aqua/github instead.
+- **New `vfox` plugins** — same reason. Use aqua/github instead.
+- **`ubi`** is deprecated and is not accepted for new registry entries.
+
+Users can still install via any backend themselves with explicit syntax
+(`mise use vfox:owner/repo`, `mise use cargo:name`, etc.) — they just don't get
+a registry shorthand for it.
 
 ### Registry Format
 
