@@ -1,8 +1,10 @@
+use std::fs;
 use std::hint::black_box;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use aqua_registry::AquaPackage;
+use aqua_registry::{AquaPackage, RegistryYaml};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -20,11 +22,17 @@ const IDS: &[&str] = &[
     "golang.org/x/perf/cmd/benchstat",
     "Automattic/harper/harper-ls",
 ];
+const LARGE_REGISTRY_FILES: &[&str] = &[
+    "WebAssembly/binaryen/registry.yaml",
+    "commercialhaskell/stack/registry.yaml",
+    "fastfetch-cli/fastfetch/registry.yaml",
+    "cri-o/cri-o/registry.yaml",
+];
 const ITERS: usize = 10_000;
 
 struct PackageFixture {
-    id: &'static str,
-    package: Value,
+    id: String,
+    package: AquaPackage,
     yaml: String,
     json: Vec<u8>,
     msgpack: Vec<u8>,
@@ -53,7 +61,9 @@ fn main() {
             black_box(package.repo_name.len());
         });
 
-        let yaml_convert = Duration::ZERO;
+        let yaml_convert = bench(ITERS, || {
+            black_box(serde_yaml::to_string(&fixture.package).unwrap());
+        });
         let json_convert = bench(ITERS, || {
             black_box(serde_json::to_vec(&fixture.package).unwrap());
         });
@@ -108,26 +118,81 @@ fn fixtures() -> Vec<PackageFixture> {
         .and_then(Value::as_sequence)
         .unwrap();
 
-    IDS.iter()
+    let mut fixtures: Vec<_> = IDS
+        .iter()
         .map(|id| {
-            let package = packages
+            let package_value = packages
                 .iter()
                 .find(|package| canonical_package_id(package).as_deref() == Some(id))
                 .unwrap_or_else(|| panic!("missing fixture package {id}"));
-            let yaml = serde_yaml::to_string(package).unwrap();
-            let json = serde_json::to_vec(package).unwrap();
-            let msgpack = rmp_serde::to_vec_named(package).unwrap();
-            let msgpack_z = encode_msgpack_z(&msgpack);
-            PackageFixture {
-                id,
-                package: package.clone(),
-                yaml,
-                json,
-                msgpack,
-                msgpack_z,
-            }
+            package_fixture((*id).to_string(), package_value)
+        })
+        .collect();
+
+    fixtures.extend(large_registry_fixtures());
+    fixtures
+}
+
+fn large_registry_fixtures() -> Vec<PackageFixture> {
+    LARGE_REGISTRY_FILES
+        .iter()
+        .filter_map(|path| {
+            let path = sibling_registry_path(path);
+            let content = match fs::read_to_string(&path) {
+                Ok(content) => content,
+                Err(err) => {
+                    eprintln!("skipping {}: {err}", path.display());
+                    return None;
+                }
+            };
+            let registry: RegistryYaml = serde_yaml::from_str(&content).unwrap();
+            let package = registry.packages.into_iter().next().unwrap();
+            let id = canonical_package_id_from_package(&package);
+            Some(package_fixture_from_package(id, package))
         })
         .collect()
+}
+
+fn sibling_registry_path(path: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("aqua-registry/pkgs")
+        .join(path)
+}
+
+fn package_fixture(id: String, package: &Value) -> PackageFixture {
+    let package: AquaPackage = serde_yaml::from_value(package.clone()).unwrap();
+    package_fixture_from_package(id, package)
+}
+
+fn package_fixture_from_package(id: String, package: AquaPackage) -> PackageFixture {
+    let yaml = serde_yaml::to_string(&package).unwrap();
+    let json = serde_json::to_vec(&package).unwrap();
+    let msgpack = rmp_serde::to_vec_named(&package).unwrap();
+    let msgpack_z = encode_msgpack_z(&msgpack);
+    PackageFixture {
+        id,
+        package,
+        yaml,
+        json,
+        msgpack,
+        msgpack_z,
+    }
+}
+
+fn canonical_package_id_from_package(package: &AquaPackage) -> String {
+    package
+        .name
+        .clone()
+        .unwrap_or_else(|| match package.path.as_ref() {
+            Some(path) => path.clone(),
+            None => format!("{}/{}", package.repo_owner, package.repo_name),
+        })
 }
 
 fn canonical_package_id(package: &Value) -> Option<String> {
