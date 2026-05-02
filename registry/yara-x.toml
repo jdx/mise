@@ -1,0 +1,3 @@
+backends = ["github:VirusTotal/yara-x"]
+description = "The pattern matching swiss army knife"
+test = { cmd = "yr --version", expected = "{{version}}" }
