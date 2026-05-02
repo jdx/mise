@@ -42,9 +42,6 @@ pub struct CondaPackageInfo {
     pub checksum: Option<String>,
 }
 
-/// Conda backend requires experimental mode to be enabled
-pub const EXPERIMENTAL: bool = true;
-
 #[derive(Debug)]
 pub struct CondaBackend {
     ba: Arc<BackendArg>,
@@ -683,8 +680,6 @@ impl Backend for CondaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        Settings::get().ensure_experimental("conda backend")?;
-
         let platform_key = self.get_platform_key();
         let has_locked = tv
             .lock_platforms
