@@ -109,6 +109,33 @@ credential_command = "op read 'op://Private/GitHub Token/credential'"
 
 mise executes this command via `sh -c` and reads the token from stdout. The hostname is passed as `$1`, so the command can return different tokens for different hosts (e.g., `github.com` vs a GHE instance). This is checked before `github_tokens.toml` and gh CLI tokens, so it takes priority over file-based sources. Results are cached per host per session.
 
+### Using ghtkn
+
+[ghtkn](https://github.com/suzuki-shunsuke/ghtkn) can generate short-lived GitHub App user access tokens and print them to stdout, which makes it compatible with `credential_command`.
+
+Run `ghtkn get` once manually before relying on it from mise so any browser-based device flow happens intentionally. After that, ghtkn can reuse tokens from your OS secret manager until they need to be regenerated.
+
+The credential command runs with mise shims removed from `PATH` to avoid recursive mise invocations. If you install `ghtkn` with mise, use `mise which` to find the real executable path and store that in `credential_command` instead of relying on the shim:
+
+```sh
+mise settings set github.credential_command "$(mise which ghtkn) get -m 1h"
+```
+
+Do not make the credential command run `mise x`, `mise exec`, or another command that may need GitHub access to resolve or install `ghtkn`, since that can loop while mise is trying to obtain the GitHub token.
+
+If `ghtkn` is already available without relying on a mise shim, you can also set it directly:
+
+```toml
+[settings.github]
+credential_command = "ghtkn get -m 1h"
+```
+
+Use `mise token github` to confirm mise can resolve the token:
+
+```sh
+mise token github
+```
+
 ## Git Credential Helpers
 
 mise can use your existing git credential helpers to obtain GitHub tokens. This is **opt-in** and acts as a last-resort fallback after all other token sources.
