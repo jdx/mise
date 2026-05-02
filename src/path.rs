@@ -106,7 +106,7 @@ pub fn is_posix_shell_program(program: &Path) -> bool {
     let Some(s) = program.to_str() else {
         return false;
     };
-    let basename = s.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(s);
+    let basename = s.rsplit(['/', '\\']).next().unwrap_or(s);
     let stem = match basename.rsplit_once('.') {
         Some((stem, ext)) if ext.eq_ignore_ascii_case("exe") => stem,
         _ => basename,
