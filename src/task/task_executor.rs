@@ -880,6 +880,12 @@ impl TaskExecutor {
         } else {
             env
         };
+        // On Windows, when about to spawn a POSIX shell, resolve the program to
+        // an absolute path *before* converting PATH for the child. Otherwise the
+        // converted Unix-form PATH is also what Win32 CreateProcess uses to find
+        // the program, and `bash` cannot be located in `/c/...:/c/...` entries.
+        #[cfg(windows)]
+        let program = resolve_posix_shell_program_path(&program, env).unwrap_or(program);
         let env = maybe_convert_env_for_msys_shell(Path::new(&program), env);
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
@@ -1189,6 +1195,38 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
         "ps1" => Some(vec!["pwsh".to_string(), "-File".to_string()]),
         _ => None,
     }
+}
+
+/// On Windows, when about to spawn a POSIX shell whose PATH we are about to
+/// convert to Unix form, resolve the program to its absolute path using the
+/// pre-conversion (Windows-form) PATH from the task env.
+///
+/// Why: `Command::spawn` on Windows uses the *child* env's PATH (when set via
+/// `.envs(...)`) to locate the program. If we hand it the converted
+/// `/c/foo:/d/bar` PATH, Win32 cannot find `bash.exe`. Resolving here means
+/// the child process gets an absolute path argument and does not need PATH
+/// search at the OS level.
+///
+/// Returns `None` when the program is not a POSIX shell, the env has no PATH,
+/// the PATH is already in Unix form (no `;` and no `\`, so no conversion will
+/// fire), or `which` fails to locate the binary — in those cases the caller
+/// keeps the original program string and lets the stdlib spawn it.
+#[cfg(windows)]
+fn resolve_posix_shell_program_path(
+    program: &std::ffi::OsStr,
+    env: &BTreeMap<String, String>,
+) -> Option<std::ffi::OsString> {
+    if !crate::path::is_posix_shell_program(Path::new(program)) {
+        return None;
+    }
+    let path_val = env.get(&*crate::env::PATH_KEY)?;
+    if !path_val.contains(';') && !path_val.contains('\\') {
+        return None;
+    }
+    let cwd = std::env::current_dir().ok()?;
+    which::which_in(program, Some(path_val.as_str()), cwd)
+        .ok()
+        .map(|p| p.into_os_string())
 }
 
 /// On Windows, when spawning a POSIX-style shell (bash/sh/zsh/...) for a task, the
