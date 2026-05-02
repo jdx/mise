@@ -1206,6 +1206,10 @@ fn maybe_convert_env_for_msys_shell<'a>(
     {
         if crate::path::is_posix_shell_program(program)
             && let Some(path_val) = env.get(&*crate::env::PATH_KEY)
+            // Skip the clone+convert cycle when PATH is already in Unix form (no
+            // `;` separator, no `\` to translate). This is the common case when
+            // mise itself runs inside Git Bash and spawns another bash subshell.
+            && (path_val.contains(';') || path_val.contains('\\'))
         {
             let converted = crate::path::windows_path_list_to_unix(path_val);
             let mut new_env = env.clone();
@@ -1285,6 +1289,30 @@ mod tests {
         let out =
             maybe_convert_env_for_msys_shell(Path::new(r"C:\Program Files\Git\bin\bash.exe"), &env);
         assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/c/foo:/d/bar");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_borrows_when_path_already_unix() {
+        // PATH already in Unix form (no `;` and no `\`) — Cow stays Borrowed,
+        // env is not cloned. Common when mise runs from Git Bash itself.
+        let env = env_with_path("/c/foo:/d/bar:/usr/bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash.exe"), &env);
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/c/foo:/d/bar:/usr/bin"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_borrows_when_path_missing() {
+        // No PATH at all — also no clone.
+        let mut env = BTreeMap::new();
+        env.insert("OTHER".to_string(), "unchanged".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash.exe"), &env);
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
     }
 
     #[test]

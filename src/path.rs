@@ -45,9 +45,11 @@ impl PathExt for Path {
 /// - `<drive>:[\\/]...` (canonical Windows drive path) → `/<drive lowercase>/<rest with `/` separator>`
 /// - already-Unix entries (start with `/`) → pass through unchanged
 /// - empty entries (e.g. trailing `;`) → preserved as empty
-/// - UNC (`\\?\...`, `\\server\share\...`) and other unrecognized shapes → pass
-///   through unchanged. bash will then fail to use them, which matches what would
-///   happen without conversion — we don't pretend to fix what we can't.
+/// - UNC (`\\?\...`, `\\server\share\...`) → pass through unchanged. bash will fail
+///   to use them, which matches what would happen without conversion.
+/// - other entries (relative paths, bare names, drive-relative `C:foo`, etc.) →
+///   `\` is replaced with `/` so that bash can resolve entries like
+///   `node_modules\.bin` or `.\bin` injected by tools that emit Windows separators.
 ///
 /// Out of scope (kept narrow per maintainer guidance — see PR description / `_context/`):
 ///
@@ -56,6 +58,7 @@ impl PathExt for Path {
 /// - Git Bash's "magic" mount of `/usr` to its install dir — `/c/Program Files/Git/usr/bin`
 ///   is resolved by bash to the same executable as `/usr/bin`, so no remapping is needed
 ///   for PATH-resolution to succeed.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn windows_path_list_to_unix(path_list: &str) -> String {
     let mut out = String::with_capacity(path_list.len());
     let mut first = true;
@@ -69,12 +72,15 @@ pub fn windows_path_list_to_unix(path_list: &str) -> String {
     out
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 const WINDOWS_PATH_SEP: char = ';';
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn append_single_windows_path_to_unix(out: &mut String, entry: &str) {
     if entry.is_empty() {
         return;
     }
+    // Already-Unix entries and UNC paths are passed through verbatim.
     if entry.starts_with('/') || entry.starts_with("\\\\") {
         out.push_str(entry);
         return;
@@ -86,14 +92,17 @@ fn append_single_windows_path_to_unix(out: &mut String, entry: &str) {
         && bytes[1] == b':'
         && (bytes[2] == b'\\' || bytes[2] == b'/');
 
-    if !is_canonical_drive {
-        out.push_str(entry);
-        return;
-    }
-
-    out.push('/');
-    out.push((bytes[0] as char).to_ascii_lowercase());
-    for c in entry[2..].chars() {
+    let rest = if is_canonical_drive {
+        // C:\foo → /c/foo : emit `/<drive lowercase>` then the tail with `\` → `/`.
+        out.push('/');
+        out.push((bytes[0] as char).to_ascii_lowercase());
+        &entry[2..]
+    } else {
+        // Other shapes (relative paths, bare names, `C:foo`) — keep as-is but
+        // still translate `\` → `/` so bash can resolve them.
+        entry
+    };
+    for c in rest.chars() {
         out.push(if c == '\\' { '/' } else { c });
     }
 }
@@ -107,6 +116,7 @@ fn append_single_windows_path_to_unix(out: &mut String, entry: &str) {
 /// `Path` separator — important since this is unit-tested on Linux/macOS too.
 /// Does not stat the file — input may be a bare name like `"bash"` that resolves
 /// later via the launcher's PATH search.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn is_posix_shell_program(program: &Path) -> bool {
     const POSIX_SHELLS: &[&str] = &["bash", "sh", "zsh", "fish", "ksh", "dash"];
     let Some(s) = program.to_str() else {
@@ -189,6 +199,23 @@ mod tests {
         // Bare "C:" or "C:foo" (relative-to-drive) is unrecognized — pass through.
         assert_eq!(windows_path_list_to_unix("C:"), "C:");
         assert_eq!(windows_path_list_to_unix("C:foo"), "C:foo");
+    }
+
+    #[test]
+    fn test_windows_path_list_to_unix_relative_paths_with_backslashes() {
+        // mise can inject relative entries via `[env] _.path = ["./node_modules/.bin"]`,
+        // and tools that emit Windows separators may produce backslash forms. bash
+        // does not treat `\` as a separator, so we translate `\` → `/` for non-UNC,
+        // non-canonical-drive entries too.
+        assert_eq!(
+            windows_path_list_to_unix(r"node_modules\.bin"),
+            "node_modules/.bin"
+        );
+        assert_eq!(windows_path_list_to_unix(r".\bin"), "./bin");
+        assert_eq!(
+            windows_path_list_to_unix(r"node_modules\.bin;C:\tools\bin"),
+            "node_modules/.bin:/c/tools/bin"
+        );
     }
 
     #[test]
