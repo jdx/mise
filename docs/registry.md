@@ -38,7 +38,7 @@ In general, the preferred [backend](/dev-tools/backends/) to use for new tools i
 - [go](./dev-tools/backends/go.html) - only for go tools, requires go to be installed to compile. Because go tools can be distributed as a single binary, aqua/github are definitely preferred.
 - [cargo](./dev-tools/backends/cargo.html) - only for rust tools, requires rust to be installed to compile. Because rust tools can be distributed as a single binary, aqua/github are definitely preferred.
 - [dotnet](./dev-tools/backends/dotnet.html) - only for dotnet tools, requires dotnet to be installed to compile. Because dotnet tools can be distributed as a single binary, aqua/github are definitely preferred.
-- [conda](./dev-tools/backends/conda.html) - potentially accepted (with a high bar, lower than the language-specific backends above) for tools that genuinely cannot be supported via aqua/github, e.g. conda-native scientific packages only distributed through conda-forge.
+- [conda](./dev-tools/backends/conda.html) - potentially accepted (with a high bar, but lower than the language-specific backends above) for tools that cannot be supported via aqua/github. Unlike `npm`/`pipx`/`gem`/`cargo`/`go`/`dotnet`, mise's conda backend does not require a separately-installed package manager on PATH — packages are fetched and extracted directly from anaconda.org.
 
 New `vfox` and `asdf` tools are not accepted for supply-chain security reasons — use `aqua` (preferred) or `github` instead. The `ubi` backend is deprecated and is not accepted for new registry entries.
 

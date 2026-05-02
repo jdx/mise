@@ -630,13 +630,17 @@ enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.git
 - **The `ubi` backend is deprecated and will not be accepted** for new registry entries.
   Use aqua/github instead.
 - **The `conda` backend has a high bar but is potentially accepted** for tools that
-  genuinely cannot be supported via aqua/github — for example, conda-native scientific
-  packages that are only distributed through conda-forge. The bar is lower than
-  `npm`/`cargo`/etc. because for some ecosystems conda is the legitimate distribution
-  channel, but the tool still needs to be popular and well-maintained.
-- **Other backends (`npm`, `pipx`, `cargo`, `gem`, `go`, `dotnet`, etc.) have a very high
-  bar** for new registry entries. They are accepted only when no aqua/github option exists
-  and the tool is widely used. Discuss with @jdx before submitting.
+  cannot be supported via aqua/github. The bar is lower than `npm`/`pipx`/`cargo`/etc.
+  because mise's conda backend downloads and extracts packages directly from
+  anaconda.org — it does not require conda/mamba/micromamba to be installed on the
+  user's PATH. The tool still needs to be popular and well-maintained.
+- **Other backends (`npm`, `pipx`, `gem`, `cargo`, `go`, `dotnet`, etc.) have a very
+  high bar** for new registry entries. These all depend on a separately-installed
+  runtime or toolchain being present on the user's PATH (`node`, `python`, `ruby`,
+  `cargo`, `go`, `dotnet`), which is fragile: tools installed via them silently bind
+  to whichever runtime happens to be on PATH at install time, breaking when versions
+  change or the runtime isn't installed. They are accepted only when no aqua/github
+  option exists and the tool is widely used. Discuss with @jdx before submitting.
 - **A test is required in `registry/`** - Must include a `test` field to
   verify installation
 - **Tools may be rejected if they are not notable** - The tool should be
