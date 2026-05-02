@@ -2,7 +2,10 @@ use crate::backend::aqua::{arch, os};
 use crate::config::Settings;
 use crate::git::{CloneOptions, Git};
 use crate::{dirs, duration::WEEKLY, file};
-use aqua_registry::{AquaRegistry, AquaRegistryConfig};
+use aqua_registry::{
+    AquaRegistry, AquaRegistryConfig, AquaRegistryError, NoOpCacheStore, RegistryFetcher,
+    RegistryYaml,
+};
 use eyre::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -22,7 +25,7 @@ pub static AQUA_REGISTRY: Lazy<MiseAquaRegistry> = Lazy::new(|| {
 /// Wrapper around the aqua-registry crate that provides mise-specific functionality
 #[derive(Debug)]
 pub struct MiseAquaRegistry {
-    inner: AquaRegistry,
+    inner: AquaRegistry<MiseRegistryFetcher>,
     #[allow(dead_code)]
     path: PathBuf,
     #[allow(dead_code)]
@@ -32,7 +35,7 @@ pub struct MiseAquaRegistry {
 impl Default for MiseAquaRegistry {
     fn default() -> Self {
         let config = AquaRegistryConfig::default();
-        let inner = AquaRegistry::new(config.clone());
+        let inner = aqua_registry(config.clone());
         Self {
             inner,
             path: config.cache_dir,
@@ -73,7 +76,7 @@ impl MiseAquaRegistry {
             prefer_offline: settings.prefer_offline(),
         };
 
-        let inner = AquaRegistry::new(config);
+        let inner = aqua_registry(config);
 
         Ok(Self {
             inner,
@@ -101,6 +104,70 @@ impl MiseAquaRegistry {
     }
 }
 
+#[derive(Debug, Clone)]
+struct MiseRegistryFetcher {
+    config: AquaRegistryConfig,
+}
+
+fn aqua_registry(config: AquaRegistryConfig) -> AquaRegistry<MiseRegistryFetcher> {
+    AquaRegistry::with_fetcher_and_cache(
+        config.clone(),
+        MiseRegistryFetcher { config },
+        NoOpCacheStore,
+    )
+}
+
+impl RegistryFetcher for MiseRegistryFetcher {
+    async fn fetch_registry(&self, package_id: &str) -> aqua_registry::Result<RegistryYaml> {
+        let path_id = package_id
+            .split('/')
+            .collect::<Vec<_>>()
+            .join(std::path::MAIN_SEPARATOR_STR);
+        let path = self
+            .config
+            .cache_dir
+            .join("pkgs")
+            .join(&path_id)
+            .join("registry.yaml");
+
+        if self.config.cache_dir.join(".git").exists() && path.exists() {
+            log::trace!("reading aqua-registry for {package_id} from repo at {path:?}");
+            let contents = std::fs::read_to_string(&path)?;
+            return Ok(serde_yaml::from_str(&contents)?);
+        }
+
+        if self.config.use_baked_registry
+            && let Some(package) = super::standard_registry::package(package_id)
+        {
+            log::trace!("reading baked-in aqua-registry for {package_id}");
+            return Ok(RegistryYaml {
+                packages: vec![package?],
+            });
+        }
+
+        Err(AquaRegistryError::RegistryNotAvailable(format!(
+            "no aqua-registry found for {package_id}"
+        )))
+    }
+
+    async fn fetch_package(&self, package_id: &str) -> aqua_registry::Result<AquaPackage> {
+        if self.config.use_baked_registry
+            && !self.config.cache_dir.join(".git").exists()
+            && let Some(package) = super::standard_registry::package(package_id)
+        {
+            log::trace!("reading baked-in aqua package for {package_id}");
+            return package;
+        }
+
+        let registry = self.fetch_registry(package_id).await?;
+        registry
+            .packages
+            .into_iter()
+            .next()
+            .ok_or_else(|| AquaRegistryError::PackageNotFound(package_id.to_string()))
+    }
+}
+
 fn fetch_latest_repo(repo: &Git) -> Result<()> {
     if file::modified_duration(&repo.dir)? < WEEKLY {
         return Ok(());
@@ -122,7 +189,7 @@ struct AquaSuggestionsCache {
 }
 
 static AQUA_SUGGESTIONS_CACHE: Lazy<AquaSuggestionsCache> = Lazy::new(|| {
-    let ids = aqua_registry::package_ids();
+    let ids = super::standard_registry::package_ids();
     let mut name_to_ids: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
     for id in ids {
         if let Some((_, name)) = id.rsplit_once('/') {

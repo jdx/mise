@@ -10,10 +10,8 @@ homepage = "https://mise.en.dev"
 readme = "README.md"
 keywords = ["mise", "aqua", "registry", "package-manager"]
 categories = ["development-tools"]
-build = "build.rs"
 include = [
   "/README.md",
-  "/build.rs",
   "/src/**/*.rs",
   "/aqua-registry/LICENSE",
   "/aqua-registry/metadata.json",
@@ -28,12 +26,19 @@ default = []
 
 [dependencies]
 # Core dependencies
-aqua-registry-types = { path = "../aqua-registry-types" }
+serde = { version = "1", features = ["derive"] }
+serde_derive = "1"
 serde_yaml = "0.9"
-flate2 = "1"
-rmp-serde = "1"
 thiserror = "2"
 eyre = "0.6"
+indexmap = { version = "2", features = ["serde"] }
+itertools = "0.14"
+strum = { version = "0.28", features = ["derive"] }
+
+# Template parsing and evaluation
+expr-lang = "1"
+heck = "0.5"
+versions = { version = "7", features = ["serde"] }
 
 # Async runtime
 tokio = { version = "1", features = ["sync"] }
@@ -44,10 +49,3 @@ log = "0.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
-
-[build-dependencies]
-aqua-registry-types = { path = "../aqua-registry-types" }
-eyre = "0.6"
-flate2 = "1"
-rmp-serde = "1"
-serde_yaml = "0.9"

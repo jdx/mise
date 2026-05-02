@@ -1,7 +1,6 @@
 [workspace]
 members = [
   "crates/vfox",
-  "crates/aqua-registry-types",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
   "crates/mise-shim",
@@ -33,6 +32,8 @@ include = [
   "/src/**/*.rs",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
+  "/crates/aqua-registry/aqua-registry/metadata.json",
+  "/crates/aqua-registry/aqua-registry/registry.yaml",
 ]
 build = "build.rs"
 rust-version = "1.91"
@@ -229,13 +230,17 @@ sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 
 [build-dependencies]
+aqua-registry = { path = "crates/aqua-registry" }
 built = { version = "0.8", features = ["chrono"] }
 cfg_aliases = "0.2"
+eyre = "0.6"
+flate2 = "1"
 heck = "0.5"
-toml = "1.0"
 indexmap = "2"
+rmp-serde = "1"
 serde = "1"
 serde_yaml = "0.9"
+toml = "1.0"
 
 [dev-dependencies]
 clap-sort = "1"
