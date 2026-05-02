@@ -854,7 +854,10 @@ pub trait Backend: Debug + Send + Sync {
                         }
                     })
                     .collect_vec();
-                if versions.is_empty() && self.get_type() != BackendType::Http {
+                if versions.is_empty()
+                    && self.get_type() != BackendType::Http
+                    && self.unresolved_latest_version().is_none()
+                {
                     warn!("No versions found for {id}");
                 }
                 Ok(versions)
