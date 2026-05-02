@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use aqua_registry_types::{AquaPackage, RegistryYaml};
 use eyre::{Result, WrapErr, eyre};
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
@@ -40,13 +41,19 @@ fn generate_baked_registry(out_dir: &str) -> Result<()> {
         )
     })?;
 
-    let registry = serde_yaml::from_str::<Value>(&content).wrap_err_with(|| {
+    let registry_yaml = serde_yaml::from_str::<RegistryYaml>(&content).wrap_err_with(|| {
+        format!(
+            "Failed to parse aqua registry file {} as RegistryYaml",
+            registry_file.display()
+        )
+    })?;
+    let registry_value = serde_yaml::from_str::<Value>(&content).wrap_err_with(|| {
         format!(
             "Failed to parse aqua registry file {}",
             registry_file.display()
         )
     })?;
-    let packages = registry
+    let package_values = registry_value
         .get("packages")
         .and_then(|packages| packages.as_sequence())
         .ok_or_else(|| {
@@ -55,7 +62,7 @@ fn generate_baked_registry(out_dir: &str) -> Result<()> {
                 registry_file.display()
             )
         })?;
-    let registries = package_registries(packages)?;
+    let registries = package_registries(&registry_yaml.packages, package_values)?;
     if registries.is_empty() {
         return Err(eyre!(
             "Aqua registry file {} contains no packages",
@@ -113,14 +120,25 @@ fn generate_registry_metadata(out_dir: &str) -> Result<()> {
     Ok(())
 }
 
-fn package_registries(packages: &[Value]) -> Result<Vec<PackageRegistry>> {
+fn package_registries(
+    packages: &[AquaPackage],
+    package_values: &[Value],
+) -> Result<Vec<PackageRegistry>> {
+    if packages.len() != package_values.len() {
+        return Err(eyre!(
+            "parsed aqua package count mismatch: RegistryYaml has {}, raw YAML has {}",
+            packages.len(),
+            package_values.len()
+        ));
+    }
+
     let mut registries = Vec::new();
-    for package in packages {
+    for (package, package_value) in packages.iter().zip(package_values) {
         let Some(id) = canonical_package_id(package) else {
             continue;
         };
         let content = package_msgpack_z(package)?;
-        let aliases = package_aliases(package);
+        let aliases = package_aliases(package_value);
         registries.push(PackageRegistry {
             id,
             content,
@@ -207,21 +225,25 @@ fn registry_string_map_code(entries: &[(String, String)]) -> String {
     code
 }
 
-fn package_msgpack_z(package: &Value) -> Result<Vec<u8>> {
+fn package_msgpack_z(package: &AquaPackage) -> Result<Vec<u8>> {
     let packed = rmp_serde::to_vec_named(package).wrap_err("Failed to serialize aqua package")?;
     let mut zlib = ZlibEncoder::new(Vec::new(), Compression::best());
     zlib.write_all(&packed)?;
     Ok(zlib.finish()?)
 }
 
-fn canonical_package_id(package: &Value) -> Option<String> {
-    string_field(package, "name")
+fn canonical_package_id(package: &AquaPackage) -> Option<String> {
+    package
+        .name
+        .clone()
         .or_else(|| {
-            let repo_owner = string_field(package, "repo_owner")?;
-            let repo_name = string_field(package, "repo_name")?;
-            Some(format!("{repo_owner}/{repo_name}"))
+            if package.repo_owner.is_empty() || package.repo_name.is_empty() {
+                None
+            } else {
+                Some(format!("{}/{}", package.repo_owner, package.repo_name))
+            }
         })
-        .or_else(|| string_field(package, "path"))
+        .or_else(|| package.path.clone())
 }
 
 fn package_aliases(package: &Value) -> Vec<String> {

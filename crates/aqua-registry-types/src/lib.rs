@@ -1,3 +1,5 @@
+mod template;
+
 use expr::{Context, Environment, Program, Value};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
@@ -18,6 +20,7 @@ pub enum AquaPackageType {
     GithubRelease,
     Http,
     GoInstall,
+    GoBuild,
     Cargo,
 }
 
@@ -425,7 +428,7 @@ impl AquaPackage {
         ctx.extend(self.vars_ctx()?);
         ctx.extend(overrides.clone());
 
-        crate::template::render(s, &ctx)
+        template::render(s, &ctx)
     }
 
     fn vars_ctx(&self) -> Result<HashMap<String, String>> {
