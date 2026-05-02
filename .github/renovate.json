@@ -20,6 +20,11 @@
       "matchPackageNames": ["ghcr.io/jdx/mise"],
       "matchCurrentValue": "copr",
       "enabled": false
+    },
+    {
+      "matchPackageNames": ["taiki-e/install-action"],
+      "matchManagers": ["github-actions"],
+      "enabled": false
     }
   ]
 }
