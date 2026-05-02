@@ -880,9 +880,10 @@ impl TaskExecutor {
         } else {
             env
         };
+        let env = maybe_convert_env_for_msys_shell(Path::new(&program), env);
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
-            .envs(env)
+            .envs(env.as_ref())
             .redact(redactions.deref().clone())
             .raw(raw)
             .with_sandbox(sandbox);
@@ -1190,6 +1191,34 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
     }
 }
 
+/// On Windows, when spawning a POSIX-style shell (bash/sh/zsh/...) for a task, the
+/// child needs PATH in MSYS Unix format — `/c/foo:/d/bar` rather than `C:\foo;D:\bar`.
+/// PowerShell-launched mise inherits no `MSYSTEM`, so the conversion has to happen
+/// here at the spawn boundary (driven by the target program), not in mise's own env.
+///
+/// The cfg-attribute pattern keeps the call site OS-agnostic and avoids cloning the
+/// env on the common path (Windows + non-POSIX-shell, or any non-Windows host).
+fn maybe_convert_env_for_msys_shell<'a>(
+    program: &Path,
+    env: &'a BTreeMap<String, String>,
+) -> std::borrow::Cow<'a, BTreeMap<String, String>> {
+    #[cfg(windows)]
+    {
+        if crate::path::is_posix_shell_program(program) {
+            let mut new_env = env.clone();
+            if let Some(path) = new_env.get_mut(&*crate::env::PATH_KEY) {
+                *path = crate::path::windows_path_list_to_unix(path);
+            }
+            return std::borrow::Cow::Owned(new_env);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = program;
+    }
+    std::borrow::Cow::Borrowed(env)
+}
+
 /// Read the shebang from a file and parse it into a shell command.
 /// e.g. `#!/usr/bin/env bash` → `["bash"]`
 /// e.g. `#!/bin/bash` → `["/bin/bash"]`
@@ -1212,4 +1241,56 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
     };
     let args: Vec<String> = parts.map(|s| s.to_string()).collect();
     Some(once(shell.to_string()).chain(args).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_with_path(path: &str) -> BTreeMap<String, String> {
+        let mut env = BTreeMap::new();
+        env.insert((*crate::env::PATH_KEY).to_string(), path.to_string());
+        env.insert("OTHER".to_string(), "unchanged".to_string());
+        env
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_converts_for_bash() {
+        let env = env_with_path(r"C:\Users\me\.rustup\bin;D:\tools\bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/c/Users/me/.rustup/bin:/d/tools/bin"
+        );
+        assert_eq!(out.get("OTHER").unwrap(), "unchanged");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_skips_for_cmd() {
+        let env = env_with_path(r"C:\Users\me\.rustup\bin;D:\tools\bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("cmd.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            r"C:\Users\me\.rustup\bin;D:\tools\bin"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_full_path_to_bash() {
+        let env = env_with_path(r"C:\foo;D:\bar");
+        let out =
+            maybe_convert_env_for_msys_shell(Path::new(r"C:\Program Files\Git\bin\bash.exe"), &env);
+        assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/c/foo:/d/bar");
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_maybe_convert_env_for_msys_shell_noop_on_unix() {
+        let env = env_with_path("/usr/bin:/bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash"), &env);
+        assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/usr/bin:/bin");
+    }
 }
