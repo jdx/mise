@@ -4,20 +4,15 @@
 //! It can load registry data from baked-in files, local repositories, or remote HTTP sources.
 
 mod registry;
+mod template;
+pub mod types;
 
 // Re-export only what's needed by the main mise crate
-pub use aqua_registry_types::{
+pub use registry::{AquaRegistry, DefaultRegistryFetcher, FileCacheStore, NoOpCacheStore};
+pub use types::{
     AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType, AquaVar,
     RegistryYaml,
 };
-pub use registry::{
-    AQUA_STANDARD_REGISTRY_FILES, AQUA_STANDARD_REGISTRY_METADATA, AquaRegistry,
-    AquaRegistryMetadata, DefaultRegistryFetcher, FileCacheStore, NoOpCacheStore, package_ids,
-};
-
-pub mod types {
-    pub use aqua_registry_types::*;
-}
 
 use thiserror::Error;
 
