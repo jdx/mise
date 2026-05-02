@@ -192,10 +192,18 @@ fn yaml_value_kind(value: &Value) -> &'static str {
 }
 
 fn registry_files_code(registries: &[PackageRegistry], packages_dir: &Path) -> Result<String> {
+    let mut used_stems = HashMap::new();
     let mut entries = registries
         .iter()
         .map(|registry| {
-            let filename = format!("{}.msgpack.z", package_file_stem(&registry.id));
+            let stem = package_file_stem(&registry.id);
+            if let Some(other_id) = used_stems.insert(stem.clone(), registry.id.as_str()) {
+                return Err(eyre!(
+                    "baked aqua registry package filename collision for {other_id:?} and {:?}: {stem}",
+                    registry.id
+                ));
+            }
+            let filename = format!("{stem}.msgpack.z");
             let path = packages_dir.join(filename);
             let mut file = File::create(&path)
                 .wrap_err_with(|| format!("Failed to write baked package {}", path.display()))?;
@@ -268,7 +276,7 @@ fn package_registry_msgpack_z(package: &Value) -> Result<Vec<u8>> {
     );
     let packed = rmp_serde::to_vec_named(&Value::Mapping(registry))
         .wrap_err("Failed to serialize aqua package registry")?;
-    let mut zlib = ZlibEncoder::new(Vec::new(), Compression::fast());
+    let mut zlib = ZlibEncoder::new(Vec::new(), Compression::best());
     zlib.write_all(&packed)?;
     Ok(zlib.finish()?)
 }

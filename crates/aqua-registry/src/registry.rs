@@ -84,7 +84,11 @@ fn baked_registry_file(package_id: &str) -> Option<&'static [u8]> {
 fn decode_baked_registry(package_id: &str, bytes: &[u8]) -> Result<RegistryYaml> {
     let mut zlib = ZlibDecoder::new(bytes);
     let mut packed = Vec::new();
-    zlib.read_to_end(&mut packed)?;
+    zlib.read_to_end(&mut packed).map_err(|err| {
+        AquaRegistryError::RegistryNotAvailable(format!(
+            "failed to decompress baked aqua-registry package {package_id}: {err}"
+        ))
+    })?;
     rmp_serde::from_slice(&packed).map_err(|err| {
         AquaRegistryError::RegistryNotAvailable(format!(
             "failed to decode baked aqua-registry package {package_id}: {err}"
