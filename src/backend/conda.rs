@@ -10,7 +10,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{self, Lockfile, PlatformInfo};
 use crate::toolset::ToolSource;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{backend::Backend, dirs, parallel};
 use crate::{file, hash};
 use async_trait::async_trait;
@@ -65,16 +65,15 @@ impl CondaBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    fn channel_name(&self) -> String {
-        self.ba
-            .opts()
+    fn channel_name(&self, opts: &ToolVersionOptions) -> String {
+        opts
             .get("channel")
             .map(|s| s.to_string())
             .unwrap_or_else(|| Settings::get().conda.channel.clone())
     }
 
-    fn channel(&self) -> Result<Channel> {
-        let name = self.channel_name();
+    fn channel(&self, opts: &ToolVersionOptions) -> Result<Channel> {
+        let name = self.channel_name(opts);
         let root_dir = std::env::current_dir().unwrap_or_else(|_| dirs::HOME.to_path_buf());
         let config = ChannelConfig::default_with_root_dir(root_dir);
         Channel::from_str(&name, &config)
@@ -122,8 +121,9 @@ impl CondaBackend {
         &self,
         specs: Vec<MatchSpec>,
         platform: CondaPlatform,
+        opts: &ToolVersionOptions,
     ) -> Result<Vec<RepoDataRecord>> {
-        let channel = self.channel()?;
+        let channel = self.channel(opts)?;
         let gateway = Self::create_gateway();
 
         let repodata: Vec<RepoData> = gateway
@@ -359,7 +359,11 @@ impl CondaBackend {
 
         ctx.pr.set_message("fetching repodata".to_string());
         let records = self
-            .solve_packages(vec![match_spec], CondaPlatform::current())
+            .solve_packages(
+                vec![match_spec],
+                CondaPlatform::current(),
+                &tv.request.options(),
+            )
             .await?;
 
         // Separate main package from deps
@@ -585,7 +589,9 @@ impl CondaBackend {
         let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
             .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
 
-        let records = self.solve_packages(vec![match_spec], platform).await?;
+        let records = self
+            .solve_packages(vec![match_spec], platform, &tv.request.options())
+            .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut result = BTreeMap::new();
@@ -617,8 +623,9 @@ impl Backend for CondaBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let channel = self.channel()?;
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let channel = self.channel(&opts)?;
         let current_platform = CondaPlatform::current();
         let tool_name = self.tool_name();
 
@@ -718,7 +725,10 @@ impl Backend for CondaBackend {
             }
         };
 
-        let records = match self.solve_packages(vec![match_spec], platform).await {
+        let records = match self
+            .solve_packages(vec![match_spec], platform, &tv.request.options())
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 debug!(
