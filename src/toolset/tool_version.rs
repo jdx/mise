@@ -228,6 +228,7 @@ impl ToolVersion {
             use_locked_version: false,
             before_date: base_opts.before_date,
             offline: base_opts.offline,
+            refresh_remote_versions: base_opts.refresh_remote_versions,
         };
         let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref
@@ -349,14 +350,24 @@ impl ToolVersion {
                 return build(v);
             }
             if !is_offline
-                && let Some(v) = backend
-                    .latest_version(config, None, opts.before_date)
-                    .await?
+                && let Some(v) = if opts.refresh_remote_versions {
+                    backend
+                        .latest_version_refresh(config, None, opts.before_date)
+                        .await?
+                } else {
+                    backend
+                        .latest_version(config, None, opts.before_date)
+                        .await?
+                }
             {
                 return build(v);
             }
             if !is_offline {
-                let versions = backend.list_remote_versions(config).await?;
+                let versions = if opts.refresh_remote_versions {
+                    backend.list_remote_versions_refresh(config).await?
+                } else {
+                    backend.list_remote_versions(config).await?
+                };
                 if versions.is_empty()
                     && let Some(v) = backend.unresolved_latest_version()
                 {
@@ -399,14 +410,25 @@ impl ToolVersion {
             if !is_offline {
                 let versions = match opts.before_date {
                     Some(before) => {
-                        let versions_with_info =
-                            backend.list_remote_versions_with_info(config).await?;
+                        let versions_with_info = if opts.refresh_remote_versions {
+                            backend
+                                .list_remote_versions_with_info_refresh(config)
+                                .await?
+                        } else {
+                            backend.list_remote_versions_with_info(config).await?
+                        };
                         VersionInfo::filter_by_date(versions_with_info, before)
                             .into_iter()
                             .map(|v| v.version)
                             .collect()
                     }
-                    None => backend.list_remote_versions(config).await?,
+                    None => {
+                        if opts.refresh_remote_versions {
+                            backend.list_remote_versions_refresh(config).await?
+                        } else {
+                            backend.list_remote_versions(config).await?
+                        }
+                    }
                 };
                 if let Some(matches) = crate::semver::npm_semver_range_filter(&versions, &v)
                     && let Some(v) = matches.last()
@@ -428,7 +450,12 @@ impl ToolVersion {
         }
         // First try with date filter (common case)
         let matches = backend
-            .list_versions_matching_with_opts(config, &v, opts.before_date)
+            .list_versions_matching_with_opts(
+                config,
+                &v,
+                opts.before_date,
+                opts.refresh_remote_versions,
+            )
             .await?;
         if matches.contains(&v) {
             return build(v);
@@ -493,7 +520,12 @@ impl ToolVersion {
             return Ok(Self::new(request, prefix.to_string()));
         }
         let matches = backend
-            .list_versions_matching_with_opts(config, prefix, opts.before_date)
+            .list_versions_matching_with_opts(
+                config,
+                prefix,
+                opts.before_date,
+                opts.refresh_remote_versions,
+            )
             .await?;
         let v = matches
             .last()
@@ -575,6 +607,8 @@ pub struct ResolveOptions {
     pub before_date: Option<Timestamp>,
     /// Additive to `Settings::offline()` — either being true skips remote version listing.
     pub offline: bool,
+    /// Ignore cached remote version lists while resolving this request.
+    pub refresh_remote_versions: bool,
 }
 
 impl Default for ResolveOptions {
@@ -584,6 +618,7 @@ impl Default for ResolveOptions {
             use_locked_version: true,
             before_date: None,
             offline: false,
+            refresh_remote_versions: false,
         }
     }
 }
@@ -623,6 +658,9 @@ impl Display for ResolveOptions {
         }
         if self.offline {
             opts.push("offline".to_string());
+        }
+        if self.refresh_remote_versions {
+            opts.push("refresh_remote_versions".to_string());
         }
         write!(f, "({})", opts.join(", "))
     }

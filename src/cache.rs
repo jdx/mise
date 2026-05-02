@@ -163,6 +163,24 @@ where
         Ok(val)
     }
 
+    /// Fetch fresh data, write it to disk, and return it without consulting the
+    /// in-memory or on-disk cache.
+    pub async fn refresh_async<F, Fut>(&self, fetch: F) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
+    {
+        let val = fetch().await?;
+        if let Err(err) = self.write(&val) {
+            warn!(
+                "failed to write cache file: {} {:#}",
+                self.cache_file_path.display(),
+                err
+            );
+        }
+        Ok(val)
+    }
+
     /// Read the cache file without checking freshness and without fetching or writing.
     pub fn get_cached(&self) -> Result<T>
     where
@@ -349,5 +367,22 @@ mod tests {
         assert_eq!(val, &1);
         let val = cache.get_or_try_init(|| Ok(2)).unwrap();
         assert_eq!(val, &1);
+    }
+
+    #[tokio::test]
+    async fn test_refresh_ignores_memory_and_file_cache() {
+        let _config = Config::get().await.unwrap();
+        let mut cache: CacheManager<i32> =
+            CacheManagerBuilder::new(dirs::CACHE.join("test-cache-refresh")).build();
+        cache.clear().unwrap();
+        let val = cache
+            .get_or_try_init_async(|| async { Ok(1) })
+            .await
+            .unwrap();
+        assert_eq!(val, &1);
+
+        let val = cache.refresh_async(|| async { Ok(2) }).await.unwrap();
+
+        assert_eq!(val, 2);
     }
 }
