@@ -1443,8 +1443,9 @@
           }
         },
         "shorthands_file": {
-          "description": "Path to a file containing custom tool shorthands.",
-          "type": "string"
+          "description": "[deprecated] Path to a file containing custom tool shorthands.",
+          "type": "string",
+          "deprecated": true
         },
         "silent": {
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",

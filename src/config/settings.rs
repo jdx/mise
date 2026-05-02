@@ -440,6 +440,9 @@ impl Settings {
         if self.npm.bun {
             self.npm.package_manager = NpmPackageManager::Bun;
         }
+        if self.shorthands_file.is_some() {
+            warn_deprecated("shorthands_file");
+        }
     }
 
     pub fn add_cli_matches(cli: &Cli) {
