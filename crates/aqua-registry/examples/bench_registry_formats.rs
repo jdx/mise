@@ -24,6 +24,7 @@ const ITERS: usize = 10_000;
 
 struct PackageFixture {
     id: &'static str,
+    package: Value,
     yaml: String,
     json: Vec<u8>,
     msgpack: Vec<u8>,
@@ -33,36 +34,60 @@ struct PackageFixture {
 fn main() {
     let fixtures = fixtures();
 
-    println!("format,size_bytes,total_ms,ns_per_decode");
+    println!("format,size_bytes,decode_ms,ns_per_decode,convert_ms,ns_per_convert");
     for fixture in &fixtures {
-        let yaml = bench(ITERS, || {
+        let yaml_decode = bench(ITERS, || {
             let package: AquaPackage = serde_yaml::from_str(&fixture.yaml).unwrap();
             black_box(package.repo_name.len());
         });
-        let json = bench(ITERS, || {
+        let json_decode = bench(ITERS, || {
             let package: AquaPackage = serde_json::from_slice(&fixture.json).unwrap();
             black_box(package.repo_name.len());
         });
-        let msgpack = bench(ITERS, || {
+        let msgpack_decode = bench(ITERS, || {
             let package: AquaPackage = rmp_serde::from_slice(&fixture.msgpack).unwrap();
             black_box(package.repo_name.len());
         });
-        let msgpack_z = bench(ITERS, || {
+        let msgpack_z_decode = bench(ITERS, || {
             let package = decode_msgpack_z(&fixture.msgpack_z);
             black_box(package.repo_name.len());
         });
 
-        print_result(&format!("{} yaml", fixture.id), fixture.yaml.len(), yaml);
-        print_result(&format!("{} json", fixture.id), fixture.json.len(), json);
+        let yaml_convert = Duration::ZERO;
+        let json_convert = bench(ITERS, || {
+            black_box(serde_json::to_vec(&fixture.package).unwrap());
+        });
+        let msgpack_convert = bench(ITERS, || {
+            black_box(rmp_serde::to_vec_named(&fixture.package).unwrap());
+        });
+        let msgpack_z_convert = bench(ITERS, || {
+            let msgpack = rmp_serde::to_vec_named(&fixture.package).unwrap();
+            black_box(encode_msgpack_z(&msgpack));
+        });
+
+        print_result(
+            &format!("{} yaml", fixture.id),
+            fixture.yaml.len(),
+            yaml_decode,
+            yaml_convert,
+        );
+        print_result(
+            &format!("{} json", fixture.id),
+            fixture.json.len(),
+            json_decode,
+            json_convert,
+        );
         print_result(
             &format!("{} msgpack", fixture.id),
             fixture.msgpack.len(),
-            msgpack,
+            msgpack_decode,
+            msgpack_convert,
         );
         print_result(
             &format!("{} msgpack_zlib", fixture.id),
             fixture.msgpack_z.len(),
-            msgpack_z,
+            msgpack_z_decode,
+            msgpack_z_convert,
         );
     }
 
@@ -95,6 +120,7 @@ fn fixtures() -> Vec<PackageFixture> {
             let msgpack_z = encode_msgpack_z(&msgpack);
             PackageFixture {
                 id,
+                package: package.clone(),
                 yaml,
                 json,
                 msgpack,
@@ -139,7 +165,12 @@ fn bench(iterations: usize, mut f: impl FnMut()) -> Duration {
     started.elapsed()
 }
 
-fn print_result(name: &str, size: usize, duration: Duration) {
-    let ns = duration.as_nanos() / ITERS as u128;
-    println!("{name},{size},{:.3},{ns}", duration.as_secs_f64() * 1000.0);
+fn print_result(name: &str, size: usize, decode: Duration, convert: Duration) {
+    let decode_ns = decode.as_nanos() / ITERS as u128;
+    let convert_ns = convert.as_nanos() / ITERS as u128;
+    println!(
+        "{name},{size},{:.3},{decode_ns},{:.3},{convert_ns}",
+        decode.as_secs_f64() * 1000.0,
+        convert.as_secs_f64() * 1000.0
+    );
 }
