@@ -1,4 +1,4 @@
 backends = ["pipx:git-filter-repo"]
 depends = ["git"]
 description = "Quickly rewrite git repository history (filter-branch replacement)"
-test = { cmd = "which git-filter-repo", expected = "git-filter-repo" }
+test = { cmd = "git-filter-repo --version", expected = "{{version}}" }
