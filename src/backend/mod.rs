@@ -261,9 +261,11 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
 
 pub fn remove(short: &str) {
     let mut tools = TOOLS.lock().unwrap();
-    let mut tools_ = tools.as_ref().unwrap().deref().clone();
-    tools_.remove(short);
-    *tools = Some(Arc::new(tools_));
+    if let Some(current) = tools.as_ref() {
+        let mut tools_ = current.deref().clone();
+        tools_.remove(short);
+        *tools = Some(Arc::new(tools_));
+    }
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {

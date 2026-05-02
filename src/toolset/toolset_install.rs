@@ -552,8 +552,8 @@ impl Toolset {
 
         let mpr = MultiProgressReport::get();
 
-        for (plugin_key, url) in &config.repo_urls {
-            let (plugin_type, name) = Self::parse_plugin_key(plugin_key, url);
+        for plugin_key in config.repo_urls.keys() {
+            let (plugin_type, name) = Self::parse_plugin_key(plugin_key);
 
             // Skip empty plugin names (e.g., from malformed keys like "" or "vfox:")
             if name.is_empty() {
@@ -572,7 +572,7 @@ impl Toolset {
         Ok(())
     }
 
-    fn parse_plugin_key<'a>(key: &'a str, url: &str) -> (PluginType, &'a str) {
-        PluginType::from_plugin_config(key, url)
+    fn parse_plugin_key(key: &str) -> (PluginType, &str) {
+        PluginType::from_plugin_config(key)
     }
 }

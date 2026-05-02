@@ -226,8 +226,8 @@ impl Config {
         time!("load done");
 
         measure!("config::load install_state", {
-            for (plugin, url) in &config.repo_urls {
-                let (plugin_type, plugin) = PluginType::from_plugin_config(plugin, url);
+            for plugin in config.repo_urls.keys() {
+                let (plugin_type, plugin) = PluginType::from_plugin_config(plugin);
                 install_state::add_plugin(plugin, plugin_type).await?;
             }
         });

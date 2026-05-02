@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
 
 cat >mise.toml <<EOF
-[tools]
-"myplugin:eslint" = "9.38.0"
-"myplugin:prettier" = "3.6.2"
-
 [plugins]
-"vfox-backend:myplugin" = "https://github.com/jdx/vfox-npm"
+myplugin = "https://github.com/jbadeau/mise-nix"
 EOF
 
-mise install
+assert_matches "mise latest myplugin:hello" '^[0-9]'
 assert_contains "mise plugin ls" "myplugin"
-assert "mise current myplugin:eslint" "9.38.0"
-assert "mise current myplugin:prettier" "3.6.2"
+assert_contains "mise plugin ls --urls" "https://github.com/jbadeau/mise-nix"

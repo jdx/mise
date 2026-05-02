@@ -4,12 +4,13 @@ use crate::file::remove_all_with_progress;
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::plugins::warn_if_env_plugin_shadows_registry;
-use crate::plugins::{Plugin, PluginSource};
+use crate::plugins::{Plugin, PluginSource, PluginType};
 use crate::result::Result;
+use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, file, lock_file, registry};
+use crate::{backend, dirs, file, lock_file, registry};
 use async_trait::async_trait;
 use console::style;
 use contracts::requires;
@@ -270,6 +271,10 @@ impl Plugin for VfoxPlugin {
         if !dry_run {
             let _lock = lock_file::get(&self.plugin_path, force)?;
             self.install(config, pr.as_ref()).await?;
+            let plugin_type =
+                PluginType::from_plugin_path(&self.plugin_path).unwrap_or(PluginType::Vfox);
+            install_state::add_plugin(&self.name, plugin_type).await?;
+            backend::remove(&self.name);
             warn_if_env_plugin_shadows_registry(&self.name, &self.plugin_path);
         }
         Ok(())

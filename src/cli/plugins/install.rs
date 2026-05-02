@@ -133,16 +133,9 @@ impl PluginsInstall {
         name: String,
         git_url: Option<String>,
     ) -> Result<()> {
+        let (plugin_type, name) = PluginType::from_plugin_config(&name);
+        let name = name.to_string();
         let path = dirs::PLUGINS.join(name.to_kebab_case());
-        let plugin_type = git_url
-            .as_deref()
-            .map(PluginType::from_plugin_url)
-            .unwrap_or_else(|| {
-                config
-                    .get_repo_url(&name)
-                    .map(|url| PluginType::from_plugin_url(&url))
-                    .unwrap_or(PluginType::Asdf)
-            });
         let plugin = plugin_type.plugin(name.clone());
         if let Some(url) = git_url {
             plugin.set_remote_url(url);
