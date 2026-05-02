@@ -170,16 +170,8 @@ async fn init_plugins() -> MutexResult<InstallStatePlugins> {
                 info!("removing banned plugin {d}");
                 let _ = file::remove_all(&path);
                 None
-            } else if path.join("metadata.lua").exists() {
-                if has_backend_methods(&path) {
-                    Some((d, PluginType::VfoxBackend))
-                } else {
-                    Some((d, PluginType::Vfox))
-                }
-            } else if path.join("bin").join("list-all").exists() {
-                Some((d, PluginType::Asdf))
             } else {
-                None
+                PluginType::from_plugin_path(&path).map(|plugin_type| (d, plugin_type))
             }
         })
         .collect();
@@ -426,14 +418,6 @@ fn is_banned_plugin(path: &Path) -> bool {
         }
     }
     false
-}
-
-fn has_backend_methods(plugin_path: &Path) -> bool {
-    // to be a backend plugin, it must have a backend_install.lua file so we don't need to check for other files
-    plugin_path
-        .join("hooks")
-        .join("backend_install.lua")
-        .exists()
 }
 
 pub fn get_tool_full(short: &str) -> Option<String> {

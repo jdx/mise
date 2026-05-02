@@ -3,13 +3,14 @@ use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all_with_progress};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
-use crate::plugins::{Plugin, PluginSource, Script, ScriptManager};
+use crate::plugins::{Plugin, PluginSource, PluginType, Script, ScriptManager};
 use crate::result::Result;
 use crate::timeout::run_with_timeout;
+use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, env, exit, file, lock_file, registry};
+use crate::{backend, dirs, env, exit, file, lock_file, registry};
 use async_trait::async_trait;
 use clap::Command;
 use console::style;
@@ -293,7 +294,12 @@ impl Plugin for AsdfPlugin {
         let pr = mpr.add_with_options(&prefix, dry_run);
         if !dry_run {
             let _lock = lock_file::get(&self.plugin_path, force)?;
-            self.install(config, pr.as_ref()).await
+            self.install(config, pr.as_ref()).await?;
+            let plugin_type =
+                PluginType::from_plugin_path(&self.plugin_path).unwrap_or(PluginType::Asdf);
+            install_state::add_plugin(&self.name, plugin_type).await?;
+            backend::remove(&self.name);
+            Ok(())
         } else {
             Ok(())
         }

@@ -318,14 +318,11 @@ impl BackendArg {
         if let Ok(backend_type) = backend.parse() {
             return backend_type;
         }
-        if config::is_loaded()
-            && let Some(repo_url) = Config::get_().get_repo_url(&self.short)
-        {
-            return if repo_url.contains("vfox-") {
-                BackendType::Vfox
-            } else {
-                // TODO: maybe something more intelligent?
-                BackendType::Asdf
+        if config::is_loaded() && Config::get_().get_repo_url(&self.short).is_some() {
+            return match install_state::get_plugin_type(&self.short).unwrap_or(PluginType::Asdf) {
+                PluginType::Vfox => BackendType::Vfox,
+                PluginType::VfoxBackend => BackendType::VfoxBackend(self.short.to_string()),
+                PluginType::Asdf => BackendType::Asdf,
             };
         }
         BackendType::Unknown
@@ -350,7 +347,11 @@ impl BackendArg {
                 return full;
             }
             if let Some(url) = Config::get_().repo_urls.get(short) {
-                return format!("asdf:{url}");
+                return match install_state::get_plugin_type(short).unwrap_or(PluginType::Asdf) {
+                    PluginType::Asdf => format!("asdf:{url}"),
+                    PluginType::Vfox => format!("vfox:{short}"),
+                    PluginType::VfoxBackend => short.to_string(),
+                };
             }
 
             let config = Config::get_();
