@@ -682,7 +682,12 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        self.list_remote_versions_with_refresh(config, false).await
+        Ok(self
+            .list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
     }
 
     /// Like `list_remote_versions` but with explicit refresh control. Pass
