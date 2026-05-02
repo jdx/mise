@@ -38,7 +38,22 @@ Before touching `registry/`, ALWAYS do the following:
 5. **If the tool is borderline or numbers are low, warn the user clearly** that the PR is likely to be rejected without reason, and ask if they still want to proceed. Do not soften this — users have repeatedly been surprised when their PR was closed, and the agent should have warned them up front.
 6. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.en.dev/tool-plugin-development.html). The registry is *only* for shorthand convenience for popular tools — not for enabling installation.
 
-New asdf plugins are also not accepted; use aqua/github backends.
+### Backend choice: aqua (preferred) or github
+
+For registry entries the backend tiers are:
+
+- **Tier 1 — preferred:** `aqua:`, `github:`, and `gitlab:`. These are the routinely accepted backends.
+  - **Prefer `aqua:`** when the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry). Better UX, SLSA verification, and per-version logic.
+  - **Use `github:`** when the tool isn't in aqua but ships GitHub releases.
+  - **Use `gitlab:`** for tools released through GitLab.
+- **Tier 2 — high bar, but lower than tier 3:** `conda:`. Potentially acceptable when the tool can't be supported via aqua/github. The bar is lower than tier 3 because **the conda backend in mise does not require a separately-installed package manager** — mise downloads and extracts packages directly from anaconda.org via rattler, so users don't need conda/mamba on PATH. Still requires a popular, well-maintained tool.
+- **Tier 3 — extremely high bar, almost never accepted:** `npm:`, `pipx:`, `gem:`, `cargo:`, `go:`, `dotnet:`. These all rely on a separately-installed runtime/toolchain being present on PATH (`node`, `python`, `ruby`, `cargo`, `go`, `dotnet`), which is fragile — the wrong version, a missing install, or PATH ordering quirks all break them. `npm:`/`pipx:`/`gem:` are particularly painful because tools installed via them silently bind to whichever `node`/`python`/`ruby` was on PATH at install time. Don't reach for these for a registry PR unless the user has explicitly confirmed @jdx wants it that way for this specific tool.
+- **Not accepted at all:**
+  - **New `asdf:` plugins** — supply-chain security. Use aqua/github instead.
+  - **New `vfox:` plugins** — same reason. Use aqua/github instead.
+  - **`ubi:`** is deprecated and will not be accepted under any circumstances.
+
+Users can still install via any backend themselves with explicit syntax (`mise use vfox:...`, `mise use cargo:...`, etc.) — they just don't get a registry shorthand for it.
 
 ## Development Commands
 
