@@ -1,9 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use eyre::{Result, WrapErr, eyre};
+use flate2::Compression;
+use flate2::write::ZlibEncoder;
 use serde_yaml::Value;
 
 fn main() -> Result<()> {
@@ -16,13 +20,14 @@ fn main() -> Result<()> {
 #[derive(Debug)]
 struct PackageRegistry {
     id: String,
-    content: String,
+    content: Vec<u8>,
     aliases: Vec<String>,
 }
 
 fn generate_baked_registry(out_dir: &str) -> Result<()> {
     let files_dest_path = Path::new(out_dir).join("aqua_standard_registry_files.rs");
     let aliases_dest_path = Path::new(out_dir).join("aqua_standard_registry_aliases.rs");
+    let packages_dir = Path::new(out_dir).join("aqua_standard_registry_packages");
 
     let registry_file = find_registry_file()?;
 
@@ -59,8 +64,12 @@ fn generate_baked_registry(out_dir: &str) -> Result<()> {
         ));
     }
 
-    fs::write(files_dest_path, registry_files_code(&registries))
-        .wrap_err("Failed to write baked registry files")?;
+    fs::create_dir_all(&packages_dir).wrap_err("Failed to create baked registry package dir")?;
+    fs::write(
+        files_dest_path,
+        registry_files_code(&registries, &packages_dir)?,
+    )
+    .wrap_err("Failed to write baked registry files")?;
     fs::write(aliases_dest_path, registry_aliases_code(&registries))
         .wrap_err("Failed to write baked registry aliases")?;
     Ok(())
@@ -111,7 +120,7 @@ fn package_registries(packages: &[Value]) -> Result<Vec<PackageRegistry>> {
         let Some(id) = canonical_package_id(package) else {
             continue;
         };
-        let content = package_registry_yaml(package)?;
+        let content = package_registry_msgpack_z(package)?;
         let aliases = package_aliases(package);
         registries.push(PackageRegistry {
             id,
@@ -182,14 +191,43 @@ fn yaml_value_kind(value: &Value) -> &'static str {
     }
 }
 
-fn registry_files_code(registries: &[PackageRegistry]) -> String {
+fn registry_files_code(registries: &[PackageRegistry], packages_dir: &Path) -> Result<String> {
     let mut entries = registries
         .iter()
-        .map(|registry| (registry.id.clone(), registry.content.clone()))
-        .collect::<Vec<_>>();
+        .map(|registry| {
+            let filename = format!("{}.msgpack.z", package_file_stem(&registry.id));
+            let path = packages_dir.join(filename);
+            let mut file = File::create(&path)
+                .wrap_err_with(|| format!("Failed to write baked package {}", path.display()))?;
+            file.write_all(&registry.content)
+                .wrap_err_with(|| format!("Failed to write baked package {}", path.display()))?;
+            Ok((registry.id.clone(), path))
+        })
+        .collect::<Result<Vec<_>>>()?;
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
-    registry_map_code(&entries)
+    Ok(registry_bytes_map_code(&entries))
+}
+
+fn registry_bytes_map_code(entries: &[(String, PathBuf)]) -> String {
+    let mut code = String::from("HashMap::from([\n");
+    for (key, path) in entries {
+        code.push_str(&format!(
+            "    ({key:?}, include_bytes!({:?}).as_slice()),\n",
+            path.display().to_string()
+        ));
+    }
+    code.push_str("])");
+    code
+}
+
+fn package_file_stem(id: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in id.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
 
 fn registry_aliases_code(registries: &[PackageRegistry]) -> String {
@@ -210,10 +248,10 @@ fn registry_aliases_code(registries: &[PackageRegistry]) -> String {
     let mut entries = aliases.into_iter().collect::<Vec<_>>();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
-    registry_map_code(&entries)
+    registry_string_map_code(&entries)
 }
 
-fn registry_map_code(entries: &[(String, String)]) -> String {
+fn registry_string_map_code(entries: &[(String, String)]) -> String {
     let mut code = String::from("HashMap::from([\n");
     for (key, value) in entries {
         code.push_str(&format!("    ({key:?}, {value:?}),\n"));
@@ -222,14 +260,17 @@ fn registry_map_code(entries: &[(String, String)]) -> String {
     code
 }
 
-fn package_registry_yaml(package: &Value) -> Result<String> {
+fn package_registry_msgpack_z(package: &Value) -> Result<Vec<u8>> {
     let mut registry = serde_yaml::Mapping::new();
     registry.insert(
         Value::String("packages".to_string()),
         Value::Sequence(vec![package.clone()]),
     );
-    serde_yaml::to_string(&Value::Mapping(registry))
-        .wrap_err("Failed to serialize aqua package registry")
+    let packed = rmp_serde::to_vec_named(&Value::Mapping(registry))
+        .wrap_err("Failed to serialize aqua package registry")?;
+    let mut zlib = ZlibEncoder::new(Vec::new(), Compression::fast());
+    zlib.write_all(&packed)?;
+    Ok(zlib.finish()?)
 }
 
 fn canonical_package_id(package: &Value) -> Option<String> {

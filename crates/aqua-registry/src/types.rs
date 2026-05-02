@@ -4,13 +4,13 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use serde::Deserializer;
 use serde::de::Error as DeError;
-use serde_derive::Deserialize;
+use serde_derive::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use versions::Versioning;
 
 /// Type of Aqua package
-#[derive(Debug, Deserialize, Default, Clone, PartialEq, strum::Display)]
+#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum AquaPackageType {
@@ -24,7 +24,7 @@ pub enum AquaPackageType {
 }
 
 /// Main Aqua package definition
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct AquaPackage {
     pub r#type: AquaPackageType,
@@ -63,7 +63,7 @@ pub struct AquaPackage {
 }
 
 /// Override configuration for specific OS/architecture combinations
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct AquaOverride {
     #[serde(flatten)]
     pkg: AquaPackage,
@@ -72,7 +72,7 @@ struct AquaOverride {
 }
 
 /// Variable definition for Aqua templates
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct AquaVar {
     pub name: String,
     /// Aqua's schema allows arbitrary YAML defaults, but mise intentionally
@@ -84,14 +84,14 @@ pub struct AquaVar {
 }
 
 /// File definition within a package
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
 }
 
 /// Checksum algorithm options
-#[derive(Debug, Deserialize, Clone, strum::AsRefStr, strum::Display)]
+#[derive(Debug, Deserialize, Serialize, Clone, strum::AsRefStr, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum AquaChecksumAlgorithm {
@@ -102,7 +102,7 @@ pub enum AquaChecksumAlgorithm {
 }
 
 /// Type of checksum source
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaChecksumType {
     GithubRelease,
@@ -110,7 +110,7 @@ pub enum AquaChecksumType {
 }
 
 /// Type of minisign source
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaMinisignType {
     GithubRelease,
@@ -118,7 +118,7 @@ pub enum AquaMinisignType {
 }
 
 /// Cosign signature configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AquaCosignSignature {
     pub r#type: Option<String>,
     pub repo_owner: Option<String>,
@@ -128,7 +128,7 @@ pub struct AquaCosignSignature {
 }
 
 /// Cosign verification configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AquaCosign {
     pub enabled: Option<bool>,
     pub signature: Option<AquaCosignSignature>,
@@ -140,7 +140,7 @@ pub struct AquaCosign {
 }
 
 /// SLSA provenance configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AquaSlsaProvenance {
     pub enabled: Option<bool>,
     pub r#type: Option<String>,
@@ -153,7 +153,7 @@ pub struct AquaSlsaProvenance {
 }
 
 /// Minisign verification configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AquaMinisign {
     pub enabled: Option<bool>,
     pub r#type: Option<AquaMinisignType>,
@@ -165,14 +165,14 @@ pub struct AquaMinisign {
 }
 
 /// GitHub artifact attestations configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
     pub enabled: Option<bool>,
     pub signer_workflow: Option<String>,
 }
 
 /// Checksum verification configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AquaChecksum {
     pub r#type: Option<AquaChecksumType>,
     pub algorithm: Option<AquaChecksumAlgorithm>,
@@ -185,14 +185,14 @@ pub struct AquaChecksum {
 }
 
 /// Checksum pattern configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AquaChecksumPattern {
     pub checksum: String,
     pub file: Option<String>,
 }
 
 /// Registry YAML file structure
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RegistryYaml {
     pub packages: Vec<AquaPackage>,
 }
