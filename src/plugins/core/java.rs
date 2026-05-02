@@ -359,11 +359,15 @@ impl Backend for JavaPlugin {
         Ok(versions)
     }
 
-    /// Override to bypass the shared remote_versions cache since Java has separate
-    /// caches for GA and EA release types in fetch_java_metadata.
-    async fn list_remote_versions_with_info(
+    /// Override to bypass the shared remote_versions cache since Java has
+    /// separate caches for GA and EA release types in `fetch_java_metadata`.
+    /// The override is on `_with_refresh` so install-time refresh paths also
+    /// reach the GA/EA-aware logic; the underlying fetch already handles
+    /// freshness, so the `_refresh` flag is irrelevant.
+    async fn list_remote_versions_with_info_with_refresh(
         &self,
         config: &Arc<Config>,
+        _refresh: bool,
     ) -> Result<Vec<VersionInfo>> {
         self._list_remote_versions(config).await
     }
