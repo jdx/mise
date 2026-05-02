@@ -637,14 +637,15 @@ enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.git
 Which backend you choose for a registry entry matters as much as which tool you
 add. Backends fall into the following tiers:
 
-**Tier 1 — preferred, routinely accepted:** [`aqua`](dev-tools/backends/aqua.md)
-and [`github`](dev-tools/backends/github.md).
+**Tier 1 — preferred, routinely accepted:** [`aqua`](/dev-tools/backends/aqua.html),
+[`github`](/dev-tools/backends/github.html), and [`gitlab`](/dev-tools/backends/gitlab.html).
 
 - Prefer `aqua` when the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry) —
   it has better UX, SLSA verification, and per-version logic.
 - Use `github` when the tool isn't in aqua but ships GitHub releases.
+- Use `gitlab` for tools released through GitLab.
 
-**Tier 2 — high bar, but lower than tier 3:** [`conda`](dev-tools/backends/conda.md).
+**Tier 2 — high bar, but lower than tier 3:** [`conda`](/dev-tools/backends/conda.html).
 
 Potentially accepted for tools that can't reasonably be supported via aqua/github.
 The bar is lower than tier 3 because **mise's conda backend does not require a
@@ -664,7 +665,7 @@ option exists and the tool is widely used. Discuss with @jdx before submitting.
 
 **Not accepted:** `asdf`, `vfox`, `ubi`.
 
-- **New `asdf` plugins** — supply-chain security. Use aqua/github instead.
+- **New `asdf` plugins** — supply-chain security. Use [aqua](/dev-tools/backends/aqua.html) or [github](/dev-tools/backends/github.html) instead.
 - **New `vfox` plugins** — same reason. Use aqua/github instead.
 - **`ubi`** is deprecated and is not accepted for new registry entries.
 

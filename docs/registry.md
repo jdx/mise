@@ -53,7 +53,7 @@ These all depend on a separately-installed runtime/toolchain on PATH, which is f
 
 **Not accepted:**
 
-- New `vfox` and `asdf` tools are not accepted for supply-chain security reasons — use `aqua` (preferred) or `github` instead.
+- New `vfox` and `asdf` tools are not accepted for supply-chain security reasons — use [`aqua`](./dev-tools/backends/aqua.html) (preferred) or [`github`](./dev-tools/backends/github.html) instead.
 - The `ubi` backend is deprecated and is not accepted for new registry entries.
 
 Users can still install via any backend themselves with explicit syntax (`mise use vfox:owner/repo`, `mise use cargo:name`, etc.) — they just don't get a registry shorthand for it.
