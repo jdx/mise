@@ -163,10 +163,10 @@ where
         Ok(val)
     }
 
-    /// Fetch fresh data, write it to disk, and return it without consulting the
-    /// existing on-disk cache. The in-memory cache cells are reset so that
-    /// subsequent non-refresh reads see the fresh value rather than a stale
-    /// previously-cached one.
+    /// Fetch fresh data, write it to disk, and return it without consulting
+    /// any cache. The in-memory cache cells are replaced with the fresh value
+    /// so future non-refresh reads observe it instead of a stale previously-
+    /// initialized one.
     pub async fn refresh_async<F, Fut>(&mut self, fetch: F) -> Result<T>
     where
         F: FnOnce() -> Fut,
@@ -181,13 +181,8 @@ where
                 err
             );
         }
-        // Replace the in-memory cells so future non-refresh reads observe the
-        // fresh value instead of a stale previously-initialized one.
-        *self.cache = OnceCell::new();
-        let async_cell = tokio::sync::OnceCell::new();
-        let _ = async_cell.set(val.clone());
-        *self.cache_async = async_cell;
-        let _ = self.cache.set(val.clone());
+        *self.cache = OnceCell::with_value(val.clone());
+        *self.cache_async = tokio::sync::OnceCell::new_with(Some(val.clone()));
         Ok(val)
     }
 

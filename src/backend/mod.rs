@@ -682,20 +682,20 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        Ok(self
-            .list_remote_versions_with_info(config)
-            .await?
-            .into_iter()
-            .map(|v| v.version)
-            .collect())
+        self.list_remote_versions_with_refresh(config, false).await
     }
 
-    async fn list_remote_versions_refresh(
+    /// Like `list_remote_versions` but with explicit refresh control. Pass
+    /// `refresh = true` to bypass the cached remote-versions list and re-fetch
+    /// upstream. Used by install-time resolution for selectors whose answer
+    /// depends on the freshest upstream entry (e.g. `latest`).
+    async fn list_remote_versions_with_refresh(
         &self,
         config: &Arc<Config>,
+        refresh: bool,
     ) -> eyre::Result<Vec<String>> {
         Ok(self
-            .list_remote_versions_with_info_refresh(config)
+            .list_remote_versions_with_info_with_refresh(config, refresh)
             .await?
             .into_iter()
             .map(|v| v.version)
@@ -720,14 +720,6 @@ pub trait Backend: Debug + Send + Sync {
         config: &Arc<Config>,
     ) -> eyre::Result<Vec<VersionInfo>> {
         self.list_remote_versions_with_info_with_refresh(config, false)
-            .await
-    }
-
-    async fn list_remote_versions_with_info_refresh(
-        &self,
-        config: &Arc<Config>,
-    ) -> eyre::Result<Vec<VersionInfo>> {
-        self.list_remote_versions_with_info_with_refresh(config, true)
             .await
     }
 
@@ -1090,11 +1082,9 @@ pub trait Backend: Debug + Send + Sync {
         let versions = match before_date {
             Some(before) => {
                 // Use version info to filter by date
-                let versions_with_info = if refresh {
-                    self.list_remote_versions_with_info_refresh(config).await?
-                } else {
-                    self.list_remote_versions_with_info(config).await?
-                };
+                let versions_with_info = self
+                    .list_remote_versions_with_info_with_refresh(config, refresh)
+                    .await?;
                 let filtered = VersionInfo::filter_by_date(versions_with_info, before);
                 // Warn if no versions have timestamps
                 if filtered.iter().all(|v| v.created_at.is_none()) && !filtered.is_empty() {
@@ -1106,11 +1096,8 @@ pub trait Backend: Debug + Send + Sync {
                 filtered.into_iter().map(|v| v.version).collect()
             }
             None => {
-                if refresh {
-                    self.list_remote_versions_refresh(config).await?
-                } else {
-                    self.list_remote_versions(config).await?
-                }
+                self.list_remote_versions_with_refresh(config, refresh)
+                    .await?
             }
         };
         let opts = config
@@ -1135,22 +1122,17 @@ pub trait Backend: Debug + Send + Sync {
             // Fall back to all versions if no match
             matches = match before_date {
                 Some(before) => {
-                    let versions_with_info = if refresh {
-                        self.list_remote_versions_with_info_refresh(config).await?
-                    } else {
-                        self.list_remote_versions_with_info(config).await?
-                    };
+                    let versions_with_info = self
+                        .list_remote_versions_with_info_with_refresh(config, refresh)
+                        .await?;
                     VersionInfo::filter_by_date(versions_with_info, before)
                         .into_iter()
                         .map(|v| v.version)
                         .collect()
                 }
                 None => {
-                    if refresh {
-                        self.list_remote_versions_refresh(config).await?
-                    } else {
-                        self.list_remote_versions(config).await?
-                    }
+                    self.list_remote_versions_with_refresh(config, refresh)
+                        .await?
                 }
             };
         }
@@ -1171,44 +1153,33 @@ pub trait Backend: Debug + Send + Sync {
         query: Option<String>,
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
-        let before_date = effective_latest_before_date(self, config, before_date).await?;
-        match query.as_deref() {
-            Some("latest") | None => match before_date {
-                Some(before) => {
-                    self.latest_version_for_query(config, "latest", Some(before), false)
-                        .await
-                }
-                None => match self.latest_stable_version(config).await? {
-                    Some(version) => Ok(Some(version)),
-                    None => {
-                        self.latest_version_for_query(config, "latest", None, false)
-                            .await
-                    }
-                },
-            },
-            Some(query) => {
-                self.latest_version_for_query(config, query, before_date, false)
-                    .await
-            }
-        }
+        self.latest_version_with_refresh(config, query, before_date, false)
+            .await
     }
-    async fn latest_version_refresh(
+
+    /// Like `latest_version` but with explicit refresh control. Pass
+    /// `refresh = true` to bypass the cached remote-versions list. The
+    /// `latest_stable_version` fast path is skipped when refreshing — refresh
+    /// callers want the shared version-list path so they pick up new entries
+    /// the cached list (or backend-specific fast path) would miss.
+    async fn latest_version_with_refresh(
         &self,
         config: &Arc<Config>,
         query: Option<String>,
         before_date: Option<Timestamp>,
+        refresh: bool,
     ) -> eyre::Result<Option<String>> {
         let before_date = effective_latest_before_date(self, config, before_date).await?;
-        match query.as_deref() {
-            Some("latest") | None => {
-                self.latest_version_for_query(config, "latest", before_date, true)
-                    .await
-            }
-            Some(query) => {
-                self.latest_version_for_query(config, query, before_date, true)
-                    .await
-            }
+        let resolved_query = query.as_deref().unwrap_or("latest");
+        if !refresh
+            && resolved_query == "latest"
+            && before_date.is_none()
+            && let Some(version) = self.latest_stable_version(config).await?
+        {
+            return Ok(Some(version));
         }
+        self.latest_version_for_query(config, resolved_query, before_date, refresh)
+            .await
     }
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {

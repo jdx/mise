@@ -350,24 +350,21 @@ impl ToolVersion {
                 return build(v);
             }
             if !is_offline
-                && let Some(v) = if opts.refresh_remote_versions {
-                    backend
-                        .latest_version_refresh(config, None, opts.before_date)
-                        .await?
-                } else {
-                    backend
-                        .latest_version(config, None, opts.before_date)
-                        .await?
-                }
+                && let Some(v) = backend
+                    .latest_version_with_refresh(
+                        config,
+                        None,
+                        opts.before_date,
+                        opts.refresh_remote_versions,
+                    )
+                    .await?
             {
                 return build(v);
             }
             if !is_offline {
-                let versions = if opts.refresh_remote_versions {
-                    backend.list_remote_versions_refresh(config).await?
-                } else {
-                    backend.list_remote_versions(config).await?
-                };
+                let versions = backend
+                    .list_remote_versions_with_refresh(config, opts.refresh_remote_versions)
+                    .await?;
                 if versions.is_empty()
                     && let Some(v) = backend.unresolved_latest_version()
                 {
@@ -410,24 +407,21 @@ impl ToolVersion {
             if !is_offline {
                 let versions = match opts.before_date {
                     Some(before) => {
-                        let versions_with_info = if opts.refresh_remote_versions {
-                            backend
-                                .list_remote_versions_with_info_refresh(config)
-                                .await?
-                        } else {
-                            backend.list_remote_versions_with_info(config).await?
-                        };
+                        let versions_with_info = backend
+                            .list_remote_versions_with_info_with_refresh(
+                                config,
+                                opts.refresh_remote_versions,
+                            )
+                            .await?;
                         VersionInfo::filter_by_date(versions_with_info, before)
                             .into_iter()
                             .map(|v| v.version)
                             .collect()
                     }
                     None => {
-                        if opts.refresh_remote_versions {
-                            backend.list_remote_versions_refresh(config).await?
-                        } else {
-                            backend.list_remote_versions(config).await?
-                        }
+                        backend
+                            .list_remote_versions_with_refresh(config, opts.refresh_remote_versions)
+                            .await?
                     }
                 };
                 if let Some(matches) = crate::semver::npm_semver_range_filter(&versions, &v)
@@ -494,18 +488,15 @@ impl ToolVersion {
             return Ok(Self::new(request, version));
         }
         let v = match v {
-            "latest" => {
-                let latest = if opts.refresh_remote_versions {
-                    backend
-                        .latest_version_refresh(config, None, opts.before_date)
-                        .await?
-                } else {
-                    backend
-                        .latest_version(config, None, opts.before_date)
-                        .await?
-                };
-                latest.ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?
-            }
+            "latest" => backend
+                .latest_version_with_refresh(
+                    config,
+                    None,
+                    opts.before_date,
+                    opts.refresh_remote_versions,
+                )
+                .await?
+                .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?,
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
