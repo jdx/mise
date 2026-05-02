@@ -1,6 +1,8 @@
 use crate::types::{AquaPackage, RegistryYaml};
 use crate::{AquaRegistryConfig, AquaRegistryError, CacheStore, RegistryFetcher, Result};
+use flate2::read::ZlibDecoder;
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
@@ -44,8 +46,8 @@ pub struct AquaRegistryMetadata {
     pub tag: &'static str,
 }
 
-/// Baked canonical registry files (compiled into binary).
-pub static AQUA_STANDARD_REGISTRY_FILES: LazyLock<HashMap<&'static str, &'static str>> =
+/// Baked canonical registry packages (compiled into binary).
+pub static AQUA_STANDARD_REGISTRY_FILES: LazyLock<HashMap<&'static str, &'static [u8]>> =
     LazyLock::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry_files.rs")));
 
 /// Baked aqua registry snapshot metadata (compiled into binary).
@@ -68,7 +70,7 @@ pub fn package_ids() -> Vec<&'static str> {
     AQUA_STANDARD_REGISTRY_FILES.keys().copied().collect()
 }
 
-fn baked_registry_file(package_id: &str) -> Option<&'static str> {
+fn baked_registry_file(package_id: &str) -> Option<&'static [u8]> {
     if let Some(content) = AQUA_STANDARD_REGISTRY_FILES.get(package_id) {
         return Some(*content);
     }
@@ -77,6 +79,17 @@ fn baked_registry_file(package_id: &str) -> Option<&'static str> {
         .get(package_id)
         .and_then(|canonical| AQUA_STANDARD_REGISTRY_FILES.get(*canonical))
         .copied()
+}
+
+fn decode_baked_registry(package_id: &str, bytes: &[u8]) -> Result<RegistryYaml> {
+    let mut zlib = ZlibDecoder::new(bytes);
+    let mut packed = Vec::new();
+    zlib.read_to_end(&mut packed)?;
+    rmp_serde::from_slice(&packed).map_err(|err| {
+        AquaRegistryError::RegistryNotAvailable(format!(
+            "failed to decode baked aqua-registry package {package_id}: {err}"
+        ))
+    })
 }
 
 impl AquaRegistry {
@@ -181,7 +194,7 @@ impl RegistryFetcher for DefaultRegistryFetcher {
             && let Some(content) = baked_registry_file(package_id)
         {
             log::trace!("reading baked-in aqua-registry for {package_id}");
-            return Ok(serde_yaml::from_str(content)?);
+            return decode_baked_registry(package_id, content);
         }
 
         Err(AquaRegistryError::RegistryNotAvailable(format!(
@@ -267,7 +280,7 @@ mod tests {
     #[test]
     fn test_baked_registry_package_lookup() {
         let registry = baked_registry_file("01mf02/jaq").unwrap();
-        let registry = serde_yaml::from_str::<RegistryYaml>(registry).unwrap();
+        let registry = decode_baked_registry("01mf02/jaq", registry).unwrap();
 
         let package = registry.packages.into_iter().next().unwrap();
         assert_eq!(package.repo_owner, "01mf02");
@@ -277,7 +290,7 @@ mod tests {
     #[test]
     fn test_baked_registry_path_only_package_lookup() {
         let registry = baked_registry_file("golang.org/x/perf/cmd/benchstat").unwrap();
-        let registry = serde_yaml::from_str::<RegistryYaml>(registry).unwrap();
+        let registry = decode_baked_registry("golang.org/x/perf/cmd/benchstat", registry).unwrap();
 
         let package = registry.packages.into_iter().next().unwrap();
         assert_eq!(
@@ -307,7 +320,7 @@ mod tests {
         );
 
         let registry = baked_registry_file(alias).unwrap();
-        let registry = serde_yaml::from_str::<RegistryYaml>(registry).unwrap();
+        let registry = decode_baked_registry(alias, registry).unwrap();
 
         let package = registry.packages.into_iter().next().unwrap();
         assert_eq!(package.name.as_deref(), Some("Automattic/harper/harper-ls"));
