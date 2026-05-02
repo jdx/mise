@@ -242,21 +242,30 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "aqua-registry"
 version = "2026.5.0"
 dependencies = [
- "expr-lang",
+ "aqua-registry-types",
  "eyre",
  "flate2",
+ "log",
+ "rmp-serde",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "aqua-registry-types"
+version = "2026.4.11"
+dependencies = [
+ "expr-lang",
+ "eyre",
  "heck",
  "indexmap 2.14.0",
  "itertools 0.14.0",
  "log",
- "rmp-serde",
  "serde",
  "serde_derive",
- "serde_json",
  "serde_yaml",
  "strum 0.28.0",
- "thiserror 2.0.18",
- "tokio",
  "versions",
 ]
 

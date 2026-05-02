@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/vfox",
+  "crates/aqua-registry-types",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
   "crates/mise-shim",

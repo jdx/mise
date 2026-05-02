@@ -1,0 +1,29 @@
+[package]
+name = "aqua-registry-types"
+version = "2026.4.11"
+edition = "2024"
+description = "Aqua registry types for mise"
+authors = ["Jeff Dickey (@jdx)"]
+license = "MIT"
+repository = "https://github.com/jdx/mise"
+homepage = "https://mise.en.dev"
+readme = "../aqua-registry/README.md"
+keywords = ["mise", "aqua", "registry", "package-manager"]
+categories = ["development-tools"]
+include = [
+  "/src/**/*.rs",
+  "/../aqua-registry/README.md",
+]
+
+[dependencies]
+expr-lang = "1"
+eyre = "0.6"
+heck = "0.5"
+indexmap = { version = "2", features = ["serde"] }
+itertools = "0.14"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_derive = "1"
+serde_yaml = "0.9"
+strum = { version = "0.28", features = ["derive"] }
+versions = { version = "7", features = ["serde"] }
