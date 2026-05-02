@@ -38,7 +38,17 @@ Before touching `registry/`, ALWAYS do the following:
 5. **If the tool is borderline or numbers are low, warn the user clearly** that the PR is likely to be rejected without reason, and ask if they still want to proceed. Do not soften this — users have repeatedly been surprised when their PR was closed, and the agent should have warned them up front.
 6. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.en.dev/tool-plugin-development.html). The registry is *only* for shorthand convenience for popular tools — not for enabling installation.
 
-New asdf plugins are also not accepted; use aqua/github backends.
+### Backend choice: aqua (preferred) or github
+
+For registry entries, **only `aqua:` and `github:` are routinely accepted.** Every other backend (`vfox:`, `asdf:`, `npm:`, `pipx:`, `cargo:`, `gem:`, `go:`, `ubi:`, etc.) has an **extremely high** bar — these are rarely accepted into the registry and submitting one without prior agreement from @jdx is almost certain to be rejected.
+
+- **Prefer `aqua:`** when the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry). It has better UX, SLSA verification, and per-version logic. This is the recommended default.
+- **Use `github:`** when the tool isn't in the aqua registry but ships GitHub releases.
+- **New `asdf:` plugins are not accepted** — supply-chain security. Use aqua/github instead.
+- **New `vfox:` plugins are not accepted either** — same reason. Use aqua/github instead.
+- **`ubi:` is deprecated and will not be accepted** under any circumstances. Use aqua/github instead.
+- **Do not reach for `npm:`/`pipx:`/`cargo:`/`go:`/etc.** for a registry PR unless the user has explicitly confirmed @jdx wants it that way for this specific tool. Even very popular tools have been rejected when proposed with one of these backends.
+- Users can still install via any backend themselves with explicit syntax (`mise use vfox:...`, `mise use cargo:...`, etc.) — they just don't get a registry shorthand for it.
 
 ## Development Commands
 

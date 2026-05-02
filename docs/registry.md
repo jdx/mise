@@ -39,7 +39,7 @@ In general, the preferred [backend](/dev-tools/backends/) to use for new tools i
 - [cargo](./dev-tools/backends/cargo.html) - only for rust tools, requires rust to be installed to compile. Because rust tools can be distributed as a single binary, aqua/github are definitely preferred.
 - [dotnet](./dev-tools/backends/dotnet.html) - only for dotnet tools, requires dotnet to be installed to compile. Because dotnet tools can be distributed as a single binary, aqua/github are definitely preferred.
 
-New vfox and asdf tools are almost never accepted for supply-chain security reasons.
+New `vfox` and `asdf` tools are not accepted for supply-chain security reasons — use `aqua` (preferred) or `github` instead. The `ubi` backend is deprecated and is not accepted for new registry entries.
 
 ### Backends Priority
 

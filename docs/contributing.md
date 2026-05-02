@@ -624,13 +624,21 @@ of the full backend specification.
 When adding a new tool, the following requirements apply (automatically
 enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.github/workflows/registry_comment.yml)):
 
-- **New asdf plugins are not accepted** - Use aqua/github instead
+- **New asdf and vfox plugins are not accepted** - Use [aqua](dev-tools/backends/aqua.md)
+  (preferred) or [github](dev-tools/backends/github.md) instead. This is a supply-chain
+  security policy.
+- **The `ubi` backend is deprecated and will not be accepted** for new registry entries.
+  Use aqua/github instead.
+- **Other backends (`npm`, `pipx`, `cargo`, `gem`, `go`, `dotnet`, etc.) have a very high
+  bar** for new registry entries. They are accepted only when no aqua/github option exists
+  and the tool is widely used. Discuss with @jdx before submitting.
 - **A test is required in `registry/`** - Must include a `test` field to
   verify installation
 - **Tools may be rejected if they are not notable** - The tool should be
   reasonably popular and well-maintained. There are no specific guidelines for this and
   a lot of factors are taken into account. @jdx won't explain why a given tool wasn't
-  accepted.
+  accepted. Include a brief popularity summary (stars, downloads, recent release date) in
+  the PR description so the policy can be applied without re-doing the research.
 
 ### Registry Format
 
