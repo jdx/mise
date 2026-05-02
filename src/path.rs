@@ -57,24 +57,27 @@ impl PathExt for Path {
 ///   is resolved by bash to the same executable as `/usr/bin`, so no remapping is needed
 ///   for PATH-resolution to succeed.
 pub fn windows_path_list_to_unix(path_list: &str) -> String {
-    path_list
-        .split(WINDOWS_PATH_SEP)
-        .map(convert_single_windows_path_to_unix)
-        .collect::<Vec<_>>()
-        .join(":")
+    let mut out = String::with_capacity(path_list.len());
+    let mut first = true;
+    for entry in path_list.split(WINDOWS_PATH_SEP) {
+        if !first {
+            out.push(':');
+        }
+        append_single_windows_path_to_unix(&mut out, entry);
+        first = false;
+    }
+    out
 }
 
 const WINDOWS_PATH_SEP: char = ';';
 
-fn convert_single_windows_path_to_unix(entry: &str) -> String {
+fn append_single_windows_path_to_unix(out: &mut String, entry: &str) {
     if entry.is_empty() {
-        return String::new();
+        return;
     }
-    if entry.starts_with('/') {
-        return entry.to_string();
-    }
-    if entry.starts_with("\\\\") {
-        return entry.to_string();
+    if entry.starts_with('/') || entry.starts_with("\\\\") {
+        out.push_str(entry);
+        return;
     }
 
     let bytes = entry.as_bytes();
@@ -84,12 +87,15 @@ fn convert_single_windows_path_to_unix(entry: &str) -> String {
         && (bytes[2] == b'\\' || bytes[2] == b'/');
 
     if !is_canonical_drive {
-        return entry.to_string();
+        out.push_str(entry);
+        return;
     }
 
-    let drive = (bytes[0] as char).to_ascii_lowercase();
-    let rest = &entry[2..].replace('\\', "/");
-    format!("/{drive}{rest}")
+    out.push('/');
+    out.push((bytes[0] as char).to_ascii_lowercase());
+    for c in entry[2..].chars() {
+        out.push(if c == '\\' { '/' } else { c });
+    }
 }
 
 /// Returns true if `program` is the path or basename of a POSIX-style shell that

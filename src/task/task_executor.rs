@@ -1204,11 +1204,12 @@ fn maybe_convert_env_for_msys_shell<'a>(
 ) -> std::borrow::Cow<'a, BTreeMap<String, String>> {
     #[cfg(windows)]
     {
-        if crate::path::is_posix_shell_program(program) {
+        if crate::path::is_posix_shell_program(program)
+            && let Some(path_val) = env.get(&*crate::env::PATH_KEY)
+        {
+            let converted = crate::path::windows_path_list_to_unix(path_val);
             let mut new_env = env.clone();
-            if let Some(path) = new_env.get_mut(&*crate::env::PATH_KEY) {
-                *path = crate::path::windows_path_list_to_unix(path);
-            }
+            new_env.insert((*crate::env::PATH_KEY).to_string(), converted);
             return std::borrow::Cow::Owned(new_env);
         }
     }
