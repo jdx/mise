@@ -454,7 +454,7 @@ impl Toolset {
         let mpr = MultiProgressReport::get();
         let backend = tr.backend()?;
         let mut resolve_options = opts.resolve_options.clone();
-        if should_refresh_remote_versions(tr, &resolve_options) {
+        if should_refresh_remote_versions(tr, &backend, &resolve_options) {
             resolve_options.refresh_remote_versions = true;
         }
         let mut tv = tr.resolve(config, &resolve_options).await?;
@@ -583,22 +583,26 @@ impl Toolset {
 
 /// Whether install-time resolution should refresh the remote-versions cache
 /// before picking a version. Only selectors whose meaning depends on the
-/// freshest upstream entry benefit: `latest`, prefix queries, and
-/// `sub-N:latest`. Fully-pinned exact versions, refs, paths, and `system` are
-/// unaffected by cache staleness — the cached list either contains the
-/// requested version or it doesn't, and refreshing doesn't change the answer.
-///
-/// The `latest_versions` flag (set by `mise install`/`use`/`upgrade`) is not
-/// consulted here: when a selector is freshness-sensitive we always refresh,
-/// and when it isn't, refreshing would be wasted network traffic regardless
-/// of the user's command.
-fn should_refresh_remote_versions(tr: &ToolRequest, opts: &ResolveOptions) -> bool {
+/// freshest upstream entry benefit: `latest`, `sub-N:latest`, and prefix
+/// queries that have no matching installed version. Fully-pinned exact
+/// versions, refs, paths, `system`, and prefix queries already satisfied by
+/// an installed version are unaffected by cache staleness — for those the
+/// cached answer is either correct or harmless, and refreshing is wasted
+/// network traffic. Users who want to pull the absolute latest matching a
+/// prefix can run `mise upgrade` or pin to `@latest`.
+fn should_refresh_remote_versions(
+    tr: &ToolRequest,
+    backend: &crate::backend::ABackend,
+    opts: &ResolveOptions,
+) -> bool {
     if opts.refresh_remote_versions || opts.offline || Settings::get().offline() {
         return false;
     }
     match tr {
         ToolRequest::Version { version, .. } => version == "latest",
-        ToolRequest::Prefix { .. } => true,
+        ToolRequest::Prefix { prefix, .. } => {
+            backend.list_installed_versions_matching(prefix).is_empty()
+        }
         ToolRequest::Sub { orig_version, .. } => orig_version == "latest",
         ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => false,
     }

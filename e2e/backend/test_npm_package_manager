@@ -24,25 +24,30 @@ if ! command -v pnpm >/dev/null 2>&1; then
   assert_succeed "mise use pnpm@10.16.0"
 fi
 
-# Test 1: Default behavior (npm) - checks npm.package_manager="npm" implicitly
-echo "Testing npm backend with default settings (npm)..."
+# Test 1: npm.package_manager = "npm". Pin explicitly rather than relying
+# on the `auto` default — `auto` picks aube when aube is on PATH (including
+# system installs like Homebrew), which would emit `--minimum-release-age`
+# instead of npm's `--before` and break the assertion below on dev machines.
+echo "Testing npm backend with npm package manager..."
 unset MISE_NPM_BUN
-unset MISE_NPM_PACKAGE_MANAGER
+export MISE_NPM_PACKAGE_MANAGER=npm
 
 # Test listing versions - should succeed
 assert_succeed "mise ls-remote npm:tiny >/dev/null"
 echo "✓ npm backend lists versions using npm"
 
-# Test installation using npm (default)
+# Test installation using npm
 cat >.mise.toml <<EOF
 [tools]
 "npm:tiny" = { version = "latest", npm_args = "--foreground-scripts" }
 EOF
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 assert_succeed "MISE_DEBUG=1 mise install >/tmp/npm_debug.log 2>&1"
-assert_contains "cat /tmp/npm_debug.log" "--before"
+# npm 11.10.0+ uses `--min-release-age={days}`; older npm uses `--before {ts}`.
+# Accept either since the underlying npm version varies between environments.
+assert_matches "cat /tmp/npm_debug.log" "--(before|min-release-age)"
 assert_contains "cat /tmp/npm_debug.log" "--foreground-scripts"
-echo "✓ npm backend successfully installs package using npm (default)"
+echo "✓ npm backend successfully installs package using npm"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
 # Test 2: npm.package_manager = "bun"
