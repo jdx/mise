@@ -238,7 +238,23 @@ The `depends` field accepts either a single string or an array of strings:
 "pipx:ruff" = { version = "latest", depends = ["python", "pipx"] }
 ```
 
-This is in addition to the automatic dependencies that backends declare (e.g., `pipx` automatically depends on `python` and `uv`). User-specified `depends` lets you add extra ordering constraints for your specific setup.
+User-specified `depends` adds ordering constraints for tools already in the current install set. Use it when one configured tool install must finish before another configured tool install starts, especially when installs would otherwise run in parallel.
+
+### vfox plugin hook dependencies
+
+`depends` in `[tools]` only adds install graph ordering. It does not by itself declare hook-time dependencies or add those tools to the `PATH` used while vfox install hooks run.
+
+For vfox plugins, declare install-hook tool requirements on the `PLUGIN` table in `metadata.lua`:
+
+```lua
+PLUGIN = {
+    name = "example",
+    version = "1.0.0",
+    depends = { "go" },
+}
+```
+
+Use tool names as they would appear in `mise.toml`. When matching tools are configured, mise uses those metadata entries to order current install jobs and to build the hook environment. See [Tool plugin development](/tool-plugin-development#_2-metadata-lua).
 
 ## Caching and Performance
 
