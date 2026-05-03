@@ -137,7 +137,7 @@ PLUGIN = {
     description = "Backend plugin for npm packages",
     author = "Your Name",
 
-    -- mise short names of tools that must be on PATH during BackendInstall / hooks
+    -- mise tool names that must be on PATH during BackendInstall / hooks
     depends = { "node" },
 }
 ```

@@ -31,7 +31,7 @@ PLUGIN = {
 }
 ```
 
-Use an array of **short tool names** (strings). mise merges these with backend and registry dependencies so installs run in the right order and those tools appear on `PATH` inside the dependency environment used during installation. This is separate from `depends` on a `[tools]` entry in `mise.toml`, which only orders installs among tools you already listed in config.
+Use an array of **tool name strings** (the same identifiers you would use in `mise.toml`, e.g. `node` or an explicit backend id when required). mise merges these with backend and registry dependencies so installs run in the right order and those tools appear on `PATH` inside the dependency environment used during installation. This is separate from `depends` on a `[tools]` entry in `mise.toml`, which only orders installs among tools you already listed in config.
 
 ## Usage
 

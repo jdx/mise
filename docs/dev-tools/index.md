@@ -247,7 +247,7 @@ This is in addition to the automatic dependencies that backends declare (e.g., `
 If your install step needs another tool’s executable during hooks (for example a compiler or package manager invoked from Lua), declare that dependency where mise can apply it globally:
 
 - **Curated registry tools**: add `depends` in [`registry/`](https://github.com/jdx/mise/tree/main/registry) for that tool (see each `*.toml` file).
-- **Vfox plugins** (classic or backend): add `depends = { "shortname", ... }` to the `PLUGIN` table in `metadata.lua`. See [Tool plugin development](/tool-plugin-development#_2-metadata-lua).
+- **Vfox plugins** (classic or backend): add `depends = { "<tool>", ... }` to the `PLUGIN` table in `metadata.lua` (tool names as in `mise.toml`). See [Tool plugin development](/tool-plugin-development#_2-metadata-lua).
 
 Those declarations are wired into backend dependencies and `dependency_env`, so required tools are installed first and are visible on `PATH` during install.
 
