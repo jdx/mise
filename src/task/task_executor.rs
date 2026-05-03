@@ -357,10 +357,7 @@ impl TaskExecutor {
             // nested `mise run` and any OTEL-instrumented tools the task
             // invokes automatically join this distributed trace.
             // https://opentelemetry.io/docs/specs/otel/context/env-carriers/
-            env.insert(
-                "TRACEPARENT".into(),
-                crate::otel::task_trace::format_traceparent(ctx.trace_id, ctx.span_id),
-            );
+            crate::otel::task_trace::inject_otel_context(&mut env, ctx);
         }
         if let Some(cwd) = &*crate::dirs::CWD {
             Self::insert_env_excluded_from_nested_mise_diff(
