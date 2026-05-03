@@ -131,7 +131,9 @@ impl RegistryTool {
 
         if let Some(backend) = self.get_backend(full) {
             for (k, v) in backend.options {
-                let value = parse_registry_option(k, v);
+                let value = toml::from_str::<toml::Value>(v).unwrap_or_else(|e| {
+                    panic!("failed to parse registry option {k} as a TOML value: {e}")
+                });
                 opts.insert(k.to_string(), value);
             }
         }
@@ -141,11 +143,6 @@ impl RegistryTool {
             ..Default::default()
         }
     }
-}
-
-fn parse_registry_option(key: &str, value: &str) -> toml::Value {
-    toml::from_str::<toml::Value>(value)
-        .unwrap_or_else(|e| panic!("failed to parse registry option {key} as a TOML value: {e}"))
 }
 
 pub fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {

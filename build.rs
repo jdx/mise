@@ -53,7 +53,8 @@ fn parse_options(opts: Option<&toml::Value>) -> Vec<(String, String)> {
             table
                 .iter()
                 .map(|(k, v)| {
-                    let value = toml_value::to_string(v)
+                    let mut value = String::new();
+                    v.serialize(toml::ser::ValueSerializer::new(&mut value))
                         .unwrap_or_else(|e| panic!("failed to serialize registry option {k}: {e}"));
                     (k.clone(), value)
                 })
@@ -63,16 +64,6 @@ fn parse_options(opts: Option<&toml::Value>) -> Vec<(String, String)> {
         }
     })
     .unwrap_or_default()
-}
-
-mod toml_value {
-    use super::*;
-
-    pub fn to_string(value: &toml::Value) -> Result<String, toml::ser::Error> {
-        let mut output = String::new();
-        value.serialize(toml::ser::ValueSerializer::new(&mut output))?;
-        Ok(output)
-    }
 }
 
 fn load_registry_tools() -> toml::map::Map<String, toml::Value> {
