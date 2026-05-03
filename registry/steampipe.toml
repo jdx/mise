@@ -1,3 +1,4 @@
 backends = ["aqua:turbot/steampipe", "asdf:carnei-ro/asdf-steampipe"]
 description = "Use SQL to instantly query your cloud services (AWS, Azure, GCP and more). Open source CLI. No DB required"
-test = { cmd = "steampipe --version", expected = "Steampipe v{{version}}" }
+# TODO: re-enable once steampipe exposes a version command that works as root in CI.
+# test = { cmd = "steampipe --version", expected = "Steampipe v{{version}}" }

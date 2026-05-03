@@ -1,5 +1,5 @@
 description = "A terminal tool that right-sizes LLM models to your system's RAM, CPU, and GPU"
-test = { cmd = "llmfit --version", expected = "llmfit: {{version}}" }
+test = { cmd = "llmfit --version", expected = "llmfit {{version}}" }
 
 [[backends]]
 full = "github:AlexsJones/llmfit"

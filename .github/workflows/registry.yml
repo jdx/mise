@@ -169,12 +169,19 @@ jobs:
           TEST_TRANCHE: ${{ matrix.tranche }}
           TEST_TRANCHE_COUNT: ${{ needs.list-changed-tools.outputs.tools == '' && 8 || 1 }}
         run: |
+          summary_dir="$RUNNER_TEMP/test-tool-${{ matrix.tranche }}"
+          rm -rf "$summary_dir"
+          mkdir -p "$summary_dir"
+          chmod 777 "$summary_dir"
+          summary_file="$summary_dir/summary.md"
+
+          set +e
           docker run --rm \
             -v "$PWD:/mise-src:ro" \
             -v "$PWD/target/debug/mise:/usr/local/bin/mise:ro" \
-            -v "$GITHUB_STEP_SUMMARY:/tmp/github_summary" \
+            -v "$summary_dir:/tmp/github-summary" \
             -e GITHUB_TOKEN="${POOL_TOKEN:-}" \
-            -e GITHUB_STEP_SUMMARY=/tmp/github_summary \
+            -e GITHUB_STEP_SUMMARY=/tmp/github-summary/summary.md \
             -e TEST_TRANCHE="$TEST_TRANCHE" \
             -e TEST_TRANCHE_COUNT="$TEST_TRANCHE_COUNT" \
             -e MISE_EXPERIMENTAL=1 \
@@ -182,28 +189,58 @@ jobs:
             -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
-            mise test-tool ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }} || true
-          failed_tools=$(grep "Failed Tools" "$GITHUB_STEP_SUMMARY" | sed 's/\*\*Failed Tools\*\*: //' | tr ',' ' ')
+            mise test-tool ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }}
+          test_tool_status=$?
+          set -e
+
+          if [ -f "$summary_file" ]; then
+            cat "$summary_file" >> "$GITHUB_STEP_SUMMARY"
+            failed_tools=$(grep "Failed Tools" "$summary_file" | sed 's/\*\*Failed Tools\*\*: //' | tr ',' ' ' || true)
+          else
+            failed_tools=""
+          fi
           echo "failed_tools=$failed_tools" >> "$GITHUB_OUTPUT"
+          if [ "$test_tool_status" -ne 0 ] && [ -z "$failed_tools" ]; then
+            echo "::error::mise test-tool exited with status $test_tool_status without reporting failed tools"
+            exit "$test_tool_status"
+          fi
       - name: Retry failed tools
         id: retry
         if: steps.test-tools.outputs.failed_tools != ''
         run: |
-          summary_lines=$(wc -l < "$GITHUB_STEP_SUMMARY")
+          summary_dir="$RUNNER_TEMP/test-tool-retry-${{ matrix.tranche }}"
+          rm -rf "$summary_dir"
+          mkdir -p "$summary_dir"
+          chmod 777 "$summary_dir"
+          summary_file="$summary_dir/summary.md"
+
+          set +e
           docker run --rm \
             -v "$PWD:/mise-src:ro" \
             -v "$PWD/target/debug/mise:/usr/local/bin/mise:ro" \
-            -v "$GITHUB_STEP_SUMMARY:/tmp/github_summary" \
+            -v "$summary_dir:/tmp/github-summary" \
             -e GITHUB_TOKEN="${POOL_TOKEN:-}" \
-            -e GITHUB_STEP_SUMMARY=/tmp/github_summary \
+            -e GITHUB_STEP_SUMMARY=/tmp/github-summary/summary.md \
             -e MISE_EXPERIMENTAL=1 \
             -e MISE_LOCKFILE=1 \
             -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
-            mise test-tool ${{ steps.test-tools.outputs.failed_tools }} || true
-          failed_tools=$(tail -n "+$((summary_lines+1))" "$GITHUB_STEP_SUMMARY" | grep "Failed Tools" | sed 's/\*\*Failed Tools\*\*: //' | tr ',' ' ')
+            mise test-tool ${{ steps.test-tools.outputs.failed_tools }}
+          test_tool_status=$?
+          set -e
+
+          if [ -f "$summary_file" ]; then
+            cat "$summary_file" >> "$GITHUB_STEP_SUMMARY"
+            failed_tools=$(grep "Failed Tools" "$summary_file" | sed 's/\*\*Failed Tools\*\*: //' | tr ',' ' ' || true)
+          else
+            failed_tools=""
+          fi
           echo "failed_tools=$failed_tools" >> "$GITHUB_OUTPUT"
+          if [ "$test_tool_status" -ne 0 ] && [ -z "$failed_tools" ]; then
+            echo "::error::mise test-tool retry exited with status $test_tool_status without reporting failed tools"
+            exit "$test_tool_status"
+          fi
       - name: Handle retry failures
         if: steps.retry.outputs.failed_tools != '' && github.head_ref != 'release' && github.ref != 'refs/heads/release'
         run: |
