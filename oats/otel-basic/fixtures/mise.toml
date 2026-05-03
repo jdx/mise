@@ -1,0 +1,5 @@
+[settings]
+otel.enabled = true
+
+[tasks.hello]
+run = "./run-task.sh"
