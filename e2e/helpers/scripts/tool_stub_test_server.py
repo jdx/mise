@@ -5,6 +5,7 @@ Serves mock endpoints to avoid external network dependencies
 """
 
 import http.server
+import os
 import socketserver
 import sys
 import json
@@ -51,7 +52,11 @@ class ToolStubTestHandler(http.server.SimpleHTTPRequestHandler):
 def start_server(port):
     """Start the HTTP test server"""
     with socketserver.TCPServer(("127.0.0.1", port), ToolStubTestHandler) as httpd:
-        print(f"Tool stub test server running on port {port}", flush=True)
+        actual_port = httpd.server_address[1]
+        port_file = os.environ.get("MISE_TOOL_STUB_TEST_PORT_FILE")
+        if port_file:
+            Path(port_file).write_text(str(actual_port))
+        print(f"Tool stub test server running on port {actual_port}", flush=True)
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

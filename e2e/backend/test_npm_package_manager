@@ -42,11 +42,12 @@ cat >.mise.toml <<EOF
 "npm:tiny" = { version = "latest", npm_args = "--foreground-scripts" }
 EOF
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
-assert_succeed "MISE_DEBUG=1 mise install >/tmp/npm_debug.log 2>&1"
+NPM_DEBUG_LOG="$TMPDIR/npm_debug.log"
+assert_succeed "MISE_DEBUG=1 mise install >'$NPM_DEBUG_LOG' 2>&1"
 # npm 11.10.0+ uses `--min-release-age={days}`; older npm uses `--before {ts}`.
 # Accept either since the underlying npm version varies between environments.
-assert_matches "cat /tmp/npm_debug.log" "--(before|min-release-age)"
-assert_contains "cat /tmp/npm_debug.log" "--foreground-scripts"
+assert_matches "cat '$NPM_DEBUG_LOG'" "--(before|min-release-age)"
+assert_contains "cat '$NPM_DEBUG_LOG'" "--foreground-scripts"
 echo "✓ npm backend successfully installs package using npm"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -58,9 +59,10 @@ cat >.mise.toml <<EOF
 [tools]
 "npm:tiny" = { version = "latest", bun_args = "--verbose" }
 EOF
-assert_succeed "MISE_DEBUG=1 mise install >/tmp/bun_debug.log 2>&1"
-assert_contains "cat /tmp/bun_debug.log" "--minimum-release-age"
-assert_contains "cat /tmp/bun_debug.log" "--verbose"
+BUN_DEBUG_LOG="$TMPDIR/bun_debug.log"
+assert_succeed "MISE_DEBUG=1 mise install >'$BUN_DEBUG_LOG' 2>&1"
+assert_contains "cat '$BUN_DEBUG_LOG'" "--minimum-release-age"
+assert_contains "cat '$BUN_DEBUG_LOG'" "--verbose"
 echo "✓ npm backend successfully installs package using bun (package_manager=bun)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -72,13 +74,14 @@ cat >.mise.toml <<EOF
 [tools]
 "npm:tiny" = { version = "latest", pnpm_args = "--loglevel=warn" }
 EOF
-if ! MISE_DEBUG=1 mise install >/tmp/pnpm_debug.log 2>&1; then
+PNPM_DEBUG_LOG="$TMPDIR/pnpm_debug.log"
+if ! MISE_DEBUG=1 mise install >"$PNPM_DEBUG_LOG" 2>&1; then
   echo "Command failed. Output:"
-  cat /tmp/pnpm_debug.log
+  cat "$PNPM_DEBUG_LOG"
   exit 1
 fi
-assert_contains "cat /tmp/pnpm_debug.log" "--config.minimumReleaseAge="
-assert_contains "cat /tmp/pnpm_debug.log" "--loglevel=warn"
+assert_contains "cat '$PNPM_DEBUG_LOG'" "--config.minimumReleaseAge="
+assert_contains "cat '$PNPM_DEBUG_LOG'" "--loglevel=warn"
 echo "✓ npm backend successfully installs package using pnpm (package_manager=pnpm)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -100,9 +103,10 @@ cat >.mise.toml <<EOF
 [tools]
 "npm:tiny" = { version = "latest", aube_args = "--reporter append-only" }
 EOF
-assert_succeed "MISE_DEBUG=1 mise install >/tmp/aube_debug.log 2>&1"
-assert_contains "cat /tmp/aube_debug.log" "--reporter"
-assert_contains "cat /tmp/aube_debug.log" "append-only"
+AUBE_DEBUG_LOG="$TMPDIR/aube_debug.log"
+assert_succeed "MISE_DEBUG=1 mise install >'$AUBE_DEBUG_LOG' 2>&1"
+assert_contains "cat '$AUBE_DEBUG_LOG'" "--reporter"
+assert_contains "cat '$AUBE_DEBUG_LOG'" "append-only"
 echo "✓ npm backend successfully installs package using aube (package_manager=aube)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 

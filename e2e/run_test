@@ -94,6 +94,7 @@ within_isolated_env() {
     MISE_DEBUG="${MISE_DEBUG:-0}" \
     MISE_EXPERIMENTAL=1 \
     MISE_GPG_VERIFY="${MISE_GPG_VERIFY:-}" \
+    MISE_HTTP_TEST_PORT_FILE="$TEST_TMPDIR/mise_http_test_port" \
     MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
     MISE_STATE_DIR="$MISE_STATE_DIR" \
     MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \

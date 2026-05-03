@@ -59,6 +59,7 @@ MISE_BIN="$(resolve_mise_bin)"
 test_count=0
 skipped_count=0
 status=0
+RUN_FILES=()
 
 summary "Test" "Duration" "Result"
 summary "---" "---" "---"
@@ -81,13 +82,99 @@ for index in "${!FILES[@]}"; do
     continue
   fi
 
-  mise_wait_for_gh_rate_limit "$MISE_BIN"
-  # Actually run the test
-  "$ROOT/e2e/run_test" "$TEST_NAME" # fail fast for now
-  # if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
-  #   status=1
-  # fi
-  test_count=$((test_count + 1))
+  RUN_FILES+=("$TEST_NAME")
+done
+
+cpu_count() {
+  if command -v getconf >/dev/null 2>&1; then
+    getconf _NPROCESSORS_ONLN 2>/dev/null && return
+  fi
+  if command -v sysctl >/dev/null 2>&1; then
+    sysctl -n hw.ncpu 2>/dev/null && return
+  fi
+  echo 4
+}
+
+default_jobs="$(cpu_count)"
+if [[ ! $default_jobs =~ ^[0-9]+$ || $default_jobs -lt 1 ]]; then
+  default_jobs=4
+fi
+if [[ $default_jobs -gt 4 ]]; then
+  default_jobs=4
+fi
+E2E_JOBS="${E2E_JOBS:-$default_jobs}"
+if [[ ! $E2E_JOBS =~ ^[0-9]+$ || $E2E_JOBS -lt 1 ]]; then
+  err "E2E_JOBS must be a positive integer"
+  exit 1
+fi
+
+LOG_DIR="$(mktemp --tmpdir --directory "mise-e2e-logs.XXXXXX")"
+trap 'rm -rf "$LOG_DIR"' EXIT
+
+PIDS=()
+LOG_FILES=()
+STATUS_FILES=()
+FINISHED=()
+total=${#RUN_FILES[@]}
+next=0
+active=0
+completed=0
+printed=0
+
+start_test() {
+  local index="$1"
+  local test_name="${RUN_FILES[$index]}"
+  local log_file="$LOG_DIR/$index.log"
+  local status_file="$LOG_DIR/$index.status"
+
+  LOG_FILES[index]="$log_file"
+  STATUS_FILES[index]="$status_file"
+
+  (
+    test_status=0
+    mise_wait_for_gh_rate_limit "$MISE_BIN" || test_status=$?
+    if [[ $test_status == 0 ]]; then
+      "$ROOT/e2e/run_test" "$test_name" || test_status=$?
+    fi
+    echo "$test_status" >"$status_file"
+  ) >"$log_file" 2>&1 &
+
+  PIDS[index]=$!
+}
+
+while [[ $completed -lt $total ]]; do
+  while [[ $active -lt $E2E_JOBS && $next -lt $total ]]; do
+    start_test "$next"
+    next=$((next + 1))
+    active=$((active + 1))
+  done
+
+  for ((index = 0; index < next; index++)); do
+    status_file="${STATUS_FILES[$index]:-}"
+    if [[ ${FINISHED[$index]:-0} == 0 && -n $status_file && -f $status_file ]]; then
+      FINISHED[index]=1
+      active=$((active - 1))
+      completed=$((completed + 1))
+    fi
+  done
+
+  while [[ $printed -lt $total && ${FINISHED[$printed]:-0} == 1 ]]; do
+    cat "${LOG_FILES[$printed]}"
+    test_status="$(cat "${STATUS_FILES[$printed]}")"
+    if [[ $test_status != 0 ]]; then
+      status=1
+    fi
+    test_count=$((test_count + 1))
+    printed=$((printed + 1))
+  done
+
+  if [[ $completed -lt $total ]]; then
+    sleep 0.2
+  fi
+done
+
+for pid in "${PIDS[@]}"; do
+  wait "$pid" || true
 done
 
 echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2

@@ -100,23 +100,24 @@ else
   echo "SKIP: Permission check test (non-Unix OS)"
 fi
 
-# Find available port
-find_available_port() {
-  python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"
-}
-
 # Start local HTTP test server with header logging
 HEADERS_LOG_DIR=$(mktemp -d)
-SERVER_PORT=$(find_available_port)
-python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" "$SERVER_PORT" "$HEADERS_LOG_DIR" &
+HTTP_PORT_FILE="$TMPDIR/mise_http_test_port"
+python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 "$HEADERS_LOG_DIR" &
 SERVER_PID=$!
-sleep 1
+for _ in {1..30}; do
+  if [ -f "$HTTP_PORT_FILE" ]; then
+    break
+  fi
+  sleep 1
+done
+SERVER_PORT=$(cat "$HTTP_PORT_FILE")
 
 # Ensure cleanup on exit
 cleanup() {
   kill "$SERVER_PID" 2>/dev/null || true
   rm -rf "$HEADERS_LOG_DIR"
-  rm -f /tmp/mise_http_test_port
+  rm -f "${MISE_HTTP_TEST_PORT_FILE:-$TMPDIR/mise_http_test_port}"
 }
 trap cleanup EXIT
 

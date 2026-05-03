@@ -6,9 +6,13 @@
 # Install MinIO server and client
 mise install minio@latest mc@latest
 
+find_available_port() {
+  python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()"
+}
+
 # MinIO configuration
-MINIO_PORT=19000
-MINIO_CONSOLE_PORT=19001
+MINIO_PORT=$(find_available_port)
+MINIO_CONSOLE_PORT=$(find_available_port)
 MINIO_ROOT_USER="minioadmin"
 MINIO_ROOT_PASSWORD="minioadmin"
 MINIO_ENDPOINT="http://127.0.0.1:$MINIO_PORT"
