@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 
 # Validate that the mise JSON schema works correctly with tombi (strict mode).
-# Regression test for https://github.com/jdx/mise/discussions/8254
-# where unevaluatedProperties caused tombi to reject valid task properties.
+# Tombi v0.9.19 fixed evaluated-property collection for allOf +
+# unevaluatedProperties in tombi-toml/tombi#1725, which lets the schema share
+# task properties through $refs without inlining them.
+
+TOMBI_VERSION="0.9.22"
 
 # Install a pinned tombi version so release asset packaging changes do not break
 # this schema regression test.
-mise use -g tombi@0.9.22
+mise use -g tombi@$TOMBI_VERSION
 
 SCHEMA_PATH="$ROOT/schema/mise.json"
 TASK_SCHEMA_PATH="$ROOT/schema/mise-task.json"
-TOMBI="mise x tombi@0.9.22 -- tombi"
+TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
+assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
 
 # Set up tombi config pointing to local schema
 cat >"$HOME/tombi.toml" <<EOF

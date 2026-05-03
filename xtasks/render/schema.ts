@@ -37,7 +37,7 @@ type Element = {
 
 type NestedElement = {
   type: "object";
-  additionalProperties: false;
+  unevaluatedProperties: false;
   deprecated?: true;
   properties: Record<string, Element>;
 };
@@ -185,7 +185,7 @@ for (const key in doc) {
     for (const subkey in props) {
       settings[key] ??= {
         type: "object",
-        additionalProperties: false,
+        unevaluatedProperties: false,
         properties: {},
       };
       if (props.deprecated) {
@@ -202,28 +202,39 @@ for (const key in doc) {
 const schema = JSON.parse(fs.readFileSync("schema/mise.json", "utf-8"));
 schema["$defs"].settings.properties = settings;
 
-// Generate task and task_template from task_props to avoid unevaluatedProperties
-// (which Tombi doesn't support) while keeping extends only on tasks, not templates.
-const taskProps = schema["$defs"].task_props;
+// Keep task_props as the shared task-property definition. task and
+// task_template close over it with unevaluatedProperties so the property map is
+// only defined once.
+if (!schema["$defs"].task_props) {
+  throw new Error("schema/mise.json is missing $defs.task_props");
+}
 
-// task_template: task_props + additionalProperties: false
 schema["$defs"].task_template = {
   description: "task template that can be extended by tasks",
-  properties: { ...taskProps.properties },
-  additionalProperties: false,
+  allOf: [
+    {
+      $ref: "#/$defs/task_props",
+    },
+  ],
+  unevaluatedProperties: false,
   type: "object",
 };
 
-// task (object variant): task_props + extends + additionalProperties: false
 const taskObjectVariant = {
-  properties: {
-    ...taskProps.properties,
-    extends: {
-      description: "name of the task template to extend",
-      type: "string",
+  allOf: [
+    {
+      $ref: "#/$defs/task_props",
     },
-  },
-  additionalProperties: false,
+    {
+      properties: {
+        extends: {
+          description: "name of the task template to extend",
+          type: "string",
+        },
+      },
+    },
+  ],
+  unevaluatedProperties: false,
   type: "object",
 };
 
@@ -250,7 +261,7 @@ const misercSchema = {
   description:
     "Early initialization settings for mise. These settings are loaded before the main config files.",
   type: "object",
-  additionalProperties: false,
+  unevaluatedProperties: false,
   properties: misercSettings,
 };
 
