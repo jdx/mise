@@ -1,3 +1,4 @@
 backends = ["aqua:aristocratos/btop"]
 description = "A monitor of resources"
-test = { cmd = "btop --version", expected = "btop version: {{version}}" }
+# TODO: re-enable once upstream aquaproj/aqua-registry uses the current .tar.gz assets for recent btop releases.
+# test = { cmd = "btop --version", expected = "btop version: {{version}}" }

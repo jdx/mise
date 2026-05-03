@@ -21,20 +21,31 @@ apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cargo \
     curl \
+    default-jdk-headless \
     direnv \
     fd-find \
     fish \
     git \
     jq \
+    libasound2t64 \
     libffi-dev \
+    libgl1 \
+    libglib2.0-0 \
     libicu-dev \
     libncurses-dev \
     libreadline-dev \
     libssl-dev \
+    libsm6 \
+    libwayland-client0 \
+    libxi6 \
+    libxfixes3 \
+    libxkbcommon0 \
     libxml2-dev \
     libyaml-dev \
     pipx \
     pkg-config \
+    openssh-client \
+    python-is-python3 \
     python3-full \
     python3-venv \
     unzip \
