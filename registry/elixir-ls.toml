@@ -1,2 +1,3 @@
-backends = ["asdf:mise-plugins/mise-elixir-ls"]
+backends = ["aqua:elixir-lsp/elixir-ls", "asdf:mise-plugins/mise-elixir-ls"]
 description = "A frontend-independent IDE 'smartness' server for Elixir. Implements the 'Language Server Protocol' standard and provides debugger support via the 'Debug Adapter Protocol'"
+test = { cmd = "which elixir-ls", expected = "elixir-ls" }
