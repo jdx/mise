@@ -200,7 +200,13 @@ Please note the following discussion categories, which match how issues are ofte
 
 ## Special Thanks
 
-We're grateful for Cloudflare's support through [Project Alexandria](https://www.cloudflare.com/lp/project-alexandria/).
+<p>
+  <a href="https://namespace.so">
+    <img src="docs/public/namespace-logo.svg" alt="Namespace" width="64" height="64">
+  </a>
+  <br>
+  Thanks to <a href="https://namespace.so">Namespace</a> for providing CI services for mise.
+</p>
 
 ## Contributors
 

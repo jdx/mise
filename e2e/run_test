@@ -188,6 +188,7 @@ run_in_docker() {
 
   local docker_args=(
     docker run --rm
+    --security-opt seccomp=unconfined
     -v "$ROOT:/mise-src:ro"
     -v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
     -e ROOT=/mise-src

@@ -1,7 +1,7 @@
 use eyre::{Result, eyre};
 use landlock::{
     ABI, AccessFs, BitFlags, Compatible, PathBeneath, PathFd, Ruleset, RulesetAttr,
-    RulesetCreatedAttr,
+    RulesetCreatedAttr, RulesetStatus,
 };
 
 use super::SandboxConfig;
@@ -133,9 +133,12 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
         }
     }
 
-    ruleset
+    let status = ruleset
         .restrict_self()
         .map_err(|e| eyre!("failed to apply landlock restrictions: {e}"))?;
+    if status.ruleset == RulesetStatus::NotEnforced || !status.no_new_privs {
+        eyre::bail!("failed to apply landlock restrictions: {status:?}");
+    }
 
     Ok(())
 }

@@ -21,7 +21,7 @@ env:
 
 jobs:
   check-changes:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 5
     outputs:
       registry-changed: ${{ steps.check.outputs.registry-changed }}
@@ -44,26 +44,44 @@ jobs:
 
   build:
     timeout-minutes: 20
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs: check-changes
     if: needs.check-changes.outputs.registry-changed == 'true'
     env:
       GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
         with:
-          shared-key: build
-          save-if: false
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - run: cargo build --all-features
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise
           path: target/debug/mise
+      - run: sccache --show-stats
+        if: always()
 
   list-changed-tools:
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs: check-changes
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.registry-changed == 'true'
     outputs:
@@ -103,7 +121,7 @@ jobs:
           fi
 
   validate-new-tools:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 5
     needs: list-changed-tools
     if: |
@@ -132,7 +150,7 @@ jobs:
   test-tool:
     name: test-tool-${{ matrix.tranche }}
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs:
       - build
       - list-changed-tools
@@ -148,6 +166,8 @@ jobs:
         tranche: ${{ fromJson(needs.list-changed-tools.outputs.tools == '' && '[0,1,2,3,4,5,6,7]' || '[0]') }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - name: Fetch token from pool
         id: token
         uses: ./.github/actions/fetch-token
@@ -181,14 +201,25 @@ jobs:
           mkdir -p "$summary_dir"
           chmod 777 "$summary_dir"
           summary_file="$summary_dir/summary.md"
+          container_tmp_dir="$RUNNER_TEMP/test-tool-tmp-${{ matrix.tranche }}"
+          container_var_tmp_dir="$RUNNER_TEMP/test-tool-var-tmp-${{ matrix.tranche }}"
+          container_home_dir="$RUNNER_TEMP/test-tool-home-${{ matrix.tranche }}"
+          rm -rf "$container_tmp_dir" "$container_var_tmp_dir" "$container_home_dir"
+          mkdir -p "$container_tmp_dir" "$container_var_tmp_dir" "$container_home_dir"
+          chmod 777 "$container_tmp_dir" "$container_var_tmp_dir" "$container_home_dir"
 
           set +e
           docker run --rm \
+            --read-only \
+            -v "$container_tmp_dir:/tmp" \
+            -v "$container_var_tmp_dir:/var/tmp" \
+            -v "$container_home_dir:/root" \
             -v "$PWD:/mise-src:ro" \
             -v "$PWD/target/debug/mise:/usr/local/bin/mise:ro" \
             -v "$summary_dir:/tmp/github-summary" \
             -e GITHUB_TOKEN="${POOL_TOKEN:-}" \
             -e GITHUB_STEP_SUMMARY=/tmp/github-summary/summary.md \
+            -e TEST_TOOL_JOBS="$TEST_TOOL_JOBS" \
             -e TEST_TRANCHE="$TEST_TRANCHE" \
             -e TEST_TRANCHE_COUNT="$TEST_TRANCHE_COUNT" \
             -e MISE_EXPERIMENTAL=1 \
@@ -196,7 +227,18 @@ jobs:
             -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
-            mise test-tool --jobs "$TEST_TOOL_JOBS" ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }}
+            sh -lc '
+              set -e
+              export HOME=/root
+              export MISE_CACHE_DIR=/tmp/mise-cache
+              export MISE_CONFIG_DIR=/tmp/mise-config
+              export MISE_DATA_DIR=/tmp/mise-data
+              export MISE_STATE_DIR=/tmp/mise-state
+              export MISE_TMP_DIR=/tmp/mise-tmp
+              mkdir -p "$HOME" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_TMP_DIR"
+
+              mise test-tool --jobs "$TEST_TOOL_JOBS" ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }}
+            '
           test_tool_status=$?
           set -e
 
@@ -220,20 +262,42 @@ jobs:
           mkdir -p "$summary_dir"
           chmod 777 "$summary_dir"
           summary_file="$summary_dir/summary.md"
+          container_tmp_dir="$RUNNER_TEMP/test-tool-retry-tmp-${{ matrix.tranche }}"
+          container_var_tmp_dir="$RUNNER_TEMP/test-tool-retry-var-tmp-${{ matrix.tranche }}"
+          container_home_dir="$RUNNER_TEMP/test-tool-retry-home-${{ matrix.tranche }}"
+          rm -rf "$container_tmp_dir" "$container_var_tmp_dir" "$container_home_dir"
+          mkdir -p "$container_tmp_dir" "$container_var_tmp_dir" "$container_home_dir"
+          chmod 777 "$container_tmp_dir" "$container_var_tmp_dir" "$container_home_dir"
 
           set +e
           docker run --rm \
+            --read-only \
+            -v "$container_tmp_dir:/tmp" \
+            -v "$container_var_tmp_dir:/var/tmp" \
+            -v "$container_home_dir:/root" \
             -v "$PWD:/mise-src:ro" \
             -v "$PWD/target/debug/mise:/usr/local/bin/mise:ro" \
             -v "$summary_dir:/tmp/github-summary" \
             -e GITHUB_TOKEN="${POOL_TOKEN:-}" \
             -e GITHUB_STEP_SUMMARY=/tmp/github-summary/summary.md \
+            -e TEST_TOOL_JOBS="$TEST_TOOL_JOBS" \
             -e MISE_EXPERIMENTAL=1 \
             -e MISE_LOCKFILE=1 \
             -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
-            mise test-tool --jobs "$TEST_TOOL_JOBS" ${{ steps.test-tools.outputs.failed_tools }}
+            sh -lc '
+              set -e
+              export HOME=/root
+              export MISE_CACHE_DIR=/tmp/mise-cache
+              export MISE_CONFIG_DIR=/tmp/mise-config
+              export MISE_DATA_DIR=/tmp/mise-data
+              export MISE_STATE_DIR=/tmp/mise-state
+              export MISE_TMP_DIR=/tmp/mise-tmp
+              mkdir -p "$HOME" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_TMP_DIR"
+
+              mise test-tool --jobs "$TEST_TOOL_JOBS" ${{ steps.test-tools.outputs.failed_tools }}
+            '
           test_tool_status=$?
           set -e
 
@@ -260,7 +324,7 @@ jobs:
         run: mise run test-tool-retry --check-only --grace-period ${{ steps.retry.outputs.failed_tools }}
 
   registry-ci:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 1
     needs:
       - check-changes

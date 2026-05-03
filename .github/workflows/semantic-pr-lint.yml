@@ -10,7 +10,7 @@ on:
 jobs:
   main:
     name: Validate PR title
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     permissions:
       pull-requests: read
     steps:
