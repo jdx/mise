@@ -55,12 +55,7 @@ PY
 SERVER_PID=$!
 
 # Wait for server to start
-for _ in {1..30}; do
-  if [ -f "$HTTP_PORT_FILE" ]; then
-    break
-  fi
-  sleep 1
-done
+wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$SERVER_PID"
 HTTP_PORT=$(cat "$HTTP_PORT_FILE")
 
 # Test with different compressed formats

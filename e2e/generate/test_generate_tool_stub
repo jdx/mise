@@ -12,12 +12,7 @@ MISE_TOOL_STUB_TEST_PORT_FILE="$SERVER_PORT_FILE" python3 "${TEST_ROOT}/helpers/
 SERVER_PID=$!
 
 # Wait for server to start
-for _ in {1..30}; do
-  if [ -f "$SERVER_PORT_FILE" ]; then
-    break
-  fi
-  sleep 1
-done
+wait_for_file "$SERVER_PORT_FILE" "tool stub test server port file" 30 "$SERVER_PID"
 SERVER_PORT=$(cat "$SERVER_PORT_FILE")
 
 # Ensure cleanup on exit

@@ -55,7 +55,9 @@ def start_server(port):
         actual_port = httpd.server_address[1]
         port_file = os.environ.get("MISE_TOOL_STUB_TEST_PORT_FILE")
         if port_file:
-            Path(port_file).write_text(str(actual_port))
+            port_file_path = Path(port_file)
+            port_file_path.parent.mkdir(parents=True, exist_ok=True)
+            port_file_path.write_text(str(actual_port))
         print(f"Tool stub test server running on port {actual_port}", flush=True)
         try:
             httpd.serve_forever()

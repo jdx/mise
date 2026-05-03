@@ -66,26 +66,13 @@ class TestFileHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def find_available_port():
-    """Find an available port starting from 8080"""
-    import socket
-    for port in range(8080, 8200):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('', port))
-                return port
-        except OSError:
-            continue
-    raise RuntimeError("No available ports found")
-
-
 def start_server(port=None, headers_log_dir=None):
     """Start the HTTP test server"""
     global HEADERS_LOG_DIR
     HEADERS_LOG_DIR = headers_log_dir
 
     if port is None:
-        port = find_available_port()
+        port = 0
 
     with socketserver.TCPServer(("", port), TestFileHandler) as httpd:
         actual_port = httpd.server_address[1]

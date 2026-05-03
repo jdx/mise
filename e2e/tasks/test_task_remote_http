@@ -6,7 +6,7 @@
 
 # Start HTTP test server
 HTTP_PORT_FILE="$TMPDIR/mise_http_test_port"
-python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 &
+MISE_HTTP_TEST_PORT_FILE="$HTTP_PORT_FILE" python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 &
 HTTP_SERVER_PID=$!
 
 # Ensure cleanup on exit
@@ -16,12 +16,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Wait for server to start
-for _ in {1..30}; do
-  if [ -f "$HTTP_PORT_FILE" ]; then
-    break
-  fi
-  sleep 1
-done
+wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$HTTP_SERVER_PID"
 HTTP_PORT=$(cat "$HTTP_PORT_FILE")
 
 cat <<EOF >mise.toml
