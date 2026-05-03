@@ -85,14 +85,6 @@ for index in "${!FILES[@]}"; do
     continue
   fi
 
-  # Sandbox e2e tests require host-level sandbox support and are not useful inside nested Docker.
-  if [[ ${MISE_E2E_DOCKER:-0} == 1 && $TEST_NAME == sandbox/test_sandbox_* ]]; then
-    skipped_count=$((skipped_count + 1))
-    SUMMARY_ENTRY_TYPES+=("skip")
-    SUMMARY_ENTRY_VALUES+=("$TEST_NAME")
-    continue
-  fi
-
   SUMMARY_ENTRY_TYPES+=("run")
   SUMMARY_ENTRY_VALUES+=("${#RUN_FILES[@]}")
   RUN_FILES+=("$TEST_NAME")

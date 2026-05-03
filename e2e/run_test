@@ -189,7 +189,9 @@ run_in_docker() {
 
   local docker_args=(
     docker run --rm
-    --security-opt seccomp=unconfined
+    --read-only
+    --tmpfs /root:exec
+    --tmpfs /tmp:exec
     -v "$ROOT:/mise-src:ro"
     -v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
     -e ROOT=/mise-src
@@ -204,7 +206,7 @@ run_in_docker() {
     -e CARGO_TARGET_DIR=/usr/local/lib/mise
   )
 
-  "${docker_args[@]}" "$image" /mise-src/e2e/run_test "$TEST"
+  "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST"
 }
 
 if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then

@@ -124,12 +124,6 @@ jobs:
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features
-      - name: Run sandbox e2e tests
-        run: |
-          for test in e2e/sandbox/test_sandbox_*; do
-            echo "Running $test..."
-            ./e2e/run_test "$test"
-          done
       - run: sccache --show-stats
         if: always()
 
