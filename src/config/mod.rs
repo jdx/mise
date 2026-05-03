@@ -15,7 +15,7 @@ use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, ResolvedToolOptions, split_bracketed_opts};
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
@@ -340,8 +340,27 @@ impl Config {
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
     ) -> Result<ToolVersionOptions> {
+        Ok(self
+            .resolve_tool_opts_with_overrides(backend_arg)
+            .await?
+            .into_options())
+    }
+
+    pub async fn resolve_tool_opts_with_overrides(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+    ) -> Result<ResolvedToolOptions> {
         let config_opts = self.get_tool_opts(backend_arg).await?;
-        Ok(backend_arg.opts_with_config(config_opts))
+        let alias_opts = self.get_backend_alias_opts(backend_arg);
+        Ok(backend_arg.resolved_opts_with_layers(alias_opts, config_opts))
+    }
+
+    fn get_backend_alias_opts(&self, backend_arg: &BackendArg) -> Option<ToolVersionOptions> {
+        self.all_aliases
+            .get(backend_arg.short.as_str())
+            .and_then(|alias| alias.backend.as_deref())
+            .and_then(|backend| split_bracketed_opts(backend).map(|(_, opts)| opts))
+            .map(crate::toolset::parse_tool_options)
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
@@ -2571,6 +2590,79 @@ mod tests {
         let opts = config.get_tool_opts_with_overrides(&ba).await?;
 
         assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_tool_opts_tracks_alias_config_and_inline_sources() -> Result<()> {
+        crate::toolset::install_state::init().await?;
+
+        let source = crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml"));
+        let config_ba = Arc::new(BackendArg::from("tiny"));
+        let config_opts =
+            crate::toolset::parse_tool_options("asset_pattern=config-pattern,bar=config");
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(
+            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            &source,
+        );
+
+        let mut all_aliases = AliasMap::default();
+        all_aliases.insert(
+            "tiny".to_string(),
+            Alias {
+                backend: Some(
+                    "github:jdx/mise-test-fixtures[api_url=https://alias.example/api/v3,asset_pattern=alias-pattern,foo=alias]"
+                        .to_string(),
+                ),
+                versions: Default::default(),
+            },
+        );
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases,
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
+        };
+        config.tool_request_set.set(trs).ok();
+        let config = Arc::new(config);
+        let ba = Arc::new(BackendArg::from(
+            "tiny[api_url=https://inline.example/api/v3]",
+        ));
+
+        let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
+        let opts = resolved.options();
+
+        assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
+        assert_eq!(opts.get("asset_pattern"), Some("config-pattern"));
+        assert_eq!(opts.get("foo"), Some("alias"));
+        assert_eq!(opts.get("bar"), Some("config"));
+        assert_eq!(
+            resolved.source_for_key("api_url"),
+            Some(crate::cli::args::ToolOptionSource::InlineBackendArg)
+        );
+        assert_eq!(
+            resolved.source_for_key("asset_pattern"),
+            Some(crate::cli::args::ToolOptionSource::Config)
+        );
+        assert_eq!(
+            resolved.source_for_key("foo"),
+            Some(crate::cli::args::ToolOptionSource::BackendAlias)
+        );
         Ok(())
     }
 

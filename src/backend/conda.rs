@@ -66,8 +66,7 @@ impl CondaBackend {
     }
 
     fn channel_name(&self, opts: &ToolVersionOptions) -> String {
-        opts
-            .get("channel")
+        opts.get("channel")
             .map(|s| s.to_string())
             .unwrap_or_else(|| Settings::get().conda.channel.clone())
     }

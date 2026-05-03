@@ -328,6 +328,7 @@ pub enum GitProviderKind {
 }
 
 impl GitProvider {
+    #[cfg(test)]
     fn from_ba(ba: &BackendArg) -> Self {
         let opts = ba.opts();
         Self::from_ba_with_opts(ba, &opts)

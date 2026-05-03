@@ -790,6 +790,7 @@ pub trait Backend: Debug + Send + Sync {
         let mut remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
         let id = self.id();
+        let opts = config.get_tool_opts_with_overrides(&ba).await?;
 
         // Only a subset of backends benefit from the versions host cache —
         // those whose upstream listing is rate-limited (github API) or not
@@ -802,10 +803,7 @@ pub trait Backend: Debug + Send + Sync {
         // it for backends that are not on this allowlist.
         let backend_type = self.get_type();
         let has_version_list_url = if matches!(backend_type, BackendType::Http | BackendType::S3) {
-            config
-                .get_tool_opts_with_overrides(&ba)
-                .await?
-                .contains_key("version_list_url")
+            opts.contains_key("version_list_url")
         } else {
             false
         };
@@ -873,7 +871,6 @@ pub trait Backend: Debug + Send + Sync {
         // that honor `prerelease`. When the current opts don't opt in, drop
         // entries with `prerelease = true` before returning so flipping the
         // tool option takes effect without invalidating the cache.
-        let opts = config.get_tool_opts_with_overrides(&ba).await?;
         let want_prereleases = include_prereleases(&opts);
 
         if Settings::get().offline() {
