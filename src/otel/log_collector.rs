@@ -47,6 +47,7 @@ impl OtelLogCollector {
         task_args: Arc<str>,
         trace_id: TraceId,
         span_id: SpanId,
+        trace_flags: TraceFlags,
         is_stderr: bool,
     ) -> impl Fn(String) + Send + 'static {
         let logger = Arc::clone(&self.logger);
@@ -78,7 +79,7 @@ impl OtelLogCollector {
             record.set_body(opentelemetry::logs::AnyValue::String(
                 line.to_string().into(),
             ));
-            record.set_trace_context(trace_id, span_id, Some(TraceFlags::SAMPLED));
+            record.set_trace_context(trace_id, span_id, Some(trace_flags));
             record.add_attribute("mise.task.name", task_name.to_string());
             if !task_args.is_empty() {
                 record.add_attribute("mise.task.args", task_args.to_string());
@@ -108,6 +109,7 @@ impl OtelLogCollector {
             Arc::clone(&task_args),
             started.trace_id,
             started.span_id,
+            started.trace_flags,
             false,
         ));
         cmd = cmd.with_stderr_hook(collector.hook(
@@ -115,6 +117,7 @@ impl OtelLogCollector {
             task_args,
             started.trace_id,
             started.span_id,
+            started.trace_flags,
             true,
         ));
         cmd
@@ -211,6 +214,7 @@ mod tests {
             Arc::from("--release"),
             trace_id,
             span_id,
+            TraceFlags::SAMPLED,
             false,
         );
         let stderr_hook = collector.hook(
@@ -218,6 +222,7 @@ mod tests {
             Arc::from("--release"),
             trace_id,
             span_id,
+            TraceFlags::SAMPLED,
             true,
         );
         stdout_hook("hello".to_string());
@@ -284,7 +289,14 @@ mod tests {
         let trace_id = TraceId::from_bytes([0x11; 16]);
         let span_id = SpanId::from_bytes([0x22; 8]);
 
-        let hook = collector.hook(Arc::from("build"), Arc::from(""), trace_id, span_id, false);
+        let hook = collector.hook(
+            Arc::from("build"),
+            Arc::from(""),
+            trace_id,
+            span_id,
+            TraceFlags::SAMPLED,
+            false,
+        );
         // Simulate a progress bar line with \r-separated frames
         hook("10% done\r50% done\r100% done".to_string());
         collector.shutdown();
@@ -305,7 +317,14 @@ mod tests {
         let trace_id = TraceId::from_bytes([0x11; 16]);
         let span_id = SpanId::from_bytes([0x22; 8]);
 
-        let hook = collector.hook(Arc::from("build"), Arc::from(""), trace_id, span_id, false);
+        let hook = collector.hook(
+            Arc::from("build"),
+            Arc::from(""),
+            trace_id,
+            span_id,
+            TraceFlags::SAMPLED,
+            false,
+        );
         // Line ending with \r produces empty string after split
         hook("progress\r".to_string());
         collector.shutdown();
@@ -320,8 +339,14 @@ mod tests {
         let trace_id = TraceId::from_bytes([0x11; 16]);
         let span_id = SpanId::from_bytes([0x22; 8]);
 
-        let stdout_hook =
-            collector.hook(Arc::from("build"), Arc::from(""), trace_id, span_id, false);
+        let stdout_hook = collector.hook(
+            Arc::from("build"),
+            Arc::from(""),
+            trace_id,
+            span_id,
+            TraceFlags::SAMPLED,
+            false,
+        );
         collector.shutdown();
         stdout_hook("late".to_string());
 
