@@ -1954,29 +1954,59 @@ packages:
     repo_owner: CircleCI-Public
     repo_name: circleci-cli
     description: Use CircleCI from the command line
-    rosetta2: true
-    asset: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
-    format: tar.gz
-    overrides:
-      - goos: windows
-        format: zip
     files:
       - name: circleci
-        src: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}/circleci
-    version_constraint: semver(">= 0.1.17554")
+        src: "{{.AssetWithoutExt}}/circleci"
+    version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: Version == "v0.1.28363"
+        asset: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: circleci-cli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.1.17522")
+        asset: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: circleci-cli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
         supported_envs:
           - darwin
+          - windows
           - amd64
-    checksum:
-      type: github_release
-      asset: circleci-cli_{{trimV .Version}}_checksums.txt
-      algorithm: sha256
+      - version_constraint: semver("<= 0.1.28434")
+        asset: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: circleci-cli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: circleci-cli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: ClementTsang
     repo_name: bottom
@@ -2976,6 +3006,14 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+      - version_constraint: semver("< 3.12.0")
+        asset: nova_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: nova_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -2984,6 +3022,13 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --key
+              - https://artifacts.fairwinds.com/cosign-p256.pub
   - type: github_release
     repo_owner: FairwindsOps
     repo_name: pluto
@@ -3192,6 +3237,53 @@ packages:
         asset: tentez-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
+  - type: github_release
+    repo_owner: Feel-ix-343
+    repo_name: markdown-oxide
+    description: PKM Markdown Language Server
+    version_constraint: "false"
+    files:
+      - name: markdown-oxide
+        src: "{{.AssetWithoutExt}}/markdown-oxide"
+    version_overrides:
+      - version_constraint: Version == "v0.0.9"
+        asset: markdown-oxide-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.0.11")
+        asset: markdown-oxide-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: markdown-oxide-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-gnu
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: FiloSottile
     repo_name: age
@@ -5671,6 +5763,18 @@ packages:
           linux: unknown-linux-musl
           windows: pc-windows-msvc
   - type: github_release
+    repo_owner: OpenAPITools
+    repo_name: openapi-generator
+    description: OpenAPI Generator allows generation of API client libraries (SDK generation), server stubs, documentation and configuration automatically given an OpenAPI Spec (v2, v3)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 7.21.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: openapi-generator-cli-{{trimV .Version}}.jar
+        format: raw
+        complete_windows_ext: false
+  - type: github_release
     repo_owner: Orange-OpenSource
     repo_name: hurl
     description: Hurl, run and test HTTP requests with plain text
@@ -7788,6 +7892,19 @@ packages:
           algorithm: sha256
         github_artifact_attestations:
           signer_workflow: UpCloudLtd/upcloud-cli/.github/workflows/publish.yml
+        overrides:
+          - goos: windows
+            format: zip
+        github_immutable_release: true
+      - version_constraint: Version == "v3.32.0"
+        asset: upcloud-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
         overrides:
           - goos: windows
             format: zip
@@ -12703,6 +12820,16 @@ packages:
           - name: claude
         replacements:
           amd64: x64
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            url: https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{trimV .Version}}/{{.OS}}-{{.Arch}}-musl/claude
+            variants:
+              - key: libc
+                value: musl
         supported_envs:
           - darwin
           - linux
@@ -19605,6 +19732,59 @@ packages:
       type: github_release
       asset: kubectl-fzf_checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: boostsecurityio
+    repo_name: bagel
+    description: bagel, a CLI that inventories security-relevant metadata on developer workstations
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: bagel_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: bagel_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/boostsecurityio/bagel/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: bagel_{{trimV .Version}}_checksums.txt.sigstore.json
+      - version_constraint: "true"
+        asset: bagel_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: bagel_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/boostsecurityio/bagel/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: bagel_{{trimV .Version}}_checksums.txt.sigstore.json
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: bootandy
     repo_name: dust
@@ -29298,40 +29478,52 @@ packages:
       asset: checksums.txt
       algorithm: sha256
   - type: github_release
-    repo_owner: dagu-org
+    repo_owner: dagucloud
     repo_name: dagu
     aliases:
       - name: yohamta/dagu
       - name: hotaruswarm/dagu
       - name: dagu-dev/dagu
       - name: daguflow/dagu
-    description: Yet another cron alternative with a Web UI, but with much more capabilities. It aims to solve greater problems
-    asset: dagu_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-    format: tar.gz
-    supported_envs:
-      - linux
-      - darwin
-    checksum:
-      type: github_release
-      asset: checksums.txt
-      algorithm: sha256
-    version_constraint: semver(">= 1.10.6")
+      - name: dagu-org/dagu
+    description: Self-hosted workflow engine for scripts, cron jobs, containers, and ops automation. YAML workflows, retries, logs, approvals, and optional distributed workers
+    version_constraint: "false"
     version_overrides:
-      - version_constraint: semver(">= 1.1.0")
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-      - version_constraint: semver("< 1.1.0")
+      - version_constraint: semver("<= 1.0.2")
         # https://github.com/dagu-dev/dagu/pull/15
         # Rename jobctl to dagu
-        asset: jobctl_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        error_message: The version is too old. Please upgrade to a newer version.
+      - version_constraint: semver("<= 1.10.5")
+        asset: dagu_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
         replacements:
           amd64: x86_64
           darwin: Darwin
           linux: Linux
-        files:
-          - name: jobctl
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.17.3")
+        asset: dagu_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: dagu_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
   - type: github_release
     repo_owner: daichirata
     repo_name: hammer
@@ -29827,8 +30019,10 @@ packages:
           - darwin
           - amd64
   - type: github_release
-    repo_owner: datastax-labs
+    repo_owner: datastax-archive
     repo_name: astra-cli
+    aliases:
+      - name: datastax-labs/astra-cli
     description: DataStax Astra automation CLI
     asset: astra-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
     files:
@@ -34159,6 +34353,72 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: elixir-lsp
+    repo_name: elixir-ls
+    description: A frontend-independent IDE "smartness" server for Elixir. Implements the "Language Server Protocol" standard and provides debugger support via the "Debug Adapter Protocol"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.14.6")
+        asset: elixir-ls.{{.Format}}
+        format: zip
+        files:
+          - name: elixir-ls
+            src: language_server.sh
+          - name: elixir-debug-adapter
+            src: debugger.sh
+        overrides:
+          - goos: windows
+            files:
+              - name: elixir-ls
+                src: language_server.bat
+              - name: elixir-debug-adapter
+                src: debugger.bat
+      - version_constraint: semver("<= 0.17.10")
+        asset: elixir-ls-{{.Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: elixir-ls
+            src: language_server.sh
+          - name: elixir-debug-adapter
+            src: debugger.sh
+        overrides:
+          - goos: windows
+            files:
+              - name: elixir-ls
+                src: language_server.bat
+              - name: elixir-debug-adapter
+                src: debugger.bat
+      - version_constraint: Version == "v0.29.0"
+        asset: elixir-ls.{{.Format}}
+        format: zip
+        files:
+          - name: elixir-ls
+            src: language_server.sh
+          - name: elixir-debug-adapter
+            src: debug_adapter.sh
+        overrides:
+          - goos: windows
+            files:
+              - name: elixir-ls
+                src: language_server.bat
+              - name: elixir-debug-adapter
+                src: debug_adapter.bat
+      - version_constraint: "true"
+        asset: elixir-ls-{{.Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: elixir-ls
+            src: language_server.sh
+          - name: elixir-debug-adapter
+            src: debug_adapter.sh
+        overrides:
+          - goos: windows
+            files:
+              - name: elixir-ls
+                src: language_server.bat
+              - name: elixir-debug-adapter
+                src: debug_adapter.bat
+  - type: github_release
     repo_owner: elkowar
     repo_name: pipr
     description: A tool to interactively write shell pipelines
@@ -34259,24 +34519,83 @@ packages:
     repo_owner: endevco
     repo_name: aube
     description: A fast Node.js package manager
-    asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-    format: tar.gz
-    replacements:
-      amd64: x86_64
-      arm64: aarch64
-      darwin: apple-darwin
-      linux: unknown-linux-gnu
-      windows: pc-windows-msvc
-    overrides:
-      - goos: darwin
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0-beta.1"
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
         replacements:
-          amd64: amd64
-      - goos: windows
-        format: zip
-    supported_envs:
-      - linux
-      - darwin/arm64
-      - windows
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 1.0.0-beta.11")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: semver("<= 1.1.0")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: "true"
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+        github_artifact_attestations:
+          signer_workflow: endevco/aube/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: endevco
     repo_name: pitchfork
@@ -34356,6 +34675,22 @@ packages:
           - darwin
       - version_constraint: "true"
         asset: entire_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
+    repo_owner: entireio
+    repo_name: git-sync
+    description: Mirror git refs from a source remote to a target remote without a local checkout. Packfiles stream directly over Smart HTTP and an in-memory object store
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: git-sync_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
           type: github_release
@@ -34765,287 +35100,6 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
-  - type: github_release
-    repo_owner: errata-ai
-    repo_name: vale
-    description: ":pencil: A markup-aware linter for prose built with speed and extensibility in mind"
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: Version == "v1.0.0"
-        no_asset: true
-      - version_constraint: Version == "v1.1.6-alpha"
-        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: vale
-            src: bin/vale
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "v2.23.1"
-        asset: vale_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_{{trimV .Version}}_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-      - version_constraint: Version == "v2.23.2"
-        asset: vale_.{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        overrides:
-          - goos: windows
-            format: zip
-      - version_constraint: semver("<= 0.2.0")
-        asset: "{{.OS}}-{{.Arch}}.{{.Format}}"
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 0.4.1")
-        asset: "{{.OS}}-{{.Arch}}.{{.Format}}"
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 0.6.2")
-        asset: vale_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "0.7.0"
-        asset: vale_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "v0.7.1"
-        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 0.9.0")
-        asset: vale_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 0.10.1")
-        asset: vale_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_{{.Version}}_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 2.15.2")
-        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_{{trimV .Version}}_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 2.18.0")
-        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_{{trimV .Version}}_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 2.23.0")
-        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_{{trimV .Version}}_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-      - version_constraint: semver("<= 3.4.2")
-        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_{{trimV .Version}}_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-      - version_constraint: "true"
-        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        replacements:
-          amd64: 64-bit
-          darwin: macOS
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: vale_{{trimV .Version}}_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
   - type: github_release
     repo_owner: estesp
     repo_name: manifest-tool
@@ -36459,6 +36513,22 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: fillmore-labs
+    repo_name: scopeguard
+    description: A Go static analyzer that identifies variables with unnecessarily wide scope and suggests moving them to tighter scopes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: scopeguard_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: fioncat
     repo_name: otree
@@ -43783,6 +43853,33 @@ packages:
         overrides:
           - goos: windows
             asset: alloy-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+  - type: github_release
+    repo_owner: grafana
+    repo_name: flint
+    description: Flint is a fast linter runner that keeps local and CI checks consistent with one binary, one config, and only the tools your repo declares
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.9.2")
+        no_asset: true
+      - version_constraint: "true"
+        asset: flint-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: grafana/flint/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: grafana
     repo_name: gcx
@@ -58415,6 +58512,25 @@ packages:
               - name: fvm
                 src: fvm/fvm.exe
   - type: github_release
+    repo_owner: levibostian
+    repo_name: decaf
+    description: Calm & reliable automated deployments. No more coffee breaks to deploy your code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.1.0" or semver(">= 1.0.0-alpha.1, <= 1.0.0-alpha.8")
+        no_asset: true
+      - version_constraint: "true"
+        asset: bin-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: lewispeckover
     repo_name: consulator
     description: Import and synchronize your Consul KV data from JSON and YAML
@@ -61642,7 +61758,7 @@ packages:
             format: zip
             files:
               - name: edit
-                src: "{{.AssetWithoutExt}}/edit.exe"
+                src: "{{.AssetWithoutExt}}/edit"
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -61665,11 +61781,11 @@ packages:
             format: zip
             files:
               - name: edit
-                src: "{{.AssetWithoutExt}}/edit.exe"
+                src: "{{.AssetWithoutExt}}/edit"
         supported_envs:
           - linux
           - windows
-      - version_constraint: "true"
+      - version_constraint: semver("< 2.0.0")
         asset: edit-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.zst
         overrides:
@@ -61677,12 +61793,30 @@ packages:
             format: zip
             files:
               - name: edit
-                src: "{{.AssetWithoutExt}}/edit.exe"
+                src: "{{.AssetWithoutExt}}/edit"
         replacements:
           amd64: x86_64
           arm64: aarch64
           linux: linux-gnu
         supported_envs:
+          - linux
+          - windows
+      - version_constraint: "true"
+        asset: edit-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: edit
+                src: "{{.AssetWithoutExt}}/edit"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: linux-gnu
+        supported_envs:
+          - darwin/arm64
           - linux
           - windows
   - type: github_release
@@ -67825,6 +67959,35 @@ packages:
           asset: runc.sha256sum
           algorithm: sha256
   - type: github_release
+    repo_owner: opencontainers
+    repo_name: umoci
+    description: umoci modifies Open Container images
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.1")
+        asset: umoci.amd64
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.4.7")
+        asset: umoci.amd64
+        format: raw
+        checksum:
+          type: github_release
+          asset: umoci.sha256sum
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: umoci.{{.OS}}.{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: umoci.sha256sum
+          algorithm: sha256
+        supported_envs:
+          - linux
+  - type: github_release
     repo_owner: openfaas
     repo_name: faas-cli
     format: raw
@@ -69491,12 +69654,12 @@ packages:
   - type: github_release
     repo_owner: owenlamont
     repo_name: ryl
-    description: Personal project to learn Rust and create a yaml linter
+    description: Re-implementation of yamllint in Rust
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 0.2.0")
         no_asset: true
-      - version_constraint: semver("< 0.3.2")
+      - version_constraint: semver("<= 0.3.1")
         asset: ryl-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -69517,11 +69680,15 @@ packages:
           darwin: apple-darwin
           linux: unknown-linux-musl
           windows: pc-windows-msvc
+        github_artifact_attestations:
+          signer_workflow: owenlamont/ryl/.github/workflows/release.yml
         overrides:
           - goos: windows
             format: zip
-        github_artifact_attestations:
-          signer_workflow: owenlamont/ryl/.github/workflows/release.yml
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
   - type: github_release
     repo_owner: owenrumney
     repo_name: squealer
@@ -70778,6 +70945,122 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: github_release
+    repo_owner: phrase
+    repo_name: phrase-cli
+    description: CLI for the Phrase API
+    files:
+      - name: phrase
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.0.14")
+        asset: phrase_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macosx
+        files:
+          - name: phrase
+            src: phrase_{{.OS}}_{{.Arch}}
+        overrides:
+          - goos: darwin
+            files:
+              - name: phrase
+          - goos: windows
+            format: zip
+            asset: phrase_{{.OS}}_{{.Arch}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "2.0.15-alpine-alpha9"
+        no_asset: true
+      - version_constraint: semver("<= 2.0.28")
+        asset: phrase_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macosx
+        files:
+          - name: phrase
+            src: phrase_{{.OS}}_{{.Arch}}
+        overrides:
+          - goos: darwin
+            files:
+              - name: phrase
+          - goos: windows
+            format: zip
+            asset: phrase_{{.OS}}_{{.Arch}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "2.1.1"
+        asset: phrase_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macosx
+        files:
+          - name: phrase
+            src: phrase_{{.OS}}_{{.Arch}}
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            format: raw
+            asset: phrase_{{.OS}}_{{.Arch}}
+          - goos: darwin
+            files:
+              - name: phrase
+          - goos: windows
+            format: zip
+            asset: phrase_{{.OS}}_{{.Arch}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.4.1")
+        asset: phrase_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macosx
+        files:
+          - name: phrase
+            src: phrase_{{.OS}}_{{.Arch}}
+        overrides:
+          - goos: darwin
+            files:
+              - name: phrase
+          - goos: windows
+            format: zip
+            asset: phrase_{{.OS}}_{{.Arch}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: phrase_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macosx
+        files:
+          - name: phrase
+            src: phrase_{{.OS}}_{{.Arch}}
+        overrides:
+          - goos: linux
+            goarch: arm64
+            format: raw
+            asset: phrase_{{.OS}}_{{.Arch}}
+          - goos: darwin
+            files:
+              - name: phrase
+          - goos: windows
+            format: zip
+            asset: phrase_{{.OS}}_{{.Arch}}.exe.{{.Format}}
   - type: github_release
     repo_owner: pimalaya
     repo_name: himalaya
@@ -74493,6 +74776,29 @@ packages:
             replacements:
               amd64: x86_64
               arm64: aarch64
+  - type: github_release
+    repo_owner: remoteoss
+    repo_name: dexter
+    description: A fast, full-featured Elixir LSP optimized for large codebases
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: dexter_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: dexter
+            src: "{{.AssetWithoutExt}}/dexter"
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin/arm64
   - type: github_release
     repo_owner: replicatedhq
     repo_name: kots
@@ -90543,6 +90849,28 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: github_release
+    repo_owner: tursodatabase
+    repo_name: turso-cli
+    description: Command line interface to the Turso Cloud
+    files:
+      - name: turso
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: turso-cli_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
   - type: http
     repo_owner: twistedpair
     repo_name: google-cloud-sdk
@@ -91851,6 +92179,289 @@ packages:
           - darwin
           - windows
           - amd64
+  - type: github_release
+    repo_owner: vale-cli
+    repo_name: vale
+    aliases:
+      - name: errata-ai/vale
+    description: ":pencil: A markup-aware linter for prose built with speed and extensibility in mind"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        no_asset: true
+      - version_constraint: Version == "v1.1.6-alpha"
+        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: vale
+            src: bin/vale
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v2.23.1"
+        asset: vale_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v2.23.2"
+        asset: vale_.{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.2.0")
+        asset: "{{.OS}}-{{.Arch}}.{{.Format}}"
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.1")
+        asset: "{{.OS}}-{{.Arch}}.{{.Format}}"
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.6.2")
+        asset: vale_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.7.0"
+        asset: vale_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.7.1"
+        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.9.0")
+        asset: vale_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.10.1")
+        asset: vale_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_{{.Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.15.2")
+        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.18.0")
+        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.23.0")
+        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 3.4.2")
+        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: vale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: vale_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: variadico
     repo_name: noti
