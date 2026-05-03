@@ -94,6 +94,25 @@ timeout() {
   run_with_timeout "$seconds" "$@"
 }
 
+wait_for_file() {
+  local file="$1"
+  local description="${2:-file}"
+  local attempts="${3:-30}"
+  local pid="${4:-}"
+
+  for ((i = 0; i < attempts; i++)); do
+    if [[ -f $file ]]; then
+      return 0
+    fi
+    if [[ -n $pid ]] && ! kill -0 "$pid" 2>/dev/null; then
+      fail "$description process $pid exited before writing $file"
+    fi
+    sleep 1
+  done
+
+  fail "$description did not appear within ${attempts}s: $file"
+}
+
 # Safeguard against running the test directly, which would execute in the actual user home
 [[ -n ${TEST_NAME:-} ]] || fail "tests should be called using run_test"
 
