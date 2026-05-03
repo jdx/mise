@@ -243,10 +243,25 @@ pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
+        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master)"
     )
         .unwrap()
 });
+
+/// PEP 440 separator-less pre-release segment, grounded in the canonical
+/// public version grammar:
+///
+/// > `[N!]N(.N)*[{a|b|rc}N][.postN][.devN]`
+///
+/// The pre-release segment (`{a|b|rc}N`) must follow the release segment, so
+/// the regex requires a leading digit. `c` is included as PEP 440's recognized
+/// alternate spelling for `rc`. The trailing boundary `(?:$|[^a-z0-9])` keeps
+/// it from matching inside hex hashes or other identifiers.
+///
+/// Only consulted by Python-flavored backends (currently `pipx`); other
+/// backends would false-positive on hex hashes like `f149714c1d54`.
+pub static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> =
+    Lazy::new(|| Regex::new(r"(?i)[0-9](?:a|b|c|rc)[0-9]+(?:$|[^a-z0-9])").unwrap());
 
 pub fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
@@ -553,5 +568,51 @@ mod tests {
         assert!(!VERSION_REGEX.is_match("1.0.0"));
         assert!(!VERSION_REGEX.is_match("2026.3.3"));
         assert!(!VERSION_REGEX.is_match("22.6.0"));
+
+        // PEP 440 separator-less suffixes (`3.12.0a1`, `1.2.3c1`) live in
+        // PEP440_PRERELEASE_REGEX, not the general regex — see that test below.
+        assert!(!VERSION_REGEX.is_match("3.12.0a1"));
+        assert!(!VERSION_REGEX.is_match("1.2.3c1"));
+
+        // Go pseudo-versions and other identifiers with incidental `[abc]\d`
+        // substrings (commit hashes) must not be flagged.
+        assert!(!VERSION_REGEX.is_match("2.0.0-20260404020628-f149714c1d54"));
+    }
+
+    #[test]
+    fn test_pep440_prerelease_regex() {
+        // Canonical PEP 440 pre-release segments: `aN`, `bN`, `rcN`, plus the
+        // recognized `cN` alias for `rcN`.
+        assert!(PEP440_PRERELEASE_REGEX.is_match("3.12.0a1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("3.12.0b2"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.2.3c1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.2.3rc1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0c1+build"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0a1.dev0"));
+
+        // Stable releases — including `.postN`, which PEP 440 specifies as a
+        // post-release (after a stable), NOT a pre-release.
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("3.12.0"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0.post1"));
+
+        // The `{a|b|rc}N` segment must follow the release segment per the
+        // PEP 440 grammar — the leading-digit anchor enforces that. Identifiers
+        // whose hex hashes happen to contain `c1` / `a1` / `b2` substrings
+        // (e.g. Go pseudo-versions) do not match because the `[abc]` is
+        // preceded by a hex letter, not a digit.
+        assert!(
+            !PEP440_PRERELEASE_REGEX.is_match("2.0.0-20260404020628-f149714c1d54"),
+            "Go pseudo-version with `c1` in hash should not match"
+        );
+        assert!(
+            !PEP440_PRERELEASE_REGEX.is_match("1.0.0-20240101000000-a1b2c3d4e5f6"),
+            "Go pseudo-version with `a1`/`b2`/`c3` in hash should not match"
+        );
+
+        // Bare `aN` / `bN` / `cN` not attached to a release segment (uncommon
+        // but possible identifier shapes) is also rejected.
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("a1"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("b1234567"));
     }
 }

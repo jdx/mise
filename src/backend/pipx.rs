@@ -10,6 +10,7 @@ use crate::file;
 use crate::github::{self, GithubRelease};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
+use crate::plugins::PEP440_PRERELEASE_REGEX;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -56,6 +57,18 @@ impl Backend for PIPXBackend {
         true
     }
 
+    /// PyPI versions follow PEP 440, so the shared filter alone (which only
+    /// knows about `-rc1`/`-dev` separators) would let `3.12.0a1`-style
+    /// versions slip through. See `fuzzy_match_versions_pep440`.
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
+        crate::backend::fuzzy_match_versions_pep440(versions, query, filter_prereleases)
+    }
+
     /// Pipx installs packages from PyPI or Git using version specs (e.g., black==24.3.0).
     /// It doesn't support installing from direct URLs, so lockfile URLs are not applicable.
     fn supports_lockfile_url(&self) -> bool {
@@ -63,7 +76,7 @@ impl Backend for PIPXBackend {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        match self.tool_name().parse()? {
+        let versions: Vec<VersionInfo> = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
                 let registry_url = Self::get_registry_url()?;
                 if registry_url.contains("/json") {
@@ -72,8 +85,7 @@ impl Backend for PIPXBackend {
                     let data: PypiPackage = HTTP_FETCH.json(url).await?;
 
                     // Get versions sorted and attach timestamps from the first file in each release
-                    let versions = data
-                        .releases
+                    data.releases
                         .into_iter()
                         .sorted_by_cached_key(|(v, _)| Versioning::new(v))
                         .map(|(version, files)| {
@@ -89,9 +101,7 @@ impl Backend for PIPXBackend {
                                 ..Default::default()
                             }
                         })
-                        .collect();
-
-                    Ok(versions)
+                        .collect()
                 } else {
                     debug!("Fetching HTML for {}", package);
                     let url = registry_url.replace("{}", &package);
@@ -102,7 +112,7 @@ impl Backend for PIPXBackend {
                         r#"href=["'][^"']*/([^/]+)\.tar\.gz(?:#(md5|sha1|sha224|sha256|sha384|sha512)=[0-9A-Fa-f]+)?["']"#
                     );
 
-                    let versions: Vec<VersionInfo> = version_re
+                    version_re
                         .captures_iter(&html)
                         .filter_map(|cap| {
                             let filename = cap.get(1)?.as_str();
@@ -118,18 +128,29 @@ impl Backend for PIPXBackend {
                             })
                         })
                         .sorted_by_cached_key(|v| Versioning::new(&v.version))
-                        .collect();
-
-                    Ok(versions)
+                        .collect()
                 }
             }
             PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
                 let repo = url.strip_prefix("https://github.com/").unwrap();
                 let data = github::list_releases(repo).await?;
-                Ok(Self::versions_from_github_releases(data))
+                Self::versions_from_github_releases(data)
             }
-            PipxRequest::Git { .. } => Ok(vec![]),
-        }
+            PipxRequest::Git { .. } => vec![],
+        };
+        // PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
+        // suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared
+        // regex so the rule stays scoped to Python — hex commit hashes used
+        // by other ecosystems (e.g. Go pseudo-versions) would false-positive.
+        Ok(versions
+            .into_iter()
+            .map(|mut v| {
+                if !v.prerelease && PEP440_PRERELEASE_REGEX.is_match(&v.version) {
+                    v.prerelease = true;
+                }
+                v
+            })
+            .collect())
     }
 
     async fn latest_stable_version(&self, _config: &Arc<Config>) -> eyre::Result<Option<String>> {
