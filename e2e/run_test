@@ -187,11 +187,21 @@ run_in_docker() {
     return 1
   fi
 
+  # Bind-mount disk-backed host dirs for /tmp and /root instead of using
+  # `--tmpfs` (which is RAM-backed and capped at ~half of RAM). Multi-GB tool
+  # installs (e.g. swift) do not fit in tmpfs and fail with ENOSPC. On
+  # namespace/GHA runners RUNNER_TEMP lives on the workspace disk.
+  local host_tmp_root="${MISE_E2E_HOST_TMP:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}"
+  local host_tmp host_root
+  host_tmp="$(mktemp -d "$host_tmp_root/mise-e2e-tmp.XXXXXX")"
+  host_root="$(mktemp -d "$host_tmp_root/mise-e2e-root.XXXXXX")"
+  chmod 777 "$host_tmp" "$host_root"
+
   local docker_args=(
     docker run --rm
     --read-only
-    --tmpfs /root:exec
-    --tmpfs /tmp:exec
+    -v "$host_root:/root"
+    -v "$host_tmp:/tmp"
     -v "$ROOT:/mise-src:ro"
     -v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
     -e ROOT=/mise-src
@@ -206,7 +216,10 @@ run_in_docker() {
     -e CARGO_TARGET_DIR=/usr/local/lib/mise
   )
 
-  "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST"
+  local rc=0
+  "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST" || rc=$?
+  rm -rf "$host_tmp" "$host_root"
+  return "$rc"
 }
 
 if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then

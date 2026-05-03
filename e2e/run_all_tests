@@ -118,6 +118,7 @@ LOG_FILES=()
 SUMMARY_FILES=()
 STATUS_FILES=()
 FINISHED=()
+FAILED_TESTS=()
 ORIGINAL_GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:-}"
 
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mise-e2e-logs.XXXXXX")"
@@ -197,6 +198,7 @@ while [[ $completed -lt $total ]]; do
     test_status="${test_status:-1}"
     if [[ $test_status != 0 ]]; then
       status=1
+      FAILED_TESTS+=("${RUN_FILES[$printed]}")
     fi
     test_count=$((test_count + 1))
     printed=$((printed + 1))
@@ -227,5 +229,29 @@ if ((${#SUMMARY_ENTRY_TYPES[@]} > 0)); then
 fi
 
 echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2
+
+if ((${#FAILED_TESTS[@]} > 0)); then
+  echo >&2
+  echo "Failed e2e tests (${#FAILED_TESTS[@]}):" >&2
+  for failed in "${FAILED_TESTS[@]}"; do
+    echo "  - $failed" >&2
+  done
+  if [[ -n ${GITHUB_ACTIONS:-} ]]; then
+    failed_joined="$(
+      IFS=,
+      echo "${FAILED_TESTS[*]}"
+    )"
+    echo "::error title=E2E failures (${#FAILED_TESTS[@]})::${failed_joined}" >&2
+    if [[ -n $ORIGINAL_GITHUB_STEP_SUMMARY ]]; then
+      {
+        echo
+        echo "### :x: Failed e2e tests (${#FAILED_TESTS[@]})"
+        for failed in "${FAILED_TESTS[@]}"; do
+          echo "- \`$failed\`"
+        done
+      } >>"$ORIGINAL_GITHUB_STEP_SUMMARY"
+    fi
+  fi
+fi
 
 exit "$status"
