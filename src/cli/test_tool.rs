@@ -1,4 +1,5 @@
 use crate::cli::args::ToolArg;
+use crate::cmd::cmd;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::registry::{REGISTRY, RegistryTool};
@@ -9,9 +10,10 @@ use crate::{dirs, env, file};
 use eyre::{Result, bail, eyre};
 use std::path::{Path, PathBuf};
 use std::{collections::BTreeSet, sync::Arc};
+use tokio::task::JoinSet;
 
 /// Test a tool installs and executes
-#[derive(Debug, clap::Args)]
+#[derive(Debug, Clone, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TestTool {
     /// Tool(s) to test
@@ -20,9 +22,9 @@ pub struct TestTool {
     /// Test every tool specified in registry/
     #[clap(long, short, conflicts_with = "tools", conflicts_with = "all_config")]
     pub all: bool,
-    /// Number of jobs to run in parallel
+    /// Number of tool tests to run in parallel
     /// [default: 4]
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[clap(long, short, env = "MISE_TEST_TOOL_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
     /// Test all tools specified in config files
     #[clap(long, conflicts_with = "tools", conflicts_with = "all")]
@@ -52,37 +54,61 @@ impl TestTool {
         let mut config = Config::get().await?;
 
         let target_tools = self.get_target_tools(&config).await?;
+        let mut targets = vec![];
         for (i, (tool, rt)) in target_tools.into_iter().enumerate() {
             if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
             {
                 continue;
             }
             let (cmd, expected) = if let Some(test) = &rt.test {
-                (test.0.to_string(), test.1)
+                (test.0.to_string(), test.1.to_string())
             } else if self.include_non_defined {
-                (format!("{} --version", tool.short), "__TODO__")
+                (format!("{} --version", tool.short), "__TODO__".to_string())
             } else {
                 continue;
             };
-            let start = std::time::Instant::now();
-            match self.test(&mut config, &tool, &cmd, expected).await {
-                Ok(_) => {
-                    info!("{}: OK", tool.short);
-                    self.github_summary(vec![
-                        tool.short.clone(),
-                        time::format_duration(start.elapsed()).to_string(),
-                        ":white_check_mark:".to_string(),
-                    ])?;
+            targets.push(TestToolTarget {
+                index: targets.len(),
+                tool,
+                cmd,
+                expected,
+            });
+        }
+
+        if self.run_in_process(targets.len()) {
+            let mut cleaned_any = false;
+            for target in &targets {
+                cleaned_any |= self.clean(&target.tool)?;
+            }
+            if cleaned_any {
+                config = Config::reset().await?;
+            }
+        }
+
+        let results = self.test_targets(config, targets).await?;
+        for result in results {
+            if !result.output.is_empty() {
+                miseprintln!("{}", result.output);
+            }
+            if let Some(err) = result.error {
+                if !result.status_logged {
+                    error!("{}: {}", result.tool, err);
                 }
-                Err(err) => {
-                    error!("{}: {:?}", tool.short, err);
-                    errored.push(tool.short.clone());
-                    self.github_summary(vec![
-                        tool.short.clone(),
-                        time::format_duration(start.elapsed()).to_string(),
-                        ":x:".to_string(),
-                    ])?;
+                errored.push(result.tool.clone());
+                self.github_summary(vec![
+                    result.tool,
+                    time::format_duration(result.duration).to_string(),
+                    ":x:".to_string(),
+                ])?;
+            } else {
+                if !result.status_logged {
+                    info!("{}: OK", result.tool);
                 }
+                self.github_summary(vec![
+                    result.tool,
+                    time::format_duration(result.duration).to_string(),
+                    ":white_check_mark:".to_string(),
+                ])?;
             };
         }
         if let Ok(github_summary) = env::var("GITHUB_STEP_SUMMARY") {
@@ -96,6 +122,113 @@ impl TestTool {
             bail!("tools failed: {}", errored.join(", "));
         }
         Ok(())
+    }
+
+    async fn test_targets(
+        &self,
+        config: Arc<Config>,
+        targets: Vec<TestToolTarget>,
+    ) -> Result<Vec<TestToolResult>> {
+        if self.run_in_process(targets.len()) {
+            let mut results = vec![];
+            for target in targets {
+                let tool = target.tool.short.clone();
+                let start = std::time::Instant::now();
+                let result = match self
+                    .test(&config, &target.tool, &target.cmd, &target.expected)
+                    .await
+                {
+                    Ok(output) => TestToolResult {
+                        index: target.index,
+                        tool,
+                        duration: start.elapsed(),
+                        output,
+                        error: None,
+                        status_logged: false,
+                    },
+                    Err(err) => TestToolResult {
+                        index: target.index,
+                        tool,
+                        duration: start.elapsed(),
+                        output: String::new(),
+                        error: Some(format!("{err:?}")),
+                        status_logged: false,
+                    },
+                };
+                results.push(result);
+            }
+            return Ok(results);
+        }
+
+        let jobs = self.jobs();
+        let mut jset = JoinSet::new();
+        let mut results = targets.iter().map(|_| None).collect::<Vec<_>>();
+
+        for target in targets {
+            while jset.len() >= jobs {
+                Self::collect_child_result(&mut jset, &mut results).await?;
+            }
+            let this = self.clone();
+            jset.spawn(async move {
+                tokio::task::spawn_blocking(move || this.test_child(target))
+                    .await
+                    .map_err(|err| eyre!("task panicked: {err}"))?
+            });
+        }
+
+        while !jset.is_empty() {
+            Self::collect_child_result(&mut jset, &mut results).await?;
+        }
+
+        Ok(results.into_iter().flatten().collect())
+    }
+
+    async fn collect_child_result(
+        jset: &mut JoinSet<Result<TestToolResult>>,
+        results: &mut [Option<TestToolResult>],
+    ) -> Result<()> {
+        if let Some(result) = jset.join_next().await {
+            let result = result??;
+            let index = result.index;
+            results[index] = Some(result);
+        }
+        Ok(())
+    }
+
+    fn test_child(&self, target: TestToolTarget) -> Result<TestToolResult> {
+        let start = std::time::Instant::now();
+        let exe = std::env::current_exe()?;
+        let mut args = vec![
+            "test-tool".to_string(),
+            "--jobs=1".to_string(),
+            target.tool.to_string(),
+        ];
+        if self.include_non_defined {
+            args.insert(1, "--include-non-defined".to_string());
+        }
+
+        let res = cmd(exe, args)
+            .env_remove("GITHUB_STEP_SUMMARY")
+            .env_remove("TEST_TRANCHE")
+            .env_remove("TEST_TRANCHE_COUNT")
+            .stderr_to_stdout()
+            .stdout_capture()
+            .unchecked()
+            .run()?;
+        let output = String::from_utf8(res.stdout)?.trim_end().to_string();
+        let error = match res.status.code() {
+            Some(0) => None,
+            Some(code) => Some(format!("command failed: exit code {code}")),
+            None => Some("command failed: terminated by signal".to_string()),
+        };
+        Ok(TestToolResult {
+            index: target.index,
+            tool: target.tool.short,
+            duration: start.elapsed(),
+            output,
+            error,
+            status_logged: true,
+        })
     }
 
     async fn get_target_tools(
@@ -148,13 +281,19 @@ impl TestTool {
         Ok(())
     }
 
-    async fn test(
-        &self,
-        config: &mut Arc<Config>,
-        tool: &ToolArg,
-        cmd: &str,
-        expected: &str,
-    ) -> Result<()> {
+    fn jobs(&self) -> usize {
+        if self.raw {
+            1
+        } else {
+            self.jobs.unwrap_or(4).max(1)
+        }
+    }
+
+    fn run_in_process(&self, target_count: usize) -> bool {
+        self.jobs() == 1 || target_count <= 1
+    }
+
+    fn clean(&self, tool: &ToolArg) -> Result<bool> {
         // First, clean all backend data by removing directories
         let pr = crate::ui::multi_progress_report::MultiProgressReport::get()
             .add(&format!("cleaning {}", tool.short));
@@ -189,12 +328,17 @@ impl TestTool {
         }
 
         pr.finish();
+        Ok(cleaned_any)
+    }
 
-        // Reset the config to clear in-memory backend metadata caches if we cleaned anything
-        if cleaned_any {
-            *config = Config::reset().await?;
-        }
-
+    async fn test(
+        &self,
+        config: &Arc<Config>,
+        tool: &ToolArg,
+        cmd: &str,
+        expected: &str,
+    ) -> Result<String> {
+        let mut config = config.clone();
         let mut args = vec![tool.clone()];
         args.extend(
             tool.ba
@@ -207,7 +351,7 @@ impl TestTool {
         let mut ts = ToolsetBuilder::new()
             .with_args(&args)
             .with_default_to_latest(true)
-            .build(config)
+            .build(&config)
             .await?;
         let opts = InstallOptions {
             missing_args_only: false,
@@ -215,7 +359,7 @@ impl TestTool {
             raw: self.raw,
             ..Default::default()
         };
-        let (_, missing) = ts.install_missing_versions(config, &opts).await?;
+        let (_, missing) = ts.install_missing_versions(&mut config, &opts).await?;
         ts.notify_missing_versions(missing);
         let tv = if let Some(tv) = ts
             .versions
@@ -225,14 +369,14 @@ impl TestTool {
             tv.clone()
         } else {
             warn!("no versions found for {tool}");
-            return Ok(());
+            return Ok(String::new());
         };
         let backend = tv.backend()?;
-        let env = ts.env_with_path(config).await?;
+        let env = ts.env_with_path(&config).await?;
         let mut which_parts = cmd.split_whitespace().collect::<Vec<_>>();
         let cmd = which_parts.remove(0);
         let mut which_cmd = backend
-            .which(config, &tv, cmd)
+            .which(&config, &tv, cmd)
             .await?
             .unwrap_or(PathBuf::from(cmd));
         if cfg!(windows) && which_cmd == Path::new("which") {
@@ -262,7 +406,7 @@ impl TestTool {
                             info!("command output:\n{stdout}");
                         }
                     }
-                    let bin_dirs = backend.list_bin_paths(config, &tv).await?;
+                    let bin_dirs = backend.list_bin_paths(&config, &tv).await?;
                     for bin_dir in &bin_dirs {
                         let bins = file::ls(bin_dir)?
                             .into_iter()
@@ -285,15 +429,30 @@ impl TestTool {
         let mut tera = get_tera(dirs::CWD.as_ref().map(|d| d.as_path()));
         let expected = tera.render_str(expected, &ctx)?;
         let stdout = String::from_utf8(res.stdout)?;
-        miseprintln!("{}", stdout.trim_end());
         let clean_stdout = console::strip_ansi_codes(&stdout);
         if !clean_stdout.contains(&expected) {
             return Err(eyre!(
                 "expected output not found: {expected}, got: {clean_stdout}"
             ));
         }
-        Ok(())
+        Ok(stdout.trim_end().to_string())
     }
+}
+
+struct TestToolTarget {
+    index: usize,
+    tool: ToolArg,
+    cmd: String,
+    expected: String,
+}
+
+struct TestToolResult {
+    index: usize,
+    tool: String,
+    duration: std::time::Duration,
+    output: String,
+    error: Option<String>,
+    status_logged: bool,
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
