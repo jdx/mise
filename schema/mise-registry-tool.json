@@ -4,6 +4,12 @@
   "title": "mise registry tool schema",
   "description": "Schema for individual tool files in the mise registry",
   "type": "object",
+  "definitions": {
+    "backendFull": {
+      "type": "string",
+      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
+    }
+  },
   "properties": {
     "aliases": {
       "type": "array",
@@ -18,16 +24,14 @@
       "items": {
         "oneOf": [
           {
-            "type": "string",
-            "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):.+$",
+            "$ref": "#/definitions/backendFull",
             "description": "Backend specification as a string (e.g., 'aqua:owner/repo')"
           },
           {
             "type": "object",
             "properties": {
               "full": {
-                "type": "string",
-                "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):.+$",
+                "$ref": "#/definitions/backendFull",
                 "description": "Full backend specification"
               },
               "platforms": {
