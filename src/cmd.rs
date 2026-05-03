@@ -109,6 +109,8 @@ pub struct CmdLineRunner<'a> {
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
+    stdout_hooks: Vec<Box<dyn Fn(String) + Send + 'a>>,
+    stderr_hooks: Vec<Box<dyn Fn(String) + Send + 'a>>,
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
 }
@@ -247,6 +249,8 @@ impl<'a> CmdLineRunner<'a> {
             pass_signals: false,
             on_stdout: None,
             on_stderr: None,
+            stdout_hooks: Vec::new(),
+            stderr_hooks: Vec::new(),
             timeout: None,
             sandbox: None,
         }
@@ -315,6 +319,22 @@ impl<'a> CmdLineRunner<'a> {
     pub fn with_on_stderr<F: Fn(String) + Send + 'a>(mut self, on_stderr: F) -> Self {
         self.on_stderr = Some(Box::new(on_stderr));
         self
+    }
+
+    /// Add a hook that fires for every stdout/stderr line alongside the
+    /// primary handler or default pr/terminal output. Hooks see
+    /// already-redacted lines and don't affect output behavior.
+    pub fn with_stdout_hook<F: Fn(String) + Send + 'a>(mut self, f: F) -> Self {
+        self.stdout_hooks.push(Box::new(f));
+        self
+    }
+    pub fn with_stderr_hook<F: Fn(String) + Send + 'a>(mut self, f: F) -> Self {
+        self.stderr_hooks.push(Box::new(f));
+        self
+    }
+
+    pub fn has_stdout_hooks(&self) -> bool {
+        !self.stdout_hooks.is_empty()
     }
 
     pub fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
@@ -514,6 +534,8 @@ impl<'a> CmdLineRunner<'a> {
         for line in rx {
             match line {
                 ChildProcessOutput::Stdout(line) => {
+                    // Redaction runs before hooks, so stdout_hooks (including
+                    // OTel log export) receive already-redacted content.
                     let line = self.redactor.redact(&line);
                     self.on_stdout(line.clone());
                     combined_output.push((line, OutputSource::Stdout));
@@ -711,6 +733,9 @@ impl<'a> CmdLineRunner<'a> {
 
     fn on_stdout(&self, line: String) {
         let _lock = OUTPUT_LOCK.lock().unwrap();
+        for hook in &self.stdout_hooks {
+            hook(line.clone());
+        }
         if let Some(on_stdout) = &self.on_stdout {
             on_stdout(line);
             return;
@@ -734,6 +759,9 @@ impl<'a> CmdLineRunner<'a> {
 
     fn on_stderr(&self, line: String) {
         let _lock = OUTPUT_LOCK.lock().unwrap();
+        for hook in &self.stderr_hooks {
+            hook(line.clone());
+        }
         if let Some(on_stderr) = &self.on_stderr {
             on_stderr(line);
             return;

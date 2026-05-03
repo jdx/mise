@@ -11,6 +11,7 @@ use crate::deps::{DepsEngine, DepsOptions};
 use crate::duration;
 use crate::env;
 use crate::file::display_path;
+use crate::otel;
 use crate::task::has_any_usage_spec;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
@@ -222,6 +223,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
+
+    #[clap(skip)]
+    pub trace_context: Option<otel::TraceContext>,
 }
 
 impl Run {
@@ -305,6 +309,11 @@ impl Run {
             .collect_vec();
 
         let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
+
+        // Capture the user-requested task names *before* dependency resolution,
+        // so the OpenTelemetry root span can be named after what was actually
+        // invoked rather than the (much larger) resolved dep set.
+        let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect
@@ -404,6 +413,11 @@ impl Run {
                 .await?;
         }
 
+        // Initialize OpenTelemetry before the timeout wrapper so traces
+        // are finalized even when the run is cancelled by --timeout.
+        // RunTrace implements Drop, so spans are flushed automatically.
+        let run_trace = otel::RunTrace::init_if_enabled(&requested_task_names);
+
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
             Some(duration::parse_duration(timeout_str)?)
@@ -412,12 +426,16 @@ impl Run {
         };
 
         if let Some(timeout) = timeout {
-            tokio::time::timeout(timeout, self.parallelize_tasks(config, resolved_tasks))
-                .await
-                .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
+            tokio::time::timeout(
+                timeout,
+                self.parallelize_tasks(config, resolved_tasks, run_trace),
+            )
+            .await
+            .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
         } else {
-            self.parallelize_tasks(config, resolved_tasks).await?
-        }
+            self.parallelize_tasks(config, resolved_tasks, run_trace)
+                .await?
+        };
 
         time!("run done");
         Ok(())
@@ -431,7 +449,12 @@ impl Run {
             .clone()
     }
 
-    async fn parallelize_tasks(mut self, mut config: Arc<Config>, tasks: Vec<Task>) -> Result<()> {
+    async fn parallelize_tasks(
+        mut self,
+        mut config: Arc<Config>,
+        tasks: Vec<Task>,
+        run_trace: Option<otel::RunTrace>,
+    ) -> Result<()> {
         time!("parallelize_tasks start");
 
         // Step 1: Prepare tasks (resolve dependencies, fetch, validate)
@@ -450,6 +473,13 @@ impl Run {
         // Step 4: Create TaskExecutor after tool installation
         self.setup_executor()?;
 
+        if let Some(ref rt) = run_trace {
+            self.trace_context = Some(rt.trace.clone());
+            if let Some(ref mut executor) = self.executor {
+                executor.otel_log_collector = Some(rt.log_collector.clone());
+            }
+        }
+
         // Disable exit-on-ctrl-c so tasks can handle SIGINT gracefully
         ctrlc::exit_on_ctrl_c(false);
 
@@ -464,7 +494,7 @@ impl Run {
         // Pump deps leaves into scheduler
         let mut main_done_rx = scheduler.pump_deps(main_deps.clone()).await;
         let spawn_context = scheduler.spawn_context(config.clone());
-        scheduler
+        let run_result = scheduler
             .run_loop(
                 &mut main_done_rx,
                 main_deps.clone(),
@@ -478,9 +508,26 @@ impl Run {
                     }
                 },
             )
-            .await?;
+            .await;
 
-        scheduler.join_all(this.continue_on_error).await?;
+        // On scheduler-level failure, propagate immediately — don't
+        // wait for in-flight tasks via join_all. RunTrace defaults to
+        // has_failures=true, so Drop will emit an errored root span.
+        run_result?;
+
+        let join_result = scheduler.join_all(this.continue_on_error).await;
+
+        // Mark success only when everything actually succeeded.
+        if !this.is_stopping()
+            && join_result.is_ok()
+            && let Some(ref rt) = run_trace
+        {
+            rt.set_succeeded();
+        }
+        // run_trace is dropped here, triggering finalization.
+        drop(run_trace);
+
+        join_result?;
 
         // Step 5: Display results and handle failures
         let results_display = crate::task::task_results_display::TaskResultsDisplay::new(
@@ -490,6 +537,7 @@ impl Run {
             this.timings(),
         );
         results_display.display_results(num_tasks, timer);
+
         time!("parallelize_tasks done");
 
         Ok(())
@@ -566,6 +614,12 @@ impl Run {
                 let deps = deps_for_remove.lock().await;
                 (deps.handled_task_keys(), deps.any_dep_ran(&task))
             };
+            // Reserve otel span IDs so task logs can be correlated to the span.
+            // The full span is emitted once from `end_task` below.
+            let otel_started = this
+                .trace_context
+                .as_ref()
+                .map(|tc| tc.start_task(&task, ctx.config.project_root.as_ref()));
             let result = this
                 .run_task_sched(
                     &task,
@@ -575,8 +629,10 @@ impl Run {
                     dep_ran,
                     semaphore,
                     &mut permit,
+                    otel_started.clone(),
                 )
                 .await;
+            let otel_end = std::time::SystemTime::now();
             // If the task actually ran (not skipped) and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
             // Tasks without sources always run and should not trigger invalidation.
@@ -602,6 +658,12 @@ impl Run {
                 }
                 this.add_failed_task(task.clone(), status);
             }
+
+            // Record completed otel span with real timing and status.
+            if let (Some(trace_ctx), Some(started)) = (&this.trace_context, otel_started) {
+                trace_ctx.end_task(started, &task, otel_end, &result);
+            }
+
             if let Some(oh) = &this.output_handler
                 && oh.output(None) == TaskOutput::KeepOrder
             {
@@ -754,6 +816,7 @@ impl Run {
         dep_ran: bool,
         semaphore: Arc<tokio::sync::Semaphore>,
         permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
+        otel_started: Option<crate::otel::trace_context::StartedSpan>,
     ) -> Result<bool> {
         self.executor
             .as_ref()
@@ -766,6 +829,7 @@ impl Run {
                 dep_ran,
                 semaphore,
                 permit,
+                otel_started,
             )
             .await
     }
