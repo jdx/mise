@@ -989,6 +989,25 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                     .ok()
                     .map(|(idx, tv)| (idx, tv.request.clone()))
                 {
+                    // Only propagate when the new install resolves the same
+                    // version specifier as the config. `mise x node` (no
+                    // version) is rewritten by `with_default_to_latest` to
+                    // carry the config's version string, so it matches and
+                    // updates the lockfile as expected. `mise x node@latest`
+                    // with mise.toml `node = "24"` carries a "latest"
+                    // specifier that doesn't match — that's an ad-hoc CLI
+                    // override and pairing the "24" request with a 25.x
+                    // install would produce a nonsensical lockfile entry.
+                    if new_version.request.version() != request.version() {
+                        trace!(
+                            "skipping lockfile update for {}@{} in {}: CLI override does not match config request {}",
+                            new_version.short(),
+                            new_version.version,
+                            display_path(&lockfile_path),
+                            request.version(),
+                        );
+                        continue;
+                    }
                     let mut new_version = new_version.clone();
                     new_version.request = request;
                     versions.remove(idx);
