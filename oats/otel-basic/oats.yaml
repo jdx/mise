@@ -1,0 +1,22 @@
+oats-schema-version: 2
+docker-compose:
+  files:
+    - docker-compose.yaml
+input:
+  - path: /run
+expected:
+  traces:
+    - traceql: '{ resource.service.name = "mise-oats" && name = "mise run hello" }'
+      equals: "mise run hello"
+      attributes:
+        mise.span_type: run
+    - traceql: '{ resource.service.name = "mise-oats" && name = "hello" }'
+      equals: "hello"
+      attributes:
+        mise.task.name: hello
+  logs:
+    - logql: '{service_name="mise-oats"} |= `hello from oats task`'
+      equals: "hello from oats task"
+      count:
+        min: 1
+        max: 1

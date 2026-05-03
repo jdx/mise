@@ -1,0 +1,11 @@
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: oats/otel-basic/Dockerfile
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: mise-oats
+    ports:
+      - "8080:8080"
