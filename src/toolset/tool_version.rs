@@ -172,7 +172,14 @@ impl ToolVersion {
             env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname)
         };
 
-        INSTALL_PATH_CACHE.insert(self.clone(), path.clone());
+        // Only cache the resolved path if it actually exists on disk. Otherwise
+        // the answer may change once the tool installs into a different
+        // location (e.g. a shared install dir created mid-run by `--system` /
+        // `--shared`), and the stale cache entry would be returned to callers
+        // like core go's `exec_env`, sending wrong values for GOROOT/GOPATH.
+        if path.exists() {
+            INSTALL_PATH_CACHE.insert(self.clone(), path.clone());
+        }
         path
     }
     pub fn runtime_path(&self) -> PathBuf {
@@ -707,6 +714,62 @@ mod tests {
         let runtime_path = tv.runtime_path();
         assert_eq!(runtime_path, install_path);
         assert!(runtime_path.is_dir());
+
+        Ok(())
+    }
+
+    /// Regression test for https://github.com/jdx/mise/discussions/9526
+    ///
+    /// `install_path()` must not cache a path that does not yet exist. If it
+    /// did, a tool that first asked for its install path before the install
+    /// completed would receive that cached path forever — even after the tool
+    /// installed somewhere else (e.g. via `--system` into a shared install
+    /// dir). Subsequent callers like core go's `exec_env` would then export
+    /// the wrong GOROOT/GOPATH, breaking go-backend tools that depend on go.
+    #[test]
+    fn install_path_does_not_cache_nonexistent_paths() -> Result<()> {
+        reset_install_path_cache();
+
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "dummy-cache-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short,
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join("dummy-cache");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "1.0.0".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.0.0".into());
+
+        // First call: nothing exists yet. Should return the primary path but
+        // must NOT populate the cache.
+        let p1 = tv.install_path();
+        assert!(!p1.exists());
+        assert!(INSTALL_PATH_CACHE.get(&tv).is_none());
+
+        // Now "install" the tool by creating the dir.
+        fs::create_dir_all(&p1)?;
+
+        // Second call should still return the same path; this time it exists
+        // so the cache is populated.
+        let p2 = tv.install_path();
+        assert_eq!(p1, p2);
+        assert!(p2.exists());
+        assert!(INSTALL_PATH_CACHE.get(&tv).is_some());
 
         Ok(())
     }
