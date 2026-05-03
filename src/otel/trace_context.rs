@@ -41,6 +41,8 @@ pub struct TraceContext {
 
 struct TraceContextInner {
     trace_id: TraceId,
+    trace_flags: TraceFlags,
+    trace_state: TraceState,
     root_span: RootSpan,
     /// Monorepo parent spans keyed by config_root path
     monorepo_parents: HashMap<PathBuf, MonorepoParent>,
@@ -51,7 +53,7 @@ struct TraceContextInner {
 }
 
 struct RootSpan {
-    parent_span_id: Option<SpanId>,
+    parent_span_context: Option<SpanContext>,
     span_id: SpanId,
     name: String,
     init_time: SystemTime,
@@ -108,6 +110,8 @@ pub struct StartedSpan {
     pub trace_id: TraceId,
     pub span_id: SpanId,
     pub parent_span_id: Option<SpanId>,
+    pub trace_flags: TraceFlags,
+    pub trace_state: TraceState,
     reserved_time: SystemTime,
     start_time: Arc<Mutex<Option<SystemTime>>>,
 }
@@ -127,12 +131,39 @@ impl StartedSpan {
             .unwrap_or(self.reserved_time)
     }
 
+    pub fn span_context(&self) -> SpanContext {
+        SpanContext::new(
+            self.trace_id,
+            self.span_id,
+            self.trace_flags,
+            false,
+            self.trace_state.clone(),
+        )
+    }
+
     #[cfg(test)]
     pub fn for_test(trace_id: TraceId, span_id: SpanId) -> Self {
+        Self::for_test_with_context(
+            trace_id,
+            span_id,
+            TraceFlags::SAMPLED,
+            TraceState::default(),
+        )
+    }
+
+    #[cfg(test)]
+    pub fn for_test_with_context(
+        trace_id: TraceId,
+        span_id: SpanId,
+        trace_flags: TraceFlags,
+        trace_state: TraceState,
+    ) -> Self {
         Self {
             trace_id,
             span_id,
             parent_span_id: None,
+            trace_flags,
+            trace_state,
             reserved_time: SystemTime::UNIX_EPOCH,
             start_time: Arc::new(Mutex::new(None)),
         }
@@ -141,22 +172,40 @@ impl StartedSpan {
 
 impl TraceContext {
     pub fn new(root_span_name: &str, provider: SdkTracerProvider) -> Self {
-        Self::new_with_parent(root_span_name, id_gen().new_trace_id(), None, provider)
+        Self::new_with_parent(
+            root_span_name,
+            id_gen().new_trace_id(),
+            None,
+            TraceFlags::SAMPLED,
+            TraceState::default(),
+            provider,
+        )
     }
 
-    pub fn from_parent(
+    pub fn from_parent_context(
         root_span_name: &str,
-        trace_id: TraceId,
-        parent_span_id: SpanId,
+        parent_span_context: SpanContext,
         provider: SdkTracerProvider,
     ) -> Self {
-        Self::new_with_parent(root_span_name, trace_id, Some(parent_span_id), provider)
+        let trace_id = parent_span_context.trace_id();
+        let trace_flags = parent_span_context.trace_flags();
+        let trace_state = parent_span_context.trace_state().clone();
+        Self::new_with_parent(
+            root_span_name,
+            trace_id,
+            Some(parent_span_context),
+            trace_flags,
+            trace_state,
+            provider,
+        )
     }
 
     fn new_with_parent(
         root_span_name: &str,
         trace_id: TraceId,
-        parent_span_id: Option<SpanId>,
+        parent_span_context: Option<SpanContext>,
+        trace_flags: TraceFlags,
+        trace_state: TraceState,
         tracer_provider: SdkTracerProvider,
     ) -> Self {
         let root_span_id = id_gen().new_span_id();
@@ -165,8 +214,10 @@ impl TraceContext {
         Self {
             inner: Arc::new(Mutex::new(TraceContextInner {
                 trace_id,
+                trace_flags,
+                trace_state,
                 root_span: RootSpan {
-                    parent_span_id,
+                    parent_span_context,
                     span_id: root_span_id,
                     name: root_span_name.to_string(),
                     init_time: root_init_time,
@@ -279,11 +330,13 @@ impl TraceContext {
         parent_span_id: Option<SpanId>,
         start_time: Option<SystemTime>,
     ) -> StartedSpan {
-        let trace_id = self.inner.lock().unwrap().trace_id;
+        let inner = self.inner.lock().unwrap();
         StartedSpan {
-            trace_id,
+            trace_id: inner.trace_id,
             span_id: id_gen().new_span_id(),
             parent_span_id,
+            trace_flags: inner.trace_flags,
+            trace_state: inner.trace_state.clone(),
             reserved_time: SystemTime::now(),
             start_time: Arc::new(Mutex::new(start_time)),
         }
@@ -319,7 +372,15 @@ impl TraceContext {
                 name: task_name.to_string(),
                 trace_id: started.trace_id,
                 span_id: started.span_id,
-                parent_span_id: started.parent_span_id,
+                parent_span_context: started.parent_span_id.map(|parent_span_id| {
+                    SpanContext::new(
+                        started.trace_id,
+                        parent_span_id,
+                        started.trace_flags,
+                        false,
+                        started.trace_state.clone(),
+                    )
+                }),
                 start_time: started.effective_start_time(),
                 end_time,
                 status,
@@ -364,7 +425,13 @@ impl TraceContext {
                     name: parent.display_name,
                     trace_id,
                     span_id: parent.span_id,
-                    parent_span_id: Some(root_span_id),
+                    parent_span_context: Some(SpanContext::new(
+                        trace_id,
+                        root_span_id,
+                        inner.trace_flags,
+                        false,
+                        inner.trace_state.clone(),
+                    )),
                     start_time: parent.min_start.unwrap_or(parent.init_time),
                     end_time: parent.max_end.unwrap_or(now),
                     status: Status::Unset,
@@ -386,7 +453,7 @@ impl TraceContext {
                 name: inner.root_span.name.clone(),
                 trace_id,
                 span_id: root_span_id,
-                parent_span_id: inner.root_span.parent_span_id,
+                parent_span_context: inner.root_span.parent_span_context.clone(),
                 start_time: inner
                     .root_span
                     .min_start
@@ -404,7 +471,7 @@ struct EmitSpanParams {
     name: String,
     trace_id: TraceId,
     span_id: SpanId,
-    parent_span_id: Option<SpanId>,
+    parent_span_context: Option<SpanContext>,
     start_time: SystemTime,
     end_time: SystemTime,
     status: Status,
@@ -417,14 +484,7 @@ fn emit_span(provider: &SdkTracerProvider, params: EmitSpanParams) {
     let tracer = provider.tracer("mise.tasks");
 
     // Build parent context if we have a parent span ID.
-    let parent_cx = if let Some(psid) = params.parent_span_id {
-        let parent_sc = SpanContext::new(
-            params.trace_id,
-            psid,
-            TraceFlags::SAMPLED,
-            true,
-            TraceState::default(),
-        );
+    let parent_cx = if let Some(parent_sc) = params.parent_span_context {
         opentelemetry::Context::new().with_remote_span_context(parent_sc)
     } else {
         opentelemetry::Context::new()
@@ -646,8 +706,17 @@ mod tests {
         ]);
         let parent_span_id = SpanId::from_bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]);
 
-        let trace =
-            TraceContext::from_parent("mise run nested", parent_trace_id, parent_span_id, provider);
+        let trace = TraceContext::from_parent_context(
+            "mise run nested",
+            SpanContext::new(
+                parent_trace_id,
+                parent_span_id,
+                TraceFlags::SAMPLED,
+                true,
+                TraceState::default(),
+            ),
+            provider,
+        );
 
         trace.emit_final_spans(false);
 

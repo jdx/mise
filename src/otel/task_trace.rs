@@ -10,9 +10,10 @@ use crate::otel::{OtelLogCollector, TraceContext, is_enabled};
 use crate::task::Task;
 use eyre::Result;
 use opentelemetry::propagation::TextMapPropagator;
-use opentelemetry::trace::{SpanId, Status, TraceContextExt, TraceId};
+use opentelemetry::trace::{SpanContext, Status, TraceContextExt};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -55,10 +56,9 @@ impl RunTrace {
         let logger_provider = crate::otel::build_logger_provider(resource);
 
         let trace = match parse_otel_context() {
-            Some((trace_id, parent_span_id)) => TraceContext::from_parent(
+            Some(parent_span_context) => TraceContext::from_parent_context(
                 &root_span_name,
-                trace_id,
-                parent_span_id,
+                parent_span_context,
                 tracer_provider,
             ),
             _ => TraceContext::new(&root_span_name, tracer_provider),
@@ -169,29 +169,55 @@ fn task_attributes(task: &Task, display_name: &str) -> Vec<(String, String)> {
     attrs
 }
 
-/// Format a W3C traceparent value. TraceId/SpanId Display impls
-/// produce the correct lowercase hex, so this is just glue.
-pub fn format_traceparent(trace_id: TraceId, span_id: SpanId) -> String {
-    format!("00-{trace_id}-{span_id}-01")
+/// Inject a span context into task env vars using the standard
+/// W3C Trace Context propagator and env-carrier variable names.
+pub fn inject_otel_context(env: &mut BTreeMap<String, String>, started: &StartedSpan) {
+    let propagator = TraceContextPropagator::new();
+    let cx = opentelemetry::Context::new().with_remote_span_context(started.span_context());
+    let mut carrier = HashMap::new();
+    propagator.inject_context(&cx, &mut carrier);
+    if let Some(traceparent) = carrier.remove("traceparent") {
+        env.insert("TRACEPARENT".into(), traceparent);
+    }
+    if let Some(tracestate) = carrier.remove("tracestate") {
+        env.insert("TRACESTATE".into(), tracestate);
+    }
 }
 
 /// Extract parent trace context from the `TRACEPARENT` env var.
 /// Uses the SDK's `TraceContextPropagator` for parsing.
-fn parse_otel_context() -> Option<(TraceId, SpanId)> {
-    parse_otel_context_from_str(&std::env::var("TRACEPARENT").ok()?)
+fn parse_otel_context() -> Option<SpanContext> {
+    let mut carrier = HashMap::new();
+    carrier.insert(
+        "traceparent".to_string(),
+        std::env::var("TRACEPARENT").ok()?,
+    );
+    if let Ok(tracestate) = std::env::var("TRACESTATE") {
+        carrier.insert("tracestate".to_string(), tracestate);
+    }
+    extract_span_context(&carrier)
 }
 
-fn parse_otel_context_from_str(traceparent: &str) -> Option<(TraceId, SpanId)> {
+#[cfg(test)]
+fn parse_otel_context_from_str(traceparent: &str) -> Option<SpanContext> {
     let mut carrier = HashMap::new();
     carrier.insert("traceparent".to_string(), traceparent.to_string());
+    extract_span_context(&carrier)
+}
+
+#[cfg(test)]
+fn parse_otel_context_from_parts(traceparent: &str, tracestate: &str) -> Option<SpanContext> {
+    let mut carrier = HashMap::new();
+    carrier.insert("traceparent".to_string(), traceparent.to_string());
+    carrier.insert("tracestate".to_string(), tracestate.to_string());
+    extract_span_context(&carrier)
+}
+
+fn extract_span_context(carrier: &HashMap<String, String>) -> Option<SpanContext> {
     let propagator = TraceContextPropagator::new();
-    let cx = propagator.extract(&carrier);
+    let cx = propagator.extract(carrier);
     let sc = cx.span().span_context().clone();
-    if sc.trace_id() != TraceId::INVALID && sc.span_id() != SpanId::INVALID {
-        Some((sc.trace_id(), sc.span_id()))
-    } else {
-        None
-    }
+    if sc.is_valid() { Some(sc) } else { None }
 }
 
 #[cfg(test)]
@@ -199,7 +225,7 @@ mod tests {
     use super::*;
     use crate::otel::OtelLogCollector;
     use crate::task::Task;
-    use opentelemetry::trace::{SpanId, Status, TraceId};
+    use opentelemetry::trace::{SpanId, Status, TraceFlags, TraceId, TraceState};
     use opentelemetry_sdk::error::OTelSdkResult;
     use opentelemetry_sdk::trace::{SimpleSpanProcessor, SpanData, SpanExporter};
     use std::future;
@@ -297,15 +323,24 @@ mod tests {
     }
 
     #[test]
-    fn format_traceparent_produces_w3c_format() {
+    fn inject_otel_context_uses_propagator_output() {
         let trace_id = TraceId::from_bytes([
             0x0a, 0xf7, 0x65, 0x19, 0x16, 0xcd, 0x43, 0xdd, 0x84, 0x48, 0xeb, 0x21, 0x1c, 0x80,
             0x31, 0x9c,
         ]);
         let span_id = SpanId::from_bytes([0xb7, 0xad, 0x6b, 0x71, 0x69, 0x20, 0x33, 0x31]);
+        let started = StartedSpan::for_test_with_context(
+            trace_id,
+            span_id,
+            TraceFlags::SAMPLED,
+            TraceState::default(),
+        );
+
+        let mut env = BTreeMap::new();
+        inject_otel_context(&mut env, &started);
         assert_eq!(
-            format_traceparent(trace_id, span_id),
-            "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+            env.get("TRACEPARENT").map(String::as_str),
+            Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
         );
     }
 
@@ -316,14 +351,27 @@ mod tests {
             0x31, 0x9c,
         ]);
         let span_id = SpanId::from_bytes([0xb7, 0xad, 0x6b, 0x71, 0x69, 0x20, 0x33, 0x31]);
-        let parsed = parse_otel_context_from_str(&format_traceparent(trace_id, span_id));
-        assert_eq!(parsed, Some((trace_id, span_id)));
+        let parsed =
+            parse_otel_context_from_str("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+                .unwrap();
+        assert_eq!(parsed.trace_id(), trace_id);
+        assert_eq!(parsed.span_id(), span_id);
     }
 
     #[test]
     fn parse_otel_context_rejects_invalid_traceparent_env() {
         let parsed = parse_otel_context_from_str("00-short-also_short-01");
         assert_eq!(parsed, None);
+    }
+
+    #[test]
+    fn parse_otel_context_preserves_upstream_tracestate() {
+        let parsed = parse_otel_context_from_parts(
+            "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+            "vendor=value",
+        )
+        .unwrap();
+        assert_eq!(parsed.trace_state().header(), "vendor=value");
     }
 
     #[test]
