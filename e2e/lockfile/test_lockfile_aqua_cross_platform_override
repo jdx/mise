@@ -21,11 +21,12 @@ TARGET_PLATFORM="windows-x64"
 TARGET_AQUA_OS="windows"
 
 REGISTRY_DIR="$PWD/aqua-registry-local"
-mkdir -p "$REGISTRY_DIR/pkgs/example/testtool"
+mkdir -p "$REGISTRY_DIR"
 
-cat <<EOF_REGISTRY >"$REGISTRY_DIR/pkgs/example/testtool/registry.yaml"
+cat <<EOF_REGISTRY >"$REGISTRY_DIR/registry.yaml"
 packages:
   - type: http
+    name: example/testtool
     supported_envs:
       - linux
       - darwin
@@ -36,13 +37,6 @@ packages:
         url: https://example.com/host-{{.OS}}-{{.Arch}}-{{.Version}}.pkg
         format: pkg
 EOF_REGISTRY
-
-(
-  cd "$REGISTRY_DIR"
-  git init -q
-  git add pkgs/example/testtool/registry.yaml
-  git commit -qm "init local aqua registry"
-)
 
 export MISE_AQUA_BAKED_REGISTRY=0
 export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"

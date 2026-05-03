@@ -126,13 +126,20 @@ env = "MISE_AQUA_MINISIGN"
 type = "Bool"
 
 [aqua.registry_url]
-description = "URL to fetch aqua registry from."
+description = "URL of an aqua registry repository to fetch."
 docs = """
-URL to fetch aqua registry from. This is used to install tools from the aqua registry.
+URL of an aqua registry repository to fetch. mise downloads `registry.yaml` from the repository root
+and falls back to `registry.yml` if needed.
 
-If this is set, the baked-in aqua registry is not used.
+Downloaded registries are cached and compiled into per-package rkyv blobs so package lookup
+doesn't parse the full YAML registry on every command.
 
-By default, the official aqua registry is used: https://github.com/aquaproj/aqua-registry
+If this is set, mise checks the configured registry first. The baked-in aqua registry remains a
+fallback when `aqua.baked_registry` is enabled.
+
+By default, mise uses the baked-in official aqua registry when `aqua.baked_registry` is enabled.
+If the baked registry is disabled, mise downloads the official registry:
+https://github.com/aquaproj/aqua-registry
 """
 env = "MISE_AQUA_REGISTRY_URL"
 optional = true
