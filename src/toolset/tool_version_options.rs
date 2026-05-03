@@ -25,6 +25,93 @@ pub struct ToolVersionOptions {
 // and won't have NaN, so this is safe in practice.
 impl Eq for ToolVersionOptions {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolOptionSource {
+    Registry,
+    BackendAlias,
+    Config,
+    InlineBackendArg,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ResolvedToolOptions {
+    options: ToolVersionOptions,
+    sources: IndexMap<String, ToolOptionSource>,
+}
+
+impl ResolvedToolOptions {
+    pub fn options(&self) -> &ToolVersionOptions {
+        &self.options
+    }
+
+    pub fn into_options(self) -> ToolVersionOptions {
+        self.options
+    }
+
+    pub fn source_for_key(&self, key: &str) -> Option<ToolOptionSource> {
+        self.sources.get(key).copied().or_else(|| {
+            key.split_once('.')
+                .and_then(|(root, _)| self.sources.get(root).copied())
+        })
+    }
+
+    pub fn has_key_from_sources(&self, key: &str, sources: &[ToolOptionSource]) -> bool {
+        if key == "install_env" {
+            return !self.options.install_env.is_empty()
+                && self.sources.iter().any(|(source_key, source)| {
+                    option_key_matches(source_key, key) && sources.contains(source)
+                });
+        }
+        self.source_for_key(key)
+            .is_some_and(|source| sources.contains(&source))
+            && self.options.contains_key(key)
+    }
+
+    pub fn has_any_key_from_sources(&self, keys: &[&str], sources: &[ToolOptionSource]) -> bool {
+        keys.iter()
+            .any(|key| self.has_key_from_sources(key, sources))
+    }
+
+    pub fn has_any_key_except_from_sources(
+        &self,
+        except_keys: &[&str],
+        sources: &[ToolOptionSource],
+    ) -> bool {
+        self.sources.iter().any(|(key, source)| {
+            sources.contains(source)
+                && !except_keys
+                    .iter()
+                    .any(|except_key| option_key_matches(key, except_key))
+        })
+    }
+
+    pub fn apply_overrides(&mut self, options: &ToolVersionOptions, source: ToolOptionSource) {
+        self.options.apply_overrides(options);
+        for key in options.opts.keys() {
+            self.sources.insert(key.clone(), source);
+        }
+        if options.os.is_some() {
+            self.sources.insert("os".to_string(), source);
+        }
+        if options.depends.is_some() {
+            self.sources.insert("depends".to_string(), source);
+        }
+        if !options.install_env.is_empty() {
+            self.sources.insert("install_env".to_string(), source);
+            for key in options.install_env.keys() {
+                self.sources.insert(format!("install_env.{key}"), source);
+            }
+        }
+    }
+}
+
+fn option_key_matches(key: &str, expected: &str) -> bool {
+    key == expected
+        || key
+            .strip_prefix(expected)
+            .is_some_and(|suffix| suffix.starts_with('.'))
+}
+
 // Implement Hash manually to ensure deterministic hashing across IndexMap
 impl std::hash::Hash for ToolVersionOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -68,7 +155,8 @@ fn hash_toml_value<H: std::hash::Hasher>(v: &toml::Value, state: &mut H) {
 
 impl ToolVersionOptions {
     pub fn is_empty(&self) -> bool {
-        self.depends.as_ref().is_none_or(|d| d.is_empty())
+        self.os.as_ref().is_none_or(|os| os.is_empty())
+            && self.depends.as_ref().is_none_or(|d| d.is_empty())
             && self.install_env.is_empty()
             && self.opts.is_empty()
     }
@@ -141,6 +229,18 @@ impl ToolVersionOptions {
     pub fn contains_key(&self, key: &str) -> bool {
         if self.opts.contains_key(key) {
             return true;
+        }
+        if key == "os" {
+            return self.os.is_some();
+        }
+        if key == "depends" {
+            return self.depends.is_some();
+        }
+        if key == "install_env" {
+            return !self.install_env.is_empty();
+        }
+        if let Some(env_key) = key.strip_prefix("install_env.") {
+            return self.install_env.contains_key(env_key);
         }
 
         // Check if it's a nested key that exists
@@ -756,6 +856,71 @@ mod tests {
     }
 
     #[test]
+    fn test_contains_key_with_named_fields() {
+        let tool_opts = ToolVersionOptions {
+            os: Some(vec!["linux".to_string()]),
+            depends: Some(vec!["node".to_string()]),
+            install_env: [(
+                "NPM_CONFIG_REGISTRY".to_string(),
+                "https://example.com".to_string(),
+            )]
+            .iter()
+            .cloned()
+            .collect(),
+            ..Default::default()
+        };
+
+        assert!(tool_opts.contains_key("os"));
+        assert!(tool_opts.contains_key("depends"));
+        assert!(tool_opts.contains_key("install_env"));
+        assert!(tool_opts.contains_key("install_env.NPM_CONFIG_REGISTRY"));
+        assert!(!tool_opts.contains_key("install_env.MISSING"));
+    }
+
+    #[test]
+    fn test_resolved_tool_options_tracks_named_field_sources() {
+        let config_opts = ToolVersionOptions {
+            os: Some(vec!["linux".to_string()]),
+            install_env: [("CONFIG_ONLY".to_string(), "1".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+            ..Default::default()
+        };
+        let inline_opts = ToolVersionOptions {
+            depends: Some(vec!["node".to_string()]),
+            install_env: [("INLINE_ONLY".to_string(), "2".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+            ..Default::default()
+        };
+
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&config_opts, ToolOptionSource::Config);
+        resolved.apply_overrides(&inline_opts, ToolOptionSource::InlineBackendArg);
+
+        assert_eq!(
+            resolved.source_for_key("os"),
+            Some(ToolOptionSource::Config)
+        );
+        assert_eq!(
+            resolved.source_for_key("install_env.CONFIG_ONLY"),
+            Some(ToolOptionSource::Config)
+        );
+        assert_eq!(
+            resolved.source_for_key("install_env.INLINE_ONLY"),
+            Some(ToolOptionSource::InlineBackendArg)
+        );
+        assert!(resolved.has_key_from_sources("install_env", &[ToolOptionSource::Config]));
+        assert!(resolved.has_key_from_sources("depends", &[ToolOptionSource::InlineBackendArg]));
+        assert!(!resolved.has_any_key_except_from_sources(
+            &["install_env", "depends"],
+            &[ToolOptionSource::InlineBackendArg],
+        ));
+    }
+
+    #[test]
     fn test_merge_functionality() {
         let mut opts = IndexMap::new();
         let mut platforms = toml::map::Map::new();
@@ -854,6 +1019,15 @@ mod tests {
             ..Default::default()
         };
         assert!(tvo.is_empty());
+    }
+
+    #[test]
+    fn test_os_field_is_not_empty() {
+        let tvo = ToolVersionOptions {
+            os: Some(vec!["linux".to_string()]),
+            ..Default::default()
+        };
+        assert!(!tvo.is_empty());
     }
 
     #[test]

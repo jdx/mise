@@ -12,7 +12,6 @@ use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
 use heck::{ToKebabCase, ToShoutySnakeCase};
-use indexmap::IndexMap;
 use std::collections::HashSet;
 use std::env;
 use std::fmt::{Debug, Display};
@@ -33,65 +32,6 @@ pub struct BackendResolution {
 impl BackendResolution {
     pub fn new(explicit: bool) -> Self {
         Self { explicit }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolOptionSource {
-    Registry,
-    BackendAlias,
-    Config,
-    InlineBackendArg,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ResolvedToolOptions {
-    options: ToolVersionOptions,
-    sources: IndexMap<String, ToolOptionSource>,
-}
-
-impl ResolvedToolOptions {
-    pub fn options(&self) -> &ToolVersionOptions {
-        &self.options
-    }
-
-    pub fn into_options(self) -> ToolVersionOptions {
-        self.options
-    }
-
-    pub fn source_for_key(&self, key: &str) -> Option<ToolOptionSource> {
-        self.sources.get(key).copied().or_else(|| {
-            key.split_once('.')
-                .and_then(|(root, _)| self.sources.get(root).copied())
-        })
-    }
-
-    pub fn has_key_from_sources(&self, key: &str, sources: &[ToolOptionSource]) -> bool {
-        self.source_for_key(key)
-            .is_some_and(|source| sources.contains(&source))
-            && self.options.contains_key(key)
-    }
-
-    pub fn has_any_key_from_sources(&self, keys: &[&str], sources: &[ToolOptionSource]) -> bool {
-        keys.iter()
-            .any(|key| self.has_key_from_sources(key, sources))
-    }
-
-    pub fn has_any_key_except_from_sources(
-        &self,
-        except_keys: &[&str],
-        sources: &[ToolOptionSource],
-    ) -> bool {
-        self.sources
-            .iter()
-            .any(|(key, source)| sources.contains(source) && !except_keys.contains(&key.as_str()))
-    }
-
-    fn apply_overrides(&mut self, options: &ToolVersionOptions, source: ToolOptionSource) {
-        self.options.apply_overrides(options);
-        for key in options.opts.keys() {
-            self.sources.insert(key.clone(), source);
-        }
     }
 }
 
@@ -504,7 +444,7 @@ impl BackendArg {
     }
 
     pub fn opts(&self) -> ToolVersionOptions {
-        self.resolved_opts().into_options()
+        self.opts_with_layers(self.backend_alias_opts_from_loaded_config(), None)
     }
 
     pub fn registry_opts(&self) -> ToolVersionOptions {
@@ -516,35 +456,23 @@ impl BackendArg {
     }
 
     pub fn opts_with_config(&self, config_opts: Option<ToolVersionOptions>) -> ToolVersionOptions {
-        self.resolved_opts_with_config(config_opts).into_options()
+        self.opts_with_layers(self.backend_alias_opts_from_loaded_config(), config_opts)
     }
 
-    pub fn resolved_opts(&self) -> ResolvedToolOptions {
-        self.resolved_opts_with_layers(self.backend_alias_opts_from_loaded_config(), None)
-    }
-
-    pub fn resolved_opts_with_config(
-        &self,
-        config_opts: Option<ToolVersionOptions>,
-    ) -> ResolvedToolOptions {
-        self.resolved_opts_with_layers(self.backend_alias_opts_from_loaded_config(), config_opts)
-    }
-
-    pub fn resolved_opts_with_layers(
+    fn opts_with_layers(
         &self,
         alias_opts: Option<ToolVersionOptions>,
         config_opts: Option<ToolVersionOptions>,
-    ) -> ResolvedToolOptions {
-        let mut opts = ResolvedToolOptions::default();
-        opts.apply_overrides(&self.registry_opts(), ToolOptionSource::Registry);
+    ) -> ToolVersionOptions {
+        let mut opts = self.registry_opts();
         if let Some(alias_opts) = alias_opts {
-            opts.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
+            opts.apply_overrides(&alias_opts);
         }
         if let Some(config_opts) = config_opts {
-            opts.apply_overrides(&config_opts, ToolOptionSource::Config);
+            opts.apply_overrides(&config_opts);
         }
         if let Some(user_opts) = self.explicit_opts() {
-            opts.apply_overrides(user_opts, ToolOptionSource::InlineBackendArg);
+            opts.apply_overrides(user_opts);
         }
         opts
     }
@@ -702,6 +630,7 @@ impl Hash for BackendArg {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
     use pretty_assertions::{assert_eq, assert_str_eq};
 
     #[tokio::test]
@@ -943,6 +872,22 @@ mod tests {
         assert_eq!(ba.registry_opts().get("exe"), Some("gt"));
         assert_eq!(opts.get("exe"), Some("inline"));
         assert_eq!(opts.get("bar"), Some("config"));
+        assert_eq!(opts.get("foo"), Some("inline"));
+    }
+
+    #[tokio::test]
+    async fn test_opts_with_layers_preserves_alias_options() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg = "graphite[exe=inline,foo=inline]".into();
+        let alias_opts = parse_tool_options("exe=alias,alias_only=alias");
+        let config_opts = parse_tool_options("exe=config,config_only=config");
+
+        let opts = ba.opts_with_layers(Some(alias_opts), Some(config_opts));
+
+        assert_eq!(ba.registry_opts().get("exe"), Some("gt"));
+        assert_eq!(opts.get("exe"), Some("inline"));
+        assert_eq!(opts.get("alias_only"), Some("alias"));
+        assert_eq!(opts.get("config_only"), Some("config"));
         assert_eq!(opts.get("foo"), Some("inline"));
     }
 }

@@ -15,7 +15,7 @@ use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
-use crate::cli::args::{BackendArg, ResolvedToolOptions, split_bracketed_opts};
+use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
@@ -31,7 +31,8 @@ use crate::task::{Task, TaskTemplate};
 use crate::tera::take_tera_accessed_files;
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ResolvedToolOptions, ToolOptionSource, ToolRequestSet, ToolRequestSetBuilder, ToolVersion,
+    ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -352,12 +353,24 @@ impl Config {
     ) -> Result<ResolvedToolOptions> {
         let config_opts = self.get_tool_opts(backend_arg).await?;
         let alias_opts = self.get_backend_alias_opts(backend_arg);
-        Ok(backend_arg.resolved_opts_with_layers(alias_opts, config_opts))
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
+        if let Some(alias_opts) = alias_opts {
+            resolved.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
+        }
+        if let Some(config_opts) = config_opts {
+            resolved.apply_overrides(&config_opts, ToolOptionSource::Config);
+        }
+        if let Some(inline_opts) = backend_arg.explicit_opts() {
+            resolved.apply_overrides(inline_opts, ToolOptionSource::InlineBackendArg);
+        }
+        Ok(resolved)
     }
 
     fn get_backend_alias_opts(&self, backend_arg: &BackendArg) -> Option<ToolVersionOptions> {
+        let short = backend::unalias_backend(&backend_arg.short);
         self.all_aliases
-            .get(backend_arg.short.as_str())
+            .get(short)
             .and_then(|alias| alias.backend.as_deref())
             .and_then(|backend| split_bracketed_opts(backend).map(|(_, opts)| opts))
             .map(crate::toolset::parse_tool_options)
@@ -2653,15 +2666,15 @@ mod tests {
         assert_eq!(opts.get("bar"), Some("config"));
         assert_eq!(
             resolved.source_for_key("api_url"),
-            Some(crate::cli::args::ToolOptionSource::InlineBackendArg)
+            Some(crate::toolset::ToolOptionSource::InlineBackendArg)
         );
         assert_eq!(
             resolved.source_for_key("asset_pattern"),
-            Some(crate::cli::args::ToolOptionSource::Config)
+            Some(crate::toolset::ToolOptionSource::Config)
         );
         assert_eq!(
             resolved.source_for_key("foo"),
-            Some(crate::cli::args::ToolOptionSource::BackendAlias)
+            Some(crate::toolset::ToolOptionSource::BackendAlias)
         );
         Ok(())
     }
