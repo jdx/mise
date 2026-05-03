@@ -32,15 +32,7 @@ impl DepsProvider for BundlerDepsProvider {
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        let root = self.base.config_root();
-        // Check for vendor/bundle if using --path vendor/bundle
-        let vendor = root.join("vendor/bundle");
-        if vendor.exists() {
-            vec![vendor]
-        } else {
-            // Use .bundle directory as fallback indicator
-            vec![root.join(".bundle")]
-        }
+        vec![self.base.config_root().join("vendor/bundle")]
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
