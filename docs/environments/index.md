@@ -45,7 +45,7 @@ Environment variables are available when using [`mise x|exec`](/cli/exec.html), 
 
 ```shell
 mise set MY_VAR=123
-mise exec -- echo $MY_VAR
+mise exec -- bash -c 'echo $MY_VAR'
 # 123
 ```
 
