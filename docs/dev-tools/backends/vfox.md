@@ -19,20 +19,6 @@ The code for this is inside the mise repository at [`./src/backend/vfox.rs`](htt
 
 No extra system packages are required to _run_ the vfox backend. Vfox Lua code is executed by the interpreter built into mise.
 
-### `depends` in `metadata.lua`
-
-If a plugin’s install hooks need another mise tool’s executables (for example `node` for `npm` in `BackendInstall`), declare them on the `PLUGIN` table in `metadata.lua`:
-
-```lua
-PLUGIN = {
-    name = "vfox-npm",
-    version = "1.0.0",
-    depends = { "node" },
-}
-```
-
-Use an array of **tool name strings** (the same identifiers you would use in `mise.toml`). mise treats them as install dependencies so those tools are ordered before this plugin and appear on `PATH` in the dependency environment used during installation. This is separate from `depends` on a `[tools]` entry in `mise.toml`, which only orders installs among tools you already listed in config.
-
 ## Usage
 
 The following installs the latest version of cmake and sets it as the active version on PATH:

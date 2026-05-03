@@ -135,10 +135,7 @@ PLUGIN = {
     name = "vfox-npm",
     version = "1.0.0",
     description = "Backend plugin for npm packages",
-    author = "Your Name",
-
-    -- mise tool names that must be on PATH during BackendInstall / hooks
-    depends = { "node" },
+    author = "Your Name"
 }
 ```
 
