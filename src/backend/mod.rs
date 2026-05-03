@@ -13,7 +13,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
 
-use crate::cli::args::{BackendArg, ToolVersionType};
+use crate::cli::args::{BackendArg, ToolOptionSource, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
@@ -75,6 +75,14 @@ pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
+
+const VERSIONS_HOST_SAFE_LOCAL_OPT_KEYS: &[&str] =
+    &["prerelease", "minimum_release_age", "install_before"];
+const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
+    ToolOptionSource::BackendAlias,
+    ToolOptionSource::Config,
+    ToolOptionSource::InlineBackendArg,
+];
 
 static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
 
@@ -786,7 +794,8 @@ pub trait Backend: Debug + Send + Sync {
         let mut remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
         let id = self.id();
-        let opts = config.get_tool_opts_with_overrides(&ba).await?;
+        let resolved_opts = config.resolve_tool_opts_with_overrides(&ba).await?;
+        let opts = resolved_opts.options();
 
         // Only a subset of backends benefit from the versions host cache —
         // those whose upstream listing is rate-limited (github API) or not
@@ -822,6 +831,15 @@ pub trait Backend: Debug + Send + Sync {
             trace!(
                 "Skipping versions host for {} because {} backend has a direct source",
                 ba.short, backend_type
+            );
+            false
+        } else if resolved_opts.has_any_key_except_from_sources(
+            VERSIONS_HOST_SAFE_LOCAL_OPT_KEYS,
+            VERSIONS_HOST_LOCAL_OPT_SOURCES,
+        ) {
+            trace!(
+                "Skipping versions host for {} because backend opts are overridden outside the registry",
+                ba.short
             );
             false
         } else if let Some(plugin) = self.plugin()
@@ -867,7 +885,7 @@ pub trait Backend: Debug + Send + Sync {
         // that honor `prerelease`. When the current opts don't opt in, drop
         // entries with `prerelease = true` before returning so flipping the
         // tool option takes effect without invalidating the cache.
-        let want_prereleases = include_prereleases(&opts);
+        let want_prereleases = include_prereleases(opts);
 
         if Settings::get().offline() {
             trace!(
