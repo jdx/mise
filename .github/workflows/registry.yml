@@ -211,6 +211,7 @@ jobs:
           set +e
           docker run --rm \
             --read-only \
+            -w /tmp \
             -v "$container_tmp_dir:/tmp" \
             -v "$container_var_tmp_dir:/var/tmp" \
             -v "$container_home_dir:/root" \
@@ -272,6 +273,7 @@ jobs:
           set +e
           docker run --rm \
             --read-only \
+            -w /tmp \
             -v "$container_tmp_dir:/tmp" \
             -v "$container_var_tmp_dir:/var/tmp" \
             -v "$container_home_dir:/root" \
