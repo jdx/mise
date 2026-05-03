@@ -238,11 +238,11 @@ The `depends` field accepts either a single string or an array of strings:
 "pipx:ruff" = { version = "latest", depends = ["python", "pipx"] }
 ```
 
-User-specified `depends` adds ordering constraints for tools already in the current install set.
+User-specified `depends` adds ordering constraints for tools already in the current install set. Use it when one configured tool install must finish before another configured tool install starts, especially when installs would otherwise run in parallel.
 
 ### vfox plugin hook dependencies
 
-`depends` in `[tools]` only affects install order. It does not by itself add those tools to the `PATH` used while a plugin's install hooks run.
+`depends` in `[tools]` only adds install graph ordering. It does not by itself declare hook-time dependencies or add those tools to the `PATH` used while vfox install hooks run.
 
 For vfox plugins, declare install-hook tool requirements on the `PLUGIN` table in `metadata.lua`:
 

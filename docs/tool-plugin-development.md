@@ -331,7 +331,7 @@ PLUGIN = {
 
 Add `depends` to the `PLUGIN` table when install hooks need other mise-managed tools on `PATH`. Use tool names as they would appear in `mise.toml`, for example `depends = { "go", "make" }`. Omit it if hooks do not shell out to other tools.
 
-This is separate from `depends` in `[tools]`, which is only an install-order constraint for that config entry. vfox `metadata.lua` `depends` is plugin metadata; when matching tools are configured, mise uses it to order current install jobs and to build the hook environment.
+This is separate from `depends` in `[tools]`, which only makes one configured tool wait for another configured tool in the install graph. vfox `metadata.lua` `depends` is plugin metadata; when matching tools are configured, mise uses it to order current install jobs and to build the hook environment.
 
 ### 3. Helper Libraries
 
