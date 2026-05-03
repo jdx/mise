@@ -137,6 +137,24 @@ description = "run end-to-end tests"
 depends = ["build"]
 run = "e2e/run_all_tests"
 
+["test:oats"]
+description = "run OpenTelemetry acceptance tests"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+  echo "docker is required to run OATs acceptance tests" >&2
+  exit 1
+fi
+
+if [[ ! -x target/debug/mise ]]; then
+  cargo build --all-features
+fi
+
+oats -timeout 2m oats/otel-basic/oats.yaml
+"""
+
 ["test:shuffle"]
 description = 'Run tests with shuffling enabled'
 run = 'cargo +nightly test --all-features -- -Z unstable-options --shuffle'
