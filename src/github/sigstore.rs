@@ -1,7 +1,7 @@
-//! Sole mise-internal bridge to the `sigstore-verification` crate.
+//! Sole mise-internal bridge to the `mise-sigstore` crate.
 //!
-//! Every call mise makes into `sigstore_verification` goes through this module. Callers never
-//! touch the external crate directly and never pass a GitHub token — the token is resolved
+//! Every call mise makes into `mise_sigstore` goes through this module. Callers never
+//! touch the underlying crate directly and never pass a GitHub token — the token is resolved
 //! internally via [`crate::github::resolve_token_for_api_url`], which walks the full chain
 //! (env vars → `credential_command` → `github_tokens.toml` → gh CLI → git credential fill).
 //!
@@ -13,7 +13,7 @@
 //! full chain. That asymmetry left `mise lock` issuing unauthenticated attestation requests,
 //! which hit GitHub's 60/hour IP rate limit after the second run.
 //!
-//! Concentrating the `sigstore_verification` surface here makes the asymmetry
+//! Concentrating the `mise_sigstore` surface here makes the asymmetry
 //! structurally impossible: wrapper signatures omit the token argument, so callers cannot
 //! re-introduce the bug without first editing this file.
 //!
@@ -26,12 +26,12 @@
 
 use std::path::Path;
 
-use sigstore_verification::sources::github::GitHubSource;
-use sigstore_verification::{ArtifactRef, AttestationSource};
+use mise_sigstore::sources::github::GitHubSource;
+use mise_sigstore::{ArtifactRef, AttestationSource};
 
-pub use sigstore_verification::AttestationError;
+pub use mise_sigstore::AttestationError;
 
-/// Result alias that matches `sigstore_verification`'s internal convention.
+/// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
 
 /// Resolve a GitHub token for an optional API base URL, defaulting to [`crate::github::API_URL`].
@@ -42,9 +42,9 @@ fn resolve_token_for_wrapper(api_url: Option<&str>) -> Option<String> {
 
 /// Verify a GitHub artifact attestation for a file on disk.
 ///
-/// Dispatches to [`sigstore_verification::verify_github_attestation_with_base_url`] when
+/// Dispatches to [`mise_sigstore::verify_github_attestation_with_base_url`] when
 /// `api_url` is `Some` (to support GitHub Enterprise) and to
-/// [`sigstore_verification::verify_github_attestation`] otherwise.
+/// [`mise_sigstore::verify_github_attestation`] otherwise.
 pub async fn verify_attestation(
     artifact_path: &Path,
     owner: &str,
@@ -55,7 +55,7 @@ pub async fn verify_attestation(
     let token = resolve_token_for_wrapper(api_url);
     match api_url {
         Some(base_url) => {
-            sigstore_verification::verify_github_attestation_with_base_url(
+            mise_sigstore::verify_github_attestation_with_base_url(
                 artifact_path,
                 owner,
                 repo,
@@ -66,7 +66,7 @@ pub async fn verify_attestation(
             .await
         }
         None => {
-            sigstore_verification::verify_github_attestation(
+            mise_sigstore::verify_github_attestation(
                 artifact_path,
                 owner,
                 repo,
@@ -139,7 +139,7 @@ pub async fn verify_slsa_provenance(
     provenance_path: &Path,
     min_level: u8,
 ) -> AttestationResult<bool> {
-    sigstore_verification::verify_slsa_provenance(artifact_path, provenance_path, min_level).await
+    mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level).await
 }
 
 /// Verify a keyless Cosign signature or bundle. Passthrough — no token needed.
@@ -147,7 +147,7 @@ pub async fn verify_cosign_signature(
     artifact_path: &Path,
     sig_or_bundle_path: &Path,
 ) -> AttestationResult<bool> {
-    sigstore_verification::verify_cosign_signature(artifact_path, sig_or_bundle_path).await
+    mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path).await
 }
 
 /// Verify a Cosign signature against a public key. Passthrough — no token needed.
@@ -156,7 +156,7 @@ pub async fn verify_cosign_signature_with_key(
     sig_or_bundle_path: &Path,
     public_key_path: &Path,
 ) -> AttestationResult<bool> {
-    sigstore_verification::verify_cosign_signature_with_key(
+    mise_sigstore::verify_cosign_signature_with_key(
         artifact_path,
         sig_or_bundle_path,
         public_key_path,
