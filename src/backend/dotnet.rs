@@ -1,14 +1,18 @@
 use std::sync::Arc;
 
-use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::{
+    VersionInfo, filter_cached_prereleases, include_prereleases, mark_prerelease,
+};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::HTTP_FETCH;
+use crate::toolset::ToolVersionOptions;
 use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
+use jiff::Timestamp;
 
 /// Dotnet backend requires experimental mode to be enabled
 pub const EXPERIMENTAL: bool = true;
@@ -36,18 +40,16 @@ impl Backend for DotnetBackend {
         true
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let feed_url = self.get_search_url().await?;
+        let opts = self.tool_opts(config).await?;
 
         let feed: NugetFeedSearch = HTTP_FETCH
             .json(format!(
                 "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
                 feed_url,
                 &self.tool_name(),
-                Settings::get()
-                    .dotnet
-                    .package_flags
-                    .contains(&"prerelease".to_string())
+                self.dotnet_prereleases_enabled(&opts)
             ))
             .await?;
 
@@ -70,6 +72,53 @@ impl Backend for DotnetBackend {
                 ..Default::default()
             })
             .collect())
+    }
+
+    /// Bypass the shared remote-versions cache because the dotnet package flags
+    /// affect which versions NuGet returns. The override is on `_with_refresh`
+    /// so install-time latest resolution uses the same dotnet-specific
+    /// prerelease filtering as `ls-remote`.
+    async fn list_remote_versions_with_info_with_refresh(
+        &self,
+        config: &Arc<Config>,
+        _refresh: bool,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        let opts = self.tool_opts(config).await?;
+        let want_prereleases = self.dotnet_prereleases_enabled(&opts);
+        let versions = self
+            ._list_remote_versions(config)
+            .await?
+            .into_iter()
+            .map(mark_prerelease)
+            .collect();
+        Ok(filter_cached_prereleases(versions, want_prereleases))
+    }
+
+    async fn list_versions_matching_with_opts(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        before_date: Option<Timestamp>,
+        refresh: bool,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = match before_date {
+            Some(before) => {
+                let versions_with_info = self
+                    .list_remote_versions_with_info_with_refresh(config, refresh)
+                    .await?;
+                VersionInfo::filter_by_date(versions_with_info, before)
+                    .into_iter()
+                    .map(|v| v.version)
+                    .collect()
+            }
+            None => {
+                self.list_remote_versions_with_refresh(config, refresh)
+                    .await?
+            }
+        };
+        let opts = self.tool_opts(config).await?;
+        let filter = !self.dotnet_prereleases_enabled(&opts);
+        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     async fn install_version_(
@@ -133,6 +182,22 @@ impl DotnetBackend {
             .ok_or_else(|| eyre!("No SearchQueryService found"))?;
 
         Ok(feed.id.clone())
+    }
+
+    async fn tool_opts(&self, config: &Arc<Config>) -> eyre::Result<ToolVersionOptions> {
+        Ok(config
+            .get_tool_opts(&self.ba)
+            .await?
+            .unwrap_or_else(|| self.ba.opts()))
+    }
+
+    fn dotnet_prereleases_enabled(&self, opts: &ToolVersionOptions) -> bool {
+        Settings::get().prereleases
+            || Settings::get()
+                .dotnet
+                .package_flags
+                .contains(&"prerelease".to_string())
+            || include_prereleases(opts)
     }
 }
 
