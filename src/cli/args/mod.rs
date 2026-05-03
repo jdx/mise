@@ -1,5 +1,5 @@
 pub use backend_arg::{
-    BackendArg, BackendResolution, ResolvedToolOptions, ToolOptionSource, split_bracketed_opts,
+    BackendArg, BackendResolution, ResolvedToolOptions, split_bracketed_opts,
 };
 pub use env_var_arg::EnvVarArg;
 pub use tool_arg::{ToolArg, ToolVersionType};
