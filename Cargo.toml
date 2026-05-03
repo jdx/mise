@@ -305,3 +305,6 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 
 [lints.clippy]
 borrowed_box = "allow"
+
+[profile.dev]
+debug = 1
