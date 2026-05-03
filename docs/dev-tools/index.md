@@ -244,12 +244,9 @@ This is in addition to the automatic dependencies that backends declare (e.g., `
 
 `depends` in `[tools]` only affects **which tools finish installing before another starts** when both are listed in your config. It does **not** declare that those tools belong in the **dependency environment** mise builds for running install hooks—so it does not by itself put their `bin` directories on `PATH` while a plugin installs.
 
-If your install step needs another tool’s executable during hooks (for example a compiler or package manager invoked from Lua), declare that dependency where mise can apply it globally:
+If your install step needs another tool’s executable during **vfox** hooks (for example a compiler or package manager invoked from Lua), add `depends = { "<tool>", ... }` to the `PLUGIN` table in `metadata.lua` (tool names as in `mise.toml`). See [Tool plugin development](/tool-plugin-development#_2-metadata-lua).
 
-- **Curated registry tools**: add `depends` in [`registry/`](https://github.com/jdx/mise/tree/main/registry) for that tool (see each `*.toml` file).
-- **Vfox plugins** (classic or backend): add `depends = { "<tool>", ... }` to the `PLUGIN` table in `metadata.lua` (tool names as in `mise.toml`). See [Tool plugin development](/tool-plugin-development#_2-metadata-lua).
-
-Those declarations are wired into backend dependencies and `dependency_env`, so required tools are installed first and are visible on `PATH` during install.
+mise uses those entries when scheduling installs and when building `dependency_env`, so the listed tools are installed first and are on `PATH` while your hooks run.
 
 ## Caching and Performance
 

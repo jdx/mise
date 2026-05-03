@@ -177,7 +177,7 @@ You can also have environment specific config files like `.mise.production.toml`
 See [Tools](/dev-tools/). In addition to specifying versions, each tool entry can include options such as:
 
 - `os`: Restrict installation to certain operating systems
-- `depends`: Install order relative to other tools in this config only; use registry or vfox `metadata.lua` `depends` when another tool must be on `PATH` during install (see [Tool Dependencies](/dev-tools/#tool-dependencies))
+- `depends`: Install order relative to other tools in this config only; for vfox plugins, put `depends` in `metadata.lua` when another tool must be on `PATH` during install hooks (see [Tool Dependencies](/dev-tools/#tool-dependencies))
 - `install_env`: Environment vars used during install
 - `postinstall`: Command to run after installation completes for that specific tool
 

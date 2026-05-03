@@ -31,7 +31,7 @@ PLUGIN = {
 }
 ```
 
-Use an array of **tool name strings** (the same identifiers you would use in `mise.toml`). mise merges these with backend and registry dependencies so installs run in the right order and those tools appear on `PATH` inside the dependency environment used during installation. This is separate from `depends` on a `[tools]` entry in `mise.toml`, which only orders installs among tools you already listed in config.
+Use an array of **tool name strings** (the same identifiers you would use in `mise.toml`). mise treats them as install dependencies so those tools are ordered before this plugin and appear on `PATH` in the dependency environment used during installation. This is separate from `depends` on a `[tools]` entry in `mise.toml`, which only orders installs among tools you already listed in config.
 
 ## Usage
 
