@@ -326,6 +326,8 @@ PLUGIN = {
 }
 ```
 
+Add `depends` to the `PLUGIN` table when install hooks need other mise-managed tools on `PATH` (short names only), for example `depends = { "go", "make" }`. Omit it if hooks do not shell out to other tools. The `depends` field in `[tools]` only affects install order among entries in your config; it does not declare hook-time `PATH` dependencies the way `metadata.lua` does.
+
 ### 3. Helper Libraries
 
 Create shared functions in the `lib/` directory:

@@ -240,6 +240,17 @@ The `depends` field accepts either a single string or an array of strings:
 
 This is in addition to the automatic dependencies that backends declare (e.g., `pipx` automatically depends on `python` and `uv`). User-specified `depends` lets you add extra ordering constraints for your specific setup.
 
+### Config `depends` and install-time `PATH`
+
+`depends` in `[tools]` only affects **which tools finish installing before another starts** when both are listed in your config. It does **not** declare that those tools belong in the **dependency environment** mise builds for running install hooks—so it does not by itself put their `bin` directories on `PATH` while a plugin installs.
+
+If your install step needs another tool’s executable during hooks (for example a compiler or package manager invoked from Lua), declare that dependency where mise can apply it globally:
+
+- **Curated registry tools**: add `depends` in [`registry/`](https://github.com/jdx/mise/tree/main/registry) for that tool (see each `*.toml` file).
+- **Vfox plugins** (classic or backend): add `depends = { "shortname", ... }` to the `PLUGIN` table in `metadata.lua`. See [Tool plugin development](/tool-plugin-development#_2-metadata-lua).
+
+Those declarations are wired into backend dependencies and `dependency_env`, so required tools are installed first and are visible on `PATH` during install.
+
 ## Caching and Performance
 
 mise uses intelligent caching to minimize overhead:

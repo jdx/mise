@@ -17,7 +17,21 @@ The code for this is inside the mise repository at [`./src/backend/vfox.rs`](htt
 
 ## Dependencies
 
-No dependencies are required for vfox. Vfox lua code is read via a lua interpreter built into mise.
+No extra system packages are required to *run* the vfox backend. Vfox Lua code is executed by the interpreter built into mise.
+
+### `depends` in `metadata.lua`
+
+If a plugin’s install hooks need another mise tool’s executables (for example `node` for `npm` in `BackendInstall`), declare them on the `PLUGIN` table in `metadata.lua`:
+
+```lua
+PLUGIN = {
+    name = "vfox-npm",
+    version = "1.0.0",
+    depends = { "node" },
+}
+```
+
+Use an array of **short tool names** (strings). mise merges these with backend and registry dependencies so installs run in the right order and those tools appear on `PATH` inside the dependency environment used during installation. This is separate from `depends` on a `[tools]` entry in `mise.toml`, which only orders installs among tools you already listed in config.
 
 ## Usage
 
