@@ -13,9 +13,6 @@ categories = ["development-tools"]
 include = [
   "/README.md",
   "/src/**/*.rs",
-  "/aqua-registry/LICENSE",
-  "/aqua-registry/metadata.json",
-  "/aqua-registry/registry.yaml",
 ]
 
 [package.metadata.cargo-machete]
@@ -31,8 +28,10 @@ serde_derive = "1"
 serde_yaml = "0.9"
 thiserror = "2"
 eyre = "0.6"
+flate2 = "1"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.14"
+rmp-serde = "1"
 strum = { version = "0.28", features = ["derive"] }
 
 # Template parsing and evaluation

@@ -264,8 +264,9 @@ fi
 mise run fetch-gpg-keys
 mise run render ::: lint-fix
 
-AQUA_REGISTRY_DIR="crates/aqua-registry/aqua-registry"
+AQUA_REGISTRY_DIR="vendor/aqua-registry"
 AQUA_REGISTRY_METADATA="$AQUA_REGISTRY_DIR/metadata.json"
+AQUA_REGISTRY_FILE="$AQUA_REGISTRY_DIR/registry.yml"
 AQUA_REGISTRY_REPO="aquaproj/aqua-registry"
 
 # Capture current aqua-registry tag before updating
@@ -278,7 +279,7 @@ NEW_AQUA_REGISTRY_TAG="$(gh release view --repo "$AQUA_REGISTRY_REPO" --json tag
 rm -rf "$AQUA_REGISTRY_DIR"
 mkdir -p "$AQUA_REGISTRY_DIR"
 curl -fsSL "https://raw.githubusercontent.com/$AQUA_REGISTRY_REPO/$NEW_AQUA_REGISTRY_TAG/registry.yaml" \
-	-o "$AQUA_REGISTRY_DIR/registry.yaml"
+	-o "$AQUA_REGISTRY_FILE"
 curl -fsSL "https://raw.githubusercontent.com/$AQUA_REGISTRY_REPO/$NEW_AQUA_REGISTRY_TAG/LICENSE" \
 	-o "$AQUA_REGISTRY_DIR/LICENSE"
 cat >"$AQUA_REGISTRY_METADATA" <<EOF
@@ -367,7 +368,7 @@ git add \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
-	crates/aqua-registry/aqua-registry \
+	vendor/aqua-registry \
 	crates/aqua-registry/Cargo.toml \
 	crates/vfox/embedded-plugins \
 	crates/vfox/Cargo.toml \

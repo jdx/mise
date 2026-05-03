@@ -1,5 +1,5 @@
 zipsign.pub binary
-crates/aqua-registry/aqua-registry/** linguist-vendored
+vendor/aqua-registry/** linguist-vendored
 crates/vfox/embedded-plugins/** linguist-vendored
 schema/mise-task.json linguist-generated=true
 schema/miserc.json linguist-generated=true

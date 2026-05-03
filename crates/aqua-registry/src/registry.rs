@@ -110,7 +110,7 @@ where
 }
 
 impl RegistryFetcher for DefaultRegistryFetcher {
-    async fn fetch_registry(&self, package_id: &str) -> Result<RegistryYaml> {
+    async fn fetch_package(&self, package_id: &str) -> Result<AquaPackage> {
         let path_id = package_id
             .split('/')
             .collect::<Vec<_>>()
@@ -126,7 +126,12 @@ impl RegistryFetcher for DefaultRegistryFetcher {
         if self.config.cache_dir.join(".git").exists() && path.exists() {
             log::trace!("reading aqua-registry for {package_id} from repo at {path:?}");
             let contents = std::fs::read_to_string(&path)?;
-            return Ok(serde_yaml::from_str(&contents)?);
+            let registry = serde_yaml::from_str::<RegistryYaml>(&contents)?;
+            return registry
+                .packages
+                .into_iter()
+                .next()
+                .ok_or_else(|| AquaRegistryError::PackageNotFound(package_id.to_string()));
         }
 
         Err(AquaRegistryError::RegistryNotAvailable(format!(

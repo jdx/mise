@@ -10,7 +10,7 @@ OLD_TAG="${1:-}"
 NEW_TAG="${2:-}"
 HEADING_LEVEL="${3:-###}" # Default to ### for CHANGELOG.md sections
 REPO="aquaproj/aqua-registry"
-NEW_REGISTRY="crates/aqua-registry/aqua-registry/registry.yaml"
+NEW_REGISTRY="vendor/aqua-registry/registry.yml"
 
 if [[ -z $OLD_TAG ]] || [[ -z $NEW_TAG ]] || [[ $OLD_TAG == "$NEW_TAG" ]]; then
 	exit 0

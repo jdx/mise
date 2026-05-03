@@ -1,7 +1,5 @@
-use aqua_registry::{AquaPackage, AquaRegistryError, Result};
-use flate2::read::ZlibDecoder;
+use aqua_registry::{AquaPackage, Result, decode_package_msgpack_z};
 use std::collections::HashMap;
-use std::io::Read;
 use std::sync::LazyLock;
 
 /// Metadata for the baked aqua registry snapshot.
@@ -51,18 +49,7 @@ fn baked_registry_file(package_id: &str) -> Option<&'static [u8]> {
 }
 
 fn decode_baked_package(package_id: &str, bytes: &[u8]) -> Result<AquaPackage> {
-    let mut zlib = ZlibDecoder::new(bytes);
-    let mut packed = Vec::new();
-    zlib.read_to_end(&mut packed).map_err(|err| {
-        AquaRegistryError::RegistryNotAvailable(format!(
-            "failed to decompress baked aqua-registry package {package_id}: {err}"
-        ))
-    })?;
-    rmp_serde::from_slice(&packed).map_err(|err| {
-        AquaRegistryError::RegistryNotAvailable(format!(
-            "failed to decode baked aqua package {package_id}: {err}"
-        ))
-    })
+    decode_package_msgpack_z(package_id, bytes)
 }
 
 #[cfg(test)]

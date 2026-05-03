@@ -4,7 +4,6 @@ use crate::git::{CloneOptions, Git};
 use crate::{dirs, duration::WEEKLY, file};
 use aqua_registry::{
     AquaRegistry, AquaRegistryConfig, AquaRegistryError, NoOpCacheStore, RegistryFetcher,
-    RegistryYaml,
 };
 use eyre::Result;
 use std::collections::HashMap;
@@ -118,7 +117,15 @@ fn aqua_registry(config: AquaRegistryConfig) -> AquaRegistry<MiseRegistryFetcher
 }
 
 impl RegistryFetcher for MiseRegistryFetcher {
-    async fn fetch_registry(&self, package_id: &str) -> aqua_registry::Result<RegistryYaml> {
+    async fn fetch_package(&self, package_id: &str) -> aqua_registry::Result<AquaPackage> {
+        if self.config.use_baked_registry
+            && !self.config.cache_dir.join(".git").exists()
+            && let Some(package) = super::standard_registry::package(package_id)
+        {
+            log::trace!("reading baked-in aqua package for {package_id}");
+            return package;
+        }
+
         let path_id = package_id
             .split('/')
             .collect::<Vec<_>>()
@@ -133,38 +140,24 @@ impl RegistryFetcher for MiseRegistryFetcher {
         if self.config.cache_dir.join(".git").exists() && path.exists() {
             log::trace!("reading aqua-registry for {package_id} from repo at {path:?}");
             let contents = std::fs::read_to_string(&path)?;
-            return Ok(serde_yaml::from_str(&contents)?);
+            let registry = serde_yaml::from_str::<aqua_registry::RegistryYaml>(&contents)?;
+            return registry
+                .packages
+                .into_iter()
+                .next()
+                .ok_or_else(|| AquaRegistryError::PackageNotFound(package_id.to_string()));
         }
 
         if self.config.use_baked_registry
-            && let Some(package) = super::standard_registry::package(package_id)
-        {
-            log::trace!("reading baked-in aqua-registry for {package_id}");
-            return Ok(RegistryYaml {
-                packages: vec![package?],
-            });
-        }
-
-        Err(AquaRegistryError::RegistryNotAvailable(format!(
-            "no aqua-registry found for {package_id}"
-        )))
-    }
-
-    async fn fetch_package(&self, package_id: &str) -> aqua_registry::Result<AquaPackage> {
-        if self.config.use_baked_registry
-            && !self.config.cache_dir.join(".git").exists()
             && let Some(package) = super::standard_registry::package(package_id)
         {
             log::trace!("reading baked-in aqua package for {package_id}");
             return package;
         }
 
-        let registry = self.fetch_registry(package_id).await?;
-        registry
-            .packages
-            .into_iter()
-            .next()
-            .ok_or_else(|| AquaRegistryError::PackageNotFound(package_id.to_string()))
+        Err(AquaRegistryError::RegistryNotAvailable(format!(
+            "no aqua-registry found for {package_id}"
+        )))
     }
 }
 

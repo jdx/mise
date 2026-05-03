@@ -244,10 +244,12 @@ version = "2026.5.0"
 dependencies = [
  "expr-lang",
  "eyre",
+ "flate2",
  "heck",
  "indexmap 2.14.0",
  "itertools 0.14.0",
  "log",
+ "rmp-serde",
  "serde",
  "serde_derive",
  "serde_yaml",
