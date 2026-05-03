@@ -6,10 +6,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
+use aqua_registry::encode_package_msgpack_z;
 use aqua_registry::types::{AquaPackage, RegistryYaml};
 use eyre::{Result, WrapErr, eyre};
-use flate2::Compression;
-use flate2::write::ZlibEncoder;
 use serde_yaml::Value;
 
 fn main() {
@@ -326,7 +325,7 @@ fn codegen_aqua_standard_registry() -> Result<()> {
     let metadata_dest_path = Path::new(&out_dir).join("aqua_standard_registry_metadata.rs");
     let packages_dir = Path::new(&out_dir).join("aqua_standard_registry_packages");
 
-    let registry_file = aqua_registry_file("registry.yaml");
+    let registry_file = aqua_registry_file("registry.yml");
     let metadata_file = aqua_registry_file("metadata.json");
 
     println!("cargo:rerun-if-changed={}", registry_file.display());
@@ -428,7 +427,8 @@ fn aqua_package_registries(
         let Some(id) = aqua_canonical_package_id(package) else {
             continue;
         };
-        let content = aqua_package_msgpack_z(package)?;
+        let content = encode_package_msgpack_z(package)
+            .wrap_err_with(|| format!("Failed to encode baked package {id}"))?;
         let aliases = aqua_package_aliases(package_value);
         registries.push(AquaPackageRegistry {
             id,
@@ -519,13 +519,6 @@ fn aqua_registry_string_map_code(entries: &[(String, String)]) -> String {
     code
 }
 
-fn aqua_package_msgpack_z(package: &AquaPackage) -> Result<Vec<u8>> {
-    let packed = rmp_serde::to_vec_named(package).wrap_err("Failed to serialize aqua package")?;
-    let mut zlib = ZlibEncoder::new(Vec::new(), Compression::best());
-    zlib.write_all(&packed)?;
-    Ok(zlib.finish()?)
-}
-
 fn aqua_canonical_package_id(package: &AquaPackage) -> Option<String> {
     package
         .name
@@ -558,10 +551,7 @@ fn yaml_string_field(value: &Value, key: &str) -> Option<String> {
 }
 
 fn aqua_registry_file(file_name: &str) -> PathBuf {
-    Path::new("crates")
-        .join("aqua-registry")
-        .join("aqua-registry")
-        .join(file_name)
+    Path::new("vendor").join("aqua-registry").join(file_name)
 }
 
 fn codegen_settings() {
