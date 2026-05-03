@@ -3664,7 +3664,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["-j", "--jobs"],
-          description: "Number of jobs to run in parallel\n[default: 4]",
+          description: "Number of tool tests to run in parallel\n[default: 4]",
           isRepeatable: false,
           args: {
             name: "jobs",

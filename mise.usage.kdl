@@ -1244,7 +1244,7 @@ cmd tasks help="Manage tasks" {
 cmd test-tool help="Test a tool installs and executes" {
     after_long_help "Examples:\n\n    $ mise test-tool ripgrep\n"
     flag "-a --all" help="Test every tool specified in registry/"
-    flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
+    flag "-j --jobs" help="Number of tool tests to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
     flag --all-config help="Test all tools specified in config files"
