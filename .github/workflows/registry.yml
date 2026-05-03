@@ -164,6 +164,13 @@ jobs:
       - uses: ./.github/actions/mise-tools
       - name: Pull e2e Docker image
         run: docker pull ghcr.io/jdx/mise:e2e
+      - name: Set test-tool jobs
+        run: |
+          jobs="$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+          if ! [[ $jobs =~ ^[0-9]+$ ]] || [ "$jobs" -lt 1 ]; then
+            jobs=4
+          fi
+          echo "TEST_TOOL_JOBS=$jobs" >> "$GITHUB_ENV"
       - id: test-tools
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
@@ -189,7 +196,7 @@ jobs:
             -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
-            mise test-tool ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }}
+            mise test-tool --jobs "$TEST_TOOL_JOBS" ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }}
           test_tool_status=$?
           set -e
 
@@ -226,7 +233,7 @@ jobs:
             -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
-            mise test-tool ${{ steps.test-tools.outputs.failed_tools }}
+            mise test-tool --jobs "$TEST_TOOL_JOBS" ${{ steps.test-tools.outputs.failed_tools }}
           test_tool_status=$?
           set -e
 

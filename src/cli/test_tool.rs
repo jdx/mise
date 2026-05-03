@@ -10,7 +10,6 @@ use crate::{dirs, env, file};
 use eyre::{Result, bail, eyre};
 use std::path::{Path, PathBuf};
 use std::{collections::BTreeSet, sync::Arc};
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 /// Test a tool installs and executes
@@ -23,9 +22,9 @@ pub struct TestTool {
     /// Test every tool specified in registry/
     #[clap(long, short, conflicts_with = "tools", conflicts_with = "all_config")]
     pub all: bool,
-    /// Number of jobs to run in parallel
+    /// Number of tool tests to run in parallel
     /// [default: 4]
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[clap(long, short, env = "MISE_TEST_TOOL_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
     /// Test all tools specified in config files
     #[clap(long, conflicts_with = "tools", conflicts_with = "all")]
@@ -162,26 +161,38 @@ impl TestTool {
         }
 
         let jobs = self.jobs();
-        let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset = JoinSet::new();
         let mut results = targets.iter().map(|_| None).collect::<Vec<_>>();
 
         for target in targets {
-            let permit = semaphore.clone().acquire_owned().await?;
+            while jset.len() >= jobs {
+                Self::collect_child_result(&mut jset, &mut results).await?;
+            }
             let this = self.clone();
             jset.spawn(async move {
-                let _permit = permit;
-                this.test_child(target)
+                tokio::task::spawn_blocking(move || this.test_child(target))
+                    .await
+                    .map_err(|err| eyre!("task panicked: {err}"))?
             });
         }
 
-        while let Some(result) = jset.join_next().await {
+        while !jset.is_empty() {
+            Self::collect_child_result(&mut jset, &mut results).await?;
+        }
+
+        Ok(results.into_iter().flatten().collect())
+    }
+
+    async fn collect_child_result(
+        jset: &mut JoinSet<Result<TestToolResult>>,
+        results: &mut [Option<TestToolResult>],
+    ) -> Result<()> {
+        if let Some(result) = jset.join_next().await {
             let result = result??;
             let index = result.index;
             results[index] = Some(result);
         }
-
-        Ok(results.into_iter().flatten().collect())
+        Ok(())
     }
 
     fn test_child(&self, target: TestToolTarget) -> Result<TestToolResult> {

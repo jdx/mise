@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-summary="$TMPDIR/test-tool-summary.md"
+summary="${TMPDIR:-/tmp}/test-tool-summary.md"
 GITHUB_STEP_SUMMARY="$summary" mise test-tool --jobs=2 shellcheck shfmt
 
 cat "$summary"
