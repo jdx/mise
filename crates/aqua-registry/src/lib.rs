@@ -4,12 +4,17 @@
 //! It can load registry data from baked-in files, local repositories, or remote HTTP sources.
 
 mod codec;
+mod compiled;
 mod registry;
 mod template;
 pub mod types;
 
 // Re-export only what's needed by the main mise crate
-pub use codec::{decode_package_msgpack_z, encode_package_msgpack_z};
+pub use codec::{
+    decode_package_msgpack, decode_package_msgpack_z, encode_package_msgpack,
+    encode_package_msgpack_z,
+};
+pub use compiled::CompiledRegistry;
 pub use registry::{AquaRegistry, DefaultRegistryFetcher, FileCacheStore, NoOpCacheStore};
 pub use types::{
     AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType, AquaVar,

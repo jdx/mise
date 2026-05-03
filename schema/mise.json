@@ -554,7 +554,7 @@
               "type": "boolean"
             },
             "registry_url": {
-              "description": "URL to fetch aqua registry from.",
+              "description": "URL of an aqua registry repository to fetch.",
               "type": "string"
             },
             "slsa": {

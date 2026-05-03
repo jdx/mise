@@ -7,11 +7,12 @@ export MISE_AQUA_BAKED_REGISTRY=0
 detect_platform
 
 REGISTRY_DIR="$PWD/aqua-registry-local"
-mkdir -p "$REGISTRY_DIR/pkgs/example/vars-tool"
+mkdir -p "$REGISTRY_DIR"
 
-cat <<'EOF_REGISTRY' >"$REGISTRY_DIR/pkgs/example/vars-tool/registry.yaml"
+cat <<'EOF_REGISTRY' >"$REGISTRY_DIR/registry.yml"
 packages:
   - type: http
+    name: example/vars-tool
     supported_envs:
       - darwin
       - linux
@@ -24,13 +25,6 @@ packages:
       - name: fixture_version
         required: true
 EOF_REGISTRY
-
-(
-  cd "$REGISTRY_DIR"
-  git init -q
-  git add pkgs/example/vars-tool/registry.yaml
-  git commit -qm "init local aqua registry"
-)
 
 export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
 

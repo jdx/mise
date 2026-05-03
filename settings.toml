@@ -126,9 +126,13 @@ env = "MISE_AQUA_MINISIGN"
 type = "Bool"
 
 [aqua.registry_url]
-description = "URL to fetch aqua registry from."
+description = "URL of an aqua registry repository to fetch."
 docs = """
-URL to fetch aqua registry from. This is used to install tools from the aqua registry.
+URL of an aqua registry repository to fetch. mise downloads `registry.yaml` from the repository root
+and falls back to `registry.yml` if needed.
+
+Downloaded registries are cached and compiled into per-package MessagePack files so package lookup
+doesn't parse the full YAML registry on every command.
 
 If this is set, the baked-in aqua registry is not used.
 
