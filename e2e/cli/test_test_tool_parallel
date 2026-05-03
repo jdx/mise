@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+summary="$TMPDIR/test-tool-summary.md"
+GITHUB_STEP_SUMMARY="$summary" mise test-tool --jobs=2 shellcheck shfmt
+
+cat "$summary"
+
+failed_count=$(grep -c "Failed Tools" "$summary" || true)
+[ "$failed_count" = 0 ]
+
+grep -c '^| Tool | Duration | Status |$' "$summary" | grep '^1$'
+grep -c '^| shellcheck |' "$summary" | grep '^1$'
+grep -c '^| shfmt |' "$summary" | grep '^1$'
