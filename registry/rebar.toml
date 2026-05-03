@@ -1,3 +1,4 @@
-backends = ["asdf:mise-plugins/mise-rebar"]
+backends = [{ full = "github:erlang/rebar3", options = { asset_pattern = "rebar3" } }]
 depends = ["erlang"]
 description = "Erlang build tool that makes it easy to compile and test Erlang applications and releases"
+test = { cmd = "rebar3 --version", expected = "rebar {{version}}" }
