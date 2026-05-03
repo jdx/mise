@@ -708,6 +708,18 @@ impl Backend for PythonPlugin {
         ])
     }
 
+    /// Python versions follow PEP 440, so `3.15.0a8`-style separator-less
+    /// alpha suffixes are pre-releases that the shared filter wouldn't catch
+    /// on its own. See `fuzzy_match_versions_pep440`.
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
+        crate::backend::fuzzy_match_versions_pep440(versions, query, filter_prereleases)
+    }
+
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 

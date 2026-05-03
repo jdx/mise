@@ -24,7 +24,7 @@ use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{PluginType, VERSION_REGEX};
+use crate::plugins::{PEP440_PRERELEASE_REGEX, PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::tera::get_tera;
@@ -448,6 +448,33 @@ mod tests {
     }
 
     #[test]
+    fn test_fuzzy_match_versions_pep440_drops_alphas_but_honors_exact_match() {
+        let versions = vec![
+            "3.13.0".to_string(),
+            "3.14.0a1".to_string(),
+            "3.14.0".to_string(),
+            "3.15.0a8".to_string(),
+        ];
+        // `latest` resolution skips PEP 440 prereleases.
+        assert_eq!(
+            fuzzy_match_versions_pep440(versions.clone(), "latest", true),
+            vec!["3.13.0".to_string(), "3.14.0".to_string()]
+        );
+        // Explicit prerelease request still resolves — preserves the
+        // exact-match bypass that `fuzzy_match_versions` already provides for
+        // generic prereleases like `1.0.0-rc1`.
+        assert_eq!(
+            fuzzy_match_versions_pep440(versions.clone(), "3.14.0a1", true),
+            vec!["3.14.0a1".to_string()]
+        );
+        // Opting in to prereleases keeps the full list.
+        assert_eq!(
+            fuzzy_match_versions_pep440(versions.clone(), "latest", false),
+            versions
+        );
+    }
+
+    #[test]
     fn test_filter_cached_prereleases_drops_flagged_entries_by_default() {
         // The cache stores the pre-release superset; `prerelease = false` (the
         // default) must filter out entries flagged by the upstream so the user
@@ -518,6 +545,26 @@ mod tests {
             ..Default::default()
         });
         assert!(already_flagged.prerelease);
+
+        // Go pseudo-version (`-DATE-HASH`) must not false-positive on the
+        // `[abc][0-9]+` alternative — that pattern lives in
+        // PEP440_PRERELEASE_REGEX (pipx-only), not the general regex.
+        let go_pseudo = mark_prerelease(VersionInfo {
+            version: "2.0.0-20260404020628-f149714c1d54".into(),
+            ..Default::default()
+        });
+        assert!(
+            !go_pseudo.prerelease,
+            "Go pseudo-version must not be flagged by the general regex"
+        );
+
+        // PEP 440 separator-less alpha is similarly not the general regex's
+        // concern — pipx applies that rule itself.
+        let py_alpha = mark_prerelease(VersionInfo {
+            version: "3.12.0a1".into(),
+            ..Default::default()
+        });
+        assert!(!py_alpha.prerelease);
     }
 
     #[test]
@@ -2455,6 +2502,30 @@ pub(crate) fn include_prereleases(opts: &crate::toolset::ToolVersionOptions) -> 
         toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
         _ => false,
     })
+}
+
+/// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection
+/// applied on top of the shared filter. Used by Python-flavored backends
+/// (`pipx`, the `python` core plugin) so `3.15.0a8`-style versions are dropped
+/// from `latest` resolution and partial-prefix queries when the user hasn't
+/// opted in to prereleases.
+pub(crate) fn fuzzy_match_versions_pep440(
+    versions: Vec<String>,
+    query: &str,
+    filter_prereleases: bool,
+) -> Vec<String> {
+    let versions = if filter_prereleases {
+        // Mirror the exact-match bypass in `fuzzy_match_versions` so an
+        // explicit prerelease request (`python@3.14.0a1`) still resolves even
+        // when filter_prereleases is on.
+        versions
+            .into_iter()
+            .filter(|v| query == v || !PEP440_PRERELEASE_REGEX.is_match(v))
+            .collect()
+    } else {
+        versions
+    };
+    fuzzy_match_versions(versions, query, filter_prereleases)
 }
 
 /// Fuzzy-match `versions` against `query`. When `filter_prereleases` is true,
