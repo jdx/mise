@@ -26,10 +26,11 @@ mise use --rm dummy
 # Test: Installing a tool that's only configured via MISE_<TOOL>_VERSION env
 # var should NOT show the hint (regression test for #9522 review feedback —
 # the config-files-only check was missing env-var-configured tools).
-MISE_DUMMY_VERSION=1.0.0 mise install dummy 2>&1 | tee /tmp/mise-install-env.log
-assert_not_contains "cat /tmp/mise-install-env.log" "not activated"
-MISE_DUMMY_VERSION=1.0.0 mise install dummy@1.0.0 2>&1 | tee /tmp/mise-install-env.log
-assert_not_contains "cat /tmp/mise-install-env.log" "not activated"
+INSTALL_ENV_LOG="$TMPDIR/mise-install-env.log"
+MISE_DUMMY_VERSION=1.0.0 mise install dummy 2>&1 | tee "$INSTALL_ENV_LOG"
+assert_not_contains "cat '$INSTALL_ENV_LOG'" "not activated"
+MISE_DUMMY_VERSION=1.0.0 mise install dummy@1.0.0 2>&1 | tee "$INSTALL_ENV_LOG"
+assert_not_contains "cat '$INSTALL_ENV_LOG'" "not activated"
 # (Backend-alias coverage for env-var-configured tools — e.g. that
 # MISE_NODEJS_VERSION matches `node` — lives in the tool_env_vars unit test
 # in src/toolset/tool_request_set.rs; we don't repeat it here because

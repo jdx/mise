@@ -6,18 +6,14 @@
 # Disable GPG verification to avoid test failures
 export MISE_GPG_VERIFY=false
 
-# Find available port
-find_available_port() {
-  python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"
-}
-
 # Start local HTTP test server
-SERVER_PORT=$(find_available_port)
-python3 "${TEST_ROOT}/helpers/scripts/tool_stub_test_server.py" "$SERVER_PORT" &
+SERVER_PORT_FILE="$TMPDIR/tool_stub_test_port"
+MISE_TOOL_STUB_TEST_PORT_FILE="$SERVER_PORT_FILE" python3 "${TEST_ROOT}/helpers/scripts/tool_stub_test_server.py" 0 &
 SERVER_PID=$!
 
 # Wait for server to start
-sleep 1
+wait_for_file "$SERVER_PORT_FILE" "tool stub test server port file" 30 "$SERVER_PID"
+SERVER_PORT=$(cat "$SERVER_PORT_FILE")
 
 # Ensure cleanup on exit
 cleanup() {

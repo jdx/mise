@@ -59,6 +59,9 @@ MISE_BIN="$(resolve_mise_bin)"
 test_count=0
 skipped_count=0
 status=0
+RUN_FILES=()
+SUMMARY_ENTRY_TYPES=()
+SUMMARY_ENTRY_VALUES=()
 
 summary "Test" "Duration" "Result"
 summary "---" "---" "---"
@@ -77,18 +80,151 @@ for index in "${!FILES[@]}"; do
   if [[ ${TEST_ALL:-0} != 1 && $TEST_NAME == *_slow ]]; then
     #    title="E2E test $TEST_NAME skipped" file="e2e/$TEST_NAME" warn "slow tests are disabled"
     skipped_count=$((skipped_count + 1))
-    summary "$TEST_NAME" "-" ":zap:"
+    SUMMARY_ENTRY_TYPES+=("skip")
+    SUMMARY_ENTRY_VALUES+=("$TEST_NAME")
     continue
   fi
 
-  mise_wait_for_gh_rate_limit "$MISE_BIN"
-  # Actually run the test
-  "$ROOT/e2e/run_test" "$TEST_NAME" # fail fast for now
-  # if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
-  #   status=1
-  # fi
-  test_count=$((test_count + 1))
+  SUMMARY_ENTRY_TYPES+=("run")
+  SUMMARY_ENTRY_VALUES+=("${#RUN_FILES[@]}")
+  RUN_FILES+=("$TEST_NAME")
 done
+
+cpu_count() {
+  if command -v getconf >/dev/null 2>&1; then
+    getconf _NPROCESSORS_ONLN 2>/dev/null && return
+  fi
+  if command -v sysctl >/dev/null 2>&1; then
+    sysctl -n hw.ncpu 2>/dev/null && return
+  fi
+  echo 4
+}
+
+default_jobs="$(cpu_count)"
+if [[ ! $default_jobs =~ ^[0-9]+$ || $default_jobs -lt 1 ]]; then
+  default_jobs=4
+fi
+if [[ $default_jobs -gt 4 ]]; then
+  default_jobs=4
+fi
+E2E_JOBS="${E2E_JOBS:-$default_jobs}"
+if [[ ! $E2E_JOBS =~ ^[0-9]+$ || $E2E_JOBS -lt 1 ]]; then
+  err "E2E_JOBS must be a positive integer"
+  exit 1
+fi
+
+PIDS=()
+LOG_FILES=()
+SUMMARY_FILES=()
+STATUS_FILES=()
+FINISHED=()
+ORIGINAL_GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:-}"
+
+LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mise-e2e-logs.XXXXXX")"
+# shellcheck disable=SC2329
+cleanup() {
+  if ((${#PIDS[@]} > 0)); then
+    kill "${PIDS[@]}" 2>/dev/null || true
+  fi
+  rm -rf "$LOG_DIR"
+}
+trap 'cleanup' EXIT
+trap 'cleanup; exit 130' INT TERM
+
+total=${#RUN_FILES[@]}
+next=0
+active=0
+completed=0
+printed=0
+
+start_test() {
+  local index="$1"
+  local test_name="${RUN_FILES[$index]}"
+  local log_file="$LOG_DIR/$index.log"
+  local summary_file="$LOG_DIR/$index.summary"
+  local status_file="$LOG_DIR/$index.status"
+
+  LOG_FILES[index]="$log_file"
+  SUMMARY_FILES[index]="$summary_file"
+  STATUS_FILES[index]="$status_file"
+
+  (
+    if [[ -n $ORIGINAL_GITHUB_STEP_SUMMARY ]]; then
+      export GITHUB_STEP_SUMMARY="$summary_file"
+    else
+      unset GITHUB_STEP_SUMMARY
+    fi
+    test_status=0
+    mise_wait_for_gh_rate_limit "$MISE_BIN" || test_status=$?
+    if [[ $test_status == 0 ]]; then
+      "$ROOT/e2e/run_test" "$test_name" || test_status=$?
+    fi
+    echo "$test_status" >"$status_file.tmp" && mv "$status_file.tmp" "$status_file"
+  ) >"$log_file" 2>&1 &
+
+  PIDS[index]=$!
+}
+
+while [[ $completed -lt $total ]]; do
+  while [[ $active -lt $E2E_JOBS && $next -lt $total ]]; do
+    start_test "$next"
+    next=$((next + 1))
+    active=$((active + 1))
+  done
+
+  for ((index = 0; index < next; index++)); do
+    status_file="${STATUS_FILES[$index]:-}"
+    if [[ ${FINISHED[$index]:-0} == 0 && -n $status_file ]]; then
+      if [[ -f $status_file ]]; then
+        FINISHED[index]=1
+        active=$((active - 1))
+        completed=$((completed + 1))
+      elif ! kill -0 "${PIDS[$index]}" 2>/dev/null; then
+        if [[ ! -f $status_file ]]; then
+          echo "test process exited without writing status: ${RUN_FILES[$index]}" >>"${LOG_FILES[$index]}"
+          echo "1" >"$status_file.tmp" && mv "$status_file.tmp" "$status_file"
+        fi
+        FINISHED[index]=1
+        active=$((active - 1))
+        completed=$((completed + 1))
+      fi
+    fi
+  done
+
+  while [[ $printed -lt $total && ${FINISHED[$printed]:-0} == 1 ]]; do
+    cat "${LOG_FILES[$printed]}"
+    test_status="$(cat "${STATUS_FILES[$printed]}")"
+    test_status="${test_status:-1}"
+    if [[ $test_status != 0 ]]; then
+      status=1
+    fi
+    test_count=$((test_count + 1))
+    printed=$((printed + 1))
+  done
+
+  if [[ $completed -lt $total ]]; then
+    sleep 0.2
+  fi
+done
+
+if ((${#PIDS[@]} > 0)); then
+  for pid in "${PIDS[@]}"; do
+    wait "$pid" || true
+  done
+fi
+
+if ((${#SUMMARY_ENTRY_TYPES[@]} > 0)); then
+  for index in "${!SUMMARY_ENTRY_TYPES[@]}"; do
+    if [[ ${SUMMARY_ENTRY_TYPES[$index]} == skip ]]; then
+      summary "${SUMMARY_ENTRY_VALUES[$index]}" "-" ":zap:"
+    else
+      run_index="${SUMMARY_ENTRY_VALUES[$index]}"
+      if [[ -n $ORIGINAL_GITHUB_STEP_SUMMARY && -f ${SUMMARY_FILES[$run_index]} ]]; then
+        cat "${SUMMARY_FILES[$run_index]}" >>"$ORIGINAL_GITHUB_STEP_SUMMARY"
+      fi
+    fi
+  done
+fi
 
 echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2
 
