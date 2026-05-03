@@ -27,7 +27,7 @@ jobs:
   build-tarball-linux:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-release-rust-linux
     timeout-minutes: 45
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -50,17 +50,16 @@ jobs:
             target: armv7-unknown-linux-musleabi
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
       - name: Install cross
         uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with:
           tool: cross
-      - name: cache crates
-        id: cache-crates
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.cargo/registry/cache
-          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-registry
       - name: build-tarball ${{matrix.target}}
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
@@ -75,14 +74,10 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
-        with: { tool: cargo-cache }
-      - if: steps.cache-crates.outputs.cache-hit != 'true'
-        run: cargo cache --autoclean
   build-tarball-macos:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: macos-latest
+    runs-on: namespace-profile-endev-macos-arm64-large;overrides.cache-tag=mise-release-rust-macos
     timeout-minutes: 90
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -101,13 +96,26 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - name: cache crates
-        id: cache-crates
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
         with:
-          path: ~/.cargo/registry/cache
-          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-registry
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - name: Setup Rust target
         run: rustup target add ${{matrix.target}}
       - name: build-tarball ${{matrix.target}}
@@ -124,10 +132,8 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
-        with: { tool: cargo-cache }
-      - if: steps.cache-crates.outputs.cache-hit != 'true'
-        run: cargo cache --autoclean
+      - run: sccache --show-stats
+        if: always()
   build-tarball-windows:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-windows-${{matrix.arch}}
