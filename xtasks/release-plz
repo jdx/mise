@@ -237,7 +237,7 @@ stars_raw="$(gh api repos/jdx/mise --jq '.stargazers_count')"
 if [[ -n $stars_raw ]]; then
 	if [[ $stars_raw -ge 1000 ]]; then
 		# Format as k notation (e.g., 19346 -> 19.3k)
-		stars_formatted="$(echo "scale=1; $stars_raw / 1000" | bc)k"
+		stars_formatted="$(awk -v n="$stars_raw" 'BEGIN { printf "%.1fk", n/1000 }')"
 		# Remove trailing .0k
 		stars_formatted="${stars_formatted/.0k/k}"
 	else
