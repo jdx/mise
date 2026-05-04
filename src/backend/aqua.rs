@@ -1669,7 +1669,7 @@ impl AquaBackend {
             && let Some(cosign) = Self::binary_cosign_config(pkg)
         {
             let artifact_path = download_path.join(filename);
-            self.cosign_artifact(ctx, cosign, pkg, v, tv, &artifact_path, &download_path)
+            self.cosign_artifact(ctx, cosign, pkg, v, tv, &artifact_path)
                 .await?;
             cosign_already_verified = true;
         }
@@ -1709,7 +1709,7 @@ impl AquaBackend {
                 && !cosign_already_verified
                 && checksum_path.exists()
             {
-                self.cosign_checksums(ctx, cosign, pkg, v, tv, &checksum_path, &download_path)
+                self.cosign_checksums(ctx, cosign, pkg, v, tv, &checksum_path)
                     .await?;
             }
 
@@ -1897,8 +1897,8 @@ impl AquaBackend {
         v: &str,
         tv: &mut ToolVersion,
         artifact_path: &Path,
-        download_path: &Path,
     ) -> Result<()> {
+        let download_path = tv.download_path();
         ctx.pr
             .set_message("verify artifact with cosign".to_string());
         self.run_cosign_check(
@@ -1906,7 +1906,7 @@ impl AquaBackend {
             cosign,
             pkg,
             v,
-            download_path,
+            &download_path,
             Some(ctx.pr.as_ref()),
         )
         .await?;
@@ -1924,8 +1924,8 @@ impl AquaBackend {
         v: &str,
         tv: &mut ToolVersion,
         checksum_path: &Path,
-        download_path: &Path,
     ) -> Result<()> {
+        let download_path = tv.download_path();
         ctx.pr
             .set_message("verify checksums with cosign".to_string());
         self.run_cosign_check(
@@ -1933,7 +1933,7 @@ impl AquaBackend {
             cosign,
             pkg,
             v,
-            download_path,
+            &download_path,
             Some(ctx.pr.as_ref()),
         )
         .await?;
