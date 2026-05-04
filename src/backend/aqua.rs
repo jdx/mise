@@ -1645,7 +1645,7 @@ impl AquaBackend {
         }
         if !skip_minisign {
             // Short-circuit: if SLSA or GithubAttestations already recorded provenance, skip minisign.
-            // Cosign runs later in the checksum block, so it cannot be set at this point.
+            // Cosign runs later, so it cannot be set at this point.
             let already_verified = tv
                 .lock_platforms
                 .get(&platform_key)
@@ -1663,16 +1663,15 @@ impl AquaBackend {
             .and_then(|pi| pi.provenance.as_ref())
             .is_some_and(|p| *p > ProvenanceType::Cosign);
 
-        let binary_cosign_configured = Self::binary_cosign_config(pkg).is_some();
         if !skip_cosign
             && Settings::get().aqua.cosign
             && !cosign_already_verified
-            && binary_cosign_configured
+            && Self::binary_cosign_config(pkg).is_some()
         {
             let artifact_path = download_path.join(filename);
             self.cosign_artifact(ctx, pkg, v, tv, &artifact_path, &download_path)
                 .await?;
-            cosign_already_verified = binary_cosign_configured;
+            cosign_already_verified = true;
         }
 
         if let Some(checksum) = &pkg.checksum
