@@ -39,12 +39,12 @@ output=$(mise install aqua:technicalpickles/envsense@0.3.4 2>&1)
 echo "$output"
 
 if echo "$output" | grep -q "verify artifact with cosign"; then
-	echo "✅ Native top-level binary Cosign verification was used"
+  echo "✅ Native top-level binary Cosign verification was used"
 else
-	echo "❌ ERROR: top-level binary Cosign verification message not found in output"
-	echo "Output was:"
-	echo "$output"
-	exit 1
+  echo "❌ ERROR: top-level binary Cosign verification message not found in output"
+  echo "Output was:"
+  echo "$output"
+  exit 1
 fi
 
 assert_contains "mise x aqua:technicalpickles/envsense@0.3.4 -- which envsense" "envsense"
