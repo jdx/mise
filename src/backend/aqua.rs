@@ -6,6 +6,7 @@ use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
+use crate::duration::parse_into_timestamp;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -31,6 +32,7 @@ use async_trait::async_trait;
 use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use jiff::Timestamp;
 use regex::Regex;
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -279,89 +281,28 @@ impl Backend for AquaBackend {
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
-        if Settings::get().offline() {
-            trace!("Skipping latest stable version due to offline mode");
-            return Ok(None);
+        self.latest_marked_release_version(config, None).await
+    }
+
+    async fn latest_version_with_refresh(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+        before_date: Option<Timestamp>,
+        refresh: bool,
+    ) -> Result<Option<String>> {
+        let before_date =
+            crate::backend::effective_latest_before_date(self, config, before_date).await?;
+        let resolved_query = query.as_deref().unwrap_or("latest");
+        if resolved_query == "latest"
+            && let Some(version) = self
+                .latest_marked_release_version(config, before_date)
+                .await?
+        {
+            return Ok(Some(version));
         }
-
-        let pkg = match AQUA_REGISTRY.package(&self.id).await {
-            Ok(pkg) => pkg,
-            Err(e) => {
-                warn!("Latest version cannot be fetched: {}", e);
-                return Ok(None);
-            }
-        };
-
-        if pkg.repo_owner.is_empty() || pkg.repo_name.is_empty() {
-            warn!(
-                "aqua package {} does not have repo_owner and/or repo_name.",
-                self.id
-            );
-            return Ok(None);
-        }
-
-        let opts = config
-            .get_tool_opts(&self.ba)
-            .await?
-            .unwrap_or_else(|| self.ba.opts());
-        let want_prereleases = include_prereleases(&opts);
-        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let latest_version = if pkg.version_source.as_deref() == Some("github_tag") {
-            match github::list_tags(&repo).await {
-                Ok(tags) => {
-                    self.first_installable_version_from_tags(&pkg, tags, want_prereleases)
-                        .await
-                }
-                Err(e) => {
-                    debug!(
-                        "Failed to fetch GitHub tags for aqua package {}: {e}",
-                        self.id
-                    );
-                    None
-                }
-            }
-        } else {
-            match github::get_release(&repo, "latest").await {
-                Ok(release) => match self
-                    .installable_version_from_tag(&pkg, &release.tag_name)
-                    .await
-                {
-                    Ok(Some(version))
-                        if version_allowed_by_prerelease_opts(
-                            &version,
-                            release.prerelease,
-                            want_prereleases,
-                        ) =>
-                    {
-                        Some(version)
-                    }
-                    Ok(Some(version)) => {
-                        debug!(
-                            "Latest GitHub release for aqua package {} ({version}) is a pre-release; falling back to chronological latest",
-                            self.id
-                        );
-                        None
-                    }
-                    Ok(None) => None,
-                    Err(e) => {
-                        debug!(
-                            "Failed to resolve latest GitHub release tag for aqua package {}: {e}",
-                            self.id
-                        );
-                        None
-                    }
-                },
-                Err(e) => {
-                    debug!(
-                        "Failed to fetch latest GitHub release for aqua package {}: {e}",
-                        self.id
-                    );
-                    None
-                }
-            }
-        };
-
-        Ok(latest_version)
+        self.latest_version_for_query(config, resolved_query, before_date, refresh)
+            .await
     }
 
     async fn install_version_(
@@ -1352,6 +1293,103 @@ impl AquaBackend {
             )
             .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .build(),
+        }
+    }
+
+    async fn latest_marked_release_version(
+        &self,
+        config: &Arc<Config>,
+        before_date: Option<Timestamp>,
+    ) -> Result<Option<String>> {
+        if Settings::get().offline() {
+            trace!("Skipping latest stable version due to offline mode");
+            return Ok(None);
+        }
+
+        let pkg = match AQUA_REGISTRY.package(&self.id).await {
+            Ok(pkg) => pkg,
+            Err(e) => {
+                warn!("Latest version cannot be fetched: {}", e);
+                return Ok(None);
+            }
+        };
+
+        if pkg.repo_owner.is_empty() || pkg.repo_name.is_empty() {
+            warn!(
+                "aqua package {} does not have repo_owner and/or repo_name.",
+                self.id
+            );
+            return Ok(None);
+        }
+
+        let opts = config
+            .get_tool_opts(&self.ba)
+            .await?
+            .unwrap_or_else(|| self.ba.opts());
+        let want_prereleases = include_prereleases(&opts);
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        if pkg.version_source.as_deref() == Some("github_tag") {
+            return match github::list_tags(&repo).await {
+                Ok(tags) => Ok(self
+                    .first_installable_version_from_tags(&pkg, tags, want_prereleases)
+                    .await),
+                Err(e) => {
+                    debug!(
+                        "Failed to fetch GitHub tags for aqua package {}: {e}",
+                        self.id
+                    );
+                    Ok(None)
+                }
+            };
+        }
+
+        let release = match github::get_release(&repo, "latest").await {
+            Ok(release) => release,
+            Err(e) => {
+                debug!(
+                    "Failed to fetch latest GitHub release for aqua package {}: {e}",
+                    self.id
+                );
+                return Ok(None);
+            }
+        };
+
+        if !created_at_allowed_by_before_date(&release.created_at, before_date) {
+            debug!(
+                "Latest GitHub release for aqua package {} ({}) is excluded by before_date; falling back to chronological latest",
+                self.id, release.tag_name
+            );
+            return Ok(None);
+        }
+
+        match self
+            .installable_version_from_tag(&pkg, &release.tag_name)
+            .await
+        {
+            Ok(Some(version))
+                if version_allowed_by_prerelease_opts(
+                    &version,
+                    release.prerelease,
+                    want_prereleases,
+                ) =>
+            {
+                Ok(Some(version))
+            }
+            Ok(Some(version)) => {
+                debug!(
+                    "Latest GitHub release for aqua package {} ({version}) is excluded by prerelease opts; falling back to chronological latest",
+                    self.id
+                );
+                Ok(None)
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                debug!(
+                    "Failed to resolve latest GitHub release tag for aqua package {}: {e}",
+                    self.id
+                );
+                Ok(None)
+            }
         }
     }
 
@@ -2529,6 +2567,19 @@ fn version_allowed_by_prerelease_opts(
     want_prereleases || (!prerelease && !VERSION_REGEX.is_match(version))
 }
 
+fn created_at_allowed_by_before_date(created_at: &str, before_date: Option<Timestamp>) -> bool {
+    let Some(before) = before_date else {
+        return true;
+    };
+    match parse_into_timestamp(created_at) {
+        Ok(created) => created < before,
+        Err(_) => {
+            trace!("Failed to parse timestamp: {}", created_at);
+            true
+        }
+    }
+}
+
 fn package_has_asset(pkg: &AquaPackage) -> bool {
     !pkg.no_asset && pkg.error_message.is_none()
 }
@@ -2807,6 +2858,28 @@ mod lock_candidate_tests {
             "1.2.3-rc.1",
             false,
             true
+        ));
+    }
+
+    #[test]
+    fn test_created_at_allowed_by_before_date() {
+        let before = "2024-01-02T00:00:00Z".parse().unwrap();
+
+        assert!(created_at_allowed_by_before_date(
+            "2024-01-01T00:00:00Z",
+            Some(before)
+        ));
+        assert!(!created_at_allowed_by_before_date(
+            "2024-01-03T00:00:00Z",
+            Some(before)
+        ));
+        assert!(created_at_allowed_by_before_date(
+            "not-a-timestamp",
+            Some(before)
+        ));
+        assert!(created_at_allowed_by_before_date(
+            "2024-01-03T00:00:00Z",
+            None
         ));
     }
 

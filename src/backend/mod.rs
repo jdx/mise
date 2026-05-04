@@ -2086,7 +2086,7 @@ pub trait Backend: Debug + Send + Sync {
     }
 }
 
-async fn effective_latest_before_date<B: Backend + ?Sized>(
+pub(crate) async fn effective_latest_before_date<B: Backend + ?Sized>(
     backend: &B,
     config: &Arc<Config>,
     before_date: Option<Timestamp>,
