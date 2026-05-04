@@ -1666,10 +1666,10 @@ impl AquaBackend {
         if !skip_cosign
             && Settings::get().aqua.cosign
             && !cosign_already_verified
-            && Self::binary_cosign_config(pkg).is_some()
+            && let Some(cosign) = Self::binary_cosign_config(pkg)
         {
             let artifact_path = download_path.join(filename);
-            self.cosign_artifact(ctx, pkg, v, tv, &artifact_path, &download_path)
+            self.cosign_artifact(ctx, cosign, pkg, v, tv, &artifact_path, &download_path)
                 .await?;
             cosign_already_verified = true;
         }
@@ -1684,9 +1684,10 @@ impl AquaBackend {
                 .get(&platform_key)
                 .is_none_or(|pi| pi.checksum.is_none());
 
-            let needs_cosign = !skip_cosign
-                && Settings::get().aqua.cosign
-                && Self::checksum_cosign_config(pkg).is_some();
+            let checksum_cosign = (!skip_cosign && Settings::get().aqua.cosign)
+                .then(|| Self::checksum_cosign_config(pkg).map(|(_, cosign)| cosign))
+                .flatten();
+            let needs_cosign = checksum_cosign.is_some();
             // Re-download only if the checksum file doesn't exist yet. An existing file
             // from a prior attempt is trusted because the download directory is version-specific
             // and the final artifact is independently verified by verify_checksum at the end.
@@ -1704,8 +1705,11 @@ impl AquaBackend {
                     .await?;
             }
 
-            if needs_cosign && !cosign_already_verified && checksum_path.exists() {
-                self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
+            if let Some(cosign) = checksum_cosign
+                && !cosign_already_verified
+                && checksum_path.exists()
+            {
+                self.cosign_checksums(ctx, cosign, pkg, v, tv, &checksum_path, &download_path)
                     .await?;
             }
 
@@ -1888,83 +1892,54 @@ impl AquaBackend {
     async fn cosign_artifact(
         &self,
         ctx: &InstallContext,
+        cosign: &AquaCosign,
         pkg: &AquaPackage,
         v: &str,
         tv: &mut ToolVersion,
         artifact_path: &Path,
         download_path: &Path,
     ) -> Result<()> {
-        if !Settings::get().aqua.cosign {
-            return Ok(());
-        }
-        if let Some(cosign) = &pkg.cosign {
-            if cosign.enabled == Some(false) {
-                debug!("cosign is disabled for {tv}");
-                return Ok(());
-            }
+        ctx.pr
+            .set_message("verify artifact with cosign".to_string());
+        self.run_cosign_check(
+            artifact_path,
+            cosign,
+            pkg,
+            v,
+            download_path,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
 
-            if cosign.key.is_none() && cosign.bundle.is_none() {
-                debug!("cosign for {tv} uses opts-only config, skipping native verification");
-                return Ok(());
-            }
-
-            ctx.pr
-                .set_message("verify artifact with cosign".to_string());
-            self.run_cosign_check(
-                artifact_path,
-                cosign,
-                pkg,
-                v,
-                download_path,
-                Some(ctx.pr.as_ref()),
-            )
-            .await?;
-
-            ctx.pr.set_message("✓ Cosign verified".to_string());
-            self.record_cosign_provenance(tv);
-        }
+        ctx.pr.set_message("✓ Cosign verified".to_string());
+        self.record_cosign_provenance(tv);
         Ok(())
     }
 
     async fn cosign_checksums(
         &self,
         ctx: &InstallContext,
+        cosign: &AquaCosign,
         pkg: &AquaPackage,
         v: &str,
         tv: &mut ToolVersion,
         checksum_path: &Path,
         download_path: &Path,
     ) -> Result<()> {
-        if !Settings::get().aqua.cosign {
-            return Ok(());
-        }
-        if let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref()) {
-            if cosign.enabled == Some(false) {
-                debug!("cosign is disabled for {tv}");
-                return Ok(());
-            }
+        ctx.pr
+            .set_message("verify checksums with cosign".to_string());
+        self.run_cosign_check(
+            checksum_path,
+            cosign,
+            pkg,
+            v,
+            download_path,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
 
-            // Opts-only config (no key or bundle) — nothing to verify natively
-            if cosign.key.is_none() && cosign.bundle.is_none() {
-                debug!("cosign for {tv} uses opts-only config, skipping native verification");
-                return Ok(());
-            }
-
-            ctx.pr
-                .set_message("verify checksums with cosign".to_string());
-            self.run_cosign_check(
-                checksum_path,
-                cosign,
-                pkg,
-                v,
-                download_path,
-                Some(ctx.pr.as_ref()),
-            )
-            .await?;
-
-            ctx.pr.set_message("✓ Cosign verified".to_string());
-            self.record_cosign_provenance(tv);
-        }
+        ctx.pr.set_message("✓ Cosign verified".to_string());
+        self.record_cosign_provenance(tv);
         Ok(())
     }
 
