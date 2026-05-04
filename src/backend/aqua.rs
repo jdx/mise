@@ -171,13 +171,7 @@ impl Backend for AquaBackend {
 
         // Cosign - check registry config OR actual release assets
         let has_cosign_config = all_pkgs.iter().any(|p| {
-            p.cosign
-                .as_ref()
-                .is_some_and(|cosign| cosign.enabled.unwrap_or(true))
-                || p.checksum
-                    .as_ref()
-                    .and_then(|c| c.cosign.as_ref())
-                    .is_some_and(|cosign| cosign.enabled.unwrap_or(true))
+            Self::binary_cosign_config(p).is_some() || Self::checksum_cosign_config(p).is_some()
         });
         let has_cosign_assets = release_assets.iter().any(|a| {
             let name = a.name.to_lowercase();
