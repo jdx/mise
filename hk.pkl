@@ -81,14 +81,8 @@ fi
     }
     ["schema"] {
         glob = List("schema/**/*.json")
-        batch = false
-        check = """
-        failed=0
-        {% for file in files_list %}
-        ajv compile -s {{ file }} --spec=draft2020 --strict-types=true --strict-tuples=true || failed=1
-        {% endfor %}
-        exit $failed
-        """
+        stdin = "{{ files_list | join(sep='\u{0}') }}"
+        check = "xargs -0 -I {} ajv compile -s {} --spec=draft2020 --strict-types=true --strict-tuples=true"
     }
 }
 
