@@ -188,7 +188,15 @@ impl Toolset {
                     // A single bad install also shouldn't abort the whole listing,
                     // so warn and skip on per-tool failures.
                     match ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown) {
-                        Ok(req) => versions.push((b.clone(), ToolVersion::new(req, v))),
+                        Ok(req) => {
+                            // Use `request.version()`, not the raw dir name `v`:
+                            // for ref-type dirs (e.g. `ref-main`) `ToolRequest::new`
+                            // normalizes to `ref:main`, and `ToolVersion.version`
+                            // must match `tv.request.version()` to stay consistent
+                            // with the old `.resolve()` path.
+                            let version = req.version();
+                            versions.push((b.clone(), ToolVersion::new(req, version)));
+                        }
                         Err(e) => warn!("Error listing {}@{}: {:#}", b.id(), v, e),
                     }
                 }
