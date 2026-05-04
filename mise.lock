@@ -207,76 +207,100 @@ checksum = "sha256:715709c69b176e20994533d3292bd0b7c32de9c0c5575b916746ec6b2aa38
 url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.10/bun-windows-x64-baseline.zip"
 
 [[tools.cargo-binstall]]
-version = "1.18.1"
+version = "1.19.0"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall."platforms.linux-arm64"]
-checksum = "sha256:c55962a0115f9716b709216de7f8bdd59d6ba8738779e60b051b4593f677717a"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-aarch64-unknown-linux-musl.tgz"
+checksum = "sha256:57148539e6160789715745e6f50e0aac9193636df42bd9b4554cd9012195866c"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-aarch64-unknown-linux-musl.tgz"
 
 [tools.cargo-binstall."platforms.linux-arm64-musl"]
-checksum = "sha256:c55962a0115f9716b709216de7f8bdd59d6ba8738779e60b051b4593f677717a"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-aarch64-unknown-linux-musl.tgz"
+checksum = "sha256:57148539e6160789715745e6f50e0aac9193636df42bd9b4554cd9012195866c"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-aarch64-unknown-linux-musl.tgz"
 
 [tools.cargo-binstall."platforms.linux-x64"]
-checksum = "sha256:cf2a4b54494ea8555d6349685e9a301efc1051d9fba6308c76914b2486f8700f"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "sha256:a7a4271099ce891368bc544d3f89315f12547df653ba16de2030461e8867edd6"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools.cargo-binstall."platforms.linux-x64-baseline"]
-checksum = "sha256:cf2a4b54494ea8555d6349685e9a301efc1051d9fba6308c76914b2486f8700f"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "sha256:a7a4271099ce891368bc544d3f89315f12547df653ba16de2030461e8867edd6"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools.cargo-binstall."platforms.linux-x64-musl"]
-checksum = "sha256:cf2a4b54494ea8555d6349685e9a301efc1051d9fba6308c76914b2486f8700f"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "sha256:a7a4271099ce891368bc544d3f89315f12547df653ba16de2030461e8867edd6"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools.cargo-binstall."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:cf2a4b54494ea8555d6349685e9a301efc1051d9fba6308c76914b2486f8700f"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "sha256:a7a4271099ce891368bc544d3f89315f12547df653ba16de2030461e8867edd6"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools.cargo-binstall."platforms.macos-arm64"]
-checksum = "sha256:955abf167994c90f3547e233edace4c0f794465dd4aa408249b38999aa5ca3cf"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-aarch64-apple-darwin.zip"
+checksum = "sha256:1208282e0719ae33fc1db20fe533a50827673d017fb85ed5dec0cb9b0c7ca569"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-aarch64-apple-darwin.zip"
 
 [tools.cargo-binstall."platforms.macos-x64"]
-checksum = "sha256:e06370bec7143668653bb7c09d0b8b689fc703dd4fa58ec5847c4b571d8a490d"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-x86_64-apple-darwin.zip"
+checksum = "sha256:289007dce39f181188b620c19783d3a0e8f37fb9e5d7c3ff1da9cfb9a2d8ecc3"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-apple-darwin.zip"
 
 [tools.cargo-binstall."platforms.macos-x64-baseline"]
-checksum = "sha256:e06370bec7143668653bb7c09d0b8b689fc703dd4fa58ec5847c4b571d8a490d"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-x86_64-apple-darwin.zip"
+checksum = "sha256:289007dce39f181188b620c19783d3a0e8f37fb9e5d7c3ff1da9cfb9a2d8ecc3"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-apple-darwin.zip"
 
 [tools.cargo-binstall."platforms.windows-x64"]
-checksum = "sha256:89706aa5215c164d8d091597a470fee72308ac87e8553af395ea77db844a888c"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:1113c92eb53160c4e0c12dc803f582a266d26b26ca529520e104806cce8d0204"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-pc-windows-msvc.zip"
 
 [tools.cargo-binstall."platforms.windows-x64-baseline"]
-checksum = "sha256:89706aa5215c164d8d091597a470fee72308ac87e8553af395ea77db844a888c"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.18.1/cargo-binstall-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:1113c92eb53160c4e0c12dc803f582a266d26b26ca529520e104806cce8d0204"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-pc-windows-msvc.zip"
+
+[[tools.cargo-insta]]
+version = "1.47.2"
+backend = "aqua:mitsuhiko/insta"
+
+[tools.cargo-insta."platforms.linux-x64"]
+checksum = "sha256:1c2a2e82200b430f6fa27b6d0ba0059573eae2f32b0b8aa54446184ab7b46ee7"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.47.2/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
+
+[tools.cargo-insta."platforms.linux-x64-baseline"]
+checksum = "sha256:1c2a2e82200b430f6fa27b6d0ba0059573eae2f32b0b8aa54446184ab7b46ee7"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.47.2/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
+
+[tools.cargo-insta."platforms.linux-x64-musl"]
+checksum = "sha256:1c2a2e82200b430f6fa27b6d0ba0059573eae2f32b0b8aa54446184ab7b46ee7"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.47.2/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
+
+[tools.cargo-insta."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:1c2a2e82200b430f6fa27b6d0ba0059573eae2f32b0b8aa54446184ab7b46ee7"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.47.2/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
+
+[tools.cargo-insta."platforms.macos-arm64"]
+checksum = "sha256:4876319b5201b875188351445b754db09f7674b506daa983634c95d6d44ca51e"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.47.2/cargo-insta-aarch64-apple-darwin.tar.xz"
+
+[tools.cargo-insta."platforms.macos-x64"]
+checksum = "sha256:62efa25c4e9f8182c16ae46f58bc3e9c8fdbe74aaf0409d3ed06909a70d128a5"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.47.2/cargo-insta-x86_64-apple-darwin.tar.xz"
+
+[tools.cargo-insta."platforms.macos-x64-baseline"]
+checksum = "sha256:62efa25c4e9f8182c16ae46f58bc3e9c8fdbe74aaf0409d3ed06909a70d128a5"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.47.2/cargo-insta-x86_64-apple-darwin.tar.xz"
+
+[tools.cargo-insta."platforms.windows-x64"]
+checksum = "sha256:2f2ffcdda5608f78de53509bdd6a5feba185dad9490b5aad951c35bf8c37fa9e"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.47.2/cargo-insta-x86_64-pc-windows-msvc.zip"
+
+[tools.cargo-insta."platforms.windows-x64-baseline"]
+checksum = "sha256:2f2ffcdda5608f78de53509bdd6a5feba185dad9490b5aad951c35bf8c37fa9e"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.47.2/cargo-insta-x86_64-pc-windows-msvc.zip"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.10"
 backend = "cargo:cargo-edit"
 
-[[tools."cargo:cargo-insta"]]
-version = "1.46.3"
-backend = "cargo:cargo-insta"
-
-[[tools."cargo:cargo-release"]]
-version = "1.1.1"
-backend = "cargo:cargo-release"
-
-[[tools."cargo:git-cliff"]]
-version = "2.12.0"
-backend = "cargo:git-cliff"
-
 [[tools."cargo:toml-cli"]]
 version = "0.2.3"
 backend = "cargo:toml-cli"
-
-[[tools."cargo:usage-cli"]]
-version = "3.1.0"
-backend = "cargo:usage-cli"
 
 [[tools.communique]]
 version = "1.1.2"
@@ -434,6 +458,113 @@ provenance = "github-attestations"
 checksum = "sha256:c590bcb488f80a85c8febd5cde27edd68fdd481bd004aaf9adc50dcf1b21c09c"
 url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_windows_amd64.zip"
 provenance = "github-attestations"
+
+[[tools.git-cliff]]
+version = "2.13.1"
+backend = "aqua:orhun/git-cliff"
+
+[tools.git-cliff."platforms.linux-arm64"]
+checksum = "sha256:4054c124b926c117f3fa048939bc8be0a954f29f3b6f367627e8cb22c1971882"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-aarch64-unknown-linux-musl.tar.gz"
+
+[tools.git-cliff."platforms.linux-arm64-musl"]
+checksum = "sha256:4054c124b926c117f3fa048939bc8be0a954f29f3b6f367627e8cb22c1971882"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-aarch64-unknown-linux-musl.tar.gz"
+
+[tools.git-cliff."platforms.linux-x64"]
+checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.git-cliff."platforms.linux-x64-baseline"]
+checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.git-cliff."platforms.linux-x64-musl"]
+checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.git-cliff."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.git-cliff."platforms.macos-arm64"]
+checksum = "sha256:21547ae4a0421164070ab75c2522864ea5565858a011fabc5f583061b20f1226"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-aarch64-apple-darwin.tar.gz"
+
+[tools.git-cliff."platforms.macos-x64"]
+checksum = "sha256:6e60ae390d375cecb9d8008c49f0e724a8dfe40390b532ef5501e421d2cc8acb"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-apple-darwin.tar.gz"
+
+[tools.git-cliff."platforms.macos-x64-baseline"]
+checksum = "sha256:6e60ae390d375cecb9d8008c49f0e724a8dfe40390b532ef5501e421d2cc8acb"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-apple-darwin.tar.gz"
+
+[tools.git-cliff."platforms.windows-x64"]
+checksum = "sha256:3ae3a5549e85c7ad5b20192ebcfee4371269deca51255f6f2f2e051c6541f5ca"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-pc-windows-msvc.zip"
+
+[tools.git-cliff."platforms.windows-x64-baseline"]
+checksum = "sha256:3ae3a5549e85c7ad5b20192ebcfee4371269deca51255f6f2f2e051c6541f5ca"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-pc-windows-msvc.zip"
+
+[[tools."github:crate-ci/cargo-release"]]
+version = "1.1.2"
+backend = "github:crate-ci/cargo-release"
+
+[tools."github:crate-ci/cargo-release"."platforms.linux-arm64"]
+checksum = "sha256:ee60ed5ad9c7c73e68ead7ccbc56fc2bf367eaa7f188b722a00cf15a71f08c6a"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380569253"
+
+[tools."github:crate-ci/cargo-release"."platforms.linux-arm64-musl"]
+checksum = "sha256:ee60ed5ad9c7c73e68ead7ccbc56fc2bf367eaa7f188b722a00cf15a71f08c6a"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380569253"
+
+[tools."github:crate-ci/cargo-release"."platforms.linux-x64"]
+checksum = "sha256:24e641b88c90411aaacba613f40d5c8f2b686b2721dfb61afd25b67e16956089"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380569398"
+
+[tools."github:crate-ci/cargo-release"."platforms.linux-x64-baseline"]
+checksum = "sha256:24e641b88c90411aaacba613f40d5c8f2b686b2721dfb61afd25b67e16956089"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380569398"
+
+[tools."github:crate-ci/cargo-release"."platforms.linux-x64-musl"]
+checksum = "sha256:24e641b88c90411aaacba613f40d5c8f2b686b2721dfb61afd25b67e16956089"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380569398"
+
+[tools."github:crate-ci/cargo-release"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:24e641b88c90411aaacba613f40d5c8f2b686b2721dfb61afd25b67e16956089"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380569398"
+
+[tools."github:crate-ci/cargo-release"."platforms.macos-arm64"]
+checksum = "sha256:135e1152c39b1a5ab4d3d370d0b95b0ce20a8e5a937465fcd9c6421d7c489a5b"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380569463"
+
+[tools."github:crate-ci/cargo-release"."platforms.macos-x64"]
+checksum = "sha256:745c92e38c8b654979872d783da2a42b148c877f40860d4aa4ba525b8d36c845"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380569735"
+
+[tools."github:crate-ci/cargo-release"."platforms.macos-x64-baseline"]
+checksum = "sha256:745c92e38c8b654979872d783da2a42b148c877f40860d4aa4ba525b8d36c845"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380569735"
+
+[tools."github:crate-ci/cargo-release"."platforms.windows-x64"]
+checksum = "sha256:b36c0d3b8bd64ff78bfe6904525c5f7d8eafe56a5cd45b0d94793d8072500074"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380570010"
+
+[tools."github:crate-ci/cargo-release"."platforms.windows-x64-baseline"]
+checksum = "sha256:b36c0d3b8bd64ff78bfe6904525c5f7d8eafe56a5cd45b0d94793d8072500074"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.2/cargo-release-v1.1.2-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/380570010"
 
 [[tools.hk]]
 version = "1.44.3"
@@ -638,10 +769,6 @@ backend = "npm:ajv-cli"
 version = "0.48.0"
 backend = "npm:markdownlint-cli"
 
-[[tools."npm:prettier"]]
-version = "3.8.1"
-backend = "npm:prettier"
-
 [[tools.pkl]]
 version = "0.31.1"
 backend = "aqua:apple/pkl"
@@ -689,6 +816,10 @@ url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-windows-amd64.e
 [tools.pkl."platforms.windows-x64-baseline"]
 checksum = "sha256:a8834481667325b44c539dbb758d7365a16389070f343c04b639bbe525ede013"
 url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-windows-amd64.exe"
+
+[[tools.prettier]]
+version = "3.8.3"
+backend = "npm:prettier"
 
 [[tools.ripgrep]]
 version = "15.1.0"
@@ -1001,6 +1132,54 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x
 
 [tools.taplo."platforms.windows-x64-baseline"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
+
+[[tools.usage]]
+version = "3.2.1"
+backend = "aqua:jdx/usage"
+
+[tools.usage."platforms.linux-arm64"]
+checksum = "sha256:c5a237c272e3b08d05a698aa37e6775ab36152e12e74084363c7a230d9fc7070"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-aarch64-unknown-linux-musl.tar.gz"
+
+[tools.usage."platforms.linux-arm64-musl"]
+checksum = "sha256:c5a237c272e3b08d05a698aa37e6775ab36152e12e74084363c7a230d9fc7070"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-aarch64-unknown-linux-musl.tar.gz"
+
+[tools.usage."platforms.linux-x64"]
+checksum = "sha256:aea16298c6fa7d13e10a04ce7a9e7c743a1d49151a7065aa3f80697c56a89452"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.usage."platforms.linux-x64-baseline"]
+checksum = "sha256:aea16298c6fa7d13e10a04ce7a9e7c743a1d49151a7065aa3f80697c56a89452"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.usage."platforms.linux-x64-musl"]
+checksum = "sha256:aea16298c6fa7d13e10a04ce7a9e7c743a1d49151a7065aa3f80697c56a89452"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.usage."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:aea16298c6fa7d13e10a04ce7a9e7c743a1d49151a7065aa3f80697c56a89452"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.usage."platforms.macos-arm64"]
+checksum = "sha256:94c0b8a913618e24c0bc8002a688112210ec3f5e8bbb5431a2687eed9fad2dff"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-universal-apple-darwin.tar.gz"
+
+[tools.usage."platforms.macos-x64"]
+checksum = "sha256:94c0b8a913618e24c0bc8002a688112210ec3f5e8bbb5431a2687eed9fad2dff"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-universal-apple-darwin.tar.gz"
+
+[tools.usage."platforms.macos-x64-baseline"]
+checksum = "sha256:94c0b8a913618e24c0bc8002a688112210ec3f5e8bbb5431a2687eed9fad2dff"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-universal-apple-darwin.tar.gz"
+
+[tools.usage."platforms.windows-x64"]
+checksum = "sha256:9ac550ddcb67c1bb30e76fbf04126d50704004fc7850e7fa1aaa6994ce4601f5"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-x86_64-pc-windows-msvc.zip"
+
+[tools.usage."platforms.windows-x64-baseline"]
+checksum = "sha256:9ac550ddcb67c1bb30e76fbf04126d50704004fc7850e7fa1aaa6994ce4601f5"
+url = "https://github.com/jdx/usage/releases/download/v3.2.1/usage-x86_64-pc-windows-msvc.zip"
 
 [[tools.wait-for-gh-rate-limit]]
 version = "1.1.1"
