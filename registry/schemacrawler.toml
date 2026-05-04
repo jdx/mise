@@ -1,5 +1,6 @@
+depends = ["java"]
 description = "Free database schema discovery and comprehension tool"
-test = { cmd = "which schemacrawler.sh", expected = "schemacrawler.sh" }
+test = { cmd = "schemacrawler.sh --version", expected = "SchemaCrawler {{version}}" }
 
 [[backends]]
 full = "github:schemacrawler/SchemaCrawler"
