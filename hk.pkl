@@ -81,7 +81,8 @@ fi
     }
     ["schema"] {
         glob = List("schema/**/*.json")
-        check = "ajv compile -s schema/mise.json --spec=draft2019 --strict-schema=true && ajv compile -s schema/mise-task.json --spec=draft2019 --strict-schema=true && ajv compile -s schema/mise.plugin.json --spec=draft2020 --strict-schema=true && ajv compile -s schema/mise-registry-tool.json --spec=draft7 --strict-schema=true"
+        stdin = "{{ files_list | join(sep='\u{0}') }}"
+        check = "xargs -0 -I {} ajv compile -s {} --spec=draft2020 --strict-types=true --strict-tuples=true"
     }
 }
 
