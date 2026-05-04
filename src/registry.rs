@@ -131,7 +131,7 @@ impl RegistryTool {
 
         if let Some(backend) = self.get_backend(full) {
             for (k, v) in backend.options {
-                let value = toml::from_str::<toml::Value>(v).unwrap_or_else(|e| {
+                let value = v.parse::<toml::Value>().unwrap_or_else(|e| {
                     panic!("failed to parse registry option {k} as a TOML value: {e}")
                 });
                 opts.insert(k.to_string(), value);

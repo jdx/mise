@@ -220,7 +220,7 @@ impl Backend for PIPXBackend {
         // Check if pipx is available (unless uvx is being used)
         let use_uvx = self.uv_is_installed(&ctx.config).await
             && Settings::get().pipx.uvx != Some(false)
-            && tv.request.options().get("uvx") != Some("false");
+            && tv.request.options().get_string("uvx").as_deref() != Some("false");
 
         if !use_uvx {
             self.warn_if_dependency_missing(
@@ -293,8 +293,8 @@ impl Backend for PIPXBackend {
 
         // These options affect what gets installed
         for key in ["extras", "pipx_args", "uvx_args", "uvx"] {
-            if let Some(value) = opts.get(key) {
-                result.insert(key.to_string(), value.to_string());
+            if let Some(value) = opts.get_string(key) {
+                result.insert(key.to_string(), value);
             }
         }
 
