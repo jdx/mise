@@ -1,0 +1,3 @@
+backends = ["aqua:bytecodealliance/wasm-tools"]
+description = "CLI and Rust libraries for low-level manipulation of WebAssembly modules"
+test = { cmd = "wasm-tools --version", expected = "wasm-tools {{version}}" }
