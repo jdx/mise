@@ -1,5 +1,5 @@
 description = "Odin Programming Language"
-test = { cmd = "odin version", expected = "odin version" }
+test = { cmd = "odin version", expected = "version {{version}}" }
 
 [[backends]]
 full = "github:odin-lang/Odin"
