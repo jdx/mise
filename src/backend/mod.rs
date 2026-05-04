@@ -714,10 +714,6 @@ pub trait Backend: Debug + Send + Sync {
             deps.extend(self.get_optional_dependencies()?);
         }
         let mut deps: IndexSet<_> = deps.into_iter().map(BackendArg::from).collect();
-        if let Some(rt) = REGISTRY.get(self.ba().short.as_str()) {
-            // add dependencies from registry/
-            deps.extend(rt.depends.iter().map(BackendArg::from));
-        }
         deps.retain(|ba| &**self.ba() != ba);
         deps.retain(|ba| !all_fulls.contains(&ba.full()));
         for ba in deps.clone() {
