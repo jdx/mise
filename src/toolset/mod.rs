@@ -168,7 +168,7 @@ impl Toolset {
         })
     }
 
-    pub async fn list_installed_versions(&self, config: &Arc<Config>) -> Result<Vec<TVTuple>> {
+    pub async fn list_installed_versions(&self, _config: &Arc<Config>) -> Result<Vec<TVTuple>> {
         let current_versions: HashMap<(String, String), TVTuple> = self
             .list_current_versions()
             .into_iter()
@@ -181,10 +181,16 @@ impl Toolset {
                 if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
                     versions.push((p.clone(), tv.clone()));
                 } else {
-                    let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
-                        .resolve(config, &Default::default())
-                        .await?;
-                    versions.push((b.clone(), tv));
+                    // The version string came from an on-disk install directory,
+                    // so it's already concrete — don't call `.resolve()`, which
+                    // would hit the network and can fail (e.g. a stale install
+                    // dir literally named `latest` would re-query the registry).
+                    // A single bad install also shouldn't abort the whole listing,
+                    // so warn and skip on per-tool failures.
+                    match ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown) {
+                        Ok(req) => versions.push((b.clone(), ToolVersion::new(req, v))),
+                        Err(e) => warn!("Error listing {}@{}: {:#}", b.id(), v, e),
+                    }
                 }
             }
         }
