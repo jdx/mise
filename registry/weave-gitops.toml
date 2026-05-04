@@ -3,8 +3,5 @@ description = "Command line utility for managing Kubernetes applications via Git
 [[backends]]
 full = "github:weaveworks/weave-gitops"
 
-[backends.options]
-exe = "gitops"
-
 [[backends]]
 full = "asdf:deas/asdf-weave-gitops"

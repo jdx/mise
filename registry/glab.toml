@@ -5,15 +5,9 @@ test = { cmd = "glab version", expected = "glab {{version}}" }
 full = "gitlab:gitlab-org/cli"
 platforms = ["linux", "macos"]
 
-[backends.options]
-exe = "glab"
-
 [[backends]]
 full = "gitlab:gitlab-org/cli"
 platforms = ["windows"]
-
-[backends.options]
-exe = "glab"
 
 [[backends]]
 full = "asdf:mise-plugins/mise-glab"

@@ -3,8 +3,5 @@ description = "The Swift code generator for your assets, storyboards, Localizabl
 [[backends]]
 full = "github:SwiftGen/SwiftGen"
 
-[backends.options]
-exe = "swiftgen/bin/swiftgen"
-
 [[backends]]
 full = "asdf:mise-plugins/mise-swiftgen"

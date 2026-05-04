@@ -4,8 +4,5 @@ description = "A CLI application for interacting with a Cloudflare account. Powe
 [[backends]]
 full = "github:cloudflare/cloudflare-go"
 
-[backends.options]
-exe = "flarectl"
-
 [[backends]]
 full = "asdf:mise-plugins/asdf-flarectl"
