@@ -4,7 +4,6 @@
 //MISE depends=["docs:setup"]
 
 import * as fs from "node:fs";
-import * as child_process from "node:child_process";
 import * as toml from "toml";
 
 type EnumValue = string | boolean | number;
@@ -44,53 +43,65 @@ type NestedElement = {
 };
 
 function writeFormattedJson(path: string, value: unknown) {
-  const tmpPath = `${path}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(value));
-  child_process.execSync(`jq . < ${tmpPath} > ${path}`);
-  child_process.execSync(`prettier --write ${path}`);
-  fs.unlinkSync(tmpPath);
+  fs.writeFileSync(path, `${JSON.stringify(value)}\n`);
 }
 
-function pickDefs(schema: JsonObject, keys: string[]) {
+function crawlReferencedDefs(schema: JsonObject, root: unknown) {
   const defs = schema["$defs"] as JsonObject | undefined;
   if (!defs) {
     throw new Error("schema/mise.json is missing $defs");
   }
 
+  const queued = [root];
+  const seenDefs = new Set<string>();
   const picked: JsonObject = {};
-  for (const key of keys) {
-    const value = defs[key];
-    if (!value) {
-      throw new Error(`schema/mise.json is missing $defs.${key}`);
+
+  for (let i = 0; i < queued.length; i++) {
+    const value = queued[i];
+    if (Array.isArray(value)) {
+      queued.push(...value);
+      continue;
     }
-    picked[key] = value;
+    if (!value || typeof value !== "object") {
+      continue;
+    }
+
+    const obj = value as JsonObject;
+    const ref = obj["$ref"];
+    if (typeof ref === "string" && ref.startsWith("#/$defs/")) {
+      const key = ref.slice("#/$defs/".length).split("/")[0];
+      if (defs[key] === undefined) {
+        throw new Error(`schema/mise.json is missing $defs.${key}`);
+      }
+      if (!seenDefs.has(key)) {
+        seenDefs.add(key);
+        picked[key] = defs[key];
+        queued.push(defs[key]);
+      }
+    } else if (typeof ref === "string" && ref.startsWith("#/")) {
+      throw new Error(`unsupported local JSON schema ref: ${ref}`);
+    }
+
+    queued.push(...Object.values(obj));
   }
+
   return picked;
 }
 
 function buildTaskSchema(schema: JsonObject) {
-  return {
+  const taskSchema: JsonObject = {
     $id: "https://mise.en.dev/schema/mise-task.json",
     $schema: schema["$schema"],
     title: "mise-task-schema",
     type: "object",
-    $defs: pickDefs(schema, [
-      "task_dependency_item",
-      "task",
-      "env",
-      "env_directive",
-      "task_run_entry",
-      "task_template",
-      "vars",
-      "os_filter_item",
-      "os_filter",
-    ]),
     description:
       "Config file for included mise tasks (https://mise.en.dev/tasks/#task-configuration)",
     additionalProperties: {
       $ref: "#/$defs/task",
     },
   };
+  taskSchema["$defs"] = crawlReferencedDefs(schema, taskSchema);
+  return taskSchema;
 }
 
 function buildElement(key: string, props: Props): Element {

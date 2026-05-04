@@ -83,6 +83,7 @@ fi
         glob = List("schema/**/*.json")
         stdin = "{{ files_list | join(sep='\u{0}') }}"
         check = "xargs -0 -I {} ajv compile -s {} --spec=draft2020 --strict-types=true --strict-tuples=true"
+        fix = "xargs -0 -I {} sh -c 'tmp=\"$1.tmp\"; jq . < \"$1\" > \"$tmp\" && mv \"$tmp\" \"$1\" && ajv compile -s \"$1\" --spec=draft2020 --strict-types=true --strict-tuples=true' sh {}"
     }
 }
 
