@@ -4,6 +4,7 @@
 //MISE depends=["docs:setup"]
 
 import * as fs from "node:fs";
+import * as prettier from "prettier";
 import * as toml from "toml";
 
 type EnumValue = string | boolean | number;
@@ -42,8 +43,11 @@ type NestedElement = {
   properties: Record<string, Element>;
 };
 
-function writeFormattedJson(path: string, value: unknown) {
-  fs.writeFileSync(path, `${JSON.stringify(value)}\n`);
+async function writeFormattedJson(path: string, value: unknown) {
+  const json = await prettier.format(JSON.stringify(value, null, 2), {
+    parser: "json",
+  });
+  fs.writeFileSync(path, json);
 }
 
 function crawlReferencedDefs(schema: JsonObject, root: unknown) {
@@ -231,8 +235,8 @@ const taskObjectVariant = {
 const taskDef = schema["$defs"].task;
 taskDef.oneOf[taskDef.oneOf.length - 1] = taskObjectVariant;
 
-writeFormattedJson("schema/mise.json", schema);
-writeFormattedJson("schema/mise-task.json", buildTaskSchema(schema));
+await writeFormattedJson("schema/mise.json", schema);
+await writeFormattedJson("schema/mise-task.json", buildTaskSchema(schema));
 
 // Generate .miserc.toml schema with only rc=true settings
 const misercSettings: Record<string, Element> = {};
@@ -254,4 +258,4 @@ const misercSchema = {
   properties: misercSettings,
 };
 
-writeFormattedJson("schema/miserc.json", misercSchema);
+await writeFormattedJson("schema/miserc.json", misercSchema);
