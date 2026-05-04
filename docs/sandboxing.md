@@ -108,7 +108,7 @@ When filesystem restrictions are active, certain paths remain accessible so tool
 
 Filesystem sandboxing uses [Landlock](https://landlock.io/) (available since Linux 5.13). Network sandboxing uses [seccomp-bpf](https://www.kernel.org/doc/html/latest/userspace-api/seccomp_filter.html) to block inet socket creation while allowing Unix sockets.
 
-If Landlock is unavailable (older kernels), a warning is printed and the command runs unsandboxed.
+If Landlock is unavailable or cannot apply filesystem restrictions, the command fails.
 
 **Limitation**: Per-host network filtering (`--allow-net=<host>`) is not supported on Linux in v1. On Linux, `--allow-net` falls back to allowing all network access. This works on macOS via Seatbelt.
 

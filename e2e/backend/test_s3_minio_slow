@@ -6,28 +6,18 @@
 # Install MinIO server and client
 mise install minio@latest mc@latest
 
-# MinIO configuration
-MINIO_PORT=19000
-MINIO_CONSOLE_PORT=19001
+find_available_port() {
+  python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()"
+}
+
 MINIO_ROOT_USER="minioadmin"
 MINIO_ROOT_PASSWORD="minioadmin"
-MINIO_ENDPOINT="http://127.0.0.1:$MINIO_PORT"
 # Use /tmp directly to avoid disk space issues in isolated test tmp dir
 MINIO_DATA_DIR="/tmp/mise-minio-test-$$"
+MINIO_PID=""
 
 # Create data directory
 mkdir -p "$MINIO_DATA_DIR"
-
-# Start MinIO server in the background using mise x
-# MINIO_CI_CD=1 relaxes storage constraints for CI/CD environments
-MINIO_ROOT_USER="$MINIO_ROOT_USER" \
-  MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
-  MINIO_CI_CD=1 \
-  mise x minio@latest -- minio server "$MINIO_DATA_DIR" \
-  --address ":$MINIO_PORT" \
-  --console-address ":$MINIO_CONSOLE_PORT" \
-  >/dev/null 2>&1 &
-MINIO_PID=$!
 
 # Cleanup function
 cleanup() {
@@ -39,19 +29,51 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Wait for MinIO to be ready
-echo "Waiting for MinIO to start..."
-for i in {1..30}; do
-  if curl -s "$MINIO_ENDPOINT/minio/health/ready" >/dev/null 2>&1; then
-    echo "MinIO is ready"
-    break
-  fi
-  if [[ $i -eq 30 ]]; then
-    echo "MinIO failed to start"
-    exit 1
-  fi
-  sleep 1
-done
+start_minio() {
+  for attempt in {1..5}; do
+    MINIO_PORT=$(find_available_port)
+    MINIO_CONSOLE_PORT=$(find_available_port)
+    if [[ $MINIO_CONSOLE_PORT == "$MINIO_PORT" ]]; then
+      continue
+    fi
+    MINIO_ENDPOINT="http://127.0.0.1:$MINIO_PORT"
+
+    # Start MinIO server in the background using mise x
+    # MINIO_CI_CD=1 relaxes storage constraints for CI/CD environments
+    MINIO_ROOT_USER="$MINIO_ROOT_USER" \
+      MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
+      MINIO_CI_CD=1 \
+      mise x minio@latest -- minio server "$MINIO_DATA_DIR" \
+      --address ":$MINIO_PORT" \
+      --console-address ":$MINIO_CONSOLE_PORT" \
+      >/dev/null 2>&1 &
+    MINIO_PID=$!
+
+    echo "Waiting for MinIO to start on port $MINIO_PORT..."
+    for _ in {1..10}; do
+      if curl -s "$MINIO_ENDPOINT/minio/health/ready" >/dev/null 2>&1; then
+        echo "MinIO is ready"
+        return 0
+      fi
+      if ! kill -0 "$MINIO_PID" 2>/dev/null; then
+        break
+      fi
+      sleep 1
+    done
+
+    kill "$MINIO_PID" 2>/dev/null || true
+    wait "$MINIO_PID" 2>/dev/null || true
+    MINIO_PID=""
+    echo "MinIO did not start on attempt $attempt, retrying with new ports..."
+  done
+
+  echo "MinIO failed to start"
+  return 1
+}
+
+if ! start_minio; then
+  exit 1
+fi
 
 # Configure mc (MinIO client) using mise x
 mise x mc@latest -- mc alias set testminio "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --api S3v4

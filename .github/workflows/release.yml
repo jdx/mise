@@ -27,7 +27,7 @@ jobs:
   build-tarball-linux:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64-large
     timeout-minutes: 45
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -54,13 +54,6 @@ jobs:
         uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with:
           tool: cross
-      - name: cache crates
-        id: cache-crates
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.cargo/registry/cache
-          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-registry
       - name: build-tarball ${{matrix.target}}
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
@@ -75,14 +68,10 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
-        with: { tool: cargo-cache }
-      - if: steps.cache-crates.outputs.cache-hit != 'true'
-        run: cargo cache --autoclean
   build-tarball-macos:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: macos-latest
+    runs-on: namespace-profile-endev-macos-arm64-large
     timeout-minutes: 90
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -101,13 +90,6 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - name: cache crates
-        id: cache-crates
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.cargo/registry/cache
-          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-registry
       - name: Setup Rust target
         run: rustup target add ${{matrix.target}}
       - name: build-tarball ${{matrix.target}}
@@ -124,10 +106,6 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
-        with: { tool: cargo-cache }
-      - if: steps.cache-crates.outputs.cache-hit != 'true'
-        run: cargo cache --autoclean
   build-tarball-windows:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-windows-${{matrix.arch}}
@@ -144,9 +122,6 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - run: rustup target add ${{matrix.target}}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          key: ${{matrix.arch}}
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
           OS: windows
@@ -383,7 +358,8 @@ jobs:
             echo "::warning::communique failed, falling back to git-cliff changelog"
             mise x -- git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
             echo "RELEASE_TITLE=$VERSION" >> "$GITHUB_ENV"
-            cat >> /tmp/release-notes.txt <<'EOF'
+          fi
+          cat >> /tmp/release-notes.txt <<'EOF'
 
           ## 💚 Sponsor mise
 
@@ -391,7 +367,6 @@ jobs:
 
           If mise saves you or your team time, please consider sponsoring at [en.dev](https://en.dev). Individual and company sponsorships keep mise fast, free, and independent.
           EOF
-          fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Create Draft GitHub Release

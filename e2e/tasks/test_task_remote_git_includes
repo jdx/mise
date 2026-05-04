@@ -4,11 +4,18 @@
 # Setup
 #################################################################################
 
+PORT_FILE="$TMPDIR/mise_git_http_port"
+READY_FILE="$TMPDIR/mise_git_http_ready"
+INFO_FILE="$TMPDIR/mise_git_http_info"
+
 # Clean up any previous server files
-rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
+rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
 
 # Start local git HTTP server with OS-assigned port to avoid race conditions
-python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
+MISE_GIT_HTTP_PORT_FILE="$PORT_FILE" \
+  MISE_GIT_HTTP_READY_FILE="$READY_FILE" \
+  MISE_GIT_HTTP_INFO_FILE="$INFO_FILE" \
+  python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
 SERVER_PID=$!
 
 # Wait for server to be ready (with timeout)
@@ -17,7 +24,7 @@ wait_for_server() {
   local attempt=1
 
   while [ $attempt -le $max_attempts ]; do
-    if [ -f /tmp/mise_git_http_ready ] && [ -f /tmp/mise_git_http_port ]; then
+    if [ -f "$READY_FILE" ] && [ -f "$PORT_FILE" ]; then
       return 0
     fi
     sleep 1
@@ -32,7 +39,7 @@ wait_for_server() {
 wait_for_server
 
 # Read the actual port from the file
-SERVER_PORT=$(cat /tmp/mise_git_http_port)
+SERVER_PORT=$(cat "$PORT_FILE")
 LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
 
 # Update cache directory paths for local server
@@ -43,7 +50,7 @@ git init
 # Ensure cleanup on exit
 cleanup() {
   kill "$SERVER_PID" 2>/dev/null || true
-  rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
+  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
 }
 trap cleanup EXIT
 

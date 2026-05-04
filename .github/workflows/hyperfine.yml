@@ -21,15 +21,32 @@ permissions:
 
 jobs:
   benchmark:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
         with:
-          save-if: false
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - run: curl https://mise.run | MISE_INSTALL_PATH="$HOME/bin/mise-release" sh
       - run: echo "$HOME/bin" >> "$GITHUB_PATH"
       - id: versions
@@ -73,10 +90,17 @@ jobs:
             
             # Extract relative performance from hyperfine output
             variance=$(grep "±.*±" out.md | awk '{print $(NF-3)}' | sed 's/%//')
-            variance=$(echo "($variance * 100 - 100)/1" | bc)
+            whole=${variance%%.*}
+            fraction=${variance#*.}
+            if [ "$fraction" = "$variance" ]; then
+              fraction=0
+            fi
+            fraction="${fraction}000"
+            variance_scaled=$((10#$whole * 1000 + 10#${fraction:0:3}))
+            variance=$(((variance_scaled - 1000) / 10))
             
             # Add warning if variance exceeds 10%
-            if (( $(echo "$variance > 10" | bc -l) )); then
+            if [ "$variance_scaled" -gt 1100 ]; then
               if grep -q "mise-${{ steps.versions.outputs.release }}.*±.*±" out.md; then
                 echo "✅  Performance improvement for \`$cmd\` is ${variance}%" >> comment.md
               else
@@ -97,6 +121,8 @@ jobs:
           NUM_TASKS: 2000
           RUNS: 10
           MISE_ALT: mise-${{ steps.versions.outputs.release }}
+      - if: always()
+        run: sccache --show-stats
       - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
         if: always() && github.event_name == 'pull_request'
       - name: Comment on PR
