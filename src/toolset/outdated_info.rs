@@ -4,7 +4,9 @@ use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, config::Config};
 use serde_derive::Serialize;
 use std::{
+    collections::BTreeSet,
     fmt::{Display, Formatter},
+    path::PathBuf,
     sync::Arc,
 };
 use tabled::Tabled;
@@ -241,10 +243,26 @@ pub fn compute_config_bumps(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
 ) -> Vec<ConfigBump> {
+    let config_paths = config.config_files.keys().cloned().collect();
+    compute_config_bumps_for_paths(config, tool_versions, &config_paths)
+}
+
+/// Compute config bumps against a bounded set of config paths.
+///
+/// This lets callers that intentionally target a subset of the loaded config
+/// hierarchy avoid updating shadowed parent configs.
+pub fn compute_config_bumps_for_paths(
+    config: &Config,
+    tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
+    config_paths: &BTreeSet<PathBuf>,
+) -> Vec<ConfigBump> {
     let mut bumps = Vec::new();
 
     for &(tool_name, cli_version) in tool_versions {
         for (path, cf) in config.config_files.iter() {
+            if !config_paths.contains(path) {
+                continue;
+            }
             if crate::config::is_global_config(path) {
                 continue;
             }

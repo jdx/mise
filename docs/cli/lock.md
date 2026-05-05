@@ -23,8 +23,8 @@ If not specified, all tools in lockfile will be updated
 
 ### `-g --global`
 
-Include global config lockfile (~/.config/mise/mise.lock)
-By default, only project-level configs are locked
+Target only global config lockfiles (~/.config/mise/mise.lock and system config)
+By default, only the active project config root is locked
 
 ### `-j --jobs <JOBS>`
 
@@ -53,5 +53,5 @@ mise lock node python           # update only node and python
 mise lock --platform linux-x64  # update only linux-x64 platform
 mise lock --dry-run             # show what would be updated
 mise lock --local               # update mise.local.lock for local configs
-mise lock --global              # include global config lockfile
+mise lock --global              # update only global config lockfiles
 ```

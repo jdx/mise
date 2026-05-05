@@ -1610,7 +1610,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-g", "--global"],
           description:
-            "Include global config lockfile (~/.config/mise/mise.lock)\nBy default, only project-level configs are locked",
+            "Target only global config lockfiles (~/.config/mise/mise.lock and system config)\nBy default, only the active project config root is locked",
           isRepeatable: false,
         },
         {
