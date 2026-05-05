@@ -7,7 +7,7 @@ use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
 use crate::file::{TarFormat, TarOptions};
-use crate::http::{HTTP, HTTP_FETCH};
+use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
@@ -29,7 +29,6 @@ use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
-use reqwest::StatusCode;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::{
@@ -266,11 +265,6 @@ impl Backend for AquaBackend {
                 .package_with_version(&self.id, &[&tag])
                 .await
                 .unwrap_or_default();
-            if check_pkg.r#type == AquaPackageType::Http
-                && !Self::http_package_version_available(&check_pkg, &tag).await
-            {
-                continue;
-            }
             if !check_pkg.no_asset && check_pkg.error_message.is_none() {
                 let release_url = format!(
                     "https://github.com/{}/{}/releases/tag/{}",
@@ -2140,28 +2134,6 @@ impl AquaBackend {
             .collect();
         Ok(files)
     }
-
-    async fn http_package_version_available(pkg: &AquaPackage, v: &str) -> bool {
-        let url = match pkg.url(v, os(), arch()) {
-            Ok(url) => url,
-            Err(e) => {
-                debug!("failed to render aqua HTTP URL for {v}: {e}");
-                return false;
-            }
-        };
-
-        match HTTP_FETCH.head_status(&url).await {
-            Ok(status) if http_status_allows_aqua_version(status) => true,
-            Ok(status) => {
-                debug!("skipping aqua HTTP version {v}: {url} returned {status}");
-                false
-            }
-            Err(e) => {
-                debug!("could not verify aqua HTTP version {v} at {url}, keeping it: {e}");
-                true
-            }
-        }
-    }
 }
 
 fn unescape_regex_literal(pattern: &str) -> Cow<'_, str> {
@@ -2261,10 +2233,6 @@ fn complete_windows_dst_ext(src: &Path, dst: PathBuf, complete: bool, target_os:
     }
 }
 
-fn http_status_allows_aqua_version(status: StatusCode) -> bool {
-    status.is_success() || status == StatusCode::METHOD_NOT_ALLOWED
-}
-
 /// Returns install-time-only option keys for the Aqua backend.
 ///
 /// Aqua registry vars may be provided either as a nested `vars` table or as
@@ -2333,15 +2301,6 @@ mod tests {
             ),
             PathBuf::from("bin/tool.exe")
         );
-    }
-
-    #[test]
-    fn test_http_status_allows_aqua_version() {
-        assert!(http_status_allows_aqua_version(StatusCode::OK));
-        assert!(http_status_allows_aqua_version(
-            StatusCode::METHOD_NOT_ALLOWED
-        ));
-        assert!(!http_status_allows_aqua_version(StatusCode::NOT_FOUND));
     }
 
     #[test]

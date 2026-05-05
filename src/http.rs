@@ -130,16 +130,6 @@ impl Client {
         self.head_async_with_headers(url, &headers).await
     }
 
-    pub async fn head_status<U: IntoUrl>(&self, url: U) -> Result<StatusCode> {
-        match self.head(url).await {
-            Ok(resp) => Ok(resp.status()),
-            Err(err) => match error_code(&err).and_then(|code| StatusCode::from_u16(code).ok()) {
-                Some(status) => Ok(status),
-                None => Err(err),
-            },
-        }
-    }
-
     pub async fn head_async_with_headers<U: IntoUrl>(
         &self,
         url: U,
