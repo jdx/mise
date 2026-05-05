@@ -15,7 +15,14 @@ pub struct BinPaths {
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Option<Vec<ToolArg>>,
 
-    /// Output executable entries in JSON format
+    /// Output executable names instead of bin directories
+    #[clap(
+        long,
+        default_value_if("json", clap::builder::ArgPredicate::IsPresent, Some("true"))
+    )]
+    bin_names: bool,
+
+    /// Output executable entries in JSON format (implies --bin-names)
     #[clap(long, short = 'J')]
     json: bool,
 }
@@ -33,8 +40,15 @@ impl BinPaths {
         }
         ts.notify_if_versions_missing(&config).await;
         let paths = ts.list_paths(&config).await;
-        if self.json {
-            miseprintln!("{}", serde_json::to_string_pretty(&list_bins(paths)?)?);
+        if self.bin_names {
+            let bins = list_bins(paths)?;
+            if self.json {
+                miseprintln!("{}", serde_json::to_string_pretty(&bins)?);
+            } else {
+                for bin in bins {
+                    miseprintln!("{}", bin.name);
+                }
+            }
             return Ok(());
         }
         for p in paths {

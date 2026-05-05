@@ -87,7 +87,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise tool-alias unset <PLUGIN> [ALIAS]`](/cli/tool-alias/unset.md)
 - [`mise backends <SUBCOMMAND>`](/cli/backends.md)
 - [`mise backends ls`](/cli/backends/ls.md)
-- [`mise bin-paths [-J --json] [TOOL@VERSION]…`](/cli/bin-paths.md)
+- [`mise bin-paths [--bin-names] [-J --json] [TOOL@VERSION]…`](/cli/bin-paths.md)
 - [`mise cache <SUBCOMMAND>`](/cli/cache.md)
 - [`mise cache clear [PLUGIN]…`](/cli/cache/clear.md)
 - [`mise cache path`](/cli/cache/path.md)

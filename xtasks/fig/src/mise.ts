@@ -668,8 +668,14 @@ const completionSpec: Fig.Spec = {
       description: "List all the active runtime bin paths",
       options: [
         {
+          name: "--bin-names",
+          description: "Output executable names instead of bin directories",
+          isRepeatable: false,
+        },
+        {
           name: ["-J", "--json"],
-          description: "Output executable entries in JSON format",
+          description:
+            "Output executable entries in JSON format (implies --bin-names)",
           isRepeatable: false,
         },
       ],
