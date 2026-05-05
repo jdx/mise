@@ -287,7 +287,6 @@ mod tests {
             overrides: &[],
             test: &None,
             os: &[],
-            depends: &[],
             idiomatic_files: &[],
             detect: &[],
         };
