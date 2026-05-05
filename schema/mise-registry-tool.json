@@ -56,13 +56,27 @@
                       "type": "object",
                       "description": "Platform-specific configuration",
                       "additionalProperties": {
-                        "oneOf": [{ "type": "string" }, { "type": "boolean" }]
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
                       }
                     }
                   }
                 },
                 "additionalProperties": {
-                  "oneOf": [{ "type": "string" }, { "type": "boolean" }]
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
                 }
               }
             },
