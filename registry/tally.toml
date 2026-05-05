@@ -1,0 +1,3 @@
+backends = ["github:wharflab/tally", "npm:tally-cli", "pipx:tally-cli", "go:github.com/wharflab/tally", "gem:tally-cli"]
+description = "Dockerfile and Containerfile linter and formatter for best practices, security issues, and common mistakes"
+test = { cmd = "tally --version", expected = "tally version {{version}}" }
