@@ -8,6 +8,8 @@ use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
 use indexmap::IndexSet;
+use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -521,6 +523,14 @@ pub fn install_artifact(
         let explicit_bin_path = lookup_with_fallback(opts, "bin_path")
             .map(|t| install_path.join(template_string(&t, tv)));
 
+        if matches!(format, file::TarFormat::Zip | file::TarFormat::SevenZip) {
+            make_likely_archive_executables(
+                &install_path,
+                explicit_bin_path.as_deref(),
+                tool_name,
+            )?;
+        }
+
         // Handle bin= option for archives (renames executable to specified name)
         // bin= values are relative to install_path, so always use install_path or explicit bin_path
         if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
@@ -546,6 +556,124 @@ pub fn install_artifact(
         }
     }
     Ok(())
+}
+
+fn make_likely_archive_executables(
+    install_path: &Path,
+    explicit_bin_path: Option<&Path>,
+    tool_name: &str,
+) -> Result<()> {
+    for dir in likely_archive_bin_dirs(install_path, explicit_bin_path)? {
+        for path in file::ls(&dir)? {
+            if !path.is_file() || file::is_executable(&path) {
+                continue;
+            }
+
+            let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+            if should_skip_archive_executable_candidate(&file_name) {
+                continue;
+            }
+
+            if is_likely_executable_file(&path, &file_name, tool_name)? {
+                file::make_executable(&path)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn likely_archive_bin_dirs(
+    install_path: &Path,
+    explicit_bin_path: Option<&Path>,
+) -> Result<Vec<PathBuf>> {
+    let mut dirs = IndexSet::new();
+
+    if let Some(bin_path) = explicit_bin_path {
+        dirs.insert(bin_path.to_path_buf());
+        return Ok(dirs.into_iter().collect());
+    }
+
+    dirs.insert(install_path.to_path_buf());
+
+    let bin_dir = install_path.join("bin");
+    if bin_dir.is_dir() {
+        dirs.insert(bin_dir);
+    }
+
+    let contents_macos = install_path.join("Contents").join("MacOS");
+    if contents_macos.is_dir() {
+        dirs.insert(contents_macos);
+    }
+
+    for entry in file::ls(install_path)? {
+        if !entry.is_dir() {
+            continue;
+        }
+
+        let dir_name = entry.file_name().unwrap_or_default().to_string_lossy();
+        if dir_name.ends_with(".app") {
+            let macos_dir = entry.join("Contents").join("MacOS");
+            if macos_dir.is_dir() {
+                dirs.insert(macos_dir);
+            }
+        }
+
+        let sub_bin_dir = entry.join("bin");
+        if sub_bin_dir.is_dir() {
+            dirs.insert(sub_bin_dir);
+        }
+
+        dirs.insert(entry);
+    }
+
+    Ok(dirs.into_iter().collect())
+}
+
+fn is_likely_executable_file(path: &Path, file_name: &str, tool_name: &str) -> Result<bool> {
+    if has_executable_magic(path)? {
+        return Ok(true);
+    }
+
+    if tool_name.is_empty() {
+        return Ok(false);
+    }
+
+    let file_name = file_name.to_lowercase();
+    let tool_name = tool_name.to_lowercase();
+
+    let executable_name = Path::new(&file_name)
+        .extension()
+        .is_none_or(|ext| EXECUTABLE_EXTENSIONS.contains(&ext.to_string_lossy().as_ref()));
+
+    Ok(executable_name && (file_name == tool_name || file_name.contains(&tool_name)))
+}
+
+fn has_executable_magic(path: &Path) -> Result<bool> {
+    let mut file = File::open(path)?;
+    let mut buf = [0; 4];
+    let len = file.read(&mut buf)?;
+
+    Ok((len >= 2 && (&buf[..2] == b"#!" || &buf[..2] == b"MZ"))
+        || (len >= 4
+            && matches!(
+                buf,
+                [0x7f, b'E', b'L', b'F']
+                    | [0xfe, 0xed, 0xfa, 0xce]
+                    | [0xfe, 0xed, 0xfa, 0xcf]
+                    | [0xce, 0xfa, 0xed, 0xfe]
+                    | [0xcf, 0xfa, 0xed, 0xfe]
+                    | [0xca, 0xfe, 0xba, 0xbe]
+            )))
+}
+
+fn should_skip_archive_executable_candidate(file_name: &str) -> bool {
+    let lower = file_name.to_lowercase();
+
+    should_skip_file(&lower, true)
+        || ARCHIVE_EXECUTABLE_SKIP_EXTENSIONS
+            .iter()
+            .any(|ext| lower.ends_with(ext))
 }
 
 pub fn verify_artifact(
@@ -594,6 +722,13 @@ pub fn verify_checksum_str(
 
 /// File extensions that indicate non-binary files.
 const SKIP_EXTENSIONS: &[&str] = &[".txt", ".md", ".json", ".yml", ".yaml"];
+
+const ARCHIVE_EXECUTABLE_SKIP_EXTENSIONS: &[&str] = &[
+    ".a", ".dll", ".dylib", ".h", ".hpp", ".lib", ".pc", ".so", ".toml", ".xml",
+];
+
+const EXECUTABLE_EXTENSIONS: &[&str] =
+    &["appimage", "bat", "bin", "cmd", "exe", "ps1", "run", "sh"];
 
 /// File names (case-insensitive) that should be skipped when looking for executables.
 const SKIP_FILE_NAMES: &[&str] = &["LICENSE", "README"];
@@ -1436,5 +1571,29 @@ bin = "tool.exe"
                 b
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_make_likely_archive_executables_marks_matching_binary() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let binary = tmp.path().join("selene");
+        let readme = tmp.path().join("README.md");
+        let config = tmp.path().join("selene.toml");
+        std::fs::write(&binary, b"\x7fELFtest").unwrap();
+        std::fs::write(&readme, b"\x7fELFnot-a-binary").unwrap();
+        std::fs::write(&config, b"not-a-binary").unwrap();
+
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&readme, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        make_likely_archive_executables(tmp.path(), None, "selene").unwrap();
+
+        assert!(file::is_executable(&binary));
+        assert!(!file::is_executable(&readme));
+        assert!(!file::is_executable(&config));
     }
 }

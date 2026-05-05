@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "Skipping Linux-specific test on non-Linux OS"
+  exit 0
+fi
+
+cat >mise.toml <<EOF
+[tools]
+"github:Kampfkarren/selene" = { version = "0.30.0", asset_pattern = "selene-0.30.0-linux.zip" }
+EOF
+
+mise install
+
+install_path="$(mise where github:Kampfkarren/selene)"
+assert_succeed "test -x '$install_path/selene'"
+assert_contains "mise x -- selene --version" "selene 0.30.0"
