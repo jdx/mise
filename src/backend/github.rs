@@ -354,7 +354,7 @@ impl Backend for UnifiedGitBackend {
     ) -> Result<Vec<std::path::PathBuf>> {
         let mise_bins_dir = tv.install_path().join(".mise-bins");
         if self.get_filter_bins(tv).is_some() || mise_bins_dir.is_dir() {
-            return Ok(vec![runtime_path_for_install_path(tv, mise_bins_dir)]);
+            return Ok(vec![tv.runtime_path().join(".mise-bins")]);
         }
 
         Ok(self
