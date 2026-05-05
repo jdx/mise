@@ -1,5 +1,49 @@
 # Changelog
 
+## [2026.5.1](https://github.com/jdx/mise/compare/v2026.5.0..v2026.5.1) - 2026-05-05
+
+### 🚀 Features
+
+- **(backend)** support top-level aqua cosign verification by @risu729 in [#9111](https://github.com/jdx/mise/pull/9111)
+
+### 🐛 Bug Fixes
+
+- **(schema)** validate all schema files with draft2020 and strict mode by @risu729 in [#9594](https://github.com/jdx/mise/pull/9594)
+- **(shim)** skip network resolution for installed tool dirs by @jdx in [#9599](https://github.com/jdx/mise/pull/9599)
+
+### 📚 Documentation
+
+- **(dev-tools)** clarify vfox metadata depends for install hooks by @risu729 in [#9573](https://github.com/jdx/mise/pull/9573)
+- **(plugins)** remove registry submission guidance by @risu729 in [#9577](https://github.com/jdx/mise/pull/9577)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#9586](https://github.com/jdx/mise/pull/9586)
+
+### 📦 Registry
+
+- remove bashly asdf fallback by @risu729 in [#9578](https://github.com/jdx/mise/pull/9578)
+- use github backend for rebar by @risu729 in [#9576](https://github.com/jdx/mise/pull/9576)
+- add wasm-tools ([aqua:bytecodealliance/wasm-tools](https://github.com/bytecodealliance/wasm-tools)) by @2xdevv in [#9596](https://github.com/jdx/mise/pull/9596)
+- enable symlink_bins for elixir-ls by @AlternateRT in [#9592](https://github.com/jdx/mise/pull/9592)
+
+### Chore
+
+- **(release)** always append sponsor block to release notes by @jdx in [#9580](https://github.com/jdx/mise/pull/9580)
+- warn on vendored vfox embedded plugins by @risu729 in [#9588](https://github.com/jdx/mise/pull/9588)
+- prefer registry shorthands over cargo/npm backends in mise.toml by @risu729 in [#9595](https://github.com/jdx/mise/pull/9595)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`salesforce/reactive-grpc/protoc-gen-reactor-grpc`](https://github.com/salesforce/reactive-grpc)
+- [`spinframework/spin`](https://github.com/spinframework/spin)
+
+#### Updated Packages (1)
+
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+
 ## [2026.5.0](https://github.com/jdx/mise/compare/v2026.4.28..v2026.5.0) - 2026-05-03
 
 ### 🚀 Features
