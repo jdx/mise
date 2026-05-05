@@ -16,7 +16,7 @@ use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use async_trait::async_trait;
 use jiff::Timestamp;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::ffi::OsString;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
@@ -147,6 +147,37 @@ impl Backend for NPMBackend {
                 let time = data["time"]
                     .as_object()
                     .ok_or_else(|| eyre::eyre!("invalid time"))?;
+                let deprecated_versions = match cmd!(
+                    NPM_PROGRAM,
+                    "view",
+                    Self::deprecated_versions_query(&self.tool_name()),
+                    "version",
+                    "deprecated",
+                    "--json"
+                )
+                .full_env(&env)
+                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                .read()
+                {
+                    Ok(raw) if raw.trim().is_empty() => HashSet::new(),
+                    Ok(raw) => match serde_json::from_str::<Value>(&raw) {
+                        Ok(data) => Self::deprecated_versions_from_npm_view(&data),
+                        Err(err) => {
+                            debug!(
+                                "failed to parse npm deprecated metadata for {}: {err:#}",
+                                self.tool_name()
+                            );
+                            HashSet::new()
+                        }
+                    },
+                    Err(err) => {
+                        debug!(
+                            "failed to fetch npm deprecated metadata for {}: {err:#}",
+                            self.tool_name()
+                        );
+                        HashSet::new()
+                    }
+                };
                 let version_info = versions
                     .iter()
                     .filter_map(|v| v.as_str())
@@ -164,7 +195,10 @@ impl Backend for NPMBackend {
                     })
                     .collect();
 
-                Ok(version_info)
+                Ok(Self::filter_deprecated_versions(
+                    version_info,
+                    &deprecated_versions,
+                ))
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
@@ -672,6 +706,60 @@ impl NPMBackend {
         seconds.div_ceil(60)
     }
 
+    fn deprecated_versions_query(package: &str) -> String {
+        format!("{package}@>=0.0.0")
+    }
+
+    fn deprecated_versions_from_npm_view(data: &Value) -> HashSet<String> {
+        let mut versions = HashSet::new();
+        Self::collect_deprecated_versions(data, &mut versions);
+        versions
+    }
+
+    fn collect_deprecated_versions(data: &Value, versions: &mut HashSet<String>) {
+        match data {
+            Value::Array(entries) => {
+                for entry in entries {
+                    Self::collect_deprecated_versions(entry, versions);
+                }
+            }
+            Value::Object(entry) => {
+                if let Some(version) = entry.get("version").and_then(Value::as_str)
+                    && Self::is_deprecated_value(entry.get("deprecated"))
+                {
+                    versions.insert(version.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn is_deprecated_value(value: Option<&Value>) -> bool {
+        match value {
+            Some(Value::String(s)) => !s.trim().is_empty(),
+            Some(Value::Bool(true)) => true,
+            _ => false,
+        }
+    }
+
+    fn filter_deprecated_versions(
+        versions: Vec<VersionInfo>,
+        deprecated_versions: &HashSet<String>,
+    ) -> Vec<VersionInfo> {
+        if deprecated_versions.is_empty()
+            || versions
+                .iter()
+                .all(|v| deprecated_versions.contains(&v.version))
+        {
+            return versions;
+        }
+
+        versions
+            .into_iter()
+            .filter(|v| !deprecated_versions.contains(&v.version))
+            .collect()
+    }
+
     #[cfg(any(windows, test))]
     fn windows_bin_paths_for_install_path(install_path: &Path) -> Vec<std::path::PathBuf> {
         let bin_dir = install_path.join("bin");
@@ -1008,6 +1096,124 @@ mod tests {
             Some(&"--loglevel=warn".to_string())
         );
         assert!(!resolved.contains_key("install_env.NPM_CONFIG_REGISTRY"));
+    }
+
+    #[test]
+    fn test_deprecated_versions_query_handles_scoped_packages() {
+        assert_eq!(
+            NPMBackend::deprecated_versions_query("@scope/pkg"),
+            "@scope/pkg@>=0.0.0"
+        );
+    }
+
+    #[test]
+    fn test_deprecated_versions_from_npm_view_array_objects() {
+        let data: Value = serde_json::json!([
+            {
+                "version": "1.0.0",
+                "deprecated": "use a newer version"
+            },
+            {
+                "version": "1.1.0"
+            },
+            {
+                "version": "1.2.0",
+                "deprecated": ""
+            },
+            {
+                "version": "2.0.0",
+                "deprecated": "unsupported"
+            }
+        ]);
+
+        let versions = NPMBackend::deprecated_versions_from_npm_view(&data);
+
+        assert!(versions.contains("1.0.0"));
+        assert!(versions.contains("2.0.0"));
+        assert!(!versions.contains("1.1.0"));
+        assert!(!versions.contains("1.2.0"));
+    }
+
+    #[test]
+    fn test_deprecated_versions_from_npm_view_array_strings() {
+        let data: Value = serde_json::json!(["1.0.0", "1.1.0"]);
+
+        let versions = NPMBackend::deprecated_versions_from_npm_view(&data);
+
+        assert!(versions.is_empty());
+    }
+
+    #[test]
+    fn test_deprecated_versions_from_npm_view_single_object() {
+        let data: Value = serde_json::json!({
+            "version": "1.0.0",
+            "deprecated": "use a newer version"
+        });
+
+        let versions = NPMBackend::deprecated_versions_from_npm_view(&data);
+
+        assert_eq!(versions, HashSet::from(["1.0.0".to_string()]));
+    }
+
+    #[test]
+    fn test_deprecated_versions_from_npm_view_null() {
+        let versions = NPMBackend::deprecated_versions_from_npm_view(&Value::Null);
+
+        assert!(versions.is_empty());
+    }
+
+    #[test]
+    fn test_filter_deprecated_versions_drops_subset() {
+        let versions = vec![
+            VersionInfo {
+                version: "1.0.0".to_string(),
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0".to_string(),
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.2.0".to_string(),
+                ..Default::default()
+            },
+        ];
+        let deprecated = HashSet::from(["1.1.0".to_string()]);
+
+        let filtered = NPMBackend::filter_deprecated_versions(versions, &deprecated);
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|v| v.version.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1.0.0", "1.2.0"]
+        );
+    }
+
+    #[test]
+    fn test_filter_deprecated_versions_keeps_package_level_deprecation() {
+        let versions = vec![
+            VersionInfo {
+                version: "1.0.0".to_string(),
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "1.1.0".to_string(),
+                ..Default::default()
+            },
+        ];
+        let deprecated = HashSet::from(["1.0.0".to_string(), "1.1.0".to_string()]);
+
+        let filtered = NPMBackend::filter_deprecated_versions(versions, &deprecated);
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|v| v.version.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1.0.0", "1.1.0"]
+        );
     }
 
     #[test]
