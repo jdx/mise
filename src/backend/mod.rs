@@ -77,7 +77,6 @@ pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
-<<<<<<< HEAD
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
     ToolOptionSource::BackendAlias,
     ToolOptionSource::Config,
@@ -90,7 +89,14 @@ fn has_local_version_listing_option_override(
 ) -> bool {
     resolved_opts
         .has_any_key_from_sources(version_listing_opt_keys, VERSIONS_HOST_LOCAL_OPT_SOURCES)
-=======
+}
+
+/// Remaps a backend-discovered path from the concrete install dir to the
+/// runtime path users put on PATH.
+///
+/// For fuzzy requests like `latest` or `1.46`, backends may discover bins under
+/// the resolved version dir, but `bin-paths` should expose the stable runtime
+/// symlink. Paths outside the install dir are returned unchanged.
 pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> PathBuf {
     let install_path = tv.install_path();
     if let Ok(relative_path) = path.strip_prefix(&install_path) {
