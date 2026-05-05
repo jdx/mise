@@ -172,12 +172,7 @@ where
         P: Fn(&T) -> bool,
         T: Clone,
     {
-        if let Some(val) = self.cache_async.get()
-            && should_cache(val)
-        {
-            return Ok(val.clone());
-        }
-        if let Some(val) = self.cache.get()
+        if let Some(val) = self.cache_async.get().or_else(|| self.cache.get())
             && should_cache(val)
         {
             return Ok(val.clone());
