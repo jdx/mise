@@ -280,10 +280,6 @@ impl Backend for AquaBackend {
         Ok(versions)
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
-        self.latest_marked_release_version(config, None).await
-    }
-
     async fn latest_version_with_refresh(
         &self,
         config: &Arc<Config>,
