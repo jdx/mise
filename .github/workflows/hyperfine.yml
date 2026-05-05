@@ -69,7 +69,7 @@ jobs:
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
       - uses: ./.github/actions/mise-tools
       - run: |
-          set -x
+          set -ex
           failed=false
           CMDS=(
             "x -- echo"
@@ -95,9 +95,9 @@ jobs:
           import os
 
           REGRESSION_THRESHOLD = 1.10
-          # Only fail when the slowdown is beyond the threshold even after
-          # accounting for measurement error, and the error is not itself large.
-          MAX_CLEAR_ERROR = 0.10
+          # Only fail when the slowdown is beyond the threshold after accounting
+          # for error, and the error is small relative to the observed slowdown.
+          MAX_ERROR_TO_SLOWDOWN_RATIO = 0.5
 
           cmd = os.environ["CMD"]
           with open("out.json", encoding="utf-8") as f:
@@ -118,11 +118,15 @@ jobs:
           if current_mean > reference_mean:
               ratio = current_mean / reference_mean
               error = ratio_error(ratio)
+              slowdown = ratio - 1
               variance = round((ratio - 1) * 100)
               error_percent = round(error * 100)
               if ratio <= REGRESSION_THRESHOLD:
                   print("ok\t")
-              elif ratio - error > REGRESSION_THRESHOLD and error <= MAX_CLEAR_ERROR:
+              elif (
+                  ratio - error > REGRESSION_THRESHOLD
+                  and error <= slowdown * MAX_ERROR_TO_SLOWDOWN_RATIO
+              ):
                   print(
                       f"fail\t⚠️  Warning: Performance variance for `{cmd}` is "
                       f"{variance}% (±{error_percent}%)"
