@@ -671,10 +671,7 @@ impl Backend for CondaBackend {
         config: &Arc<Config>,
         _refresh: bool,
     ) -> Result<Vec<VersionInfo>> {
-        let opts = config
-            .get_tool_opts(&self.ba)
-            .await?
-            .unwrap_or_else(|| self.ba.opts());
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let want_prereleases = include_prereleases(&opts);
         let versions = self
             ._list_remote_versions(config)

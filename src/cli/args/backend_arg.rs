@@ -329,8 +329,7 @@ impl BackendArg {
 
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
-        let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
-        if let Ok(env_value) = env::var(&env_key) {
+        if let Some(env_value) = self.env_backend_override() {
             return env_value;
         }
 
@@ -448,7 +447,7 @@ impl BackendArg {
     }
 
     pub fn registry_opts(&self) -> ToolVersionOptions {
-        let full = self.full();
+        let full = self.full_without_opts();
         REGISTRY
             .get(self.short.as_str())
             .map(|rt| rt.backend_options(&full))
@@ -465,6 +464,11 @@ impl BackendArg {
         config_opts: Option<ToolVersionOptions>,
     ) -> ToolVersionOptions {
         let mut opts = self.registry_opts();
+        if alias_opts.is_none()
+            && let Some(full_opts) = self.resolved_full_opts()
+        {
+            opts.apply_overrides(&full_opts);
+        }
         if let Some(alias_opts) = alias_opts {
             opts.apply_overrides(&alias_opts);
         }
@@ -481,8 +485,23 @@ impl BackendArg {
         self.opts.as_ref()
     }
 
+    pub(crate) fn resolved_full_opts(&self) -> Option<ToolVersionOptions> {
+        let full = self.full();
+        split_bracketed_opts(&full).map(|(_, opts)| parse_tool_options(opts))
+    }
+
+    pub(crate) fn has_env_backend_override(&self) -> bool {
+        self.env_backend_override().is_some()
+    }
+
+    fn env_backend_override(&self) -> Option<String> {
+        let short = unalias_backend(&self.short);
+        let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
+        env::var(&env_key).ok()
+    }
+
     fn backend_alias_opts_from_loaded_config(&self) -> Option<ToolVersionOptions> {
-        if !config::is_loaded() {
+        if !config::is_loaded() || self.has_env_backend_override() {
             return None;
         }
         let short = unalias_backend(&self.short);
@@ -889,5 +908,22 @@ mod tests {
         assert_eq!(opts.get("alias_only"), Some("alias"));
         assert_eq!(opts.get("config_only"), Some("config"));
         assert_eq!(opts.get("foo"), Some("inline"));
+    }
+
+    #[test]
+    fn test_opts_include_resolved_full_bracket_options() {
+        let ba = BackendArg::new_raw(
+            "graphite".to_string(),
+            Some("github:withgraphite/homebrew-tap[foo=resolved]".to_string()),
+            "withgraphite/homebrew-tap".to_string(),
+            None,
+            BackendResolution::new(true),
+        );
+
+        let opts = ba.opts();
+
+        assert_eq!(ba.registry_opts().get("exe"), Some("gt"));
+        assert_eq!(opts.get("exe"), Some("gt"));
+        assert_eq!(opts.get("foo"), Some("resolved"));
     }
 }

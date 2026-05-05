@@ -355,6 +355,11 @@ impl Config {
         let alias_opts = self.get_backend_alias_opts(backend_arg);
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
+        if alias_opts.is_none()
+            && let Some(full_opts) = backend_arg.resolved_full_opts()
+        {
+            resolved.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
+        }
         if let Some(alias_opts) = alias_opts {
             resolved.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
         }
@@ -368,6 +373,9 @@ impl Config {
     }
 
     fn get_backend_alias_opts(&self, backend_arg: &BackendArg) -> Option<ToolVersionOptions> {
+        if backend_arg.has_env_backend_override() {
+            return None;
+        }
         let short = backend::unalias_backend(&backend_arg.short);
         self.all_aliases
             .get(short)
@@ -2677,6 +2685,66 @@ mod tests {
             Some(crate::toolset::ToolOptionSource::BackendAlias)
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_tool_opts_prefers_env_backend_override_over_alias_opts() -> Result<()> {
+        unsafe {
+            std::env::set_var("MISE_BACKENDS_ENV_OPTS_TEST", "github:env/repo[foo=env]");
+        }
+
+        let result = async {
+            let mut all_aliases = AliasMap::default();
+            all_aliases.insert(
+                "env-opts-test".to_string(),
+                Alias {
+                    backend: Some("github:alias/repo[foo=alias,bar=alias]".to_string()),
+                    versions: Default::default(),
+                },
+            );
+            let config = Config {
+                tera_ctx: BASE_CONTEXT.clone(),
+                config_files: Default::default(),
+                env: OnceCell::new(),
+                env_with_sources: OnceCell::new(),
+                shorthands: get_shorthands(&Settings::get()),
+                hooks: OnceCell::new(),
+                tasks_cache: Arc::new(DashMap::new()),
+                tool_request_set: OnceCell::new(),
+                toolset: OnceCell::new(),
+                all_aliases,
+                aliases: Default::default(),
+                project_root: Default::default(),
+                repo_urls: Default::default(),
+                shell_aliases: Default::default(),
+                tera_files: Default::default(),
+                vars: Default::default(),
+                vars_loader: None,
+                vars_results: OnceCell::new(),
+            };
+            config.tool_request_set.set(ToolRequestSet::new()).ok();
+            let config = Arc::new(config);
+            let ba = Arc::new(BackendArg::from("env-opts-test"));
+
+            let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
+            let opts = resolved.options();
+
+            assert_eq!(ba.full(), "github:env/repo[foo=env]");
+            assert_eq!(opts.get("foo"), Some("env"));
+            assert_eq!(opts.get("bar"), None);
+            assert_eq!(
+                resolved.source_for_key("foo"),
+                Some(crate::toolset::ToolOptionSource::BackendAlias)
+            );
+            Ok(())
+        }
+        .await;
+
+        unsafe {
+            std::env::remove_var("MISE_BACKENDS_ENV_OPTS_TEST");
+        }
+
+        result
     }
 
     #[tokio::test]
