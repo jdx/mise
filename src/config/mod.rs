@@ -2279,7 +2279,7 @@ async fn load_tasks_includes(
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
         load_task_file(config, root, config_root, task_config_dir).await
     } else if root.is_dir() {
-        let files = WalkDir::new(root)
+        let all_files = WalkDir::new(root)
             .follow_links(true)
             .into_iter()
             // skip hidden directories (if the root is hidden that's ok)
@@ -2288,7 +2288,6 @@ async fn load_tasks_includes(
             .map_ok(|e| e.path().to_path_buf())
             .try_collect::<_, Vec<PathBuf>, _>()?
             .into_iter()
-            .filter(|p| file::is_executable(p))
             .filter(|p| {
                 !Settings::get()
                     .task
@@ -2297,10 +2296,18 @@ async fn load_tasks_includes(
                     .any(|d| p.starts_with(d))
             })
             .collect::<Vec<_>>();
+        let is_toml = |p: &Path| p.extension().map(|e| e == "toml").unwrap_or(false);
+        let (toml_files, exec_files): (Vec<_>, Vec<_>) = all_files
+            .into_iter()
+            .filter(|p| is_toml(p) || file::is_executable(p))
+            .partition(|p| is_toml(p));
         let mut tasks = vec![];
+        for path in toml_files {
+            tasks.extend(load_task_file(config, &path, config_root, task_config_dir).await?);
+        }
         let root = Arc::new(root.to_path_buf());
         let config_root = Arc::new(config_root.to_path_buf());
-        for path in files {
+        for path in exec_files {
             let root = root.clone();
             let config_root = config_root.clone();
             let config = config.clone();
