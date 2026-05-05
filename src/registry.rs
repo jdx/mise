@@ -25,11 +25,17 @@ pub struct RegistryTool {
     #[allow(unused)]
     pub aliases: &'static [&'static str],
     pub overrides: &'static [&'static str],
-    pub test: &'static Option<(&'static str, &'static str)>,
+    pub test: &'static Option<RegistryToolTest>,
     pub os: &'static [&'static str],
-    pub depends: &'static [&'static str],
     pub idiomatic_files: &'static [&'static str],
     pub detect: &'static [&'static str],
+}
+
+#[derive(Debug, Clone)]
+pub struct RegistryToolTest {
+    pub cmd: &'static str,
+    pub expected: &'static str,
+    pub tools: &'static [&'static str],
 }
 
 #[derive(Debug, Clone)]

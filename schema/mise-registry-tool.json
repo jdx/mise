@@ -100,14 +100,6 @@
       "description": "List of backends that can install this tool",
       "minItems": 1
     },
-    "depends": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "pattern": "^[a-zA-Z0-9_.-]+$"
-      },
-      "description": "Other tools this tool depends on"
-    },
     "description": {
       "type": "string",
       "description": "A brief description of the tool"
@@ -152,6 +144,14 @@
         "expected": {
           "type": "string",
           "description": "Expected substring in the command output"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_.-]+$"
+          },
+          "description": "Additional mise tools to install before running test.cmd. Used only by mise test-tool."
         }
       },
       "required": ["cmd", "expected"],
