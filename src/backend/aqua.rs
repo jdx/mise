@@ -2057,7 +2057,7 @@ impl AquaBackend {
 
         let srcs = Self::srcs(pkg, tv)?;
         for link in &srcs {
-            if link.src != link.dst && link.src.exists() && !link.dst.exists() {
+            if link.src != link.dst && link.src.exists() {
                 Self::create_file_link(link)?;
             }
         }
@@ -2138,7 +2138,14 @@ impl AquaBackend {
                     )?]
                 } else {
                     vec![
-                        Self::file_link_for_version(f, pkg, version, install_path, os, arch)?,
+                        Self::file_link_for_version(
+                            f,
+                            pkg,
+                            version.as_ref(),
+                            install_path,
+                            os,
+                            arch,
+                        )?,
                         Self::file_link_for_version(
                             f,
                             pkg,
@@ -2198,6 +2205,12 @@ impl AquaBackend {
 
         if link.hard || (cfg!(windows) && link.explicit_link) {
             trace!("ln {} {}", link.src.display(), link.dst.display());
+            if link.dst.is_dir() {
+                return Err(eyre!(
+                    "destination is a directory, cannot create hard link: {}",
+                    link.dst.display()
+                ));
+            }
             if link.dst.is_file() || link.dst.is_symlink() {
                 fs::remove_file(&link.dst)?;
             }
@@ -2233,13 +2246,6 @@ fn relative_path(from: &Path, to: &Path) -> Option<PathBuf> {
         .zip(&to_components)
         .take_while(|(from, to)| from == to)
         .count();
-
-    if from_components[..common_len]
-        .iter()
-        .any(|component| matches!(component, std::path::Component::CurDir))
-    {
-        return None;
-    }
 
     let mut result = PathBuf::new();
     for component in &from_components[common_len..] {
@@ -2637,6 +2643,39 @@ mod tests {
             .unwrap(),
             PathBuf::from("../tool")
         );
+    }
+
+    #[test]
+    fn test_relative_path_with_shared_curdir() {
+        assert_eq!(
+            relative_path(
+                Path::new("./install/bin/aliases"),
+                Path::new("./install/bin/tool"),
+            )
+            .unwrap(),
+            PathBuf::from("../tool")
+        );
+    }
+
+    #[test]
+    fn test_create_file_link_rejects_hard_link_directory_destination() -> Result<()> {
+        let tmp_dir = tempfile::tempdir()?;
+        let src = tmp_dir.path().join("tool");
+        let dst = tmp_dir.path().join("tool-hard");
+        fs::write(&src, "tool")?;
+        fs::create_dir(&dst)?;
+
+        let err = AquaBackend::create_file_link(&AquaFileLink {
+            src,
+            dst,
+            hard: true,
+            explicit_link: true,
+        })
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("destination is a directory"));
+        Ok(())
     }
 
     #[test]
