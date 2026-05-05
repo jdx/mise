@@ -225,7 +225,7 @@ impl Trust {
         };
         let ts = config.get_toolset().await?;
         let trusted_roots = trusted_roots.into_iter().unique().collect_vec();
-        hooks::run_enter_hooks_for_roots(&config, &ts, &trusted_roots).await;
+        hooks::run_enter_hooks_for_roots(&config, ts, &trusted_roots).await;
         Ok(())
     }
 }
