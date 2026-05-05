@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p project
+cat <<'EOF' >project/mise.toml
+[hooks]
+enter = 'echo HOOK-ENTER'
+EOF
+
+cd project || exit 1
+assert_contains "mise trust 2>&1" "HOOK-ENTER"
+assert_not_contains "mise trust 2>&1" "HOOK-ENTER"
+
+cd .. || exit 1
+mkdir -p other
+cat <<'EOF' >other/mise.toml
+[hooks]
+enter = 'echo OTHER-ENTER'
+EOF
+
+assert_not_contains "mise trust other/mise.toml 2>&1" "OTHER-ENTER"

@@ -1,12 +1,14 @@
 use std::path::PathBuf;
 
+use crate::config::Config;
+use crate::config::config_file::config_root;
 use crate::config::config_file::config_trust_root;
 use crate::config::{
     ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES, Settings, config_file, config_files_in_dir,
     is_global_config,
 };
 use crate::file::{display_path, remove_file};
-use crate::{config, dirs, env, file};
+use crate::{config, dirs, env, file, hooks};
 use clap::ValueHint;
 use eyre::Result;
 use itertools::Itertools;
@@ -55,13 +57,17 @@ impl Trust {
         } else if self.ignore {
             self.ignore()
         } else if self.all {
+            let mut trusted_roots = vec![];
             while let Some(p) = self.get_next_untrusted() {
                 self.config_file = Some(p);
-                self.trust()?;
+                if let Some(root) = self.trust()? {
+                    trusted_roots.push(root);
+                }
             }
-            Ok(())
+            self.run_enter_hooks(trusted_roots).await
         } else {
-            self.trust()
+            let trusted_roots = self.trust()?.into_iter().collect();
+            self.run_enter_hooks(trusted_roots).await
         }
     }
     pub fn clean() -> Result<()> {
@@ -147,21 +153,27 @@ impl Trust {
         }
         Ok(())
     }
-    fn trust(&self) -> Result<()> {
+    fn trust(&self) -> Result<Option<PathBuf>> {
         let path = match self.config_file() {
             Some(filename) => config_trust_root(&filename),
             None => match self.get_next_untrusted() {
                 Some(path) => path,
                 None => {
                     warn!("No untrusted config files found.");
-                    return Ok(());
+                    return Ok(None);
                 }
             },
         };
+        let was_trusted = config_file::is_trusted(&path);
+        let hook_root = hook_root(&path);
         config_file::trust(&path)?;
         let cfr = path.canonicalize()?;
         info!("trusted {}", cfr.display());
-        Ok(())
+        let should_run_enter = !was_trusted
+            && dirs::CWD
+                .as_ref()
+                .is_some_and(|cwd| cwd.starts_with(&hook_root));
+        Ok(should_run_enter.then_some(hook_root))
     }
 
     fn config_file(&self) -> Option<PathBuf> {
@@ -200,6 +212,29 @@ impl Trust {
             }
         }
         Ok(())
+    }
+
+    async fn run_enter_hooks(&self, trusted_roots: Vec<PathBuf>) -> Result<()> {
+        if trusted_roots.is_empty() || self.get_next_untrusted().is_some() {
+            return Ok(());
+        }
+        let config = if config::is_loaded() {
+            Config::reset().await?
+        } else {
+            Config::get().await?
+        };
+        let ts = config.get_toolset().await?;
+        let trusted_roots = trusted_roots.into_iter().unique().collect_vec();
+        hooks::run_enter_hooks_for_roots(&config, &ts, &trusted_roots).await;
+        Ok(())
+    }
+}
+
+fn hook_root(path: &std::path::Path) -> PathBuf {
+    if path.is_file() {
+        config_root::config_root(path)
+    } else {
+        path.to_path_buf()
     }
 }
 
