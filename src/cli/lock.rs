@@ -553,12 +553,14 @@ impl Lock {
                     for request in requests {
                         if ba.backend().is_ok() {
                             // Check if the resolved toolset has a matching request.
+                            let mut matched_resolved = false;
                             if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
                                 for tv in &resolved_tv.versions {
                                     if tv.request.version() == request.version()
                                         && tv.request.options() == request.options()
                                         && tv.version != "latest"
                                     {
+                                        matched_resolved = true;
                                         let key = (ba.short.clone(), tv.version.clone());
                                         if seen.insert(key) {
                                             all_tools.push((ba.as_ref().clone(), tv.clone()));
@@ -570,7 +572,7 @@ impl Lock {
                             // active tools. When an install-before cutoff is active, bypass
                             // installed-version selection so the fallback still uses release
                             // dates from the remote version metadata.
-                            if request.version() == "latest" {
+                            if !matched_resolved && request.version() == "latest" {
                                 let mut resolve_options = match request
                                     .resolve_options(base_resolve_options)
                                 {
@@ -580,6 +582,7 @@ impl Lock {
                                         continue;
                                     }
                                 };
+                                resolve_options.use_locked_version = false;
                                 if resolve_options.before_date.is_some() {
                                     resolve_options.latest_versions = true;
                                 }
