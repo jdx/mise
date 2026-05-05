@@ -135,7 +135,26 @@ fn codegen_registry() {
                 .and_then(|v| v.as_str())
                 .unwrap_or_else(|| panic!("[{short}] 'test.expected' must be a string"))
                 .to_string();
-            (cmd, expected)
+            let tools = t
+                .get("tools")
+                .map(|tools| {
+                    let mut tools = tools
+                        .as_array()
+                        .unwrap_or_else(|| panic!("[{short}] 'test.tools' must be an array"))
+                        .iter()
+                        .map(|v| {
+                            v.as_str()
+                                .unwrap_or_else(|| {
+                                    panic!("[{short}] 'test.tools' must contain only strings")
+                                })
+                                .to_string()
+                        })
+                        .collect::<Vec<_>>();
+                    tools.sort();
+                    tools
+                })
+                .unwrap_or_default();
+            (cmd, expected, tools)
         });
         let mut backends = vec![];
         for backend in info.get("backends").unwrap().as_array().unwrap() {
@@ -202,18 +221,6 @@ fn codegen_registry() {
         let description = info
             .get("description")
             .map(|d| d.as_str().unwrap().to_string());
-        let depends = info
-            .get("depends")
-            .map(|depends| {
-                let depends = depends.as_array().unwrap();
-                let mut depends = depends
-                    .iter()
-                    .map(|d| d.as_str().unwrap().to_string())
-                    .collect::<Vec<_>>();
-                depends.sort();
-                depends
-            })
-            .unwrap_or_default();
         let idiomatic_files = info
             .get("idiomatic_files")
             .map(|idiomatic_files| {
@@ -248,7 +255,7 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
                 .unwrap_or("None".to_string()),
@@ -259,20 +266,20 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
             test = test
-                .map(|(t, v)| format!(
-                    "Some(({}, {}))",
-                    raw_string_literal(&t),
-                    raw_string_literal(&v)
+                .map(|(cmd, expected, tools)| format!(
+                    "Some(RegistryToolTest{{ cmd: {}, expected: {}, tools: &[{}] }})",
+                    raw_string_literal(&cmd),
+                    raw_string_literal(&expected),
+                    tools
+                        .iter()
+                        .map(|tool| format!("\"{tool}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ))
                 .unwrap_or("None".to_string()),
             os = os
                 .iter()
                 .map(|o| format!("\"{o}\""))
-                .collect::<Vec<_>>()
-                .join(", "),
-            depends = depends
-                .iter()
-                .map(|d| format!("\"{d}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
             idiomatic_files = idiomatic_files
