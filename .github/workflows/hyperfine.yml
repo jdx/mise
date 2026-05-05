@@ -84,7 +84,7 @@ jobs:
             else
               reference="mise-${{ steps.versions.outputs.release }} $cmd"
             fi
-            mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --export-json out.json --reference "$reference" "$reference" "mise $cmd"
+            mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --export-json out.json --reference "$reference" "mise $cmd"
             echo "### \`mise $cmd\`" >> comment.md
             cat out.md >> comment.md
             cat out.md
