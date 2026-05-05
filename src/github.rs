@@ -287,9 +287,11 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || get_release_(API_URL, repo, tag).await)
-        .await?
-        .clone())
+        .get_or_try_init_async_if(
+            async || get_release_(API_URL, repo, tag).await,
+            should_cache_release,
+        )
+        .await?)
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
@@ -297,9 +299,15 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || get_release_(api_url, repo, tag).await)
-        .await?
-        .clone())
+        .get_or_try_init_async_if(
+            async || get_release_(api_url, repo, tag).await,
+            should_cache_release,
+        )
+        .await?)
+}
+
+fn should_cache_release(release: &GithubRelease) -> bool {
+    !release.assets.is_empty()
 }
 
 /// Find the latest build revision for a version in a GitHub repo.
@@ -863,5 +871,66 @@ something_else = "value"
         ];
         let best = pick_best_build_revision(releases, "3.3.11").unwrap();
         assert_eq!(best.tag_name, "3.3.11-1");
+    }
+
+    fn make_asset(name: &str) -> GithubAsset {
+        GithubAsset {
+            name: name.to_string(),
+            browser_download_url: format!("https://github.com/owner/repo/releases/download/{name}"),
+            url: format!("https://api.github.com/repos/owner/repo/releases/assets/{name}"),
+            digest: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_release_assets_are_not_cached() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/empty-assets-cache-test";
+        let tag = "v1.0.0";
+        let path = format!("/repos/{repo}/releases/tags/{tag}");
+        let key = format!("{}-{repo}-{tag}", server.url()).to_kebab_case();
+
+        let cached_empty_release = make_release(tag);
+        {
+            let cache_group = get_release_cache(&key).await;
+            let cache = cache_group.get(&key).unwrap();
+            cache.write(&cached_empty_release).unwrap();
+        }
+
+        let empty_mock = server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&cached_empty_release).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        assert!(release.assets.is_empty());
+        empty_mock.assert_async().await;
+        empty_mock.remove_async().await;
+
+        let populated_release = GithubRelease {
+            assets: vec![make_asset("tool-v1.0.0-linux-x86_64.tar.gz")],
+            ..make_release(tag)
+        };
+        let mock = server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&populated_release).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        assert_eq!(release.assets.len(), 1);
+        assert_eq!(release.assets[0].name, "tool-v1.0.0-linux-x86_64.tar.gz");
+
+        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        assert_eq!(release.assets.len(), 1);
+        mock.assert_async().await;
     }
 }
