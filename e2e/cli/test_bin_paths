@@ -5,3 +5,13 @@ assert "mise bin-paths dummy" "$MISE_DATA_DIR/installs/dummy/latest/bin"
 assert "mise bin-paths tiny" "$MISE_DATA_DIR/installs/tiny/latest/bin"
 assert "mise bin-paths" "$MISE_DATA_DIR/installs/dummy/latest/bin
 $MISE_DATA_DIR/installs/tiny/latest/bin"
+
+dummy_bin="$MISE_DATA_DIR/installs/dummy/latest/bin"
+ln -s dummy "$dummy_bin/dummy-link"
+touch "$dummy_bin/not-executable"
+
+assert "mise bin-paths dummy --json | jq -r '.[] | select(.name == \"dummy\") | .path'" "$dummy_bin/dummy"
+assert "mise bin-paths dummy --json | jq -r '.[] | select(.name == \"dummy\") | .symlink'" "false"
+assert "mise bin-paths dummy --json | jq -r '.[] | select(.name == \"dummy-link\") | .path'" "$dummy_bin/dummy-link"
+assert "mise bin-paths dummy --json | jq -r '.[] | select(.name == \"dummy-link\") | .symlink'" "true"
+assert "mise bin-paths dummy --json | jq -r 'map(select(.name == \"not-executable\")) | length'" "0"
