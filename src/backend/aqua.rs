@@ -1362,17 +1362,13 @@ impl AquaBackend {
             return Ok(None);
         }
 
+        // GitHub's latest-release endpoint cannot return a draft or prerelease, so prerelease
+        // handling here only needs to inspect the normalized version string.
         match self
             .installable_version_from_tag(&pkg, &release.tag_name)
             .await
         {
-            Ok(Some(version))
-                if version_allowed_by_prerelease_opts(
-                    &version,
-                    release.prerelease,
-                    want_prereleases,
-                ) =>
-            {
+            Ok(Some(version)) if version_allowed_by_prerelease_opts(&version, want_prereleases) => {
                 Ok(Some(version))
             }
             Ok(Some(version)) => {
@@ -1450,7 +1446,7 @@ impl AquaBackend {
         for tag in tags {
             match self.installable_version_from_tag(pkg, &tag).await {
                 Ok(Some(version))
-                    if version_allowed_by_prerelease_opts(&version, false, want_prereleases) =>
+                    if version_allowed_by_prerelease_opts(&version, want_prereleases) =>
                 {
                     return Some(version);
                 }
@@ -2559,12 +2555,8 @@ fn version_from_tag(pkg: &AquaPackage, tag: &str) -> Result<Option<String>> {
     Ok(Some(version.to_string()))
 }
 
-fn version_allowed_by_prerelease_opts(
-    version: &str,
-    prerelease: bool,
-    want_prereleases: bool,
-) -> bool {
-    want_prereleases || (!prerelease && !VERSION_REGEX.is_match(version))
+fn version_allowed_by_prerelease_opts(version: &str, want_prereleases: bool) -> bool {
+    want_prereleases || !VERSION_REGEX.is_match(version)
 }
 
 fn created_at_allowed_by_before_date(created_at: &str, before_date: Option<Timestamp>) -> bool {
@@ -2846,19 +2838,9 @@ mod lock_candidate_tests {
 
     #[test]
     fn test_version_allowed_by_prerelease_opts() {
-        assert!(version_allowed_by_prerelease_opts("1.2.3", false, false));
-        assert!(!version_allowed_by_prerelease_opts("1.2.3", true, false));
-        assert!(version_allowed_by_prerelease_opts("1.2.3", true, true));
-        assert!(!version_allowed_by_prerelease_opts(
-            "1.2.3-rc.1",
-            false,
-            false
-        ));
-        assert!(version_allowed_by_prerelease_opts(
-            "1.2.3-rc.1",
-            false,
-            true
-        ));
+        assert!(version_allowed_by_prerelease_opts("1.2.3", false));
+        assert!(!version_allowed_by_prerelease_opts("1.2.3-rc.1", false));
+        assert!(version_allowed_by_prerelease_opts("1.2.3-rc.1", true));
     }
 
     #[test]
