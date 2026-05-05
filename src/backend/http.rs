@@ -745,16 +745,13 @@ impl Backend for HttpBackend {
         // Check for explicit bin_path
         if let Some(bin_path_template) = get_opt(&opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
-            return Ok(vec![runtime_path_for_install_path(
-                tv,
-                install_path.join(bin_path),
-            )]);
+            return Ok(vec![tv.runtime_path().join(bin_path)]);
         }
 
         // Check for bin directory
         let bin_dir = install_path.join("bin");
         if bin_dir.exists() {
-            return Ok(vec![runtime_path_for_install_path(tv, bin_dir)]);
+            return Ok(vec![tv.runtime_path().join("bin")]);
         }
 
         // Search subdirectories for bin directories
@@ -772,7 +769,7 @@ impl Backend for HttpBackend {
         }
 
         if paths.is_empty() {
-            Ok(vec![runtime_path_for_install_path(tv, install_path)])
+            Ok(vec![tv.runtime_path()])
         } else {
             Ok(paths
                 .into_iter()
