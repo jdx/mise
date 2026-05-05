@@ -129,17 +129,40 @@ impl Backend for NPMBackend {
             async || {
                 let env = self.dependency_env(config).await?;
 
-                let raw = cmd!(
-                    NPM_PROGRAM,
-                    "view",
-                    self.tool_name(),
-                    "versions",
-                    "time",
-                    "--json"
-                )
-                .full_env(&env)
-                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                .read()?;
+                let package = self.tool_name();
+                let package_for_versions = package.clone();
+                let package_for_logs = package.clone();
+                let deprecated_query = Self::deprecated_versions_query(&package);
+                let versions_env = env.clone();
+                let deprecated_env = env;
+                let versions_task = tokio::task::spawn_blocking(move || {
+                    cmd!(
+                        NPM_PROGRAM,
+                        "view",
+                        package_for_versions,
+                        "versions",
+                        "time",
+                        "--json"
+                    )
+                    .full_env(&versions_env)
+                    .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                    .read()
+                });
+                let deprecated_task = tokio::task::spawn_blocking(move || {
+                    cmd!(
+                        NPM_PROGRAM,
+                        "view",
+                        deprecated_query,
+                        "version",
+                        "deprecated",
+                        "--json"
+                    )
+                    .full_env(&deprecated_env)
+                    .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                    .read()
+                });
+                let (raw, deprecated_raw) = tokio::try_join!(versions_task, deprecated_task)?;
+                let raw = raw?;
                 let data: Value = serde_json::from_str(&raw)?;
                 let versions = data["versions"]
                     .as_array()
@@ -147,25 +170,14 @@ impl Backend for NPMBackend {
                 let time = data["time"]
                     .as_object()
                     .ok_or_else(|| eyre::eyre!("invalid time"))?;
-                let deprecated_versions = match cmd!(
-                    NPM_PROGRAM,
-                    "view",
-                    Self::deprecated_versions_query(&self.tool_name()),
-                    "version",
-                    "deprecated",
-                    "--json"
-                )
-                .full_env(&env)
-                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                .read()
-                {
+                let deprecated_versions = match deprecated_raw {
                     Ok(raw) if raw.trim().is_empty() => HashSet::new(),
                     Ok(raw) => match serde_json::from_str::<Value>(&raw) {
                         Ok(data) => Self::deprecated_versions_from_npm_view(&data),
                         Err(err) => {
                             debug!(
                                 "failed to parse npm deprecated metadata for {}: {err:#}",
-                                self.tool_name()
+                                package_for_logs
                             );
                             HashSet::new()
                         }
@@ -173,7 +185,7 @@ impl Backend for NPMBackend {
                     Err(err) => {
                         debug!(
                             "failed to fetch npm deprecated metadata for {}: {err:#}",
-                            self.tool_name()
+                            package_for_logs
                         );
                         HashSet::new()
                     }
@@ -707,7 +719,7 @@ impl NPMBackend {
     }
 
     fn deprecated_versions_query(package: &str) -> String {
-        format!("{package}@>=0.0.0")
+        format!("{package}@>=0.0.0-0")
     }
 
     fn deprecated_versions_from_npm_view(data: &Value) -> HashSet<String> {
@@ -1102,7 +1114,7 @@ mod tests {
     fn test_deprecated_versions_query_handles_scoped_packages() {
         assert_eq!(
             NPMBackend::deprecated_versions_query("@scope/pkg"),
-            "@scope/pkg@>=0.0.0"
+            "@scope/pkg@>=0.0.0-0"
         );
     }
 

@@ -22,8 +22,10 @@ assert_not_contains "mise latest npm:prettier" "2.8.8"
 assert_contains "mise latest npm:prettier --before 2023-06-01" "2.8.8"
 
 # Test: deprecated versions are skipped when resolving latest with --before.
-# glob 10.5.0 was released before this cutoff but deprecated; 12.0.0 is the
-# newest non-deprecated version before the cutoff.
+# At the time this regression test was added, glob 10.5.0 and 11.x were
+# deprecated upstream with "Glob versions prior to v9 are no longer supported"
+# or "Glob versions prior to v11 are no longer supported". 12.0.0 is the newest
+# non-deprecated version before the cutoff.
 assert "mise latest npm:glob --before 2025-11-18T12:00:00Z" "12.0.0"
 
 # Test: package-level deprecation does not filter every version out.
