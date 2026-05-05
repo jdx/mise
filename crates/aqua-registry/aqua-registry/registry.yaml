@@ -71816,7 +71816,7 @@ packages:
           darwin: macos
           windows: win
         github_immutable_release: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 11.0.4")
         asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         files:
@@ -71828,6 +71828,24 @@ packages:
           - goos: windows
             format: zip
         github_immutable_release: true
+      - version_constraint: "true"
+        asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: pnpm
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: pnpm/pnpm/\.github/workflows/release\.yml
+        github_immutable_release: true
+        supported_envs:
+          - linux
+          - windows
+          - darwin/arm64
   - type: github_release
     repo_owner: po3rin
     repo_name: github_link_creator
@@ -77013,6 +77031,23 @@ packages:
     complete_windows_ext: false
     format: raw
     asset: yamldiff-v{{.Version}}-{{.OS}}-amd64
+  - name: salesforce/reactive-grpc/protoc-gen-reactor-grpc
+    type: http
+    repo_owner: salesforce
+    repo_name: reactive-grpc
+    description: Reactor-gRPC is a set of gRPC bindings for reactive programming with Reactor
+    url: https://repo1.maven.org/maven2/com/salesforce/servicelibs/reactor-grpc/{{trimV .Version}}/reactor-grpc-{{trimV .Version}}-{{.OS}}-{{.Arch}}.exe
+    format: raw
+    windows_arm_emulation: true
+    replacements:
+      darwin: osx
+      amd64: x86_64
+      arm64: aarch_64
+    checksum:
+      type: http
+      url: https://repo1.maven.org/maven2/com/salesforce/servicelibs/reactor-grpc/{{trimV .Version}}/reactor-grpc-{{trimV .Version}}-{{.OS}}-{{.Arch}}.exe.sha1
+      file_format: raw
+      algorithm: sha1
   - type: github_release
     repo_owner: samuel-lucas6
     repo_name: Kryptor
@@ -81844,6 +81879,69 @@ packages:
           - darwin
         github_artifact_attestations:
           signer_workflow: spinel-coop/rv/.github/workflows/release.yml
+  - type: github_release
+    repo_owner: spinframework
+    repo_name: spin
+    description: Developer tool for building and running serverless WebAssembly applications
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0-rc.1"
+        asset: spin-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          arm64: aarch64
+          darwin: macos
+      - version_constraint: Version == "v0.1.0-rc.4"
+        asset: spin-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: checksums-{{.Version}}.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.6.0")
+        asset: spin-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: checksums-{{.Version}}.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: spin-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: checksums-{{.Version}}.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}
   - name: spinnaker/spin
     type: http
     format: raw
