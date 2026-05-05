@@ -590,12 +590,19 @@ impl Toolset {
 /// cached answer is either correct or harmless, and refreshing is wasted
 /// network traffic. Users who want to pull the absolute latest matching a
 /// prefix can run `mise upgrade` or pin to `@latest`.
+///
+/// Skipped in `prefer_offline` mode (shims, hook-env, activate, etc.) because
+/// the versions host is disabled there, so a refresh would bypass the
+/// on-disk cache populated by an earlier non-prefer-offline command and fall
+/// through to a backend listing that often has far fewer versions (e.g. the
+/// GitHub releases listing only returns the most recent ~30), turning a
+/// previously-resolvable prefix query into "no versions found".
 fn should_refresh_remote_versions(
     tr: &ToolRequest,
     backend: &crate::backend::ABackend,
     opts: &ResolveOptions,
 ) -> bool {
-    if opts.refresh_remote_versions || opts.offline || Settings::get().offline() {
+    if opts.refresh_remote_versions || opts.offline || Settings::get().prefer_offline() {
         return false;
     }
     match tr {
