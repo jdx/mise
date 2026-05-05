@@ -1,4 +1,4 @@
-use aqua_registry::{AquaPackage, Result, decode_package_msgpack_z};
+use aqua_registry::{AquaPackage, Result, decode_package_rkyv};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -49,7 +49,7 @@ fn baked_registry_file(package_id: &str) -> Option<&'static [u8]> {
 }
 
 fn decode_baked_package(package_id: &str, bytes: &[u8]) -> Result<AquaPackage> {
-    decode_package_msgpack_z(package_id, bytes)
+    decode_package_rkyv(package_id, bytes)
 }
 
 #[cfg(test)]

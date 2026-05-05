@@ -25,10 +25,9 @@ serde_derive = "1"
 serde_yaml = "0.9"
 thiserror = "2"
 eyre = "0.6"
-flate2 = "1"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.14"
-rmp-serde = "1"
+rkyv = { version = "0.8", features = ["unaligned"] }
 strum = { version = "0.28", features = ["derive"] }
 
 # Template parsing and evaluation

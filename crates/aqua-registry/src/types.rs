@@ -2,15 +2,30 @@ use expr::{Context, Environment, Program, Value};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use rkyv::rancor::{Fallible, Source};
+use rkyv::with::{ArchiveWith, DeserializeWith, SerializeWith};
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Place, Serialize as RkyvSerialize};
 use serde::Deserializer;
 use serde::de::Error as DeError;
 use serde_derive::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use std::collections::HashMap;
+use std::io::{Error as IoError, ErrorKind};
 use versions::Versioning;
 
 /// Type of Aqua package
-#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq, strum::Display)]
+#[derive(
+    Debug,
+    Deserialize,
+    Serialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+    Default,
+    Clone,
+    PartialEq,
+    strum::Display,
+)]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum AquaPackageType {
@@ -25,7 +40,18 @@ pub enum AquaPackageType {
 }
 
 /// Main Aqua package definition
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[rkyv(serialize_bounds(
+    __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+    __S::Error: rkyv::rancor::Source,
+))]
+#[rkyv(deserialize_bounds(__D::Error: rkyv::rancor::Source))]
+#[rkyv(bytecheck(
+    bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source,
+    )
+))]
 #[serde(default)]
 pub struct AquaPackage {
     pub r#type: AquaPackageType,
@@ -46,6 +72,7 @@ pub struct AquaPackage {
     pub version_prefix: Option<String>,
     version_filter: Option<String>,
     #[serde(skip)]
+    #[rkyv(with = EmptyVersionFilterExpr)]
     version_filter_expr: Option<Program>,
     pub version_source: Option<String>,
     pub cosign: Option<AquaCosign>,
@@ -53,18 +80,21 @@ pub struct AquaPackage {
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
     pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
+    #[rkyv(omit_bounds)]
     overrides: Vec<AquaOverride>,
     version_constraint: String,
+    #[rkyv(omit_bounds)]
     pub version_overrides: Vec<AquaPackage>,
     pub no_asset: bool,
     pub error_message: Option<String>,
     pub path: Option<String>,
     #[serde(skip)]
+    #[rkyv(with = EmptyVarValues)]
     var_values: HashMap<String, String>,
 }
 
 /// Override configuration for specific OS/architecture combinations
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 struct AquaOverride {
     #[serde(flatten)]
     pkg: AquaPackage,
@@ -73,7 +103,9 @@ struct AquaOverride {
 }
 
 /// Variable definition for Aqua templates
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[derive(
+    Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone, Default,
+)]
 pub struct AquaVar {
     pub name: String,
     /// Aqua's schema allows arbitrary YAML defaults, but mise intentionally
@@ -85,14 +117,24 @@ pub struct AquaVar {
 }
 
 /// File definition within a package
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
 }
 
 /// Checksum algorithm options
-#[derive(Debug, Deserialize, Serialize, Clone, strum::AsRefStr, strum::Display)]
+#[derive(
+    Debug,
+    Deserialize,
+    Serialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+    Clone,
+    strum::AsRefStr,
+    strum::Display,
+)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum AquaChecksumAlgorithm {
@@ -103,7 +145,7 @@ pub enum AquaChecksumAlgorithm {
 }
 
 /// Type of checksum source
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaChecksumType {
     GithubRelease,
@@ -111,7 +153,7 @@ pub enum AquaChecksumType {
 }
 
 /// Type of minisign source
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaMinisignType {
     GithubRelease,
@@ -119,7 +161,7 @@ pub enum AquaMinisignType {
 }
 
 /// Cosign signature configuration
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaCosignSignature {
     pub r#type: Option<String>,
     pub repo_owner: Option<String>,
@@ -129,7 +171,7 @@ pub struct AquaCosignSignature {
 }
 
 /// Cosign verification configuration
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaCosign {
     pub enabled: Option<bool>,
     pub signature: Option<AquaCosignSignature>,
@@ -141,7 +183,7 @@ pub struct AquaCosign {
 }
 
 /// SLSA provenance configuration
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaSlsaProvenance {
     pub enabled: Option<bool>,
     pub r#type: Option<String>,
@@ -154,7 +196,7 @@ pub struct AquaSlsaProvenance {
 }
 
 /// Minisign verification configuration
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaMinisign {
     pub enabled: Option<bool>,
     pub r#type: Option<AquaMinisignType>,
@@ -166,14 +208,14 @@ pub struct AquaMinisign {
 }
 
 /// GitHub artifact attestations configuration
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
     pub enabled: Option<bool>,
     pub signer_workflow: Option<String>,
 }
 
 /// Checksum verification configuration
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaChecksum {
     pub r#type: Option<AquaChecksumType>,
     pub algorithm: Option<AquaChecksumAlgorithm>,
@@ -186,7 +228,7 @@ pub struct AquaChecksum {
 }
 
 /// Checksum pattern configuration
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaChecksumPattern {
     pub checksum: String,
     pub file: Option<String>,
@@ -196,6 +238,128 @@ pub struct AquaChecksumPattern {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RegistryYaml {
     pub packages: Vec<AquaPackage>,
+}
+
+// rkyv archives the parsed package data only. Runtime-only fields mirror serde's
+// skipped behavior, and YAML var defaults are proxied through YAML text because
+// serde_yaml::Value does not implement rkyv traits.
+struct EmptyVersionFilterExpr;
+
+impl ArchiveWith<Option<Program>> for EmptyVersionFilterExpr {
+    type Archived = ();
+    type Resolver = ();
+
+    fn resolve_with(_: &Option<Program>, _: Self::Resolver, out: Place<Self::Archived>) {
+        out.write(());
+    }
+}
+
+impl<S> SerializeWith<Option<Program>, S> for EmptyVersionFilterExpr
+where
+    S: Fallible + ?Sized,
+{
+    fn serialize_with(_: &Option<Program>, _: &mut S) -> std::result::Result<(), S::Error> {
+        Ok(())
+    }
+}
+
+impl<D> DeserializeWith<(), Option<Program>, D> for EmptyVersionFilterExpr
+where
+    D: Fallible + ?Sized,
+{
+    fn deserialize_with(_: &(), _: &mut D) -> std::result::Result<Option<Program>, D::Error> {
+        Ok(None)
+    }
+}
+
+struct EmptyVarValues;
+
+impl ArchiveWith<HashMap<String, String>> for EmptyVarValues {
+    type Archived = ();
+    type Resolver = ();
+
+    fn resolve_with(_: &HashMap<String, String>, _: Self::Resolver, out: Place<Self::Archived>) {
+        out.write(());
+    }
+}
+
+impl<S> SerializeWith<HashMap<String, String>, S> for EmptyVarValues
+where
+    S: Fallible + ?Sized,
+{
+    fn serialize_with(_: &HashMap<String, String>, _: &mut S) -> std::result::Result<(), S::Error> {
+        Ok(())
+    }
+}
+
+impl<D> DeserializeWith<(), HashMap<String, String>, D> for EmptyVarValues
+where
+    D: Fallible + ?Sized,
+{
+    fn deserialize_with(
+        _: &(),
+        _: &mut D,
+    ) -> std::result::Result<HashMap<String, String>, D::Error> {
+        Ok(HashMap::new())
+    }
+}
+
+struct YamlValueOption;
+
+impl ArchiveWith<Option<serde_yaml::Value>> for YamlValueOption {
+    type Archived = <Option<String> as Archive>::Archived;
+    type Resolver = <Option<String> as Archive>::Resolver;
+
+    fn resolve_with(
+        field: &Option<serde_yaml::Value>,
+        resolver: Self::Resolver,
+        out: Place<Self::Archived>,
+    ) {
+        yaml_value_archive_string(field).resolve(resolver, out);
+    }
+}
+
+impl<S> SerializeWith<Option<serde_yaml::Value>, S> for YamlValueOption
+where
+    Option<String>: rkyv::Serialize<S>,
+    S: Fallible + ?Sized,
+{
+    fn serialize_with(
+        field: &Option<serde_yaml::Value>,
+        serializer: &mut S,
+    ) -> std::result::Result<Self::Resolver, S::Error> {
+        yaml_value_archive_string(field).serialize(serializer)
+    }
+}
+
+impl<D> DeserializeWith<<Option<String> as Archive>::Archived, Option<serde_yaml::Value>, D>
+    for YamlValueOption
+where
+    <Option<String> as Archive>::Archived: rkyv::Deserialize<Option<String>, D>,
+    D: Fallible + ?Sized,
+    D::Error: Source,
+{
+    fn deserialize_with(
+        field: &<Option<String> as Archive>::Archived,
+        deserializer: &mut D,
+    ) -> std::result::Result<Option<serde_yaml::Value>, D::Error> {
+        let raw: Option<String> = rkyv::Deserialize::deserialize(field, deserializer)?;
+        raw.map(|raw| {
+            serde_yaml::from_str(&raw).map_err(|err| {
+                D::Error::new(IoError::new(
+                    ErrorKind::InvalidData,
+                    format!("failed to decode archived aqua var default: {err}"),
+                ))
+            })
+        })
+        .transpose()
+    }
+}
+
+fn yaml_value_archive_string(value: &Option<serde_yaml::Value>) -> Option<String> {
+    value.as_ref().map(|value| {
+        serde_yaml::to_string(value).expect("serde_yaml::Value should serialize to YAML")
+    })
 }
 
 impl Default for AquaPackage {

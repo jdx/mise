@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
-use aqua_registry::encode_package_msgpack_z;
+use aqua_registry::encode_package_rkyv;
 use aqua_registry::types::{AquaPackage, RegistryYaml};
 use eyre::{Result, WrapErr, eyre};
 use serde_yaml::Value;
@@ -430,7 +430,7 @@ fn aqua_package_registries(
         let Some(id) = aqua_canonical_package_id(package) else {
             continue;
         };
-        let content = encode_package_msgpack_z(package)
+        let content = encode_package_rkyv(package)
             .wrap_err_with(|| format!("Failed to encode baked package {id}"))?;
         let aliases = aqua_package_aliases(package_value);
         registries.push(AquaPackageRegistry {
@@ -457,7 +457,7 @@ fn aqua_registry_files_code(
                     registry.id
                 ));
             }
-            let filename = format!("{stem}.msgpack.z");
+            let filename = format!("{stem}.rkyv");
             let path = packages_dir.join(filename);
             let mut file = File::create(&path)
                 .wrap_err_with(|| format!("Failed to write baked package {}", path.display()))?;
