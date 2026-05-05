@@ -46,13 +46,13 @@ function writeFormattedJson(path: string, value: unknown) {
   fs.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function crawlReferencedDefs(schema: JsonObject, roots: unknown[]) {
+function crawlReferencedDefs(schema: JsonObject, root: unknown) {
   const defs = schema["$defs"] as JsonObject | undefined;
   if (!defs) {
     throw new Error("schema/mise.json is missing $defs");
   }
 
-  const queued = [...roots];
+  const queued = [root];
   const seenDefs = new Set<string>();
   const picked: JsonObject = {};
 
@@ -89,33 +89,18 @@ function crawlReferencedDefs(schema: JsonObject, roots: unknown[]) {
 }
 
 function buildTaskSchema(schema: JsonObject) {
-  const seedDefs = [
-    "task_dependency_item",
-    "task",
-    "env",
-    "env_directive",
-    "task_run_entry",
-    "task_template",
-    "vars",
-    "os_filter_item",
-    "os_filter",
-  ];
   const taskSchema: JsonObject = {
     $id: "https://mise.en.dev/schema/mise-task.json",
     $schema: schema["$schema"],
     title: "mise-task-schema",
     type: "object",
-    $defs: {},
     description:
       "Config file for included mise tasks (https://mise.en.dev/tasks/#task-configuration)",
     additionalProperties: {
       $ref: "#/$defs/task",
     },
   };
-  taskSchema["$defs"] = crawlReferencedDefs(schema, [
-    ...seedDefs.map((key) => ({ $ref: `#/$defs/${key}` })),
-    taskSchema,
-  ]);
+  taskSchema["$defs"] = crawlReferencedDefs(schema, taskSchema);
   return taskSchema;
 }
 
