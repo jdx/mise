@@ -130,6 +130,26 @@ impl Client {
         self.head_async_with_headers(url, &headers).await
     }
 
+    pub async fn head_status<U: IntoUrl>(&self, url: U) -> Result<StatusCode> {
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
+        let mut url = url.into_url().unwrap();
+        apply_url_replacements(&mut url);
+        let mut headers = host_auth_headers(&url);
+        headers.extend(netrc_headers(&url));
+        debug!("HEAD {}", &url);
+        let resp = self
+            .reqwest
+            .request(Method::HEAD, url.clone())
+            .headers(headers)
+            .send()
+            .await?;
+        if *env::MISE_LOG_HTTP {
+            eprintln!("HEAD {url} {}", resp.status());
+        }
+        debug!("HEAD {url} {}", resp.status());
+        Ok(resp.status())
+    }
+
     pub async fn head_async_with_headers<U: IntoUrl>(
         &self,
         url: U,
