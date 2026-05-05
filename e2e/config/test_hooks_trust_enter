@@ -21,3 +21,21 @@ enter = 'echo OTHER-ENTER'
 EOF
 
 assert_not_contains "mise trust other/mise.toml 2>&1" "OTHER-ENTER"
+
+mkdir -p parent/child
+cat <<'EOF' >parent/mise.toml
+[hooks]
+enter = 'echo PARENT-ENTER'
+EOF
+cat <<'EOF' >parent/child/mise.toml
+[hooks]
+enter = 'echo CHILD-ENTER'
+EOF
+
+cd parent || exit 1
+assert_contains "mise trust 2>&1" "PARENT-ENTER"
+
+cd child || exit 1
+child_trust_output="$(mise trust 2>&1)"
+[[ $child_trust_output == *"CHILD-ENTER"* ]] || fail "expected child enter hook to run"
+[[ $child_trust_output != *"PARENT-ENTER"* ]] || fail "parent enter hook should not re-run"

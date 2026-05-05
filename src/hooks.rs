@@ -236,14 +236,17 @@ pub async fn run_enter_hooks_for_roots(
         return;
     };
     for (root, h) in config.hooks().await.cloned().unwrap_or_default() {
-        if h.hook != Hooks::Enter || h.shell.is_some() || !cwd.starts_with(&root) {
+        if h.hook != Hooks::Enter || !cwd.starts_with(&root) {
             continue;
         }
-        if !trusted_roots.iter().any(|trusted_root| {
-            root.as_path() == trusted_root.as_path()
-                || root.starts_with(trusted_root)
-                || trusted_root.starts_with(&root)
-        }) {
+        if h.shell.is_some() {
+            trace!("skipping shell-specific enter hook after trust in {root:?}");
+            continue;
+        }
+        if !trusted_roots
+            .iter()
+            .any(|trusted_root| root.as_path() == trusted_root.as_path())
+        {
             continue;
         }
         run_matched_hook(config, ts, &root, &h, None, None).await;
