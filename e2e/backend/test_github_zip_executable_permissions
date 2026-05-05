@@ -8,7 +8,7 @@ fi
 
 cat >mise.toml <<EOF
 [tools]
-"github:Kampfkarren/selene" = { version = "0.30.0", asset_pattern = "selene-0.30.0-linux.zip" }
+"github:Kampfkarren/selene" = { version = "0.30.0", asset_pattern = "selene-0.30.0-linux.zip", bin = "selene" }
 EOF
 
 mise install
