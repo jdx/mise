@@ -84,24 +84,7 @@ impl Backend for PIPXBackend {
                     let url = registry_url.replace("{}", &package);
                     let data: PypiPackage = HTTP_FETCH.json(url).await?;
 
-                    // Get versions sorted and attach timestamps from the first file in each release
-                    data.releases
-                        .into_iter()
-                        .sorted_by_cached_key(|(v, _)| Versioning::new(v))
-                        .map(|(version, files)| {
-                            // Get the earliest upload_time from the release files
-                            let created_at = files
-                                .iter()
-                                .filter_map(|f| f.upload_time.as_ref())
-                                .min()
-                                .cloned();
-                            VersionInfo {
-                                version,
-                                created_at,
-                                ..Default::default()
-                            }
-                        })
-                        .collect()
+                    Self::versions_from_pypi_package(data)
                 } else {
                     debug!("Fetching HTML for {}", package);
                     let url = registry_url.replace("{}", &package);
@@ -313,6 +296,29 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 impl PIPXBackend {
+    fn versions_from_pypi_package(data: PypiPackage) -> Vec<VersionInfo> {
+        // Releases with only yanked files are ignored so fuzzy/latest
+        // resolution mirrors pip's default yanked-file behavior. Preserve the
+        // existing timestamp behavior by using the earliest file upload time.
+        data.releases
+            .into_iter()
+            .filter(|(_, files)| files.iter().any(|f| !f.yanked))
+            .sorted_by_cached_key(|(v, _)| Versioning::new(v))
+            .map(|(version, files)| {
+                let created_at = files
+                    .iter()
+                    .filter_map(|f| f.upload_time.as_ref())
+                    .min()
+                    .cloned();
+                VersionInfo {
+                    version,
+                    created_at,
+                    ..Default::default()
+                }
+            })
+            .collect()
+    }
+
     fn versions_from_github_releases(releases: Vec<GithubRelease>) -> Vec<VersionInfo> {
         releases
             .into_iter()
@@ -535,6 +541,8 @@ struct PypiInfo {
 #[derive(serde::Deserialize)]
 struct PypiRelease {
     upload_time: Option<String>,
+    #[serde(default)]
+    yanked: bool,
 }
 
 impl FromStr for PipxRequest {
@@ -698,10 +706,62 @@ fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::PIPXBackend;
+    use super::{PIPXBackend, PypiInfo, PypiPackage, PypiRelease};
     use crate::github::GithubRelease;
+    use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;
+
+    #[test]
+    fn test_versions_from_pypi_package_skips_yanked_releases() {
+        let versions = PIPXBackend::versions_from_pypi_package(pypi_package(vec![
+            (
+                "1.0.0",
+                vec![pypi_release(Some("2024-01-01T00:00:00Z"), false)],
+            ),
+            (
+                "1.1.0",
+                vec![pypi_release(Some("2024-02-01T00:00:00Z"), true)],
+            ),
+            (
+                "1.2.0",
+                vec![
+                    pypi_release(Some("2024-03-01T00:00:00Z"), true),
+                    pypi_release(Some("2024-03-01T00:01:00Z"), false),
+                ],
+            ),
+        ]));
+
+        assert_eq!(
+            versions
+                .iter()
+                .map(|v| (v.version.as_str(), v.created_at.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("1.0.0", Some("2024-01-01T00:00:00Z")),
+                ("1.2.0", Some("2024-03-01T00:00:00Z")),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_versions_from_pypi_package_skips_empty_releases() {
+        let versions = PIPXBackend::versions_from_pypi_package(pypi_package(vec![
+            ("1.0.0", vec![]),
+            (
+                "1.1.0",
+                vec![pypi_release(Some("2024-02-01T00:00:00Z"), false)],
+            ),
+        ]));
+
+        assert_eq!(
+            versions
+                .iter()
+                .map(|v| v.version.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1.1.0"]
+        );
+    }
 
     #[test]
     fn test_versions_from_empty_github_releases_stays_empty() {
@@ -780,6 +840,25 @@ mod tests {
             prerelease: false,
             created_at: created_at.to_string(),
             assets: vec![],
+        }
+    }
+
+    fn pypi_package(releases: Vec<(&str, Vec<PypiRelease>)>) -> PypiPackage {
+        PypiPackage {
+            releases: releases
+                .into_iter()
+                .map(|(version, files)| (version.to_string(), files))
+                .collect::<IndexMap<_, _>>(),
+            info: PypiInfo {
+                version: "1.0.0".to_string(),
+            },
+        }
+    }
+
+    fn pypi_release(upload_time: Option<&str>, yanked: bool) -> PypiRelease {
+        PypiRelease {
+            upload_time: upload_time.map(str::to_string),
+            yanked,
         }
     }
 }
