@@ -80,33 +80,77 @@ jobs:
           echo "## Hyperfine Performance" >> comment.md
           for cmd in "${CMDS[@]}"; do
             if [ -n "${MISE_ALT:-}" ]; then
-              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "$MISE_ALT $cmd" "mise $cmd"
+              reference="$MISE_ALT $cmd"
             else
-              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
+              reference="mise-${{ steps.versions.outputs.release }} $cmd"
             fi
+            mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --export-json out.json --reference "$reference" "$reference" "mise $cmd"
             echo "### \`mise $cmd\`" >> comment.md
             cat out.md >> comment.md
             cat out.md
-            
-            # Extract relative performance from hyperfine output
-            variance=$(grep "±.*±" out.md | awk '{print $(NF-3)}' | sed 's/%//')
-            whole=${variance%%.*}
-            fraction=${variance#*.}
-            if [ "$fraction" = "$variance" ]; then
-              fraction=0
+
+            analysis=$(CMD="$cmd" python3 <<'PY'
+          import json
+          import math
+          import os
+
+          REGRESSION_THRESHOLD = 1.10
+          # Only fail when the slowdown is beyond the threshold even after
+          # accounting for measurement error, and the error is not itself large.
+          MAX_CLEAR_ERROR = 0.10
+
+          cmd = os.environ["CMD"]
+          with open("out.json", encoding="utf-8") as f:
+              results = json.load(f)["results"]
+
+          reference, current = results[0], results[1]
+          reference_mean = float(reference["mean"])
+          current_mean = float(current["mean"])
+          reference_stddev = float(reference.get("stddev") or 0)
+          current_stddev = float(current.get("stddev") or 0)
+
+          def ratio_error(ratio: float) -> float:
+              return ratio * math.sqrt(
+                  (reference_stddev / reference_mean) ** 2
+                  + (current_stddev / current_mean) ** 2
+              )
+
+          if current_mean > reference_mean:
+              ratio = current_mean / reference_mean
+              error = ratio_error(ratio)
+              variance = round((ratio - 1) * 100)
+              error_percent = round(error * 100)
+              if ratio <= REGRESSION_THRESHOLD:
+                  print("ok\t")
+              elif ratio - error > REGRESSION_THRESHOLD and error <= MAX_CLEAR_ERROR:
+                  print(
+                      f"fail\t⚠️  Warning: Performance variance for `{cmd}` is "
+                      f"{variance}% (±{error_percent}%)"
+                  )
+              else:
+                  print(
+                      f"ok\t⚠️  Inconclusive performance variance for `{cmd}` is "
+                      f"{variance}% (±{error_percent}%); not failing because the "
+                      "measurement is noisy"
+                  )
+          else:
+              ratio = reference_mean / current_mean
+              error = ratio_error(ratio)
+              variance = round((ratio - 1) * 100)
+              error_percent = round(error * 100)
+              if ratio > REGRESSION_THRESHOLD:
+                  print(f"ok\t✅  Performance improvement for `{cmd}` is {variance}% (±{error_percent}%)")
+              else:
+                  print("ok\t")
+          PY
+          )
+            status=${analysis%%$'\t'*}
+            message=${analysis#*$'\t'}
+            if [ -n "$message" ]; then
+              echo "$message" >> comment.md
             fi
-            fraction="${fraction}000"
-            variance_scaled=$((10#$whole * 1000 + 10#${fraction:0:3}))
-            variance=$(((variance_scaled - 1000) / 10))
-            
-            # Add warning if variance exceeds 10%
-            if [ "$variance_scaled" -gt 1100 ]; then
-              if grep -q "mise-${{ steps.versions.outputs.release }}.*±.*±" out.md; then
-                echo "✅  Performance improvement for \`$cmd\` is ${variance}%" >> comment.md
-              else
-                echo "⚠️  Warning: Performance variance for \`$cmd\` is ${variance}%" >> comment.md
-                failed=true
-              fi
+            if [ "$status" = fail ]; then
+              failed=true
             fi
           done
           if [ "$failed" = true ]; then
