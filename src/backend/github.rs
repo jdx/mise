@@ -6,7 +6,7 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_platform_key_for_target,
     template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
 };
-use crate::backend::{SecurityFeature, runtime_path_for_install_path};
+use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
 use crate::file;
@@ -352,9 +352,9 @@ impl Backend for UnifiedGitBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
-        let mise_bins_dir = tv.install_path().join(".mise-bins");
+        let mise_bins_dir = tv.install_path().join(MISE_BINS_DIR);
         if self.get_filter_bins(tv).is_some() || mise_bins_dir.is_dir() {
-            return Ok(vec![tv.runtime_path().join(".mise-bins")]);
+            return Ok(vec![tv.runtime_path().join(MISE_BINS_DIR)]);
         }
 
         Ok(self
@@ -1371,7 +1371,7 @@ impl UnifiedGitBackend {
 
     /// Creates a `.mise-bins` directory with symlinks only to the binaries specified in filter_bins.
     fn create_symlink_bin_dir(&self, tv: &ToolVersion, bins: Vec<String>) -> Result<()> {
-        let symlink_dir = tv.install_path().join(".mise-bins");
+        let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
         file::create_dir_all(&symlink_dir)?;
 
         // Find where the actual binaries are
