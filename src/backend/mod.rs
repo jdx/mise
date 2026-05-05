@@ -13,7 +13,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
 
-use crate::cli::args::{BackendArg, ToolOptionSource, ToolVersionType};
+use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
@@ -30,7 +30,8 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::tera::get_tera;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ResolveOptions, ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version,
+    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, Toolset, install_state,
+    is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
