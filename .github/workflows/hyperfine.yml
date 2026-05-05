@@ -125,9 +125,19 @@ jobs:
         run: sccache --show-stats
       - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
         if: always() && github.event_name == 'pull_request'
+      - name: Check PR comment permission
+        id: pr-comment-permission
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
+            echo "can-comment=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can-comment=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping PR comment because this pull request was opened from a fork." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Comment on PR
         uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && steps.pr-comment-permission.outputs.can-comment == 'true'
         continue-on-error: true
         with:
           file-path: comment.md
