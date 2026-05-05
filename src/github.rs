@@ -286,24 +286,24 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
     let key = format!("{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
+    cache
         .get_or_try_init_async_if(
             async || get_release_(API_URL, repo, tag).await,
             should_cache_release,
         )
-        .await?)
+        .await
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
     let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
+    cache
         .get_or_try_init_async_if(
             async || get_release_(api_url, repo, tag).await,
             should_cache_release,
         )
-        .await?)
+        .await
 }
 
 fn should_cache_release(release: &GithubRelease) -> bool {
