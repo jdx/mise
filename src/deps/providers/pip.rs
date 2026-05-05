@@ -31,12 +31,15 @@ impl DepsProvider for PipDepsProvider {
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        // `pip install` doesn't create `.venv` itself — it installs into whatever
-        // python is on PATH. Use `.venv` as an output only if it already exists
-        // (project is using a local virtualenv); otherwise fall back to
-        // source-hash freshness so we don't reinstall on every invocation.
-        let venv = self.base.config_root().join(".venv");
-        if venv.exists() { vec![venv] } else { vec![] }
+        vec![]
+    }
+
+    fn optional_outputs(&self) -> Vec<PathBuf> {
+        // `pip install` installs into whatever python is on PATH and doesn't
+        // create `.venv` itself. Track it as optional so projects that use a
+        // local venv detect deletion, without forcing a re-run for projects
+        // that don't.
+        vec![self.base.config_root().join(".venv")]
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

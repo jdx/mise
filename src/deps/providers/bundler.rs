@@ -32,16 +32,15 @@ impl DepsProvider for BundlerDepsProvider {
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn optional_outputs(&self) -> Vec<PathBuf> {
         // `bundle install` writes to the system/user gem path by default and
         // only populates `vendor/bundle` when `--path vendor/bundle` is used.
-        // For non-vendored projects we have no on-disk output to check, so
-        // return empty and let the engine fall back to source-hash freshness.
-        let vendor = self.base.config_root().join("vendor/bundle");
-        if vendor.exists() {
-            vec![vendor]
-        } else {
-            vec![]
-        }
+        // Track it as optional so vendored projects detect deletion of
+        // `vendor/bundle`, while non-vendored projects rely on source hashes.
+        vec![self.base.config_root().join("vendor/bundle")]
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

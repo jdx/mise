@@ -117,8 +117,28 @@ pub trait DepsProvider: Debug + Send + Sync {
     /// Returns the source files to check for freshness (lock files, config files)
     fn sources(&self) -> Vec<PathBuf>;
 
-    /// Returns the output files/directories that should be newer than sources
+    /// Returns the output files/directories that should be newer than sources.
+    ///
+    /// These are *required* outputs: once declared, they must exist for the
+    /// provider to be considered fresh. If any are missing, the install command
+    /// re-runs.
     fn outputs(&self) -> Vec<PathBuf>;
+
+    /// Returns optional output files/directories whose existence is tracked but
+    /// not required on first run.
+    ///
+    /// Used by built-in providers whose install command may or may not write to
+    /// a known location depending on configuration (e.g. `.venv` for pip, only
+    /// present when the project uses a local virtualenv; `vendor/bundle` for
+    /// bundler, only present with `--path vendor/bundle`).
+    ///
+    /// The engine records which optional outputs existed after a successful run
+    /// and enforces their continued existence thereafter — so deleting `.venv`
+    /// after `uv sync` triggers a re-run, but a project that never had `.venv`
+    /// doesn't re-run on every invocation.
+    fn optional_outputs(&self) -> Vec<PathBuf> {
+        vec![]
+    }
 
     /// The command to run when outputs are stale relative to sources
     fn install_command(&self) -> Result<DepsCommand>;

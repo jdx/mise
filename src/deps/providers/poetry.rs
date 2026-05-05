@@ -32,11 +32,14 @@ impl DepsProvider for PoetryDepsProvider {
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn optional_outputs(&self) -> Vec<PathBuf> {
         // Poetry only writes `.venv` in the project when `virtualenvs.in-project`
-        // is enabled; by default the venv lives elsewhere. Use `.venv` only when
-        // it exists; otherwise fall back to source-hash freshness.
-        let venv = self.base.config_root().join(".venv");
-        if venv.exists() { vec![venv] } else { vec![] }
+        // is enabled; otherwise the venv lives elsewhere. Track as optional so
+        // in-project setups detect deletion without breaking the default mode.
+        vec![self.base.config_root().join(".venv")]
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

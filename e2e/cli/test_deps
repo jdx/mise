@@ -349,6 +349,55 @@ assert_contains "mise deps --only no_outputs 2>&1" "Installed: no_outputs"
 
 rm -rf sentinel.txt mise.toml .mise
 
+# A provider with neither sources nor outputs declared (a custom hook) should
+# always run — there's no freshness signal to skip on.
+cat >mise.toml <<'EOF'
+[deps.always_run]
+run = "echo ALWAYS_RAN"
+EOF
+
+assert_contains "mise deps --only always_run 2>&1" "Installed: always_run"
+assert_contains "mise deps --only always_run 2>&1" "Installed: always_run"
+assert_contains "mise deps --dry-run 2>&1" "no sources or outputs defined"
+
+rm -rf mise.toml .mise
+
+# Built-in providers track their canonical optional output (e.g. .venv for
+# pip/uv/poetry, vendor/bundle for bundler, vendor/ for go) once it has been
+# observed on a successful run. Deleting the directory afterwards triggers a
+# re-run — but a project that never produces that output is not perpetually
+# stale.
+cat >requirements.txt <<'EOF'
+requests==2.31.0
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.pip]
+run = "echo PIP_RAN"
+EOF
+
+# First run: no state → runs. .venv doesn't exist, so seen_outputs stays empty.
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+
+# Second run: state stored, .venv was never observed, source unchanged → fresh.
+# This is the regression fix for #9585: previously perpetually stale.
+assert_contains "mise deps --only pip 2>&1" "up to date"
+
+# Now simulate the project gaining a local virtualenv. After the next
+# successful run, .venv is recorded in seen_outputs.
+echo "flask==3.0.0" >>requirements.txt
+mkdir -p .venv
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+assert_contains "mise deps --only pip 2>&1" "up to date"
+
+# Deleting .venv after it has been observed should mark the provider stale,
+# even though the source hashes still match.
+rm -rf .venv
+assert_contains "mise deps --dry-run 2>&1" "outputs missing"
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+
+rm -rf .venv requirements.txt mise.toml .mise
+
 # Test --explain flag
 cat >mise.toml <<'EOF'
 [deps.explain_test]
