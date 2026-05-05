@@ -77,8 +77,15 @@ pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
-const VERSIONS_HOST_SAFE_LOCAL_OPT_KEYS: &[&str] =
-    &["prerelease", "minimum_release_age", "install_before"];
+const VERSIONS_HOST_SAFE_LOCAL_OPT_KEYS: &[&str] = &[
+    "prerelease",
+    "minimum_release_age",
+    "install_before",
+    "postinstall",
+    "install_env",
+    "depends",
+    "os",
+];
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
     ToolOptionSource::BackendAlias,
     ToolOptionSource::Config,
