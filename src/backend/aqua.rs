@@ -23,7 +23,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{
-    backend::{Backend, strict_metadata},
+    backend::{Backend, MISE_BINS_DIR, strict_metadata},
     config::Config,
 };
 use crate::{file, github, minisign};
@@ -501,9 +501,9 @@ impl Backend for AquaBackend {
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
         let runtime_path = tv.runtime_path();
-        let mise_bins_dir = tv.install_path().join(".mise-bins");
+        let mise_bins_dir = tv.install_path().join(MISE_BINS_DIR);
         if self.symlink_bins(tv) || mise_bins_dir.is_dir() {
-            return Ok(vec![runtime_path.join(".mise-bins")]);
+            return Ok(vec![runtime_path.join(MISE_BINS_DIR)]);
         }
 
         let install_path = tv.install_path();
@@ -2261,7 +2261,7 @@ impl AquaBackend {
     /// Creates a `.mise-bins` directory with symlinks only to the binaries defined in the aqua registry.
     /// This prevents bundled dependencies (like Python in aws-cli) from being exposed on PATH.
     fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[AquaFileLink]) -> Result<()> {
-        let symlink_dir = tv.install_path().join(".mise-bins");
+        let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
         file::create_dir_all(&symlink_dir)?;
 
         for link in srcs {

@@ -78,6 +78,8 @@ pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
+pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
+
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
     ToolOptionSource::BackendAlias,
     ToolOptionSource::Config,
@@ -110,7 +112,6 @@ pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> 
     } else {
         path
     }
->>>>>>> f3aa315a9 (fix(backend): use runtime paths for backend bin dirs)
 }
 
 static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
