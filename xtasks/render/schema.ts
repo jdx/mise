@@ -4,7 +4,6 @@
 //MISE depends=["docs:setup"]
 
 import * as fs from "node:fs";
-import * as prettier from "prettier";
 import * as toml from "toml";
 
 type EnumValue = string | boolean | number;
@@ -43,20 +42,17 @@ type NestedElement = {
   properties: Record<string, Element>;
 };
 
-async function writeFormattedJson(path: string, value: unknown) {
-  const json = await prettier.format(JSON.stringify(value, null, 2), {
-    parser: "json",
-  });
-  fs.writeFileSync(path, json);
+function writeFormattedJson(path: string, value: unknown) {
+  fs.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function crawlReferencedDefs(schema: JsonObject, root: unknown) {
+function crawlReferencedDefs(schema: JsonObject, roots: unknown[]) {
   const defs = schema["$defs"] as JsonObject | undefined;
   if (!defs) {
     throw new Error("schema/mise.json is missing $defs");
   }
 
-  const queued = [root];
+  const queued = [...roots];
   const seenDefs = new Set<string>();
   const picked: JsonObject = {};
 
@@ -93,18 +89,33 @@ function crawlReferencedDefs(schema: JsonObject, root: unknown) {
 }
 
 function buildTaskSchema(schema: JsonObject) {
+  const seedDefs = [
+    "task_dependency_item",
+    "task",
+    "env",
+    "env_directive",
+    "task_run_entry",
+    "task_template",
+    "vars",
+    "os_filter_item",
+    "os_filter",
+  ];
   const taskSchema: JsonObject = {
     $id: "https://mise.en.dev/schema/mise-task.json",
     $schema: schema["$schema"],
     title: "mise-task-schema",
     type: "object",
+    $defs: {},
     description:
       "Config file for included mise tasks (https://mise.en.dev/tasks/#task-configuration)",
     additionalProperties: {
       $ref: "#/$defs/task",
     },
   };
-  taskSchema["$defs"] = crawlReferencedDefs(schema, taskSchema);
+  taskSchema["$defs"] = crawlReferencedDefs(schema, [
+    ...seedDefs.map((key) => ({ $ref: `#/$defs/${key}` })),
+    taskSchema,
+  ]);
   return taskSchema;
 }
 
@@ -235,8 +246,8 @@ const taskObjectVariant = {
 const taskDef = schema["$defs"].task;
 taskDef.oneOf[taskDef.oneOf.length - 1] = taskObjectVariant;
 
-await writeFormattedJson("schema/mise.json", schema);
-await writeFormattedJson("schema/mise-task.json", buildTaskSchema(schema));
+writeFormattedJson("schema/mise.json", schema);
+writeFormattedJson("schema/mise-task.json", buildTaskSchema(schema));
 
 // Generate .miserc.toml schema with only rc=true settings
 const misercSettings: Record<string, Element> = {};
@@ -258,4 +269,4 @@ const misercSchema = {
   properties: misercSettings,
 };
 
-await writeFormattedJson("schema/miserc.json", misercSchema);
+writeFormattedJson("schema/miserc.json", misercSchema);
