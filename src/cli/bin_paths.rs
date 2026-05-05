@@ -53,21 +53,31 @@ struct BinPathEntry {
 
 fn list_bins(paths: Vec<PathBuf>) -> Result<Vec<BinPathEntry>> {
     let mut bins = vec![];
-    for dir in paths.into_iter().filter(|path| path.exists()) {
-        for entry in dir.read_dir()? {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            let path = entry.path();
-            if file::is_executable(&path) && (file_type.is_file() || file_type.is_symlink()) {
-                bins.push(BinPathEntry {
-                    name: entry
-                        .file_name()
-                        .into_string()
-                        .unwrap_or_else(|name| name.to_string_lossy().into_owned()),
-                    path,
-                    symlink: file_type.is_symlink(),
-                });
+    for dir in paths.into_iter().filter(|path| path.is_dir()) {
+        let Ok(entries) = dir.read_dir() else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_file() && !file_type.is_symlink() {
+                continue;
             }
+
+            let path = entry.path();
+            if !path.is_file() || !file::is_executable(&path) {
+                continue;
+            }
+
+            bins.push(BinPathEntry {
+                name: entry
+                    .file_name()
+                    .into_string()
+                    .unwrap_or_else(|name| name.to_string_lossy().into_owned()),
+                path,
+                symlink: file_type.is_symlink(),
+            });
         }
     }
     bins.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.path.cmp(&b.path)));
