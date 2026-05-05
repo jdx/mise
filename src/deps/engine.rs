@@ -339,7 +339,13 @@ impl DepsEngine {
 
             if !freshness.is_fresh() {
                 let cmd = provider.install_command()?;
-                let outputs = provider.outputs();
+                // Carry both required and optional outputs so session-staleness
+                // can be cleared on whichever paths actually exist after the run.
+                let outputs: Vec<PathBuf> = provider
+                    .outputs()
+                    .into_iter()
+                    .chain(provider.optional_outputs())
+                    .collect();
                 let depends = provider.depends();
                 let timeout = provider.timeout();
                 let reason = freshness.reason().to_string();
@@ -387,7 +393,8 @@ impl DepsEngine {
                 }
             }
 
-            // Save content hashes for all successfully ran providers
+            // Save content hashes and existing optional outputs for each
+            // successfully ran provider.
             for step in &results {
                 if let DepsStepResult::Ran(id) = step
                     && let Some(provider) = self.providers.iter().find(|p| p.id() == id)
@@ -395,8 +402,15 @@ impl DepsEngine {
                     let project_root = &provider.base().project_root;
                     let sources = provider.sources();
                     if let Ok(hashes) = state::hash_sources(&sources, project_root) {
+                        let seen: Vec<String> = provider
+                            .optional_outputs()
+                            .iter()
+                            .filter(|p| p.exists())
+                            .map(|p| state::relative_str(p, project_root))
+                            .collect();
                         let mut st = DepsState::load(project_root);
                         st.set_hashes(id, hashes);
+                        st.set_seen_outputs(id, seen);
                         if let Err(e) = st.save(project_root) {
                             warn!("failed to save deps state: {e}");
                         }
@@ -649,19 +663,27 @@ impl DepsEngine {
 
     /// Check if a provider's outputs are fresh relative to its sources.
     ///
-    /// Uses blake3 content hashing with persistent state. On first run (no stored
-    /// hashes), the provider is always considered stale. Session-based stale
-    /// tracking (venv auto-creation) is always checked first.
+    /// Required outputs (`provider.outputs()`) must always exist. Optional
+    /// outputs (`provider.optional_outputs()`) are only enforced once they've
+    /// been observed on a previous successful run — this lets built-in
+    /// providers declare a canonical output (`.venv`, `vendor/bundle`, etc.)
+    /// that detects post-install deletion without forcing a re-run for
+    /// projects that never produce that output.
+    ///
+    /// Uses blake3 content hashing with persistent state. On first run (no
+    /// stored hashes), the provider is always considered stale.
     pub fn check_freshness(&self, provider: &dyn DepsProvider) -> Result<FreshnessResult> {
         let sources = provider.sources();
         let outputs = provider.outputs();
+        let optional_outputs = provider.optional_outputs();
 
-        if outputs.is_empty() {
-            return Ok(FreshnessResult::NoOutputs);
-        }
+        let project_root = &provider.base().project_root;
+        let st = DepsState::load(project_root);
+        let provider_id = provider.id();
 
-        // Check if any output was created this session (before deps ran)
-        for output in &outputs {
+        // Session-stale check applies to any output that currently exists,
+        // regardless of whether it was required or optional.
+        for output in outputs.iter().chain(optional_outputs.iter()) {
             if super::is_output_stale(output) {
                 return Ok(FreshnessResult::Stale(
                     "output created this session".to_string(),
@@ -669,21 +691,37 @@ impl DepsEngine {
             }
         }
 
-        // Check if any output is missing
+        // Required outputs must exist whenever they are declared.
         for output in &outputs {
             if !output.exists() {
                 return Ok(FreshnessResult::OutputsMissing);
             }
         }
 
+        // Optional outputs are enforced only for paths that existed at the
+        // last successful run (recorded in state). This catches deletion
+        // (e.g. `rm -rf .venv` after `uv sync`) without forcing a re-run for
+        // providers whose canonical output is intentionally absent.
+        if let Some(seen) = st.get_seen_outputs(provider_id) {
+            for output in &optional_outputs {
+                let rel = state::relative_str(output, project_root);
+                if seen.iter().any(|p| p == &rel) && !output.exists() {
+                    return Ok(FreshnessResult::OutputsMissing);
+                }
+            }
+        }
+
+        // A provider with neither sources nor outputs has no freshness signal —
+        // always run it (matches pre-PR custom-hook behavior).
+        if sources.is_empty() && outputs.is_empty() && optional_outputs.is_empty() {
+            return Ok(FreshnessResult::Stale(
+                "no sources or outputs defined".to_string(),
+            ));
+        }
+
         if sources.is_empty() {
             return Ok(FreshnessResult::NoSources);
         }
-
-        // Use content-hash comparison via persistent state
-        let project_root = &provider.base().project_root;
-        let st = DepsState::load(project_root);
-        let provider_id = provider.id();
 
         let current_hashes = state::hash_sources(&sources, project_root)?;
 
