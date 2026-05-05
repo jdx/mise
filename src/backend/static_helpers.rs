@@ -574,7 +574,7 @@ fn make_likely_archive_executables(
                 continue;
             }
 
-            if is_likely_executable_file(&path, &file_name, tool_name)? {
+            if is_likely_executable_file(&path, &file_name, tool_name) {
                 file::make_executable(&path)?;
             }
         }
@@ -630,13 +630,13 @@ fn likely_archive_bin_dirs(
     Ok(dirs.into_iter().collect())
 }
 
-fn is_likely_executable_file(path: &Path, file_name: &str, tool_name: &str) -> Result<bool> {
-    if has_executable_magic(path)? {
-        return Ok(true);
+fn is_likely_executable_file(path: &Path, file_name: &str, tool_name: &str) -> bool {
+    if has_executable_magic(path) {
+        return true;
     }
 
     if tool_name.is_empty() {
-        return Ok(false);
+        return false;
     }
 
     let file_name = file_name.to_lowercase();
@@ -646,15 +646,32 @@ fn is_likely_executable_file(path: &Path, file_name: &str, tool_name: &str) -> R
         .extension()
         .is_none_or(|ext| EXECUTABLE_EXTENSIONS.contains(&ext.to_string_lossy().as_ref()));
 
-    Ok(executable_name && (file_name == tool_name || file_name.contains(&tool_name)))
+    executable_name && archive_candidate_matches_tool_name(&file_name, &tool_name)
 }
 
-fn has_executable_magic(path: &Path) -> Result<bool> {
-    let mut file = File::open(path)?;
-    let mut buf = [0; 4];
-    let len = file.read(&mut buf)?;
+fn archive_candidate_matches_tool_name(file_name: &str, tool_name: &str) -> bool {
+    file_name == tool_name
+        || file_name.starts_with(&format!("{tool_name}-"))
+        || file_name.starts_with(&format!("{tool_name}_"))
+        || file_name.starts_with(&format!("{tool_name}."))
+        || file_name.ends_with(&format!("-{tool_name}"))
+        || file_name.ends_with(&format!("_{tool_name}"))
+        || file_name.contains(&format!("-{tool_name}-"))
+        || file_name.contains(&format!("-{tool_name}_"))
+        || file_name.contains(&format!("_{tool_name}-"))
+        || file_name.contains(&format!("_{tool_name}_"))
+}
 
-    Ok((len >= 2 && (&buf[..2] == b"#!" || &buf[..2] == b"MZ"))
+fn has_executable_magic(path: &Path) -> bool {
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    let mut buf = [0; 4];
+    let Ok(len) = file.read(&mut buf) else {
+        return false;
+    };
+
+    (len >= 2 && (&buf[..2] == b"#!" || &buf[..2] == b"MZ"))
         || (len >= 4
             && matches!(
                 buf,
@@ -664,7 +681,7 @@ fn has_executable_magic(path: &Path) -> Result<bool> {
                     | [0xce, 0xfa, 0xed, 0xfe]
                     | [0xcf, 0xfa, 0xed, 0xfe]
                     | [0xca, 0xfe, 0xba, 0xbe]
-            )))
+            ))
 }
 
 fn should_skip_archive_executable_candidate(file_name: &str) -> bool {
@@ -674,6 +691,7 @@ fn should_skip_archive_executable_candidate(file_name: &str) -> bool {
         || ARCHIVE_EXECUTABLE_SKIP_EXTENSIONS
             .iter()
             .any(|ext| lower.ends_with(ext))
+        || lower.contains(".so.")
 }
 
 pub fn verify_artifact(
@@ -724,7 +742,7 @@ pub fn verify_checksum_str(
 const SKIP_EXTENSIONS: &[&str] = &[".txt", ".md", ".json", ".yml", ".yaml"];
 
 const ARCHIVE_EXECUTABLE_SKIP_EXTENSIONS: &[&str] = &[
-    ".a", ".dll", ".dylib", ".h", ".hpp", ".lib", ".pc", ".so", ".toml", ".xml",
+    ".a", ".class", ".dll", ".dylib", ".h", ".hpp", ".lib", ".pc", ".so", ".toml", ".xml",
 ];
 
 const EXECUTABLE_EXTENSIONS: &[&str] =
@@ -1582,18 +1600,30 @@ bin = "tool.exe"
         let binary = tmp.path().join("selene");
         let readme = tmp.path().join("README.md");
         let config = tmp.path().join("selene.toml");
+        let class_file = tmp.path().join("Selene.class");
+        let shared_library = tmp.path().join("libselene.so.1");
+        let unrelated = tmp.path().join("counselene");
         std::fs::write(&binary, b"\x7fELFtest").unwrap();
         std::fs::write(&readme, b"\x7fELFnot-a-binary").unwrap();
         std::fs::write(&config, b"not-a-binary").unwrap();
+        std::fs::write(&class_file, b"\xca\xfe\xba\xbetest").unwrap();
+        std::fs::write(&shared_library, b"\x7fELFtest").unwrap();
+        std::fs::write(&unrelated, b"not-a-binary").unwrap();
 
         std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644)).unwrap();
         std::fs::set_permissions(&readme, std::fs::Permissions::from_mode(0o644)).unwrap();
         std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&class_file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&shared_library, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&unrelated, std::fs::Permissions::from_mode(0o644)).unwrap();
 
         make_likely_archive_executables(tmp.path(), None, "selene").unwrap();
 
         assert!(file::is_executable(&binary));
         assert!(!file::is_executable(&readme));
         assert!(!file::is_executable(&config));
+        assert!(!file::is_executable(&class_file));
+        assert!(!file::is_executable(&shared_library));
+        assert!(!file::is_executable(&unrelated));
     }
 }
