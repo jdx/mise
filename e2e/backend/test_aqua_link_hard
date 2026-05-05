@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_AQUA_BAKED_REGISTRY=0
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR/pkgs/example/link-tool"
+
+cat <<'EOF_REGISTRY' >"$REGISTRY_DIR/pkgs/example/link-tool/registry.yaml"
+packages:
+  - type: http
+    supported_envs:
+      - darwin
+      - linux
+      - windows
+    url: https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz
+    files:
+      - name: hello-world
+        src: hello-world-1.0.0/bin/hello-world
+        link: hello-link
+      - name: hello-world
+        src: hello-world-1.0.0/bin/hello-world
+        link: hello-hard
+        hard: true
+EOF_REGISTRY
+
+(
+  cd "$REGISTRY_DIR"
+  git init -q
+  git add pkgs/example/link-tool/registry.yaml
+  git commit -qm "init local aqua registry"
+)
+
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/link-tool" = "1.0.0"
+EOF_MISE
+
+mise install
+assert_contains "mise x -- hello-link" "hello world"
+assert_contains "mise x -- hello-hard" "hello world"

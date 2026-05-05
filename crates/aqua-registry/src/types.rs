@@ -79,10 +79,13 @@ pub struct AquaVar {
 }
 
 /// File definition within a package
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
+    pub link: Option<String>,
+    #[serde(default)]
+    pub hard: bool,
 }
 
 /// Checksum algorithm options
@@ -582,8 +585,13 @@ fn split_version_prefix(version: &str) -> (String, String) {
 }
 
 impl AquaFile {
-    /// Get the source path for this file within the package
-    pub fn src(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+    fn template_ctx(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<HashMap<String, String>> {
         let asset = pkg.asset(v, os, arch)?;
         let asset = asset.strip_suffix(".tar.gz").unwrap_or(&asset);
         let asset = asset.strip_suffix(".tar.xz").unwrap_or(asset);
@@ -601,10 +609,24 @@ impl AquaFile {
         let mut ctx = HashMap::new();
         ctx.insert("AssetWithoutExt".to_string(), asset.to_string());
         ctx.insert("FileName".to_string(), self.name.to_string());
+        Ok(ctx)
+    }
 
+    /// Get the source path for this file within the package
+    pub fn src(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+        let ctx = self.template_ctx(pkg, v, os, arch)?;
         self.src
             .as_ref()
             .map(|src| pkg.parse_aqua_str(src, v, &ctx, os, arch))
+            .transpose()
+    }
+
+    /// Get the link path for this file.
+    pub fn link(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+        let ctx = self.template_ctx(pkg, v, os, arch)?;
+        self.link
+            .as_ref()
+            .map(|link| pkg.parse_aqua_str(link, v, &ctx, os, arch))
             .transpose()
     }
 }
@@ -1016,6 +1038,7 @@ mod tests {
         let file = AquaFile {
             name: "gradle".to_string(),
             src: Some("{{.AssetWithoutExt | trimSuffix \"-bin\"}}/bin/gradle".to_string()),
+            ..Default::default()
         };
 
         let result = file.src(&pkg, "8.14.3", "darwin", "arm64").unwrap();
@@ -1038,6 +1061,7 @@ mod tests {
         let file = AquaFile {
             name: "sccache".to_string(),
             src: Some("{{.AssetWithoutExt}}/sccache".to_string()),
+            ..Default::default()
         };
 
         let result = file.src(&pkg, "brew", "darwin", "arm64").unwrap();
@@ -1129,6 +1153,24 @@ mod tests {
                 "Asset string should not have double .exe, got: {s}"
             );
         }
+    }
+
+    #[test]
+    fn test_aqua_file_link_template() {
+        let pkg = AquaPackage {
+            repo_owner: "example".to_string(),
+            repo_name: "tool".to_string(),
+            asset: "tool-{{.Version}}.tar.gz".to_string(),
+            ..Default::default()
+        };
+        let file = AquaFile {
+            name: "tool".to_string(),
+            link: Some("{{.FileName}}-alias".to_string()),
+            ..Default::default()
+        };
+
+        let result = file.link(&pkg, "1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(result, Some("tool-alias".to_string()));
     }
 
     #[test]

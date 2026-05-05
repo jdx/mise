@@ -33,6 +33,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    fs,
     sync::Arc,
 };
 
@@ -41,6 +42,14 @@ pub struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AquaFileLink {
+    src: PathBuf,
+    dst: PathBuf,
+    hard: bool,
+    explicit_link: bool,
 }
 
 #[async_trait]
@@ -512,12 +521,12 @@ impl Backend for AquaBackend {
             .get_or_try_init_async(async || {
                 let pkg = self.package_with_options(tv, &[&tv.version]).await?;
 
-                let srcs = self.srcs(&pkg, tv)?;
+                let srcs = Self::srcs(&pkg, tv)?;
                 let paths = if srcs.is_empty() {
                     vec![install_path.clone()]
                 } else {
                     srcs.iter()
-                        .map(|(_, dst)| dst.parent().unwrap().to_path_buf())
+                        .map(|link| link.dst.parent().unwrap().to_path_buf())
                         .collect()
                 };
                 Ok(paths
@@ -2046,15 +2055,10 @@ impl AquaBackend {
             }
         }
 
-        let srcs = self.srcs(pkg, tv)?;
-        for (src, dst) in &srcs {
-            if src != dst && src.exists() && !dst.exists() {
-                if cfg!(windows) {
-                    file::copy(src, dst)?;
-                } else {
-                    let src = PathBuf::from(".").join(src.file_name().unwrap().to_str().unwrap());
-                    file::make_symlink(&src, dst)?;
-                }
+        let srcs = Self::srcs(pkg, tv)?;
+        for link in &srcs {
+            if link.src != link.dst && link.src.exists() && !link.dst.exists() {
+                Self::create_file_link(link)?;
             }
         }
 
@@ -2067,15 +2071,15 @@ impl AquaBackend {
 
     /// Creates a `.mise-bins` directory with symlinks only to the binaries defined in the aqua registry.
     /// This prevents bundled dependencies (like Python in aws-cli) from being exposed on PATH.
-    fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[(PathBuf, PathBuf)]) -> Result<()> {
+    fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[AquaFileLink]) -> Result<()> {
         let symlink_dir = tv.install_path().join(".mise-bins");
         file::create_dir_all(&symlink_dir)?;
 
-        for (_, dst) in srcs {
-            if let Some(bin_name) = dst.file_name() {
+        for link in srcs {
+            if let Some(bin_name) = link.dst.file_name() {
                 let symlink_path = symlink_dir.join(bin_name);
-                if dst.exists() && !symlink_path.exists() {
-                    file::make_symlink_or_copy(dst, &symlink_path)?;
+                if link.dst.exists() && !symlink_path.exists() {
+                    file::make_symlink_or_copy(&link.dst, &symlink_path)?;
                 }
             }
         }
@@ -2089,7 +2093,17 @@ impl AquaBackend {
             .is_some_and(|v| v == "true" || v == "1")
     }
 
-    fn srcs(&self, pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<(PathBuf, PathBuf)>> {
+    fn srcs(pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<AquaFileLink>> {
+        Self::srcs_for_platform(pkg, &tv.version, &tv.install_path(), os(), arch())
+    }
+
+    fn srcs_for_platform(
+        pkg: &AquaPackage,
+        version: &str,
+        install_path: &Path,
+        os: &str,
+        arch: &str,
+    ) -> Result<Vec<AquaFileLink>> {
         if pkg.files.is_empty() {
             let fallback_name = pkg
                 .name
@@ -2097,42 +2111,156 @@ impl AquaBackend {
                 .and_then(|n| n.split('/').next_back())
                 .unwrap_or(&pkg.repo_name);
 
-            let mut path = tv.install_path().join(fallback_name);
-            path = complete_windows_ext(path, pkg.complete_windows_ext, os());
+            let mut path = install_path.join(fallback_name);
+            path = complete_windows_ext(path, pkg.complete_windows_ext, os);
 
-            return Ok(vec![(path.clone(), path)]);
+            return Ok(vec![AquaFileLink {
+                src: path.clone(),
+                dst: path,
+                hard: false,
+                explicit_link: false,
+            }]);
         }
 
-        let files: Vec<(PathBuf, PathBuf)> = pkg
+        let files: Vec<AquaFileLink> = pkg
             .files
             .iter()
             .map(|f| {
-                let version = version_with_prefix(&tv.version, pkg.version_prefix.as_deref());
+                let version = version_with_prefix(version, pkg.version_prefix.as_deref());
                 let srcs = if pkg.version_prefix.is_some() {
-                    vec![f.src(pkg, version.as_ref(), os(), arch())?]
+                    vec![Self::file_link_for_version(
+                        f,
+                        pkg,
+                        version.as_ref(),
+                        install_path,
+                        os,
+                        arch,
+                    )?]
                 } else {
                     vec![
-                        f.src(pkg, &tv.version, os(), arch())?,
-                        f.src(pkg, &format!("v{}", tv.version), os(), arch())?,
+                        Self::file_link_for_version(f, pkg, version, install_path, os, arch)?,
+                        Self::file_link_for_version(
+                            f,
+                            pkg,
+                            &format!("v{version}"),
+                            install_path,
+                            os,
+                            arch,
+                        )?,
                     ]
                 };
-                Ok(srcs
-                    .into_iter()
-                    .flatten()
-                    .map(|src| tv.install_path().join(src))
-                    .map(|mut src| {
-                        let mut dst = src.parent().unwrap().join(f.name.as_str());
-                        src = complete_windows_ext(src, pkg.complete_windows_ext, os());
-                        dst = complete_windows_dst_ext(&src, dst, pkg.complete_windows_ext, os());
-                        (src, dst)
-                    }))
+                Ok(srcs.into_iter().flatten())
             })
             .flatten_ok()
             .collect::<Result<Vec<_>>>()?
             .into_iter()
-            .unique_by(|(src, _)| src.to_path_buf())
+            .unique_by(|link| (link.src.to_path_buf(), link.dst.to_path_buf()))
             .collect();
         Ok(files)
+    }
+
+    fn file_link_for_version(
+        f: &aqua_registry::AquaFile,
+        pkg: &AquaPackage,
+        version: &str,
+        install_path: &Path,
+        os: &str,
+        arch: &str,
+    ) -> Result<Option<AquaFileLink>> {
+        let explicit_link = f.link.is_some();
+        let src = match f.src(pkg, version, os, arch)? {
+            Some(src) => src,
+            None if explicit_link => f.name.clone(),
+            None => return Ok(None),
+        };
+        let link = f.link(pkg, version, os, arch)?;
+
+        let mut src = install_path.join(src);
+        let mut dst = src
+            .parent()
+            .wrap_err_with(|| format!("file source has no parent: {}", src.display()))?
+            .join(link.as_deref().unwrap_or(f.name.as_str()));
+        src = complete_windows_ext(src, pkg.complete_windows_ext, os);
+        dst = complete_windows_dst_ext(&src, dst, pkg.complete_windows_ext, os);
+
+        Ok(Some(AquaFileLink {
+            src,
+            dst,
+            hard: f.hard,
+            explicit_link,
+        }))
+    }
+
+    fn create_file_link(link: &AquaFileLink) -> Result<()> {
+        if let Some(parent) = link.dst.parent() {
+            file::create_dir_all(parent)?;
+        }
+
+        if link.hard || (cfg!(windows) && link.explicit_link) {
+            trace!("ln {} {}", link.src.display(), link.dst.display());
+            if link.dst.is_file() || link.dst.is_symlink() {
+                fs::remove_file(&link.dst)?;
+            }
+            fs::hard_link(&link.src, &link.dst).wrap_err_with(|| {
+                format!(
+                    "failed to hard link {} {}",
+                    link.src.display(),
+                    link.dst.display()
+                )
+            })?;
+            return Ok(());
+        }
+
+        if cfg!(windows) {
+            file::copy(&link.src, &link.dst)?;
+        } else {
+            let target = link
+                .dst
+                .parent()
+                .and_then(|parent| relative_path(parent, &link.src))
+                .unwrap_or_else(|| link.src.clone());
+            file::make_symlink(&target, &link.dst)?;
+        }
+        Ok(())
+    }
+}
+
+fn relative_path(from: &Path, to: &Path) -> Option<PathBuf> {
+    let from_components = from.components().collect_vec();
+    let to_components = to.components().collect_vec();
+    let common_len = from_components
+        .iter()
+        .zip(&to_components)
+        .take_while(|(from, to)| from == to)
+        .count();
+
+    if from_components[..common_len]
+        .iter()
+        .any(|component| matches!(component, std::path::Component::CurDir))
+    {
+        return None;
+    }
+
+    let mut result = PathBuf::new();
+    for component in &from_components[common_len..] {
+        match component {
+            std::path::Component::Normal(_) => result.push(".."),
+            std::path::Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    for component in &to_components[common_len..] {
+        match component {
+            std::path::Component::Normal(_) | std::path::Component::CurDir => {
+                result.push(component.as_os_str())
+            }
+            _ => return None,
+        }
+    }
+    if result.as_os_str().is_empty() {
+        Some(PathBuf::from("."))
+    } else {
+        Some(result)
     }
 }
 
@@ -2250,7 +2378,7 @@ pub fn is_install_time_option_key(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aqua_registry::AquaVar;
+    use aqua_registry::{AquaFile, AquaVar};
 
     fn aqua_var(name: &str, required: bool) -> AquaVar {
         AquaVar {
@@ -2442,6 +2570,73 @@ mod tests {
         assert!(is_install_time_option_key("vars.channel"));
         assert!(is_install_time_option_key("vars"));
         assert!(!is_install_time_option_key("symlink_bins"));
+    }
+
+    #[test]
+    fn test_srcs_support_file_link_with_default_src() {
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![AquaFile {
+            name: "mc".to_string(),
+            link: Some("mc.exe".to_string()),
+            ..Default::default()
+        }];
+        pkg.complete_windows_ext = false;
+
+        let links = AquaBackend::srcs_for_platform(
+            &pkg,
+            "RELEASE.2025-08-13T08-35-41Z",
+            Path::new("install"),
+            "windows",
+            "amd64",
+        )
+        .unwrap();
+
+        assert_eq!(
+            links,
+            vec![AquaFileLink {
+                src: PathBuf::from("install").join("mc"),
+                dst: PathBuf::from("install").join("mc.exe"),
+                hard: false,
+                explicit_link: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_srcs_support_hard_file_link() {
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![AquaFile {
+            name: "pnpm".to_string(),
+            src: Some("bin/pnpm".to_string()),
+            link: Some("pnpm-hard".to_string()),
+            hard: true,
+        }];
+
+        let links =
+            AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "linux", "amd64")
+                .unwrap();
+
+        assert_eq!(
+            links,
+            vec![AquaFileLink {
+                src: PathBuf::from("install").join("bin/pnpm"),
+                dst: PathBuf::from("install").join("bin/pnpm-hard"),
+                hard: true,
+                explicit_link: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_relative_path_between_link_and_source() {
+        assert_eq!(
+            relative_path(
+                Path::new("/tmp/install/bin/aliases"),
+                Path::new("/tmp/install/bin/tool"),
+            )
+            .unwrap(),
+            PathBuf::from("../tool")
+        );
     }
 
     #[test]
