@@ -161,6 +161,17 @@ impl DepsInstall {
             miseprintln!("  {} {}", marker, output.display());
         }
 
+        // Optional outputs (tracked but not required on first run)
+        let optional_outputs = provider.optional_outputs();
+        if !optional_outputs.is_empty() {
+            miseprintln!("Optional outputs:");
+            for output in &optional_outputs {
+                let exists = output.exists();
+                let marker = if exists { "+" } else { "-" };
+                miseprintln!("  {} {}", marker, output.display());
+            }
+        }
+
         // Command
         if let Ok(cmd) = provider.install_command() {
             miseprintln!("Command: {}", cmd.description);
@@ -200,6 +211,7 @@ impl DepsInstall {
             let outputs = provider
                 .outputs()
                 .iter()
+                .chain(provider.optional_outputs().iter())
                 .map(|p| p.display().to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
