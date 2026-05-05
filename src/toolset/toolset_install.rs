@@ -81,12 +81,12 @@ impl Toolset {
                 // Use config request options if available, falling back to backend arg opts.
                 // This ensures tool options like postinstall from mise.toml are preserved
                 // when installing with an explicit CLI version (e.g. `mise install tool@latest`).
-                let options = tvl
+                let config_options = tvl
                     .requests
                     .first()
                     .map(|r| r.options())
-                    .filter(|opts| !opts.is_empty())
-                    .unwrap_or_else(|| tvl.backend.opts());
+                    .filter(|opts| !opts.is_empty());
+                let options = tr.ba().opts_with_config(config_options);
                 if tr.options().is_empty() || tr.options() != options {
                     tr.set_options(options);
                 }
@@ -590,12 +590,19 @@ impl Toolset {
 /// cached answer is either correct or harmless, and refreshing is wasted
 /// network traffic. Users who want to pull the absolute latest matching a
 /// prefix can run `mise upgrade` or pin to `@latest`.
+///
+/// Skipped in `prefer_offline` mode (shims, hook-env, activate, etc.) because
+/// the versions host is disabled there, so a refresh would bypass the
+/// on-disk cache populated by an earlier non-prefer-offline command and fall
+/// through to a backend listing that often has far fewer versions (e.g. the
+/// GitHub releases listing only returns the most recent ~30), turning a
+/// previously-resolvable prefix query into "no versions found".
 fn should_refresh_remote_versions(
     tr: &ToolRequest,
     backend: &crate::backend::ABackend,
     opts: &ResolveOptions,
 ) -> bool {
-    if opts.refresh_remote_versions || opts.offline || Settings::get().offline() {
+    if opts.refresh_remote_versions || opts.offline || Settings::get().prefer_offline() {
         return false;
     }
     match tr {

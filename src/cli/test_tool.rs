@@ -60,10 +60,18 @@ impl TestTool {
             {
                 continue;
             }
-            let (cmd, expected) = if let Some(test) = &rt.test {
-                (test.0.to_string(), test.1.to_string())
+            let (cmd, expected, tools) = if let Some(test) = rt.test.as_ref() {
+                (
+                    test.cmd.to_string(),
+                    test.expected.to_string(),
+                    test.tools.iter().map(|tool| tool.to_string()).collect(),
+                )
             } else if self.include_non_defined {
-                (format!("{} --version", tool.short), "__TODO__".to_string())
+                (
+                    format!("{} --version", tool.short),
+                    "__TODO__".to_string(),
+                    vec![],
+                )
             } else {
                 continue;
             };
@@ -72,6 +80,7 @@ impl TestTool {
                 tool,
                 cmd,
                 expected,
+                tools,
             });
         }
 
@@ -135,7 +144,13 @@ impl TestTool {
                 let tool = target.tool.short.clone();
                 let start = std::time::Instant::now();
                 let result = match self
-                    .test(&config, &target.tool, &target.cmd, &target.expected)
+                    .test(
+                        &config,
+                        &target.tool,
+                        &target.cmd,
+                        &target.expected,
+                        &target.tools,
+                    )
                     .await
                 {
                     Ok(output) => TestToolResult {
@@ -337,6 +352,7 @@ impl TestTool {
         tool: &ToolArg,
         cmd: &str,
         expected: &str,
+        test_tools: &[String],
     ) -> Result<String> {
         let mut config = config.clone();
         let mut args = vec![tool.clone()];
@@ -346,6 +362,12 @@ impl TestTool {
                 .get_all_dependencies(false)?
                 .into_iter()
                 .map(|ba| ba.to_string().parse())
+                .collect::<Result<Vec<ToolArg>>>()?,
+        );
+        args.extend(
+            test_tools
+                .iter()
+                .map(|tool| tool.parse())
                 .collect::<Result<Vec<ToolArg>>>()?,
         );
         let mut ts = ToolsetBuilder::new()
@@ -444,6 +466,7 @@ struct TestToolTarget {
     tool: ToolArg,
     cmd: String,
     expected: String,
+    tools: Vec<String>,
 }
 
 struct TestToolResult {
