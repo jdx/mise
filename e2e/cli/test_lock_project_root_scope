@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+echo "=== Testing mise lock only targets configs from the current project root ==="
+rm -rf scope-root
+mkdir -p scope-root/app/.config
+
+cat >scope-root/mise.toml <<'EOF'
+[tools]
+"aqua:cli/cli" = "2.65.0"
+EOF
+
+cat >scope-root/app/mise.toml <<'EOF'
+[tools]
+"aqua:mikefarah/yq" = "4.44.6"
+EOF
+
+cat >scope-root/app/mise.local.toml <<'EOF'
+[tools]
+"aqua:BurntSushi/ripgrep" = "14.1.1"
+EOF
+
+cat >scope-root/app/mise.test.toml <<'EOF'
+[tools]
+"aqua:sharkdp/fd" = "10.2.0"
+EOF
+
+cat >scope-root/app/.config/mise.toml <<'EOF'
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+output=$(cd scope-root/app && env MISE_ENV=test mise lock --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" "mikefarah/yq"
+assert_contains "echo '$output'" "BurntSushi/ripgrep"
+assert_contains "echo '$output'" "sharkdp/fd"
+assert_contains "echo '$output'" "jqlang/jq"
+assert_contains "echo '$output'" ".config/mise.lock"
+assert_not_contains "echo '$output'" "cli/cli"
+
+echo "=== Testing monorepo lock scope follows the active config root ==="
+mkdir -p monorepo-root/packages/api
+
+cat >monorepo-root/mise.toml <<'EOF'
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[tools]
+"aqua:cli/cli" = "2.65.0"
+EOF
+
+cat >monorepo-root/packages/api/mise.toml <<'EOF'
+[tools]
+"aqua:mikefarah/yq" = "4.44.6"
+EOF
+
+output=$(cd monorepo-root/packages/api && env MISE_EXPERIMENTAL=1 mise lock --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" "mikefarah/yq"
+assert_not_contains "echo '$output'" "cli/cli"
+
+output=$(cd monorepo-root && env MISE_EXPERIMENTAL=1 mise lock --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" "cli/cli"
+assert_not_contains "echo '$output'" "mikefarah/yq"
+
+echo "=== Testing mise lock --global only targets the global config ==="
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+"aqua:cli/cli" = "2.65.0"
+EOF
+mkdir -p system-config
+cat >system-config/config.toml <<'EOF'
+[tools]
+"aqua:sharkdp/bat" = "0.25.0"
+EOF
+export MISE_SYSTEM_CONFIG_FILE="$PWD/system-config/config.toml"
+
+output=$(cd scope-root/app && mise lock --global --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" "cli/cli"
+assert_contains "echo '$output'" "sharkdp/bat"
+assert_not_contains "echo '$output'" "mikefarah/yq"
+assert_not_contains "echo '$output'" "jqlang/jq"
+
+mkdir -p global-only
+output=$(cd global-only && mise lock --global --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" "cli/cli"
+assert_contains "echo '$output'" "sharkdp/bat"
+
+echo "=== Testing scoped explicit locks do not bump parent configs ==="
+rm -rf bump-root
+mkdir -p bump-root/app
+
+cat >bump-root/mise.toml <<'EOF'
+[tools]
+"aqua:cli/cli" = "1"
+EOF
+
+cat >bump-root/app/mise.toml <<'EOF'
+[tools]
+"aqua:mikefarah/yq" = "3"
+EOF
+
+output=$(cd bump-root/app && mise lock "aqua:mikefarah/yq@4.44.6" --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" "Would update aqua:mikefarah/yq from 3 to 4"
+assert_contains "echo '$output'" "app/mise.toml"
+assert_not_contains "echo '$output'" "cli/cli"
+
+output=$(cd bump-root/app && mise lock "aqua:cli/cli@2.65.0" --platform linux-x64 --dry-run 2>&1)
+assert_not_contains "echo '$output'" "Would update"
+assert_not_contains "echo '$output'" "cli/cli"
+
+echo "=== Cleanup ==="
+rm -rf scope-root monorepo-root bump-root global-only system-config "$MISE_CONFIG_DIR/config.toml"
+
+echo "mise lock project root scope tests passed!"

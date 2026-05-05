@@ -1747,13 +1747,21 @@ pub async fn rebuild_shims_and_runtime_symlinks(
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
     });
+    // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
+    // current-platform entries — auto-lock uses this to tell a curated lockfile
+    // (existing entries are authoritative) from a fresh one (expand to common).
+    let pre_install_platforms = if new_versions.is_empty() {
+        Default::default()
+    } else {
+        lockfile::snapshot_pre_install_platforms(new_versions)
+    };
     measure!("updating lockfiles", {
         lockfile::update_lockfiles(config, ts, new_versions)
             .wrap_err("failed to update lockfiles")?;
     });
     if !new_versions.is_empty() {
         measure!("auto-locking platforms", {
-            lockfile::auto_lock_new_versions(config, new_versions)
+            lockfile::auto_lock_new_versions(config, new_versions, &pre_install_platforms)
                 .await
                 .wrap_err("failed to auto-lock platforms for new versions")?;
         });
