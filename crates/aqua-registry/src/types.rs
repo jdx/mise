@@ -45,6 +45,7 @@ pub struct AquaPackage {
     #[serde(skip)]
     version_filter_expr: Option<Program>,
     pub version_source: Option<String>,
+    pub cosign: Option<AquaCosign>,
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
@@ -213,6 +214,7 @@ impl Default for AquaPackage {
             version_filter: None,
             version_filter_expr: None,
             version_source: None,
+            cosign: None,
             checksum: None,
             slsa_provenance: None,
             minisign: None,
@@ -659,6 +661,17 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
             }
             None => {
                 orig.checksum = Some(avo_checksum.clone());
+            }
+        }
+    }
+
+    if let Some(avo_cosign) = &avo.cosign {
+        match &mut orig.cosign {
+            Some(cosign) => {
+                cosign.merge(avo_cosign.clone());
+            }
+            None => {
+                orig.cosign = Some(avo_cosign.clone());
             }
         }
     }
@@ -1257,5 +1270,54 @@ mod tests {
             err.to_string().contains("aqua var name is empty"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn test_top_level_cosign_is_deserialized() {
+        let yml = r#"
+packages:
+  - cosign:
+      bundle:
+        type: github_release
+        asset: "{{.Asset}}.sigstore.json"
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(pkg.cosign.is_some());
+        assert!(pkg.checksum.is_none());
+    }
+
+    #[test]
+    fn test_top_level_cosign_is_merged_from_version_override() {
+        let yml = r#"
+packages:
+  - asset: tool-{{.Version}}-{{.OS}}-{{.Arch}}
+    format: raw
+    cosign:
+      bundle:
+        type: github_release
+        asset: "{{.Asset}}.sigstore.json"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        cosign:
+          key:
+            type: github_release
+            asset: cosign.pub
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_version(&["v1.0.0"], "linux", "amd64");
+        let cosign = pkg.cosign.unwrap();
+        assert!(cosign.bundle.is_some());
+        assert!(cosign.key.is_some());
     }
 }

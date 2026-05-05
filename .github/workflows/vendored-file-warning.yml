@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "crates/aqua-registry/aqua-registry/**"
+      - "crates/vfox/embedded-plugins/**"
 
 permissions: {}
 
@@ -23,5 +24,9 @@ jobs:
 
           The `registry/*.toml` files are fine to add here, but the backend should
           reference the package after it's been accepted upstream.
+
+          The vfox plugins under `crates/vfox/embedded-plugins/` are also vendored
+          from upstream repositories. Please submit changes to the upstream plugins
+          instead of modifying them directly in this repo.
           EOF
           exit 1

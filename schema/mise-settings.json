@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mise.en.dev/schema/mise-settings.json",
   "title": "Mise Settings Schema",
   "description": "JSON schema for mise settings.toml configuration file",
@@ -84,9 +84,15 @@
                 "properties": {
                   "value": {
                     "oneOf": [
-                      { "type": "string" },
-                      { "type": "boolean" },
-                      { "type": "integer" }
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "integer"
+                      }
                     ],
                     "description": "The enum value"
                   },
