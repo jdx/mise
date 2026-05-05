@@ -1,2 +1,2 @@
 backends = ["aqua:pypa/pipx", "asdf:mise-plugins/mise-pipx"]
-test = { cmd = "pipx --version", expected = "{{version}}" }
+test = { cmd = "pipx --version", expected = "{{version}}", tools = ["python"] }

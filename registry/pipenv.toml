@@ -1,3 +1,5 @@
 backends = ["vfox:mise-plugins/vfox-pipenv", "pipx:pipenv"]
 description = "Python Development Workflow for Humans"
-test = { cmd = "pipenv --version", expected = "pipenv, version {{version}}" }
+test = { cmd = "pipenv --version", expected = "pipenv, version {{version}}", tools = [
+  "python",
+] }
