@@ -1,4 +1,3 @@
-use crate::backend::SecurityFeature;
 use crate::backend::VersionInfo;
 use crate::backend::asset_matcher::{self, Asset, AssetPicker, ChecksumFetcher};
 use crate::backend::backend_type::BackendType;
@@ -7,6 +6,7 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_platform_key_for_target,
     template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
 };
+use crate::backend::{SecurityFeature, runtime_path_for_install_path};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
 use crate::file;
@@ -354,10 +354,14 @@ impl Backend for UnifiedGitBackend {
     ) -> Result<Vec<std::path::PathBuf>> {
         let mise_bins_dir = tv.install_path().join(".mise-bins");
         if self.get_filter_bins(tv).is_some() || mise_bins_dir.is_dir() {
-            return Ok(vec![mise_bins_dir]);
+            return Ok(vec![runtime_path_for_install_path(tv, mise_bins_dir)]);
         }
 
-        self.discover_bin_paths(tv)
+        Ok(self
+            .discover_bin_paths(tv)?
+            .into_iter()
+            .map(|path| runtime_path_for_install_path(tv, path))
+            .collect())
     }
 
     fn resolve_lockfile_options(
