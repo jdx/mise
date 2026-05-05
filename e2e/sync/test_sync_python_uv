@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
 export MISE_PYTHON_GITHUB_ATTESTATIONS=0
-assert "mise use -g uv python@3.11.3"
+# Pinned: uv 0.11.9 was manually published and lacks SLSA attestations
+# (astral-sh/uv#19278). Bump once 0.11.10 ships with attestations restored.
+assert "mise use -g uv@0.11.8 python@3.11.3"
 assert "mise x -- uv python install 3.11.1"
 export UV_PYTHON_DOWNLOADS=never
 assert "mise sync python --uv"
