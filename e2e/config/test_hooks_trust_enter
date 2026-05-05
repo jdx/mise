@@ -39,3 +39,35 @@ cd child || exit 1
 child_trust_output="$(mise trust 2>&1)"
 [[ $child_trust_output == *"CHILD-ENTER"* ]] || fail "expected child enter hook to run"
 [[ $child_trust_output != *"PARENT-ENTER"* ]] || fail "parent enter hook should not re-run"
+
+cd ../.. || exit 1
+mkdir -p guarded/child
+cat <<'EOF' >guarded/mise.toml
+[hooks]
+enter = 'echo GUARDED-PARENT-ENTER'
+EOF
+cat <<'EOF' >guarded/child/mise.toml
+[hooks]
+enter = 'echo GUARDED-CHILD-ENTER'
+EOF
+
+cd guarded/child || exit 1
+guarded_child_output="$(mise trust mise.toml 2>&1)"
+[[ $guarded_child_output != *"GUARDED-PARENT-ENTER"* ]] || fail "parent hook should not run with untrusted parent"
+[[ $guarded_child_output != *"GUARDED-CHILD-ENTER"* ]] || fail "child hook should wait for untrusted parent"
+
+cd ../.. || exit 1
+mkdir -p trust_all/child
+cat <<'EOF' >trust_all/mise.toml
+[hooks]
+enter = 'echo ALL-PARENT-ENTER'
+EOF
+cat <<'EOF' >trust_all/child/mise.toml
+[hooks]
+enter = 'echo ALL-CHILD-ENTER'
+EOF
+
+cd trust_all/child || exit 1
+trust_all_output="$(mise trust --all 2>&1)"
+[[ $trust_all_output == *"ALL-PARENT-ENTER"* ]] || fail "expected parent enter hook with --all"
+[[ $trust_all_output == *"ALL-CHILD-ENTER"* ]] || fail "expected child enter hook with --all"
