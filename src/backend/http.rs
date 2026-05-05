@@ -564,11 +564,7 @@ impl HttpBackend {
 
     /// Fetch versions from version_list_url if configured
     async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        let opts = if !self.ba.opts().contains_key("version_list_url") {
-            config.get_tool_opts(&self.ba).await?.unwrap_or_default()
-        } else {
-            self.ba.opts()
-        };
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
 
         let url = match opts.get("version_list_url") {
             Some(url) => url.to_string(),

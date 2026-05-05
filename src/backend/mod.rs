@@ -245,6 +245,12 @@ pub fn list() -> BackendList {
 }
 
 pub fn get(ba: &BackendArg) -> Option<ABackend> {
+    // Inline opts are command-scoped, so a short-name cache hit must not drop
+    // the caller's BackendArg options.
+    if ba.explicit_opts().is_some() {
+        return arg_to_backend(ba.clone());
+    }
+
     let mut tools = TOOLS.lock().unwrap();
     let tools_ = tools.as_ref().unwrap();
     if let Some(backend) = tools_.get(&ba.short) {
@@ -780,6 +786,7 @@ pub trait Backend: Debug + Send + Sync {
         let mut remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
         let id = self.id();
+        let opts = config.get_tool_opts_with_overrides(&ba).await?;
 
         // Only a subset of backends benefit from the versions host cache —
         // those whose upstream listing is rate-limited (github API) or not
@@ -791,12 +798,11 @@ pub trait Backend: Debug + Send + Sync {
         // setting can still disable the host globally, but cannot re-enable
         // it for backends that are not on this allowlist.
         let backend_type = self.get_type();
-        let has_version_list_url = matches!(backend_type, BackendType::Http | BackendType::S3)
-            && (ba.opts().contains_key("version_list_url")
-                || config
-                    .get_tool_opts(&ba)
-                    .await?
-                    .is_some_and(|o| o.contains_key("version_list_url")));
+        let has_version_list_url = if matches!(backend_type, BackendType::Http | BackendType::S3) {
+            opts.contains_key("version_list_url")
+        } else {
+            false
+        };
         let versions_host_applies = match backend_type {
             BackendType::Github
             | BackendType::Gitlab
@@ -861,10 +867,6 @@ pub trait Backend: Debug + Send + Sync {
         // that honor `prerelease`. When the current opts don't opt in, drop
         // entries with `prerelease = true` before returning so flipping the
         // tool option takes effect without invalidating the cache.
-        let opts = config
-            .get_tool_opts(&ba)
-            .await?
-            .unwrap_or_else(|| ba.opts());
         let want_prereleases = include_prereleases(&opts);
 
         if Settings::get().offline() {
@@ -1110,10 +1112,7 @@ pub trait Backend: Debug + Send + Sync {
         query: &str,
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
-        let opts = config
-            .get_tool_opts(self.ba())
-            .await?
-            .unwrap_or_else(|| self.ba().opts());
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !include_prereleases(&opts);
         Ok(self.fuzzy_match_filter(versions, query, filter))
     }
@@ -1148,10 +1147,7 @@ pub trait Backend: Debug + Send + Sync {
                     .await?
             }
         };
-        let opts = config
-            .get_tool_opts(self.ba())
-            .await?
-            .unwrap_or_else(|| self.ba().opts());
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !include_prereleases(&opts);
         Ok(self.fuzzy_match_filter(versions, query, filter))
     }
@@ -2091,16 +2087,8 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
         return Ok(before_date);
     }
 
-    let backend_opts = backend.ba().opts();
-    if let Some(before) = backend_opts.minimum_release_age() {
-        return resolve_before_date(None, Some(before));
-    }
-
-    let config_install_before = config
-        .get_tool_opts(backend.ba())
-        .await?
-        .and_then(|opts| opts.minimum_release_age().map(str::to_string));
-    resolve_before_date(None, config_install_before.as_deref())
+    let opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
+    resolve_before_date(None, opts.minimum_release_age())
 }
 
 #[cfg(test)]
