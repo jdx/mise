@@ -314,8 +314,9 @@ impl BackendArg {
         }
 
         let full = self.full();
-        let backend = full.split(':').next().unwrap();
-        if let Ok(backend_type) = backend.parse() {
+        if let Some((backend, _)) = full.split_once(':')
+            && let Ok(backend_type) = backend.parse()
+        {
             return backend_type;
         }
         if config::is_loaded() && Config::get_().get_repo_url(&self.short).is_some() {
@@ -646,6 +647,27 @@ mod tests {
             "vfox:version-fox/vfox-nodejs",
             "version-fox/vfox-nodejs",
         );
+    }
+
+    #[tokio::test]
+    async fn test_bare_package_backend_names_are_not_implicit_tools() {
+        let _config = Config::get().await.unwrap();
+
+        for name in ["cargo", "gem"] {
+            let fa: BackendArg = name.into();
+            assert_str_eq!(name, fa.full());
+            assert_eq!(BackendType::Unknown, fa.backend_type());
+        }
+
+        let fa: BackendArg = "cargo:ripgrep".into();
+        assert_eq!(BackendType::Cargo, fa.backend_type());
+
+        let fa: BackendArg = "gem:bashly".into();
+        assert_eq!(BackendType::Gem, fa.backend_type());
+
+        let fa: BackendArg = "npm".into();
+        assert_str_eq!("npm:npm", fa.full());
+        assert_eq!(BackendType::Npm, fa.backend_type());
     }
 
     #[tokio::test]
