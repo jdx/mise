@@ -54,7 +54,7 @@ function buildElement(key: string, props: Props): Element {
     ListPath: "string[]",
     SetString: "string[]",
     "IndexMap<String, String>": "object",
-    BoolOrString: ["boolean", "string"],
+    BoolOrString: "__bool_or_string__",
   };
   const type = props.type ? typeMap[props.type] : undefined;
   if (!type) {
@@ -91,6 +91,16 @@ function buildElement(key: string, props: Props): Element {
     element.additionalProperties = {
       type: "string",
     };
+  }
+
+  // BoolOrString: use oneOf instead of union type array for AJV strictTypes
+  if (type === "__bool_or_string__") {
+    delete (element as Record<string, unknown>).type;
+    const oneOfTypes: Array<{ type: string }> = [
+      { type: "boolean" },
+      { type: "string" },
+    ];
+    (element as Record<string, unknown>).oneOf = oneOfTypes;
   }
 
   return element;

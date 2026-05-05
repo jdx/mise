@@ -1162,28 +1162,71 @@ fn check_provenance_regression(
     (regressing, errors)
 }
 
-/// Determine target platforms using an already-loaded lockfile (used by auto-lock).
-/// Returns all common platforms + current platform + any existing platforms in the lockfile.
-fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Result<Vec<Platform>> {
-    // If lockfile_platforms setting is configured, use it as the authoritative set
+/// Snapshot the platform keys present in each lockfile that the upcoming install run
+/// will touch. Must be called BEFORE `update_lockfiles` writes any current-platform
+/// entries — the snapshot is what lets `auto_lock_new_versions` tell a user-curated
+/// lockfile (existing entries are authoritative) apart from a fresh one whose only
+/// current-platform entry was just added by this install.
+pub fn snapshot_pre_install_platforms(
+    new_versions: &[ToolVersion],
+) -> HashMap<PathBuf, BTreeSet<String>> {
+    let mut result: HashMap<PathBuf, BTreeSet<String>> = HashMap::new();
+    for tv in new_versions {
+        if !tv.request.source().is_mise_toml() {
+            continue;
+        }
+        let Some(source_path) = tv.request.source().path() else {
+            continue;
+        };
+        let (lockfile_path, _) = lockfile_path_for_config(source_path);
+        if result.contains_key(&lockfile_path) {
+            continue;
+        }
+        let keys = if lockfile_path.exists() {
+            Lockfile::read(&lockfile_path)
+                .map(|lf| lf.all_platform_keys())
+                .unwrap_or_default()
+        } else {
+            BTreeSet::new()
+        };
+        result.insert(lockfile_path, keys);
+    }
+    result
+}
+
+/// Determine target platforms for auto-lock from the pre-install lockfile snapshot.
+///
+/// If the lockfile had platform entries before this install run, those are authoritative
+/// (plus the current platform). Otherwise — the lockfile was fresh — fall back to the
+/// common platform set so a brand-new lockfile gets cross-platform-populated. The
+/// `lockfile_platforms` setting overrides both paths.
+fn determine_target_platforms_from_lockfile(
+    pre_install_keys: &BTreeSet<String>,
+) -> Result<Vec<Platform>> {
     if let Some(configured) = Settings::get().lockfile_platforms()? {
         let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
         platforms.insert(Platform::current());
         return Ok(platforms.into_iter().collect());
     }
 
-    // Default: all common platforms + current + existing lockfile platforms
-    let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
-    platforms.insert(Platform::current());
-    if let Some(lockfile) = lockfile {
-        for platform_key in lockfile.all_platform_keys() {
-            if let Ok(p) = Platform::parse(&platform_key)
+    if !pre_install_keys.is_empty() {
+        let mut platforms: BTreeSet<Platform> = BTreeSet::new();
+        for platform_key in pre_install_keys {
+            if let Ok(p) = Platform::parse(platform_key)
                 && p.validate().is_ok()
             {
                 platforms.insert(p);
             }
         }
+        if !platforms.is_empty() {
+            platforms.insert(Platform::current());
+            return Ok(platforms.into_iter().collect());
+        }
     }
+
+    // Fresh lockfile (or no parseable keys) — populate common defaults + current.
+    let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
+    platforms.insert(Platform::current());
     Ok(platforms.into_iter().collect())
 }
 
@@ -1223,7 +1266,11 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform
 /// After installing new tool versions, resolve checksums/URLs for all common platforms
 /// so the lockfile is complete and doesn't change when other developers on different
 /// platforms run `mise install`.
-pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersion]) -> Result<()> {
+pub async fn auto_lock_new_versions(
+    _config: &Config,
+    new_versions: &[ToolVersion],
+    pre_install_platforms: &HashMap<PathBuf, BTreeSet<String>>,
+) -> Result<()> {
     if !Settings::get().lockfile_enabled() || Settings::get().locked || new_versions.is_empty() {
         return Ok(());
     }
@@ -1247,6 +1294,7 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
     let jobs = settings.jobs;
     let mut all_provenance_errors: Vec<String> = Vec::new();
 
+    let empty_keys: BTreeSet<String> = BTreeSet::new();
     for (lockfile_path, versions) in versions_by_lockfile {
         // Only update existing lockfiles (consistent with update_lockfiles)
         if !lockfile_path.exists() {
@@ -1256,7 +1304,10 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         let mut lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
-        let target_platforms = determine_target_platforms_from_lockfile(Some(&lockfile))?;
+        let pre_install_keys = pre_install_platforms
+            .get(&lockfile_path)
+            .unwrap_or(&empty_keys);
+        let target_platforms = determine_target_platforms_from_lockfile(pre_install_keys)?;
 
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
@@ -2829,6 +2880,65 @@ backend = "conda:jq"
                 );
             }
             other => panic!("expected Slsa provenance with URL, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_determine_target_platforms_respects_pre_install_keys() {
+        // Regression: auto-lock must not silently re-add platforms (e.g. macos-x64) that
+        // a user has dropped. The pre-install snapshot is authoritative when non-empty.
+        let pre: BTreeSet<String> = ["linux-arm64", "windows-x64"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let platforms = determine_target_platforms_from_lockfile(&pre).unwrap();
+        let keys: BTreeSet<String> = platforms.iter().map(|p| p.to_key()).collect();
+
+        assert!(keys.contains("linux-arm64"));
+        assert!(keys.contains("windows-x64"));
+        assert!(keys.contains(&Platform::current().to_key()));
+        // macos-x64 / macos-arm64 / linux-x64-musl etc. must not leak in unless current.
+        for extra in ["macos-x64", "macos-arm64"] {
+            if extra != Platform::current().to_key() {
+                assert!(
+                    !keys.contains(extra),
+                    "{extra} leaked into target platforms: {keys:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_determine_target_platforms_one_platform_lockfile_is_authoritative() {
+        // A user can intentionally maintain a single-platform lockfile. As long as the
+        // pre-install snapshot was non-empty, that intent must be respected — even if
+        // the only entry happens to be the current platform.
+        let current = Platform::current().to_key();
+        let pre: BTreeSet<String> = std::iter::once(current.clone()).collect();
+
+        let platforms = determine_target_platforms_from_lockfile(&pre).unwrap();
+        let keys: BTreeSet<String> = platforms.iter().map(|p| p.to_key()).collect();
+
+        assert_eq!(keys.len(), 1, "expected only {current}, got {keys:?}");
+        assert!(keys.contains(&current));
+    }
+
+    #[test]
+    fn test_determine_target_platforms_expands_for_fresh_lockfile() {
+        // A fresh lockfile (no entries before this install) must expand to the common
+        // platform set so first-install gets cross-platform-locked.
+        let pre: BTreeSet<String> = BTreeSet::new();
+
+        let platforms = determine_target_platforms_from_lockfile(&pre).unwrap();
+        let keys: BTreeSet<String> = platforms.iter().map(|p| p.to_key()).collect();
+
+        for common in Platform::common_platforms() {
+            assert!(
+                keys.contains(&common.to_key()),
+                "{} missing from fresh-lockfile target set: {keys:?}",
+                common.to_key()
+            );
         }
     }
 }
