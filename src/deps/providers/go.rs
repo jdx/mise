@@ -32,14 +32,14 @@ impl DepsProvider for GoDepsProvider {
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        let root = self.base.config_root();
-        // Go downloads modules to GOPATH/pkg/mod, but we can check vendor/ if used
-        let vendor = root.join("vendor");
+        // Go downloads modules to GOPATH/pkg/mod by default, leaving nothing in
+        // the project tree to check. Only treat `vendor/` as an output when the
+        // project is vendored; otherwise fall back to source-hash freshness.
+        let vendor = self.base.config_root().join("vendor");
         if vendor.exists() {
             vec![vendor]
         } else {
-            // go.sum gets updated after go mod download completes
-            vec![root.join("go.sum")]
+            vec![]
         }
     }
 

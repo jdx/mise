@@ -161,22 +161,17 @@ assert_contains "mise deps --dry-run 2>&1" "aube"
 
 # Test go provider
 rm -f aube-lock.yaml
-cat >go.sum <<'EOF'
-github.com/foo/bar v1.0.0 h1:abc
-EOF
 cat >go.mod <<'EOF'
 module test
 go 1.21
 EOF
-# Ensure go.sum (output) is older than go.mod (source) to trigger staleness
-touch -t 202301010000 go.sum
 
 cat >mise.toml <<'EOF'
 [deps.go]
 EOF
 
 assert_contains "mise deps --list" "go"
-assert_contains "mise deps --list" "go.sum"
+assert_contains "mise deps --list" "go.mod"
 assert_contains "mise deps --dry-run 2>&1" "go"
 
 # Test pip provider
@@ -327,6 +322,32 @@ assert_contains "mise deps --dry-run 2>&1" "requirements.txt changed"
 # Clean up
 rm -rf .venv requirements.txt .mise
 rm -f composer.lock composer.json package.json mise.toml schema.graphql
+
+# Test that providers with no declared outputs fall through to hash-based
+# freshness instead of being perpetually stale (regression for #9585: bundler,
+# pip, go, poetry, uv all return empty outputs() when their install command
+# writes outside the project tree).
+cat >mise.toml <<'EOF'
+[deps.no_outputs]
+sources = ["sentinel.txt"]
+run = "echo NO_OUTPUTS_RAN"
+EOF
+
+echo "first" >sentinel.txt
+
+# First run: no stored state → stale, runs.
+assert_contains "mise deps --only no_outputs 2>&1" "Installed: no_outputs"
+
+# Second run: state stored, source unchanged → fresh (no perpetual re-run).
+assert_contains "mise deps --only no_outputs 2>&1" "up to date"
+assert_not_contains "mise deps --dry-run 2>&1" "no_outputs"
+
+# Source changes → stale again.
+echo "second" >sentinel.txt
+assert_contains "mise deps --dry-run 2>&1" "sentinel.txt changed"
+assert_contains "mise deps --only no_outputs 2>&1" "Installed: no_outputs"
+
+rm -rf sentinel.txt mise.toml .mise
 
 # Test --explain flag
 cat >mise.toml <<'EOF'

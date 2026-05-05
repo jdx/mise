@@ -652,27 +652,33 @@ impl DepsEngine {
     /// Uses blake3 content hashing with persistent state. On first run (no stored
     /// hashes), the provider is always considered stale. Session-based stale
     /// tracking (venv auto-creation) is always checked first.
+    ///
+    /// When a provider returns no outputs, the existence check is skipped and the
+    /// hash check decides freshness on its own. This lets providers whose install
+    /// command writes outside the project tree (e.g. `bundle install` to the
+    /// system gem path, `pip install` without a virtualenv) avoid being perpetually
+    /// stale.
     pub fn check_freshness(&self, provider: &dyn DepsProvider) -> Result<FreshnessResult> {
         let sources = provider.sources();
         let outputs = provider.outputs();
 
-        if outputs.is_empty() {
-            return Ok(FreshnessResult::NoOutputs);
-        }
-
-        // Check if any output was created this session (before deps ran)
-        for output in &outputs {
-            if super::is_output_stale(output) {
-                return Ok(FreshnessResult::Stale(
-                    "output created this session".to_string(),
-                ));
+        // Output-based checks only apply when the provider declares outputs.
+        // Empty outputs fall through to the hash-based check below.
+        if !outputs.is_empty() {
+            // Check if any output was created this session (before deps ran)
+            for output in &outputs {
+                if super::is_output_stale(output) {
+                    return Ok(FreshnessResult::Stale(
+                        "output created this session".to_string(),
+                    ));
+                }
             }
-        }
 
-        // Check if any output is missing
-        for output in &outputs {
-            if !output.exists() {
-                return Ok(FreshnessResult::OutputsMissing);
+            // Check if any output is missing
+            for output in &outputs {
+                if !output.exists() {
+                    return Ok(FreshnessResult::OutputsMissing);
+                }
             }
         }
 

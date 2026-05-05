@@ -22,8 +22,6 @@ pub mod state;
 pub enum FreshnessResult {
     /// Outputs are up to date with sources
     Fresh,
-    /// Provider has no outputs defined, always run to be safe
-    NoOutputs,
     /// One or more output paths don't exist
     OutputsMissing,
     /// Sources have changed since last successful run
@@ -44,7 +42,6 @@ impl FreshnessResult {
     pub fn reason(&self) -> &str {
         match self {
             FreshnessResult::Fresh => "outputs are up to date",
-            FreshnessResult::NoOutputs => "no outputs defined",
             FreshnessResult::OutputsMissing => "outputs missing",
             FreshnessResult::Stale(reason) => reason,
             FreshnessResult::NoSources => "no sources to check",
