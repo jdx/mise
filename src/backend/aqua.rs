@@ -6,7 +6,6 @@ use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
-use crate::duration::parse_into_timestamp;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -23,16 +22,12 @@ use crate::{
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
-use crate::{
-    backend::{Backend, include_prereleases, strict_metadata},
-    config::Config,
-};
+use crate::{backend::Backend, backend::strict_metadata, config::Config};
 use crate::{file, github, minisign};
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use jiff::Timestamp;
 use regex::Regex;
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -280,25 +275,8 @@ impl Backend for AquaBackend {
         Ok(versions)
     }
 
-    async fn latest_version_with_refresh(
-        &self,
-        config: &Arc<Config>,
-        query: Option<String>,
-        before_date: Option<Timestamp>,
-        refresh: bool,
-    ) -> Result<Option<String>> {
-        let before_date =
-            crate::backend::effective_latest_before_date(self, config, before_date).await?;
-        let resolved_query = query.as_deref().unwrap_or("latest");
-        if resolved_query == "latest"
-            && let Some(version) = self
-                .latest_marked_release_version(config, before_date)
-                .await?
-        {
-            return Ok(Some(version));
-        }
-        self.latest_version_for_query(config, resolved_query, before_date, refresh)
-            .await
+    async fn latest_stable_version(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        self.latest_marked_release_version().await
     }
 
     async fn install_version_(
@@ -1292,11 +1270,7 @@ impl AquaBackend {
         }
     }
 
-    async fn latest_marked_release_version(
-        &self,
-        config: &Arc<Config>,
-        before_date: Option<Timestamp>,
-    ) -> Result<Option<String>> {
+    async fn latest_marked_release_version(&self) -> Result<Option<String>> {
         if Settings::get().offline() {
             trace!("Skipping latest stable version due to offline mode");
             return Ok(None);
@@ -1322,11 +1296,6 @@ impl AquaBackend {
             return Ok(None);
         }
 
-        let opts = config
-            .get_tool_opts(&self.ba)
-            .await?
-            .unwrap_or_else(|| self.ba.opts());
-        let want_prereleases = include_prereleases(&opts);
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let release = match github::get_release(&repo, "latest").await {
             Ok(release) => release,
@@ -1339,30 +1308,11 @@ impl AquaBackend {
             }
         };
 
-        if !created_at_allowed_by_before_date(&release.created_at, before_date) {
-            debug!(
-                "Latest GitHub release for aqua package {} ({}) is excluded by before_date; falling back to chronological latest",
-                self.id, release.tag_name
-            );
-            return Ok(None);
-        }
-
-        // GitHub's latest-release endpoint cannot return a draft or prerelease, so prerelease
-        // handling here only needs to inspect the normalized version string.
         match self
             .installable_version_from_tag(&pkg, &release.tag_name)
             .await
         {
-            Ok(Some(version)) if version_allowed_by_prerelease_opts(&version, want_prereleases) => {
-                Ok(Some(version))
-            }
-            Ok(Some(version)) => {
-                debug!(
-                    "Latest GitHub release for aqua package {} ({version}) is excluded by prerelease opts; falling back to chronological latest",
-                    self.id
-                );
-                Ok(None)
-            }
+            Ok(Some(version)) => Ok(Some(version)),
             Ok(None) => Ok(None),
             Err(e) => {
                 debug!(
@@ -2516,23 +2466,6 @@ fn version_from_tag(pkg: &AquaPackage, tag: &str) -> Result<Option<String>> {
     Ok(Some(version.to_string()))
 }
 
-fn version_allowed_by_prerelease_opts(version: &str, want_prereleases: bool) -> bool {
-    want_prereleases || !VERSION_REGEX.is_match(version)
-}
-
-fn created_at_allowed_by_before_date(created_at: &str, before_date: Option<Timestamp>) -> bool {
-    let Some(before) = before_date else {
-        return true;
-    };
-    match parse_into_timestamp(created_at) {
-        Ok(created) => created < before,
-        Err(_) => {
-            trace!("Failed to parse timestamp: {}", created_at);
-            true
-        }
-    }
-}
-
 fn package_has_asset(pkg: &AquaPackage) -> bool {
     !pkg.no_asset && pkg.error_message.is_none()
 }
@@ -2795,35 +2728,6 @@ mod lock_candidate_tests {
             Some("1.2.3".to_string())
         );
         assert_eq!(version_from_tag(&pkg, "other-1.2.3").unwrap(), None);
-    }
-
-    #[test]
-    fn test_version_allowed_by_prerelease_opts() {
-        assert!(version_allowed_by_prerelease_opts("1.2.3", false));
-        assert!(!version_allowed_by_prerelease_opts("1.2.3-rc.1", false));
-        assert!(version_allowed_by_prerelease_opts("1.2.3-rc.1", true));
-    }
-
-    #[test]
-    fn test_created_at_allowed_by_before_date() {
-        let before = "2024-01-02T00:00:00Z".parse().unwrap();
-
-        assert!(created_at_allowed_by_before_date(
-            "2024-01-01T00:00:00Z",
-            Some(before)
-        ));
-        assert!(!created_at_allowed_by_before_date(
-            "2024-01-03T00:00:00Z",
-            Some(before)
-        ));
-        assert!(created_at_allowed_by_before_date(
-            "not-a-timestamp",
-            Some(before)
-        ));
-        assert!(created_at_allowed_by_before_date(
-            "2024-01-03T00:00:00Z",
-            None
-        ));
     }
 
     #[test]

@@ -17,6 +17,7 @@ use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
+use crate::duration::parse_into_timestamp;
 use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
 use crate::install_before::resolve_before_date;
 use crate::install_context::InstallContext;
@@ -955,8 +956,7 @@ pub trait Backend: Debug + Send + Sync {
     /// Backend-specific fast path for the absolute latest stable version.
     ///
     /// Do not call this from CLI/toolset code. Use `latest_version` instead so
-    /// `minimum_release_age` / `--before` cutoffs are resolved before this fast path
-    /// is used.
+    /// `minimum_release_age` / `--before` cutoffs are handled around this fast path.
     ///
     /// Return `Ok(None)` when the backend does not have a fast path result.
     /// `latest_version` centrally falls back to the shared version-list path,
@@ -1194,11 +1194,11 @@ pub trait Backend: Debug + Send + Sync {
     /// Get the latest version, optionally filtered by release date.
     ///
     /// `latest_stable_version` may use backend-specific fast paths (dist tags,
-    /// latest release endpoints, plugin scripts). Those fast paths return the
-    /// absolute latest stable version, so only use them when no install-before
-    /// cutoff is active. If the fast path returns `None`, fall back to the
-    /// shared version-list path here instead of duplicating that fallback in
-    /// each backend.
+    /// latest release endpoints, plugin scripts). If the fast path returns
+    /// `None`, fall back to the shared version-list path here instead of
+    /// duplicating that fallback in each backend. When a cutoff is active, only
+    /// skip the fast path result if remote-version metadata shows that
+    /// candidate is newer than the cutoff.
     async fn latest_version(
         &self,
         config: &Arc<Config>,
@@ -1226,13 +1226,25 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<Option<String>> {
         let before_date = effective_latest_before_date(self, config, before_date).await?;
         let resolved_query = query.as_deref().unwrap_or("latest");
+        let mut fallback_refresh = refresh;
         if resolved_query == "latest"
-            && before_date.is_none()
             && let Some(version) = self.latest_stable_version(config).await?
         {
-            return Ok(Some(version));
+            match before_date {
+                Some(before) => {
+                    let versions = self
+                        .list_remote_versions_with_info_with_refresh(config, refresh)
+                        .await?;
+                    fallback_refresh = false;
+                    let info = versions.iter().find(|v| v.version == version);
+                    if latest_stable_candidate_allowed_by_before_date(info, before) {
+                        return Ok(Some(version));
+                    }
+                }
+                None => return Ok(Some(version)),
+            }
         }
-        self.latest_version_for_query(config, resolved_query, before_date, refresh)
+        self.latest_version_for_query(config, resolved_query, before_date, fallback_refresh)
             .await
     }
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
@@ -2107,6 +2119,22 @@ pub(crate) async fn effective_latest_before_date<B: Backend + ?Sized>(
     resolve_before_date(None, config_install_before.as_deref())
 }
 
+fn latest_stable_candidate_allowed_by_before_date(
+    info: Option<&VersionInfo>,
+    before: Timestamp,
+) -> bool {
+    let Some(created_at) = info.and_then(|v| v.created_at.as_deref()) else {
+        return true;
+    };
+    match parse_into_timestamp(created_at) {
+        Ok(created) => created < before,
+        Err(_) => {
+            trace!("Failed to parse timestamp: {}", created_at);
+            true
+        }
+    }
+}
+
 #[cfg(test)]
 mod latest_version_tests {
     use super::*;
@@ -2220,9 +2248,10 @@ mod latest_version_tests {
     }
 
     #[tokio::test]
-    async fn test_date_filtered_latest_bypasses_latest_stable_version() {
+    async fn test_date_filtered_latest_uses_stable_when_not_newer() {
         let config = Config::get().await.unwrap();
-        let backend = LatestBackend::new("test-latest-before-date");
+        let backend =
+            LatestBackend::new("test-latest-before-date-allowed").with_stable_result(Some("1.0.0"));
         backend
             .get_remote_version_cache()
             .lock()
@@ -2239,7 +2268,32 @@ mod latest_version_tests {
                 .as_deref(),
             Some("1.0.0")
         );
-        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_date_filtered_latest_falls_back_when_stable_is_newer() {
+        let config = Config::get().await.unwrap();
+        let backend =
+            LatestBackend::new("test-latest-before-date-newer").with_stable_result(Some("2.0.0"));
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+        let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(backend.stable_calls(), 1);
         assert_eq!(backend.list_calls(), 1);
     }
 
@@ -2384,7 +2438,8 @@ mod latest_version_tests {
         let config = Config::get().await.unwrap();
         // The test fixture has a `tiny` config entry without install_before.
         // Inline backend opts must still win when a config entry exists.
-        let backend = LatestBackend::new("tiny[install_before=2024-06-01]");
+        let backend =
+            LatestBackend::new("tiny[install_before=2024-06-01]").with_stable_result(Some("2.0.0"));
         backend
             .get_remote_version_cache()
             .lock()
@@ -2400,7 +2455,7 @@ mod latest_version_tests {
                 .as_deref(),
             Some("1.0.0")
         );
-        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.stable_calls(), 1);
         assert_eq!(backend.list_calls(), 1);
     }
 }
