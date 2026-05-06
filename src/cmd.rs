@@ -258,18 +258,28 @@ const TASK_PGID_MANAGED_ENV: &str = "MISE_TASK_PGID_MANAGED";
 ///
 /// In both cases we share whatever pgid we landed in, so the ancestor
 /// that owns it can clean us up.
+///
+/// Cached on first access: `execute()` decides whether to `setpgid` at
+/// spawn time, and `kill_all()` decides whether to `killpg` at signal
+/// time. They must agree — a child placed in its own pgid by `execute()`
+/// must be killed via `killpg`, or only the direct PID gets the signal
+/// and grandchildren leak. Computing this once removes any chance of the
+/// two callers disagreeing if the env later mutates.
 #[cfg(unix)]
 fn should_use_pgroup() -> bool {
-    if std::env::var_os(TASK_PGID_MANAGED_ENV).is_some() {
-        return false;
-    }
-    let me = nix::unistd::getpid();
-    if let Ok(sid) = nix::unistd::getsid(None)
-        && sid == me
-    {
-        return false;
-    }
-    true
+    static CACHED: Lazy<bool> = Lazy::new(|| {
+        if std::env::var_os(TASK_PGID_MANAGED_ENV).is_some() {
+            return false;
+        }
+        let me = nix::unistd::getpid();
+        if let Ok(sid) = nix::unistd::getsid(None)
+            && sid == me
+        {
+            return false;
+        }
+        true
+    });
+    *CACHED
 }
 
 /// Grace period after a child's ExitStatus arrives during which we keep

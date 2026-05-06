@@ -11,6 +11,10 @@ set -euo pipefail
 
 marker="$(mktemp -t long_finished.XXXXXX)"
 rm -f "$marker"
+# If the script aborts before the explicit cleanup below, a leftover marker
+# would silently fail subsequent runs. The trap guarantees removal even on
+# abnormal exit (set -e, fail, signal).
+trap 'rm -f "$marker"' EXIT
 
 cat <<EOF >mise.toml
 [tasks.fail]
