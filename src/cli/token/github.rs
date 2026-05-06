@@ -12,10 +12,6 @@ pub struct Github {
     #[clap(default_value = "github.com")]
     host: String,
 
-    /// Show the full unmasked token
-    #[clap(long)]
-    unmask: bool,
-
     /// Force native GitHub OAuth device flow instead of normal token resolution
     #[clap(long)]
     oauth: bool,
@@ -23,6 +19,10 @@ pub struct Github {
     /// Print only the token value
     #[clap(long)]
     raw: bool,
+
+    /// Show the full unmasked token
+    #[clap(long)]
+    unmask: bool,
 }
 
 impl Github {

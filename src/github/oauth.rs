@@ -62,12 +62,11 @@ struct TokenCache {
     tokens: HashMap<String, CachedToken>,
 }
 
-pub fn configured() -> bool {
-    !Settings::get().github.oauth_client_id.trim().is_empty()
-}
-
 pub fn resolve_token(host: &str) -> Option<String> {
-    if !configured() || !host_matches_settings(host) {
+    let settings = Settings::get();
+    if settings.github.oauth_client_id.trim().is_empty()
+        || !host_matches_settings(host, &settings.github.oauth_api_url)
+    {
         return None;
     }
 
@@ -85,31 +84,42 @@ pub fn token(req: TokenRequest) -> Result<String> {
 async fn token_async(req: TokenRequest) -> Result<String> {
     let settings = Settings::get();
     let client_id = settings.github.oauth_client_id.trim();
+    let scopes = settings.github.oauth_scopes.trim();
     if client_id.is_empty() {
         bail!("GitHub OAuth is not configured. Set github.oauth_client_id first.");
     }
-    if !host_matches_settings(&req.host) {
+    if !host_matches_settings(&req.host, &settings.github.oauth_api_url) {
         bail!(
             "GitHub OAuth is configured for {}, not {}",
-            api_host().unwrap_or_else(|| "unknown host".to_string()),
+            api_host(&settings.github.oauth_api_url).unwrap_or_else(|| "unknown host".to_string()),
             req.host
         );
     }
 
-    let cache_key = cache_key(&req.host, client_id);
+    let cache_key = cache_key(&req.host, client_id, scopes);
     let mut cache = read_cache();
-    if let Some(cached) = cache.tokens.get(&cache_key)
-        && reusable(cached)
-    {
-        return Ok(cached.access_token.clone());
-    }
-    if let Some(cached) = cache.tokens.get(&cache_key).cloned()
-        && let Some(refreshed) = refresh_token(&cached).await?
-    {
-        let token = refreshed.access_token.clone();
-        cache.tokens.insert(cache_key, refreshed);
-        write_cache(&cache)?;
-        return Ok(token);
+    if !req.force_device_flow {
+        if let Some(cached) = cache.tokens.get(&cache_key)
+            && reusable(cached)
+        {
+            return Ok(cached.access_token.clone());
+        }
+        if let Some(cached) = cache.tokens.get(&cache_key).cloned() {
+            match refresh_token(&cached).await {
+                Ok(Some(refreshed)) => {
+                    let token = refreshed.access_token.clone();
+                    cache.tokens.insert(cache_key, refreshed);
+                    write_cache(&cache)?;
+                    return Ok(token);
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    debug!(
+                        "failed to refresh GitHub OAuth token; falling back to device flow: {err:#}"
+                    );
+                }
+            }
+        }
     }
 
     if !req.force_device_flow && !std::io::stderr().is_terminal() {
@@ -281,16 +291,8 @@ fn reusable(token: &CachedToken) -> bool {
     token.expires_at - chrono::Duration::seconds(REUSE_BUFFER_SECS) > chrono::Utc::now()
 }
 
-fn cache_key(host: &str, client_id: &str) -> String {
-    let hash = blake3::hash(
-        format!(
-            "{}|{}|{}",
-            host,
-            client_id,
-            Settings::get().github.oauth_scopes
-        )
-        .as_bytes(),
-    );
+fn cache_key(host: &str, client_id: &str, scopes: &str) -> String {
+    let hash = blake3::hash(format!("{host}|{client_id}|{scopes}").as_bytes());
     hash.to_hex()[..16].to_string()
 }
 
@@ -331,15 +333,15 @@ fn write_cache(cache: &TokenCache) -> Result<()> {
     Ok(())
 }
 
-fn host_matches_settings(host: &str) -> bool {
-    let Some(api_host) = api_host() else {
+fn host_matches_settings(host: &str, oauth_api_url: &str) -> bool {
+    let Some(api_host) = api_host(oauth_api_url) else {
         return false;
     };
     host == api_host || (host == "github.com" && api_host == "api.github.com")
 }
 
-fn api_host() -> Option<String> {
-    url::Url::parse(&Settings::get().github.oauth_api_url)
+fn api_host(oauth_api_url: &str) -> Option<String> {
+    url::Url::parse(oauth_api_url)
         .ok()?
         .host_str()
         .map(|h| h.to_string())
