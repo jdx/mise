@@ -422,6 +422,19 @@ impl Backend for S3Backend {
         true
     }
 
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &[
+            "version_list_url",
+            "version_regex",
+            "version_json_path",
+            "version_expr",
+            "version_prefix",
+            "url",
+            "region",
+            "endpoint",
+        ]
+    }
+
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let opts = tv.request.options();
         super::http_install_operation_count(

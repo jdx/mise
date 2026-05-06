@@ -40,6 +40,10 @@ impl Backend for DotnetBackend {
         true
     }
 
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["prerelease"]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let feed_url = self.get_search_url().await?;
         let opts = self.tool_opts(config).await?;

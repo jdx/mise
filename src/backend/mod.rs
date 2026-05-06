@@ -77,20 +77,25 @@ pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
-const VERSIONS_HOST_SAFE_LOCAL_OPT_KEYS: &[&str] = &[
-    "prerelease",
-    "minimum_release_age",
-    "install_before",
-    "postinstall",
-    "install_env",
-    "depends",
-    "os",
-];
+pub(crate) const ALL_TOOL_OPTION_KEYS: &str = "*";
+
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
     ToolOptionSource::BackendAlias,
     ToolOptionSource::Config,
     ToolOptionSource::InlineBackendArg,
 ];
+
+fn has_local_remote_version_listing_tool_opts(
+    resolved_opts: &crate::toolset::ResolvedToolOptions,
+    version_listing_opt_keys: &[&str],
+) -> bool {
+    if version_listing_opt_keys.contains(&ALL_TOOL_OPTION_KEYS) {
+        resolved_opts.has_any_key_except_from_sources(&[], VERSIONS_HOST_LOCAL_OPT_SOURCES)
+    } else {
+        resolved_opts
+            .has_any_key_from_sources(version_listing_opt_keys, VERSIONS_HOST_LOCAL_OPT_SOURCES)
+    }
+}
 
 static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
 
@@ -428,6 +433,72 @@ mod tests {
     }
 
     #[test]
+    fn test_remote_version_listing_opts_are_backend_specific() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource, ToolVersionOptions};
+
+        let mut install_only_opts = ToolVersionOptions::default();
+        install_only_opts.opts.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("tool-{{version}}.tar.gz".into()),
+        );
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&install_only_opts, ToolOptionSource::Config);
+
+        assert!(!has_local_remote_version_listing_tool_opts(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
+
+        let mut listing_opts = ToolVersionOptions::default();
+        listing_opts.opts.insert(
+            "api_url".to_string(),
+            toml::Value::String("https://github.example.com/api/v3".into()),
+        );
+        resolved.apply_overrides(&listing_opts, ToolOptionSource::Config);
+
+        assert!(has_local_remote_version_listing_tool_opts(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
+    }
+
+    #[test]
+    fn test_remote_version_listing_opts_ignore_registry_sources() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource, ToolVersionOptions};
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("release-".into()),
+        );
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&opts, ToolOptionSource::Registry);
+
+        assert!(!has_local_remote_version_listing_tool_opts(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
+    }
+
+    #[test]
+    fn test_remote_version_listing_opts_support_all_keys_sentinel() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource, ToolVersionOptions};
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "plugin_specific".to_string(),
+            toml::Value::String("stable".into()),
+        );
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&opts, ToolOptionSource::InlineBackendArg);
+
+        assert!(has_local_remote_version_listing_tool_opts(
+            &resolved,
+            &[ALL_TOOL_OPTION_KEYS],
+        ));
+    }
+
+    #[test]
     fn test_fuzzy_match_versions_filters_prereleases_by_default() {
         let versions = vec![
             "1.0.0".to_string(),
@@ -720,6 +791,18 @@ pub trait Backend: Debug + Send + Sync {
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         false
     }
+
+    /// Tool option keys whose non-registry overrides change the backend's
+    /// remote version list. When any of these keys come from a backend alias,
+    /// config, or inline backend arg, the versions host must be skipped because
+    /// its cache is keyed by the registry/default listing.
+    ///
+    /// Return `[ALL_TOOL_OPTION_KEYS]` only for backends that pass arbitrary
+    /// options into their version-listing hook.
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// dependencies which wait for install but do not warn, like cargo-binstall
     fn get_optional_dependencies(&self) -> Result<Vec<&str>> {
         Ok(vec![])
@@ -835,19 +918,20 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         // Check if this is an external plugin with a custom remote - skip versions host if so
+        let has_local_version_listing_opts = has_local_remote_version_listing_tool_opts(
+            &resolved_opts,
+            self.remote_version_listing_tool_option_keys(),
+        );
         let use_versions_host = if !versions_host_applies {
             trace!(
                 "Skipping versions host for {} because {} backend has a direct source",
                 ba.short, backend_type
             );
             false
-        } else if resolved_opts.has_any_key_except_from_sources(
-            VERSIONS_HOST_SAFE_LOCAL_OPT_KEYS,
-            VERSIONS_HOST_LOCAL_OPT_SOURCES,
-        ) {
+        } else if has_local_version_listing_opts {
             trace!(
-                "Skipping versions host for {} because backend opts are overridden outside the registry",
-                ba.short
+                "Skipping versions host for {} because local backend opts affect remote version listing",
+                ba.short,
             );
             false
         } else if let Some(plugin) = self.plugin()

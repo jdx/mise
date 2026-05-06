@@ -48,6 +48,10 @@ impl Backend for SPMBackend {
         true
     }
 
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["provider", "api_url"]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
