@@ -47,3 +47,20 @@ output_root_task=$(mise run //:root-task)
 echo "root task: $output_root_task"
 assert_contains "echo $output_root_task" "PROJECT_ROOT=$monorepo_root"
 assert_contains "echo $output_root_task" "MONOREPO_ROOT=$monorepo_root"
+
+# Global task invoked from a local project: MISE_PROJECT_ROOT must remain the
+# local project root, not the global config dir. Regression coverage for the
+# task-config-root fallback.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tasks.global-show-root]
+run = 'echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"'
+TOML
+
+output_global_task=$(mise run global-show-root)
+echo "global task from monorepo root: $output_global_task"
+assert_contains "echo $output_global_task" "PROJECT_ROOT=$monorepo_root"
+
+output_global_task_from_sub=$(cd projects/frontend && mise run global-show-root)
+echo "global task from subproject: $output_global_task_from_sub"
+# From inside the subproject the local project root is the subproject's mise.toml dir.
+assert_contains "echo $output_global_task_from_sub" "PROJECT_ROOT=$frontend_root"
