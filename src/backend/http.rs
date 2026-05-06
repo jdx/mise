@@ -29,7 +29,7 @@ const METADATA_FILE: &str = "metadata.json";
 
 /// Helper to get an option value with platform-specific fallback
 fn get_opt(opts: &ToolVersionOptions, key: &str) -> Option<String> {
-    lookup_platform_key(opts, key).or_else(|| opts.get(key).map(|s| s.to_string()))
+    lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
 }
 
 /// Metadata stored alongside cached extractions

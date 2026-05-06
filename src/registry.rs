@@ -137,12 +137,9 @@ impl RegistryTool {
 
         if let Some(backend) = self.get_backend(full) {
             for (k, v) in backend.options {
-                // Try to parse as TOML to preserve nested table structure
-                // (e.g., platforms with per-platform options like asset_pattern)
-                let value = match toml::from_str::<toml::Value>(v) {
-                    Ok(parsed) if parsed.is_table() => parsed,
-                    _ => toml::Value::String(v.to_string()),
-                };
+                let value = v.parse::<toml::Value>().unwrap_or_else(|e| {
+                    panic!("failed to parse registry option {k} as a TOML value: {e}")
+                });
                 opts.insert(k.to_string(), value);
             }
         }
@@ -258,6 +255,58 @@ mod tests {
             &BTreeSet::from(["cargo"]),
             &name
         ));
+    }
+
+    #[test]
+    fn test_backend_options_parse_toml_values() {
+        use super::*;
+
+        static OPTIONS: &[(&str, &str)] = &[
+            ("bin", r#""rg""#),
+            ("prerelease", "true"),
+            ("strip_components", "1"),
+            (
+                "targets",
+                r#"["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"]"#,
+            ),
+            (
+                "platforms",
+                r#"{ linux-x64 = { asset_pattern = "tool-linux.tar.gz" } }"#,
+            ),
+        ];
+        static BACKENDS: &[RegistryBackend] = &[RegistryBackend {
+            full: "github:owner/repo",
+            platforms: &[],
+            options: OPTIONS,
+        }];
+        let tool = RegistryTool {
+            short: "test",
+            description: None,
+            backends: BACKENDS,
+            aliases: &[],
+            overrides: &[],
+            test: &None,
+            os: &[],
+            idiomatic_files: &[],
+            detect: &[],
+        };
+
+        let opts = tool.backend_options("github:owner/repo");
+
+        assert_eq!(opts.get("bin"), Some("rg"));
+        assert_eq!(
+            opts.opts.get("prerelease"),
+            Some(&toml::Value::Boolean(true))
+        );
+        assert_eq!(
+            opts.opts.get("strip_components"),
+            Some(&toml::Value::Integer(1))
+        );
+        assert!(opts.opts.get("targets").is_some_and(toml::Value::is_array));
+        assert_eq!(
+            opts.get_nested_string("platforms.linux-x64.asset_pattern"),
+            Some("tool-linux.tar.gz".to_string())
+        );
     }
 
     #[tokio::test]
