@@ -236,6 +236,7 @@ impl ToolVersion {
             before_date: base_opts.before_date,
             offline: base_opts.offline,
             refresh_remote_versions: base_opts.refresh_remote_versions,
+            no_source: base_opts.no_source,
         };
         let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref
@@ -615,6 +616,8 @@ pub struct ResolveOptions {
     pub offline: bool,
     /// Ignore cached remote version lists while resolving this request.
     pub refresh_remote_versions: bool,
+    /// Consider all versions of the tool instead of just those matching the config.
+    pub no_source: bool,
 }
 
 impl Default for ResolveOptions {
@@ -625,6 +628,7 @@ impl Default for ResolveOptions {
             before_date: None,
             offline: false,
             refresh_remote_versions: false,
+            no_source: false,
         }
     }
 }

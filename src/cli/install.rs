@@ -244,6 +244,7 @@ impl Install {
                 before_date: self.get_before_date()?,
                 offline: false,
                 refresh_remote_versions: false,
+                no_source: false,
             },
             dry_run: self.is_dry_run(),
             locked: Settings::get().locked,
