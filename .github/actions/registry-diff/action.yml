@@ -5,6 +5,10 @@ inputs:
   base_sha:
     description: "The base commit SHA to compare against"
     required: true
+  head_sha:
+    description: "The head commit SHA to compare against"
+    required: false
+    default: HEAD
 outputs:
   modified_tools:
     description: "Space-separated list of all modified tools"
@@ -18,14 +22,17 @@ runs:
   steps:
     - id: diff
       shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base_sha }}
+        HEAD_SHA: ${{ inputs.head_sha }}
       run: |
         # Get modified registry files and extract tool names
-        modified=$(git diff --name-only ${{ inputs.base_sha }} HEAD -- 'registry/*.toml' \
+        modified=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'registry/*.toml' \
           | xargs -I{} basename {} .toml \
           | tr '\n' ' ')
 
         # Get newly added registry files
-        new=$(git diff --name-only --diff-filter=A ${{ inputs.base_sha }} HEAD -- 'registry/*.toml' \
+        new=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" -- 'registry/*.toml' \
           | xargs -I{} basename {} .toml \
           | tr '\n' ' ')
 
