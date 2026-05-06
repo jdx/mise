@@ -601,6 +601,18 @@ impl Run {
                     };
                 }
                 this.add_failed_task(task.clone(), status);
+                // SIGTERM any still-running siblings so we exit promptly on
+                // failure instead of waiting for them to finish naturally.
+                // run_loop only sees `is_stopping` when it next iterates,
+                // which doesn't happen while it's awaiting an idle select —
+                // so the kill has to be triggered from here.
+                if !this.continue_on_error {
+                    debug!("task {} failed, killing siblings", task.name);
+                    #[cfg(unix)]
+                    crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);
+                    #[cfg(windows)]
+                    crate::cmd::CmdLineRunner::kill_all();
+                }
             }
             if let Some(oh) = &this.output_handler
                 && oh.output(None) == TaskOutput::KeepOrder

@@ -5,10 +5,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, RwLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use crate::redactions::Redactor;
 use color_eyre::Result;
@@ -230,6 +233,53 @@ static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
 static RUNNING_PIDS: Lazy<Mutex<HashSet<u32>>> = Lazy::new(Default::default);
 
+/// Env var set on every spawned child when this mise process is managing
+/// process groups (calling setpgid + killpg). A nested mise that sees this
+/// var skips its own setpgid so descendants stay in the outer pgid — that
+/// way the outer mise's killpg actually reaches the leaves.
+#[cfg(unix)]
+const TASK_PGID_MANAGED_ENV: &str = "MISE_TASK_PGID_MANAGED";
+
+/// True when this mise should `setpgid` spawned children and `killpg` them
+/// for cleanup.
+///
+/// We skip pgroup management in two cases:
+///
+/// 1. **Nested under another mise** (env var present). The outer mise is
+///    already managing pgroups; if we set our own, the outer's `killpg`
+///    can't reach our descendants and either an orchestrator or the
+///    user's Ctrl+C leaves orphans behind.
+/// 2. **We're the session leader** — i.e. `getsid(0) == getpid()`. This
+///    is what Node's `detached: true` (Playwright's `webServer`) does:
+///    it calls `setsid` so the orchestrator can `kill(-pgid, SIGKILL)`
+///    the whole tree later. If we then create our own pgroups, the
+///    orchestrator's tree-kill stops at us and our descendants survive,
+///    holding pipes open and hanging the parent.
+///
+/// In both cases we share whatever pgid we landed in, so the ancestor
+/// that owns it can clean us up.
+#[cfg(unix)]
+fn should_use_pgroup() -> bool {
+    if std::env::var_os(TASK_PGID_MANAGED_ENV).is_some() {
+        return false;
+    }
+    let me = nix::unistd::getpid();
+    if let Ok(sid) = nix::unistd::getsid(None)
+        && sid == me
+    {
+        return false;
+    }
+    true
+}
+
+/// Grace period after a child's ExitStatus arrives during which we keep
+/// reading its stdout/stderr pipes. If a grandchild inherited the pipes
+/// and survived (e.g. a nested mise that escaped our pgroup, or an
+/// orchestrator's SIGKILL leaving orphans), the readers would otherwise
+/// block forever waiting for EOF and the parent would hang. After this
+/// deadline we abandon the readers — any tail output is dropped.
+const PIPE_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+
 impl<'a> CmdLineRunner<'a> {
     pub fn new<P: AsRef<OsStr>>(program: P) -> Self {
         let mut cmd = Command::new(program);
@@ -261,12 +311,28 @@ impl<'a> CmdLineRunner<'a> {
 
     #[cfg(unix)]
     pub fn kill_all(signal: nix::sys::signal::Signal) {
+        let use_pgroup = should_use_pgroup();
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
             let pid = *pid as i32;
-            trace!("{signal}: {pid}");
-            if let Err(e) = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal) {
-                debug!("Failed to kill cmd {pid}: {e}");
+            let nix_pid = nix::unistd::Pid::from_raw(pid);
+            if use_pgroup {
+                trace!("{signal}: pgid {pid}");
+                // Each tracked PID is also the leader of its own pgid (set
+                // via setpgid(0,0) in pre_exec), so killpg targets the whole
+                // descendant tree. Fall back to plain kill for the rare case
+                // where setpgid was skipped (TTY stdin) — still better than
+                // silently dropping the signal.
+                if nix::sys::signal::killpg(nix_pid, signal).is_err()
+                    && let Err(e) = nix::sys::signal::kill(nix_pid, signal)
+                {
+                    debug!("Failed to kill cmd {pid}: {e}");
+                }
+            } else {
+                trace!("{signal}: {pid}");
+                if let Err(e) = nix::sys::signal::kill(nix_pid, signal) {
+                    debug!("Failed to kill cmd {pid}: {e}");
+                }
             }
         }
     }
@@ -439,6 +505,30 @@ impl<'a> CmdLineRunner<'a> {
             let _write_lock = RAW_LOCK.write().unwrap();
             return self.execute_raw();
         }
+        #[cfg(unix)]
+        if should_use_pgroup() {
+            // Mark descendants so a nested mise inherits this var and skips
+            // its own setpgid — keeping the whole tree in our pgid.
+            self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
+            unsafe {
+                self.cmd.pre_exec(|| {
+                    // Skip setpgid when stdin is a TTY: interactive tools
+                    // (e.g. Tilt) need to stay in the terminal's foreground
+                    // pgid or they hang on SIGTTIN when reading stdin.
+                    // Use BorrowedFd::borrow_raw rather than std::io::stdin()
+                    // — pre_exec runs post-fork where OnceLock/malloc are
+                    // not async-signal-safe.
+                    let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
+                    if !std::io::IsTerminal::is_terminal(&stdin) {
+                        let _ = nix::unistd::setpgid(
+                            nix::unistd::Pid::from_raw(0),
+                            nix::unistd::Pid::from_raw(0),
+                        );
+                    }
+                    Ok(())
+                });
+            }
+        }
         let mut cp = self
             .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
@@ -511,8 +601,33 @@ impl<'a> CmdLineRunner<'a> {
 
         let mut combined_output = vec![];
         let mut status = None;
-        for line in rx {
-            match line {
+        // Once ExitStatus arrives we set a deadline and switch to recv_timeout
+        // so a grandchild that inherited the pipes can't hang us forever
+        // waiting for EOF. See PIPE_DRAIN_TIMEOUT.
+        let mut drain_deadline: Option<Instant> = None;
+        loop {
+            let msg = match drain_deadline {
+                Some(deadline) => {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        debug!("pipe drain timeout for {id}, abandoning readers");
+                        break;
+                    }
+                    match rx.recv_timeout(remaining) {
+                        Ok(m) => m,
+                        Err(RecvTimeoutError::Timeout) => {
+                            debug!("pipe drain timeout for {id}, abandoning readers");
+                            break;
+                        }
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+                None => match rx.recv() {
+                    Ok(m) => m,
+                    Err(_) => break,
+                },
+            };
+            match msg {
                 ChildProcessOutput::Stdout(line) => {
                     let line = self.redactor.redact(&line);
                     self.on_stdout(line.clone());
@@ -525,16 +640,27 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 ChildProcessOutput::ExitStatus(s) => {
                     status = Some(s);
+                    drain_deadline = Some(Instant::now() + PIPE_DRAIN_TIMEOUT);
                 }
                 #[cfg(not(any(test, windows)))]
                 ChildProcessOutput::Signal(sig) => {
-                    if sig != SIGINT {
+                    let pid = nix::unistd::Pid::from_raw(id as i32);
+                    let nix_sig = nix::sys::signal::Signal::try_from(sig).unwrap();
+                    if should_use_pgroup() {
+                        // With pgroups the child is isolated from the
+                        // terminal's foreground pgid, so terminal SIGINT
+                        // doesn't reach it — forward every signal we
+                        // catch, including SIGINT.
+                        debug!("Received signal {sig}, forwarding to pgid {id}");
+                        if nix::sys::signal::killpg(pid, nix_sig).is_err() {
+                            let _ = nix::sys::signal::kill(pid, nix_sig);
+                        }
+                    } else if sig != SIGINT {
+                        // No pgroup: the child is in our pgid, so the
+                        // terminal already delivered SIGINT. Forwarding
+                        // it again would just be a redundant kill.
                         debug!("Received signal {sig}, forwarding to {id}");
-                        let pid = nix::unistd::Pid::from_raw(id as i32);
-                        let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
-                        // Ignore errors — the child may have already exited
-                        // (e.g., killed by TimeoutGuard or exited naturally).
-                        let _ = nix::sys::signal::kill(pid, sig);
+                        let _ = nix::sys::signal::kill(pid, nix_sig);
                     }
                 }
             }
@@ -637,7 +763,6 @@ impl<'a> CmdLineRunner<'a> {
             }
             // Use pre_exec to apply Landlock/seccomp in the child process
             // before it execs the target program. This avoids restricting the mise process.
-            use std::os::unix::process::CommandExt;
             let sandbox = sandbox.clone();
             unsafe {
                 self.cmd.pre_exec(move || {
