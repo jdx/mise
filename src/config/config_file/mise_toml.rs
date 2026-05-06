@@ -2515,7 +2515,7 @@ run = 'echo "template"'
             .expect("ansible should be in tool request set");
         let opts = ansible_requests[0].options();
         assert_eq!(
-            opts.get("uvx"),
+            opts.get_string("uvx").as_deref(),
             Some("false"),
             "registry default uvx=false should be preserved with table syntax"
         );
@@ -2539,7 +2539,7 @@ run = 'echo "template"'
             .expect("ansible should be in tool request set");
         let opts2 = ansible2[0].options();
         assert_eq!(
-            opts2.get("uvx"),
+            opts2.get_string("uvx").as_deref(),
             Some("true"),
             "user-provided uvx=true should override registry default uvx=false"
         );

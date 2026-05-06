@@ -2085,7 +2085,7 @@ impl AquaBackend {
     fn symlink_bins(&self, tv: &ToolVersion) -> bool {
         tv.request
             .options()
-            .get("symlink_bins")
+            .get_string("symlink_bins")
             .is_some_and(|v| v == "true" || v == "1")
     }
 
