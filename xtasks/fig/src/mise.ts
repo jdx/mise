@@ -2030,6 +2030,12 @@ const completionSpec: Fig.Spec = {
           description: "Don't show table header",
           isRepeatable: false,
         },
+        {
+          name: "--no-source",
+          description:
+            "Show all outdated tools, even those that don't match the current config",
+          isRepeatable: false,
+        },
       ],
       args: {
         name: "tool@version",
@@ -4024,6 +4030,12 @@ const completionSpec: Fig.Spec = {
         {
           name: "--local",
           description: "Only upgrade tools defined in local config files",
+          isRepeatable: false,
+        },
+        {
+          name: "--no-source",
+          description:
+            "Upgrade all tools, even those that don't match the current config",
           isRepeatable: false,
         },
         {
