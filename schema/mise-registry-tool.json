@@ -24,13 +24,13 @@
         {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/optionValue"
+            "$ref": "#/$defs/optionValue"
           }
         },
         {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/optionValue"
+            "$ref": "#/$defs/optionValue"
           }
         }
       ]
@@ -82,13 +82,13 @@
                       "type": "object",
                       "description": "Platform-specific configuration",
                       "additionalProperties": {
-                        "$ref": "#/definitions/optionValue"
+                        "$ref": "#/$defs/optionValue"
                       }
                     }
                   }
                 },
                 "additionalProperties": {
-                  "$ref": "#/definitions/optionValue"
+                  "$ref": "#/$defs/optionValue"
                 }
               }
             },
