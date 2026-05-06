@@ -758,20 +758,6 @@
       "required": ["version"],
       "type": "object"
     },
-    "os_filter": {
-      "description": "operating system filters to install on",
-      "oneOf": [
-        {
-          "$ref": "#/$defs/os_filter_item"
-        },
-        {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/os_filter_item"
-          }
-        }
-      ]
-    },
     "env_value": {
       "oneOf": [
         {
@@ -875,6 +861,20 @@
             }
           },
           "required": ["paths"]
+        }
+      ]
+    },
+    "os_filter": {
+      "description": "operating system filters to install on",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/os_filter_item"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/os_filter_item"
+          }
         }
       ]
     },
