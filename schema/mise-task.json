@@ -771,25 +771,6 @@
         }
       ]
     },
-    "env_path": {
-      "oneOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      ]
-    },
-    "env_paths": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
     "env_tools": {
       "type": "boolean",
       "description": "load tools before resolving"
@@ -814,15 +795,6 @@
     "env_age": {
       "type": "string",
       "description": "[experimental] age-encrypted value (simplified format)"
-    },
-    "env_age_value": {
-      "type": "string",
-      "description": "[experimental] age-encrypted value"
-    },
-    "env_age_format": {
-      "type": "string",
-      "enum": ["raw", "zstd"],
-      "description": "[experimental] compression format for the encrypted value"
     },
     "env_directive": {
       "type": "object",
@@ -864,6 +836,15 @@
         }
       ]
     },
+    "env_age_value": {
+      "type": "string",
+      "description": "[experimental] age-encrypted value"
+    },
+    "env_age_format": {
+      "type": "string",
+      "enum": ["raw", "zstd"],
+      "description": "[experimental] compression format for the encrypted value"
+    },
     "os_filter": {
       "description": "operating system filters to install on",
       "oneOf": [
@@ -877,6 +858,25 @@
           }
         }
       ]
+    },
+    "env_path": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "env_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "os_filter_item": {
       "description": "operating system or os/arch pair to install on",
