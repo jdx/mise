@@ -44,6 +44,8 @@ use backend_type::BackendType;
 use eyre::{Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+#[cfg(windows)]
+use path_absolutize::Absolutize;
 use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
@@ -108,7 +110,24 @@ pub(crate) fn runtime_path_for_bin_paths(tv: &ToolVersion) -> PathBuf {
     .replace([':', '/'], "-");
 
     let path = tv.ba().installs_path.join(&pathname);
-    env::find_in_shared_installs(path, &tv.ba().tool_dir_name(), &pathname)
+    let path = env::find_in_shared_installs(path, &tv.ba().tool_dir_name(), &pathname);
+
+    #[cfg(windows)]
+    if path.is_file()
+        && is_runtime_symlink(&path)
+        && let Ok(Some(target)) = file::resolve_symlink(&path)
+        && let Some(parent) = path.parent()
+    {
+        let target = parent.join(target);
+        if target.is_dir() {
+            return target
+                .absolutize()
+                .expect("failed to absolutize path")
+                .to_path_buf();
+        }
+    }
+
+    path
 }
 
 /// Remaps a backend-discovered path from the concrete install dir to the
