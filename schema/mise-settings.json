@@ -17,12 +17,12 @@
               "$ref": "#/definitions/setting"
             }
           },
-          "additionalProperties": false
+          "unevaluatedProperties": false
         }
       ]
     }
   },
-  "additionalProperties": false,
+  "unevaluatedProperties": false,
   "definitions": {
     "setting": {
       "type": "object",
@@ -102,7 +102,7 @@
                   }
                 },
                 "required": ["value"],
-                "additionalProperties": false
+                "unevaluatedProperties": false
               }
             ]
           }
@@ -158,7 +158,7 @@
         }
       },
       "required": ["description"],
-      "additionalProperties": false
+      "unevaluatedProperties": false
     }
   }
 }

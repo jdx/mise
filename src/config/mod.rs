@@ -419,6 +419,10 @@ impl Config {
         find_monorepo_root(&self.config_files).is_some()
     }
 
+    pub fn monorepo_root(&self) -> Option<PathBuf> {
+        find_monorepo_root(&self.config_files)
+    }
+
     pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
         self.tasks_with_context(None).await
     }
