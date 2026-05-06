@@ -1,3 +1,4 @@
+mod login;
 mod token;
 
 /// GitHub related commands
@@ -10,12 +11,14 @@ pub struct Github {
 
 #[derive(Debug, clap::Subcommand)]
 enum Commands {
+    Login(login::Login),
     Token(token::Token),
 }
 
 impl Github {
     pub async fn run(self) -> eyre::Result<()> {
         match self.subcommand {
+            Commands::Login(cmd) => cmd.run(),
             Commands::Token(cmd) => cmd.run(),
         }
     }
