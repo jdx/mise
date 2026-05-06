@@ -297,13 +297,10 @@ impl Backend for JavaPlugin {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let release_type = config
-            .get_tool_request_set()
-            .await?
-            .list_tools()
-            .iter()
-            .find(|ba| ba.short == "java")
-            .and_then(|ba| ba.opts().get("release_type").map(|s| s.to_string()))
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let release_type = opts
+            .get("release_type")
+            .map(|s| s.to_string())
             .unwrap_or_else(|| "ga".to_string());
 
         let versions = self

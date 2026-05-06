@@ -1,4 +1,3 @@
 backends = ["aqua:kubecolor/kubecolor", "asdf:dex4er/asdf-kubecolor"]
-depends = ["kubectl"]
 description = "Colorize your kubectl output"
 test = { cmd = "kubecolor --kubecolor-version", expected = "{{version}}" }

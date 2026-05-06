@@ -50,3 +50,19 @@ EOF
 
 assert "mise install --force hw@1.0.0"
 assert "test -d ~/.local/share/mise/installs/hw/1.0.0/hello-world-1.0.0"
+
+# CLI options should have the highest priority, even when the alias falls back
+# to options from the resolved full backend config entry.
+cat <<'EOF' >mise.toml
+[tool_alias]
+hw = "github:jdx/mise-test-fixtures"
+
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+asset_pattern = "definitely-not-a-real-hello-world-asset"
+EOF
+
+# shellcheck disable=SC2016
+tool='hw[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin,postinstall="chmod +x $MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"]@1.0.0'
+assert "mise install --force '$tool'"
+assert "test -d ~/.local/share/mise/installs/hw/1.0.0/hello-world-1.0.0"
