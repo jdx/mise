@@ -26,13 +26,13 @@ mod tests {
     use crate::types::AquaVar;
 
     #[test]
-    fn test_rkyv_package_roundtrip_preserves_yaml_var_default() {
+    fn test_rkyv_package_roundtrip_preserves_var_default() {
         let mut package = AquaPackage::default();
         package.repo_owner = "owner".into();
         package.repo_name = "repo".into();
         package.vars = vec![AquaVar {
             name: "channel".into(),
-            default: Some(serde_yaml::Value::String("beta".into())),
+            default: Some("beta".into()),
             required: false,
         }];
 
@@ -41,12 +41,6 @@ mod tests {
 
         assert_eq!(decoded.repo_owner, "owner");
         assert_eq!(decoded.repo_name, "repo");
-        assert_eq!(
-            decoded.vars[0]
-                .default
-                .as_ref()
-                .and_then(|value| value.as_str()),
-            Some("beta")
-        );
+        assert_eq!(decoded.vars[0].default.as_deref(), Some("beta"));
     }
 }

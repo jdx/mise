@@ -2,15 +2,12 @@ use expr::{Context, Environment, Program, Value};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use rkyv::rancor::{Fallible, Source};
-use rkyv::with::{ArchiveWith, DeserializeWith, SerializeWith};
-use rkyv::{Archive, Deserialize as RkyvDeserialize, Place, Serialize as RkyvSerialize};
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::Deserializer;
 use serde::de::Error as DeError;
 use serde_derive::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use std::collections::HashMap;
-use std::io::{Error as IoError, ErrorKind};
 use versions::Versioning;
 
 /// Type of Aqua package
@@ -40,6 +37,9 @@ pub enum AquaPackageType {
 }
 
 /// Main Aqua package definition
+///
+/// rkyv archives parsed package data only. Runtime-only fields mirror serde's
+/// skipped behavior with `rkyv::with::Skip`.
 #[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[rkyv(serialize_bounds(
     __S: rkyv::ser::Writer + rkyv::ser::Allocator,
@@ -72,7 +72,7 @@ pub struct AquaPackage {
     pub version_prefix: Option<String>,
     version_filter: Option<String>,
     #[serde(skip)]
-    #[rkyv(with = EmptyVersionFilterExpr)]
+    #[rkyv(with = rkyv::with::Skip)]
     version_filter_expr: Option<Program>,
     pub version_source: Option<String>,
     pub cosign: Option<AquaCosign>,
@@ -89,7 +89,7 @@ pub struct AquaPackage {
     pub error_message: Option<String>,
     pub path: Option<String>,
     #[serde(skip)]
-    #[rkyv(with = EmptyVarValues)]
+    #[rkyv(with = rkyv::with::Skip)]
     var_values: HashMap<String, String>,
 }
 
@@ -238,128 +238,6 @@ pub struct AquaChecksumPattern {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RegistryYaml {
     pub packages: Vec<AquaPackage>,
-}
-
-// rkyv archives the parsed package data only. Runtime-only fields mirror serde's
-// skipped behavior, and YAML var defaults are proxied through YAML text because
-// serde_yaml::Value does not implement rkyv traits.
-struct EmptyVersionFilterExpr;
-
-impl ArchiveWith<Option<Program>> for EmptyVersionFilterExpr {
-    type Archived = ();
-    type Resolver = ();
-
-    fn resolve_with(_: &Option<Program>, _: Self::Resolver, out: Place<Self::Archived>) {
-        out.write(());
-    }
-}
-
-impl<S> SerializeWith<Option<Program>, S> for EmptyVersionFilterExpr
-where
-    S: Fallible + ?Sized,
-{
-    fn serialize_with(_: &Option<Program>, _: &mut S) -> std::result::Result<(), S::Error> {
-        Ok(())
-    }
-}
-
-impl<D> DeserializeWith<(), Option<Program>, D> for EmptyVersionFilterExpr
-where
-    D: Fallible + ?Sized,
-{
-    fn deserialize_with(_: &(), _: &mut D) -> std::result::Result<Option<Program>, D::Error> {
-        Ok(None)
-    }
-}
-
-struct EmptyVarValues;
-
-impl ArchiveWith<HashMap<String, String>> for EmptyVarValues {
-    type Archived = ();
-    type Resolver = ();
-
-    fn resolve_with(_: &HashMap<String, String>, _: Self::Resolver, out: Place<Self::Archived>) {
-        out.write(());
-    }
-}
-
-impl<S> SerializeWith<HashMap<String, String>, S> for EmptyVarValues
-where
-    S: Fallible + ?Sized,
-{
-    fn serialize_with(_: &HashMap<String, String>, _: &mut S) -> std::result::Result<(), S::Error> {
-        Ok(())
-    }
-}
-
-impl<D> DeserializeWith<(), HashMap<String, String>, D> for EmptyVarValues
-where
-    D: Fallible + ?Sized,
-{
-    fn deserialize_with(
-        _: &(),
-        _: &mut D,
-    ) -> std::result::Result<HashMap<String, String>, D::Error> {
-        Ok(HashMap::new())
-    }
-}
-
-struct YamlValueOption;
-
-impl ArchiveWith<Option<serde_yaml::Value>> for YamlValueOption {
-    type Archived = <Option<String> as Archive>::Archived;
-    type Resolver = <Option<String> as Archive>::Resolver;
-
-    fn resolve_with(
-        field: &Option<serde_yaml::Value>,
-        resolver: Self::Resolver,
-        out: Place<Self::Archived>,
-    ) {
-        yaml_value_archive_string(field).resolve(resolver, out);
-    }
-}
-
-impl<S> SerializeWith<Option<serde_yaml::Value>, S> for YamlValueOption
-where
-    Option<String>: rkyv::Serialize<S>,
-    S: Fallible + ?Sized,
-{
-    fn serialize_with(
-        field: &Option<serde_yaml::Value>,
-        serializer: &mut S,
-    ) -> std::result::Result<Self::Resolver, S::Error> {
-        yaml_value_archive_string(field).serialize(serializer)
-    }
-}
-
-impl<D> DeserializeWith<<Option<String> as Archive>::Archived, Option<serde_yaml::Value>, D>
-    for YamlValueOption
-where
-    <Option<String> as Archive>::Archived: rkyv::Deserialize<Option<String>, D>,
-    D: Fallible + ?Sized,
-    D::Error: Source,
-{
-    fn deserialize_with(
-        field: &<Option<String> as Archive>::Archived,
-        deserializer: &mut D,
-    ) -> std::result::Result<Option<serde_yaml::Value>, D::Error> {
-        let raw: Option<String> = rkyv::Deserialize::deserialize(field, deserializer)?;
-        raw.map(|raw| {
-            serde_yaml::from_str(&raw).map_err(|err| {
-                D::Error::new(IoError::new(
-                    ErrorKind::InvalidData,
-                    format!("failed to decode archived aqua var default: {err}"),
-                ))
-            })
-        })
-        .transpose()
-    }
-}
-
-fn yaml_value_archive_string(value: &Option<serde_yaml::Value>) -> Option<String> {
-    value.as_ref().map(|value| {
-        serde_yaml::to_string(value).expect("serde_yaml::Value should serialize to YAML")
-    })
 }
 
 impl Default for AquaPackage {
