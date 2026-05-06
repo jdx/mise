@@ -64,3 +64,22 @@ output_global_task_from_sub=$(cd projects/frontend && mise run global-show-root)
 echo "global task from subproject: $output_global_task_from_sub"
 # From inside the subproject the local project root is the subproject's mise.toml dir.
 assert_contains "echo $output_global_task_from_sub" "PROJECT_ROOT=$frontend_root"
+
+# Global *file* task (script under ~/.config/mise/tasks/) must also use the
+# local project root, not the global config dir. task.config_source for these
+# is the script path itself, which is why this case needs task.global rather
+# than is_global_config(&task.config_source).
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+cat >"$MISE_CONFIG_DIR/tasks/global-file-show-root" <<'SH'
+#!/usr/bin/env bash
+echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"
+SH
+chmod +x "$MISE_CONFIG_DIR/tasks/global-file-show-root"
+
+output_global_file_from_root=$(mise run global-file-show-root)
+echo "global file task from monorepo root: $output_global_file_from_root"
+assert_contains "echo $output_global_file_from_root" "PROJECT_ROOT=$monorepo_root"
+
+output_global_file_from_sub=$(cd projects/frontend && mise run global-file-show-root)
+echo "global file task from subproject: $output_global_file_from_sub"
+assert_contains "echo $output_global_file_from_sub" "PROJECT_ROOT=$frontend_root"

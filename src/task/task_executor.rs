@@ -283,12 +283,12 @@ impl TaskExecutor {
         // cwd from which the task was invoked (important for monorepo subprojects, where
         // config.project_root depends on cwd).
         //
-        // Exception: for tasks defined in a global/system config, task.config_root points
-        // at the global config directory (e.g. ~/.config/mise) which is rarely what the
-        // task author wants. Fall back to config.project_root (the local project the user
-        // is in) for those, matching the pre-existing behavior.
-        let task_is_global = crate::config::is_global_config(&task.config_source);
-        let project_root = if task_is_global {
+        // Exception: for global tasks (inline in ~/.config/mise/config.toml or scripts in
+        // ~/.config/mise/tasks/) and remote tasks (loaded from git/http), task.config_root
+        // points at the global/remote location rather than the user's project. Fall back
+        // to config.project_root (the local project the user is in) for those, matching
+        // the pre-existing behavior.
+        let project_root = if task.global || task.is_remote() {
             config.project_root.clone().or(task.config_root.clone())
         } else {
             task.config_root.clone().or(config.project_root.clone())
