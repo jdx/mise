@@ -93,7 +93,7 @@
               }
             },
             "required": ["full"],
-            "additionalProperties": false
+            "unevaluatedProperties": false
           }
         ]
       },
@@ -155,10 +155,10 @@
         }
       },
       "required": ["cmd", "expected"],
-      "additionalProperties": false,
+      "unevaluatedProperties": false,
       "description": "Command to test the tool installation"
     }
   },
   "required": ["backends"],
-  "additionalProperties": false
+  "unevaluatedProperties": false
 }

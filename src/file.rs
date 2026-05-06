@@ -1216,7 +1216,7 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
 
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
     if cfg!(macos) {
-        cmd!("cp", "-cR", from, to).run()?;
+        cmd!("/bin/cp", "-cR", from, to).run()?;
     } else if cfg!(windows) {
         cmd!("robocopy", from, to, "/MIR").run()?;
     } else {
