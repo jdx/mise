@@ -16,10 +16,6 @@ GitHub hostname
 
 ## Flags
 
-### `--unmask`
-
-Show the full unmasked token
-
 ### `--oauth`
 
 Force native GitHub OAuth device flow instead of normal token resolution
@@ -27,6 +23,10 @@ Force native GitHub OAuth device flow instead of normal token resolution
 ### `--raw`
 
 Print only the token value
+
+### `--unmask`
+
+Show the full unmasked token
 
 Examples:
 

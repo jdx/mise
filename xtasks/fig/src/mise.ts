@@ -3733,11 +3733,6 @@ const completionSpec: Fig.Spec = {
           description: "GitHub token",
           options: [
             {
-              name: "--unmask",
-              description: "Show the full unmasked token",
-              isRepeatable: false,
-            },
-            {
               name: "--oauth",
               description:
                 "Force native GitHub OAuth device flow instead of normal token resolution",
@@ -3746,6 +3741,11 @@ const completionSpec: Fig.Spec = {
             {
               name: "--raw",
               description: "Print only the token value",
+              isRepeatable: false,
+            },
+            {
+              name: "--unmask",
+              description: "Show the full unmasked token",
               isRepeatable: false,
             },
           ],
