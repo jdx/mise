@@ -205,7 +205,7 @@ schema["$defs"].settings.properties = settings;
 // Keep task_props as the shared task-property definition. task and
 // task_template close over it with unevaluatedProperties so the property map is
 // only defined once.
-if (!schema["$defs"].task_props) {
+if (schema["$defs"].task_props === undefined) {
   throw new Error("schema/mise.json is missing $defs.task_props");
 }
 
