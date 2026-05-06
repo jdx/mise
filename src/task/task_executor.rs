@@ -278,8 +278,18 @@ impl TaskExecutor {
         if let Some(cwd) = &*crate::dirs::CWD {
             env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
         }
-        if let Some(root) = config.project_root.clone().or(task.config_root.clone()) {
+        // Prefer the task's own config_root so MISE_PROJECT_ROOT is the directory of the
+        // mise.toml that defined the task. This keeps the value stable regardless of the
+        // cwd from which the task was invoked (important for monorepo subprojects, where
+        // config.project_root depends on cwd).
+        if let Some(root) = task.config_root.clone().or(config.project_root.clone()) {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
+        }
+        if let Some(monorepo_root) = config.monorepo_root() {
+            env.insert(
+                "MISE_MONOREPO_ROOT".into(),
+                monorepo_root.display().to_string(),
+            );
         }
         env.insert("MISE_TASK_NAME".into(), task.name.clone());
         let task_file = task
