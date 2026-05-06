@@ -1,4 +1,3 @@
-use crate::backend::aqua::{arch, os};
 use crate::config::Settings;
 use crate::git::{CloneOptions, Git};
 use crate::{dirs, duration::WEEKLY, file};
@@ -93,11 +92,6 @@ impl MiseAquaRegistry {
         let pkg = self.inner.package(id).await?;
         CACHE.lock().await.insert(id.to_string(), pkg.clone());
         Ok(pkg)
-    }
-
-    pub async fn package_with_version(&self, id: &str, versions: &[&str]) -> Result<AquaPackage> {
-        let pkg = self.package(id).await?;
-        Ok(pkg.with_version(versions, os(), arch()))
     }
 }
 
