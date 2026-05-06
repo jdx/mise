@@ -1318,27 +1318,16 @@ impl AquaBackend {
             return Ok(None);
         }
 
+        if pkg.version_source.as_deref() == Some("github_tag") {
+            return Ok(None);
+        }
+
         let opts = config
             .get_tool_opts(&self.ba)
             .await?
             .unwrap_or_else(|| self.ba.opts());
         let want_prereleases = include_prereleases(&opts);
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        if pkg.version_source.as_deref() == Some("github_tag") {
-            return match github::list_tags(&repo).await {
-                Ok(tags) => Ok(self
-                    .first_installable_version_from_tags(&pkg, tags, want_prereleases)
-                    .await),
-                Err(e) => {
-                    debug!(
-                        "Failed to fetch GitHub tags for aqua package {}: {e}",
-                        self.id
-                    );
-                    Ok(None)
-                }
-            };
-        }
-
         let release = match github::get_release(&repo, "latest").await {
             Ok(release) => release,
             Err(e) => {
@@ -1431,30 +1420,6 @@ impl AquaBackend {
         } else {
             Ok(None)
         }
-    }
-
-    async fn first_installable_version_from_tags(
-        &self,
-        pkg: &AquaPackage,
-        tags: Vec<String>,
-        want_prereleases: bool,
-    ) -> Option<String> {
-        for tag in tags {
-            match self.installable_version_from_tag(pkg, &tag).await {
-                Ok(Some(version))
-                    if version_allowed_by_prerelease_opts(&version, want_prereleases) =>
-                {
-                    return Some(version);
-                }
-                Ok(None) => continue,
-                Ok(Some(_)) => continue,
-                Err(e) => {
-                    warn!("[{}] aqua version filter error: {e}", self.ba());
-                    continue;
-                }
-            }
-        }
-        None
     }
 
     async fn tag_has_installable_package(&self, tag: &str) -> bool {
