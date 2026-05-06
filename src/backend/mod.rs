@@ -85,7 +85,7 @@ const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
     ToolOptionSource::InlineBackendArg,
 ];
 
-fn has_local_remote_version_listing_tool_opts(
+fn has_local_version_listing_option_override(
     resolved_opts: &crate::toolset::ResolvedToolOptions,
     version_listing_opt_keys: &[&str],
 ) -> bool {
@@ -444,7 +444,7 @@ mod tests {
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&install_only_opts, ToolOptionSource::Config);
 
-        assert!(!has_local_remote_version_listing_tool_opts(
+        assert!(!has_local_version_listing_option_override(
             &resolved,
             &["api_url", "version_prefix"],
         ));
@@ -456,7 +456,7 @@ mod tests {
         );
         resolved.apply_overrides(&listing_opts, ToolOptionSource::Config);
 
-        assert!(has_local_remote_version_listing_tool_opts(
+        assert!(has_local_version_listing_option_override(
             &resolved,
             &["api_url", "version_prefix"],
         ));
@@ -474,7 +474,7 @@ mod tests {
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&opts, ToolOptionSource::Registry);
 
-        assert!(!has_local_remote_version_listing_tool_opts(
+        assert!(!has_local_version_listing_option_override(
             &resolved,
             &["api_url", "version_prefix"],
         ));
@@ -492,7 +492,7 @@ mod tests {
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&opts, ToolOptionSource::InlineBackendArg);
 
-        assert!(has_local_remote_version_listing_tool_opts(
+        assert!(has_local_version_listing_option_override(
             &resolved,
             &[ALL_TOOL_OPTION_KEYS],
         ));
@@ -917,8 +917,7 @@ pub trait Backend: Debug + Send + Sync {
             _ => false,
         };
 
-        // Check if this is an external plugin with a custom remote - skip versions host if so
-        let has_local_version_listing_opts = has_local_remote_version_listing_tool_opts(
+        let has_local_version_listing_override = has_local_version_listing_option_override(
             &resolved_opts,
             self.remote_version_listing_tool_option_keys(),
         );
@@ -928,7 +927,7 @@ pub trait Backend: Debug + Send + Sync {
                 ba.short, backend_type
             );
             false
-        } else if has_local_version_listing_opts {
+        } else if has_local_version_listing_override {
             trace!(
                 "Skipping versions host for {} because local backend opts affect remote version listing",
                 ba.short,
