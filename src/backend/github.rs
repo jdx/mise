@@ -6,7 +6,9 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_platform_key_for_target,
     template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
 };
-use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
+use crate::backend::{
+    MISE_BINS_DIR, SecurityFeature, runtime_path_for_bin_paths, runtime_path_for_install_path,
+};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
 use crate::file;
@@ -354,7 +356,7 @@ impl Backend for UnifiedGitBackend {
     ) -> Result<Vec<std::path::PathBuf>> {
         let mise_bins_dir = tv.install_path().join(MISE_BINS_DIR);
         if self.get_filter_bins(tv).is_some() || mise_bins_dir.is_dir() {
-            return Ok(vec![tv.runtime_path().join(MISE_BINS_DIR)]);
+            return Ok(vec![runtime_path_for_bin_paths(tv).join(MISE_BINS_DIR)]);
         }
 
         Ok(self

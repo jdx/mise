@@ -1,8 +1,8 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{lookup_platform_key, try_with_v_prefix};
+use crate::backend::{runtime_path_for_bin_paths, runtime_path_for_install_path};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::env::{
@@ -372,13 +372,13 @@ impl Backend for UbiBackend {
                 tv.install_path().join(&bin_path),
             )])
         } else if opts.get("extract_all").is_some_and(|v| v == "true") {
-            Ok(vec![tv.runtime_path()])
+            Ok(vec![runtime_path_for_bin_paths(tv)])
         } else {
             let bin_path = tv.install_path().join("bin");
             if bin_path.exists() {
                 Ok(vec![runtime_path_for_install_path(tv, bin_path)])
             } else {
-                Ok(vec![tv.runtime_path()])
+                Ok(vec![runtime_path_for_bin_paths(tv)])
             }
         }
     }

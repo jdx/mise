@@ -93,6 +93,24 @@ fn has_local_version_listing_option_override(
         .has_any_key_from_sources(version_listing_opt_keys, VERSIONS_HOST_LOCAL_OPT_SOURCES)
 }
 
+/// Returns the runtime-label path that `bin-paths` should expose.
+///
+/// This intentionally does not call `ToolVersion::runtime_path()`: when a
+/// lockfile resolves a fuzzy request to a concrete version, `runtime_path()`
+/// returns the concrete install dir, but `bin-paths` should still use the
+/// requested runtime label.
+pub(crate) fn runtime_path_for_bin_paths(tv: &ToolVersion) -> PathBuf {
+    let pathname = match &tv.request {
+        ToolRequest::Version { version, .. } if version != &tv.version => version,
+        ToolRequest::Prefix { prefix, .. } => prefix,
+        _ => return tv.runtime_path(),
+    }
+    .replace([':', '/'], "-");
+
+    let path = tv.ba().installs_path.join(&pathname);
+    env::find_in_shared_installs(path, &tv.ba().tool_dir_name(), &pathname)
+}
+
 /// Remaps a backend-discovered path from the concrete install dir to the
 /// runtime path users put on PATH.
 ///
@@ -102,7 +120,7 @@ fn has_local_version_listing_option_override(
 pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> PathBuf {
     let install_path = tv.install_path();
     if let Ok(relative_path) = path.strip_prefix(&install_path) {
-        let runtime_path = tv.runtime_path();
+        let runtime_path = runtime_path_for_bin_paths(tv);
         if relative_path.as_os_str().is_empty() {
             runtime_path
         } else {
@@ -542,6 +560,45 @@ mod tests {
         assert_eq!(
             runtime_path_for_install_path(&tv, external_path.clone()),
             external_path
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_runtime_path_for_install_path_uses_request_label_without_symlink() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "runtime-remap-missing-symlink-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short.clone(),
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(&short);
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let install_path = backend.installs_path.join("1.0.1");
+        fs::create_dir_all(install_path.join("bin"))?;
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "latest".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.0.1".into());
+
+        assert_eq!(
+            runtime_path_for_install_path(&tv, install_path.join("bin")),
+            tv.ba().installs_path.join("latest").join("bin")
         );
 
         Ok(())
@@ -1798,7 +1855,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<Vec<PathBuf>> {
         match tv.request {
             ToolRequest::System { .. } => Ok(vec![]),
-            _ => Ok(vec![tv.runtime_path().join("bin")]),
+            _ => Ok(vec![runtime_path_for_bin_paths(tv).join("bin")]),
         }
     }
 

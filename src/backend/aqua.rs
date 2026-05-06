@@ -22,7 +22,10 @@ use crate::{
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
-use crate::{backend::Backend, backend::MISE_BINS_DIR, backend::strict_metadata, config::Config};
+use crate::{
+    backend::Backend, backend::MISE_BINS_DIR, backend::runtime_path_for_bin_paths,
+    backend::strict_metadata, config::Config,
+};
 use crate::{file, github, minisign};
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
@@ -492,7 +495,7 @@ impl Backend for AquaBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        let runtime_path = tv.runtime_path();
+        let runtime_path = runtime_path_for_bin_paths(tv);
         let mise_bins_dir = tv.install_path().join(MISE_BINS_DIR);
         if self.symlink_bins(tv) || mise_bins_dir.is_dir() {
             return Ok(vec![runtime_path.join(MISE_BINS_DIR)]);

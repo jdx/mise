@@ -1,12 +1,12 @@
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     clean_binary_name, get_filename_from_url, list_available_platforms_with_key,
     lookup_platform_key, rename_executable_in_dir, template_string, verify_artifact,
 };
 use crate::backend::version_list;
+use crate::backend::{runtime_path_for_bin_paths, runtime_path_for_install_path};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
@@ -745,13 +745,13 @@ impl Backend for HttpBackend {
         // Check for explicit bin_path
         if let Some(bin_path_template) = get_opt(&opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
-            return Ok(vec![tv.runtime_path().join(bin_path)]);
+            return Ok(vec![runtime_path_for_bin_paths(tv).join(bin_path)]);
         }
 
         // Check for bin directory
         let bin_dir = install_path.join("bin");
         if bin_dir.exists() {
-            return Ok(vec![tv.runtime_path().join("bin")]);
+            return Ok(vec![runtime_path_for_bin_paths(tv).join("bin")]);
         }
 
         // Search subdirectories for bin directories
@@ -769,7 +769,7 @@ impl Backend for HttpBackend {
         }
 
         if paths.is_empty() {
-            Ok(vec![tv.runtime_path()])
+            Ok(vec![runtime_path_for_bin_paths(tv)])
         } else {
             Ok(paths
                 .into_iter()

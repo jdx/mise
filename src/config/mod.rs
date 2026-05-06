@@ -1747,7 +1747,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
             .wrap_err("failed to rebuild shims")?;
     });
     measure!("rebuilding runtime symlinks", {
-        runtime_symlinks::rebuild(config)
+        runtime_symlinks::rebuild_for_toolset(config, ts)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
     });
