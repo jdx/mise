@@ -9,13 +9,29 @@
       "type": "string",
       "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
     },
-    "backendOptionValue": {
-      "oneOf": [
+    "optionValue": {
+      "description": "Backend option value.",
+      "anyOf": [
         {
           "type": "string"
         },
         {
+          "type": "number"
+        },
+        {
           "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/optionValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/optionValue"
+          }
         }
       ]
     },
@@ -72,13 +88,13 @@
                       "type": "object",
                       "description": "Platform-specific configuration",
                       "additionalProperties": {
-                        "$ref": "#/definitions/backendOptionValue"
+                        "$ref": "#/definitions/optionValue"
                       }
                     }
                   }
                 },
                 "additionalProperties": {
-                  "$ref": "#/definitions/backendOptionValue"
+                  "$ref": "#/definitions/optionValue"
                 }
               }
             },
