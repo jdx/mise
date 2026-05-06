@@ -1752,6 +1752,14 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--before",
+          description: "Only show versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
+          },
+        },
+        {
           name: ["-J", "--json"],
           description:
             "Output in JSON format (includes version metadata like created_at timestamps when available)",
@@ -1772,14 +1780,6 @@ const completionSpec: Fig.Spec = {
           name: "--strict-metadata",
           description: "Fail if release metadata fetches fail",
           isRepeatable: false,
-        },
-        {
-          name: "--before",
-          description: "Only show versions released before this date",
-          isRepeatable: false,
-          args: {
-            name: "before",
-          },
         },
       ],
       args: [

@@ -25,6 +25,12 @@ same as the first argument after the "@"
 
 Show all installed plugins and versions
 
+### `--before <BEFORE>`
+
+Only show versions released before this date
+
+Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+
 ### `-J --json`
 
 Output in JSON format (includes version metadata like created_at timestamps when available)
@@ -48,12 +54,6 @@ Requires --json and --no-versions-host.
 
 This prevents metadata consumers from accepting empty fallback results
 when a backend's metadata-producing upstream request fails.
-
-### `--before <BEFORE>`
-
-Only show versions released before this date
-
-Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 
 Examples:
 
