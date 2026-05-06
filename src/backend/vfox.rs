@@ -9,10 +9,10 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use tokio::sync::RwLock;
 
+use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{ALL_TOOL_OPTION_KEYS, Backend};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
@@ -74,11 +74,11 @@ impl Backend for VfoxBackend {
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
-        if self.is_backend_plugin() {
-            &[ALL_TOOL_OPTION_KEYS]
-        } else {
-            &[]
-        }
+        // TODO: support a vfox backend plugin capability/metadata field for
+        // declaring which tool options affect BackendListVersions. The
+        // vendored plugins do not currently expose version-listing options, so
+        // keep versions-host behavior unchanged until there is a real contract.
+        &[]
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
