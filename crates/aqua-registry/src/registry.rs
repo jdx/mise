@@ -143,17 +143,6 @@ where
         CACHE.lock().await.insert(id.to_string(), pkg.clone());
         Ok(pkg)
     }
-
-    /// Get a package definition configured for specific versions
-    pub async fn package_with_version(
-        &self,
-        id: &str,
-        versions: &[&str],
-        os: &str,
-        arch: &str,
-    ) -> Result<AquaPackage> {
-        Ok(self.package(id).await?.with_version(versions, os, arch))
-    }
 }
 
 impl RegistryFetcher for DefaultRegistryFetcher {

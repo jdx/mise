@@ -3,11 +3,11 @@ set -euxo pipefail
 
 BASE_DIR="$(pwd)"
 RELEASE_DIR="$(pwd)/tmp"
-MISE_VERSION="v$(curl -fsSL https://mise.en.dev/VERSION)"
+MISE_VERSION="v$(curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 https://mise.en.dev/VERSION)"
 export BASE_DIR RELEASE_DIR MISE_VERSION
 
 mkdir -p "$RELEASE_DIR/$MISE_VERSION"
-curl -fsSL "https://mise.en.dev/$MISE_VERSION/SHASUMS256.txt" >"$RELEASE_DIR/$MISE_VERSION/SHASUMS256.txt"
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 "https://mise.en.dev/$MISE_VERSION/SHASUMS256.txt" >"$RELEASE_DIR/$MISE_VERSION/SHASUMS256.txt"
 ./scripts/render-install.sh >tmp/install.sh
 chmod +x tmp/install.sh
 mise x shellcheck -- shellcheck tmp/install.sh

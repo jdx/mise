@@ -67,6 +67,20 @@ struct AquaOverride {
     pkg: AquaPackage,
     goos: Option<String>,
     goarch: Option<String>,
+    #[serde(default)]
+    variants: Vec<AquaVariant>,
+}
+
+/// Runtime variant selector for an override.
+#[derive(Debug, Deserialize, Clone)]
+struct AquaVariant {
+    key: String,
+    value: String,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct AquaRuntime<'a> {
+    libc: Option<&'a str>,
 }
 
 /// Variable definition for Aqua templates
@@ -232,20 +246,36 @@ impl Default for AquaPackage {
 
 impl AquaPackage {
     /// Apply version-specific configurations and overrides
-    pub fn with_version(mut self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
+    pub fn with_version(self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
+        self.with_version_runtime(versions, os, arch, AquaRuntime::default())
+    }
+
+    /// Apply version-specific configurations and overrides for a libc runtime variant.
+    pub fn with_version_libc(
+        self,
+        versions: &[&str],
+        os: &str,
+        arch: &str,
+        libc: Option<&str>,
+    ) -> AquaPackage {
+        self.with_version_runtime(versions, os, arch, AquaRuntime { libc })
+    }
+
+    fn with_version_runtime(
+        mut self,
+        versions: &[&str],
+        os: &str,
+        arch: &str,
+        runtime: AquaRuntime<'_>,
+    ) -> AquaPackage {
         self = apply_override(self.clone(), self.version_override(versions));
-        if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
-            if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
-                goos == os && goarch == arch
-            } else if let Some(goos) = &o.goos {
-                goos == os
-            } else if let Some(goarch) = &o.goarch {
-                goarch == arch
-            } else {
-                false
-            }
-        }) {
-            self = apply_override(self, &avo.pkg)
+        if let Some(pkg) = self
+            .overrides
+            .iter()
+            .find(|o| o.matches(os, arch, runtime))
+            .map(|o| o.pkg.clone())
+        {
+            self = apply_override(self, &pkg)
         }
         self
     }
@@ -527,6 +557,52 @@ impl AquaPackage {
         let mut ctx = Context::default();
         ctx.insert("Version", v);
         ctx
+    }
+}
+
+impl AquaOverride {
+    fn matches(&self, os: &str, arch: &str, runtime: AquaRuntime<'_>) -> bool {
+        let platform_matches = if let (Some(goos), Some(goarch)) = (&self.goos, &self.goarch) {
+            goos == os && goarch == arch
+        } else if let Some(goos) = &self.goos {
+            goos == os
+        } else if let Some(goarch) = &self.goarch {
+            goarch == arch
+        } else {
+            false
+        };
+
+        platform_matches
+            && self
+                .variants
+                .iter()
+                .all(|variant| variant.matches(os, runtime))
+    }
+}
+
+impl AquaVariant {
+    fn matches(&self, os: &str, runtime: AquaRuntime<'_>) -> bool {
+        match self.key.as_str() {
+            "libc" => match (
+                normalize_libc(runtime.libc),
+                normalize_libc(Some(&self.value)),
+            ) {
+                (Some(actual), Some(expected)) => os == "linux" && actual == expected,
+                _ => false,
+            },
+            key => {
+                log::debug!("unsupported aqua override variant key: {key}");
+                false
+            }
+        }
+    }
+}
+
+fn normalize_libc(libc: Option<&str>) -> Option<&str> {
+    match libc? {
+        "glibc" | "gnu" => Some("gnu"),
+        "musl" => Some("musl"),
+        _ => None,
     }
 }
 
@@ -1319,5 +1395,103 @@ packages:
         let cosign = pkg.cosign.unwrap();
         assert!(cosign.bundle.is_some());
         assert!(cosign.key.is_some());
+    }
+
+    #[test]
+    fn test_override_variants_match_linux_libc() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-{{.Version}}-{{.OS}}-{{.Arch}}-gnu
+    format: raw
+    overrides:
+      - goos: linux
+        variants:
+          - key: libc
+            value: gnu
+      - goos: linux
+        url: https://example.com/tool-{{.Version}}-{{.OS}}-{{.Arch}}-musl
+        variants:
+          - key: libc
+            value: musl
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
+
+        let gnu = pkg
+            .clone()
+            .with_version_libc(&["1.0.0"], "linux", "amd64", Some("gnu"));
+        let musl = pkg.with_version_libc(&["1.0.0"], "linux", "amd64", Some("musl"));
+
+        assert_eq!(
+            gnu.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-1.0.0-linux-amd64-gnu"
+        );
+        assert_eq!(
+            musl.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-1.0.0-linux-amd64-musl"
+        );
+    }
+
+    #[test]
+    fn test_override_variants_skip_unknown_keys() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - goos: linux
+        url: https://example.com/tool-avx2
+        variants:
+          - key: cpu
+            value: avx2
+      - goos: linux
+        url: https://example.com/tool-musl
+        variants:
+          - key: libc
+            value: musl
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_version_libc(&["1.0.0"], "linux", "amd64", Some("musl"));
+
+        assert_eq!(
+            pkg.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-musl"
+        );
+    }
+
+    #[test]
+    fn test_override_variants_do_not_match_without_runtime_libc() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - goos: linux
+        url: https://example.com/tool-musl
+        variants:
+          - key: libc
+            value: musl
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(
+            pkg.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-default"
+        );
     }
 }
