@@ -105,9 +105,11 @@ jobs:
       - id: determine-tools
         run: |
           if [ "${{ steps.workflow-check.outputs.modified }}" == "true" ]; then
-            echo "Workflow modified, running all tests"
-            echo "tools=" >> "$GITHUB_OUTPUT"
-            echo "tranches=8" >> "$GITHUB_OUTPUT"
+            # Exercise the registry workflow path without expanding PRs to the full registry.
+            workflow_test_tools="actionlint bat delta difftastic eza fd fzf jaq jq ripgrep shellcheck shfmt starship usage yq zoxide"
+            echo "Workflow modified, testing representative tools: $workflow_test_tools"
+            echo "tools=$workflow_test_tools" >> "$GITHUB_OUTPUT"
+            echo "tranches=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
