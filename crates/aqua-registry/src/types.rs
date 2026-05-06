@@ -2,6 +2,8 @@ use expr::{Context, Environment, Program, Value};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use serde::Deserializer;
+use serde::de::Error as DeError;
 use serde_derive::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
@@ -73,7 +75,10 @@ struct AquaOverride {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct AquaVar {
     pub name: String,
-    pub default: Option<serde_yaml::Value>,
+    /// Aqua's schema allows arbitrary YAML defaults, but mise intentionally
+    /// supports only string defaults to keep variable resolution simple.
+    #[serde(default, deserialize_with = "deserialize_aqua_var_default")]
+    pub default: Option<String>,
     #[serde(default)]
     pub required: bool,
 }
@@ -457,10 +462,7 @@ impl AquaPackage {
         if let Some(value) = self.var_values.get(&var.name) {
             return Ok(Some(value.clone()));
         }
-        var.default
-            .as_ref()
-            .map(|value| yaml_var_to_string(&var.name, value))
-            .transpose()
+        Ok(var.default.clone())
     }
 
     /// Set up version filter expression if configured
@@ -530,15 +532,25 @@ impl AquaPackage {
     }
 }
 
-fn yaml_var_to_string(name: &str, value: &serde_yaml::Value) -> Result<String> {
+fn deserialize_aqua_var_default<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = <serde_yaml::Value as serde::Deserialize>::deserialize(deserializer)?;
+    aqua_var_default_from_yaml(value).map_err(D::Error::custom)
+}
+
+fn aqua_var_default_from_yaml(
+    value: serde_yaml::Value,
+) -> std::result::Result<Option<String>, String> {
     match value {
-        serde_yaml::Value::String(s) => Ok(s.clone()),
-        serde_yaml::Value::Null => Ok(String::new()),
-        serde_yaml::Value::Tagged(tagged) => yaml_var_to_string(name, &tagged.value),
-        value => Err(eyre!(
-            "aqua var `{}` must be a string, got {}",
-            name,
-            yaml_value_kind(value)
+        serde_yaml::Value::String(s) => Ok(Some(s)),
+        serde_yaml::Value::Tagged(tagged) => aqua_var_default_from_yaml(tagged.value),
+        value => Err(format!(
+            "aqua var default must be a string, got {}",
+            yaml_value_kind(&value)
         )),
     }
 }
@@ -1000,8 +1012,8 @@ impl AquaGithubArtifactAttestations {
 mod tests {
     use super::*;
 
-    fn default_str(value: &str) -> Option<serde_yaml::Value> {
-        Some(serde_yaml::Value::String(value.to_string()))
+    fn default_str(value: &str) -> Option<String> {
+        Some(value.to_string())
     }
 
     #[test]
@@ -1166,56 +1178,48 @@ mod tests {
     }
 
     #[test]
-    fn test_vars_default_scalar_value() {
-        let pkg = AquaPackage {
-            asset: "tool-go{{.Vars.go_version}}-{{.Version}}.tar.gz".to_string(),
-            vars: vec![AquaVar {
-                name: "go_version".to_string(),
-                default: Some(serde_yaml::from_str(r#""1.24""#).unwrap()),
-                required: false,
-            }],
-            ..Default::default()
-        };
+    fn test_vars_default_unquoted_yaml_string() {
+        let yml = r#"
+packages:
+  - asset: tool-{{.Vars.channel}}-{{.Version}}.tar.gz
+    vars:
+      - name: channel
+        default: stable
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
         let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
-        assert_eq!(asset, "tool-go1.24-1.0.0.tar.gz");
+        assert_eq!(asset, "tool-stable-1.0.0.tar.gz");
     }
 
     #[test]
-    fn test_vars_default_array_errors() {
-        let pkg = AquaPackage {
-            asset: "tool-{{.Vars.channels}}-{{.Version}}.tar.gz".to_string(),
-            vars: vec![AquaVar {
-                name: "channels".to_string(),
-                default: Some(serde_yaml::from_str("[stable, beta]").unwrap()),
-                required: true,
-            }],
-            ..Default::default()
-        };
-        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("aqua var `channels` must be a string, got array"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn test_vars_default_object_errors() {
-        let pkg = AquaPackage {
-            asset: "tool-{{.Vars.config}}-{{.Version}}.tar.gz".to_string(),
-            vars: vec![AquaVar {
-                name: "config".to_string(),
-                default: Some(serde_yaml::from_str("{channel: stable, flavor: beta}").unwrap()),
-                required: true,
-            }],
-            ..Default::default()
-        };
-        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("aqua var `config` must be a string, got object"),
-            "unexpected error: {err}"
-        );
+    fn test_vars_non_string_defaults_fail_yaml_parse() {
+        for (yaml_default, kind) in [
+            ("null", "null"),
+            ("true", "boolean"),
+            ("123", "number"),
+            ("[stable, beta]", "array"),
+            ("{channel: stable}", "object"),
+        ] {
+            let yml = format!(
+                r#"
+packages:
+  - vars:
+      - name: channel
+        default: {yaml_default}
+"#
+            );
+            let err = serde_yaml::from_str::<RegistryYaml>(&yml).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains(&format!("aqua var default must be a string, got {kind}")),
+                "unexpected error for {yaml_default}: {err}"
+            );
+        }
     }
 
     #[test]

@@ -50,6 +50,7 @@ fn generate_baked_registry(out_dir: &str) -> Result<()> {
                 registry_file.display()
             )
         })?;
+    validate_var_defaults(packages)?;
     let registries = package_registries(packages)?;
     if registries.is_empty() {
         return Err(eyre!(
@@ -119,6 +120,66 @@ fn package_registries(packages: &[Value]) -> Result<Vec<PackageRegistry>> {
         });
     }
     Ok(registries)
+}
+
+fn validate_var_defaults(packages: &[Value]) -> Result<()> {
+    for package in packages {
+        let package_id = canonical_package_id(package).unwrap_or_else(|| "<unknown>".to_string());
+        validate_var_defaults_in_value(package, &package_id)?;
+    }
+    Ok(())
+}
+
+fn validate_var_defaults_in_value(value: &Value, package_id: &str) -> Result<()> {
+    match value {
+        Value::Mapping(mapping) => {
+            if let Some(vars) = value.get("vars").and_then(|vars| vars.as_sequence()) {
+                for var in vars {
+                    if let Some(default) = var.get("default")
+                        && !yaml_value_is_string(default)
+                    {
+                        let var_name =
+                            string_field(var, "name").unwrap_or_else(|| "<unnamed>".to_string());
+                        return Err(eyre!(
+                            "unsupported non-string aqua var default in package {package_id}, var {var_name}: got {}",
+                            yaml_value_kind(default)
+                        ));
+                    }
+                }
+            }
+            for child in mapping.values() {
+                validate_var_defaults_in_value(child, package_id)?;
+            }
+        }
+        Value::Sequence(values) => {
+            for child in values {
+                validate_var_defaults_in_value(child, package_id)?;
+            }
+        }
+        Value::Tagged(tagged) => validate_var_defaults_in_value(&tagged.value, package_id)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+fn yaml_value_is_string(value: &Value) -> bool {
+    match value {
+        Value::String(_) => true,
+        Value::Tagged(tagged) => yaml_value_is_string(&tagged.value),
+        _ => false,
+    }
+}
+
+fn yaml_value_kind(value: &Value) -> &'static str {
+    match value {
+        Value::String(_) => "string",
+        Value::Number(_) => "number",
+        Value::Bool(_) => "boolean",
+        Value::Sequence(_) => "array",
+        Value::Mapping(_) => "object",
+        Value::Null => "null",
+        Value::Tagged(tagged) => yaml_value_kind(&tagged.value),
+    }
 }
 
 fn registry_files_code(registries: &[PackageRegistry]) -> String {
