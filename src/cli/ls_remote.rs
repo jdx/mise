@@ -45,6 +45,12 @@ pub struct LsRemote {
     #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
     pub all: bool,
 
+    /// Only show versions released before this date
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(long, verbatim_doc_comment)]
+    pub before: Option<String>,
+
     /// Output in JSON format (includes version metadata like created_at timestamps when available)
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
@@ -68,12 +74,6 @@ pub struct LsRemote {
     /// when a backend's metadata-producing upstream request fails.
     #[clap(long, verbatim_doc_comment, requires_all = ["json", "no_versions_host"])]
     pub strict_metadata: bool,
-
-    /// Only show versions released before this date
-    ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[clap(long, verbatim_doc_comment)]
-    pub before: Option<String>,
 }
 
 impl LsRemote {
