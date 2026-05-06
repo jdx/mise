@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Regression test for the prefer-offline auto-install path.
+#
+# In prefer-offline mode (set on shim/hook-env/activate paths), install-time
+# version resolution must reuse the on-disk remote-versions cache populated
+# by an earlier non-prefer-offline command, NOT bypass it with a forced
+# refresh. The forced-refresh path falls through to the backend's own
+# listing, which for many backends returns far fewer versions (e.g. the
+# GitHub releases listing returns only the most recent ~30) — turning
+# previously-resolvable prefix queries into "no versions found for <tool>"
+# in a project whose `mise.toml` pins an older prefix.
+#
+# Reported on aafe53f19 (#9545):
+# https://github.com/jdx/mise/commit/aafe53f19#commitcomment-184356367
+
+# 1. Pre-warm the on-disk remote_versions cache. The dummy plugin's list-all
+#    writes [1.0.0 1.1.0 2.0.0] to the cache.
+mise install dummy@2.0.0
+
+# 2. Pin a prefix that has no installed match. install_single_tool sees no
+#    installed version matching "1.0", so the buggy code path would set
+#    refresh_remote_versions=true and force a re-fetch.
+cat >mise.toml <<EOF
+[tools]
+dummy = "prefix:1.0"
+EOF
+
+# 3. Make any call to list-all fail, and force prefer-offline mode.
+#    With the fix: the on-disk cache is reused and 1.0.0 is resolved and
+#    installed without re-running list-all.
+#    Without the fix: refresh_async re-runs list-all → exits 1 → the install
+#    aborts with "no versions found for dummy".
+RTX_FAILURE=1 MISE_PREFER_OFFLINE=1 mise install
+
+# 4. Confirm the prefix resolved from cache to 1.0.0 and was installed.
+assert_contains "mise ls dummy" "1.0.0"

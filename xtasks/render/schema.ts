@@ -4,7 +4,6 @@
 //MISE depends=["docs:setup"]
 
 import * as fs from "node:fs";
-import * as child_process from "node:child_process";
 import * as toml from "toml";
 
 type EnumValue = string | boolean | number;
@@ -20,6 +19,7 @@ type Props = {
 };
 
 type SettingsToml = Record<string, Props | Record<string, Props>>;
+type JsonObject = Record<string, unknown>;
 
 type Element = {
   type: string | string[];
@@ -41,6 +41,68 @@ type NestedElement = {
   deprecated?: true;
   properties: Record<string, Element>;
 };
+
+function writeFormattedJson(path: string, value: unknown) {
+  fs.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function crawlReferencedDefs(schema: JsonObject, root: unknown) {
+  const defs = schema["$defs"] as JsonObject | undefined;
+  if (!defs) {
+    throw new Error("schema/mise.json is missing $defs");
+  }
+
+  const queued = [root];
+  const seenDefs = new Set<string>();
+  const picked: JsonObject = {};
+
+  for (let i = 0; i < queued.length; i++) {
+    const value = queued[i];
+    if (Array.isArray(value)) {
+      queued.push(...value);
+      continue;
+    }
+    if (!value || typeof value !== "object") {
+      continue;
+    }
+
+    const obj = value as JsonObject;
+    const ref = obj["$ref"];
+    if (typeof ref === "string" && ref.startsWith("#/$defs/")) {
+      const key = ref.slice("#/$defs/".length).split("/")[0];
+      if (defs[key] === undefined) {
+        throw new Error(`schema/mise.json is missing $defs.${key}`);
+      }
+      if (!seenDefs.has(key)) {
+        seenDefs.add(key);
+        picked[key] = defs[key];
+        queued.push(defs[key]);
+      }
+    } else if (typeof ref === "string" && ref.startsWith("#/")) {
+      throw new Error(`unsupported local JSON schema ref: ${ref}`);
+    }
+
+    queued.push(...Object.values(obj));
+  }
+
+  return picked;
+}
+
+function buildTaskSchema(schema: JsonObject) {
+  const taskSchema: JsonObject = {
+    $id: "https://mise.en.dev/schema/mise-task.json",
+    $schema: schema["$schema"],
+    title: "mise-task-schema",
+    type: "object",
+    description:
+      "Config file for included mise tasks (https://mise.en.dev/tasks/#task-configuration)",
+    additionalProperties: {
+      $ref: "#/$defs/task",
+    },
+  };
+  taskSchema["$defs"] = crawlReferencedDefs(schema, taskSchema);
+  return taskSchema;
+}
 
 function buildElement(key: string, props: Props): Element {
   const typeMap: Record<string, string | string[]> = {
@@ -169,30 +231,8 @@ const taskObjectVariant = {
 const taskDef = schema["$defs"].task;
 taskDef.oneOf[taskDef.oneOf.length - 1] = taskObjectVariant;
 
-fs.writeFileSync("schema/mise.json.tmp", JSON.stringify(schema));
-
-child_process.execSync("jq . < schema/mise.json.tmp > schema/mise.json");
-child_process.execSync("prettier --write schema/mise.json");
-fs.unlinkSync("schema/mise.json.tmp");
-
-const taskSchema = JSON.parse(
-  fs.readFileSync("schema/mise-task.json", "utf-8"),
-);
-taskSchema["$defs"].env_directive = schema["$defs"].env_directive;
-taskSchema["$defs"].env = schema["$defs"].env;
-taskSchema["$defs"].vars = schema["$defs"].vars;
-taskSchema["$defs"].os_filter_item = schema["$defs"].os_filter_item;
-taskSchema["$defs"].os_filter = schema["$defs"].os_filter;
-taskSchema["$defs"].task_run_entry = schema["$defs"].task_run_entry;
-taskSchema["$defs"].task = schema["$defs"].task;
-taskSchema["$defs"].task_template = schema["$defs"].task_template;
-delete taskSchema["$defs"].task_props;
-fs.writeFileSync("schema/mise-task.json.tmp", JSON.stringify(taskSchema));
-child_process.execSync(
-  "jq . < schema/mise-task.json.tmp > schema/mise-task.json",
-);
-child_process.execSync("prettier --write schema/mise-task.json");
-fs.unlinkSync("schema/mise-task.json.tmp");
+writeFormattedJson("schema/mise.json", schema);
+writeFormattedJson("schema/mise-task.json", buildTaskSchema(schema));
 
 // Generate .miserc.toml schema with only rc=true settings
 const misercSettings: Record<string, Element> = {};
@@ -214,7 +254,4 @@ const misercSchema = {
   properties: misercSettings,
 };
 
-fs.writeFileSync("schema/miserc.json.tmp", JSON.stringify(misercSchema));
-child_process.execSync("jq . < schema/miserc.json.tmp > schema/miserc.json");
-child_process.execSync("prettier --write schema/miserc.json");
-fs.unlinkSync("schema/miserc.json.tmp");
+writeFormattedJson("schema/miserc.json", misercSchema);

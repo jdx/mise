@@ -441,7 +441,10 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
     let backend_type = list_tools()
         .get(short)
         .and_then(|ist| ist.full.as_ref())
-        .map(|full| BackendType::guess(full));
+        .and_then(|full| {
+            full.split_once(':')
+                .map(|(backend, _)| BackendType::guess(backend))
+        });
     if let Some(BackendType::Unknown) = backend_type
         && let Some((plugin_name, _)) = short.split_once(':')
         && let Some(PluginType::VfoxBackend) = get_plugin_type(plugin_name)
