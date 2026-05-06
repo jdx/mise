@@ -9,39 +9,30 @@
       "type": "string",
       "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
     },
-    "optionValue": {
-      "description": "Backend option value.",
-      "anyOf": [
+    "backendOptionValue": {
+      "oneOf": [
         {
           "type": "string"
         },
         {
-          "type": "number"
-        },
-        {
           "type": "boolean"
-        },
-        {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/optionValue"
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/definitions/optionValue"
-          }
         }
       ]
+    },
+    "os": {
+      "type": "string",
+      "enum": ["freebsd", "linux", "macos", "openbsd", "windows"]
+    },
+    "toolId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.-]+$"
     }
   },
   "properties": {
     "aliases": {
       "type": "array",
       "items": {
-        "type": "string",
-        "pattern": "^[a-zA-Z0-9_.-]+$"
+        "$ref": "#/definitions/toolId"
       },
       "description": "Alternative names for the tool"
     },
@@ -63,8 +54,7 @@
               "platforms": {
                 "type": "array",
                 "items": {
-                  "type": "string",
-                  "enum": ["freebsd", "linux", "macos", "openbsd", "windows"]
+                  "$ref": "#/definitions/os"
                 },
                 "description": "Operating systems this backend supports"
               },
@@ -82,13 +72,13 @@
                       "type": "object",
                       "description": "Platform-specific configuration",
                       "additionalProperties": {
-                        "$ref": "#/definitions/optionValue"
+                        "$ref": "#/definitions/backendOptionValue"
                       }
                     }
                   }
                 },
                 "additionalProperties": {
-                  "$ref": "#/definitions/optionValue"
+                  "$ref": "#/definitions/backendOptionValue"
                 }
               }
             },
@@ -121,16 +111,14 @@
     "os": {
       "type": "array",
       "items": {
-        "type": "string",
-        "enum": ["freebsd", "linux", "macos", "openbsd", "windows"]
+        "$ref": "#/definitions/os"
       },
       "description": "Operating systems this tool supports (empty means all)"
     },
     "overrides": {
       "type": "array",
       "items": {
-        "type": "string",
-        "pattern": "^[a-zA-Z0-9_.-]+$"
+        "$ref": "#/definitions/toolId"
       },
       "description": "List of tool IDs that this tool overrides"
     },
@@ -148,8 +136,7 @@
         "tools": {
           "type": "array",
           "items": {
-            "type": "string",
-            "pattern": "^[a-zA-Z0-9_.-]+$"
+            "$ref": "#/definitions/toolId"
           },
           "description": "Additional mise tools to install before running test.cmd. Used only by mise test-tool."
         }
