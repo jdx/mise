@@ -42,6 +42,19 @@ assert_not_contains "mise ls --installed tiny" "1.1.0"
 rm -f "$MISE_CONFIG_DIR/config.toml"
 rm -f mise.toml
 
+# if tiny is installed but no longer active in config, --inactive with a tool arg
+# should still upgrade it
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+tiny = "1"
+EOF
+mise uninstall tiny --all
+mise install tiny@1.0.0
+rm -f "$MISE_CONFIG_DIR/config.toml"
+latest_tiny=$(mise latest tiny)
+mise upgrade tiny --inactive
+assert_contains "mise ls --installed tiny" "$latest_tiny"
+
 # ensure options are retained
 mise use "ubi:bazelbuild/buildtools[exe=buildifier,matching=buildifier]@7.1.2"
 assert "cat mise.toml" '[tools]
