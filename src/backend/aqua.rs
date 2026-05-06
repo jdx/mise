@@ -23,7 +23,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{
-    backend::{Backend, MISE_BINS_DIR, strict_metadata},
+    backend::{Backend, MISE_BINS_DIR, runtime_path_for_bin_paths, strict_metadata},
     config::Config,
 };
 use crate::{file, github, minisign};
