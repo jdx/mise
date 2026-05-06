@@ -7,7 +7,7 @@ use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
-use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
+use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
@@ -608,39 +608,56 @@ impl Lock {
             all_tools
         } else {
             // Build map of tool args with explicit versions
-            let specified_versions: std::collections::HashMap<String, Option<String>> = self
+            let specified_versions: std::collections::HashMap<String, Option<ToolRequest>> = self
                 .tool
                 .iter()
-                .map(|t| {
-                    let version = t.tvr.as_ref().map(|tvr| tvr.version());
-                    (t.ba.short.clone(), version)
-                })
+                .map(|t| (t.ba.short.clone(), t.tvr.clone()))
                 .collect();
             // For `tool@latest`, we want upgrade semantics: resolve "latest" to an
             // installed concrete version and lock that. Writing the literal "latest"
             // string to the lockfile would be a bug. Use the backend's own resolver so
             // we don't impose a semver ordering on tools that don't follow semver.
-            let mut tools: Vec<LockTool> = all_tools
+            let mut tools: Vec<LockTool> = Vec::new();
+            for (ba, mut tv) in all_tools
                 .into_iter()
                 .filter(|(ba, _)| specified_versions.contains_key(&ba.short))
-                .map(|(ba, mut tv)| {
-                    if let Some(Some(version)) = specified_versions.get(&ba.short) {
-                        if version == "latest" {
-                            if let Some(latest_version) = crate::backend::get(&ba)
-                                .and_then(|b| {
-                                    b.latest_installed_version(Some("latest".to_string())).ok()
-                                })
-                                .flatten()
-                            {
-                                tv.version = latest_version;
-                            }
-                        } else {
-                            tv.version.clone_from(version);
+            {
+                if let Some(Some(request)) = specified_versions.get(&ba.short) {
+                    let version = request.version();
+                    let request = ToolRequest::new_opts(
+                        Arc::new(ba.clone()),
+                        &version,
+                        tv.request.options(),
+                        ToolSource::Argument,
+                    );
+                    let resolve_options = request
+                        .as_ref()
+                        .ok()
+                        .and_then(|request| request.resolve_options(base_resolve_options).ok());
+                    if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
+                        && resolve_options.before_date.is_some()
+                    {
+                        resolve_options.use_locked_version = false;
+                        resolve_options.latest_versions = true;
+                        match request.resolve(config, &resolve_options).await {
+                            Ok(resolved_tv) => tv = resolved_tv,
+                            Err(err) => debug!("failed to resolve specified {request}: {err}"),
                         }
+                    } else if version == "latest" {
+                        if let Some(latest_version) = crate::backend::get(&ba)
+                            .and_then(|b| {
+                                b.latest_installed_version(Some("latest".to_string())).ok()
+                            })
+                            .flatten()
+                        {
+                            tv.version = latest_version;
+                        }
+                    } else {
+                        tv.version = version;
                     }
-                    (ba, tv)
-                })
-                .collect();
+                }
+                tools.push((ba, tv));
+            }
             // Deduplicate after potential "latest" -> concrete-version resolution.
             let mut seen_after: BTreeSet<(String, String)> = BTreeSet::new();
             tools.retain(|(ba, tv)| seen_after.insert((ba.short.clone(), tv.version.clone())));
