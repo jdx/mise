@@ -1,5 +1,6 @@
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
+use serde::Serialize as _;
 use std::path::Path;
 use std::{env, fs};
 
@@ -52,14 +53,9 @@ fn parse_options(opts: Option<&toml::Value>) -> Vec<(String, String)> {
             table
                 .iter()
                 .map(|(k, v)| {
-                    let value = match v {
-                        toml::Value::String(s) => s.clone(),
-                        toml::Value::Table(t) => {
-                            // Serialize nested tables back to TOML string
-                            toml::to_string(t).unwrap_or_default()
-                        }
-                        _ => v.to_string(),
-                    };
+                    let mut value = String::new();
+                    v.serialize(toml::ser::ValueSerializer::new(&mut value))
+                        .unwrap_or_else(|e| panic!("failed to serialize registry option {k}: {e}"));
                     (k.clone(), value)
                 })
                 .collect::<Vec<_>>()

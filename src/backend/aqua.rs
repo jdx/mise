@@ -239,6 +239,9 @@ impl Backend for AquaBackend {
             }
         };
 
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target);
         let mut versions = Vec::new();
         for (tag, created_at, prerelease) in tags_with_timestamps.into_iter().rev() {
             let mut version = tag.as_str();
@@ -250,7 +253,12 @@ impl Backend for AquaBackend {
                     continue;
                 }
             }
-            let versioned_pkg = pkg.clone().with_version(&[version], os(), arch());
+            let versioned_pkg = pkg.clone().with_version_libc(
+                &[version],
+                target_os,
+                target_arch,
+                target_libc.as_deref(),
+            );
             if let Some(prefix) = &versioned_pkg.version_prefix {
                 if let Some(_v) = version.strip_prefix(prefix) {
                     version = _v;
@@ -261,11 +269,7 @@ impl Backend for AquaBackend {
             version = version.strip_prefix('v').unwrap_or(version);
 
             // Validate the package has assets
-            let check_pkg = AQUA_REGISTRY
-                .package_with_version(&self.id, &[&tag])
-                .await
-                .unwrap_or_default();
-            if !check_pkg.no_asset && check_pkg.error_message.is_none() {
+            if !versioned_pkg.no_asset && versioned_pkg.error_message.is_none() {
                 let release_url = format!(
                     "https://github.com/{}/{}/releases/tag/{}",
                     pkg.repo_owner, pkg.repo_name, tag
@@ -611,7 +615,8 @@ impl Backend for AquaBackend {
         // platform first, which can leak host-specific overrides into cross-platform lock.
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let opts = tv.request.options();
-        let pkg = pkg.with_version(&versions, target_os, target_arch);
+        let target_libc = Self::target_variant_libc(target);
+        let pkg = pkg.with_version_libc(&versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(target));
         let pkg = Self::apply_var_options(pkg, &opts)?;
 
@@ -766,7 +771,8 @@ impl AquaBackend {
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        let pkg = pkg.with_version(versions, target_os, target_arch);
+        let target_libc = Self::target_variant_libc(&target);
+        let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(&target));
         Self::apply_var_options(pkg, &tv.request.options())
     }
@@ -791,6 +797,24 @@ impl AquaBackend {
                 None
             }
         })
+    }
+
+    fn target_variant_libc(target: &PlatformTarget) -> Option<String> {
+        if target.os_name() != "linux" {
+            return None;
+        }
+        let settings_libc = if target.is_current() {
+            Settings::get().libc().map(str::to_string)
+        } else {
+            None
+        };
+        Some(
+            target
+                .libc()
+                .map(str::to_string)
+                .or(settings_libc)
+                .unwrap_or_else(|| "gnu".to_string()),
+        )
     }
 
     fn apply_aqua_libc_replacement(
@@ -1300,6 +1324,9 @@ impl AquaBackend {
                     // current `prerelease` opt, since the user may have pinned
                     // a pre-release version under a project-local override.
                     let tags = get_tags(&pkg).await?;
+                    let target = PlatformTarget::from_current();
+                    let (target_os, target_arch) = Self::to_aqua_platform(&target);
+                    let target_libc = Self::target_variant_libc(&target);
                     for tag in tags.into_iter().rev() {
                         let mut version = tag.as_str();
                         match pkg.version_filter_ok(version) {
@@ -1310,7 +1337,12 @@ impl AquaBackend {
                                 continue;
                             }
                         }
-                        let pkg = pkg.clone().with_version(&[version], os(), arch());
+                        let pkg = pkg.clone().with_version_libc(
+                            &[version],
+                            target_os,
+                            target_arch,
+                            target_libc.as_deref(),
+                        );
                         if let Some(prefix) = &pkg.version_prefix {
                             if let Some(_v) = version.strip_prefix(prefix) {
                                 version = _v;
@@ -2085,7 +2117,7 @@ impl AquaBackend {
     fn symlink_bins(&self, tv: &ToolVersion) -> bool {
         tv.request
             .options()
-            .get("symlink_bins")
+            .get_string("symlink_bins")
             .is_some_and(|v| v == "true" || v == "1")
     }
 

@@ -233,6 +233,7 @@ cfg_aliases = "0.2"
 heck = "0.5"
 toml = "1.0"
 indexmap = "2"
+serde = "1"
 serde_yaml = "0.9"
 
 [dev-dependencies]
