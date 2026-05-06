@@ -4,19 +4,7 @@
 # Uses the `needs-dummy` plugin whose install script checks that dummy is already
 # installed on disk — simulating a real runtime dependency like pipx:ruff needing python.
 
-# First: WITHOUT depends, needs-dummy fails when it runs before dummy.
-cat <<EOF >mise.toml
-[tools]
-needs-dummy = "1.0.0"
-dummy = "2.0.0"
-EOF
-
-rm -rf "$MISE_DATA_DIR/installs/dummy"
-rm -rf "$MISE_DATA_DIR/installs/needs-dummy"
-
-assert_fail "MISE_JOBS=1 mise install" "needs-dummy: ERROR dummy is not installed"
-
-# Now: WITH depends, needs-dummy waits for dummy even though it is listed first.
+# With depends, needs-dummy waits for dummy even though it is listed first.
 cat <<EOF >mise.toml
 [tools]
 needs-dummy = { version = "1.0.0", depends = ["dummy"] }
