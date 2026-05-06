@@ -1197,8 +1197,8 @@ pub trait Backend: Debug + Send + Sync {
     /// latest release endpoints, plugin scripts). If the fast path returns
     /// `None`, fall back to the shared version-list path here instead of
     /// duplicating that fallback in each backend. When a cutoff is active, only
-    /// skip the fast path result if remote-version metadata shows that
-    /// candidate is newer than the cutoff.
+    /// accept the fast path result only when remote-version metadata verifies
+    /// that the candidate is older than the cutoff.
     async fn latest_version(
         &self,
         config: &Arc<Config>,
@@ -1237,7 +1237,7 @@ pub trait Backend: Debug + Send + Sync {
                         .await?;
                     fallback_refresh = false;
                     let info = versions.iter().find(|v| v.version == version);
-                    if latest_stable_candidate_allowed_by_before_date(info, before) {
+                    if latest_stable_candidate_allowed_by_before_date(&version, info, before) {
                         return Ok(Some(version));
                     }
                 }
@@ -2120,17 +2120,29 @@ pub(crate) async fn effective_latest_before_date<B: Backend + ?Sized>(
 }
 
 fn latest_stable_candidate_allowed_by_before_date(
+    version: &str,
     info: Option<&VersionInfo>,
     before: Timestamp,
 ) -> bool {
-    let Some(created_at) = info.and_then(|v| v.created_at.as_deref()) else {
-        return true;
+    let Some(info) = info else {
+        debug!(
+            "Latest stable version {version} is missing from remote version metadata; falling back to full version list"
+        );
+        return false;
+    };
+    let Some(created_at) = info.created_at.as_deref() else {
+        debug!(
+            "Latest stable version {version} has no release date metadata; falling back to full version list"
+        );
+        return false;
     };
     match parse_into_timestamp(created_at) {
         Ok(created) => created < before,
-        Err(_) => {
-            trace!("Failed to parse timestamp: {}", created_at);
-            true
+        Err(err) => {
+            debug!(
+                "Failed to parse release date for latest stable version {version}: {created_at}: {err:#}"
+            );
+            false
         }
     }
 }
@@ -2149,6 +2161,7 @@ mod latest_version_tests {
     struct LatestBackend {
         ba: Arc<BackendArg>,
         stable_result: Option<String>,
+        remote_versions: Vec<VersionInfo>,
         stable_calls: AtomicUsize,
         list_calls: AtomicUsize,
     }
@@ -2158,6 +2171,18 @@ mod latest_version_tests {
             Self {
                 ba: Arc::new(name.into()),
                 stable_result: Some("9.9.9".to_string()),
+                remote_versions: vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        created_at: Some("2024-01-01".to_string()),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "2.0.0".to_string(),
+                        created_at: Some("2025-01-01".to_string()),
+                        ..Default::default()
+                    },
+                ],
                 stable_calls: AtomicUsize::new(0),
                 list_calls: AtomicUsize::new(0),
             }
@@ -2188,18 +2213,7 @@ mod latest_version_tests {
             _config: &Arc<Config>,
         ) -> eyre::Result<Vec<VersionInfo>> {
             self.list_calls.fetch_add(1, Ordering::SeqCst);
-            Ok(vec![
-                VersionInfo {
-                    version: "1.0.0".to_string(),
-                    created_at: Some("2024-01-01".to_string()),
-                    ..Default::default()
-                },
-                VersionInfo {
-                    version: "2.0.0".to_string(),
-                    created_at: Some("2025-01-01".to_string()),
-                    ..Default::default()
-                },
-            ])
+            Ok(self.remote_versions.clone())
         }
 
         async fn latest_stable_version(
@@ -2295,6 +2309,58 @@ mod latest_version_tests {
         );
         assert_eq!(backend.stable_calls(), 1);
         assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_date_filtered_latest_falls_back_when_stable_metadata_is_missing() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-latest-before-date-missing-metadata")
+            .with_stable_result(Some("3.0.0"));
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+        let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[test]
+    fn test_latest_stable_candidate_rejects_unverified_cutoff_metadata() {
+        let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
+
+        assert!(!latest_stable_candidate_allowed_by_before_date(
+            "1.0.0", None, before
+        ));
+        assert!(!latest_stable_candidate_allowed_by_before_date(
+            "1.0.0",
+            Some(&VersionInfo {
+                version: "1.0.0".to_string(),
+                created_at: None,
+                ..Default::default()
+            }),
+            before
+        ));
+        assert!(!latest_stable_candidate_allowed_by_before_date(
+            "1.0.0",
+            Some(&VersionInfo {
+                version: "1.0.0".to_string(),
+                created_at: Some("not-a-date".to_string()),
+                ..Default::default()
+            }),
+            before
+        ));
     }
 
     #[tokio::test]
@@ -2423,6 +2489,7 @@ mod latest_version_tests {
         let backend = LatestBackend {
             ba: Arc::new(ba),
             stable_result: Some("9.9.9".to_string()),
+            remote_versions: vec![],
             stable_calls: AtomicUsize::new(0),
             list_calls: AtomicUsize::new(0),
         };
