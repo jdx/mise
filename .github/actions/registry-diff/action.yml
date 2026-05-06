@@ -7,8 +7,7 @@ inputs:
     required: true
   head_sha:
     description: "The head commit SHA to compare against"
-    required: false
-    default: HEAD
+    required: true
 outputs:
   modified_tools:
     description: "Space-separated list of all modified tools"
@@ -27,7 +26,7 @@ runs:
         HEAD_SHA: ${{ inputs.head_sha }}
       run: |
         # Get modified registry files and extract tool names
-        modified=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'registry/*.toml' \
+        modified=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- 'registry/*.toml' \
           | xargs -I{} basename {} .toml \
           | tr '\n' ' ')
 
