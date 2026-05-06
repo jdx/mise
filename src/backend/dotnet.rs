@@ -41,7 +41,11 @@ impl Backend for DotnetBackend {
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
-        &["prerelease"]
+        // TODO: Once dotnet remote listing always fetches the prerelease
+        // superset and filters at read time, remove this override entirely.
+        // Today `prerelease` changes the NuGet query, but there are no dotnet
+        // backend registry tools using the versions host.
+        &[]
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
