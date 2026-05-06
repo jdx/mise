@@ -1985,13 +1985,7 @@ impl AquaBackend {
                 let name_str: &str = name.as_ref();
                 install_path.join(name_str)
             })
-            .map(|path| {
-                if cfg!(windows) && pkg.complete_windows_ext {
-                    path.with_extension("exe")
-                } else {
-                    path
-                }
-            })
+            .map(|path| complete_windows_ext(path, pkg.complete_windows_ext, os()))
             .collect();
         let first_bin_path = bin_paths
             .first()
@@ -2091,7 +2085,7 @@ impl AquaBackend {
     fn symlink_bins(&self, tv: &ToolVersion) -> bool {
         tv.request
             .options()
-            .get("symlink_bins")
+            .get_string("symlink_bins")
             .is_some_and(|v| v == "true" || v == "1")
     }
 
@@ -2104,9 +2098,7 @@ impl AquaBackend {
                 .unwrap_or(&pkg.repo_name);
 
             let mut path = tv.install_path().join(fallback_name);
-            if cfg!(windows) && pkg.complete_windows_ext {
-                path = path.with_extension("exe");
-            }
+            path = complete_windows_ext(path, pkg.complete_windows_ext, os());
 
             return Ok(vec![(path.clone(), path)]);
         }
@@ -2115,8 +2107,9 @@ impl AquaBackend {
             .files
             .iter()
             .map(|f| {
-                let srcs = if let Some(prefix) = &pkg.version_prefix {
-                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version), os(), arch())?]
+                let version = version_with_prefix(&tv.version, pkg.version_prefix.as_deref());
+                let srcs = if pkg.version_prefix.is_some() {
+                    vec![f.src(pkg, version.as_ref(), os(), arch())?]
                 } else {
                     vec![
                         f.src(pkg, &tv.version, os(), arch())?,
@@ -2129,10 +2122,8 @@ impl AquaBackend {
                     .map(|src| tv.install_path().join(src))
                     .map(|mut src| {
                         let mut dst = src.parent().unwrap().join(f.name.as_str());
-                        if cfg!(windows) && pkg.complete_windows_ext {
-                            src = src.with_extension("exe");
-                            dst = dst.with_extension("exe");
-                        }
+                        src = complete_windows_ext(src, pkg.complete_windows_ext, os());
+                        dst = complete_windows_dst_ext(&src, dst, pkg.complete_windows_ext, os());
                         (src, dst)
                     }))
             })
@@ -2214,6 +2205,34 @@ fn toml_value_kind(value: &toml::Value) -> &'static str {
     }
 }
 
+fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Cow<'a, str> {
+    if let Some(prefix) = version_prefix
+        && !version.starts_with(prefix)
+    {
+        Cow::Owned(format!("{prefix}{version}"))
+    } else {
+        Cow::Borrowed(version)
+    }
+}
+
+fn complete_windows_ext(path: PathBuf, complete: bool, target_os: &str) -> PathBuf {
+    if target_os == "windows" && complete && path.extension().is_none() {
+        path.with_extension("exe")
+    } else {
+        path
+    }
+}
+
+fn complete_windows_dst_ext(src: &Path, dst: PathBuf, complete: bool, target_os: &str) -> PathBuf {
+    if target_os != "windows" || !complete || dst.extension().is_some() {
+        return dst;
+    }
+    match src.extension() {
+        Some(ext) => dst.with_extension(ext),
+        None => dst.with_extension("exe"),
+    }
+}
+
 /// Returns install-time-only option keys for the Aqua backend.
 ///
 /// Aqua registry vars may be provided either as a nested `vars` table or as
@@ -2239,6 +2258,49 @@ mod tests {
             default: None,
             required,
         }
+    }
+
+    #[test]
+    fn test_version_with_prefix_does_not_double_prefix() {
+        assert_eq!(version_with_prefix("1.0.0", Some("tool-")), "tool-1.0.0");
+        assert_eq!(
+            version_with_prefix("tool-1.0.0", Some("tool-")),
+            "tool-1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_complete_windows_ext_preserves_existing_extension() {
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("bat/arq.bat"), true, "windows"),
+            PathBuf::from("bat/arq.bat")
+        );
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("bin/tool"), true, "windows"),
+            PathBuf::from("bin/tool.exe")
+        );
+    }
+
+    #[test]
+    fn test_complete_windows_dst_ext_uses_source_extension() {
+        assert_eq!(
+            complete_windows_dst_ext(
+                Path::new("bat/arq.bat"),
+                PathBuf::from("bat/arq"),
+                true,
+                "windows",
+            ),
+            PathBuf::from("bat/arq.bat")
+        );
+        assert_eq!(
+            complete_windows_dst_ext(
+                Path::new("bin/tool"),
+                PathBuf::from("bin/tool"),
+                true,
+                "windows"
+            ),
+            PathBuf::from("bin/tool.exe")
+        );
     }
 
     #[test]

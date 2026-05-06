@@ -9,13 +9,19 @@ use crate::hash::{file_hash_blake3, hash_to_str};
 
 /// Persistent state for deps freshness checking.
 ///
-/// Stores blake3 content hashes of source files keyed by provider ID.
+/// Stores blake3 content hashes of source files keyed by provider ID, plus the
+/// set of optional output paths that existed at the last successful run.
 /// Persisted to `$MISE_STATE_DIR/deps/<hash>.toml`, keyed by project root.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DepsState {
     /// provider_id → (relative_path → blake3_hex)
     #[serde(default)]
     pub providers: BTreeMap<String, BTreeMap<String, String>>,
+    /// provider_id → list of optional output paths (relative to project root)
+    /// that existed after the last successful run. Used to detect when an
+    /// output that was previously present has been deleted.
+    #[serde(default)]
+    pub seen_outputs: BTreeMap<String, Vec<String>>,
 }
 
 impl DepsState {
@@ -58,6 +64,27 @@ impl DepsState {
     pub fn set_hashes(&mut self, provider_id: &str, hashes: BTreeMap<String, String>) {
         self.providers.insert(provider_id.to_string(), hashes);
     }
+
+    /// Get optional outputs that existed at the last successful run, or None
+    /// if not previously recorded.
+    pub fn get_seen_outputs(&self, provider_id: &str) -> Option<&Vec<String>> {
+        self.seen_outputs.get(provider_id)
+    }
+
+    /// Record optional outputs that exist after a successful run.
+    pub fn set_seen_outputs(&mut self, provider_id: &str, outputs: Vec<String>) {
+        self.seen_outputs.insert(provider_id.to_string(), outputs);
+    }
+}
+
+/// Stringify a path relative to the project root using the same convention as
+/// the stored state (forward-slash relative path, falling back to the absolute
+/// path when the path is not under `project_root`).
+pub fn relative_str(path: &Path, project_root: &Path) -> String {
+    path.strip_prefix(project_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string()
 }
 
 /// Compute blake3 hashes for a list of source files.
@@ -77,12 +104,7 @@ pub fn hash_sources(sources: &[PathBuf], project_root: &Path) -> Result<BTreeMap
             hash_dir_files(&mut hashes, source, project_root, 3)?;
         } else {
             let hash = file_hash_blake3(source, None)?;
-            let rel = source
-                .strip_prefix(project_root)
-                .unwrap_or(source)
-                .to_string_lossy()
-                .to_string();
-            hashes.insert(rel, hash);
+            hashes.insert(relative_str(source, project_root), hash);
         }
     }
 
@@ -106,12 +128,7 @@ fn hash_dir_files(
                 hash_dir_files(hashes, &path, project_root, max_depth - 1)?;
             } else {
                 let hash = file_hash_blake3(&path, None)?;
-                let rel = path
-                    .strip_prefix(project_root)
-                    .unwrap_or(&path)
-                    .to_string_lossy()
-                    .to_string();
-                hashes.insert(rel, hash);
+                hashes.insert(relative_str(&path, project_root), hash);
             }
         }
     }

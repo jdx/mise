@@ -185,10 +185,7 @@ impl DotnetBackend {
     }
 
     async fn tool_opts(&self, config: &Arc<Config>) -> eyre::Result<ToolVersionOptions> {
-        Ok(config
-            .get_tool_opts(&self.ba)
-            .await?
-            .unwrap_or_else(|| self.ba.opts()))
+        config.get_tool_opts_with_overrides(&self.ba).await
     }
 
     fn dotnet_prereleases_enabled(&self, opts: &ToolVersionOptions) -> bool {

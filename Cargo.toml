@@ -8,7 +8,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.5.0"
+version = "2026.5.1"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -233,6 +233,7 @@ cfg_aliases = "0.2"
 heck = "0.5"
 toml = "1.0"
 indexmap = "2"
+serde = "1"
 serde_yaml = "0.9"
 
 [dev-dependencies]

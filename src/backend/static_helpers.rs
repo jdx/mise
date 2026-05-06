@@ -247,8 +247,8 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
             }
             // Try flat format: platforms_macos_arm64_url
             let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
-            if let Some(val) = opts.get(&flat_key) {
-                return Some(val.to_string());
+            if let Some(val) = opts.get_string(&flat_key) {
+                return Some(val);
             }
         }
     }
@@ -266,7 +266,7 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
 /// * `Some(value)` if found in platform-specific or base options
 /// * `None` if not found
 pub fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Option<String> {
-    lookup_platform_key(opts, key).or_else(|| opts.get(key).map(|s| s.to_string()))
+    lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
 }
 
 /// Returns all possible aliases for a given platform target (os, arch).
@@ -315,8 +315,8 @@ pub fn lookup_platform_key_for_target(
             }
             // Try flat format: platforms_macos_arm64_url
             let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
-            if let Some(val) = opts.get(&flat_key) {
-                return Some(val.to_string());
+            if let Some(val) = opts.get_string(&flat_key) {
+                return Some(val);
             }
         }
     }
@@ -415,7 +415,7 @@ pub fn install_artifact(
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
     let mut strip_components = lookup_platform_key(opts, "strip_components")
-        .or_else(|| opts.get("strip_components").map(|s| s.to_string()))
+        .or_else(|| opts.get_string("strip_components"))
         .and_then(|s| s.parse().ok());
 
     file::remove_all(&install_path)?;
@@ -494,9 +494,7 @@ pub fn install_artifact(
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
         if strip_components.is_none()
-            && lookup_platform_key(opts, "bin_path")
-                .or_else(|| opts.get("bin_path").map(|s| s.to_string()))
-                .is_none()
+            && lookup_with_fallback(opts, "bin_path").is_none()
             && let Ok(should_strip) = file::should_strip_components(file_path, format)
             && should_strip
         {
@@ -1291,8 +1289,7 @@ size = "5120"
         };
 
         // Test that generic fallback works when no platform-specific values exist
-        let checksum = lookup_platform_key(&tool_opts, "checksum")
-            .or_else(|| tool_opts.get("checksum").map(|s| s.to_string()));
+        let checksum = lookup_with_fallback(&tool_opts, "checksum");
         let size = lookup_with_fallback(&tool_opts, "size");
 
         assert_eq!(checksum, Some("blake3:generic123".to_string()));
@@ -1410,6 +1407,27 @@ bin = "tool.exe"
             bin_value == "tool.exe" || bin_value == "generic-tool",
             "Expected platform-specific or generic bin, got: {}",
             bin_value
+        );
+    }
+
+    #[test]
+    fn test_lookup_with_fallback_coerces_scalar_values() {
+        let mut opts = IndexMap::new();
+        opts.insert("strip_components".to_string(), toml::Value::Integer(1));
+        opts.insert("symlink_bins".to_string(), toml::Value::Boolean(true));
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            lookup_with_fallback(&tool_opts, "strip_components"),
+            Some("1".to_string())
+        );
+        assert_eq!(
+            lookup_with_fallback(&tool_opts, "symlink_bins"),
+            Some("true".to_string())
         );
     }
 
