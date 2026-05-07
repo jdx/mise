@@ -238,7 +238,12 @@ async fn refresh_token(cached: &CachedToken) -> Result<Option<CachedToken>> {
     if response.error.is_some() {
         return Ok(None);
     }
-    token_response_to_cache(response).map(Some)
+    let mut refreshed = token_response_to_cache(response)?;
+    if refreshed.refresh_token.is_none() {
+        refreshed.refresh_token = cached.refresh_token.clone();
+        refreshed.refresh_expires_at = cached.refresh_expires_at;
+    }
+    Ok(Some(refreshed))
 }
 
 fn token_response_to_cache(response: TokenResponse) -> Result<CachedToken> {
