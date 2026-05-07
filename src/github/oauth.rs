@@ -3,7 +3,6 @@ use crate::env;
 use eyre::{Result, bail, eyre};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -116,18 +115,11 @@ async fn token_async(req: TokenRequest) -> Result<String> {
                 }
                 Ok(None) => {}
                 Err(err) => {
-                    debug!(
-                        "failed to refresh GitHub OAuth token; falling back to device flow: {err:#}"
-                    );
+                    debug!("failed to refresh GitHub OAuth token: {err:#}");
                 }
             }
         }
-    }
-
-    if !req.force_device_flow && !std::io::stderr().is_terminal() {
-        return Err(eyre!(
-            "GitHub OAuth token is not cached. Run `mise token github --oauth` to authorize."
-        ));
+        bail!("GitHub OAuth token is not cached. Run `mise token github --oauth` to authorize.");
     }
 
     let device = create_device_code().await?;

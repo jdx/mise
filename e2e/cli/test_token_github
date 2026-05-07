@@ -76,6 +76,11 @@ assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred
 # Test 8e: credential_command receives host as $1
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo token-for-\$1' mise token github ghe.example.com --unmask" "token-for-ghe.example.com"
 
+# Test 9a: OAuth configured but no cached token — must not prompt for device flow
+# during normal token resolution (would hang on the unreachable URL otherwise).
+NO_DEVICE_OAUTH="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:1/login/oauth MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:1/api"
+assert_contains "$NO_DEVICE_OAUTH mise token github 127.0.0.1" "(none)"
+
 # Test 9: native GitHub OAuth device flow via token alias
 MOCK_PORT_FILE="$HOME/mock-github-oauth-port"
 MOCK_GITHUB_OAUTH_PORT_FILE="$MOCK_PORT_FILE" python3 "$ROOT/e2e/fixtures/mock-github-oauth.py" &
