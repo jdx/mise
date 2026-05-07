@@ -151,7 +151,7 @@ mise settings set github.oauth_client_id Iv1.yourgithubappclientid
 Authorize once:
 
 ```sh
-mise github login
+mise token github --oauth
 ```
 
 After that, mise reuses the cached token for its own GitHub API calls and refreshes it when GitHub returns a refresh token. This is the best setup when you want the token used only by mise.
@@ -159,14 +159,14 @@ After that, mise reuses the cached token for its own GitHub API calls and refres
 For general development, print a raw token and export it for other tools:
 
 ```sh
-export GITHUB_TOKEN="$(mise github token --oauth --raw)"
+export GITHUB_TOKEN="$(mise token github --oauth --raw)"
 gh pr list
 ```
 
 Or use the `MISE_GITHUB_TOKEN` name if you only want child mise processes to see it:
 
 ```sh
-export MISE_GITHUB_TOKEN="$(mise github token --oauth --raw)"
+export MISE_GITHUB_TOKEN="$(mise token github --oauth --raw)"
 ```
 
 Optional settings:

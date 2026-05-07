@@ -124,7 +124,7 @@ async fn token_async(req: TokenRequest) -> Result<String> {
 
     if !req.force_device_flow && !std::io::stderr().is_terminal() {
         return Err(eyre!(
-            "GitHub OAuth token is not cached. Run `mise github login` to authorize."
+            "GitHub OAuth token is not cached. Run `mise token github --oauth` to authorize."
         ));
     }
 

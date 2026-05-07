@@ -1,4 +1,3 @@
-mod login;
 mod token;
 
 /// GitHub related commands
@@ -11,14 +10,18 @@ pub struct Github {
 
 #[derive(Debug, clap::Subcommand)]
 enum Commands {
-    Login(login::Login),
     Token(token::Token),
 }
 
 impl Github {
     pub async fn run(self) -> eyre::Result<()> {
+        deprecated_at!(
+            "2026.5.1",
+            "2027.5.0",
+            "cli.github",
+            "`mise github ...` is deprecated. Use `mise token github` instead."
+        );
         match self.subcommand {
-            Commands::Login(cmd) => cmd.run(),
             Commands::Token(cmd) => cmd.run(),
         }
     }

@@ -433,9 +433,6 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
     }
 }
 cmd github hide=#true subcommand_required=#true help="GitHub related commands" {
-    cmd login hide=#true help="Authorize native GitHub OAuth device-flow tokens" {
-        arg "[HOST]" help="GitHub hostname" required=#false default=github.com
-    }
     cmd token hide=#true help="Display the GitHub token mise will use for a given host" {
         long_help "Display the GitHub token mise will use for a given host\n\nShows which token source mise would use, useful for debugging\nauthentication issues. The token is masked by default."
         after_long_help "Examples:\n\n    $ mise github token\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise github token --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise github token github.mycompany.com\n    github.mycompany.com: (none)\n"
