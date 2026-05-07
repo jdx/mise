@@ -4,7 +4,7 @@
   "title": "mise registry tool schema",
   "description": "Schema for individual tool files in the mise registry",
   "type": "object",
-  "definitions": {
+  "$defs": {
     "backendFull": {
       "type": "string",
       "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
@@ -24,13 +24,13 @@
         {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/optionValue"
+            "$ref": "#/$defs/optionValue"
           }
         },
         {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/optionValue"
+            "$ref": "#/$defs/optionValue"
           }
         }
       ]
@@ -57,14 +57,14 @@
       "items": {
         "oneOf": [
           {
-            "$ref": "#/definitions/backendFull",
+            "$ref": "#/$defs/backendFull",
             "description": "Backend specification as a string (e.g., 'aqua:owner/repo')"
           },
           {
             "type": "object",
             "properties": {
               "full": {
-                "$ref": "#/definitions/backendFull",
+                "$ref": "#/$defs/backendFull",
                 "description": "Full backend specification"
               },
               "platforms": {
@@ -88,13 +88,13 @@
                       "type": "object",
                       "description": "Platform-specific configuration",
                       "additionalProperties": {
-                        "$ref": "#/definitions/optionValue"
+                        "$ref": "#/$defs/optionValue"
                       }
                     }
                   }
                 },
                 "additionalProperties": {
-                  "$ref": "#/definitions/optionValue"
+                  "$ref": "#/$defs/optionValue"
                 }
               }
             },
