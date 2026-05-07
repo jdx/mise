@@ -202,46 +202,6 @@ for (const key in doc) {
 const schema = JSON.parse(fs.readFileSync("schema/mise.json", "utf-8"));
 schema["$defs"].settings.properties = settings;
 
-// Keep task_props as the shared task-property definition. task and
-// task_template close over it with unevaluatedProperties so the property map is
-// only defined once.
-if (schema["$defs"].task_props === undefined) {
-  throw new Error("schema/mise.json is missing $defs.task_props");
-}
-
-schema["$defs"].task_template = {
-  description: "task template that can be extended by tasks",
-  allOf: [
-    {
-      $ref: "#/$defs/task_props",
-    },
-  ],
-  unevaluatedProperties: false,
-  type: "object",
-};
-
-const taskObjectVariant = {
-  allOf: [
-    {
-      $ref: "#/$defs/task_props",
-    },
-    {
-      properties: {
-        extends: {
-          description: "name of the task template to extend",
-          type: "string",
-        },
-      },
-    },
-  ],
-  unevaluatedProperties: false,
-  type: "object",
-};
-
-// Overwrite the object variant (last entry) in task oneOf with inlined properties
-const taskDef = schema["$defs"].task;
-taskDef.oneOf[taskDef.oneOf.length - 1] = taskObjectVariant;
-
 writeFormattedJson("schema/mise.json", schema);
 writeFormattedJson("schema/mise-task.json", buildTaskSchema(schema));
 
