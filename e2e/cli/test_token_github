@@ -76,6 +76,14 @@ assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred
 # Test 8e: credential_command receives host as $1
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo token-for-\$1' mise token github ghe.example.com --unmask" "token-for-ghe.example.com"
 
+# Test 8f: credential_command uses the configured default inline shell
+cat >"$HOME/credential-shell" <<'SCRIPT'
+#!/bin/sh
+echo "custom-shell-token"
+SCRIPT
+chmod +x "$HOME/credential-shell"
+assert_contains "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='$HOME/credential-shell -c' MISE_GITHUB_CREDENTIAL_COMMAND='ignored' mise token github --unmask" "custom-shell-token"
+
 # Test 9a: OAuth configured but no cached token — must not prompt for device flow
 # during normal token resolution (would hang on the unreachable URL otherwise).
 NO_DEVICE_OAUTH="MISE_EXPERIMENTAL=1 MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:1/login/oauth MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:1/api"
