@@ -18,7 +18,7 @@ GitHub hostname
 
 ### `--oauth`
 
-Force native GitHub OAuth device flow instead of normal token resolution
+Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources
 
 ### `--raw`
 
