@@ -13,8 +13,8 @@ pub use registry::{
     AquaRegistryMetadata, DefaultRegistryFetcher, FileCacheStore, NoOpCacheStore, package_ids,
 };
 pub use types::{
-    AquaChecksum, AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage, AquaPackageType,
-    AquaVar, RegistryYaml,
+    AquaChecksum, AquaChecksumType, AquaCosign, AquaFile, AquaMinisignType, AquaPackage,
+    AquaPackageType, AquaVar, RegistryYaml,
 };
 
 use thiserror::Error;
