@@ -154,18 +154,13 @@
                 "type": "string"
               },
               {
-                "properties": {
-                  "version": {
-                    "description": "version of the tool to install",
-                    "type": "string"
-                  },
-                  "os": {
-                    "$ref": "#/$defs/os_filter"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/tool_options"
                   }
-                },
-                "required": ["version"],
+                ],
                 "type": "object",
-                "additionalProperties": {
+                "unevaluatedProperties": {
                   "oneOf": [
                     {
                       "type": "string"
@@ -838,19 +833,18 @@
         }
       ]
     },
-    "os_filter": {
-      "description": "operating system filters to install on",
-      "oneOf": [
-        {
-          "$ref": "#/$defs/os_filter_item"
+    "tool_options": {
+      "properties": {
+        "version": {
+          "description": "version of the tool to install",
+          "type": "string"
         },
-        {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/os_filter_item"
-          }
+        "os": {
+          "$ref": "#/$defs/os_filter"
         }
-      ]
+      },
+      "required": ["version"],
+      "type": "object"
     },
     "env_directive": {
       "type": "object",
@@ -914,6 +908,20 @@
             }
           },
           "required": ["paths"]
+        }
+      ]
+    },
+    "os_filter": {
+      "description": "operating system filters to install on",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/os_filter_item"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/os_filter_item"
+          }
         }
       ]
     },

@@ -1949,54 +1949,53 @@
           "type": "string"
         },
         {
-          "properties": {
-            "version": {
-              "description": "version of the tool to install",
-              "type": "string"
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool_options"
             },
-            "os": {
-              "$ref": "#/$defs/os_filter"
-            },
-            "install_env": {
-              "type": "object",
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "type": "string"
+            {
+              "properties": {
+                "install_env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
                   },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "description": "environment variables during tool installation"
-            },
-            "depends": {
-              "oneOf": [
-                {
-                  "description": "tools that must be installed before this tool",
-                  "type": "string"
+                  "description": "environment variables during tool installation"
                 },
-                {
-                  "description": "tools that must be installed before this tool",
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
+                "depends": {
+                  "oneOf": [
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "string"
+                    },
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "postinstall": {
+                  "description": "command to run after tool installation",
+                  "type": "string"
                 }
-              ]
-            },
-            "postinstall": {
-              "description": "command to run after tool installation",
-              "type": "string"
+              }
             }
-          },
-          "required": ["version"],
+          ],
           "type": "object",
-          "additionalProperties": {
+          "unevaluatedProperties": {
             "oneOf": [
               {
                 "type": "string"
@@ -2018,6 +2017,19 @@
           }
         }
       ]
+    },
+    "tool_options": {
+      "properties": {
+        "version": {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        "os": {
+          "$ref": "#/$defs/os_filter"
+        }
+      },
+      "required": ["version"],
+      "type": "object"
     },
     "hooks": {
       "description": "hooks to run",
@@ -2310,18 +2322,13 @@
                 "type": "string"
               },
               {
-                "properties": {
-                  "version": {
-                    "description": "version of the tool to install",
-                    "type": "string"
-                  },
-                  "os": {
-                    "$ref": "#/$defs/os_filter"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/tool_options"
                   }
-                },
-                "required": ["version"],
+                ],
                 "type": "object",
-                "additionalProperties": {
+                "unevaluatedProperties": {
                   "oneOf": [
                     {
                       "type": "string"
