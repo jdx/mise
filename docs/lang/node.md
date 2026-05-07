@@ -53,12 +53,12 @@ always return the version specified in `mise.toml`.
 
 By default, mise uses a `mise.toml` file for auto-switching between software versions.
 
-It also supports `.tool-versions` file to specify versions for ASDF compatibility. Additionally, `.nvmrc`, `.node-version`, and the `engines` field in `package.json` are supported but require explicit enabling (see tip below).
+It also supports `.tool-versions` file to specify versions for ASDF compatibility. Additionally, `.nvmrc`, `.node-version`, and the `devEngines` field in `package.json` are supported but require explicit enabling (see tip below).
 
 This makes it a drop-in replacement for `nvm`. See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
 
 ::: tip
-Idiomatic version files (`.nvmrc`, `.node-version`, `engines` field in `package.json`) are disabled by default and must be explicitly enabled:
+Idiomatic version files (`.nvmrc`, `.node-version`, `devEngines` field in `package.json`) are disabled by default and must be explicitly enabled:
 
 ```sh
 mise settings add idiomatic_version_file_enable_tools node
