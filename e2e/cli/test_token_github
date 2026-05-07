@@ -95,6 +95,16 @@ MOCK_PORT="$(cat "$MOCK_PORT_FILE")"
 OAUTH_ENV="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:$MOCK_PORT/login/oauth MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:$MOCK_PORT/api"
 assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --oauth --raw" "ghu-native-oauth-token"
 assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --unmask" "GitHub OAuth"
+
+# Test 9b: cached OAuth token is auto-exported as GITHUB_TOKEN
+assert_contains "$OAUTH_ENV mise env --shell bash" "export GITHUB_TOKEN=ghu-native-oauth-token"
+
+# Test 9c: oauth_export_env can pick a different variable name
+assert_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_EXPORT_ENV=GH_TOKEN mise env --shell bash" "export GH_TOKEN=ghu-native-oauth-token"
+
+# Test 9d: empty oauth_export_env disables auto-export
+assert_not_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_EXPORT_ENV= mise env --shell bash" "ghu-native-oauth-token"
+
 kill "$MOCK_PID"
 
 # Test 10: git credential fill

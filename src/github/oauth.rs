@@ -1,5 +1,6 @@
 use crate::config::Settings;
 use crate::env;
+use crate::env_diff::EnvMap;
 use eyre::{Result, bail, eyre};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -77,6 +78,24 @@ pub fn resolve_token(host: &str) -> Option<String> {
         allow_device_flow: false,
     })
     .ok()
+}
+
+/// If OAuth is configured and a cached or refreshable token is available,
+/// inject it into the env map under the configured variable name. Never
+/// triggers the device-code flow, so this is safe to call from shell hook
+/// paths like `mise hook-env`, `mise env`, and `mise exec`.
+pub fn inject_token_env(env: &mut EnvMap) {
+    let settings = Settings::get();
+    let var_name = settings.github.oauth_export_env.trim();
+    if var_name.is_empty() || settings.github.oauth_client_id.trim().is_empty() {
+        return;
+    }
+    let Some(host) = api_host(&settings.github.oauth_api_url) else {
+        return;
+    };
+    if let Some(token) = resolve_token(&host) {
+        env.insert(var_name.to_string(), token);
+    }
 }
 
 pub fn token(req: TokenRequest) -> Result<String> {

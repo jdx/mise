@@ -840,6 +840,11 @@
               "description": "GitHub App client ID for native OAuth device-flow tokens.",
               "type": "string"
             },
+            "oauth_export_env": {
+              "default": "GITHUB_TOKEN",
+              "description": "Environment variable name to export the native GitHub OAuth token under (empty disables).",
+              "type": "string"
+            },
             "oauth_open_browser": {
               "default": true,
               "description": "Open the browser during native GitHub OAuth device flow.",

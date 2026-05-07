@@ -154,16 +154,15 @@ Authorize once:
 mise token github --oauth
 ```
 
-After that, mise reuses the cached token for its own GitHub API calls and refreshes it when GitHub returns a refresh token. This is the best setup when you want the token used only by mise.
-
-For general development, print a raw token and export it for other tools:
+After that, mise reuses the cached token for its own GitHub API calls and refreshes it when GitHub returns a refresh token. While the cached token is valid, mise also exports it to your shell as `GITHUB_TOKEN` (via `mise activate` / `mise hook-env` / `mise env` / `mise exec`) so tools like `gh`, `git`, and `cargo publish` see it without any extra wiring:
 
 ```sh
-export GITHUB_TOKEN="$(mise token github --oauth --raw)"
-gh pr list
+gh pr list # uses the OAuth token automatically
 ```
 
-Or use the `MISE_GITHUB_TOKEN` name if you only want child mise processes to see it:
+To use a different variable name (for example, `gh`'s preferred `GH_TOKEN`), set `github.oauth_export_env`. Setting it to an empty string disables the auto-export.
+
+You can still print a raw token explicitly when you need to pipe it somewhere:
 
 ```sh
 export MISE_GITHUB_TOKEN="$(mise token github --oauth --raw)"
@@ -176,6 +175,7 @@ Optional settings:
 oauth_client_id = "Iv1.yourgithubappclientid"
 oauth_scopes = "" # usually empty for GitHub App user access tokens
 oauth_open_browser = true
+oauth_export_env = "GITHUB_TOKEN" # set to "" to disable automatic export
 ```
 
 ## Git Credential Helpers

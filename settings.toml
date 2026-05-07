@@ -734,6 +734,19 @@ the cached token for GitHub API calls and refresh it when possible.
 env = "MISE_GITHUB_OAUTH_CLIENT_ID"
 type = "String"
 
+[github.oauth_export_env]
+default = "GITHUB_TOKEN"
+description = "Environment variable name to export the native GitHub OAuth token under (empty disables)."
+docs = """
+When `github.oauth_client_id` is configured and a cached or refreshable token
+is available, mise exports the token under this environment variable so other
+tools (`gh`, `git`, `cargo`, etc.) can pick it up without an explicit
+`$(mise token github --oauth --raw)` call. Set to `GH_TOKEN` to use the gh
+CLI's preferred name, or to an empty string to disable the auto-export.
+"""
+env = "MISE_GITHUB_OAUTH_EXPORT_ENV"
+type = "String"
+
 [github.oauth_open_browser]
 default = true
 description = "Open the browser during native GitHub OAuth device flow."
