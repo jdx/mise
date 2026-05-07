@@ -2201,6 +2201,54 @@
         }
       }
     },
+    "tool_platform_aliases_artifact": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "platforms": {
+          "$ref": "#/$defs/tool_platform_map_artifact"
+        },
+        "platform": {
+          "$ref": "#/$defs/tool_platform_map_artifact"
+        }
+      }
+    },
+    "tool_platform_aliases_release": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "platforms": {
+          "$ref": "#/$defs/tool_platform_map_release"
+        },
+        "platform": {
+          "$ref": "#/$defs/tool_platform_map_release"
+        }
+      }
+    },
+    "tool_platform_aliases_s3": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "platforms": {
+          "$ref": "#/$defs/tool_platform_map_s3"
+        },
+        "platform": {
+          "$ref": "#/$defs/tool_platform_map_s3"
+        }
+      }
+    },
+    "tool_platform_aliases_cargo": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "platforms": {
+          "$ref": "#/$defs/tool_platform_map_cargo"
+        },
+        "platform": {
+          "$ref": "#/$defs/tool_platform_map_cargo"
+        }
+      }
+    },
     "tool_aqua_options": {
       "properties": {
         "symlink_bins": {
@@ -2218,34 +2266,35 @@
       "type": "object"
     },
     "tool_cargo_options": {
-      "properties": {
-        "features": {
-          "description": "cargo features to enable",
-          "type": "string"
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_platform_aliases_cargo"
         },
-        "default-features": {
-          "$ref": "#/$defs/tool_bool_or_string",
-          "description": "whether cargo default features are enabled"
-        },
-        "bin": {
-          "description": "binary name to install",
-          "type": "string"
-        },
-        "crate": {
-          "description": "crate name to install from a git repository",
-          "type": "string"
-        },
-        "locked": {
-          "$ref": "#/$defs/tool_bool_or_string",
-          "description": "whether to pass --locked to cargo install"
-        },
-        "platforms": {
-          "$ref": "#/$defs/tool_platform_map_cargo"
-        },
-        "platform": {
-          "$ref": "#/$defs/tool_platform_map_cargo"
+        {
+          "properties": {
+            "features": {
+              "description": "cargo features to enable",
+              "type": "string"
+            },
+            "default-features": {
+              "$ref": "#/$defs/tool_bool_or_string",
+              "description": "whether cargo default features are enabled"
+            },
+            "bin": {
+              "description": "binary name to install",
+              "type": "string"
+            },
+            "crate": {
+              "description": "crate name to install from a git repository",
+              "type": "string"
+            },
+            "locked": {
+              "$ref": "#/$defs/tool_bool_or_string",
+              "description": "whether to pass --locked to cargo install"
+            }
+          }
         }
-      },
+      ],
       "type": "object"
     },
     "tool_conda_options": {
@@ -2314,6 +2363,9 @@
           "$ref": "#/$defs/tool_artifact_platform_options"
         },
         {
+          "$ref": "#/$defs/tool_platform_aliases_release"
+        },
+        {
           "properties": {
             "asset_pattern": {
               "description": "release asset pattern to install",
@@ -2334,12 +2386,6 @@
             "api_url": {
               "description": "custom API URL for self-hosted forge instances",
               "type": "string"
-            },
-            "platforms": {
-              "$ref": "#/$defs/tool_platform_map_release"
-            },
-            "platform": {
-              "$ref": "#/$defs/tool_platform_map_release"
             }
           }
         }
@@ -2350,6 +2396,9 @@
       "allOf": [
         {
           "$ref": "#/$defs/tool_artifact_platform_options"
+        },
+        {
+          "$ref": "#/$defs/tool_platform_aliases_artifact"
         },
         {
           "properties": {
@@ -2368,12 +2417,6 @@
             "version_expr": {
               "description": "expr-lang expression used to extract versions",
               "type": "string"
-            },
-            "platforms": {
-              "$ref": "#/$defs/tool_platform_map_artifact"
-            },
-            "platform": {
-              "$ref": "#/$defs/tool_platform_map_artifact"
             }
           }
         }
@@ -2384,6 +2427,9 @@
       "allOf": [
         {
           "$ref": "#/$defs/tool_artifact_platform_options"
+        },
+        {
+          "$ref": "#/$defs/tool_platform_aliases_s3"
         },
         {
           "properties": {
@@ -2414,12 +2460,6 @@
             "version_expr": {
               "description": "expr-lang expression used to extract versions",
               "type": "string"
-            },
-            "platforms": {
-              "$ref": "#/$defs/tool_platform_map_s3"
-            },
-            "platform": {
-              "$ref": "#/$defs/tool_platform_map_s3"
             }
           }
         }
