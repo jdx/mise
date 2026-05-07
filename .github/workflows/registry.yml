@@ -18,6 +18,7 @@ env:
   MISE_LOCKFILE: 1
   MISE_USE_VERSIONS_HOST_TRACK: 0
   RUST_BACKTRACE: 1
+  MISE_GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   check-changes:
@@ -177,8 +178,14 @@ jobs:
         uses: ./.github/actions/fetch-token
         with:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Set pooled token for Docker
-        run: echo "POOL_TOKEN=${{ steps.token.outputs.token }}" >> "$GITHUB_ENV"
+      - name: Set pooled token
+        if: steps.token.outputs.token
+        run: |
+          {
+            echo "POOL_TOKEN=${{ steps.token.outputs.token }}"
+            echo "MISE_GITHUB_TOKEN=${{ steps.token.outputs.token }}"
+            echo "GITHUB_TOKEN=${{ steps.token.outputs.token }}"
+          } >> "$GITHUB_ENV"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise
@@ -222,7 +229,8 @@ jobs:
             -v "$PWD:/mise-src:ro" \
             -v "$PWD/target/debug/mise:/usr/local/bin/mise:ro" \
             -v "$summary_dir:/tmp/github-summary" \
-            -e GITHUB_TOKEN="${POOL_TOKEN:-}" \
+            -e MISE_GITHUB_TOKEN="${POOL_TOKEN:-${MISE_GITHUB_TOKEN:-}}" \
+            -e GITHUB_TOKEN="${POOL_TOKEN:-${GITHUB_TOKEN:-}}" \
             -e GITHUB_STEP_SUMMARY=/tmp/github-summary/summary.md \
             -e TEST_TOOL_JOBS="$TEST_TOOL_JOBS" \
             -e TEST_TRANCHE="$TEST_TRANCHE" \
@@ -284,7 +292,8 @@ jobs:
             -v "$PWD:/mise-src:ro" \
             -v "$PWD/target/debug/mise:/usr/local/bin/mise:ro" \
             -v "$summary_dir:/tmp/github-summary" \
-            -e GITHUB_TOKEN="${POOL_TOKEN:-}" \
+            -e MISE_GITHUB_TOKEN="${POOL_TOKEN:-${MISE_GITHUB_TOKEN:-}}" \
+            -e GITHUB_TOKEN="${POOL_TOKEN:-${GITHUB_TOKEN:-}}" \
             -e GITHUB_STEP_SUMMARY=/tmp/github-summary/summary.md \
             -e TEST_TOOL_JOBS="$TEST_TOOL_JOBS" \
             -e MISE_EXPERIMENTAL=1 \
