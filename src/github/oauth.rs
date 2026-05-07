@@ -13,14 +13,17 @@ const REUSE_BUFFER_SECS: i64 = 300;
 #[derive(Debug, Clone)]
 pub struct TokenRequest {
     pub host: String,
-    pub force_device_flow: bool,
+    /// Whether the device-code authorization flow may be triggered when no
+    /// reusable cached or refreshed token is available. When false, an
+    /// uncached host bails instead of prompting the user.
+    pub allow_device_flow: bool,
 }
 
 impl Default for TokenRequest {
     fn default() -> Self {
         Self {
             host: "github.com".to_string(),
-            force_device_flow: false,
+            allow_device_flow: false,
         }
     }
 }
@@ -71,7 +74,7 @@ pub fn resolve_token(host: &str) -> Option<String> {
 
     token(TokenRequest {
         host: host.to_string(),
-        force_device_flow: false,
+        allow_device_flow: false,
     })
     .ok()
 }
@@ -99,28 +102,28 @@ async fn token_async(req: TokenRequest) -> Result<String> {
         api_host(&settings.github.oauth_api_url).unwrap_or_else(|| req.host.clone());
     let cache_key = cache_key(&canonical_host, client_id, scopes);
     let mut cache = read_cache();
-    if !req.force_device_flow {
-        if let Some(cached) = cache.tokens.get(&cache_key)
-            && reusable(cached)
-        {
-            return Ok(cached.access_token.clone());
-        }
-        if let Some(cached) = cache.tokens.get(&cache_key).cloned() {
-            match refresh_token(&cached).await {
-                Ok(Some(refreshed)) => {
-                    let token = refreshed.access_token.clone();
-                    cache.tokens.insert(cache_key, refreshed);
-                    if let Err(err) = write_cache(&cache) {
-                        warn!("failed to cache GitHub OAuth token: {err:#}");
-                    }
-                    return Ok(token);
+    if let Some(cached) = cache.tokens.get(&cache_key)
+        && reusable(cached)
+    {
+        return Ok(cached.access_token.clone());
+    }
+    if let Some(cached) = cache.tokens.get(&cache_key).cloned() {
+        match refresh_token(&cached).await {
+            Ok(Some(refreshed)) => {
+                let token = refreshed.access_token.clone();
+                cache.tokens.insert(cache_key, refreshed);
+                if let Err(err) = write_cache(&cache) {
+                    warn!("failed to cache GitHub OAuth token: {err:#}");
                 }
-                Ok(None) => {}
-                Err(err) => {
-                    debug!("failed to refresh GitHub OAuth token: {err:#}");
-                }
+                return Ok(token);
+            }
+            Ok(None) => {}
+            Err(err) => {
+                debug!("failed to refresh GitHub OAuth token: {err:#}");
             }
         }
+    }
+    if !req.allow_device_flow {
         bail!("GitHub OAuth token is not cached. Run `mise token github --oauth` to authorize.");
     }
 
@@ -165,6 +168,7 @@ async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse>
         "{}/access_token",
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
+    let client = reqwest::Client::new();
 
     loop {
         if chrono::Utc::now() >= deadline {
@@ -172,7 +176,7 @@ async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse>
         }
         tokio::time::sleep(Duration::from_secs(interval)).await;
 
-        let response = reqwest::Client::new()
+        let response = match client
             .post(&url)
             .header("Accept", "application/json")
             .form(&[
@@ -181,10 +185,21 @@ async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse>
                 ("grant_type", GRANT_DEVICE_CODE),
             ])
             .send()
-            .await?
-            .error_for_status()?
-            .json::<TokenResponse>()
-            .await?;
+            .await
+            .and_then(|r| r.error_for_status())
+        {
+            Ok(resp) => match resp.json::<TokenResponse>().await {
+                Ok(body) => body,
+                Err(err) => {
+                    debug!("transient error polling GitHub OAuth token: {err:#}");
+                    continue;
+                }
+            },
+            Err(err) => {
+                debug!("transient error polling GitHub OAuth token: {err:#}");
+                continue;
+            }
+        };
 
         match response.error.as_deref() {
             None => return Ok(response),

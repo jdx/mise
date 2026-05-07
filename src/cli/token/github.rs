@@ -13,7 +13,8 @@ pub struct Github {
     #[clap(default_value = "github.com")]
     pub(crate) host: String,
 
-    /// Force native GitHub OAuth device flow instead of normal token resolution
+    /// Resolve only via the native GitHub OAuth source (cache, refresh, or
+    /// device-code flow), bypassing other token sources
     #[clap(long)]
     pub(crate) oauth: bool,
 
@@ -32,7 +33,7 @@ impl Github {
             Some((
                 github::oauth::token(github::oauth::TokenRequest {
                     host: self.host.clone(),
-                    force_device_flow: true,
+                    allow_device_flow: true,
                 })?,
                 github::TokenSource::GithubOauth,
             ))
