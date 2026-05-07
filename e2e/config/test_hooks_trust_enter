@@ -3,71 +3,89 @@
 export MISE_TRUSTED_CONFIG_PATHS=""
 unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
 
+run_hook_env() {
+  local stdout stderr eval_out status
+  stdout="$(mktemp)"
+  stderr="$(mktemp)"
+  eval_out="$(mktemp)"
+  status=0
+
+  mise hook-env -s bash >"$stdout" 2>"$stderr" || status=$?
+  HOOK_ENV_OUTPUT="$(cat "$stderr")"
+  if [[ $status -eq 0 ]]; then
+    # shellcheck source=/dev/null
+    source "$stdout" >"$eval_out" 2>&1 || status=$?
+    HOOK_ENV_OUTPUT="${HOOK_ENV_OUTPUT}"$'\n'"$(cat "$eval_out")"
+  elif [[ -s $stdout ]]; then
+    HOOK_ENV_OUTPUT="${HOOK_ENV_OUTPUT}"$'\n'"$(cat "$stdout")"
+  fi
+
+  rm -f "$stdout" "$stderr" "$eval_out"
+  return "$status"
+}
+
+assert_hook_env_contains() {
+  run_hook_env
+  [[ $HOOK_ENV_OUTPUT == *"$1"* ]] || fail "expected hook-env to contain $1, got: $HOOK_ENV_OUTPUT"
+}
+
+assert_hook_env_not_contains() {
+  run_hook_env
+  [[ $HOOK_ENV_OUTPUT != *"$1"* ]] || fail "expected hook-env not to contain $1, got: $HOOK_ENV_OUTPUT"
+}
+
 mkdir -p project
-cat <<'EOF' >project/mise.toml
-[hooks]
-enter = 'echo HOOK-ENTER'
-EOF
-
 cd project || exit 1
-assert_contains "mise trust 2>&1" "HOOK-ENTER"
-assert_not_contains "mise trust 2>&1" "HOOK-ENTER"
+run_hook_env
+[[ ! -e $MISE_STATE_DIR/trusted-configs ]] || fail "trusted-configs should not exist before first trust"
 
-cd .. || exit 1
-mkdir -p other
-cat <<'EOF' >other/mise.toml
-[hooks]
-enter = 'echo OTHER-ENTER'
+cat <<'EOF' >mise.toml
+[hooks.enter]
+shell = "bash"
+script = 'echo HOOK-ENTER:$MISE_PROJECT_ROOT'
 EOF
 
-assert_not_contains "mise trust other/mise.toml 2>&1" "OTHER-ENTER"
+trust_output="$(mise trust 2>&1)"
+[[ $trust_output != *"HOOK-ENTER"* ]] || fail "mise trust should not run enter hooks"
+assert_hook_env_contains "HOOK-ENTER:$PWD"
 
-mkdir -p parent/child
-cat <<'EOF' >parent/mise.toml
-[hooks]
-enter = 'echo PARENT-ENTER'
-EOF
-cat <<'EOF' >parent/child/mise.toml
-[hooks]
-enter = 'echo CHILD-ENTER'
-EOF
+trust_output="$(mise trust 2>&1)"
+[[ $trust_output != *"HOOK-ENTER"* ]] || fail "repeated mise trust should not run enter hooks"
+assert_hook_env_not_contains "HOOK-ENTER"
 
-cd parent || exit 1
-assert_contains "mise trust 2>&1" "PARENT-ENTER"
-
+mkdir -p child
 cd child || exit 1
-child_trust_output="$(mise trust 2>&1)"
-[[ $child_trust_output == *"CHILD-ENTER"* ]] || fail "expected child enter hook to run"
-[[ $child_trust_output != *"PARENT-ENTER"* ]] || fail "parent enter hook should not re-run"
-
-cd ../.. || exit 1
-mkdir -p guarded/child
-cat <<'EOF' >guarded/mise.toml
-[hooks]
-enter = 'echo GUARDED-PARENT-ENTER'
-EOF
-cat <<'EOF' >guarded/child/mise.toml
-[hooks]
-enter = 'echo GUARDED-CHILD-ENTER'
+run_hook_env
+cat <<'EOF' >mise.toml
+[hooks.enter]
+shell = "bash"
+script = 'echo CHILD-ENTER'
 EOF
 
-cd guarded/child || exit 1
-guarded_child_output="$(mise trust mise.toml 2>&1)"
-[[ $guarded_child_output != *"GUARDED-PARENT-ENTER"* ]] || fail "parent hook should not run with untrusted parent"
-[[ $guarded_child_output != *"GUARDED-CHILD-ENTER"* ]] || fail "child hook should wait for untrusted parent"
+trust_output="$(mise trust 2>&1)"
+[[ $trust_output != *"CHILD-ENTER"* ]] || fail "mise trust should not run child enter hook"
+run_hook_env
+[[ $HOOK_ENV_OUTPUT == *"CHILD-ENTER"* ]] || fail "expected child enter hook to run"
+[[ $HOOK_ENV_OUTPUT != *"HOOK-ENTER"* ]] || fail "parent enter hook should not re-run"
 
 cd ../.. || exit 1
 mkdir -p trust_all/child
-cat <<'EOF' >trust_all/mise.toml
-[hooks]
-enter = 'echo ALL-PARENT-ENTER'
+cd trust_all/child || exit 1
+run_hook_env
+cat <<'EOF' >../mise.toml
+[hooks.enter]
+shell = "bash"
+script = 'echo ALL-PARENT-ENTER'
 EOF
-cat <<'EOF' >trust_all/child/mise.toml
-[hooks]
-enter = 'echo ALL-CHILD-ENTER'
+cat <<'EOF' >mise.toml
+[hooks.enter]
+shell = "bash"
+script = 'echo ALL-CHILD-ENTER'
 EOF
 
-cd trust_all/child || exit 1
 trust_all_output="$(mise trust --all 2>&1)"
-[[ $trust_all_output == *"ALL-PARENT-ENTER"* ]] || fail "expected parent enter hook with --all"
-[[ $trust_all_output == *"ALL-CHILD-ENTER"* ]] || fail "expected child enter hook with --all"
+[[ $trust_all_output != *"ALL-PARENT-ENTER"* ]] || fail "mise trust --all should not run parent enter hook"
+[[ $trust_all_output != *"ALL-CHILD-ENTER"* ]] || fail "mise trust --all should not run child enter hook"
+run_hook_env
+[[ $HOOK_ENV_OUTPUT == *"ALL-PARENT-ENTER"* ]] || fail "expected parent enter hook after --all"
+[[ $HOOK_ENV_OUTPUT == *"ALL-CHILD-ENTER"* ]] || fail "expected child enter hook after --all"

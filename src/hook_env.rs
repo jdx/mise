@@ -210,6 +210,9 @@ pub fn should_exit_early_fast() -> bool {
             return false;
         }
     }
+    if have_trust_state_dirs_been_modified() {
+        return false;
+    }
     // Check if data dir has been modified (new tools installed, etc.)
     // Also check if it's been deleted - this requires a full update
     if !dirs::DATA.exists() {
@@ -312,6 +315,22 @@ fn have_files_been_modified(watch_files: BTreeSet<PathBuf>) -> bool {
         trace!("watch files unmodified");
     }
     modified
+}
+
+fn have_trust_state_dirs_been_modified() -> bool {
+    for path in [&*dirs::TRUSTED_CONFIGS, &*dirs::IGNORED_CONFIGS] {
+        if PREV_SESSION.watch_files.iter().any(|p| p == path) {
+            continue;
+        }
+        if let Ok(metadata) = path.metadata()
+            && let Ok(modified) = metadata.modified()
+            && mtime_to_millis(modified) > PREV_SESSION.latest_update
+        {
+            trace!("trust state dir modified: {:?}", path);
+            return true;
+        }
+    }
+    false
 }
 
 fn have_mise_env_vars_been_modified() -> bool {

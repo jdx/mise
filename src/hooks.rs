@@ -224,32 +224,42 @@ pub async fn run_one_hook_with_context(
     }
 }
 
-pub async fn run_enter_hooks_for_roots(
+pub async fn run_enter_hooks_for_newly_loaded_configs(
     config: &Arc<Config>,
     ts: &Toolset,
-    trusted_roots: &[PathBuf],
+    shell: &dyn Shell,
 ) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+        return;
+    }
+    if hook_env::dir_change().is_some() {
         return;
     }
     let Some(cwd) = dirs::CWD.as_ref() else {
         return;
     };
+    let newly_loaded_roots = config
+        .config_files
+        .iter()
+        .filter(|(path, _)| !hook_env::PREV_SESSION.loaded_configs.contains(*path))
+        .filter_map(|(_, cf)| cf.project_root())
+        .filter(|root| cwd.starts_with(root))
+        .collect::<IndexSet<_>>();
+    if newly_loaded_roots.is_empty() {
+        return;
+    }
+    let shell_name = shell.to_string();
     for (root, h) in config.hooks().await.cloned().unwrap_or_default() {
-        if h.hook != Hooks::Enter || !cwd.starts_with(&root) {
+        if h.hook != Hooks::Enter || h.global || !cwd.starts_with(&root) {
             continue;
         }
-        if h.shell.is_some() {
-            trace!("skipping shell-specific enter hook after trust in {root:?}");
+        if h.shell.as_ref().is_some_and(|s| s != &shell_name) {
             continue;
         }
-        if !trusted_roots
-            .iter()
-            .any(|trusted_root| root.as_path() == trusted_root.as_path())
-        {
+        if !newly_loaded_roots.contains(&root) {
             continue;
         }
-        run_matched_hook(config, ts, &root, &h, None, None).await;
+        run_matched_hook(config, ts, &root, &h, Some(shell), None).await;
     }
 }
 

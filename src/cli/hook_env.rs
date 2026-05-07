@@ -168,6 +168,7 @@ impl HookEnv {
         miseprint!("{alias_output}")?;
 
         hooks::run_all_hooks(&config, ts, &*shell).await;
+        hooks::run_enter_hooks_for_newly_loaded_configs(&config, ts, &*shell).await;
         watch_files::execute_runs(&config, ts).await;
 
         Ok(())
