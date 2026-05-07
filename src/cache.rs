@@ -163,6 +163,48 @@ where
         Ok(val)
     }
 
+    /// Like [`Self::get_or_try_init_async`], but values rejected by `should_cache`
+    /// are returned without populating the in-memory or on-disk cache.
+    pub async fn get_or_try_init_async_if<F, Fut, P>(&self, fetch: F, should_cache: P) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
+        P: Fn(&T) -> bool,
+        T: Clone,
+    {
+        if let Some(val) = self.cache_async.get().or_else(|| self.cache.get())
+            && should_cache(val)
+        {
+            return Ok(val.clone());
+        }
+
+        let path = &self.cache_file_path;
+        if self.is_fresh() {
+            match self.parse() {
+                Ok(val) => {
+                    if should_cache(&val) {
+                        let _ = self.cache.set(val.clone());
+                        let _ = self.cache_async.set(val.clone());
+                        return Ok(val);
+                    }
+                }
+                Err(err) => {
+                    warn!("failed to parse cache file: {} {:#}", path.display(), err);
+                }
+            }
+        }
+
+        let val = fetch().await?;
+        if should_cache(&val) {
+            if let Err(err) = self.write(&val) {
+                warn!("failed to write cache file: {} {:#}", path.display(), err);
+            }
+            let _ = self.cache.set(val.clone());
+            let _ = self.cache_async.set(val.clone());
+        }
+        Ok(val)
+    }
+
     /// Fetch fresh data, write it to disk, and return it without consulting
     /// any cache. The in-memory cache cells are replaced with the fresh value
     /// so future non-refresh reads observe it instead of a stale previously-
@@ -398,5 +440,31 @@ mod tests {
         assert_eq!(val, &2);
         let val = cache.get_or_try_init(|| Ok(4)).unwrap();
         assert_eq!(val, &2);
+    }
+
+    #[tokio::test]
+    async fn test_get_or_try_init_async_if_does_not_cache_rejected_values() {
+        let _config = Config::get().await.unwrap();
+        let mut cache: CacheManager<i32> =
+            CacheManagerBuilder::new(dirs::CACHE.join("test-cache-if")).build();
+        cache.clear().unwrap();
+
+        let val = cache
+            .get_or_try_init_async_if(|| async { Ok(1) }, |v| *v > 1)
+            .await
+            .unwrap();
+        assert_eq!(val, 1);
+
+        let val = cache
+            .get_or_try_init_async_if(|| async { Ok(2) }, |v| *v > 1)
+            .await
+            .unwrap();
+        assert_eq!(val, 2);
+
+        let val = cache
+            .get_or_try_init_async_if(|| async { Ok(3) }, |v| *v > 1)
+            .await
+            .unwrap();
+        assert_eq!(val, 2);
     }
 }
