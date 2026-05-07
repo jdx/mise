@@ -687,7 +687,7 @@ fn build_info() -> IndexMap<String, &'static str> {
     let mut s = IndexMap::new();
     s.insert("Target".into(), built_info::TARGET);
     s.insert("Features".into(), built_info::FEATURES_STR);
-    s.insert("Built".into(), built_info::BUILT_TIME_UTC);
+    s.insert("Built".into(), env!("MISE_BUILD_TIME_UTC"));
     s.insert("Rust Version".into(), built_info::RUSTC_VERSION);
     s.insert("Profile".into(), built_info::PROFILE);
     s

@@ -626,11 +626,13 @@ fn display_github_rate_limit(resp: &Response) {
                 .get("x-ratelimit-reset")
                 .and_then(|h| h.to_str().ok())
                 .and_then(|s| s.parse::<i64>().ok())
-                .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+                .and_then(|ts| jiff::Timestamp::from_second(ts).ok())
             {
                 warn!(
                     "GitHub rate limit exceeded. Resets at {}",
-                    reset_time.with_timezone(&chrono::Local)
+                    reset_time
+                        .to_zoned(jiff::tz::TimeZone::system())
+                        .strftime("%Y-%m-%d %H:%M:%S %:z")
                 );
             }
             return;

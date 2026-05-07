@@ -11,10 +11,41 @@ fn main() {
         linux: { target_os = "linux" },
         vfox: { any(feature = "vfox", target_os = "windows") },
     }
+    set_build_time();
     built::write_built_file().expect("Failed to acquire build-time information");
 
     codegen_settings();
     codegen_registry();
+}
+
+fn set_build_time() {
+    const BUILD_TIME_FORMAT: &str = "%a, %-d %b %Y %H:%M:%S %z";
+    const BUILD_TIME_OVERRIDE: &str = "BUILT_OVERRIDE_mise_BUILT_TIME_UTC";
+
+    println!("cargo:rerun-if-env-changed={BUILD_TIME_OVERRIDE}");
+    println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
+
+    let build_time = env::var(BUILD_TIME_OVERRIDE)
+        .ok()
+        .filter(|s| jiff::Timestamp::strptime(BUILD_TIME_FORMAT, s).is_ok())
+        .or_else(|| {
+            let source_date_epoch = env::var("SOURCE_DATE_EPOCH").ok()?;
+            match source_date_epoch.parse::<i64>() {
+                Ok(seconds) => jiff::Timestamp::from_second(seconds).ok(),
+                Err(_) => {
+                    eprintln!("SOURCE_DATE_EPOCH defined, but not a i64");
+                    None
+                }
+            }
+            .map(|ts| ts.strftime(BUILD_TIME_FORMAT).to_string())
+        })
+        .unwrap_or_else(|| {
+            jiff::Timestamp::now()
+                .strftime(BUILD_TIME_FORMAT)
+                .to_string()
+        });
+
+    println!("cargo:rustc-env=MISE_BUILD_TIME_UTC={build_time}");
 }
 
 /// Generate a raw string literal that safely contains the given content.

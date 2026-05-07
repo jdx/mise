@@ -77,10 +77,6 @@ aws-sdk-s3 = { version = "1", default-features = false, features = [
 base64 = "0.22"
 bzip2 = "0.6"
 calm_io = "0.1"
-chrono = { version = "0.4", default-features = false, features = [
-  "std",
-  "clock",
-] }
 ci_info = "0.14"
 clap = { version = "4", features = ["env", "derive", "string"] }
 color-eyre = "0.6"
@@ -228,13 +224,14 @@ sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 
 [build-dependencies]
-built = { version = "0.8", features = ["chrono"] }
+built = "0.8"
 cfg_aliases = "0.2"
 heck = "0.5"
 toml = "1.0"
 indexmap = "2"
 serde = "1"
 serde_yaml = "0.9"
+jiff = "0.2"
 
 [dev-dependencies]
 clap-sort = "1"

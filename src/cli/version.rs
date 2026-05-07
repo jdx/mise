@@ -41,7 +41,7 @@ impl Version {
             "latest": get_latest_version(duration::DAILY).await,
             "os": *OS,
             "arch": *ARCH,
-            "build_time": BUILD_TIME.to_string(),
+            "build_time": BUILD_TIME.strftime("%Y-%m-%d %H:%M:%S %:z").to_string(),
         });
         println!("{}", serde_json::to_string_pretty(&json)?);
         Ok(())
@@ -67,7 +67,7 @@ pub static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
 });
 
 pub static VERSION: Lazy<String> = Lazy::new(|| {
-    let build_time = BUILD_TIME.format("%Y-%m-%d");
+    let build_time = BUILD_TIME.strftime("%Y-%m-%d");
     let v = &*VERSION_PLAIN;
     format!("{v} {os}-{arch} ({build_time})", os = *OS, arch = *ARCH)
 });

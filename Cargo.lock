@@ -1183,9 +1183,6 @@ name = "built"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4ad8f11f288f48ca24471bbd51ac257aaeaaa07adae295591266b792902ae64"
-dependencies = [
- "chrono",
-]
 
 [[package]]
 name = "bumpalo"
@@ -5671,7 +5668,6 @@ dependencies = [
  "calm_io",
  "cfg_aliases",
  "chacha20poly1305",
- "chrono",
  "ci_info",
  "clap",
  "clap-sort",

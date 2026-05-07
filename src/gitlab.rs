@@ -423,7 +423,7 @@ fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
     };
 
     let mut expired = vec![];
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     for (k, entry) in hosts {
         let Some(host) = k.as_str() else { continue };
         if entry.get("oauth2_refresh_token").is_none() {
@@ -432,7 +432,7 @@ fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
         let Some(expiry_str) = entry.get("oauth2_expiry_date").and_then(Value::as_str) else {
             continue;
         };
-        let Ok(expiry_date) = chrono::DateTime::parse_from_rfc3339(expiry_str) else {
+        let Ok(expiry_date) = expiry_str.parse::<jiff::Timestamp>() else {
             continue;
         };
         if expiry_date < now {

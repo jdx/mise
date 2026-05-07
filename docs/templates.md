@@ -316,7 +316,7 @@ Some filters:
 - `str | date(format) -> String` – Converts a timestamp to
   a formatted date string using the provided format,
   such as <span v-pre>`{{ ts | date(format="%Y-%m-%d") }}`</span>.
-  Find a list of time format on [`chrono` documentation](https://docs.rs/chrono/latest/chrono/format/strftime/index.html).
+  Find a list of time format on [`jiff` documentation](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
 - `str | split(pat) -> Array` – Splits a string by the given pattern and
   returns an array of substrings.
 - `str | default(value) -> String` – Returns the default value
