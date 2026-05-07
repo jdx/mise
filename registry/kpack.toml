@@ -5,8 +5,5 @@ test = { cmd = "kp version", expected = "{{version}}" }
 [[backends]]
 full = "github:vmware-tanzu/kpack-cli"
 
-[backends.options]
-exe = "kp"
-
 [[backends]]
 full = "asdf:asdf-community/asdf-kpack-cli"

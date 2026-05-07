@@ -4,8 +4,5 @@ test = { cmd = "depot --version", expected = "depot version {{version}}" }
 [[backends]]
 full = "github:depot/cli"
 
-[backends.options]
-exe = "depot"
-
 [[backends]]
 full = "asdf:depot/asdf-depot"
