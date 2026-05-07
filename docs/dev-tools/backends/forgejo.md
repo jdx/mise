@@ -76,7 +76,7 @@ You can provide a shell command that prints a token to stdout:
 credential_command = "op read 'op://Private/Forgejo Token/credential'"
 ```
 
-The target hostname is passed as `$1` to the command.
+The target hostname is available as `MISE_CREDENTIAL_HOST`, and the provider name (`forgejo`) is available as `MISE_CREDENTIAL_PROVIDER`.
 
 ### `fj` CLI integration
 
