@@ -142,7 +142,7 @@ fn credential_command_shell_from(
 }
 
 fn shell_supports_sh_c_args(program: &str) -> bool {
-    const SHELLS: &[&str] = &["bash", "dash", "ksh", "sh", "zsh"];
+    const SHELLS: &[&str] = &["ash", "bash", "dash", "ksh", "sh", "zsh"];
     let basename = program.rsplit(['/', '\\']).next().unwrap_or(program);
     let stem = match basename.rsplit_once('.') {
         Some((stem, ext)) if ext.eq_ignore_ascii_case("exe") => stem,
@@ -362,6 +362,7 @@ logins:
 
     #[test]
     fn test_shell_supports_sh_c_args_matches_windows_bash_path() {
+        assert!(shell_supports_sh_c_args("ash"));
         assert!(shell_supports_sh_c_args(
             r"C:\Program Files\Git\bin\BASH.EXE"
         ));
