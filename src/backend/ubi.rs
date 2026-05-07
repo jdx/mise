@@ -466,7 +466,7 @@ async fn install(
     bin_dir: &Path,
     extract_all: bool,
     opts: &ToolVersionOptions,
-) -> anyhow::Result<()> {
+) -> eyre::Result<()> {
     let mut builder = UbiBuilder::new().install_dir(bin_dir);
 
     if name_is_url(name) {
@@ -508,7 +508,7 @@ async fn install(
         builder = set_enterprise_token(builder, &forge);
     }
 
-    let mut ubi = builder.build()?;
+    let mut ubi = builder.build().map_err(|e| eyre::eyre!("{e:#}"))?;
 
     // TODO: hacky but does not compile without it
     tokio::task::block_in_place(|| {
@@ -519,5 +519,6 @@ async fn install(
                 .unwrap()
         });
         RT.block_on(async { ubi.install_binary().await })
+            .map_err(|e| eyre::eyre!("{e:#}"))
     })
 }
