@@ -42,9 +42,7 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_with_fallback, template_string, verify_artifact,
 };
 use crate::backend::version_list;
-use crate::backend::{
-    Backend, VersionInfo, runtime_path_for_bin_paths, runtime_path_for_install_path,
-};
+use crate::backend::{Backend, VersionInfo, runtime_path_for_install_path};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file;
@@ -555,7 +553,7 @@ impl Backend for S3Backend {
         }
 
         if paths.is_empty() {
-            Ok(vec![runtime_path_for_bin_paths(tv)])
+            Ok(vec![tv.runtime_path()])
         } else {
             Ok(paths
                 .into_iter()
