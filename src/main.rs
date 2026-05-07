@@ -95,6 +95,7 @@ mod uv;
 mod versions_host;
 mod watch_files;
 mod wildcard;
+mod wings;
 
 pub(crate) use crate::exit::exit;
 pub(crate) use crate::result::Result;

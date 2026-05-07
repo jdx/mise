@@ -10,6 +10,7 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "depends",
     "install_before",
     "minimum_release_age",
+    "wings",
 ];
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -93,6 +94,13 @@ impl ToolVersionOptions {
             return Some(value);
         }
         None
+    }
+
+    pub fn wings_enabled(&self) -> bool {
+        !matches!(
+            self.opts.get("wings").and_then(Self::value_to_bool),
+            Some(false)
+        )
     }
 
     /// Get a scalar value for a key as an owned string.
@@ -211,6 +219,18 @@ impl ToolVersionOptions {
             toml::Value::Integer(i) => Some(i.to_string()),
             toml::Value::Boolean(b) => Some(b.to_string()),
             toml::Value::Float(f) => Some(f.to_string()),
+            _ => None,
+        }
+    }
+
+    fn value_to_bool(value: &toml::Value) -> Option<bool> {
+        match value {
+            toml::Value::Boolean(b) => Some(*b),
+            toml::Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => Some(true),
+                "false" | "0" | "no" | "off" => Some(false),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -504,6 +524,42 @@ mod tests {
 
         assert_eq!(opts.get_string("integer"), Some("124".to_string()));
         assert_eq!(opts.get_string("boolean"), Some("true".to_string()));
+    }
+
+    #[test]
+    fn test_wings_enabled_defaults_true_and_accepts_bool_values() {
+        let mut opts = ToolVersionOptions::default();
+        assert!(opts.wings_enabled());
+
+        opts.opts
+            .insert("wings".to_string(), toml::Value::Boolean(false));
+        assert!(!opts.wings_enabled());
+
+        opts.opts
+            .insert("wings".to_string(), toml::Value::Boolean(true));
+        assert!(opts.wings_enabled());
+    }
+
+    #[test]
+    fn test_wings_enabled_accepts_string_values() {
+        let mut opts = ToolVersionOptions::default();
+
+        for value in ["false", "0", "no", "off"] {
+            opts.opts
+                .insert("wings".to_string(), toml::Value::String(value.to_string()));
+            assert!(!opts.wings_enabled(), "expected {value:?} to disable wings");
+        }
+
+        for value in ["true", "1", "yes", "on"] {
+            opts.opts
+                .insert("wings".to_string(), toml::Value::String(value.to_string()));
+            assert!(opts.wings_enabled(), "expected {value:?} to enable wings");
+        }
+    }
+
+    #[test]
+    fn test_wings_option_is_ephemeral() {
+        assert!(EPHEMERAL_OPT_KEYS.contains(&"wings"));
     }
 
     #[test]

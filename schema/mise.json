@@ -1758,6 +1758,29 @@
           "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
           "type": "string"
         },
+        "wings": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "[experimental] Resolve tool installs through mise-wings OCI artifacts (paid).",
+              "type": "boolean"
+            },
+            "required": {
+              "description": "[experimental] Tool/backend patterns that must install through mise-wings when Wings is not explicitly disabled for the tool.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "staging": {
+              "default": false,
+              "description": "[experimental] Use the mise-wings staging deployment.",
+              "type": "boolean"
+            }
+          }
+        },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
@@ -2295,6 +2318,11 @@
             "postinstall": {
               "description": "command to run after tool installation",
               "type": "string"
+            },
+            "wings": {
+              "description": "whether to use mise-wings for this tool when wings.enabled is active",
+              "type": "boolean",
+              "default": true
             }
           },
           "required": ["version"],

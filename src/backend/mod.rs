@@ -1496,11 +1496,21 @@ pub trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
-        let tv = match self.install_version_(&ctx, tv).await {
-            Ok(tv) => tv,
+        let tv = match crate::wings::artifact::try_install(self, &ctx, &mut tv).await {
+            Ok(true) => tv.clone(),
+            Ok(false) => {
+                let old_tv = tv.clone();
+                match self.install_version_(&ctx, tv).await {
+                    Ok(tv) => tv,
+                    Err(e) => {
+                        self.cleanup_install_dirs_on_error(&old_tv);
+                        // Pass through the error - it will be wrapped at a higher level
+                        return Err(e);
+                    }
+                }
+            }
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
-                // Pass through the error - it will be wrapped at a higher level
                 return Err(e);
             }
         };

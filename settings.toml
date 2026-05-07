@@ -2459,6 +2459,96 @@ docs = """
 env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 
+[wings.enabled]
+default = false
+description = "[experimental] Resolve tool installs through mise-wings OCI artifacts (paid)."
+docs = """
+Opt-in: defaults to `false`. Set to `true` (or `MISE_WINGS_ENABLED=1`)
+to ask the mise-wings catalog resolver before normal tool installs. When
+the resolver returns `allow`, mise pulls the approved OCI artifact from
+`registry.<wings-host>` and installs that artifact into the normal tool
+install directory. When the resolver returns `pending`, mise waits and
+reports the worker's build progress until the artifact is ready. When the
+resolver returns `blocked`, install fails with the policy reason.
+
+Once enabled, two ways credentials get acquired:
+
+  - **Local dev**: `mise wings login` once; the rotated session JWT lives
+    in `MISE_STATE_DIR/wings/credentials.json` and auto-refreshes.
+  - **GitHub Actions**: when the runner has `permissions: id-token: write`,
+    mise exchanges the runner's OIDC token for a wings session
+    automatically. No `mise wings login` step needed; no long-lived
+    secret to rotate.
+
+Without either, the activation is a no-op. Requires an active wings
+subscription on the Clerk org linked to your GitHub account / repo for
+the proxy to issue a session. Sign up at <https://mise-wings.en.dev>.
+
+When enabled globally, Wings is attempted for tool installs by default.
+Disable it for a specific tool with `wings = false`, for example:
+`node = { version = "22", wings = false }`.
+
+The opt-in default is deliberate. If `wings.enabled` were `true` by
+default, any workflow with `id-token: write` (used for SLSA / AWS-OIDC
+/ Sigstore / etc.) would silently send the runner's OIDC token to
+mise-wings on every `mise` invocation — a behavior change for users
+who never signed up for wings. Keeping the gate explicit means no
+identity data leaves the runner without consent.
+"""
+env = "MISE_WINGS_ENABLED"
+type = "Bool"
+
+[wings.required]
+description = "[experimental] Tool/backend patterns that must install through mise-wings when Wings is not explicitly disabled for the tool."
+docs = """
+Default: empty list.
+
+When a configured tool matches one of these patterns, mise will fail the
+install if Wings does not provide the artifact instead of falling back to
+the normal backend installer. This is useful for teams that want to
+enforce Wings for selected tools or backends after opting into
+`wings.enabled`.
+
+Patterns support `*` and `?` wildcards and are matched against:
+
+  - the configured tool short name, for example `node`
+  - the resolved backend ref, for example `github:cli/cli`
+  - the backend prefix with `:*`, for example `npm:*`
+
+Examples:
+
+```toml
+[settings]
+wings.required = ["node", "github:*"]
+```
+
+Use `["*"]` to require Wings for every tool install. A tool-level
+`wings = false` remains an explicit opt-out for that tool and is not
+blocked by this setting.
+"""
+env = "MISE_WINGS_REQUIRED"
+optional = true
+rust_type = "Vec<String>"
+type = "ListString"
+
+[wings.staging]
+default = false
+description = "[experimental] Use the mise-wings staging deployment."
+docs = """
+When `true`, mise routes wings traffic through `mise-wings-staging.en.dev`
+instead of the production `mise-wings.en.dev`. Hidden setting — internal
+testing only; production users should leave this unset.
+
+Boolean (rather than a free-form host string) so the set of hosts the
+CLI will send OIDC tokens / wings session JWTs to is hardcoded to two
+known-good deployments. A typo'd `MISE_WINGS_HOST=evilcorp.example.com`
+would otherwise leak credentials to whatever the user typed; pinning
+the host list at compile time closes that footgun.
+"""
+env = "MISE_WINGS_STAGING"
+hide = true
+type = "Bool"
+
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
 env = "MISE_YES"

@@ -5698,6 +5698,7 @@ dependencies = [
  "digest 0.11.3",
  "dotenvy",
  "duct",
+ "ed25519-dalek",
  "exec",
  "expr-lang",
  "eyre",

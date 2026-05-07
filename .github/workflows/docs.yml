@@ -44,6 +44,19 @@ jobs:
   docs:
     if: github.repository == 'jdx/mise'
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    # `id-token: write` lets the runner mint the OIDC token mise
+    # exchanges for a wings session at `POST /auth`. Combined
+    # with the explicit `MISE_WINGS_ENABLED=1` opt-in below,
+    # normal tool installs can resolve through the mise-wings
+    # catalog and OCI registry.
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # Opt in to wings for this workflow. Required for the
+      # auto-OIDC exchange to fire; without it mise leaves wings
+      # inactive (no identity data sent to wings).
+      MISE_WINGS_ENABLED: "1"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
