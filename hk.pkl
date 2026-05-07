@@ -4,15 +4,23 @@ import "package://github.com/jdx/hk/releases/download/v1.44.3/hk@1.44.3#/Builtin
 local bash_glob = List("*.sh", "xtasks/**", "scripts/**", "e2e/**")
 local bash_exclude = List("*.ps1", "**/*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**", "e2e/shell/xonsh_script", "**/*.py", "**/*.xsh")
 local linters = new Mapping<String, Step> {
+    ["schema"] {
+        glob = List("schema/**/*.json")
+        stdin = "{{ files_list | join(sep='\u{0}') }}"
+        check = "xargs -0 -I {} ajv compile -s {} --spec=draft2020 --strict-types=true --strict-tuples=true"
+        fix = "xargs -0 -I {} sh -c 'tmp=\"$1.tmp\"; jq . < \"$1\" > \"$tmp\" && mv \"$tmp\" \"$1\" && ajv compile -s \"$1\" --spec=draft2020 --strict-types=true --strict-tuples=true' sh {}"
+        check_first = false
+    }
     // uses builtin prettier linter config; run via `mise x` so hk picks up
-    // the mise-pinned npm:prettier rather than whatever happens to be on
+    // the mise-pinned prettier rather than whatever happens to be on
     // PATH (e.g. a Homebrew prettier), keeping local and CI in sync.
     ["prettier"] = (Builtins.prettier) {
       batch = false
       exclude = "crates/aqua-registry/aqua-registry/**"
-      check = "mise x npm:prettier -- prettier --check {{ files }}"
-      check_list_files = "mise x npm:prettier -- prettier --list-different {{ files }}"
-      fix = "mise x npm:prettier -- prettier --write {{ files }}"
+      check = "mise x prettier -- prettier --check {{ files }}"
+      check_list_files = "mise x prettier -- prettier --list-different {{ files }}"
+      fix = "mise x prettier -- prettier --write {{ files }}"
+      depends = List("schema")
     }
     //["clippy"] = (Builtins.cargo_clippy) {
     //  check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
@@ -78,10 +86,6 @@ fi
         glob = List("**/*.md")
         check = "markdownlint {{ files }}"
         fix = "markdownlint --fix {{ files }}"
-    }
-    ["schema"] {
-        glob = List("schema/**/*.json")
-        check = "ajv compile -s schema/mise.json --spec=draft2019 --strict-schema=true && ajv compile -s schema/mise-task.json --spec=draft2019 --strict-schema=true && ajv compile -s schema/mise.plugin.json --spec=draft2020 --strict-schema=true && ajv compile -s schema/mise-registry-tool.json --spec=draft7 --strict-schema=true"
     }
 }
 

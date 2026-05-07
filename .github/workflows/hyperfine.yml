@@ -115,19 +115,19 @@ jobs:
         env:
           SHELL: zsh
       - run: mise run test:perf
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           NUM_TOOLS: 200
           NUM_TASKS: 2000
           RUNS: 10
           MISE_ALT: mise-${{ steps.versions.outputs.release }}
-      - if: always()
+      - if: ${{ !cancelled() }}
         run: sccache --show-stats
       - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
-        if: always() && github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
       - name: Comment on PR
         uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3
-        if: always() && github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         continue-on-error: true
         with:
           file-path: comment.md

@@ -666,6 +666,19 @@ const completionSpec: Fig.Spec = {
     {
       name: "bin-paths",
       description: "List all the active runtime bin paths",
+      options: [
+        {
+          name: "--bin-names",
+          description: "Output executable names instead of bin directories",
+          isRepeatable: false,
+        },
+        {
+          name: ["-J", "--json"],
+          description:
+            "Output executable entries in JSON format (implies --bin-names)",
+          isRepeatable: false,
+        },
+      ],
       args: {
         name: "tool@version",
         description: "Tool(s) to look up\ne.g.: ruby@3",
@@ -1610,7 +1623,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-g", "--global"],
           description:
-            "Include global config lockfile (~/.config/mise/mise.lock)\nBy default, only project-level configs are locked",
+            "Target only global config lockfiles (~/.config/mise/mise.lock and system config)\nBy default, only the active project config root is locked",
           isRepeatable: false,
         },
         {

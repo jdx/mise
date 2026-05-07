@@ -1,4 +1,3 @@
-use crate::backend::aqua::{arch, os};
 use crate::config::Settings;
 use crate::git::{CloneOptions, Git};
 use crate::{dirs, duration::WEEKLY, file};
@@ -94,11 +93,6 @@ impl MiseAquaRegistry {
         CACHE.lock().await.insert(id.to_string(), pkg.clone());
         Ok(pkg)
     }
-
-    pub async fn package_with_version(&self, id: &str, versions: &[&str]) -> Result<AquaPackage> {
-        let pkg = self.package(id).await?;
-        Ok(pkg.with_version(versions, os(), arch()))
-    }
 }
 
 fn fetch_latest_repo(repo: &Git) -> Result<()> {
@@ -158,5 +152,5 @@ pub fn aqua_suggest(query: &str) -> Vec<String> {
 
 // Re-export types and static for compatibility
 pub use aqua_registry::{
-    AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
+    AquaChecksum, AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage, AquaPackageType,
 };

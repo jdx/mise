@@ -704,14 +704,19 @@ backend, but can override with explicit syntax like `mise use aqua:owner/repo`.
 All tools must include a test to verify proper installation:
 
 ```toml
-test = [
-    "command-to-run",
-    "expected-output-pattern"
-]
+test = { cmd = "command-to-run", expected = "expected-output-pattern" }
 ```
 
 The test command should be reliable and the output pattern should use
 <code v-pre>{{version}}</code> to match any version number.
+
+If `test.cmd` needs extra mise-managed tools on PATH, declare them with
+`test.tools`. This is used only by `mise test-tool`; it does not affect normal
+tool installation.
+
+```toml
+test = { cmd = "gradle -V", expected = "Gradle", tools = ["java"] }
+```
 
 ### Registry Examples
 

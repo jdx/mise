@@ -17,7 +17,7 @@ use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOp
 use crate::ui::progress_report::SingleReport;
 use crate::{
     aqua::aqua_registry_wrapper::{
-        AQUA_REGISTRY, AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage,
+        AQUA_REGISTRY, AquaChecksum, AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage,
         AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
@@ -36,6 +36,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    fs,
     sync::Arc,
 };
 
@@ -44,6 +45,14 @@ pub struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AquaFileLink {
+    src: PathBuf,
+    dst: PathBuf,
+    hard: bool,
+    explicit_link: bool,
 }
 
 #[async_trait]
@@ -172,12 +181,9 @@ impl Backend for AquaBackend {
             features.push(SecurityFeature::Slsa { level: None });
         }
 
-        // Cosign (nested in checksum) - check registry config OR actual release assets
+        // Cosign - check registry config OR actual release assets
         let has_cosign_config = all_pkgs.iter().any(|p| {
-            p.checksum
-                .as_ref()
-                .and_then(|c| c.cosign.as_ref())
-                .is_some_and(|cosign| cosign.enabled.unwrap_or(true))
+            Self::binary_cosign_config(p).is_some() || Self::checksum_cosign_config(p).is_some()
         });
         let has_cosign_assets = release_assets.iter().any(|a| {
             let name = a.name.to_lowercase();
@@ -245,10 +251,19 @@ impl Backend for AquaBackend {
             }
         };
 
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target);
         let mut versions = Vec::new();
         for (tag, created_at, prerelease) in tags_with_timestamps.into_iter().rev() {
-            let version = match version_from_tag(&pkg, &tag) {
-                Ok(Some(version)) => version,
+            let (version, versioned_pkg) = match versioned_package_from_tag(
+                &pkg,
+                &tag,
+                target_os,
+                target_arch,
+                target_libc.as_deref(),
+            ) {
+                Ok(Some(versioned)) => versioned,
                 Ok(None) => continue,
                 Err(e) => {
                     warn!("[{}] aqua version filter error: {e}", self.ba());
@@ -257,11 +272,7 @@ impl Backend for AquaBackend {
             };
 
             // Validate the package has assets
-            let check_pkg = AQUA_REGISTRY
-                .package_with_version(&self.id, &[&tag])
-                .await
-                .unwrap_or_default();
-            if package_has_asset(&check_pkg) {
+            if package_has_asset(&versioned_pkg) {
                 let release_url = format!(
                     "https://github.com/{}/{}/releases/tag/{}",
                     pkg.repo_owner, pkg.repo_name, tag
@@ -512,12 +523,12 @@ impl Backend for AquaBackend {
             .get_or_try_init_async(async || {
                 let pkg = self.package_with_options(tv, &[&tv.version]).await?;
 
-                let srcs = self.srcs(&pkg, tv)?;
+                let srcs = Self::srcs(&pkg, tv)?;
                 let paths = if srcs.is_empty() {
                     vec![install_path.clone()]
                 } else {
                     srcs.iter()
-                        .map(|(_, dst)| dst.parent().unwrap().to_path_buf())
+                        .map(|link| link.dst.parent().unwrap().to_path_buf())
                         .collect()
                 };
                 Ok(paths
@@ -611,7 +622,8 @@ impl Backend for AquaBackend {
         // platform first, which can leak host-specific overrides into cross-platform lock.
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let opts = tv.request.options();
-        let pkg = pkg.with_version(&versions, target_os, target_arch);
+        let target_libc = Self::target_variant_libc(target);
+        let pkg = pkg.with_version_libc(&versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(target));
         let pkg = Self::apply_var_options(pkg, &opts)?;
 
@@ -766,7 +778,8 @@ impl AquaBackend {
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        let pkg = pkg.with_version(versions, target_os, target_arch);
+        let target_libc = Self::target_variant_libc(&target);
+        let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(&target));
         Self::apply_var_options(pkg, &tv.request.options())
     }
@@ -791,6 +804,24 @@ impl AquaBackend {
                 None
             }
         })
+    }
+
+    fn target_variant_libc(target: &PlatformTarget) -> Option<String> {
+        if target.os_name() != "linux" {
+            return None;
+        }
+        let settings_libc = if target.is_current() {
+            Settings::get().libc().map(str::to_string)
+        } else {
+            None
+        };
+        Some(
+            target
+                .libc()
+                .map(str::to_string)
+                .or(settings_libc)
+                .unwrap_or_else(|| "gnu".to_string()),
+        )
     }
 
     fn apply_aqua_libc_replacement(
@@ -861,6 +892,28 @@ impl AquaBackend {
         }
     }
 
+    fn has_native_cosign(cosign: &AquaCosign) -> bool {
+        cosign.enabled != Some(false) && (cosign.key.is_some() || cosign.bundle.is_some())
+    }
+
+    fn binary_cosign_config(pkg: &AquaPackage) -> Option<&AquaCosign> {
+        pkg.cosign
+            .as_ref()
+            .filter(|cosign| Self::has_native_cosign(cosign))
+    }
+
+    fn checksum_cosign_config(pkg: &AquaPackage) -> Option<(&AquaChecksum, &AquaCosign)> {
+        let checksum = pkg
+            .checksum
+            .as_ref()
+            .filter(|checksum| checksum.enabled())?;
+        let cosign = checksum
+            .cosign
+            .as_ref()
+            .filter(|cosign| Self::has_native_cosign(cosign))?;
+        Some((checksum, cosign))
+    }
+
     /// Detect provenance type from aqua registry package config.
     ///
     /// Returns the highest-priority provenance type that is configured and
@@ -896,16 +949,13 @@ impl AquaBackend {
             return Some(ProvenanceType::Slsa { url: None });
         }
 
-        // Check for cosign (nested under checksum config, requires checksum enabled)
+        // Check for cosign.
         // Only record cosign provenance if we can actually verify it natively
         // (key-based or bundle-based). Tools that only use opts require the external
         // cosign CLI which we don't shell out to.
         if settings.aqua.cosign
-            && let Some(checksum) = &pkg.checksum
-            && checksum.enabled()
-            && let Some(cosign) = checksum.cosign.as_ref()
-            && cosign.enabled != Some(false)
-            && (cosign.key.is_some() || cosign.bundle.is_some())
+            && (Self::binary_cosign_config(pkg).is_some()
+                || Self::checksum_cosign_config(pkg).is_some())
         {
             return Some(ProvenanceType::Cosign);
         }
@@ -962,15 +1012,19 @@ impl AquaBackend {
                 Ok(ProvenanceType::Minisign)
             }
             ProvenanceType::Cosign => {
-                let checksum_config = pkg
-                    .checksum
-                    .as_ref()
-                    .wrap_err("cosign provenance detected but no checksum config found")?;
-                let checksum_path = self
-                    .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
-                    .await?;
-                self.run_cosign_check(&checksum_path, pkg, v, tmp_dir.path(), None)
-                    .await?;
+                if let Some(cosign) = Self::binary_cosign_config(pkg) {
+                    self.run_cosign_check(&artifact_path, cosign, pkg, v, tmp_dir.path(), None)
+                        .await?;
+                } else {
+                    let (checksum_config, cosign) = Self::checksum_cosign_config(pkg).wrap_err(
+                        "cosign provenance detected but no supported binary/checksum config found",
+                    )?;
+                    let checksum_path = self
+                        .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
+                        .await?;
+                    self.run_cosign_check(&checksum_path, cosign, pkg, v, tmp_dir.path(), None)
+                        .await?;
+                }
                 Ok(ProvenanceType::Cosign)
             }
         }
@@ -1125,22 +1179,16 @@ impl AquaBackend {
         Ok(())
     }
 
-    /// Download cosign key/signature/bundle and verify checksums file.
-    /// The checksum file must already be downloaded at `checksum_path`.
+    /// Download cosign key/signature/bundle and verify a target file.
     async fn run_cosign_check(
         &self,
-        checksum_path: &Path,
+        target_path: &Path,
+        cosign: &AquaCosign,
         pkg: &AquaPackage,
         v: &str,
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
-        let cosign = pkg
-            .checksum
-            .as_ref()
-            .and_then(|c| c.cosign.as_ref())
-            .wrap_err("cosign provenance detected but no config found")?;
-
         if let Some(key) = &cosign.key {
             let mut key_pkg = pkg.clone();
             (key_pkg.repo_owner, key_pkg.repo_name) =
@@ -1175,11 +1223,11 @@ impl AquaBackend {
                 HTTP.download_file(&sig_url, &path, pr).await?;
                 path
             } else {
-                checksum_path.with_extension("sig")
+                target_path.with_extension("sig")
             };
 
             match crate::github::sigstore::verify_cosign_signature_with_key(
-                checksum_path,
+                target_path,
                 &sig_path,
                 &key_path,
             )
@@ -1209,8 +1257,7 @@ impl AquaBackend {
             let bundle_path = download_dir.join(get_filename_from_url(&bundle_url));
             HTTP.download_file(&bundle_url, &bundle_path, pr).await?;
 
-            match crate::github::sigstore::verify_cosign_signature(checksum_path, &bundle_path)
-                .await
+            match crate::github::sigstore::verify_cosign_signature(target_path, &bundle_path).await
             {
                 Ok(true) => {
                     debug!("cosign (bundle) verified");
@@ -1338,9 +1385,18 @@ impl AquaBackend {
                     // current `prerelease` opt, since the user may have pinned
                     // a pre-release version under a project-local override.
                     let tags = get_tags(&pkg).await?;
+                    let target = PlatformTarget::from_current();
+                    let (target_os, target_arch) = Self::to_aqua_platform(&target);
+                    let target_libc = Self::target_variant_libc(&target);
                     for tag in tags.into_iter().rev() {
-                        let version = match version_from_tag(&pkg, &tag) {
-                            Ok(Some(version)) => version,
+                        let (version, _) = match versioned_package_from_tag(
+                            &pkg,
+                            &tag,
+                            target_os,
+                            target_arch,
+                            target_libc.as_deref(),
+                        ) {
+                            Ok(Some(versioned)) => versioned,
                             Ok(None) => continue,
                             Err(e) => {
                                 warn!("[{}] aqua version filter error: {e}", self.ba());
@@ -1365,22 +1421,19 @@ impl AquaBackend {
         pkg: &AquaPackage,
         tag: &str,
     ) -> Result<Option<String>> {
-        let Some(version) = version_from_tag(pkg, tag)? else {
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target);
+        let Some((version, versioned_pkg)) =
+            versioned_package_from_tag(pkg, tag, target_os, target_arch, target_libc.as_deref())?
+        else {
             return Ok(None);
         };
-        if self.tag_has_installable_package(tag).await {
+        if package_has_asset(&versioned_pkg) {
             Ok(Some(version))
         } else {
             Ok(None)
         }
-    }
-
-    async fn tag_has_installable_package(&self, tag: &str) -> bool {
-        let check_pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, &[tag])
-            .await
-            .unwrap_or_default();
-        package_has_asset(&check_pkg)
     }
 
     async fn get_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, bool, Option<String>)> {
@@ -1690,7 +1743,7 @@ impl AquaBackend {
         }
         if !skip_minisign {
             // Short-circuit: if SLSA or GithubAttestations already recorded provenance, skip minisign.
-            // Cosign runs later in the checksum block, so it cannot be set at this point.
+            // Cosign runs later, so it cannot be set at this point.
             let already_verified = tv
                 .lock_platforms
                 .get(&platform_key)
@@ -1702,6 +1755,23 @@ impl AquaBackend {
         }
 
         let download_path = tv.download_path();
+        let mut cosign_already_verified = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.provenance.as_ref())
+            .is_some_and(|p| *p > ProvenanceType::Cosign);
+
+        if !skip_cosign
+            && Settings::get().aqua.cosign
+            && !cosign_already_verified
+            && let Some(cosign) = Self::binary_cosign_config(pkg)
+        {
+            let artifact_path = download_path.join(filename);
+            self.cosign_artifact(ctx, cosign, pkg, v, tv, &artifact_path)
+                .await?;
+            cosign_already_verified = true;
+        }
+
         if let Some(checksum) = &pkg.checksum
             && checksum.enabled()
         {
@@ -1712,21 +1782,10 @@ impl AquaBackend {
                 .get(&platform_key)
                 .is_none_or(|pi| pi.checksum.is_none());
 
-            let needs_cosign = !skip_cosign
-                && Settings::get().aqua.cosign
-                && checksum
-                    .cosign
-                    .as_ref()
-                    .is_some_and(|c| c.enabled != Some(false));
-            // Short-circuit cosign if a higher-priority mechanism already recorded provenance.
-            // Safe to cache: provenance is only modified by the single-threaded verification
-            // methods above (attestations, slsa, minisign), all of which have completed by now.
-            let cosign_already_verified = needs_cosign
-                && tv
-                    .lock_platforms
-                    .get(&platform_key)
-                    .and_then(|pi| pi.provenance.as_ref())
-                    .is_some_and(|p| *p > ProvenanceType::Cosign);
+            let checksum_cosign = (!skip_cosign && Settings::get().aqua.cosign)
+                .then(|| Self::checksum_cosign_config(pkg).map(|(_, cosign)| cosign))
+                .flatten();
+            let needs_cosign = checksum_cosign.is_some();
             // Re-download only if the checksum file doesn't exist yet. An existing file
             // from a prior attempt is trusted because the download directory is version-specific
             // and the final artifact is independently verified by verify_checksum at the end.
@@ -1744,8 +1803,11 @@ impl AquaBackend {
                     .await?;
             }
 
-            if needs_cosign && !cosign_already_verified && checksum_path.exists() {
-                self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
+            if let Some(cosign) = checksum_cosign
+                && !cosign_already_verified
+                && checksum_path.exists()
+            {
+                self.cosign_checksums(ctx, cosign, pkg, v, tv, &checksum_path)
                     .await?;
             }
 
@@ -1925,47 +1987,70 @@ impl AquaBackend {
         Ok(())
     }
 
+    async fn cosign_artifact(
+        &self,
+        ctx: &InstallContext,
+        cosign: &AquaCosign,
+        pkg: &AquaPackage,
+        v: &str,
+        tv: &mut ToolVersion,
+        artifact_path: &Path,
+    ) -> Result<()> {
+        let download_path = tv.download_path();
+        ctx.pr
+            .set_message("verify artifact with cosign".to_string());
+        self.run_cosign_check(
+            artifact_path,
+            cosign,
+            pkg,
+            v,
+            &download_path,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
+
+        ctx.pr.set_message("✓ Cosign verified".to_string());
+        self.record_cosign_provenance(tv);
+        Ok(())
+    }
+
     async fn cosign_checksums(
         &self,
         ctx: &InstallContext,
+        cosign: &AquaCosign,
         pkg: &AquaPackage,
         v: &str,
         tv: &mut ToolVersion,
         checksum_path: &Path,
-        download_path: &Path,
     ) -> Result<()> {
-        if !Settings::get().aqua.cosign {
-            return Ok(());
-        }
-        if let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref()) {
-            if cosign.enabled == Some(false) {
-                debug!("cosign is disabled for {tv}");
-                return Ok(());
-            }
+        let download_path = tv.download_path();
+        ctx.pr
+            .set_message("verify checksums with cosign".to_string());
+        self.run_cosign_check(
+            checksum_path,
+            cosign,
+            pkg,
+            v,
+            &download_path,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
 
-            // Opts-only config (no key or bundle) — nothing to verify natively
-            if cosign.key.is_none() && cosign.bundle.is_none() {
-                debug!("cosign for {tv} uses opts-only config, skipping native verification");
-                return Ok(());
-            }
-
-            ctx.pr
-                .set_message("verify checksums with cosign".to_string());
-            self.run_cosign_check(checksum_path, pkg, v, download_path, Some(ctx.pr.as_ref()))
-                .await?;
-
-            ctx.pr.set_message("✓ Cosign verified".to_string());
-            let platform_key = self.get_platform_key();
-            let pi = tv.lock_platforms.entry(platform_key).or_default();
-            if pi
-                .provenance
-                .as_ref()
-                .is_none_or(|p| *p < ProvenanceType::Cosign)
-            {
-                pi.provenance = Some(ProvenanceType::Cosign);
-            }
-        }
+        ctx.pr.set_message("✓ Cosign verified".to_string());
+        self.record_cosign_provenance(tv);
         Ok(())
+    }
+
+    fn record_cosign_provenance(&self, tv: &mut ToolVersion) {
+        let platform_key = self.get_platform_key();
+        let pi = tv.lock_platforms.entry(platform_key).or_default();
+        if pi
+            .provenance
+            .as_ref()
+            .is_none_or(|p| *p < ProvenanceType::Cosign)
+        {
+            pi.provenance = Some(ProvenanceType::Cosign);
+        }
     }
 
     fn install(
@@ -2004,13 +2089,7 @@ impl AquaBackend {
                 let name_str: &str = name.as_ref();
                 install_path.join(name_str)
             })
-            .map(|path| {
-                if cfg!(windows) && pkg.complete_windows_ext {
-                    path.with_extension("exe")
-                } else {
-                    path
-                }
-            })
+            .map(|path| complete_windows_ext(path, pkg.complete_windows_ext, os()))
             .collect();
         let first_bin_path = bin_paths
             .first()
@@ -2071,15 +2150,10 @@ impl AquaBackend {
             }
         }
 
-        let srcs = self.srcs(pkg, tv)?;
-        for (src, dst) in &srcs {
-            if src != dst && src.exists() && !dst.exists() {
-                if cfg!(windows) {
-                    file::copy(src, dst)?;
-                } else {
-                    let src = PathBuf::from(".").join(src.file_name().unwrap().to_str().unwrap());
-                    file::make_symlink(&src, dst)?;
-                }
+        let srcs = Self::srcs(pkg, tv)?;
+        for link in &srcs {
+            if link.src != link.dst && link.src.exists() {
+                Self::create_file_link(link)?;
             }
         }
 
@@ -2092,15 +2166,15 @@ impl AquaBackend {
 
     /// Creates a `.mise-bins` directory with symlinks only to the binaries defined in the aqua registry.
     /// This prevents bundled dependencies (like Python in aws-cli) from being exposed on PATH.
-    fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[(PathBuf, PathBuf)]) -> Result<()> {
+    fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[AquaFileLink]) -> Result<()> {
         let symlink_dir = tv.install_path().join(".mise-bins");
         file::create_dir_all(&symlink_dir)?;
 
-        for (_, dst) in srcs {
-            if let Some(bin_name) = dst.file_name() {
+        for link in srcs {
+            if let Some(bin_name) = link.dst.file_name() {
                 let symlink_path = symlink_dir.join(bin_name);
-                if dst.exists() && !symlink_path.exists() {
-                    file::make_symlink_or_copy(dst, &symlink_path)?;
+                if link.dst.exists() && !symlink_path.exists() {
+                    file::make_symlink_or_copy(&link.dst, &symlink_path)?;
                 }
             }
         }
@@ -2110,11 +2184,21 @@ impl AquaBackend {
     fn symlink_bins(&self, tv: &ToolVersion) -> bool {
         tv.request
             .options()
-            .get("symlink_bins")
+            .get_string("symlink_bins")
             .is_some_and(|v| v == "true" || v == "1")
     }
 
-    fn srcs(&self, pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<(PathBuf, PathBuf)>> {
+    fn srcs(pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<AquaFileLink>> {
+        Self::srcs_for_platform(pkg, &tv.version, &tv.install_path(), os(), arch())
+    }
+
+    fn srcs_for_platform(
+        pkg: &AquaPackage,
+        version: &str,
+        install_path: &Path,
+        os: &str,
+        arch: &str,
+    ) -> Result<Vec<AquaFileLink>> {
         if pkg.files.is_empty() {
             let fallback_name = pkg
                 .name
@@ -2122,45 +2206,162 @@ impl AquaBackend {
                 .and_then(|n| n.split('/').next_back())
                 .unwrap_or(&pkg.repo_name);
 
-            let mut path = tv.install_path().join(fallback_name);
-            if cfg!(windows) && pkg.complete_windows_ext {
-                path = path.with_extension("exe");
-            }
+            let mut path = install_path.join(fallback_name);
+            path = complete_windows_ext(path, pkg.complete_windows_ext, os);
 
-            return Ok(vec![(path.clone(), path)]);
+            return Ok(vec![AquaFileLink {
+                src: path.clone(),
+                dst: path,
+                hard: false,
+                explicit_link: false,
+            }]);
         }
 
-        let files: Vec<(PathBuf, PathBuf)> = pkg
+        let files: Vec<AquaFileLink> = pkg
             .files
             .iter()
             .map(|f| {
-                let srcs = if let Some(prefix) = &pkg.version_prefix {
-                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version), os(), arch())?]
+                let version = version_with_prefix(version, pkg.version_prefix.as_deref());
+                let srcs = if pkg.version_prefix.is_some() {
+                    vec![Self::file_link_for_version(
+                        f,
+                        pkg,
+                        version.as_ref(),
+                        install_path,
+                        os,
+                        arch,
+                    )?]
                 } else {
                     vec![
-                        f.src(pkg, &tv.version, os(), arch())?,
-                        f.src(pkg, &format!("v{}", tv.version), os(), arch())?,
+                        Self::file_link_for_version(
+                            f,
+                            pkg,
+                            version.as_ref(),
+                            install_path,
+                            os,
+                            arch,
+                        )?,
+                        Self::file_link_for_version(
+                            f,
+                            pkg,
+                            &format!("v{version}"),
+                            install_path,
+                            os,
+                            arch,
+                        )?,
                     ]
                 };
-                Ok(srcs
-                    .into_iter()
-                    .flatten()
-                    .map(|src| tv.install_path().join(src))
-                    .map(|mut src| {
-                        let mut dst = src.parent().unwrap().join(f.name.as_str());
-                        if cfg!(windows) && pkg.complete_windows_ext {
-                            src = src.with_extension("exe");
-                            dst = dst.with_extension("exe");
-                        }
-                        (src, dst)
-                    }))
+                Ok(srcs.into_iter().flatten())
             })
             .flatten_ok()
             .collect::<Result<Vec<_>>>()?
             .into_iter()
-            .unique_by(|(src, _)| src.to_path_buf())
+            .unique_by(|link| (link.src.to_path_buf(), link.dst.to_path_buf()))
             .collect();
         Ok(files)
+    }
+
+    fn file_link_for_version(
+        f: &aqua_registry::AquaFile,
+        pkg: &AquaPackage,
+        version: &str,
+        install_path: &Path,
+        os: &str,
+        arch: &str,
+    ) -> Result<Option<AquaFileLink>> {
+        let explicit_link = f.link.is_some();
+        let src = match f.src(pkg, version, os, arch)? {
+            Some(src) => src,
+            None if explicit_link => f.name.clone(),
+            None => return Ok(None),
+        };
+        let link = f.link(pkg, version, os, arch)?;
+
+        let mut src = install_path.join(src);
+        let mut dst = src
+            .parent()
+            .wrap_err_with(|| format!("file source has no parent: {}", src.display()))?
+            .join(link.as_deref().unwrap_or(f.name.as_str()));
+        src = complete_windows_ext(src, pkg.complete_windows_ext, os);
+        dst = complete_windows_dst_ext(&src, dst, pkg.complete_windows_ext, os);
+
+        Ok(Some(AquaFileLink {
+            src,
+            dst,
+            hard: f.hard,
+            explicit_link,
+        }))
+    }
+
+    fn create_file_link(link: &AquaFileLink) -> Result<()> {
+        if let Some(parent) = link.dst.parent() {
+            file::create_dir_all(parent)?;
+        }
+
+        if link.hard || (cfg!(windows) && link.explicit_link) {
+            trace!("ln {} {}", link.src.display(), link.dst.display());
+            if link.dst.is_dir() {
+                return Err(eyre!(
+                    "destination is a directory, cannot create hard link: {}",
+                    link.dst.display()
+                ));
+            }
+            if link.dst.is_file() || link.dst.is_symlink() {
+                fs::remove_file(&link.dst)?;
+            }
+            fs::hard_link(&link.src, &link.dst).wrap_err_with(|| {
+                format!(
+                    "failed to hard link {} {}",
+                    link.src.display(),
+                    link.dst.display()
+                )
+            })?;
+            return Ok(());
+        }
+
+        if cfg!(windows) {
+            file::copy(&link.src, &link.dst)?;
+        } else {
+            let target = link
+                .dst
+                .parent()
+                .and_then(|parent| relative_path(parent, &link.src))
+                .unwrap_or_else(|| link.src.clone());
+            file::make_symlink(&target, &link.dst)?;
+        }
+        Ok(())
+    }
+}
+
+fn relative_path(from: &Path, to: &Path) -> Option<PathBuf> {
+    let from_components = from.components().collect_vec();
+    let to_components = to.components().collect_vec();
+    let common_len = from_components
+        .iter()
+        .zip(&to_components)
+        .take_while(|(from, to)| from == to)
+        .count();
+
+    let mut result = PathBuf::new();
+    for component in &from_components[common_len..] {
+        match component {
+            std::path::Component::Normal(_) => result.push(".."),
+            std::path::Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    for component in &to_components[common_len..] {
+        match component {
+            std::path::Component::Normal(_) | std::path::Component::CurDir => {
+                result.push(component.as_os_str())
+            }
+            _ => return None,
+        }
+    }
+    if result.as_os_str().is_empty() {
+        Some(PathBuf::from("."))
+    } else {
+        Some(result)
     }
 }
 
@@ -2233,6 +2434,34 @@ fn toml_value_kind(value: &toml::Value) -> &'static str {
     }
 }
 
+fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Cow<'a, str> {
+    if let Some(prefix) = version_prefix
+        && !version.starts_with(prefix)
+    {
+        Cow::Owned(format!("{prefix}{version}"))
+    } else {
+        Cow::Borrowed(version)
+    }
+}
+
+fn complete_windows_ext(path: PathBuf, complete: bool, target_os: &str) -> PathBuf {
+    if target_os == "windows" && complete && path.extension().is_none() {
+        path.with_extension("exe")
+    } else {
+        path
+    }
+}
+
+fn complete_windows_dst_ext(src: &Path, dst: PathBuf, complete: bool, target_os: &str) -> PathBuf {
+    if target_os != "windows" || !complete || dst.extension().is_some() {
+        return dst;
+    }
+    match src.extension() {
+        Some(ext) => dst.with_extension(ext),
+        None => dst.with_extension("exe"),
+    }
+}
+
 /// Returns install-time-only option keys for the Aqua backend.
 ///
 /// Aqua registry vars may be provided either as a nested `vars` table or as
@@ -2250,7 +2479,7 @@ pub fn is_install_time_option_key(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aqua_registry::AquaVar;
+    use aqua_registry::{AquaFile, AquaVar};
 
     fn aqua_var(name: &str, required: bool) -> AquaVar {
         AquaVar {
@@ -2258,6 +2487,49 @@ mod tests {
             default: None,
             required,
         }
+    }
+
+    #[test]
+    fn test_version_with_prefix_does_not_double_prefix() {
+        assert_eq!(version_with_prefix("1.0.0", Some("tool-")), "tool-1.0.0");
+        assert_eq!(
+            version_with_prefix("tool-1.0.0", Some("tool-")),
+            "tool-1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_complete_windows_ext_preserves_existing_extension() {
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("bat/arq.bat"), true, "windows"),
+            PathBuf::from("bat/arq.bat")
+        );
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("bin/tool"), true, "windows"),
+            PathBuf::from("bin/tool.exe")
+        );
+    }
+
+    #[test]
+    fn test_complete_windows_dst_ext_uses_source_extension() {
+        assert_eq!(
+            complete_windows_dst_ext(
+                Path::new("bat/arq.bat"),
+                PathBuf::from("bat/arq"),
+                true,
+                "windows",
+            ),
+            PathBuf::from("bat/arq.bat")
+        );
+        assert_eq!(
+            complete_windows_dst_ext(
+                Path::new("bin/tool"),
+                PathBuf::from("bin/tool"),
+                true,
+                "windows"
+            ),
+            PathBuf::from("bin/tool.exe")
+        );
     }
 
     #[test]
@@ -2402,6 +2674,106 @@ mod tests {
     }
 
     #[test]
+    fn test_srcs_support_file_link_with_default_src() {
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![AquaFile {
+            name: "mc".to_string(),
+            link: Some("mc.exe".to_string()),
+            ..Default::default()
+        }];
+        pkg.complete_windows_ext = false;
+
+        let links = AquaBackend::srcs_for_platform(
+            &pkg,
+            "RELEASE.2025-08-13T08-35-41Z",
+            Path::new("install"),
+            "windows",
+            "amd64",
+        )
+        .unwrap();
+
+        assert_eq!(
+            links,
+            vec![AquaFileLink {
+                src: PathBuf::from("install").join("mc"),
+                dst: PathBuf::from("install").join("mc.exe"),
+                hard: false,
+                explicit_link: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_srcs_support_hard_file_link() {
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![AquaFile {
+            name: "pnpm".to_string(),
+            src: Some("bin/pnpm".to_string()),
+            link: Some("pnpm-hard".to_string()),
+            hard: true,
+        }];
+
+        let links =
+            AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "linux", "amd64")
+                .unwrap();
+
+        assert_eq!(
+            links,
+            vec![AquaFileLink {
+                src: PathBuf::from("install").join("bin/pnpm"),
+                dst: PathBuf::from("install").join("bin/pnpm-hard"),
+                hard: true,
+                explicit_link: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_relative_path_between_link_and_source() {
+        assert_eq!(
+            relative_path(
+                Path::new("/tmp/install/bin/aliases"),
+                Path::new("/tmp/install/bin/tool"),
+            )
+            .unwrap(),
+            PathBuf::from("../tool")
+        );
+    }
+
+    #[test]
+    fn test_relative_path_with_shared_curdir() {
+        assert_eq!(
+            relative_path(
+                Path::new("./install/bin/aliases"),
+                Path::new("./install/bin/tool"),
+            )
+            .unwrap(),
+            PathBuf::from("../tool")
+        );
+    }
+
+    #[test]
+    fn test_create_file_link_rejects_hard_link_directory_destination() -> Result<()> {
+        let tmp_dir = tempfile::tempdir()?;
+        let src = tmp_dir.path().join("tool");
+        let dst = tmp_dir.path().join("tool-hard");
+        fs::write(&src, "tool")?;
+        fs::create_dir(&dst)?;
+
+        let err = AquaBackend::create_file_link(&AquaFileLink {
+            src,
+            dst,
+            hard: true,
+            explicit_link: true,
+        })
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("destination is a directory"));
+        Ok(())
+    }
+
+    #[test]
     fn test_unescape_regex_literal_no_backslash_is_borrowed() {
         let result = unescape_regex_literal("astral-sh/ruff/.github/workflows/release.yml");
         assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
@@ -2452,13 +2824,32 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
         .collect())
 }
 
+#[cfg(test)]
 fn version_from_tag(pkg: &AquaPackage, tag: &str) -> Result<Option<String>> {
+    let target = PlatformTarget::from_current();
+    let (target_os, target_arch) = AquaBackend::to_aqua_platform(&target);
+    let target_libc = AquaBackend::target_variant_libc(&target);
+    Ok(
+        versioned_package_from_tag(pkg, tag, target_os, target_arch, target_libc.as_deref())?
+            .map(|(version, _)| version),
+    )
+}
+
+fn versioned_package_from_tag(
+    pkg: &AquaPackage,
+    tag: &str,
+    target_os: &str,
+    target_arch: &str,
+    target_libc: Option<&str>,
+) -> Result<Option<(String, AquaPackage)>> {
     if !pkg.version_filter_ok(tag)? {
         return Ok(None);
     }
 
     let mut version = tag;
-    let versioned_pkg = pkg.clone().with_version(&[tag], os(), arch());
+    let versioned_pkg = pkg
+        .clone()
+        .with_version_libc(&[tag], target_os, target_arch, target_libc);
     if let Some(prefix) = &versioned_pkg.version_prefix {
         let Some(stripped) = version.strip_prefix(prefix) else {
             return Ok(None);
@@ -2466,7 +2857,7 @@ fn version_from_tag(pkg: &AquaPackage, tag: &str) -> Result<Option<String>> {
         version = stripped;
     }
     let version = version.strip_prefix('v').unwrap_or(version);
-    Ok(Some(version.to_string()))
+    Ok(Some((version.to_string(), versioned_pkg)))
 }
 
 fn package_has_asset(pkg: &AquaPackage) -> bool {

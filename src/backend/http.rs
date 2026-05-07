@@ -29,7 +29,7 @@ const METADATA_FILE: &str = "metadata.json";
 
 /// Helper to get an option value with platform-specific fallback
 fn get_opt(opts: &ToolVersionOptions, key: &str) -> Option<String> {
-    lookup_platform_key(opts, key).or_else(|| opts.get(key).map(|s| s.to_string()))
+    lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
 }
 
 /// Metadata stored alongside cached extractions
@@ -564,11 +564,7 @@ impl HttpBackend {
 
     /// Fetch versions from version_list_url if configured
     async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        let opts = if !self.ba.opts().contains_key("version_list_url") {
-            config.get_tool_opts(&self.ba).await?.unwrap_or_default()
-        } else {
-            self.ba.opts()
-        };
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
 
         let url = match opts.get("version_list_url") {
             Some(url) => url.to_string(),
@@ -609,6 +605,15 @@ impl Backend for HttpBackend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &[
+            "version_list_url",
+            "version_regex",
+            "version_json_path",
+            "version_expr",
+        ]
     }
 
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {

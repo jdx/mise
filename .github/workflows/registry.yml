@@ -86,6 +86,7 @@ jobs:
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.registry-changed == 'true'
     outputs:
       tools: ${{ steps.determine-tools.outputs.tools }}
+      tranches: ${{ steps.determine-tools.outputs.tranches }}
       new_tools: ${{ steps.registry-diff.outputs.new_tools }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -106,6 +107,7 @@ jobs:
           if [ "${{ steps.workflow-check.outputs.modified }}" == "true" ]; then
             echo "Workflow modified, running all tests"
             echo "tools=" >> "$GITHUB_OUTPUT"
+            echo "tranches=8" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -113,11 +115,13 @@ jobs:
           count=$(echo "$tools" | wc -w)
           echo "Modified tools count: $(echo "$tools" | wc -w)"
 
-          if [ "$count" -gt 30 ]; then
-            echo "Over 30 tools updated, running all tests"
-            echo "tools=" >> "$GITHUB_OUTPUT"
+          if [ "$count" -ge 64 ]; then
+            echo "64 or more tools updated, splitting changed tools across 8 tranches"
+            echo "tools=$tools" >> "$GITHUB_OUTPUT"
+            echo "tranches=8" >> "$GITHUB_OUTPUT"
           else
             echo "tools=$tools" >> "$GITHUB_OUTPUT"
+            echo "tranches=1" >> "$GITHUB_OUTPUT"
           fi
 
   validate-new-tools:
@@ -163,7 +167,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tranche: ${{ fromJson(needs.list-changed-tools.outputs.tools == '' && '[0,1,2,3,4,5,6,7]' || '[0]') }}
+        tranche: ${{ fromJson((needs.list-changed-tools.outputs.tools == '' || needs.list-changed-tools.outputs.tranches == '8') && '[0,1,2,3,4,5,6,7]' || '[0]') }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -194,7 +198,7 @@ jobs:
       - id: test-tools
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
-          TEST_TRANCHE_COUNT: ${{ needs.list-changed-tools.outputs.tools == '' && 8 || 1 }}
+          TEST_TRANCHE_COUNT: ${{ (needs.list-changed-tools.outputs.tools == '' || needs.list-changed-tools.outputs.tranches == '8') && 8 || 1 }}
         run: |
           summary_dir="$RUNNER_TEMP/test-tool-${{ matrix.tranche }}"
           rm -rf "$summary_dir"

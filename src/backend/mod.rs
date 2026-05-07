@@ -30,7 +30,8 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::tera::get_tera;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ResolveOptions, ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version,
+    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, Toolset, install_state,
+    is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -75,6 +76,20 @@ pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
+
+const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
+    ToolOptionSource::BackendAlias,
+    ToolOptionSource::Config,
+    ToolOptionSource::InlineBackendArg,
+];
+
+fn has_local_version_listing_option_override(
+    resolved_opts: &crate::toolset::ResolvedToolOptions,
+    version_listing_opt_keys: &[&str],
+) -> bool {
+    resolved_opts
+        .has_any_key_from_sources(version_listing_opt_keys, VERSIONS_HOST_LOCAL_OPT_SOURCES)
+}
 
 static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
 
@@ -245,6 +260,12 @@ pub fn list() -> BackendList {
 }
 
 pub fn get(ba: &BackendArg) -> Option<ABackend> {
+    // Inline opts are command-scoped, so a short-name cache hit must not drop
+    // the caller's BackendArg options.
+    if ba.explicit_opts().is_some() {
+        return arg_to_backend(ba.clone());
+    }
+
     let mut tools = TOOLS.lock().unwrap();
     let tools_ = tools.as_ref().unwrap();
     if let Some(backend) = tools_.get(&ba.short) {
@@ -403,6 +424,54 @@ mod tests {
             normalize_idiomatic_contents("# full line comment\n3.14.2 # inline comment\n   \n\n"),
             "3.14.2"
         );
+    }
+
+    #[test]
+    fn test_remote_version_listing_opts_are_backend_specific() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource, ToolVersionOptions};
+
+        let mut install_only_opts = ToolVersionOptions::default();
+        install_only_opts.opts.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("tool-{{version}}.tar.gz".into()),
+        );
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&install_only_opts, ToolOptionSource::Config);
+
+        assert!(!has_local_version_listing_option_override(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
+
+        let mut listing_opts = ToolVersionOptions::default();
+        listing_opts.opts.insert(
+            "api_url".to_string(),
+            toml::Value::String("https://github.example.com/api/v3".into()),
+        );
+        resolved.apply_overrides(&listing_opts, ToolOptionSource::Config);
+
+        assert!(has_local_version_listing_option_override(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
+    }
+
+    #[test]
+    fn test_remote_version_listing_opts_ignore_registry_sources() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource, ToolVersionOptions};
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("release-".into()),
+        );
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&opts, ToolOptionSource::Registry);
+
+        assert!(!has_local_version_listing_option_override(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
     }
 
     #[test]
@@ -698,6 +767,15 @@ pub trait Backend: Debug + Send + Sync {
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         false
     }
+
+    /// Tool option keys whose non-registry overrides change the backend's
+    /// remote version list. When any of these keys come from a backend alias,
+    /// config, or inline backend arg, the versions host must be skipped because
+    /// its cache is keyed by the registry/default listing.
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// dependencies which wait for install but do not warn, like cargo-binstall
     fn get_optional_dependencies(&self) -> Result<Vec<&str>> {
         Ok(vec![])
@@ -714,10 +792,6 @@ pub trait Backend: Debug + Send + Sync {
             deps.extend(self.get_optional_dependencies()?);
         }
         let mut deps: IndexSet<_> = deps.into_iter().map(BackendArg::from).collect();
-        if let Some(rt) = REGISTRY.get(self.ba().short.as_str()) {
-            // add dependencies from registry/
-            deps.extend(rt.depends.iter().map(BackendArg::from));
-        }
         deps.retain(|ba| &**self.ba() != ba);
         deps.retain(|ba| !all_fulls.contains(&ba.full()));
         for ba in deps.clone() {
@@ -784,6 +858,8 @@ pub trait Backend: Debug + Send + Sync {
         let mut remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
         let id = self.id();
+        let resolved_opts = config.resolve_tool_opts_with_overrides(&ba).await?;
+        let opts = resolved_opts.options();
 
         // Only a subset of backends benefit from the versions host cache —
         // those whose upstream listing is rate-limited (github API) or not
@@ -795,12 +871,11 @@ pub trait Backend: Debug + Send + Sync {
         // setting can still disable the host globally, but cannot re-enable
         // it for backends that are not on this allowlist.
         let backend_type = self.get_type();
-        let has_version_list_url = matches!(backend_type, BackendType::Http | BackendType::S3)
-            && (ba.opts().contains_key("version_list_url")
-                || config
-                    .get_tool_opts(&ba)
-                    .await?
-                    .is_some_and(|o| o.contains_key("version_list_url")));
+        let has_version_list_url = if matches!(backend_type, BackendType::Http | BackendType::S3) {
+            opts.contains_key("version_list_url")
+        } else {
+            false
+        };
         let versions_host_applies = match backend_type {
             BackendType::Github
             | BackendType::Gitlab
@@ -815,11 +890,20 @@ pub trait Backend: Debug + Send + Sync {
             _ => false,
         };
 
-        // Check if this is an external plugin with a custom remote - skip versions host if so
+        let has_local_version_listing_override = has_local_version_listing_option_override(
+            &resolved_opts,
+            self.remote_version_listing_tool_option_keys(),
+        );
         let use_versions_host = if !versions_host_applies {
             trace!(
                 "Skipping versions host for {} because {} backend has a direct source",
                 ba.short, backend_type
+            );
+            false
+        } else if has_local_version_listing_override {
+            trace!(
+                "Skipping versions host for {} because local backend opts affect remote version listing",
+                ba.short,
             );
             false
         } else if let Some(plugin) = self.plugin()
@@ -865,11 +949,7 @@ pub trait Backend: Debug + Send + Sync {
         // that honor `prerelease`. When the current opts don't opt in, drop
         // entries with `prerelease = true` before returning so flipping the
         // tool option takes effect without invalidating the cache.
-        let opts = config
-            .get_tool_opts(&ba)
-            .await?
-            .unwrap_or_else(|| ba.opts());
-        let want_prereleases = include_prereleases(&opts);
+        let want_prereleases = include_prereleases(opts);
 
         if Settings::get().offline() {
             trace!(
@@ -1114,10 +1194,7 @@ pub trait Backend: Debug + Send + Sync {
         query: &str,
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
-        let opts = config
-            .get_tool_opts(self.ba())
-            .await?
-            .unwrap_or_else(|| self.ba().opts());
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !include_prereleases(&opts);
         Ok(self.fuzzy_match_filter(versions, query, filter))
     }
@@ -1152,10 +1229,7 @@ pub trait Backend: Debug + Send + Sync {
                     .await?
             }
         };
-        let opts = config
-            .get_tool_opts(self.ba())
-            .await?
-            .unwrap_or_else(|| self.ba().opts());
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !include_prereleases(&opts);
         Ok(self.fuzzy_match_filter(versions, query, filter))
     }
@@ -2095,16 +2169,8 @@ pub(crate) async fn effective_latest_before_date<B: Backend + ?Sized>(
         return Ok(before_date);
     }
 
-    let backend_opts = backend.ba().opts();
-    if let Some(before) = backend_opts.minimum_release_age() {
-        return resolve_before_date(None, Some(before));
-    }
-
-    let config_install_before = config
-        .get_tool_opts(backend.ba())
-        .await?
-        .and_then(|opts| opts.minimum_release_age().map(str::to_string));
-    resolve_before_date(None, config_install_before.as_deref())
+    let opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
+    resolve_before_date(None, opts.minimum_release_age())
 }
 
 #[cfg(test)]

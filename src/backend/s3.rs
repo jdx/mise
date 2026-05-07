@@ -269,7 +269,7 @@ impl S3Backend {
 
     /// Fetch versions using the configured method (manifest or listing)
     async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        let opts = config.get_tool_opts(&self.ba).await?.unwrap_or_default();
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
 
         // Try manifest-based version discovery first
         if let Some(manifest_url) = Self::get_opt(&opts, "version_list_url") {
@@ -420,6 +420,19 @@ impl Backend for S3Backend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &[
+            "version_list_url",
+            "version_regex",
+            "version_json_path",
+            "version_expr",
+            "version_prefix",
+            "url",
+            "region",
+            "endpoint",
+        ]
     }
 
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {

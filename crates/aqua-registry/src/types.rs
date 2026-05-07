@@ -45,6 +45,7 @@ pub struct AquaPackage {
     #[serde(skip)]
     version_filter_expr: Option<Program>,
     pub version_source: Option<String>,
+    pub cosign: Option<AquaCosign>,
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
@@ -66,6 +67,20 @@ struct AquaOverride {
     pkg: AquaPackage,
     goos: Option<String>,
     goarch: Option<String>,
+    #[serde(default)]
+    variants: Vec<AquaVariant>,
+}
+
+/// Runtime variant selector for an override.
+#[derive(Debug, Deserialize, Clone)]
+struct AquaVariant {
+    key: String,
+    value: String,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct AquaRuntime<'a> {
+    libc: Option<&'a str>,
 }
 
 /// Variable definition for Aqua templates
@@ -78,10 +93,13 @@ pub struct AquaVar {
 }
 
 /// File definition within a package
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
+    pub link: Option<String>,
+    #[serde(default)]
+    pub hard: bool,
 }
 
 /// Checksum algorithm options
@@ -213,6 +231,7 @@ impl Default for AquaPackage {
             version_filter: None,
             version_filter_expr: None,
             version_source: None,
+            cosign: None,
             checksum: None,
             slsa_provenance: None,
             minisign: None,
@@ -230,20 +249,36 @@ impl Default for AquaPackage {
 
 impl AquaPackage {
     /// Apply version-specific configurations and overrides
-    pub fn with_version(mut self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
+    pub fn with_version(self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
+        self.with_version_runtime(versions, os, arch, AquaRuntime::default())
+    }
+
+    /// Apply version-specific configurations and overrides for a libc runtime variant.
+    pub fn with_version_libc(
+        self,
+        versions: &[&str],
+        os: &str,
+        arch: &str,
+        libc: Option<&str>,
+    ) -> AquaPackage {
+        self.with_version_runtime(versions, os, arch, AquaRuntime { libc })
+    }
+
+    fn with_version_runtime(
+        mut self,
+        versions: &[&str],
+        os: &str,
+        arch: &str,
+        runtime: AquaRuntime<'_>,
+    ) -> AquaPackage {
         self = apply_override(self.clone(), self.version_override(versions));
-        if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
-            if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
-                goos == os && goarch == arch
-            } else if let Some(goos) = &o.goos {
-                goos == os
-            } else if let Some(goarch) = &o.goarch {
-                goarch == arch
-            } else {
-                false
-            }
-        }) {
-            self = apply_override(self, &avo.pkg)
+        if let Some(pkg) = self
+            .overrides
+            .iter()
+            .find(|o| o.matches(os, arch, runtime))
+            .map(|o| o.pkg.clone())
+        {
+            self = apply_override(self, &pkg)
         }
         self
     }
@@ -528,6 +563,52 @@ impl AquaPackage {
     }
 }
 
+impl AquaOverride {
+    fn matches(&self, os: &str, arch: &str, runtime: AquaRuntime<'_>) -> bool {
+        let platform_matches = if let (Some(goos), Some(goarch)) = (&self.goos, &self.goarch) {
+            goos == os && goarch == arch
+        } else if let Some(goos) = &self.goos {
+            goos == os
+        } else if let Some(goarch) = &self.goarch {
+            goarch == arch
+        } else {
+            false
+        };
+
+        platform_matches
+            && self
+                .variants
+                .iter()
+                .all(|variant| variant.matches(os, runtime))
+    }
+}
+
+impl AquaVariant {
+    fn matches(&self, os: &str, runtime: AquaRuntime<'_>) -> bool {
+        match self.key.as_str() {
+            "libc" => match (
+                normalize_libc(runtime.libc),
+                normalize_libc(Some(&self.value)),
+            ) {
+                (Some(actual), Some(expected)) => os == "linux" && actual == expected,
+                _ => false,
+            },
+            key => {
+                log::debug!("unsupported aqua override variant key: {key}");
+                false
+            }
+        }
+    }
+}
+
+fn normalize_libc(libc: Option<&str>) -> Option<&str> {
+    match libc? {
+        "glibc" | "gnu" => Some("gnu"),
+        "musl" => Some("musl"),
+        _ => None,
+    }
+}
+
 fn yaml_var_to_string(name: &str, value: &serde_yaml::Value) -> Result<String> {
     match value {
         serde_yaml::Value::String(s) => Ok(s.clone()),
@@ -580,8 +661,13 @@ fn split_version_prefix(version: &str) -> (String, String) {
 }
 
 impl AquaFile {
-    /// Get the source path for this file within the package
-    pub fn src(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+    fn template_ctx(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<HashMap<String, String>> {
         let asset = pkg.asset(v, os, arch)?;
         let asset = asset.strip_suffix(".tar.gz").unwrap_or(&asset);
         let asset = asset.strip_suffix(".tar.xz").unwrap_or(asset);
@@ -599,10 +685,24 @@ impl AquaFile {
         let mut ctx = HashMap::new();
         ctx.insert("AssetWithoutExt".to_string(), asset.to_string());
         ctx.insert("FileName".to_string(), self.name.to_string());
+        Ok(ctx)
+    }
 
+    /// Get the source path for this file within the package
+    pub fn src(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+        let ctx = self.template_ctx(pkg, v, os, arch)?;
         self.src
             .as_ref()
             .map(|src| pkg.parse_aqua_str(src, v, &ctx, os, arch))
+            .transpose()
+    }
+
+    /// Get the link path for this file.
+    pub fn link(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+        let ctx = self.template_ctx(pkg, v, os, arch)?;
+        self.link
+            .as_ref()
+            .map(|link| pkg.parse_aqua_str(link, v, &ctx, os, arch))
             .transpose()
     }
 }
@@ -659,6 +759,17 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
             }
             None => {
                 orig.checksum = Some(avo_checksum.clone());
+            }
+        }
+    }
+
+    if let Some(avo_cosign) = &avo.cosign {
+        match &mut orig.cosign {
+            Some(cosign) => {
+                cosign.merge(avo_cosign.clone());
+            }
+            None => {
+                orig.cosign = Some(avo_cosign.clone());
             }
         }
     }
@@ -1003,6 +1114,7 @@ mod tests {
         let file = AquaFile {
             name: "gradle".to_string(),
             src: Some("{{.AssetWithoutExt | trimSuffix \"-bin\"}}/bin/gradle".to_string()),
+            ..Default::default()
         };
 
         let result = file.src(&pkg, "8.14.3", "darwin", "arm64").unwrap();
@@ -1025,6 +1137,7 @@ mod tests {
         let file = AquaFile {
             name: "sccache".to_string(),
             src: Some("{{.AssetWithoutExt}}/sccache".to_string()),
+            ..Default::default()
         };
 
         let result = file.src(&pkg, "brew", "darwin", "arm64").unwrap();
@@ -1116,6 +1229,24 @@ mod tests {
                 "Asset string should not have double .exe, got: {s}"
             );
         }
+    }
+
+    #[test]
+    fn test_aqua_file_link_template() {
+        let pkg = AquaPackage {
+            repo_owner: "example".to_string(),
+            repo_name: "tool".to_string(),
+            asset: "tool-{{.Version}}.tar.gz".to_string(),
+            ..Default::default()
+        };
+        let file = AquaFile {
+            name: "tool".to_string(),
+            link: Some("{{.FileName}}-alias".to_string()),
+            ..Default::default()
+        };
+
+        let result = file.link(&pkg, "1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(result, Some("tool-alias".to_string()));
     }
 
     #[test]
@@ -1256,6 +1387,153 @@ mod tests {
         assert!(
             err.to_string().contains("aqua var name is empty"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_top_level_cosign_is_deserialized() {
+        let yml = r#"
+packages:
+  - cosign:
+      bundle:
+        type: github_release
+        asset: "{{.Asset}}.sigstore.json"
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(pkg.cosign.is_some());
+        assert!(pkg.checksum.is_none());
+    }
+
+    #[test]
+    fn test_top_level_cosign_is_merged_from_version_override() {
+        let yml = r#"
+packages:
+  - asset: tool-{{.Version}}-{{.OS}}-{{.Arch}}
+    format: raw
+    cosign:
+      bundle:
+        type: github_release
+        asset: "{{.Asset}}.sigstore.json"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        cosign:
+          key:
+            type: github_release
+            asset: cosign.pub
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_version(&["v1.0.0"], "linux", "amd64");
+        let cosign = pkg.cosign.unwrap();
+        assert!(cosign.bundle.is_some());
+        assert!(cosign.key.is_some());
+    }
+
+    #[test]
+    fn test_override_variants_match_linux_libc() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-{{.Version}}-{{.OS}}-{{.Arch}}-gnu
+    format: raw
+    overrides:
+      - goos: linux
+        variants:
+          - key: libc
+            value: gnu
+      - goos: linux
+        url: https://example.com/tool-{{.Version}}-{{.OS}}-{{.Arch}}-musl
+        variants:
+          - key: libc
+            value: musl
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
+
+        let gnu = pkg
+            .clone()
+            .with_version_libc(&["1.0.0"], "linux", "amd64", Some("gnu"));
+        let musl = pkg.with_version_libc(&["1.0.0"], "linux", "amd64", Some("musl"));
+
+        assert_eq!(
+            gnu.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-1.0.0-linux-amd64-gnu"
+        );
+        assert_eq!(
+            musl.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-1.0.0-linux-amd64-musl"
+        );
+    }
+
+    #[test]
+    fn test_override_variants_skip_unknown_keys() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - goos: linux
+        url: https://example.com/tool-avx2
+        variants:
+          - key: cpu
+            value: avx2
+      - goos: linux
+        url: https://example.com/tool-musl
+        variants:
+          - key: libc
+            value: musl
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_version_libc(&["1.0.0"], "linux", "amd64", Some("musl"));
+
+        assert_eq!(
+            pkg.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-musl"
+        );
+    }
+
+    #[test]
+    fn test_override_variants_do_not_match_without_runtime_libc() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - goos: linux
+        url: https://example.com/tool-musl
+        variants:
+          - key: libc
+            value: musl
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(
+            pkg.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-default"
         );
     }
 }

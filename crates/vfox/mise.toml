@@ -1,8 +1,8 @@
 [tools]
-"cargo-binstall" = "latest"
+cargo-binstall = "latest"
 "cargo:cargo-edit" = "latest"
-"cargo:git-cliff" = "latest"
-"npm:prettier" = "latest"
+git-cliff = "latest"
+prettier = "latest"
 
 [tasks.build]
 run = "cargo build"

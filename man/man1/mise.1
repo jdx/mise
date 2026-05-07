@@ -685,8 +685,16 @@ The alias to remove
 .SH "MISE BIN-PATHS"
 List all the active runtime bin paths
 .PP
-\fBUsage:\fR mise bin\-paths [<TOOL@VERSION>] ...
+\fBUsage:\fR mise bin\-paths [OPTIONS] [<TOOL@VERSION>] ...
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-bin\-names\fR
+Output executable names instead of bin directories
+.TP
+\fB\-J, \-\-json\fR
+Output executable entries in JSON format (implies \-\-bin\-names)
 \fBArguments:\fR
 .PP
 .TP
@@ -1416,8 +1424,8 @@ Operates on the lockfile in the current config root. Use TOOL arguments to targe
 .PP
 .TP
 \fB\-g, \-\-global\fR
-Include global config lockfile (~/.config/mise/mise.lock)
-By default, only project\-level configs are locked
+Target only global config lockfiles (~/.config/mise/mise.lock and system config)
+By default, only the active project config root is locked
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
