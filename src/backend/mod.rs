@@ -207,11 +207,18 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
     time!("load_tools start");
     let core_tools = CORE_PLUGINS.values().cloned().collect::<Vec<ABackend>>();
     let mut tools = core_tools;
-    // add tools with idiomatic files so they get parsed even if no versions are installed
+    // Add enabled registry tools with idiomatic files so they get parsed even
+    // if no versions are installed. Avoid eagerly constructing every registry
+    // tool that has idiomatic files when idiomatic parsing is disabled.
+    let idiomatic_enable_tools = Settings::get().idiomatic_version_file_enable_tools.clone();
     tools.extend(
         REGISTRY
             .values()
-            .filter(|rt| !rt.idiomatic_files.is_empty() && rt.is_supported_os())
+            .filter(|rt| {
+                !rt.idiomatic_files.is_empty()
+                    && idiomatic_enable_tools.contains(rt.short)
+                    && rt.is_supported_os()
+            })
             .filter_map(|rt| arg_to_backend(rt.short.into())),
     );
     time!("load_tools core");
