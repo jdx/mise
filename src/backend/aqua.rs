@@ -22,7 +22,10 @@ use crate::{
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
-use crate::{backend::Backend, backend::strict_metadata, config::Config};
+use crate::{
+    backend::{Backend, strict_metadata},
+    config::Config,
+};
 use crate::{file, github, minisign};
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
@@ -253,38 +256,29 @@ impl Backend for AquaBackend {
         let target_libc = Self::target_variant_libc(&target);
         let mut versions = Vec::new();
         for (tag, created_at, prerelease) in tags_with_timestamps.into_iter().rev() {
-            let mut version = tag.as_str();
-            match pkg.version_filter_ok(version) {
-                Ok(true) => {}
-                Ok(false) => continue,
+            let (version, versioned_pkg) = match versioned_package_from_tag(
+                &pkg,
+                &tag,
+                target_os,
+                target_arch,
+                target_libc.as_deref(),
+            ) {
+                Ok(Some(versioned)) => versioned,
+                Ok(None) => continue,
                 Err(e) => {
                     warn!("[{}] aqua version filter error: {e}", self.ba());
                     continue;
                 }
-            }
-            let versioned_pkg = pkg.clone().with_version_libc(
-                &[version],
-                target_os,
-                target_arch,
-                target_libc.as_deref(),
-            );
-            if let Some(prefix) = &versioned_pkg.version_prefix {
-                if let Some(_v) = version.strip_prefix(prefix) {
-                    version = _v;
-                } else {
-                    continue;
-                }
-            }
-            version = version.strip_prefix('v').unwrap_or(version);
+            };
 
             // Validate the package has assets
-            if !versioned_pkg.no_asset && versioned_pkg.error_message.is_none() {
+            if package_has_asset(&versioned_pkg) {
                 let release_url = format!(
                     "https://github.com/{}/{}/releases/tag/{}",
                     pkg.repo_owner, pkg.repo_name, tag
                 );
                 versions.push(VersionInfo {
-                    version: version.to_string(),
+                    version,
                     created_at,
                     release_url: Some(release_url),
                     prerelease,
@@ -293,6 +287,10 @@ impl Backend for AquaBackend {
             }
         }
         Ok(versions)
+    }
+
+    async fn latest_stable_version(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        self.latest_marked_release_version().await
     }
 
     async fn install_version_(
@@ -1322,6 +1320,68 @@ impl AquaBackend {
         }
     }
 
+    async fn latest_marked_release_version(&self) -> Result<Option<String>> {
+        if Settings::get().offline() {
+            trace!("Skipping latest stable version due to offline mode");
+            return Ok(None);
+        }
+
+        let pkg = match AQUA_REGISTRY.package(&self.id).await {
+            Ok(pkg) => pkg,
+            Err(e) => {
+                warn!("Latest version cannot be fetched: {}", e);
+                return Ok(None);
+            }
+        };
+
+        if pkg.repo_owner.is_empty() || pkg.repo_name.is_empty() {
+            warn!(
+                "aqua package {} does not have repo_owner and/or repo_name.",
+                self.id
+            );
+            return Ok(None);
+        }
+
+        if pkg.version_source.as_deref() == Some("github_tag") {
+            return Ok(None);
+        }
+
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let release = match github::get_release(&repo, "latest").await {
+            Ok(release) => release,
+            Err(e) => {
+                debug!(
+                    "Failed to fetch latest GitHub release for aqua package {}: {e}",
+                    self.id
+                );
+                return Ok(None);
+            }
+        };
+
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target);
+        match versioned_package_from_tag(
+            &pkg,
+            &release.tag_name,
+            target_os,
+            target_arch,
+            target_libc.as_deref(),
+        ) {
+            Ok(Some((version, versioned_pkg))) if package_has_asset(&versioned_pkg) => {
+                Ok(Some(version))
+            }
+            Ok(Some(_)) | Ok(None) => Ok(None),
+            Err(e) => {
+                debug!(
+                    "Failed to resolve latest GitHub release tag for aqua package {}: {e}",
+                    self.id
+                );
+                Ok(None)
+            }
+        }
+    }
+
     async fn get_version_tags(&self) -> Result<&Vec<(String, String)>> {
         self.version_tags_cache
             .get_or_try_init_async(|| async {
@@ -1337,30 +1397,21 @@ impl AquaBackend {
                     let (target_os, target_arch) = Self::to_aqua_platform(&target);
                     let target_libc = Self::target_variant_libc(&target);
                     for tag in tags.into_iter().rev() {
-                        let mut version = tag.as_str();
-                        match pkg.version_filter_ok(version) {
-                            Ok(true) => {}
-                            Ok(false) => continue,
+                        let (version, _) = match versioned_package_from_tag(
+                            &pkg,
+                            &tag,
+                            target_os,
+                            target_arch,
+                            target_libc.as_deref(),
+                        ) {
+                            Ok(Some(versioned)) => versioned,
+                            Ok(None) => continue,
                             Err(e) => {
                                 warn!("[{}] aqua version filter error: {e}", self.ba());
                                 continue;
                             }
-                        }
-                        let pkg = pkg.clone().with_version_libc(
-                            &[version],
-                            target_os,
-                            target_arch,
-                            target_libc.as_deref(),
-                        );
-                        if let Some(prefix) = &pkg.version_prefix {
-                            if let Some(_v) = version.strip_prefix(prefix) {
-                                version = _v;
-                            } else {
-                                continue;
-                            }
-                        }
-                        version = version.strip_prefix('v').unwrap_or(version);
-                        versions.push((version.to_string(), tag));
+                        };
+                        versions.push((version, tag));
                     }
                 } else {
                     bail!(
@@ -2761,6 +2812,46 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
         .collect())
 }
 
+#[cfg(test)]
+fn version_from_tag(pkg: &AquaPackage, tag: &str) -> Result<Option<String>> {
+    let target = PlatformTarget::from_current();
+    let (target_os, target_arch) = AquaBackend::to_aqua_platform(&target);
+    let target_libc = AquaBackend::target_variant_libc(&target);
+    Ok(
+        versioned_package_from_tag(pkg, tag, target_os, target_arch, target_libc.as_deref())?
+            .map(|(version, _)| version),
+    )
+}
+
+fn versioned_package_from_tag(
+    pkg: &AquaPackage,
+    tag: &str,
+    target_os: &str,
+    target_arch: &str,
+    target_libc: Option<&str>,
+) -> Result<Option<(String, AquaPackage)>> {
+    if !pkg.version_filter_ok(tag)? {
+        return Ok(None);
+    }
+
+    let mut version = tag;
+    let versioned_pkg = pkg
+        .clone()
+        .with_version_libc(&[tag], target_os, target_arch, target_libc);
+    if let Some(prefix) = &versioned_pkg.version_prefix {
+        let Some(stripped) = version.strip_prefix(prefix) else {
+            return Ok(None);
+        };
+        version = stripped;
+    }
+    let version = version.strip_prefix('v').unwrap_or(version);
+    Ok(Some((version.to_string(), versioned_pkg)))
+}
+
+fn package_has_asset(pkg: &AquaPackage) -> bool {
+    !pkg.no_asset && pkg.error_message.is_none()
+}
+
 /// Get tags with optional created_at timestamps and a pre-release flag.
 /// Returns `(tag_name, Option<created_at>, prerelease)` triples.
 ///
@@ -2998,6 +3089,40 @@ mod lock_candidate_tests {
         let (v, candidates) = build_lock_candidates("1.7.1", None, Some("jq-"));
         assert_eq!(v, "jq-1.7.1");
         assert_eq!(candidates, vec!["jq-v1.7.1", "jq-1.7.1"]);
+    }
+
+    #[test]
+    fn test_version_from_tag_strips_v_prefix() {
+        let pkg = AquaPackage::default();
+        assert_eq!(
+            version_from_tag(&pkg, "v1.2.3").unwrap(),
+            Some("1.2.3".to_string())
+        );
+    }
+
+    #[test]
+    fn test_version_from_tag_strips_aqua_version_prefix() {
+        let mut pkg = AquaPackage::default();
+        pkg.version_prefix = Some("mountpoint-s3-".to_string());
+
+        assert_eq!(
+            version_from_tag(&pkg, "mountpoint-s3-1.2.3").unwrap(),
+            Some("1.2.3".to_string())
+        );
+        assert_eq!(version_from_tag(&pkg, "other-1.2.3").unwrap(), None);
+    }
+
+    #[test]
+    fn test_package_has_asset_rejects_no_asset_and_errors() {
+        let mut pkg = AquaPackage::default();
+        assert!(package_has_asset(&pkg));
+
+        pkg.no_asset = true;
+        assert!(!package_has_asset(&pkg));
+
+        pkg.no_asset = false;
+        pkg.error_message = Some("unsupported version".to_string());
+        assert!(!package_has_asset(&pkg));
     }
 
     fn asset(name: &str) -> GithubAsset {

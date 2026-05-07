@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::file;
 use crate::toolset::ToolsetBuilder;
 use eyre::Result;
-use serde_derive::Serialize;
+use serde::Serialize;
 use std::path::PathBuf;
 
 /// List all the active runtime bin paths

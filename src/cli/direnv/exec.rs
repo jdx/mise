@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use duct::Expression;
 use eyre::{Result, WrapErr};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 
 use crate::config::Config;
 use crate::toolset::ToolsetBuilder;
