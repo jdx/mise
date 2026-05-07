@@ -2795,11 +2795,6 @@ mod tests {
                 installs_path: None,
             },
         ));
-        assert_eq!(
-            ba.install_manifest_opts()
-                .and_then(|opts| opts.get("version_json_path")),
-            None
-        );
 
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),

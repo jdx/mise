@@ -6,7 +6,7 @@ use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{
     EPHEMERAL_OPT_KEYS, ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options,
-    serialize_tool_options, should_persist_install_manifest_opt,
+    serialize_tool_options,
 };
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
@@ -85,9 +85,6 @@ impl From<InstallStateTool> for BackendArg {
         if !ist.opts.is_empty() {
             let tvo = opts.get_or_insert_with(ToolVersionOptions::default);
             for (k, v) in ist.opts {
-                if !should_persist_install_manifest_opt(&k) {
-                    continue;
-                }
                 tvo.opts.entry(k).or_insert(v);
             }
         }
