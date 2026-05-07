@@ -1,7 +1,10 @@
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::file;
 use crate::toolset::ToolsetBuilder;
 use eyre::Result;
+use serde::Serialize;
+use std::path::PathBuf;
 
 /// List all the active runtime bin paths
 #[derive(Debug, clap::Args)]
@@ -11,6 +14,17 @@ pub struct BinPaths {
     /// e.g.: ruby@3
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Option<Vec<ToolArg>>,
+
+    /// Output executable names instead of bin directories
+    #[clap(
+        long,
+        default_value_if("json", clap::builder::ArgPredicate::IsPresent, Some("true"))
+    )]
+    bin_names: bool,
+
+    /// Output executable entries in JSON format (implies --bin-names)
+    #[clap(long, short = 'J')]
+    json: bool,
 }
 
 impl BinPaths {
@@ -25,9 +39,62 @@ impl BinPaths {
             ts.versions.retain(|k, _| tool.iter().any(|t| *t.ba == **k));
         }
         ts.notify_if_versions_missing(&config).await;
-        for p in ts.list_paths(&config).await {
+        let paths = ts.list_paths(&config).await;
+        if self.bin_names {
+            let bins = list_bins(paths)?;
+            if self.json {
+                miseprintln!("{}", serde_json::to_string_pretty(&bins)?);
+            } else {
+                for bin in bins {
+                    miseprintln!("{}", bin.name);
+                }
+            }
+            return Ok(());
+        }
+        for p in paths {
             miseprintln!("{}", p.display());
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Serialize)]
+struct BinPathEntry {
+    name: String,
+    path: PathBuf,
+    symlink: bool,
+}
+
+fn list_bins(paths: Vec<PathBuf>) -> Result<Vec<BinPathEntry>> {
+    let mut bins = vec![];
+    for dir in paths.into_iter().filter(|path| path.is_dir()) {
+        let Ok(entries) = dir.read_dir() else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_file() && !file_type.is_symlink() {
+                continue;
+            }
+
+            let path = entry.path();
+            if !path.is_file() || !file::is_executable(&path) {
+                continue;
+            }
+
+            bins.push(BinPathEntry {
+                name: entry
+                    .file_name()
+                    .into_string()
+                    .unwrap_or_else(|name| name.to_string_lossy().into_owned()),
+                path,
+                symlink: file_type.is_symlink(),
+            });
+        }
+    }
+    bins.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.path.cmp(&b.path)));
+    bins.dedup_by(|a, b| a.name == b.name && a.path == b.path);
+    Ok(bins)
 }

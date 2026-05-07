@@ -4,12 +4,27 @@
   "title": "mise-plugin",
   "description": "config file for a mise plugin",
   "type": "object",
-  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "$defs": {
+    "plugin-script-config": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "cache-key": {
+          "description": "cache the script results separately based on these values",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
   "properties": {
     "list-aliases": {
       "description": "configuration for bin/list-aliases script",
       "type": "object",
-      "additionalProperties": false,
+      "unevaluatedProperties": false,
       "properties": {
         "data": {
           "description": "list of aliases to add",
@@ -20,7 +35,7 @@
     "list-legacy-filenames": {
       "description": "configuration for bin/list-legacy-filenames script",
       "type": "object",
-      "additionalProperties": false,
+      "unevaluatedProperties": false,
       "properties": {
         "data": {
           "description": "list of idiomatic filenames to check for",
@@ -30,31 +45,11 @@
     },
     "list-bin-paths": {
       "description": "configuration for bin/list-bin-paths script",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "cache-key": {
-          "description": "cache the results of bin/exec-env separately based on these values",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
+      "$ref": "#/$defs/plugin-script-config"
     },
     "exec-env": {
       "description": "configuration for bin/exec-env script",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "cache-key": {
-          "description": "cache the results of bin/exec-env separately based on these values",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
+      "$ref": "#/$defs/plugin-script-config"
     }
   }
 }

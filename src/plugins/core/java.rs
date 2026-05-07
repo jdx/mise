@@ -21,7 +21,7 @@ use color_eyre::eyre::{Result, eyre};
 use indoc::formatdoc;
 use itertools::Itertools;
 use regex::Regex;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
@@ -294,6 +294,10 @@ impl JavaPlugin {
 impl Backend for JavaPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["release_type"]
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {

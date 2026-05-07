@@ -278,8 +278,29 @@ impl TaskExecutor {
         if let Some(cwd) = &*crate::dirs::CWD {
             env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
         }
-        if let Some(root) = config.project_root.clone().or(task.config_root.clone()) {
+        // Prefer the task's own config_root so MISE_PROJECT_ROOT is the directory of the
+        // mise.toml that defined the task. This keeps the value stable regardless of the
+        // cwd from which the task was invoked (important for monorepo subprojects, where
+        // config.project_root depends on cwd).
+        //
+        // Exception: for global tasks (inline in ~/.config/mise/config.toml or scripts in
+        // ~/.config/mise/tasks/) and remote tasks (loaded from git/http), task.config_root
+        // points at the global/remote location rather than the user's project. Fall back
+        // to config.project_root (the local project the user is in) for those, matching
+        // the pre-existing behavior.
+        let project_root = if task.global || task.is_remote() {
+            config.project_root.clone().or(task.config_root.clone())
+        } else {
+            task.config_root.clone().or(config.project_root.clone())
+        };
+        if let Some(root) = project_root {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
+        }
+        if let Some(monorepo_root) = config.monorepo_root() {
+            env.insert(
+                "MISE_MONOREPO_ROOT".into(),
+                monorepo_root.display().to_string(),
+            );
         }
         env.insert("MISE_TASK_NAME".into(), task.name.clone());
         let task_file = task

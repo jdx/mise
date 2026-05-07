@@ -12,8 +12,8 @@ pub mod types;
 pub use codec::{decode_package_rkyv, encode_package_rkyv};
 pub use registry::{AquaRegistry, DefaultRegistryFetcher, FileCacheStore, NoOpCacheStore};
 pub use types::{
-    AquaChecksum, AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage, AquaPackageType,
-    AquaVar, RegistryYaml,
+    AquaChecksum, AquaChecksumType, AquaCosign, AquaFile, AquaMinisignType, AquaPackage,
+    AquaPackageType, AquaVar, RegistryYaml,
 };
 
 use thiserror::Error;

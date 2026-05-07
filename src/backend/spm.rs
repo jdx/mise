@@ -10,9 +10,9 @@ use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
 use eyre::WrapErr;
+use serde::Deserialize;
 use serde::Deserializer;
 use serde::de::{MapAccess, Visitor};
-use serde_derive::Deserialize;
 use std::path::PathBuf;
 use std::{
     fmt::{self, Debug},
@@ -46,6 +46,10 @@ impl Backend for SPMBackend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["provider", "api_url"]
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
