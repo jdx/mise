@@ -2068,37 +2068,53 @@
       "additionalProperties": {
         "oneOf": [
           {
-            "description": "inline hook command to run",
+            "description": "hook run script to execute",
             "type": "string"
           },
           {
             "unevaluatedProperties": false,
             "properties": {
               "run": {
-                "description": "inline hook command to run",
-                "type": "string"
+                "description": "hook run entry or entries to execute",
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/task_run_entry"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/task_run_entry"
+                    }
+                  }
+                ]
+              },
+              "run_windows": {
+                "description": "Windows-specific hook run entry or entries to execute",
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/task_run_entry"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/task_run_entry"
+                    }
+                  }
+                ]
               },
               "shell": {
-                "description": "inline shell command to use for run hooks, such as \"bash -c\"",
+                "description": "inline shell command to use for run script entries, such as \"bash -c\"",
                 "type": "string"
               }
             },
-            "required": ["run"],
-            "type": "object"
-          },
-          {
-            "unevaluatedProperties": false,
-            "properties": {
-              "script": {
-                "description": "current-shell script for enter/leave/cd hooks",
-                "type": "string"
+            "anyOf": [
+              {
+                "required": ["run"]
               },
-              "shell": {
-                "description": "current shell name for script hooks, such as \"bash\"",
-                "type": "string"
+              {
+                "required": ["run_windows"]
               }
-            },
-            "required": ["script"],
+            ],
             "type": "object"
           },
           {
@@ -2113,41 +2129,82 @@
             "type": "object"
           },
           {
-            "description": "scripts/tasks to run",
+            "unevaluatedProperties": false,
+            "properties": {
+              "script": {
+                "description": "current-shell script for enter/leave/cd hooks",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "shell": {
+                "description": "current shell name for script hooks, such as \"bash\"",
+                "type": "string"
+              }
+            },
+            "required": ["script"],
+            "type": "object"
+          },
+          {
+            "description": "hook entries to run in order",
             "items": {
               "oneOf": [
                 {
-                  "description": "inline hook command to run",
+                  "description": "hook run script to execute",
                   "type": "string"
                 },
                 {
                   "unevaluatedProperties": false,
                   "properties": {
                     "run": {
-                      "description": "inline hook command to run",
-                      "type": "string"
+                      "description": "hook run entry or entries to execute",
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/task_run_entry"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/$defs/task_run_entry"
+                          }
+                        }
+                      ]
+                    },
+                    "run_windows": {
+                      "description": "Windows-specific hook run entry or entries to execute",
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/task_run_entry"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/$defs/task_run_entry"
+                          }
+                        }
+                      ]
                     },
                     "shell": {
-                      "description": "inline shell command to use for run hooks, such as \"bash -c\"",
+                      "description": "inline shell command to use for run script entries, such as \"bash -c\"",
                       "type": "string"
                     }
                   },
-                  "required": ["run"],
-                  "type": "object"
-                },
-                {
-                  "unevaluatedProperties": false,
-                  "properties": {
-                    "script": {
-                      "description": "current-shell script for enter/leave/cd hooks",
-                      "type": "string"
+                  "anyOf": [
+                    {
+                      "required": ["run"]
                     },
-                    "shell": {
-                      "description": "current shell name for script hooks, such as \"bash\"",
-                      "type": "string"
+                    {
+                      "required": ["run_windows"]
                     }
-                  },
-                  "required": ["script"],
+                  ],
                   "type": "object"
                 },
                 {
@@ -2159,6 +2216,31 @@
                     }
                   },
                   "required": ["task"],
+                  "type": "object"
+                },
+                {
+                  "unevaluatedProperties": false,
+                  "properties": {
+                    "script": {
+                      "description": "current-shell script for enter/leave/cd hooks",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "shell": {
+                      "description": "current shell name for script hooks, such as \"bash\"",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["script"],
                   "type": "object"
                 }
               ]

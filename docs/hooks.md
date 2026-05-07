@@ -41,14 +41,17 @@ preinstall = "echo 'I am about to install tools'"
 postinstall = "echo 'I just installed tools'"
 ```
 
-String hooks are shorthand for `run` hooks. Use a hook table when you need to select the inline shell command:
+String hooks are shorthand for `run` hooks. Use a hook table when you need to select the inline shell command or use task-style run entries:
 
 ```toml
 [hooks]
 postinstall = { run = "echo 'installed'", shell = "bash -c" }
+preinstall = { run_windows = "Write-Output installing" }
 ```
 
-For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` alias for install hooks is deprecated.
+`run_windows` can be provided by itself for a Windows-only hook or alongside `run` as a Windows-specific override.
+
+For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script` hook, the shell is ignored and the script runs with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` alias for install hooks is deprecated.
 
 The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed:
 
@@ -78,9 +81,7 @@ Tool-level postinstall scripts receive the following environment variables:
 
 ## Task hooks
 
-Instead of inline scripts, hooks can reference mise tasks. The task is executed as a subprocess
-via `mise run`, so it reuses the full task system including dependencies, environment variables,
-and file-based task definitions.
+Instead of inline commands, hooks can reference mise tasks. `task = "name"` is shorthand for `run = [{ task = "name" }]`, so it reuses the same task run-entry semantics as `[tasks]`.
 
 ```toml
 [tasks.setup]
@@ -99,6 +100,20 @@ enter = ["echo 'entering project'", { task = "setup" }]
 ```
 
 Task hooks work with all hook types (`enter`, `leave`, `cd`, `preinstall`, `postinstall`).
+
+Hook `run` supports the same entry forms as task `run`: script strings, single task entries with `args`/`env`, and task groups.
+
+```toml
+[hooks]
+postinstall = { run = [
+  "echo first shell",
+  "echo second shell",
+  { task = "setup", args = ["--fast"], env = { CI = "1" } },
+  { tasks = ["lint", "test"] },
+] }
+```
+
+Each script string is executed in its own subprocess shell, matching task `run` behavior.
 
 ## Watch files hook
 
@@ -136,12 +151,17 @@ Hooks are executed with the following environment variables set:
 Inline `run` hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
 (`enter = "echo hi"`) is equivalent to `{ run = "echo hi" }`.
 
-`run` hooks execute in a subprocess using the default inline shell:
+`run` hooks execute in subprocesses using the default inline shell:
 [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
 or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args).
 Add `shell = "bash -c"` to a `run` hook table to choose a different inline shell command. Like task
-`shell`, the value should include both the program and the argument that evaluates the inline command
+`shell`, the value should include both the program and the argument that evaluates the inline command,
 such as `bash -c`, `zsh -c`, or `pwsh -Command`.
+
+When `run` is an array, each script string is a separate shell execution. Structured entries such as
+`{ task = "setup", args = ["--fast"] }` and `{ tasks = ["lint", "test"] }` use task run-entry
+semantics. `run_windows` can be provided by itself for a Windows-only hook or alongside `run` as a
+Windows-specific override.
 
 ## Shell hooks
 
@@ -156,6 +176,17 @@ script = "source completions.sh"
 `script` with `shell` is for current-shell hooks. Here, `shell` is a shell-name selector such as
 `bash`, `zsh`, or `fish`, not an inline shell command like `bash -c`. mise only prints the script
 when the active `mise activate` shell matches.
+
+`script` may be a string or an array of current-shell lines:
+
+```toml
+[[hooks.enter]]
+shell = "fish"
+script = [
+  "set -gx PROJECT_MODE dev",
+  "source completions.fish",
+]
+```
 
 Use `run` when the hook should execute as an inline command in a subprocess. `preinstall` and
 `postinstall` do not have a current shell, so `script` is only kept there as a legacy alias for `run`;
@@ -180,7 +211,8 @@ You can use arrays to define multiple hooks in the same file:
 [hooks]
 enter = [
   "echo 'I entered the project'",
-  { run = "echo 'I am in the project'" }
+  { run = "echo 'I am in the project'" },
+  { task = "setup" },
 ]
 
 [[hooks.cd]]

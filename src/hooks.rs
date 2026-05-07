@@ -1,16 +1,25 @@
 use crate::cmd::cmd;
+use crate::config::config_file::mise_toml::EnvList;
+use crate::config::config_file::toml::deserialize_arr;
+use crate::config::env_directive::EnvDirective;
 use crate::config::{Config, Settings, config_file};
 use crate::shell::Shell;
+use crate::task::task_context_builder::TaskContextBuilder;
+use crate::task::task_executor::{TaskExecutor, TaskExecutorConfig};
+use crate::task::task_output::TaskOutput;
+use crate::task::task_output_handler::{OutputHandler, OutputHandlerConfig};
+use crate::task::{RunEntry, Task};
 use crate::tera::get_tera;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, hook_env};
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
-use std::{iter::once, sync::Arc};
 use tokio::sync::OnceCell;
 
 /// Represents installed tool info for hooks
@@ -54,69 +63,128 @@ pub enum Hooks {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum HookDef {
-    /// Simple run string: `enter = "echo hello"`
-    RunString(String),
-    /// Table with run: `enter = { run = "echo hello" }`
-    Run { run: String, shell: Option<String> },
-    /// Table with script and optional shell: `enter = { script = "echo hello", shell = "bash" }`
-    ScriptTable {
-        script: String,
-        shell: Option<String>,
-    },
-    /// Task reference: `enter = { task = "setup" }`
-    TaskRef { task: String },
-    /// Array of hook definitions: `enter = ["echo hello", { task = "setup" }]`
-    Array(Vec<HookDef>),
+    Entry(HookEntryDef),
+    Array(Vec<HookEntryDef>),
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(untagged)]
+pub enum HookEntryDef {
+    Script(String),
+    Run(HookRunDef),
+    ScriptTable(HookScriptDef),
+    TaskRef(HookTaskRefDef),
+}
+
+#[derive(Debug, Clone)]
+pub struct HookRunDef {
+    run: Vec<RunEntry>,
+    run_windows: Vec<RunEntry>,
+    shell: Option<String>,
+}
+
+impl<'de> serde::Deserialize<'de> for HookRunDef {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct RawHookRunDef {
+            #[serde(default, deserialize_with = "deserialize_arr")]
+            run: Vec<RunEntry>,
+            #[serde(default, deserialize_with = "deserialize_arr")]
+            run_windows: Vec<RunEntry>,
+            shell: Option<String>,
+        }
+
+        let raw = RawHookRunDef::deserialize(deserializer)?;
+        if raw.run.is_empty() && raw.run_windows.is_empty() {
+            return Err(serde::de::Error::custom("expected `run` or `run_windows`"));
+        }
+
+        Ok(Self {
+            run: raw.run,
+            run_windows: raw.run_windows,
+            shell: raw.shell,
+        })
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HookScriptDef {
+    #[serde(deserialize_with = "deserialize_arr")]
+    script: Vec<String>,
+    shell: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HookTaskRefDef {
+    task: String,
 }
 
 impl HookDef {
-    /// Convert to a list of Hook structs with the given hook type
     pub fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
         match self {
-            HookDef::RunString(script) => vec![Hook {
-                hook: hook_type,
-                action: HookAction::Run {
-                    run: script,
-                    shell: None,
-                    legacy_script: false,
-                    ignored_shell: None,
-                },
-                global: false,
-            }],
-            HookDef::Run { run, shell } => vec![Hook {
-                hook: hook_type,
-                action: HookAction::Run {
-                    run,
-                    shell,
-                    legacy_script: false,
-                    ignored_shell: None,
-                },
-                global: false,
-            }],
-            HookDef::ScriptTable { script, shell } => vec![Hook {
-                hook: hook_type,
-                action: match (hook_type, shell) {
-                    (Hooks::Enter | Hooks::Leave | Hooks::Cd, Some(shell)) => {
-                        HookAction::CurrentShell { script, shell }
-                    }
-                    (_, shell) => HookAction::Run {
-                        run: script,
-                        shell: None,
-                        legacy_script: true,
-                        ignored_shell: shell,
-                    },
-                },
-                global: false,
-            }],
-            HookDef::TaskRef { task } => vec![Hook {
-                hook: hook_type,
-                action: HookAction::Task { task_name: task },
-                global: false,
-            }],
+            HookDef::Entry(entry) => vec![entry.into_hook(hook_type)],
             HookDef::Array(arr) => arr
                 .into_iter()
-                .flat_map(|d| d.into_hooks(hook_type))
+                .map(|entry| entry.into_hook(hook_type))
                 .collect(),
+        }
+    }
+}
+
+impl HookEntryDef {
+    fn into_hook(self, hook: Hooks) -> Hook {
+        let action = match self {
+            HookEntryDef::Script(script) => HookAction::Run {
+                run: vec![RunEntry::Script(script)],
+                run_windows: vec![],
+                shell: None,
+                legacy_script: false,
+                ignored_shell: None,
+            },
+            HookEntryDef::Run(def) => HookAction::Run {
+                run: def.run,
+                run_windows: def.run_windows,
+                shell: def.shell,
+                legacy_script: false,
+                ignored_shell: None,
+            },
+            HookEntryDef::ScriptTable(def) => match (hook, def.shell) {
+                (Hooks::Enter | Hooks::Leave | Hooks::Cd, Some(shell)) => {
+                    HookAction::CurrentShell {
+                        script: def.script,
+                        shell,
+                    }
+                }
+                (_, shell) => HookAction::Run {
+                    run: def.script.into_iter().map(RunEntry::Script).collect(),
+                    run_windows: vec![],
+                    shell: None,
+                    legacy_script: true,
+                    ignored_shell: shell,
+                },
+            },
+            HookEntryDef::TaskRef(def) => HookAction::Run {
+                run: vec![RunEntry::SingleTask {
+                    task: def.task,
+                    args: vec![],
+                    env: Default::default(),
+                }],
+                run_windows: vec![],
+                shell: None,
+                legacy_script: false,
+                ignored_shell: None,
+            },
+        };
+        Hook {
+            hook,
+            action,
+            global: false,
         }
     }
 }
@@ -132,17 +200,15 @@ pub struct Hook {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum HookAction {
     Run {
-        run: String,
+        run: Vec<RunEntry>,
+        run_windows: Vec<RunEntry>,
         shell: Option<String>,
         legacy_script: bool,
         ignored_shell: Option<String>,
     },
     CurrentShell {
-        script: String,
+        script: Vec<String>,
         shell: String,
-    },
-    Task {
-        task_name: String,
     },
 }
 
@@ -153,12 +219,12 @@ impl Hook {
     {
         match &mut self.action {
             HookAction::Run {
-                run,
                 shell,
                 ignored_shell,
                 ..
             } => {
-                *run = render(run)?;
+                // Run entries are rendered at execution time with hook env vars
+                // and, for non-preinstall hooks, the resolved tools context.
                 if let Some(s) = shell {
                     *s = render(s)?;
                 }
@@ -167,11 +233,10 @@ impl Hook {
                 }
             }
             HookAction::CurrentShell { script, shell } => {
-                *script = render(script)?;
+                for s in script {
+                    *s = render(s)?;
+                }
                 *shell = render(shell)?;
-            }
-            HookAction::Task { task_name } => {
-                *task_name = render(task_name)?;
             }
         }
         Ok(())
@@ -339,11 +404,6 @@ async fn run_matched_hook(
 ) {
     let hook_type = hook.hook;
     match &hook.action {
-        HookAction::Task { task_name } => {
-            if let Err(e) = execute_task(config, ts, root, hook, task_name, installed_tools).await {
-                warn!("{hook_type} hook in {} failed: {e}", root.display());
-            }
-        }
         HookAction::CurrentShell { script, .. } => {
             if let Some(shell) = shell {
                 // Set hook environment variables so shell hooks can access them
@@ -373,7 +433,9 @@ async fn run_matched_hook(
                     println!("{}", shell.set_env("MISE_INSTALLED_TOOLS", &json));
                 }
             }
-            println!("{script}");
+            for line in script {
+                println!("{line}");
+            }
         }
         HookAction::Run { .. } => {
             if let Err(e) = execute(config, ts, root, hook, installed_tools).await {
@@ -402,6 +464,7 @@ async fn execute(
     Settings::get().ensure_experimental("hooks")?;
     let HookAction::Run {
         run,
+        run_windows,
         shell,
         legacy_script,
         ignored_shell,
@@ -424,45 +487,28 @@ async fn execute(
             hook_name
         );
     }
-    let shell = shell
-        .as_ref()
-        .map(|shell| shell_words::split(shell))
-        .transpose()?
-        .unwrap_or(Settings::get().default_inline_shell()?);
 
     // Preinstall hooks skip `tools=true` env directives since the tools
     // providing those env vars aren't installed yet (fixes #6162)
-    let (tera_ctx, mut env) = if hook.hook == Hooks::Preinstall {
-        let env = ts.full_env_without_tools(config).await?;
-        let mut ctx = config.tera_ctx.clone();
-        ctx.insert("env", &env);
-        (ctx, env)
+    let mut env = if hook.hook == Hooks::Preinstall {
+        ts.full_env_without_tools(config).await?
     } else {
-        let ctx = ts.tera_ctx(config).await?.clone();
-        let env = ts.full_env(config).await?;
-        (ctx, env)
+        ts.full_env(config).await?
     };
-    let mut tera = get_tera(Some(root));
-    let rendered_script = tera.render_str(run, &tera_ctx)?;
 
-    let args = shell
-        .iter()
-        .skip(1)
-        .map(|s| s.as_str())
-        .chain(once(rendered_script.as_str()))
-        .collect_vec();
+    let mut hook_vars = BTreeMap::new();
     if let Some(cwd) = dirs::CWD.as_ref() {
-        env.insert(
+        hook_vars.insert(
             "MISE_ORIGINAL_CWD".to_string(),
             cwd.to_string_lossy().to_string(),
         );
     }
-    env.insert(
+    hook_vars.insert(
         "MISE_PROJECT_ROOT".to_string(),
         root.to_string_lossy().to_string(),
     );
     if let Some((Some(old), _new)) = hook_env::dir_change() {
-        env.insert(
+        hook_vars.insert(
             "MISE_PREVIOUS_DIR".to_string(),
             old.to_string_lossy().to_string(),
         );
@@ -471,73 +517,237 @@ async fn execute(
     if let Some(tools) = installed_tools
         && let Ok(json) = serde_json::to_string(tools)
     {
-        env.insert("MISE_INSTALLED_TOOLS".to_string(), json);
+        hook_vars.insert("MISE_INSTALLED_TOOLS".to_string(), json);
     }
-    env.insert(
+    hook_vars.insert(
         "MISE_CONFIG_ROOT".to_string(),
         root.to_string_lossy().to_string(),
     );
     // Prevent recursive hook execution (e.g. hook runs `mise run` which spawns
     // a shell that activates mise and re-triggers hooks)
-    env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
-    cmd(&shell[0], args)
+    hook_vars.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
+    env.extend(hook_vars.clone());
+
+    let hook_env_directives = hook_vars
+        .iter()
+        .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+        .collect_vec();
+    let task_env = hook_env_directives
+        .iter()
+        .filter_map(|directive| match directive {
+            EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
+            _ => None,
+        })
+        .collect_vec();
+    let mut task = Task {
+        name: format!("hook:{}", hook.hook),
+        display_name: format!("hook:{}", hook.hook),
+        config_source: root.join("mise.toml"),
+        config_root: Some(root.to_path_buf()),
+        run: run.clone(),
+        run_windows: run_windows.clone(),
+        shell: shell.clone(),
+        quiet: true,
+        env: EnvList(hook_env_directives),
+        ..Default::default()
+    };
+    if cfg!(windows) && !task.run_windows.is_empty() {
+        render_run_entries_for_hook(config, ts, hook.hook, root, &env, &mut task.run_windows)
+            .await?;
+    } else {
+        render_run_entries_for_hook(config, ts, hook.hook, root, &env, &mut task.run).await?;
+    }
+    let output_handler = OutputHandler::new(OutputHandlerConfig {
+        output: Some(TaskOutput::Quiet),
+        silent: false,
+        quiet: true,
+        raw: false,
+        is_linear: true,
+        jobs: Some(1),
+    });
+    let executor = TaskExecutor::new(
+        TaskContextBuilder::default(),
+        output_handler,
+        TaskExecutorConfig {
+            force: true,
+            cd: None,
+            shell: None,
+            tool: vec![],
+            timings: false,
+            continue_on_error: false,
+            dry_run: false,
+            skip_deps: false,
+            stdout_to_stderr: true,
+            sandbox: Default::default(),
+        },
+    );
+    if should_execute_entries_without_task_executor(config, root, hook.hook, task.run()) {
+        execute_run_entries_without_task_executor(root, &task, &env)?;
+    } else {
+        executor
+            .run_task_run_entries(config, &task, &env, &task_env)
+            .await?;
+    }
+    Ok(())
+}
+
+fn should_execute_entries_without_task_executor(
+    config: &Arc<Config>,
+    root: &Path,
+    hook: Hooks,
+    entries: &[RunEntry],
+) -> bool {
+    if entries.is_empty() {
+        return false;
+    }
+    let has_task_entries = entries
+        .iter()
+        .any(|entry| !matches!(entry, RunEntry::Script(_)));
+    // Preinstall runs before tools=true env directives are safe to resolve, so
+    // avoid the task executor's full task tera context for every run entry.
+    hook == Hooks::Preinstall || (has_task_entries && config.project_root.as_deref() != Some(root))
+}
+
+fn execute_run_entries_without_task_executor(
+    root: &Path,
+    task: &Task,
+    env: &BTreeMap<String, String>,
+) -> Result<()> {
+    for entry in task.run() {
+        match entry {
+            RunEntry::Script(script) => {
+                run_script_entry(root, task, script, env)?;
+            }
+            RunEntry::SingleTask {
+                task: spec,
+                args,
+                env: entry_env,
+            } => {
+                let resolved = crate::task::resolve_task_pattern(spec, Some(task));
+                let (name, spec_args) = crate::task::task_list::split_task_spec(&resolved);
+                let task_args = if args.is_empty() {
+                    spec_args
+                } else {
+                    args.clone()
+                };
+                let mut cmd_env = env.clone();
+                cmd_env.extend(entry_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+                run_mise_task(
+                    root,
+                    vec![name.to_string()].into_iter().chain(task_args),
+                    &cmd_env,
+                )?;
+            }
+            RunEntry::TaskGroup { tasks } => {
+                let mut args = vec![];
+                for (i, spec) in tasks.iter().enumerate() {
+                    if i > 0 {
+                        args.push(":::".to_string());
+                    }
+                    let resolved = crate::task::resolve_task_pattern(spec, Some(task));
+                    let (name, task_args) = crate::task::task_list::split_task_spec(&resolved);
+                    args.push(name.to_string());
+                    args.extend(task_args);
+                }
+                run_mise_task(root, args.into_iter(), env)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn run_script_entry(
+    root: &Path,
+    task: &Task,
+    script: &str,
+    env: &BTreeMap<String, String>,
+) -> Result<()> {
+    let shell = task
+        .shell()
+        .unwrap_or(Settings::get().default_inline_shell()?);
+    let mut shell = shell.into_iter();
+    let program = shell.next().unwrap();
+    let mut args = shell.collect_vec();
+    args.push(script.to_string());
+    cmd(program, args)
         .stdout_to_stderr()
-        // .dir(root)
+        .dir(root)
         .full_env(env)
         .run()?;
     Ok(())
 }
 
-async fn execute_task(
+fn run_mise_task(
+    root: &Path,
+    args: impl IntoIterator<Item = String>,
+    env: &BTreeMap<String, String>,
+) -> Result<()> {
+    let mise_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mise"));
+    let root = root.to_string_lossy().to_string();
+    let args = ["--cd".to_string(), root, "run".to_string()]
+        .into_iter()
+        .chain(args)
+        .collect_vec();
+    cmd(mise_bin, args).stdout_to_stderr().full_env(env).run()?;
+    Ok(())
+}
+
+async fn render_run_entries_for_hook(
     config: &Arc<Config>,
     ts: &Toolset,
+    hook: Hooks,
     root: &Path,
-    hook: &Hook,
-    task_name: &str,
-    installed_tools: Option<&[InstalledToolInfo]>,
+    env: &BTreeMap<String, String>,
+    entries: &mut [RunEntry],
 ) -> Result<()> {
-    Settings::get().ensure_experimental("hooks")?;
-
-    let mise_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mise"));
-
-    let mut env = if hook.hook == Hooks::Preinstall {
-        ts.full_env_without_tools(config).await?
+    let mut tera = get_tera(Some(root));
+    let mut tera_ctx = if hook == Hooks::Preinstall {
+        config.tera_ctx.clone()
     } else {
-        ts.full_env(config).await?
+        ts.tera_ctx(config).await?.clone()
     };
-    if let Some(cwd) = dirs::CWD.as_ref() {
-        env.insert(
-            "MISE_ORIGINAL_CWD".to_string(),
-            cwd.to_string_lossy().to_string(),
-        );
+    tera_ctx.insert("env", env);
+    tera_ctx.insert("config_root", &root.to_string_lossy().to_string());
+    for entry in entries {
+        *entry = render_run_entry_for_hook(entry, &mut tera, &tera_ctx)?;
     }
-    env.insert(
-        "MISE_PROJECT_ROOT".to_string(),
-        root.to_string_lossy().to_string(),
-    );
-    env.insert(
-        "MISE_CONFIG_ROOT".to_string(),
-        root.to_string_lossy().to_string(),
-    );
-    if let Some((Some(old), _new)) = hook_env::dir_change() {
-        env.insert(
-            "MISE_PREVIOUS_DIR".to_string(),
-            old.to_string_lossy().to_string(),
-        );
-    }
-    if let Some(tools) = installed_tools
-        && let Ok(json) = serde_json::to_string(tools)
-    {
-        env.insert("MISE_INSTALLED_TOOLS".to_string(), json);
-    }
-    env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
-
-    cmd(
-        mise_bin,
-        ["--cd", &root.to_string_lossy(), "run", task_name],
-    )
-    .stdout_to_stderr()
-    .full_env(env)
-    .run()?;
     Ok(())
+}
+
+fn render_run_entry_for_hook(
+    entry: &RunEntry,
+    tera: &mut tera::Tera,
+    tera_ctx: &tera::Context,
+) -> Result<RunEntry> {
+    match entry {
+        RunEntry::Script(script) => Ok(RunEntry::Script(render_hook_str(tera, tera_ctx, script)?)),
+        RunEntry::SingleTask { task, args, env } => {
+            let mut env = env.clone();
+            for value in env.values_mut() {
+                *value = render_hook_str(tera, tera_ctx, value)?;
+            }
+            Ok(RunEntry::SingleTask {
+                task: render_hook_str(tera, tera_ctx, task)?,
+                args: args
+                    .iter()
+                    .map(|arg| render_hook_str(tera, tera_ctx, arg))
+                    .collect::<Result<_>>()?,
+                env,
+            })
+        }
+        RunEntry::TaskGroup { tasks } => Ok(RunEntry::TaskGroup {
+            tasks: tasks
+                .iter()
+                .map(|task| render_hook_str(tera, tera_ctx, task))
+                .collect::<Result<_>>()?,
+        }),
+    }
+}
+
+fn render_hook_str(tera: &mut tera::Tera, tera_ctx: &tera::Context, value: &str) -> Result<String> {
+    if value.contains("{{") || value.contains("{%") || value.contains("{#") {
+        Ok(tera.render_str(value, tera_ctx)?)
+    } else {
+        Ok(value.to_string())
+    }
 }

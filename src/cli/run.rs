@@ -701,6 +701,7 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
+            stdout_to_stderr: false,
             sandbox: crate::sandbox::SandboxConfig {
                 deny_read: self.deny_all || self.deny_read,
                 deny_write: self.deny_all || self.deny_write,
