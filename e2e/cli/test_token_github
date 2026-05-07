@@ -8,6 +8,9 @@ unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN MISE_GITHUB_ENTERPRISE_TOK
 # Test 1: No token configured — should return (none)
 assert_contains "mise token github" "(none)"
 
+# --raw with no token should exit non-zero (so $(...) capture fails loudly)
+assert_fail "mise token github --raw"
+
 # Test 2: GITHUB_TOKEN env var
 assert_contains "GITHUB_TOKEN=env-test-token mise token github --unmask" "env-test-token"
 assert_contains "GITHUB_TOKEN=env-test-token mise token github --unmask" "GITHUB_TOKEN"

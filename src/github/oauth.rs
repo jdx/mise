@@ -1,7 +1,7 @@
 use crate::config::Settings;
 use crate::env;
 use eyre::{Result, bail, eyre};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::PathBuf;
@@ -96,7 +96,9 @@ async fn token_async(req: TokenRequest) -> Result<String> {
         );
     }
 
-    let cache_key = cache_key(&req.host, client_id, scopes);
+    let canonical_host =
+        api_host(&settings.github.oauth_api_url).unwrap_or_else(|| req.host.clone());
+    let cache_key = cache_key(&canonical_host, client_id, scopes);
     let mut cache = read_cache();
     if !req.force_device_flow {
         if let Some(cached) = cache.tokens.get(&cache_key)
@@ -337,7 +339,7 @@ fn host_matches_settings(host: &str, oauth_api_url: &str) -> bool {
     let Some(api_host) = api_host(oauth_api_url) else {
         return false;
     };
-    host == api_host || (host == "github.com" && api_host == "api.github.com")
+    host == api_host || format!("api.{host}") == api_host
 }
 
 fn api_host(oauth_api_url: &str) -> Option<String> {

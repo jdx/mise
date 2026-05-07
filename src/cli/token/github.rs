@@ -1,5 +1,6 @@
 use crate::github;
 use crate::tokens;
+use eyre::bail;
 
 /// Display the GitHub token mise will use for a given host
 ///
@@ -10,19 +11,19 @@ use crate::tokens;
 pub struct Github {
     /// GitHub hostname
     #[clap(default_value = "github.com")]
-    host: String,
+    pub(crate) host: String,
 
     /// Force native GitHub OAuth device flow instead of normal token resolution
     #[clap(long)]
-    oauth: bool,
+    pub(crate) oauth: bool,
 
     /// Print only the token value
     #[clap(long)]
-    raw: bool,
+    pub(crate) raw: bool,
 
     /// Show the full unmasked token
     #[clap(long)]
-    unmask: bool,
+    pub(crate) unmask: bool,
 }
 
 impl Github {
@@ -53,7 +54,7 @@ impl Github {
             }
             None => {
                 if self.raw {
-                    return Ok(());
+                    bail!("no GitHub token found for {}", self.host);
                 }
                 miseprintln!("{}: (none)", self.host);
             }
