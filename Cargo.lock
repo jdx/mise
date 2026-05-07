@@ -5656,7 +5656,6 @@ version = "2026.5.1"
 dependencies = [
  "age",
  "aho-corasick",
- "anyhow",
  "aqua-registry",
  "async-backtrace",
  "async-trait",

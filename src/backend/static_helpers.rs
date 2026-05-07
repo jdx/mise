@@ -87,22 +87,6 @@ pub trait VerifiableError: Sized + Send + Sync + 'static {
 
 impl VerifiableError for eyre::Report {
     fn is_not_found(&self) -> bool {
-        self.chain().any(|cause| {
-            if let Some(err) = cause.downcast_ref::<reqwest::Error>() {
-                err.status() == Some(reqwest::StatusCode::NOT_FOUND)
-            } else {
-                false
-            }
-        })
-    }
-
-    fn into_eyre(self) -> eyre::Report {
-        self
-    }
-}
-
-impl VerifiableError for anyhow::Error {
-    fn is_not_found(&self) -> bool {
         if self.to_string().contains("404") {
             return true;
         }
@@ -116,7 +100,7 @@ impl VerifiableError for anyhow::Error {
     }
 
     fn into_eyre(self) -> eyre::Report {
-        eyre::eyre!(self)
+        self
     }
 }
 
