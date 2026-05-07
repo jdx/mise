@@ -1438,6 +1438,14 @@ Comma\-separated list of platforms to target
 e.g.: linux\-x64,macos\-arm64,windows\-x64
 If not specified, all platforms already in lockfile will be updated
 .TP
+\fB\-\-before\fR \fI<BEFORE>\fR
+Only lock versions released before this date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
+This only affects fuzzy version matches like "20" or "latest".
+Explicitly pinned versions like "22.5.0" are not filtered.
+Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
+.TP
 \fB\-\-local\fR
 Update mise.local.lock instead of mise.lock
 Use for tools defined in .local.toml configs
@@ -1516,6 +1524,11 @@ Note that the results may be cached, run `mise cache clean` to clear the cache a
 .TP
 \fB\-\-all\fR
 Show all installed plugins and versions
+.TP
+\fB\-\-before\fR \fI<BEFORE>\fR
+Only show versions released before this date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format (includes version metadata like created_at timestamps when available)
