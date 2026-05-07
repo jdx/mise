@@ -10,9 +10,9 @@ use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
 use eyre::WrapErr;
+use serde::Deserialize;
 use serde::Deserializer;
 use serde::de::{MapAccess, Visitor};
-use serde_derive::Deserialize;
 use std::path::PathBuf;
 use std::{
     fmt::{self, Debug},
