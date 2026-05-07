@@ -27,9 +27,16 @@ pub async fn fetch_versions(
 ) -> Result<Vec<String>> {
     use crate::http::HTTP;
 
-    // Fetch the content
-    let response = HTTP.get_text(version_list_url).await?;
-    let content = response.trim();
+    let content = if version_regex.is_some() {
+        // When a regex is provided, the caller expects to parse arbitrary
+        // content (including HTML directory listings), so bypass the HTML rejection
+        // in get_text.
+        let resp = HTTP.get_async(version_list_url).await?;
+        resp.text().await?
+    } else {
+        HTTP.get_text(version_list_url).await?
+    };
+    let content = content.trim();
 
     // Parse versions based on format
     parse_version_list(content, version_regex, version_json_path, version_expr)
