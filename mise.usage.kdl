@@ -130,6 +130,8 @@ cmd backends help="Manage backends" {
     }
 }
 cmd bin-paths help="List all the active runtime bin paths" {
+    flag --bin-names help="Output executable names instead of bin directories"
+    flag "-J --json" help="Output executable entries in JSON format (implies --bin-names)"
     arg "[TOOL@VERSION]…" help="Tool(s) to look up\ne.g.: ruby@3" required=#false var=#true
 }
 cmd cache help="Manage the mise cache" {

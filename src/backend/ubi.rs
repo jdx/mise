@@ -43,6 +43,10 @@ impl Backend for UbiBackend {
         true
     }
 
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["provider", "api_url", "tag_regex"]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         deprecated_at!(
             "2026.4.0",

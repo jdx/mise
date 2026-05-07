@@ -161,6 +161,10 @@ impl Backend for UnifiedGitBackend {
         features
     }
 
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["api_url", "version_prefix"]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let repo = self.ba.tool_name();
         let id = self.ba.to_string();
