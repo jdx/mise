@@ -110,7 +110,9 @@ async fn token_async(req: TokenRequest) -> Result<String> {
                 Ok(Some(refreshed)) => {
                     let token = refreshed.access_token.clone();
                     cache.tokens.insert(cache_key, refreshed);
-                    write_cache(&cache)?;
+                    if let Err(err) = write_cache(&cache) {
+                        warn!("failed to cache GitHub OAuth token: {err:#}");
+                    }
                     return Ok(token);
                 }
                 Ok(None) => {}
@@ -128,7 +130,9 @@ async fn token_async(req: TokenRequest) -> Result<String> {
     let cached = token_response_to_cache(token)?;
     let access_token = cached.access_token.clone();
     cache.tokens.insert(cache_key, cached);
-    write_cache(&cache)?;
+    if let Err(err) = write_cache(&cache) {
+        warn!("failed to cache GitHub OAuth token: {err:#}");
+    }
     Ok(access_token)
 }
 
