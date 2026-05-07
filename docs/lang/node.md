@@ -70,6 +70,7 @@ Or in `~/.config/mise/config.toml`:
 [settings]
 idiomatic_version_file_enable_tools = ["node"]
 ```
+
 :::
 
 ## Default node packages
