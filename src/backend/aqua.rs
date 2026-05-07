@@ -2811,9 +2811,10 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
                     .unwrap_or_default()
             )
         }
-        AquaPackageType::GoInstall => {
+        AquaPackageType::GoInstall | AquaPackageType::GoBuild => {
             bail!(
-                "package type `go_install` is not supported in the aqua backend. Use the go backend instead{}.",
+                "package type `{}` is not supported in the aqua backend. Use the go backend instead{}.",
+                pkg.r#type,
                 pkg.path
                     .as_ref()
                     .map(|path| format!(": go:{path}"))

@@ -32,6 +32,9 @@ include = [
   "/src/**/*.rs",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
+  "/vendor/aqua-registry/LICENSE",
+  "/vendor/aqua-registry/metadata.json",
+  "/vendor/aqua-registry/registry.yml",
 ]
 build = "build.rs"
 rust-version = "1.91"
@@ -226,13 +229,15 @@ sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 
 [build-dependencies]
+aqua-registry = { path = "crates/aqua-registry" }
 built = { version = "0.8", features = ["chrono"] }
 cfg_aliases = "0.2"
+eyre = "0.6"
 heck = "0.5"
-toml = "1.0"
 indexmap = "2"
 serde = "1"
 serde_yaml = "0.9"
+toml = "1.0"
 
 [dev-dependencies]
 clap-sort = "1"

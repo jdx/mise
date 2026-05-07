@@ -15,7 +15,7 @@ local linters = new Mapping<String, Step> {
     // PATH (e.g. a Homebrew prettier), keeping local and CI in sync.
     ["prettier"] = (Builtins.prettier) {
       batch = false
-      exclude = "crates/aqua-registry/aqua-registry/**"
+      exclude = "vendor/aqua-registry/**"
       check = "mise x prettier -- prettier --check {{ files }}"
       check_list_files = "mise x prettier -- prettier --list-different {{ files }}"
       fix = "mise x prettier -- prettier --write {{ files }}"

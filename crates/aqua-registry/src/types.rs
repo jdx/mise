@@ -2,13 +2,25 @@ use expr::{Context, Environment, Program, Value};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use serde::Deserialize;
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use serde::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use versions::Versioning;
 
 /// Type of Aqua package
-#[derive(Debug, Deserialize, Default, Clone, PartialEq, strum::Display)]
+#[derive(
+    Debug,
+    Deserialize,
+    Serialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+    Default,
+    Clone,
+    PartialEq,
+    strum::Display,
+)]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum AquaPackageType {
@@ -18,11 +30,26 @@ pub enum AquaPackageType {
     GithubRelease,
     Http,
     GoInstall,
+    GoBuild,
     Cargo,
 }
 
 /// Main Aqua package definition
-#[derive(Debug, Deserialize, Clone)]
+///
+/// rkyv archives parsed package data only. Runtime-only fields mirror serde's
+/// skipped behavior with `rkyv::with::Skip`.
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[rkyv(serialize_bounds(
+    __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+    __S::Error: rkyv::rancor::Source,
+))]
+#[rkyv(deserialize_bounds(__D::Error: rkyv::rancor::Source))]
+#[rkyv(bytecheck(
+    bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source,
+    )
+))]
 #[serde(default)]
 pub struct AquaPackage {
     pub r#type: AquaPackageType,
@@ -43,6 +70,7 @@ pub struct AquaPackage {
     pub version_prefix: Option<String>,
     version_filter: Option<String>,
     #[serde(skip)]
+    #[rkyv(with = rkyv::with::Skip)]
     version_filter_expr: Option<Program>,
     pub version_source: Option<String>,
     pub cosign: Option<AquaCosign>,
@@ -50,18 +78,21 @@ pub struct AquaPackage {
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
     pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
+    #[rkyv(omit_bounds)]
     overrides: Vec<AquaOverride>,
     version_constraint: String,
+    #[rkyv(omit_bounds)]
     pub version_overrides: Vec<AquaPackage>,
     pub no_asset: bool,
     pub error_message: Option<String>,
     pub path: Option<String>,
     #[serde(skip)]
+    #[rkyv(with = rkyv::with::Skip)]
     var_values: HashMap<String, String>,
 }
 
 /// Override configuration for specific OS/architecture combinations
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 struct AquaOverride {
     #[serde(flatten)]
     pkg: AquaPackage,
@@ -72,7 +103,7 @@ struct AquaOverride {
 }
 
 /// Runtime variant selector for an override.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 struct AquaVariant {
     key: String,
     value: String,
@@ -84,7 +115,9 @@ struct AquaRuntime<'a> {
 }
 
 /// Variable definition for Aqua templates
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(
+    Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone, Default,
+)]
 pub struct AquaVar {
     pub name: String,
     /// Aqua's schema allows arbitrary YAML defaults, but mise intentionally
@@ -96,7 +129,9 @@ pub struct AquaVar {
 }
 
 /// File definition within a package
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(
+    Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone, Default,
+)]
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
@@ -106,7 +141,17 @@ pub struct AquaFile {
 }
 
 /// Checksum algorithm options
-#[derive(Debug, Deserialize, Clone, strum::AsRefStr, strum::Display)]
+#[derive(
+    Debug,
+    Deserialize,
+    Serialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+    Clone,
+    strum::AsRefStr,
+    strum::Display,
+)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum AquaChecksumAlgorithm {
@@ -117,7 +162,7 @@ pub enum AquaChecksumAlgorithm {
 }
 
 /// Type of checksum source
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaChecksumType {
     GithubRelease,
@@ -125,7 +170,7 @@ pub enum AquaChecksumType {
 }
 
 /// Type of minisign source
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaMinisignType {
     GithubRelease,
@@ -133,7 +178,7 @@ pub enum AquaMinisignType {
 }
 
 /// Cosign signature configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaCosignSignature {
     pub r#type: Option<String>,
     pub repo_owner: Option<String>,
@@ -143,7 +188,7 @@ pub struct AquaCosignSignature {
 }
 
 /// Cosign verification configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaCosign {
     pub enabled: Option<bool>,
     pub signature: Option<AquaCosignSignature>,
@@ -155,7 +200,7 @@ pub struct AquaCosign {
 }
 
 /// SLSA provenance configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaSlsaProvenance {
     pub enabled: Option<bool>,
     pub r#type: Option<String>,
@@ -168,7 +213,7 @@ pub struct AquaSlsaProvenance {
 }
 
 /// Minisign verification configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaMinisign {
     pub enabled: Option<bool>,
     pub r#type: Option<AquaMinisignType>,
@@ -180,14 +225,14 @@ pub struct AquaMinisign {
 }
 
 /// GitHub artifact attestations configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
     pub enabled: Option<bool>,
     pub signer_workflow: Option<String>,
 }
 
 /// Checksum verification configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaChecksum {
     pub r#type: Option<AquaChecksumType>,
     pub algorithm: Option<AquaChecksumAlgorithm>,
@@ -200,14 +245,14 @@ pub struct AquaChecksum {
 }
 
 /// Checksum pattern configuration
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaChecksumPattern {
     pub checksum: String,
     pub file: Option<String>,
 }
 
 /// Registry YAML file structure
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RegistryYaml {
     pub packages: Vec<AquaPackage>,
 }
@@ -1298,6 +1343,23 @@ packages:
     }
 
     #[test]
+    fn test_vars_null_default_deserializes_as_none() {
+        let yml = r#"
+packages:
+  - vars:
+      - name: channel
+        default: null
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(pkg.vars[0].default, None);
+    }
+
+    #[test]
     fn test_vars_sequence_and_mapping_defaults_fail_yaml_parse() {
         for yaml_default in ["[stable, beta]", "{channel: stable}"] {
             let yml = format!(
@@ -1314,24 +1376,6 @@ packages:
                 "unexpected error for {yaml_default}: {err}"
             );
         }
-    }
-
-    #[test]
-    fn test_vars_null_default_deserializes_as_none() {
-        let yml = r#"
-packages:
-  - vars:
-      - name: channel
-        default: null
-"#;
-        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
-            .unwrap()
-            .packages
-            .into_iter()
-            .next()
-            .unwrap();
-
-        assert_eq!(pkg.vars[0].default, None);
     }
 
     #[test]

@@ -1,8 +1,16 @@
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use serde::Serialize as _;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
+
+use aqua_registry::encode_package_rkyv;
+use aqua_registry::types::{AquaPackage, RegistryYaml};
+use eyre::{Result, WrapErr, eyre};
+use serde_yaml::Value;
 
 fn main() {
     cfg_aliases::cfg_aliases! {
@@ -15,6 +23,14 @@ fn main() {
 
     codegen_settings();
     codegen_registry();
+    codegen_aqua_standard_registry().expect("failed to generate baked aqua standard registry");
+}
+
+#[derive(Debug)]
+struct AquaPackageRegistry {
+    id: String,
+    content: Vec<u8>,
+    aliases: Vec<String>,
 }
 
 /// Generate a raw string literal that safely contains the given content.
@@ -303,6 +319,242 @@ fn codegen_registry() {
     lines.push("}".to_string());
 
     fs::write(&dest_path, lines.join("\n")).unwrap();
+}
+
+fn codegen_aqua_standard_registry() -> Result<()> {
+    let out_dir = env::var("OUT_DIR").wrap_err("OUT_DIR environment variable must be set")?;
+    let files_dest_path = Path::new(&out_dir).join("aqua_standard_registry_files.rs");
+    let aliases_dest_path = Path::new(&out_dir).join("aqua_standard_registry_aliases.rs");
+    let metadata_dest_path = Path::new(&out_dir).join("aqua_standard_registry_metadata.rs");
+    let packages_dir = Path::new(&out_dir).join("aqua_standard_registry_packages");
+
+    let registry_file = aqua_registry_file("registry.yml");
+    let metadata_file = aqua_registry_file("metadata.json");
+
+    println!("cargo:rerun-if-changed={}", registry_file.display());
+    println!("cargo:rerun-if-changed={}", metadata_file.display());
+
+    let content = fs::read_to_string(&registry_file).wrap_err_with(|| {
+        format!(
+            "Failed to read aqua registry file {}",
+            registry_file.display()
+        )
+    })?;
+    let registry_yaml = serde_yaml::from_str::<RegistryYaml>(&content).wrap_err_with(|| {
+        format!(
+            "Failed to parse aqua registry file {} as RegistryYaml",
+            registry_file.display()
+        )
+    })?;
+    let registry_value = serde_yaml::from_str::<Value>(&content).wrap_err_with(|| {
+        format!(
+            "Failed to parse aqua registry file {}",
+            registry_file.display()
+        )
+    })?;
+    let package_values = registry_value
+        .get("packages")
+        .and_then(|packages| packages.as_sequence())
+        .ok_or_else(|| {
+            eyre!(
+                "Aqua registry file {} does not contain a packages list",
+                registry_file.display()
+            )
+        })?;
+
+    let registries = aqua_package_registries(&registry_yaml.packages, package_values)?;
+    if registries.is_empty() {
+        return Err(eyre!(
+            "Aqua registry file {} contains no packages",
+            registry_file.display()
+        ));
+    }
+
+    fs::create_dir_all(&packages_dir).wrap_err("Failed to create baked registry package dir")?;
+    fs::write(
+        files_dest_path,
+        aqua_registry_files_code(&registries, &packages_dir)?,
+    )
+    .wrap_err("Failed to write baked registry files")?;
+    fs::write(aliases_dest_path, aqua_registry_aliases_code(&registries))
+        .wrap_err("Failed to write baked registry aliases")?;
+
+    let metadata_content = fs::read_to_string(&metadata_file).wrap_err_with(|| {
+        format!(
+            "Failed to read aqua registry metadata file {}",
+            metadata_file.display()
+        )
+    })?;
+    let metadata = serde_yaml::from_str::<Value>(&metadata_content).wrap_err_with(|| {
+        format!(
+            "Failed to parse aqua registry metadata file {}",
+            metadata_file.display()
+        )
+    })?;
+    let repository = yaml_string_field(&metadata, "repository").ok_or_else(|| {
+        eyre!(
+            "Aqua registry metadata file {} does not contain a repository",
+            metadata_file.display()
+        )
+    })?;
+    let tag = yaml_string_field(&metadata, "tag").ok_or_else(|| {
+        eyre!(
+            "Aqua registry metadata file {} does not contain a tag",
+            metadata_file.display()
+        )
+    })?;
+
+    fs::write(
+        metadata_dest_path,
+        format!("AquaRegistryMetadata {{ repository: {repository:?}, tag: {tag:?} }}"),
+    )
+    .wrap_err("Failed to write baked registry metadata")?;
+
+    Ok(())
+}
+
+fn aqua_package_registries(
+    packages: &[AquaPackage],
+    package_values: &[Value],
+) -> Result<Vec<AquaPackageRegistry>> {
+    if packages.len() != package_values.len() {
+        return Err(eyre!(
+            "parsed aqua package count mismatch: RegistryYaml has {}, raw YAML has {}",
+            packages.len(),
+            package_values.len()
+        ));
+    }
+
+    let mut registries = Vec::new();
+    for (package, package_value) in packages.iter().zip(package_values) {
+        let Some(id) = aqua_canonical_package_id(package) else {
+            continue;
+        };
+        let content = encode_package_rkyv(package)
+            .wrap_err_with(|| format!("Failed to encode baked package {id}"))?;
+        let aliases = aqua_package_aliases(package_value);
+        registries.push(AquaPackageRegistry {
+            id,
+            content,
+            aliases,
+        });
+    }
+    Ok(registries)
+}
+
+fn aqua_registry_files_code(
+    registries: &[AquaPackageRegistry],
+    packages_dir: &Path,
+) -> Result<String> {
+    let mut used_stems = HashMap::new();
+    let mut entries = registries
+        .iter()
+        .map(|registry| {
+            let stem = aqua_package_file_stem(&registry.id);
+            if let Some(other_id) = used_stems.insert(stem.clone(), registry.id.as_str()) {
+                return Err(eyre!(
+                    "baked aqua registry package filename collision for {other_id:?} and {:?}: {stem}",
+                    registry.id
+                ));
+            }
+            let filename = format!("{stem}.rkyv");
+            let path = packages_dir.join(filename);
+            let mut file = File::create(&path)
+                .wrap_err_with(|| format!("Failed to write baked package {}", path.display()))?;
+            file.write_all(&registry.content)
+                .wrap_err_with(|| format!("Failed to write baked package {}", path.display()))?;
+            Ok((registry.id.clone(), path))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    Ok(aqua_registry_bytes_map_code(&entries))
+}
+
+fn aqua_registry_bytes_map_code(entries: &[(String, PathBuf)]) -> String {
+    let mut code = String::from("HashMap::from([\n");
+    for (key, path) in entries {
+        code.push_str(&format!(
+            "    ({key:?}, include_bytes!({:?}).as_slice()),\n",
+            path.display().to_string()
+        ));
+    }
+    code.push_str("])");
+    code
+}
+
+fn aqua_package_file_stem(id: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in id.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn aqua_registry_aliases_code(registries: &[AquaPackageRegistry]) -> String {
+    let canonical_ids = registries
+        .iter()
+        .map(|registry| registry.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut aliases = HashMap::new();
+
+    for registry in registries {
+        for alias in &registry.aliases {
+            if alias != &registry.id && !canonical_ids.contains(alias.as_str()) {
+                aliases.insert(alias.clone(), registry.id.clone());
+            }
+        }
+    }
+
+    let mut entries = aliases.into_iter().collect::<Vec<_>>();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    aqua_registry_string_map_code(&entries)
+}
+
+fn aqua_registry_string_map_code(entries: &[(String, String)]) -> String {
+    let mut code = String::from("HashMap::from([\n");
+    for (key, value) in entries {
+        code.push_str(&format!("    ({key:?}, {value:?}),\n"));
+    }
+    code.push_str("])");
+    code
+}
+
+fn aqua_canonical_package_id(package: &AquaPackage) -> Option<String> {
+    package
+        .name
+        .clone()
+        .or_else(|| {
+            if package.repo_owner.is_empty() || package.repo_name.is_empty() {
+                None
+            } else {
+                Some(format!("{}/{}", package.repo_owner, package.repo_name))
+            }
+        })
+        .or_else(|| package.path.clone())
+}
+
+fn aqua_package_aliases(package: &Value) -> Vec<String> {
+    package
+        .get("aliases")
+        .and_then(|aliases| aliases.as_sequence())
+        .map(|aliases| {
+            aliases
+                .iter()
+                .filter_map(|alias| yaml_string_field(alias, "name"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn yaml_string_field(value: &Value, key: &str) -> Option<String> {
+    value.get(key)?.as_str().map(str::to_string)
+}
+
+fn aqua_registry_file(file_name: &str) -> PathBuf {
+    Path::new("vendor").join("aqua-registry").join(file_name)
 }
 
 fn codegen_settings() {
