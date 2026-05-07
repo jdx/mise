@@ -19,7 +19,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{env, file, gpg, hash, http, plugins};
 use async_trait::async_trait;
 use eyre::{Result, bail, ensure};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -1,5 +1,103 @@
 # Changelog
 
+## [2026.5.2](https://github.com/jdx/mise/compare/v2026.5.1..v2026.5.2) - 2026-05-07
+
+### 🚀 Features
+
+- **(aqua)** support registry libc variants by @jdx in [#9652](https://github.com/jdx/mise/pull/9652)
+- **(bin-paths)** add executable names output by @risu729 in [#9617](https://github.com/jdx/mise/pull/9617)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** preserve configured file extensions by @risu729 in [#9611](https://github.com/jdx/mise/pull/9611)
+- **(aqua)** support registry file links by @risu729 in [#9610](https://github.com/jdx/mise/pull/9610)
+- **(backend)** reject bare package backend names by @risu729 in [#9608](https://github.com/jdx/mise/pull/9608)
+- **(backend)** apply inline tool option overrides by @risu729 in [#9306](https://github.com/jdx/mise/pull/9306)
+- **(backend)** skip versions host for local tool opts by @risu729 in [#9568](https://github.com/jdx/mise/pull/9568)
+- **(github)** chmod explicit archive bin by @risu729 in [#9609](https://github.com/jdx/mise/pull/9609)
+- **(install)** skip remote-versions refresh in prefer-offline mode by @jdx in [#9627](https://github.com/jdx/mise/pull/9627)
+- **(lock)** scope targets to active project root by @risu729 in [#9319](https://github.com/jdx/mise/pull/9319)
+- **(lockfile)** respect existing platforms during auto-lock by @jdx in [#9621](https://github.com/jdx/mise/pull/9621)
+- **(pipx)** filter yanked pypi releases by @risu729 in [#9607](https://github.com/jdx/mise/pull/9607)
+- **(pipx)** declare python as a backend dependency by @jdx in [#9678](https://github.com/jdx/mise/pull/9678)
+- **(schema)** update refs to $defs in mise-registry-tool.json by @risu729 in [#9671](https://github.com/jdx/mise/pull/9671)
+- **(task)** terminate parallel siblings on failure via process groups by @jdx in [#9655](https://github.com/jdx/mise/pull/9655)
+- **(task)** stable MISE_PROJECT_ROOT for monorepo tasks, add MISE_MONOREPO_ROOT by @jdx in [#9657](https://github.com/jdx/mise/pull/9657)
+- **(trust)** run enter hooks after trusting config by @risu729 in [#9634](https://github.com/jdx/mise/pull/9634)
+- **(ui)** stop clearing screen for prompts by @jdx in [#9619](https://github.com/jdx/mise/pull/9619)
+- use /bin/cp on macos by @pdehlke in [#9656](https://github.com/jdx/mise/pull/9656)
+
+### 🚜 Refactor
+
+- **(aqua)** store aqua var defaults as strings by @risu729 in [#9645](https://github.com/jdx/mise/pull/9645)
+- **(config)** support structured TOML values in registry backend options by @risu729 in [#9584](https://github.com/jdx/mise/pull/9584)
+- **(deps)** remove serde_derive dependency by @risu729 in [#9670](https://github.com/jdx/mise/pull/9670)
+- **(deps)** remove anyhow dependency by @risu729 in [#9661](https://github.com/jdx/mise/pull/9661)
+- **(deps)** use std::sync::LazyLock instead of once_cell::Lazy by @risu729 in [#9668](https://github.com/jdx/mise/pull/9668)
+- **(schema)** generate task schema from mise schema by @risu729 in [#9581](https://github.com/jdx/mise/pull/9581)
+- **(schema)** reuse task props with unevaluatedProperties by @risu729 in [#9582](https://github.com/jdx/mise/pull/9582)
+- **(schema)** reuse registry common types by @risu729 in [#9648](https://github.com/jdx/mise/pull/9648)
+- **(schema)** reuse plugin script config by @risu729 in [#9647](https://github.com/jdx/mise/pull/9647)
+- **(schema)** use $defs in schema files by @risu729 in [#9646](https://github.com/jdx/mise/pull/9646)
+
+### 📚 Documentation
+
+- **(node)** add tips for enabling node idiomatic by @fu050409 in [#9675](https://github.com/jdx/mise/pull/9675)
+
+### 🧪 Testing
+
+- **(cli)** remove nondeterministic tool depends assertion by @risu729 in [#9633](https://github.com/jdx/mise/pull/9633)
+- **(e2e)** pin uv to 0.11.8 around astral-sh/uv#19278 by @jdx in [#9618](https://github.com/jdx/mise/pull/9618)
+- **(e2e)** wait for docker env cleanup by @risu729 in [#9631](https://github.com/jdx/mise/pull/9631)
+- **(zig)** use official zig instead of mach mirror by @jdx in [#9659](https://github.com/jdx/mise/pull/9659)
+
+### 📦️ Dependency Updates
+
+- fall through to hash check when providers have no outputs by @jdx in [#9622](https://github.com/jdx/mise/pull/9622)
+- bump Cargo.lock by @jdx in [#9625](https://github.com/jdx/mise/pull/9625)
+
+### 📦 Registry
+
+- remove registry depends by @risu729 in [#9571](https://github.com/jdx/mise/pull/9571)
+- add code-review-graph (pipx:code-review-graph) by @chautruonglong in [#9673](https://github.com/jdx/mise/pull/9673)
+
+### Chore
+
+- **(ci)** split large registry test-tool changes by @risu729 in [#9628](https://github.com/jdx/mise/pull/9628)
+- **(ci)** make perf script robust to runner noise by @jdx in [#9635](https://github.com/jdx/mise/pull/9635)
+- **(ci)** skip hyperfine comments without permission by @risu729 in [#9629](https://github.com/jdx/mise/pull/9629)
+
+### New Contributors
+
+- @chautruonglong made their first contribution in [#9673](https://github.com/jdx/mise/pull/9673)
+- @pdehlke made their first contribution in [#9656](https://github.com/jdx/mise/pull/9656)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`anthropics/anthropic-cli`](https://github.com/anthropics/anthropic-cli)
+- [`crates.io/wasmi_cli`](https://github.com/wasmi-labs/wasmi)
+- [`openclaw/gogcli`](https://github.com/openclaw/gogcli)
+- `racket-lang.org/racket-minimal`
+- [`runs-on/cli`](https://github.com/runs-on/cli)
+
+#### Updated Packages (13)
+
+- [`UpCloudLtd/upcloud-cli`](https://github.com/UpCloudLtd/upcloud-cli)
+- [`aristocratos/btop`](https://github.com/aristocratos/btop)
+- [`dprint/dprint`](https://github.com/dprint/dprint)
+- [`j178/prek`](https://github.com/j178/prek)
+- [`jdx/hk`](https://github.com/jdx/hk)
+- [`jdx/mise`](https://github.com/jdx/mise)
+- [`jdx/usage`](https://github.com/jdx/usage)
+- [`jreleaser/jreleaser`](https://github.com/jreleaser/jreleaser)
+- [`jreleaser/jreleaser/standalone`](https://github.com/jreleaser/jreleaser)
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+- [`suzuki-shunsuke/cmdx`](https://github.com/suzuki-shunsuke/cmdx)
+- [`suzuki-shunsuke/ghir`](https://github.com/suzuki-shunsuke/ghir)
+- [`twpayne/chezmoi`](https://github.com/twpayne/chezmoi)
+
 ## [2026.5.1](https://github.com/jdx/mise/compare/v2026.5.0..v2026.5.1) - 2026-05-05
 
 ### 🚀 Features
