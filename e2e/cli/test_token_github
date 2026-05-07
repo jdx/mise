@@ -73,6 +73,14 @@ assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred
 # Test 8e: credential_command receives host as $1
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo token-for-\$1' mise token github ghe.example.com --unmask" "token-for-ghe.example.com"
 
+# Test 8f: credential_command uses the configured default inline shell
+cat >"$HOME/credential-shell" <<'SCRIPT'
+#!/bin/sh
+echo "custom-shell-token"
+SCRIPT
+chmod +x "$HOME/credential-shell"
+assert_contains "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='$HOME/credential-shell -c' MISE_GITHUB_CREDENTIAL_COMMAND='ignored' mise token github --unmask" "custom-shell-token"
+
 # Test 9: git credential fill
 
 # Create a standalone credential helper script
