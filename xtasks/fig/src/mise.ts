@@ -4564,6 +4564,137 @@ const completionSpec: Fig.Spec = {
         debounce: true,
       },
     },
+    {
+      name: "wings",
+      description: "Manage `mise wings` authentication",
+      subcommands: [
+        {
+          name: "inspect",
+          description: "Inspect Wings OCI artifacts and attached evidence.",
+          subcommands: [
+            {
+              name: "manifest",
+              description: "Print the OCI image manifest for a Wings artifact.",
+              options: [
+                {
+                  name: "--digest",
+                  description:
+                    "Manifest digest to fetch when the reference does not include one",
+                  isRepeatable: false,
+                  args: {
+                    name: "digest",
+                  },
+                },
+              ],
+              args: {
+                name: "reference",
+                description:
+                  "Wings OCI reference, optionally including @sha256:<digest>",
+              },
+            },
+            {
+              name: "referrers",
+              description:
+                "Print the OCI referrers index for a Wings artifact.",
+              options: [
+                {
+                  name: "--digest",
+                  description:
+                    "Subject manifest digest when the reference does not include one",
+                  isRepeatable: false,
+                  args: {
+                    name: "digest",
+                  },
+                },
+              ],
+              args: {
+                name: "reference",
+                description:
+                  "Wings OCI reference, including @sha256:<digest> or paired with --digest",
+              },
+            },
+            {
+              name: "sbom",
+              description:
+                "Print the first SPDX or CycloneDX SBOM attached to a Wings artifact.",
+              options: [
+                {
+                  name: "--digest",
+                  description:
+                    "Subject manifest digest when the reference does not include one",
+                  isRepeatable: false,
+                  args: {
+                    name: "digest",
+                  },
+                },
+              ],
+              args: {
+                name: "reference",
+                description:
+                  "Wings OCI reference, including @sha256:<digest> or paired with --digest",
+              },
+            },
+          ],
+        },
+        {
+          name: "login",
+          description: "Authenticate with mise-wings",
+          options: [
+            {
+              name: "--token",
+              description:
+                "Clerk frontend session JWT, pasted from the dashboard's \"CLI sign-in\" page. Use `--token-stdin` to read from stdin instead of the command line — important so a secret token doesn't land in shell history",
+              isRepeatable: false,
+              args: {
+                name: "token",
+              },
+            },
+            {
+              name: "--token-stdin",
+              description:
+                "Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
+          name: "logout",
+          description: "Sign out of mise-wings.",
+          options: [
+            {
+              name: "--local-only",
+              description:
+                "Skip the server-side revoke; only delete the local credentials file. Use this when you don't have a fresh Clerk session JWT handy and just want this machine signed out — the wings session JWT remains valid on the server until its `exp` (24 h default)",
+              isRepeatable: false,
+            },
+            {
+              name: "--token",
+              description:
+                "Clerk session JWT for the server-side revoke. Same shape as `mise wings login --token`",
+              isRepeatable: false,
+              args: {
+                name: "token",
+              },
+            },
+            {
+              name: "--token-stdin",
+              description:
+                "Read the Clerk session JWT from stdin (avoids shell history). Same shape as `mise wings login --token-stdin`",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
+          name: "status",
+          description:
+            "Show the current mise-wings configuration + auth state.",
+        },
+        {
+          name: "whoami",
+          description: "Print the active mise-wings identity.",
+        },
+      ],
+    },
   ],
   options: [
     {

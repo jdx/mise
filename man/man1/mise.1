@@ -549,6 +549,33 @@ Display the installation path for a tool
 .TP
 \fBwhich\fR
 Shows the path that a tool's bin points to.
+.TP
+\fBwings\fR
+Manage `mise wings` authentication
+.TP
+\fBwings inspect\fR
+Inspect Wings OCI artifacts and attached evidence.
+.TP
+\fBwings inspect manifest\fR
+Print the OCI image manifest for a Wings artifact.
+.TP
+\fBwings inspect referrers\fR
+Print the OCI referrers index for a Wings artifact.
+.TP
+\fBwings inspect sbom\fR
+Print the first SPDX or CycloneDX SBOM attached to a Wings artifact.
+.TP
+\fBwings login\fR
+Authenticate with mise\-wings
+.TP
+\fBwings logout\fR
+Sign out of mise\-wings.
+.TP
+\fBwings status\fR
+Show the current mise\-wings configuration + auth state.
+.TP
+\fBwings whoami\fR
+Print the active mise\-wings identity.
 .SH "MISE ACTIVATE"
 Initializes mise in the current shell session
 
@@ -4056,3 +4083,166 @@ Show the version instead of the path
 .TP
 \fB<BIN_NAME>\fR
 The bin to look up
+.SH "MISE WINGS INSPECT MANIFEST"
+Print the OCI image manifest for a Wings artifact.
+
+Examples:
+
+```sh
+$ mise wings inspect manifest registry.mise\-wings.en.dev/acme/node:20
+{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","layers":[{"mediaType":"application/vnd.mise\-wings.artifact.v1","digest":"sha256:..."}]}
+```
+
+Fetch and verify a specific manifest digest:
+
+```sh
+$ mise wings inspect manifest registry.mise\-wings.en.dev/acme/node \-\-digest sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}
+```
+.PP
+\fBUsage:\fR mise wings inspect manifest [OPTIONS] <REFERENCE>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-digest\fR \fI<DIGEST>\fR
+Manifest digest to fetch when the reference does not include one
+\fBArguments:\fR
+.PP
+.TP
+\fB<REFERENCE>\fR
+Wings OCI reference, optionally including @sha256:<digest>
+.SH "MISE WINGS INSPECT REFERRERS"
+Print the OCI referrers index for a Wings artifact.
+
+Examples:
+
+```sh
+$ mise wings inspect referrers registry.mise\-wings.en.dev/acme/node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","artifactType":"application/spdx+json","digest":"sha256:..."}]}
+```
+.PP
+\fBUsage:\fR mise wings inspect referrers [OPTIONS] <REFERENCE>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-digest\fR \fI<DIGEST>\fR
+Subject manifest digest when the reference does not include one
+\fBArguments:\fR
+.PP
+.TP
+\fB<REFERENCE>\fR
+Wings OCI reference, including @sha256:<digest> or paired with \-\-digest
+.SH "MISE WINGS INSPECT SBOM"
+Print the first SPDX or CycloneDX SBOM attached to a Wings artifact.
+
+Examples:
+
+```sh
+$ mise wings inspect sbom registry.mise\-wings.en.dev/acme/node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+{"spdxVersion":"SPDX\-2.3","name":"node\-20.11.1\-linux\-x64","packages":[]}
+```
+
+If no SBOM is attached:
+
+```sh
+$ mise wings inspect sbom registry.mise\-wings.en.dev/acme/node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+no SBOM referrer found for sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; Wings may not have published SBOM referrers for this artifact yet
+```
+.PP
+\fBUsage:\fR mise wings inspect sbom [OPTIONS] <REFERENCE>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-digest\fR \fI<DIGEST>\fR
+Subject manifest digest when the reference does not include one
+\fBArguments:\fR
+.PP
+.TP
+\fB<REFERENCE>\fR
+Wings OCI reference, including @sha256:<digest> or paired with \-\-digest
+.SH "MISE WINGS LOGIN"
+Authenticate with mise\-wings
+
+By default, starts device\-code auth and stores a device\-bound
+credential. `\-\-token` remains as a legacy/manual fallback for
+internal debugging.
+
+Examples:
+
+```sh
+$ mise wings login
+To sign in to mise\-wings, open:
+
+https://app.mise\-wings.en.dev/cli\-device?code=AB12CD34
+
+Enter code: AB12\-CD34
+Waiting for browser approval...
+Signed in to mise\-wings as user_123 (acme).
+```
+
+Preferred token flow:
+
+```sh
+$ pbpaste | mise wings login \-\-token\-stdin
+Signed in to mise\-wings as user_123 (acme).
+Set `wings.enabled = true` (or `MISE_WINGS_ENABLED=1`) to start routing tool installs through the cache.
+```
+.PP
+\fBUsage:\fR mise wings login [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-token\fR \fI<TOKEN>\fR
+Clerk frontend session JWT, pasted from the dashboard's "CLI sign\-in" page. Use `\-\-token\-stdin` to read from stdin instead of the command line — important so a secret token doesn't land in shell history
+.TP
+\fB\-\-token\-stdin\fR
+Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `\-\-token` because the secret won't show up in shell history
+.SH "MISE WINGS LOGOUT"
+Sign out of mise\-wings.
+
+Deletes the local credentials file. With `\-\-token\-stdin`
+or `\-\-token`, also POSTs to `/auth/dev/revoke` to invalidate
+every wings session belonging to the calling user
+(including ones on other machines).
+
+Examples:
+
+```sh
+$ mise wings logout \-\-local\-only
+Local mise\-wings credentials cleared.
+```
+
+Revoke all server\-side sessions for the current user:
+
+```sh
+$ pbpaste | mise wings logout \-\-token\-stdin
+Revoked every active mise\-wings session for your user.
+```
+
+Without a token, logout still clears local credentials:
+
+```sh
+$ mise wings logout
+Local mise\-wings credentials cleared. Server\-side revoke skipped (no Clerk session token).
+To revoke every session for your user (including other machines), run:
+
+mise wings logout \-\-token\-stdin
+```
+.PP
+\fBUsage:\fR mise wings logout [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-local\-only\fR
+Skip the server\-side revoke; only delete the local credentials file. Use this when you don't have a fresh Clerk session JWT handy and just want this machine signed out — the wings session JWT remains valid on the server until its `exp` (24 h default)
+.TP
+\fB\-\-token\fR \fI<TOKEN>\fR
+Clerk session JWT for the server\-side revoke. Same shape as `mise wings login \-\-token`
+.TP
+\fB\-\-token\-stdin\fR
+Read the Clerk session JWT from stdin (avoids shell history). Same shape as `mise wings login \-\-token\-stdin`

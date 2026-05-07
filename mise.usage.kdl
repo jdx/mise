@@ -1604,6 +1604,54 @@ cmd which help="Shows the path that a tool's bin points to." {
     flag --version help="Show the version instead of the path"
     arg "[BIN_NAME]" help="The bin to look up" required=#false
 }
+cmd wings help="Manage `mise wings` authentication" {
+    long_help "Manage `mise wings` authentication\n\n`mise-wings` is a paid asset cache for tool installs. Run\n`mise wings login` once to authenticate; subsequent installs\nresolve through the mise-wings catalog and OCI registry when\n`wings.enabled` is set. Set `wings = false` on a specific\n`[tools]` entry to keep that tool on its normal backend path.\n\n`mise wings inspect` provides read-only OCI debugging commands\nfor artifact manifests, referrers, and evidence blobs such as\nSBOMs.\n\nBare `mise wings` with no subcommand prints the same status\nsummary as `mise wings status`."
+    cmd inspect subcommand_required=#true help="Inspect Wings OCI artifacts and attached evidence." {
+        long_help "Inspect Wings OCI artifacts and attached evidence.\n\nExamples:\n\n```sh\n$ mise wings inspect manifest registry.mise-wings.en.dev/acme/node:20\n{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"layers\":[{\"mediaType\":\"application/vnd.mise-wings.artifact.v1\",\"digest\":\"sha256:...\"}]}\n```"
+        cmd manifest help="Print the OCI image manifest for a Wings artifact." {
+            long_help "Print the OCI image manifest for a Wings artifact.\n\nExamples:\n\n```sh\n$ mise wings inspect manifest registry.mise-wings.en.dev/acme/node:20\n{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"layers\":[{\"mediaType\":\"application/vnd.mise-wings.artifact.v1\",\"digest\":\"sha256:...\"}]}\n```\n\nFetch and verify a specific manifest digest:\n\n```sh\n$ mise wings inspect manifest registry.mise-wings.en.dev/acme/node --digest sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\"}\n```"
+            flag --digest help="Manifest digest to fetch when the reference does not include one" {
+                arg <DIGEST>
+            }
+            arg <REFERENCE> help="Wings OCI reference, optionally including @sha256:<digest>"
+        }
+        cmd referrers help="Print the OCI referrers index for a Wings artifact." {
+            long_help "Print the OCI referrers index for a Wings artifact.\n\nExamples:\n\n```sh\n$ mise wings inspect referrers registry.mise-wings.en.dev/acme/node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.index.v1+json\",\"manifests\":[{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"artifactType\":\"application/spdx+json\",\"digest\":\"sha256:...\"}]}\n```"
+            flag --digest help="Subject manifest digest when the reference does not include one" {
+                arg <DIGEST>
+            }
+            arg <REFERENCE> help="Wings OCI reference, including @sha256:<digest> or paired with --digest"
+        }
+        cmd sbom help="Print the first SPDX or CycloneDX SBOM attached to a Wings artifact." {
+            long_help "Print the first SPDX or CycloneDX SBOM attached to a Wings artifact.\n\nExamples:\n\n```sh\n$ mise wings inspect sbom registry.mise-wings.en.dev/acme/node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n{\"spdxVersion\":\"SPDX-2.3\",\"name\":\"node-20.11.1-linux-x64\",\"packages\":[]}\n```\n\nIf no SBOM is attached:\n\n```sh\n$ mise wings inspect sbom registry.mise-wings.en.dev/acme/node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nno SBOM referrer found for sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; Wings may not have published SBOM referrers for this artifact yet\n```"
+            flag --digest help="Subject manifest digest when the reference does not include one" {
+                arg <DIGEST>
+            }
+            arg <REFERENCE> help="Wings OCI reference, including @sha256:<digest> or paired with --digest"
+        }
+    }
+    cmd login help="Authenticate with mise-wings" {
+        long_help "Authenticate with mise-wings\n\nBy default, starts device-code auth and stores a device-bound\ncredential. `--token` remains as a legacy/manual fallback for\ninternal debugging.\n\nExamples:\n\n```sh\n$ mise wings login\nTo sign in to mise-wings, open:\n\nhttps://app.mise-wings.en.dev/cli-device?code=AB12CD34\n\nEnter code: AB12-CD34\nWaiting for browser approval...\nSigned in to mise-wings as user_123 (acme).\n```\n\nPreferred token flow:\n\n```sh\n$ pbpaste | mise wings login --token-stdin\nSigned in to mise-wings as user_123 (acme).\nSet `wings.enabled = true` (or `MISE_WINGS_ENABLED=1`) to start routing tool installs through the cache.\n```"
+        flag --token help="Clerk frontend session JWT, pasted from the dashboard's \"CLI sign-in\" page. Use `--token-stdin` to read from stdin instead of the command line — important so a secret token doesn't land in shell history" {
+            arg <TOKEN>
+        }
+        flag --token-stdin help="Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history"
+    }
+    cmd logout help="Sign out of mise-wings." {
+        long_help "Sign out of mise-wings.\n\nDeletes the local credentials file. With `--token-stdin`\nor `--token`, also POSTs to `/auth/dev/revoke` to invalidate\nevery wings session belonging to the calling user\n(including ones on other machines).\n\nExamples:\n\n```sh\n$ mise wings logout --local-only\nLocal mise-wings credentials cleared.\n```\n\nRevoke all server-side sessions for the current user:\n\n```sh\n$ pbpaste | mise wings logout --token-stdin\nRevoked every active mise-wings session for your user.\n```\n\nWithout a token, logout still clears local credentials:\n\n```sh\n$ mise wings logout\nLocal mise-wings credentials cleared. Server-side revoke skipped (no Clerk session token).\nTo revoke every session for your user (including other machines), run:\n\nmise wings logout --token-stdin\n```"
+        flag --local-only help="Skip the server-side revoke; only delete the local credentials file. Use this when you don't have a fresh Clerk session JWT handy and just want this machine signed out — the wings session JWT remains valid on the server until its `exp` (24 h default)"
+        flag --token help="Clerk session JWT for the server-side revoke. Same shape as `mise wings login --token`" {
+            arg <TOKEN>
+        }
+        flag --token-stdin help="Read the Clerk session JWT from stdin (avoids shell history). Same shape as `mise wings login --token-stdin`"
+    }
+    cmd status help="Show the current mise-wings configuration + auth state." {
+        long_help "Show the current mise-wings configuration + auth state.\n\nExamples:\n\n```sh\n$ mise wings status\nwings.enabled: yes\nhost:          mise-wings.en.dev\ncredentials:   user=user_123 org=acme (dev login)\nconnectivity:  OK (200 OK)\n```\n\nWhen Wings is not enabled:\n\n```sh\n$ mise wings status\nwings.enabled: no\nhost:          mise-wings.en.dev\ncredentials:   none\n\nRun `mise wings login` to sign in for local dev.\n```"
+    }
+    cmd whoami help="Print the active mise-wings identity." {
+        long_help "Print the active mise-wings identity.\n\nExamples:\n\n```sh\n$ mise wings whoami\nSigned in to mise-wings\n\nuser:    user_123\norg:     acme\nhost:    mise-wings.en.dev\n\naccess:  expires in 23h\nrefresh: expires in 29d\n```\n\nWhen no local credentials are present:\n\n```sh\n$ mise wings whoami\nNot signed in to mise-wings. Run `mise wings login` to sign in.\n```"
+    }
+}
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
 {%- if cmd.subcommands | length > 0 -%}

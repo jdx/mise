@@ -180,12 +180,14 @@ See [Tools](/dev-tools/). In addition to specifying versions, each tool entry ca
 - `depends`: Install order relative to other tools in this config only; vfox plugin hook dependencies belong in plugin `metadata.lua` (see [Tool Dependencies](/dev-tools/#tool-dependencies))
 - `install_env`: Environment vars used during install
 - `postinstall`: Command to run after installation completes for that specific tool
+- `wings`: Set to `false` to skip mise-wings for that tool when `wings.enabled` is active
 
 Examples:
 
 ```toml
 [tools]
 node = { version = "22", postinstall = "corepack enable" }
+python = { version = "3.12", wings = false }
 ```
 
 ### `[env]` - Arbitrary Environment Variables

@@ -428,13 +428,17 @@ impl Client {
         use_netrc: bool,
     ) -> Result<Response> {
         apply_url_replacements(&mut url);
+        let request_url = url.clone();
+
+        let netrc = if use_netrc {
+            netrc_headers(&url)
+        } else {
+            HeaderMap::new()
+        };
         debug!("{} {}", verb_label, &url);
 
-        // Apply netrc credentials after URL replacement
         let mut final_headers = headers.clone();
-        if use_netrc {
-            final_headers.extend(netrc_headers(&url));
-        }
+        final_headers.extend(netrc);
 
         let mut req = self.reqwest.request(method.clone(), url.clone());
         req = req.headers(final_headers.clone());
@@ -477,7 +481,7 @@ impl Client {
         }
         debug!("{} {url} {}", verb_label, resp.status());
         display_github_rate_limit(&resp);
-        if is_authenticated_github_forbidden(&url, &final_headers, &resp) {
+        if is_authenticated_github_forbidden(&request_url, &final_headers, &resp) {
             let status = resp.status();
             let status_error = resp
                 .error_for_status_ref()
@@ -493,10 +497,16 @@ impl Client {
                 headers.remove(AUTHORIZATION);
                 debug!(
                     "{} {} retrying without GitHub auth after {}",
-                    verb_label, &url, status
+                    verb_label, &request_url, status
                 );
-                return Box::pin(self.send_once_inner(method, url, &headers, verb_label, false))
-                    .await;
+                return Box::pin(self.send_once_inner(
+                    method,
+                    request_url,
+                    &headers,
+                    verb_label,
+                    false,
+                ))
+                .await;
             }
             return Err(status_error.into());
         }
