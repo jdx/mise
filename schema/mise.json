@@ -825,6 +825,31 @@
               "description": "Enable GitHub Artifact Attestations verification for github backend tools.",
               "type": "boolean"
             },
+            "oauth_api_url": {
+              "default": "https://api.github.com",
+              "description": "GitHub API base URL for native OAuth token validation.",
+              "type": "string"
+            },
+            "oauth_auth_url": {
+              "default": "https://github.com/login/oauth",
+              "description": "GitHub OAuth endpoint base URL for native device-flow tokens.",
+              "type": "string"
+            },
+            "oauth_client_id": {
+              "default": "",
+              "description": "GitHub App client ID for native OAuth device-flow tokens.",
+              "type": "string"
+            },
+            "oauth_open_browser": {
+              "default": true,
+              "description": "Open the browser during native GitHub OAuth device flow.",
+              "type": "boolean"
+            },
+            "oauth_scopes": {
+              "default": "",
+              "description": "OAuth scopes requested for native GitHub device-flow tokens.",
+              "type": "string"
+            },
             "slsa": {
               "default": true,
               "description": "Enable SLSA provenance verification for github backend tools.",

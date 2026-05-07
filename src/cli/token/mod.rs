@@ -1,5 +1,5 @@
 mod forgejo;
-mod github;
+pub(crate) mod github;
 mod gitlab;
 
 /// Display git provider tokens mise will use

@@ -15,6 +15,7 @@ use tokio::sync::RwLock;
 use tokio::sync::RwLockReadGuard;
 use xx::regex;
 
+pub(crate) mod oauth;
 pub(crate) mod sigstore;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -378,6 +379,7 @@ pub enum TokenSource {
     TokensFile,
     GhCli,
     CredentialCommand,
+    GithubOauth,
     GitCredential,
 }
 
@@ -388,6 +390,7 @@ impl fmt::Display for TokenSource {
             TokenSource::TokensFile => write!(f, "github_tokens.toml"),
             TokenSource::GhCli => write!(f, "gh CLI (hosts.yml)"),
             TokenSource::CredentialCommand => write!(f, "credential_command"),
+            TokenSource::GithubOauth => write!(f, "GitHub OAuth"),
             TokenSource::GitCredential => write!(f, "git credential fill"),
         }
     }
@@ -456,9 +459,10 @@ pub fn is_github_api_url(url: &url::Url) -> bool {
 /// 1. `MISE_GITHUB_ENTERPRISE_TOKEN` env var (non-github.com only)
 /// 2. `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars
 /// 3. `credential_command` (if set)
-/// 4. `github_tokens.toml` (per-host)
-/// 5. gh CLI token (from `hosts.yml`)
-/// 6. `git credential fill` (if enabled)
+/// 4. native GitHub OAuth device-flow token (if configured)
+/// 5. `github_tokens.toml` (per-host)
+/// 6. gh CLI token (from `hosts.yml`)
+/// 7. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
 
@@ -500,7 +504,12 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         }
     }
 
-    // 4. github_tokens.toml
+    // 4. native GitHub OAuth device-flow token
+    if let Some(token) = oauth::resolve_token(host) {
+        return Some((token, TokenSource::GithubOauth));
+    }
+
+    // 5. github_tokens.toml
     #[cfg(test)]
     if let Some((token, source)) = test_support::lookup_tokens_file_override(&lookup_hosts)
         .map(|t| (t, TokenSource::TokensFile))
@@ -513,7 +522,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         }
     }
 
-    // 5. gh CLI hosts.yml
+    // 6. gh CLI hosts.yml
     if settings.github.gh_cli_tokens {
         for lookup_host in &lookup_hosts {
             if let Some(token) = GH_HOSTS.get(*lookup_host) {
@@ -522,7 +531,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         }
     }
 
-    // 6. git credential fill
+    // 7. git credential fill
     if settings.github.use_git_credentials {
         for lookup_host in &lookup_hosts {
             if let Some(token) = tokens::get_git_credential_token("github", lookup_host) {

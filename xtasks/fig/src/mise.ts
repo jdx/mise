@@ -3733,6 +3733,17 @@ const completionSpec: Fig.Spec = {
           description: "GitHub token",
           options: [
             {
+              name: "--oauth",
+              description:
+                "Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources",
+              isRepeatable: false,
+            },
+            {
+              name: "--raw",
+              description: "Print only the token value",
+              isRepeatable: false,
+            },
+            {
               name: "--unmask",
               description: "Show the full unmasked token",
               isRepeatable: false,

@@ -1,5 +1,4 @@
-use crate::github;
-use crate::tokens;
+use crate::cli::token::github::Github;
 
 /// Display the GitHub token mise will use for a given host
 ///
@@ -12,6 +11,14 @@ pub struct Token {
     #[clap(default_value = "github.com")]
     host: String,
 
+    /// Force native GitHub OAuth device flow instead of normal token resolution
+    #[clap(long)]
+    oauth: bool,
+
+    /// Print only the token value
+    #[clap(long)]
+    raw: bool,
+
     /// Show the full unmasked token
     #[clap(long)]
     unmask: bool,
@@ -19,20 +26,18 @@ pub struct Token {
 
 impl Token {
     pub fn run(self) -> eyre::Result<()> {
-        match github::resolve_token(&self.host) {
-            Some((token, source)) => {
-                let display_token = if self.unmask {
-                    token
-                } else {
-                    tokens::mask_token(&token)
-                };
-                miseprintln!("{}: {} (source: {})", self.host, display_token, source);
-            }
-            None => {
-                miseprintln!("{}: (none)", self.host);
-            }
+        Github::from(self).run()
+    }
+}
+
+impl From<Token> for Github {
+    fn from(t: Token) -> Self {
+        Github {
+            host: t.host,
+            oauth: t.oauth,
+            raw: t.raw,
+            unmask: t.unmask,
         }
-        Ok(())
     }
 }
 
