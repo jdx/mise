@@ -85,6 +85,10 @@ pub struct Upgrade {
     #[clap(long, verbatim_doc_comment)]
     local: bool,
 
+    /// Upgrade all tools, even those that don't match the current config
+    #[clap(long, verbatim_doc_comment)]
+    no_source: bool,
+
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
@@ -119,6 +123,7 @@ impl Upgrade {
             before_date,
             offline: false,
             refresh_remote_versions: false,
+            no_source: self.no_source,
         };
         // Filter tools to check before doing expensive version lookups
         let filter_tools = if !self.interactive && !self.tool.is_empty() {
@@ -264,6 +269,7 @@ impl Upgrade {
                 before_date,
                 offline: false,
                 refresh_remote_versions: false,
+                no_source: self.no_source,
             },
             ..Default::default()
         };

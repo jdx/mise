@@ -1706,6 +1706,11 @@ will skip tools defined in the global config (~/.config/mise/config.toml).
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
+.TP
+\fB\-\-no\-source\fR
+Show all outdated tools, even those that don't match the current config
+
+By default, `mise outdated` only shows versions that match your config.
 \fBArguments:\fR
 .PP
 .TP
@@ -3354,6 +3359,9 @@ Only upgrade tools defined in local config files
 
 This will only upgrade tools that are defined in project\-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
+.TP
+\fB\-\-no\-source\fR
+Upgrade all tools, even those that don't match the current config
 .TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1

@@ -74,6 +74,10 @@ Only upgrade tools defined in local config files
 This will only upgrade tools that are defined in project-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 
+### `--no-source`
+
+Upgrade all tools, even those that don't match the current config
+
 ### `--raw`
 
 Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1

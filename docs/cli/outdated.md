@@ -42,6 +42,12 @@ will skip tools defined in the global config (~/.config/mise/config.toml).
 
 Don't show table header
 
+### `--no-source`
+
+Show all outdated tools, even those that don't match the current config
+
+By default, `mise outdated` only shows versions that match your config.
+
 Examples:
 
 ```

@@ -45,6 +45,12 @@ pub struct Outdated {
     /// Don't show table header
     #[clap(long)]
     pub no_header: bool,
+
+    /// Show all outdated tools, even those that don't match the current config
+    ///
+    /// By default, `mise outdated` only shows versions that match your config.
+    #[clap(long, verbatim_doc_comment)]
+    pub no_source: bool,
 }
 
 impl Outdated {
@@ -68,7 +74,14 @@ impl Outdated {
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
         let outdated = ts
-            .list_outdated_versions(&config, self.bump, &ResolveOptions::default())
+            .list_outdated_versions(
+                &config,
+                self.bump,
+                &ResolveOptions {
+                    no_source: self.no_source,
+                    ..Default::default()
+                },
+            )
             .await;
         self.display(outdated).await?;
         Ok(())
