@@ -58,10 +58,17 @@ pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, S
 /// Get a token by running a provider-specific `credential_command`.
 ///
 /// The host and provider are passed through `MISE_CREDENTIAL_HOST` and
-/// `MISE_CREDENTIAL_PROVIDER`. For backward compatibility, POSIX `-c` shells
-/// also receive the host as `$1`, but new commands should use the environment
-/// variables. Results are cached per provider+host.
+/// `MISE_CREDENTIAL_PROVIDER`. Results are cached per provider+host.
 pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Option<String> {
+    if cmd.contains("$1") {
+        deprecated_at!(
+            "2026.5.0",
+            "2027.5.0",
+            "credential-command-shell-arg",
+            "Use MISE_CREDENTIAL_HOST instead of $1 in {provider} credential_command"
+        );
+    }
+
     let cache_key = format!("{provider}:{host}");
     let mut cache = CREDENTIAL_COMMAND_CACHE
         .lock()
