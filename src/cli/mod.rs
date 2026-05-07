@@ -80,6 +80,7 @@ pub mod version;
 mod watch;
 mod r#where;
 mod r#which;
+mod wings;
 
 #[derive(clap::ValueEnum, Debug, Clone, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
@@ -267,6 +268,7 @@ pub enum Commands {
     Watch(Box<watch::Watch>),
     Where(r#where::Where),
     Which(which::Which),
+    Wings(wings::Wings),
 }
 
 impl Commands {
@@ -338,6 +340,7 @@ impl Commands {
             Self::Watch(cmd) => cmd.run().await,
             Self::Where(cmd) => cmd.run().await,
             Self::Which(cmd) => cmd.run().await,
+            Self::Wings(cmd) => cmd.run().await,
         }
     }
 }
