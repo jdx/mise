@@ -35,3 +35,15 @@ RTX_FAILURE=1 MISE_PREFER_OFFLINE=1 mise install
 
 # 4. Confirm the prefix resolved from cache to 1.0.0 and was installed.
 assert_contains "mise ls dummy" "1.0.0"
+
+# 5. Date cutoffs should not disable installed-version fallbacks in
+#    prefer-offline/offline mode. A configured cutoff normally forces remote
+#    date-aware resolution, but prefer-offline/offline paths need to keep using
+#    installed versions rather than resolving the literal fuzzy request.
+cat >mise.toml <<EOF
+[tools]
+dummy = { version = "1", minimum_release_age = "2000-01-01" }
+EOF
+
+assert "MISE_PREFER_OFFLINE=1 mise current dummy" "1.0.0"
+assert "MISE_OFFLINE=1 mise current dummy" "1.0.0"
