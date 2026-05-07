@@ -3,7 +3,7 @@ use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::PluginType;
-use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
+use crate::toolset::{parse_tool_options, should_persist_install_manifest_opt};
 use crate::{dirs, env, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
@@ -65,6 +65,13 @@ static MANIFEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn manifest_path() -> PathBuf {
     dirs::INSTALLS.join(".mise-installs.toml")
+}
+
+fn persisted_manifest_opts(opts: &BTreeMap<String, toml::Value>) -> BTreeMap<String, toml::Value> {
+    opts.iter()
+        .filter(|(k, _)| should_persist_install_manifest_opt(k))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
 }
 
 /// Read the consolidated manifest file. Returns empty map if it doesn't exist.
@@ -232,7 +239,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         // Get metadata: prefer manifest, fall back to legacy .mise.backend
         let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
             let mut full = mt.full.clone();
-            let mut opts = mt.opts.clone();
+            let mut opts = persisted_manifest_opts(&mt.opts);
             // Backward compat: if opts is empty but full contains [...], extract opts
             if opts.is_empty()
                 && let Some(ref f) = full
@@ -241,7 +248,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 let stripped = stripped_str.to_string();
                 let parsed = parse_tool_options(opts_str);
                 for (k, v) in &parsed.opts {
-                    if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
+                    if !should_persist_install_manifest_opt(k) {
                         continue;
                     }
                     opts.insert(k.clone(), v.clone());
@@ -341,7 +348,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                     mt.short.clone(),
                     mt.full.clone(),
                     mt.explicit_backend,
-                    mt.opts.clone(),
+                    persisted_manifest_opts(&mt.opts),
                 )
             } else {
                 (dir_name.clone(), None, true, BTreeMap::new())
@@ -481,11 +488,12 @@ pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
     let full = ba.full_without_opts();
     let explicit = ba.has_explicit_backend();
 
-    // Store opts as native TOML values, filtering out ephemeral keys.
+    // Store opts as native TOML values, filtering out ephemeral and
+    // resolution-only keys.
     let mut opts_map: BTreeMap<String, toml::Value> = BTreeMap::new();
     if let Some(o) = ba.opts.as_ref() {
         for (k, v) in &o.opts {
-            if !EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
+            if should_persist_install_manifest_opt(k) {
                 opts_map.insert(k.clone(), v.clone());
             }
         }
@@ -702,6 +710,49 @@ mod tests {
             linux.get("url").unwrap().as_str(),
             Some("https://example.com/linux.tar.gz")
         );
+    }
+
+    #[test]
+    fn test_persisted_manifest_opts_filters_resolution_only_keys() {
+        use super::persisted_manifest_opts;
+
+        let mut opts = BTreeMap::new();
+        opts.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/tool.tar.gz".to_string()),
+        );
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin/tool".to_string()),
+        );
+        opts.insert(
+            "version_list_url".to_string(),
+            toml::Value::String("https://example.com/versions.json".to_string()),
+        );
+        opts.insert(
+            "version_json_path".to_string(),
+            toml::Value::String(".versions[]".to_string()),
+        );
+        opts.insert(
+            "postinstall".to_string(),
+            toml::Value::String("echo".to_string()),
+        );
+
+        let persisted = persisted_manifest_opts(&opts);
+
+        assert_eq!(
+            persisted.get("url"),
+            Some(&toml::Value::String(
+                "https://example.com/tool.tar.gz".to_string()
+            ))
+        );
+        assert_eq!(
+            persisted.get("bin_path"),
+            Some(&toml::Value::String("bin/tool".to_string()))
+        );
+        assert!(!persisted.contains_key("version_list_url"));
+        assert!(!persisted.contains_key("version_json_path"));
+        assert!(!persisted.contains_key("postinstall"));
     }
 
     #[test]

@@ -12,6 +12,18 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "minimum_release_age",
 ];
 
+/// Option keys that affect version-list parsing, not the installed tool.
+pub const VERSION_LISTING_OPT_KEYS: &[&str] = &[
+    "version_list_url",
+    "version_regex",
+    "version_json_path",
+    "version_expr",
+];
+
+pub fn should_persist_install_manifest_opt(key: &str) -> bool {
+    !EPHEMERAL_OPT_KEYS.contains(&key) && !VERSION_LISTING_OPT_KEYS.contains(&key)
+}
+
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
     pub os: Option<Vec<String>>,
