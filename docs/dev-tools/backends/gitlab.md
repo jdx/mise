@@ -70,7 +70,7 @@ You can provide a shell command that prints a token to stdout:
 credential_command = "op read 'op://Private/GitLab Token/credential'"
 ```
 
-The target hostname is available as `MISE_CREDENTIAL_HOST`, and the provider name (`gitlab`) is available as `MISE_CREDENTIAL_PROVIDER`. For sh-compatible shells (`ash`, `bash`, `dash`, `ksh`, `sh`, and `zsh`), the hostname is also passed as `$1`; other shells should use `MISE_CREDENTIAL_HOST` instead.
+The target hostname is available as `MISE_CREDENTIAL_HOST`, and the provider name (`gitlab`) is available as `MISE_CREDENTIAL_PROVIDER`. New commands should use `MISE_CREDENTIAL_HOST` instead of shell arguments. For backward compatibility, POSIX `-c` shells (`ash`, `bash`, `dash`, `ksh`, `sh`, and `zsh`) also receive the hostname as `$1`, but `$1` host passing is deprecated and may be removed in a future release.
 
 ### glab CLI integration
 

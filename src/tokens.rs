@@ -57,8 +57,10 @@ pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, S
 
 /// Get a token by running a provider-specific `credential_command`.
 ///
-/// For sh-compatible shells, the host is passed as `$1` to the command. Results
-/// are cached per provider+host.
+/// The host and provider are passed through `MISE_CREDENTIAL_HOST` and
+/// `MISE_CREDENTIAL_PROVIDER`. For backward compatibility, POSIX `-c` shells
+/// also receive the host as `$1`, but new commands should use the environment
+/// variables. Results are cached per provider+host.
 pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Option<String> {
     let cache_key = format!("{provider}:{host}");
     let mut cache = CREDENTIAL_COMMAND_CACHE
@@ -134,14 +136,14 @@ fn credential_command_shell_from(
     let (program, shell_args) = shell.split_first()?;
     let mut args = shell_args.to_vec();
     args.push(cmd.to_string());
-    if shell_supports_sh_c_args(program) {
+    if shell_supports_posix_c_arg_passing(program) {
         args.push("mise-credential-helper".to_string()); // $0
-        args.push(host.to_string()); // $1
+        args.push(host.to_string()); // deprecated $1 compatibility
     }
     Some((program.to_string(), args))
 }
 
-fn shell_supports_sh_c_args(program: &str) -> bool {
+fn shell_supports_posix_c_arg_passing(program: &str) -> bool {
     const SHELLS: &[&str] = &["ash", "bash", "dash", "ksh", "sh", "zsh"];
     let basename = program.rsplit(['/', '\\']).next().unwrap_or(program);
     let stem = match basename.rsplit_once('.') {
@@ -361,11 +363,11 @@ logins:
     }
 
     #[test]
-    fn test_shell_supports_sh_c_args_matches_windows_bash_path() {
-        assert!(shell_supports_sh_c_args("ash"));
-        assert!(shell_supports_sh_c_args(
+    fn test_shell_supports_posix_c_arg_passing_matches_windows_bash_path() {
+        assert!(shell_supports_posix_c_arg_passing("ash"));
+        assert!(shell_supports_posix_c_arg_passing(
             r"C:\Program Files\Git\bin\BASH.EXE"
         ));
-        assert!(!shell_supports_sh_c_args("cmd.exe"));
+        assert!(!shell_supports_posix_c_arg_passing("cmd.exe"));
     }
 }
