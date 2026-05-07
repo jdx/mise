@@ -230,13 +230,9 @@ impl Backend for UbiBackend {
 
         // Use lockfile URL if available, otherwise fall back to standard resolution
         if let Some(url) = &lockfile_url {
-            install(url, &v, &bin_dir, extract_all, &opts)
-                .await
-                .map_err(|e| eyre::eyre!(e))?;
+            install(url, &v, &bin_dir, extract_all, &opts).await?;
         } else if name_is_url(&self.tool_name()) {
-            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts)
-                .await
-                .map_err(|e| eyre::eyre!(e))?;
+            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
         } else {
             try_with_v_prefix(&v, None, |candidate| {
                 let opts = opts.clone();
