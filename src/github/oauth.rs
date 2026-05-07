@@ -145,9 +145,11 @@ async fn create_device_code() -> Result<DeviceCodeResponse> {
         "{}/device/code",
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
-    let mut form = vec![("client_id", settings.github.oauth_client_id.as_str())];
-    if !settings.github.oauth_scopes.trim().is_empty() {
-        form.push(("scope", settings.github.oauth_scopes.as_str()));
+    let client_id = settings.github.oauth_client_id.trim();
+    let scopes = settings.github.oauth_scopes.trim();
+    let mut form = vec![("client_id", client_id)];
+    if !scopes.is_empty() {
+        form.push(("scope", scopes));
     }
     Ok(reqwest::Client::new()
         .post(url)
@@ -168,6 +170,7 @@ async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse>
         "{}/access_token",
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
+    let client_id = settings.github.oauth_client_id.trim();
     let client = reqwest::Client::new();
 
     loop {
@@ -180,7 +183,7 @@ async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse>
             .post(&url)
             .header("Accept", "application/json")
             .form(&[
-                ("client_id", settings.github.oauth_client_id.as_str()),
+                ("client_id", client_id),
                 ("device_code", device.device_code.as_str()),
                 ("grant_type", GRANT_DEVICE_CODE),
             ])
@@ -240,7 +243,7 @@ async fn refresh_token(cached: &CachedToken) -> Result<Option<CachedToken>> {
         .post(url)
         .header("Accept", "application/json")
         .form(&[
-            ("client_id", settings.github.oauth_client_id.as_str()),
+            ("client_id", settings.github.oauth_client_id.trim()),
             ("grant_type", "refresh_token"),
             ("refresh_token", refresh_token),
         ])
