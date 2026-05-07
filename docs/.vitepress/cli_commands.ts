@@ -145,9 +145,6 @@ export const commands: { [key: string]: Command } = {
   github: {
     hide: true,
     subcommands: {
-      login: {
-        hide: true,
-      },
       token: {
         hide: true,
       },
