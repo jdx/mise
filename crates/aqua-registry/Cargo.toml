@@ -29,7 +29,6 @@ default = []
 [dependencies]
 # Core dependencies
 serde = { version = "1", features = ["derive"] }
-serde_derive = "1"
 serde_yaml = "0.9"
 thiserror = "2"
 eyre = "0.6"

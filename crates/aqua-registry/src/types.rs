@@ -2,7 +2,7 @@ use expr::{Context, Environment, Program, Value};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use versions::Versioning;
