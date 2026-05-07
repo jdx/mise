@@ -19,6 +19,7 @@ use crate::hooks::mise_path::MisePathContext;
 use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
 use crate::hooks::pre_install::{PreInstall, PreInstallAttestation, VerifiedAttestation};
+use crate::hooks::pre_uninstall::PreUninstallContext;
 use crate::http::{CLIENT, retry_async};
 use crate::metadata::Metadata;
 use crate::plugin::Plugin;
@@ -234,8 +235,31 @@ impl Vfox {
         })
     }
 
-    pub fn uninstall(&self, sdk: &str, version: &str) -> Result<()> {
+    pub async fn pre_uninstall<ID: AsRef<Path>>(
+        &self,
+        sdk: &str,
+        version: &str,
+        install_dir: ID,
+    ) -> Result<()> {
+        let sdk = self.get_sdk_with_env(sdk)?;
+        if sdk.get_metadata()?.hooks.contains("pre_uninstall") {
+            let sdk_info = sdk.sdk_info(version.to_string(), install_dir.as_ref().to_path_buf())?;
+            sdk.pre_uninstall(PreUninstallContext {
+                main: sdk_info.clone(),
+                sdk_info: BTreeMap::from([(sdk_info.name.clone(), sdk_info)]),
+            })
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn uninstall(&self, sdk: &str, version: &str) -> Result<()> {
         let path = self.install_dir.join(sdk).join(version);
+        if self.plugin_dir.join(sdk).exists()
+            || crate::embedded_plugins::get_embedded_plugin(sdk).is_some()
+        {
+            self.pre_uninstall(sdk, version, &path).await?;
+        }
         file::remove_dir_all(&path)?;
         Ok(())
     }
@@ -676,10 +700,32 @@ mod tests {
         vfox.install("dummy", "1.0.0", &install_dir).await.unwrap();
         // dummy plugin doesn't actually install binaries, so we just check the directory
         assert!(vfox.install_dir.join("dummy").join("1.0.0").exists());
-        vfox.uninstall("dummy", "1.0.0").unwrap();
+        vfox.uninstall("dummy", "1.0.0").await.unwrap();
         assert!(!vfox.install_dir.join("dummy").join("1.0.0").exists());
         file::remove_dir_all(vfox.install_dir).unwrap();
         file::remove_dir_all(vfox.download_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_pre_uninstall() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut vfox = Vfox::test();
+        vfox.install_dir = temp_dir.path().join("installs");
+        let install_dir = vfox.install_dir.join("dummy").join("1.0.0");
+        std::fs::create_dir_all(&install_dir).unwrap();
+
+        vfox.pre_uninstall("dummy", "1.0.0", &install_dir)
+            .await
+            .unwrap();
+
+        let marker = std::fs::read_to_string(install_dir.join("pre_uninstall_marker")).unwrap();
+        assert_eq!(
+            marker,
+            format!(
+                "dummy:1.0.0:{}",
+                install_dir.to_string_lossy().replace('\\', "/")
+            )
+        );
     }
 
     #[tokio::test]
@@ -721,7 +767,7 @@ mod tests {
         }
         vfox.uninstall_plugin("cmake").unwrap();
         assert!(!vfox.plugin_dir.join("cmake").exists());
-        vfox.uninstall("cmake", "3.21.0").unwrap();
+        vfox.uninstall("cmake", "3.21.0").await.unwrap();
         assert!(!vfox.install_dir.join("cmake").join("3.21.0").exists());
         file::remove_dir_all(vfox.plugin_dir.join("cmake")).unwrap();
         file::remove_dir_all(vfox.install_dir).unwrap();
