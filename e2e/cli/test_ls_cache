@@ -4,6 +4,14 @@ export MISE_USE_VERSIONS_HOST=1
 # verify that cache is reused for `mise ls`
 # see https://github.com/jdx/mise/discussions/6736
 
-assert_contains "mise -v use bat 2>&1" "GET https://mise-versions.jdx.dev/tools/bat.toml 200 OK"
-touch -t 202001010000 "$MISE_CACHE_DIR/bat/"*
-assert_not_contains "mise -v ls bat 2>&1" "GET https://mise-versions.jdx.dev/tools/bat.toml 200 OK"
+assert_contains "mise -v use bat 2>&1" "GET https://api.github.com/repos/sharkdp/bat/releases/latest 200 OK"
+find "$MISE_CACHE_DIR" -type f -exec touch -t 202001010000 {} +
+
+output="$(mise -v ls bat 2>&1)"
+if [[ $output == *"GET https://api.github.com/repos/sharkdp/bat/releases/latest"* ]]; then
+  fail "[mise -v ls bat] unexpectedly fetched the GitHub latest release"
+fi
+if [[ $output == *"GET https://mise-versions.jdx.dev/tools/bat.toml"* ]]; then
+  fail "[mise -v ls bat] unexpectedly fetched the versions host"
+fi
+ok "[mise -v ls bat] reused cached metadata"
