@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1"
+
+[tasks.setup]
+run = 'echo TASK-SETUP FOO=${FOO:-unset} "$@"'
+
+[tasks.alpha]
+run = "echo TASK-GROUP-ALPHA"
+
+[tasks.beta]
+run = "echo TASK-GROUP-BETA"
+
+[hooks]
+preinstall = { shell = "bash", script = "echo LEGACY-PREINSTALL-SHELL" }
+postinstall = [
+  { shell = "bash", script = "echo LEGACY-SCRIPT-SHELL" },
+  { run = 'echo RUN-CUSTOM-${BASH_VERSION:+bash}', shell = "bash -c" },
+  { run = ["export HOOK_X=1", 'echo RUN-ARRAY-${HOOK_X:-unset}'] },
+  { run = [
+    { task = "setup", args = ["one", "two"], env = { FOO = "bar" } },
+    { tasks = ["alpha", "beta"] },
+  ] },
+]
+EOF
+
+# shellcheck disable=SC2016
+preinstall_shell_warning='`shell` is ignored for preinstall hooks that use `script`'
+# shellcheck disable=SC2016
+postinstall_shell_warning='`shell` is ignored for postinstall hooks that use `script`'
+output="$(mise i dummy@1 2>&1)"
+assert_contains "echo '$output'" "LEGACY-PREINSTALL-SHELL"
+assert_contains "echo '$output'" "$preinstall_shell_warning"
+assert_contains "echo '$output'" "LEGACY-SCRIPT-SHELL"
+assert_contains "echo '$output'" "$postinstall_shell_warning"
+assert_contains "echo '$output'" "RUN-CUSTOM-bash"
+assert_contains "echo '$output'" "RUN-ARRAY-unset"
+assert_contains "echo '$output'" "TASK-SETUP FOO=bar one two"
+assert_contains "echo '$output'" "TASK-GROUP-ALPHA"
+assert_contains "echo '$output'" "TASK-GROUP-BETA"
+
+cat <<'EOF' >mise.toml
+[hooks]
+enter = { run_windows = "Write-Output WIN-ONLY" }
+EOF
+
+assert_not_contains "mise hook-env -s bash --force 2>&1" "WIN-ONLY"
+
+cat <<'EOF' >mise.toml
+[hooks]
+[[hooks.enter]]
+shell = "fish"
+script = [
+  "set -gx HOOK_ARRAY_ONE one",
+  "set -gx HOOK_ARRAY_TWO two",
+]
+EOF
+
+eval "$(mise hook-env -s bash --force)"
+cd ~ || exit 1
+eval "$(mise hook-env -s bash)"
+cd ~/workdir || exit 1
+output="$(mise hook-env -s fish 2>&1)"
+assert_contains "echo '$output'" "set -gx HOOK_ARRAY_ONE one"
+assert_contains "echo '$output'" "set -gx HOOK_ARRAY_TWO two"

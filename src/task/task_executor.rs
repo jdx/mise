@@ -60,11 +60,13 @@ pub struct TaskExecutorConfig {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub stdout_to_stderr: bool,
     /// CLI-level sandbox overrides (merged with task-level sandbox config)
     pub sandbox: crate::sandbox::SandboxConfig,
 }
 
 /// Executes tasks with proper context, environment, and output handling
+#[derive(Clone)]
 pub struct TaskExecutor {
     pub context_builder: TaskContextBuilder,
     pub output_handler: OutputHandler,
@@ -79,6 +81,7 @@ pub struct TaskExecutor {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub stdout_to_stderr: bool,
     pub sandbox: crate::sandbox::SandboxConfig,
 }
 
@@ -100,6 +103,7 @@ impl TaskExecutor {
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
+            stdout_to_stderr: config.stdout_to_stderr,
             sandbox: config.sandbox,
         }
     }
@@ -111,6 +115,189 @@ impl TaskExecutor {
     pub fn add_failed_task(&self, task: Task, status: Option<i32>) {
         let mut failed = self.failed_tasks.lock().unwrap();
         failed.push((task, status.or(Some(1))));
+    }
+
+    pub async fn run_task_run_entries(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        env: &BTreeMap<String, String>,
+        task_env: &[(String, String)],
+    ) -> Result<()> {
+        let rendered_run_scripts = task
+            .render_run_scripts_with_args(config, self.cd.clone(), &task.args, env, None)
+            .await?;
+        let prefix = task.estyled_prefix();
+
+        let mut scheduler = crate::task::task_scheduler::Scheduler::new(self.output_handler.jobs());
+        let sched_tx = scheduler.sched_tx.clone();
+        let semaphore = scheduler.semaphore.clone();
+        let main_deps = Arc::new(Mutex::new(Deps::new(config, vec![]).await?));
+        let (main_done_tx, mut main_done_rx) = tokio::sync::watch::channel(false);
+        let spawn_context = scheduler.spawn_context(config.clone());
+        let executor = Arc::new(self.clone());
+        let scheduler_executor = executor.clone();
+        let scheduler_task = tokio::spawn(async move {
+            scheduler
+                .run_loop(
+                    &mut main_done_rx,
+                    main_deps,
+                    || scheduler_executor.is_stopping(),
+                    scheduler_executor.continue_on_error,
+                    |task, deps_for_remove| {
+                        let executor = scheduler_executor.clone();
+                        let spawn_context = spawn_context.clone();
+                        async move {
+                            Self::spawn_sched_job(executor, task, deps_for_remove, spawn_context)
+                                .await
+                        }
+                    },
+                )
+                .await?;
+            scheduler
+                .join_all(scheduler_executor.continue_on_error)
+                .await
+        });
+
+        let mut permit = None;
+        let run_result = executor
+            .exec_task_run_entries(
+                config,
+                task,
+                (env, task_env),
+                &prefix,
+                rendered_run_scripts,
+                sched_tx,
+                None,
+                &HashSet::new(),
+                semaphore,
+                &mut permit,
+            )
+            .await;
+        let _ = main_done_tx.send(true);
+        let scheduler_result = scheduler_task.await.map_err(|e| eyre!(e))?;
+        scheduler_result?;
+        run_result?;
+        if executor.is_stopping() && !executor.continue_on_error {
+            return Err(eyre!("task sequence aborted due to failure"));
+        }
+        Ok(())
+    }
+
+    async fn spawn_sched_job(
+        executor: Arc<Self>,
+        task: Task,
+        deps_for_remove: Arc<Mutex<Deps>>,
+        ctx: crate::task::task_scheduler::SpawnContext,
+    ) -> Result<()> {
+        if executor.is_stopping() && !executor.continue_on_error {
+            let mut deps = deps_for_remove.lock().await;
+            if !deps.is_runnable_post_dep(&task) {
+                trace!(
+                    "aborting spawn before start (not continue-on-error): {} {}",
+                    task.name,
+                    task.args.join(" ")
+                );
+                deps.remove(&task);
+                return Ok(());
+            }
+            drop(deps);
+        }
+
+        let needs_permit = crate::task::task_helpers::task_needs_permit(&task);
+        let permit_opt = if needs_permit {
+            let p = Some(ctx.semaphore.clone().acquire_owned().await?);
+            if executor.is_stopping() && !executor.continue_on_error {
+                let mut deps = deps_for_remove.lock().await;
+                if !deps.is_runnable_post_dep(&task) {
+                    trace!(
+                        "aborting spawn after failure (not continue-on-error): {} {}",
+                        task.name,
+                        task.args.join(" ")
+                    );
+                    deps.remove(&task);
+                    return Ok(());
+                }
+                drop(deps);
+            }
+            p
+        } else {
+            None
+        };
+
+        ctx.in_flight
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let in_flight = ctx.in_flight.clone();
+        deps_for_remove.lock().await.mark_executed(&task);
+        let semaphore = ctx.semaphore.clone();
+        ctx.jset.lock().await.spawn(async move {
+            let mut permit = permit_opt;
+            let (completed, dep_ran) = {
+                let deps = deps_for_remove.lock().await;
+                (deps.handled_task_keys(), deps.any_dep_ran(&task))
+            };
+            let result = executor
+                .run_task_sched(
+                    &task,
+                    &ctx.config,
+                    ctx.sched_tx.clone(),
+                    completed,
+                    dep_ran,
+                    semaphore,
+                    &mut permit,
+                )
+                .await;
+            if let Ok(true) = &result
+                && !task.sources.is_empty()
+            {
+                deps_for_remove.lock().await.mark_ran(&task);
+            }
+            if let Err(err) = &result {
+                let status = crate::errors::Error::get_exit_status(err);
+                if !executor.is_stopping() && status.is_none() {
+                    let prefix = task.estyled_prefix();
+                    if Settings::get().verbose {
+                        executor.eprint(
+                            &task,
+                            &prefix,
+                            &format!("{} {err:?}", style::ered("ERROR")),
+                        );
+                    } else {
+                        executor.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+                        let mut current_err = err.source();
+                        while let Some(e) = current_err {
+                            executor.eprint(
+                                &task,
+                                &prefix,
+                                &format!("{} {e}", style::ered("ERROR")),
+                            );
+                            current_err = e.source();
+                        }
+                    };
+                }
+                executor.add_failed_task(task.clone(), status);
+                if !executor.continue_on_error {
+                    debug!("task {} failed, killing siblings", task.name);
+                    #[cfg(unix)]
+                    crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);
+                    #[cfg(windows)]
+                    crate::cmd::CmdLineRunner::kill_all();
+                }
+            }
+            if executor.output_handler.output(None) == TaskOutput::KeepOrder {
+                executor
+                    .output_handler
+                    .keep_order_state
+                    .lock()
+                    .unwrap()
+                    .on_task_finished(&task);
+            }
+            deps_for_remove.lock().await.remove(&task);
+            in_flight.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            result.map(|_| ())
+        });
+
+        Ok(())
     }
 
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
@@ -1026,7 +1213,18 @@ impl TaskExecutor {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
             TaskOutput::Quiet | TaskOutput::Interleave => {
-                if raw || redactions.is_empty() {
+                if self.stdout_to_stderr {
+                    if !task.silent.suppresses_stdout() {
+                        cmd = cmd.with_on_stdout(|line| {
+                            eprintln!("{line}");
+                        });
+                    } else {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
+                    if task.silent.suppresses_stderr() {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
+                } else if raw || redactions.is_empty() {
                     cmd = cmd.stdin(Stdio::inherit());
                     if !task.silent.suppresses_stdout() {
                         cmd = cmd.stdout(Stdio::inherit());

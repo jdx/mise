@@ -914,13 +914,7 @@ impl ConfigFile for MiseToml {
             .map(|(hook_type, def)| {
                 let mut hooks = def.clone().into_hooks(*hook_type);
                 for hook in hooks.iter_mut() {
-                    hook.script = self.parse_template(&hook.script)?;
-                    if let Some(shell) = &hook.shell {
-                        hook.shell = Some(self.parse_template(shell)?);
-                    }
-                    if let Some(task_name) = &hook.task_name {
-                        hook.task_name = Some(self.parse_template(task_name)?);
-                    }
+                    hook.render_templates(|s| self.parse_template(s))?;
                 }
                 eyre::Ok(hooks)
             })

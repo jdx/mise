@@ -41,6 +41,18 @@ preinstall = "echo 'I am about to install tools'"
 postinstall = "echo 'I just installed tools'"
 ```
 
+String hooks are shorthand for `run` hooks. Use a hook table when you need to select the inline shell or use task-style run entries:
+
+```toml
+[hooks]
+postinstall = { run = "echo 'installed'", shell = "bash -c" }
+preinstall = { run_windows = "Write-Output installing" }
+```
+
+`run_windows` can be provided by itself for a Windows-only hook or alongside `run` as a Windows-specific override.
+
+For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the spawned shell. The `script` alias for spawned hooks is deprecated starting in mise `2026.9.0` and will be removed in `2027.3.0`.
+
 The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed:
 
 ```toml
@@ -69,9 +81,7 @@ Tool-level postinstall scripts receive the following environment variables:
 
 ## Task hooks
 
-Instead of inline scripts, hooks can reference mise tasks. The task is executed as a subprocess
-via `mise run`, so it reuses the full task system including dependencies, environment variables,
-and file-based task definitions.
+Instead of inline scripts, hooks can reference mise tasks. `task = "name"` is shorthand for `run = [{ task = "name" }]`, so it reuses the same task run-entry semantics as `[tasks]`.
 
 ```toml
 [tasks.setup]
@@ -90,6 +100,20 @@ enter = ["echo 'entering project'", { task = "setup" }]
 ```
 
 Task hooks work with all hook types (`enter`, `leave`, `cd`, `preinstall`, `postinstall`).
+
+Hook `run` supports the same entry forms as task `run`: script strings, single task entries with `args`/`env`, and task groups.
+
+```toml
+[hooks]
+postinstall = { run = [
+  "echo first shell",
+  "echo second shell",
+  { task = "setup", args = ["--fast"], env = { CI = "1" } },
+  { tasks = ["lint", "test"] },
+] }
+```
+
+Each script string is executed in its own spawned shell, matching task `run` behavior.
 
 ## Watch files hook
 
@@ -126,12 +150,23 @@ Hooks are executed with the following environment variables set:
 
 ## Shell hooks
 
-Hooks can be executed in the current shell, for example if you'd like to add bash completions when entering a directory:
+`enter`, `leave`, and `cd` hooks can be executed in the current shell, for example if you'd like to add bash completions when entering a directory:
 
 ```toml
 [hooks.enter]
 shell = "bash"
 script = "source completions.sh"
+```
+
+`script` may be a string or an array of current-shell lines:
+
+```toml
+[[hooks.enter]]
+shell = "fish"
+script = [
+  "set -gx PROJECT_MODE dev",
+  "source completions.fish",
+]
 ```
 
 ::: warning
@@ -153,11 +188,12 @@ You can use arrays to define multiple hooks in the same file:
 [hooks]
 enter = [
   "echo 'I entered the project'",
-  "echo 'I am in the project'"
+  { run = "echo 'I am in the project'" },
+  { task = "setup" },
 ]
 
 [[hooks.cd]]
-script = "echo 'I changed directories'"
+run = "echo 'I changed directories'"
 [[hooks.cd]]
-script = "echo 'I also directories'"
+run = "echo 'I also changed directories'"
 ```
