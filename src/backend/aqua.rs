@@ -1358,12 +1358,20 @@ impl AquaBackend {
             }
         };
 
-        match self
-            .installable_version_from_tag(&pkg, &release.tag_name)
-            .await
-        {
-            Ok(Some(version)) => Ok(Some(version)),
-            Ok(None) => Ok(None),
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target);
+        match versioned_package_from_tag(
+            &pkg,
+            &release.tag_name,
+            target_os,
+            target_arch,
+            target_libc.as_deref(),
+        ) {
+            Ok(Some((version, versioned_pkg))) if package_has_asset(&versioned_pkg) => {
+                Ok(Some(version))
+            }
+            Ok(Some(_)) | Ok(None) => Ok(None),
             Err(e) => {
                 debug!(
                     "Failed to resolve latest GitHub release tag for aqua package {}: {e}",
@@ -1414,26 +1422,6 @@ impl AquaBackend {
                 Ok(versions)
             })
             .await
-    }
-
-    async fn installable_version_from_tag(
-        &self,
-        pkg: &AquaPackage,
-        tag: &str,
-    ) -> Result<Option<String>> {
-        let target = PlatformTarget::from_current();
-        let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target);
-        let Some((version, versioned_pkg)) =
-            versioned_package_from_tag(pkg, tag, target_os, target_arch, target_libc.as_deref())?
-        else {
-            return Ok(None);
-        };
-        if package_has_asset(&versioned_pkg) {
-            Ok(Some(version))
-        } else {
-            Ok(None)
-        }
     }
 
     async fn get_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, bool, Option<String>)> {
