@@ -9,7 +9,7 @@
 
 name: mise
 title: mise-en-place
-version: "2026.5.2"
+version: "2026.5.3"
 summary: Dev tools, env vars, and tasks in one CLI
 description: |
   mise-en-place prepares your development environment before each command runs.

@@ -1,5 +1,16 @@
 # Changelog
 
+## [2026.5.3](https://github.com/jdx/mise/compare/v2026.5.2..v2026.5.3) - 2026-05-07
+
+### 🐛 Bug Fixes
+
+- **(aqua)** resolve latest from GitHub releases by @risu729 in [#9277](https://github.com/jdx/mise/pull/9277)
+
+### Chore
+
+- **(ci)** increase lint job timeout for clippy by @risu729 in [#9682](https://github.com/jdx/mise/pull/9682)
+- **(hk)** drop jq from schema lint step by @risu729 in [#9681](https://github.com/jdx/mise/pull/9681)
+
 ## [2026.5.2](https://github.com/jdx/mise/compare/v2026.5.1..v2026.5.2) - 2026-05-07
 
 ### 🚀 Features
