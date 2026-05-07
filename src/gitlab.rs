@@ -4,7 +4,7 @@ use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::collections::HashMap;
 use std::fmt;

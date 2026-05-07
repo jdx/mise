@@ -6,7 +6,7 @@ use crate::registry::{REGISTRY, RegistryTool, tool_enabled};
 use crate::ui::table::MiseTable;
 use eyre::{Result, bail};
 use itertools::Itertools;
-use serde_derive::Serialize;
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::{sync::Semaphore, task::JoinSet};
 

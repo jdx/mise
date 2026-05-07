@@ -6,7 +6,7 @@ use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;

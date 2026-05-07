@@ -2,7 +2,7 @@ use crate::backend::SecurityFeature;
 use crate::ui::style;
 use eyre::Result;
 use itertools::Itertools;
-use serde_derive::Serialize;
+use serde::Serialize;
 
 use crate::cli::args::BackendArg;
 use crate::config::Config;
