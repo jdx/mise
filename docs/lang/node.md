@@ -49,16 +49,16 @@ npm = "11.12.1"
 The pinned npm version takes precedence over the one bundled with Node, so `npm --version` will
 always return the version specified in `mise.toml`.
 
-## `.nvmrc` and `.node-version` support
+## `.nvmrc`, `.node-version` and `package.json` support
 
 By default, mise uses a `mise.toml` file for auto-switching between software versions.
 
-It also supports `.tool-versions`, `.nvmrc` or `.node-version` file to find out what version of Node.js should be used. This will be used if `node` isn't defined in `mise.toml`.
+It also supports `.tool-versions` file to specify versions for ASDF compatibility. Additionally, `.nvmrc`, `.node-version`, and the `engines` field in `package.json` are supported but require explicit enabling (see tip below).
 
 This makes it a drop-in replacement for `nvm`. See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
 
 ::: tip
-`.nvmrc` and `.node-version` are disabled by default and must be explicitly enabled:
+Idiomatic version files (`.nvmrc`, `.node-version`, `engines` field in `package.json`) are disabled by default and must be explicitly enabled:
 
 ```sh
 mise settings add idiomatic_version_file_enable_tools node
