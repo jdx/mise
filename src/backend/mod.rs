@@ -44,8 +44,6 @@ use backend_type::BackendType;
 use eyre::{Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-#[cfg(windows)]
-use path_absolutize::Absolutize;
 use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
@@ -94,56 +92,16 @@ fn has_local_version_listing_option_override(
     resolved_opts
         .has_any_key_from_sources(version_listing_opt_keys, VERSIONS_HOST_LOCAL_OPT_SOURCES)
 }
-
-/// Returns the runtime-label path that `bin-paths` should expose.
-///
-/// This intentionally does not call `ToolVersion::runtime_path()`: when a
-/// lockfile resolves a fuzzy request to a concrete version, `runtime_path()`
-/// returns the concrete install dir, but `bin-paths` should still use the
-/// requested runtime label once that label exists.
-pub(crate) fn runtime_path_for_bin_paths(tv: &ToolVersion) -> PathBuf {
-    let pathname = match &tv.request {
-        ToolRequest::Version { version, .. } if version != &tv.version => version,
-        ToolRequest::Prefix { prefix, .. } => prefix,
-        _ => return tv.runtime_path(),
-    }
-    .replace([':', '/'], "-");
-
-    let path = tv.ba().installs_path.join(&pathname);
-    let path = env::find_in_shared_installs(path, &tv.ba().tool_dir_name(), &pathname);
-
-    #[cfg(windows)]
-    if path.is_file()
-        && is_runtime_symlink(&path)
-        && let Ok(Some(target)) = file::resolve_symlink(&path)
-        && let Some(parent) = path.parent()
-    {
-        let target = parent.join(target);
-        if target.is_dir() {
-            return target
-                .absolutize()
-                .expect("failed to absolutize path")
-                .to_path_buf();
-        }
-    }
-
-    if path.is_dir() && is_runtime_symlink(&path) {
-        path
-    } else {
-        tv.runtime_path()
-    }
-}
-
 /// Remaps a backend-discovered path from the concrete install dir to the
 /// runtime path users put on PATH.
 ///
 /// For fuzzy requests like `latest` or `1.46`, backends may discover bins under
-/// the resolved version dir, but `bin-paths` should expose the stable runtime
-/// symlink. Paths outside the install dir are returned unchanged.
+/// the resolved version dir, but PATH-facing callers should use `runtime_path()`
+/// for the same version. Paths outside the install dir are returned unchanged.
 pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> PathBuf {
     let install_path = tv.install_path();
     if let Ok(relative_path) = path.strip_prefix(&install_path) {
-        let runtime_path = runtime_path_for_bin_paths(tv);
+        let runtime_path = tv.runtime_path();
         if relative_path.as_os_str().is_empty() {
             runtime_path
         } else {
@@ -152,7 +110,6 @@ pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> 
     } else {
         path
     }
->>>>>>> f3aa315a9 (fix(backend): use runtime paths for backend bin dirs)
 }
 
 static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
@@ -1878,7 +1835,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<Vec<PathBuf>> {
         match tv.request {
             ToolRequest::System { .. } => Ok(vec![]),
-            _ => Ok(vec![runtime_path_for_bin_paths(tv).join("bin")]),
+            _ => Ok(vec![tv.runtime_path().join("bin")]),
         }
     }
 
