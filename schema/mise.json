@@ -2378,6 +2378,9 @@
     "tool_release_options": {
       "allOf": [
         {
+          "$ref": "#/$defs/tool_artifact_platform_options"
+        },
+        {
           "properties": {
             "asset_pattern": {
               "description": "release asset pattern to install",
@@ -2387,33 +2390,9 @@
               "description": "version tag prefix used by releases",
               "type": "string"
             },
-            "checksum": {
-              "description": "checksum for the downloaded asset",
-              "type": "string"
-            },
-            "size": {
-              "$ref": "#/$defs/tool_string_or_number",
-              "description": "downloaded asset size"
-            },
-            "strip_components": {
-              "$ref": "#/$defs/tool_string_or_number",
-              "description": "number of directory components to strip when extracting"
-            },
-            "bin": {
-              "description": "binary name to install or expose",
-              "type": "string"
-            },
-            "rename_exe": {
-              "description": "rename an extracted executable",
-              "type": "string"
-            },
             "no_app": {
               "$ref": "#/$defs/tool_bool_or_string",
               "description": "skip macOS .app bundle assets during autodetection"
-            },
-            "bin_path": {
-              "description": "directory containing binaries within the extracted archive",
-              "type": "string"
             },
             "filter_bins": {
               "description": "comma-separated binaries to expose on PATH",
@@ -2421,14 +2400,6 @@
             },
             "api_url": {
               "description": "custom API URL for self-hosted forge instances",
-              "type": "string"
-            },
-            "url": {
-              "description": "direct platform asset URL",
-              "type": "string"
-            },
-            "format": {
-              "description": "archive format to use when auto-detection is insufficient",
               "type": "string"
             },
             "platforms": {
