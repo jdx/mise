@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/8880
+# Current config opts must override stale install-manifest opts for http version listings.
+
+VERSION_LIST_DIR="$TMPDIR/http-version-list-opts"
+mkdir -p "$VERSION_LIST_DIR"
+cat <<'JSON' >"$VERSION_LIST_DIR/versions.json"
+{"old":["0.1.0"],"current":["1.0.0","2.0.0"]}
+JSON
+
+HTTP_PORT_FILE="$TMPDIR/http_version_list_port"
+python3 -c "
+import http.server, socketserver
+s = socketserver.TCPServer(('', 0), lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory='$VERSION_LIST_DIR'))
+with open('$HTTP_PORT_FILE', 'w') as f:
+    f.write(str(s.server_address[1]))
+s.serve_forever()
+" &
+HTTP_SERVER_PID=$!
+
+for _i in {1..20}; do
+  if [[ -f $HTTP_PORT_FILE ]]; then break; fi
+  sleep 0.1
+done
+HTTP_PORT=$(cat "$HTTP_PORT_FILE" 2>/dev/null || true)
+if [[ -z $HTTP_PORT ]]; then
+  fail "HTTP server failed to start"
+fi
+
+cleanup() {
+  kill $HTTP_SERVER_PID 2>/dev/null || true
+}
+trap cleanup EXIT
+
+mkdir -p "$MISE_DATA_DIR/installs/http-tool-opts/1.0.0"
+cat <<EOF >"$MISE_DATA_DIR/installs/.mise-installs.toml"
+[http-tool-opts]
+short = "http:tool-opts"
+full = "http:tool-opts"
+explicit_backend = true
+
+[http-tool-opts.opts]
+version_list_url = "http://localhost:$HTTP_PORT/versions.json"
+version_json_path = ".old"
+EOF
+
+cat <<EOF >mise.toml
+[tools."http:tool-opts"]
+version = "1.0.0"
+version_list_url = "http://localhost:$HTTP_PORT/versions.json"
+version_json_path = ".current"
+EOF
+
+assert "mise ls-remote http:tool-opts" "1.0.0
+2.0.0"
