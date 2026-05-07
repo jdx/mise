@@ -69,7 +69,7 @@ mise install "vfox:file://$PLUGIN_DIR@1.0.0"
 
 mise uninstall "vfox:file://$PLUGIN_DIR@1.0.0" --dry-run
 if [[ -f $MARKER ]]; then
-	fail "pre_uninstall hook ran during dry-run"
+  fail "pre_uninstall hook ran during dry-run"
 fi
 
 mise uninstall "vfox:file://$PLUGIN_DIR@1.0.0"
