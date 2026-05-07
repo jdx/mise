@@ -35,9 +35,7 @@
               }
             }
           },
-          "required": [
-            "task"
-          ],
+          "required": ["task"],
           "unevaluatedProperties": false
         }
       ]
@@ -46,13 +44,7 @@
       "description": "operating system or os/arch pair to install on",
       "type": "string",
       "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
-      "examples": [
-        "linux",
-        "macos",
-        "windows",
-        "macos/arm64",
-        "linux/x64"
-      ]
+      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
     },
     "os_filter": {
       "description": "operating system filters to install on",
@@ -120,9 +112,7 @@
               "$ref": "#/$defs/env_directive/properties/path"
             }
           },
-          "required": [
-            "path"
-          ]
+          "required": ["path"]
         },
         {
           "type": "object",
@@ -131,9 +121,7 @@
               "$ref": "#/$defs/env_directive/properties/paths"
             }
           },
-          "required": [
-            "paths"
-          ]
+          "required": ["paths"]
         }
       ]
     },
@@ -209,9 +197,7 @@
                 "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
               }
             },
-            "required": [
-              "age"
-            ],
+            "required": ["age"],
             "unevaluatedProperties": false,
             "description": "[experimental] age-encrypted environment variable"
           },
@@ -227,10 +213,7 @@
                   },
                   "format": {
                     "type": "string",
-                    "enum": [
-                      "raw",
-                      "zstd"
-                    ],
+                    "enum": ["raw", "zstd"],
                     "description": "[experimental] compression format for the encrypted value"
                   },
                   "tools": {
@@ -255,16 +238,12 @@
                     "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
                   }
                 },
-                "required": [
-                  "value"
-                ],
+                "required": ["value"],
                 "unevaluatedProperties": false,
                 "description": "[experimental] age-encrypted value (complex format)"
               }
             },
-            "required": [
-              "age"
-            ],
+            "required": ["age"],
             "unevaluatedProperties": false,
             "description": "[experimental] age-encrypted environment variable"
           },
@@ -358,9 +337,7 @@
                           ]
                         }
                       },
-                      "required": [
-                        "path"
-                      ]
+                      "required": ["path"]
                     },
                     {
                       "type": "object",
@@ -372,9 +349,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "paths"
-                      ]
+                      "required": ["paths"]
                     }
                   ]
                 },
@@ -458,9 +433,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "path"
-                      ],
+                      "required": ["path"],
                       "type": "object"
                     }
                   ]
@@ -663,13 +636,7 @@
           "default": "default",
           "description": "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)",
           "type": "string",
-          "enum": [
-            "default",
-            "charm",
-            "base16",
-            "catppuccin",
-            "dracula"
-          ]
+          "enum": ["default", "charm", "base16", "catppuccin", "dracula"]
         },
         "conda": {
           "type": "object",
@@ -1082,11 +1049,7 @@
         "libc": {
           "description": "Libc implementation to use for precompiled Linux binaries.",
           "type": "string",
-          "enum": [
-            "glibc",
-            "gnu",
-            "musl"
-          ]
+          "enum": ["glibc", "gnu", "musl"]
         },
         "libgit2": {
           "default": true,
@@ -1118,13 +1081,7 @@
           "default": "info",
           "description": "Show more/less output.",
           "type": "string",
-          "enum": [
-            "trace",
-            "debug",
-            "info",
-            "warn",
-            "error"
-          ]
+          "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "minimum_release_age": {
           "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
@@ -1238,13 +1195,7 @@
               "default": "auto",
               "description": "Package manager to use for installing npm packages.",
               "type": "string",
-              "enum": [
-                "auto",
-                "npm",
-                "aube",
-                "bun",
-                "pnpm"
-              ]
+              "enum": ["auto", "npm", "aube", "bun", "pnpm"]
             }
           }
         },
@@ -1373,12 +1324,7 @@
             "uv_venv_auto": {
               "default": false,
               "description": "Integrate with uv to manage project venvs when uv.lock is present.",
-              "enum": [
-                false,
-                "source",
-                "create|source",
-                true
-              ],
+              "enum": [false, "source", "create|source", true],
               "oneOf": [
                 {
                   "type": "boolean"
@@ -1800,14 +1746,7 @@
           "type": "string"
         },
         "windows_executable_extensions": {
-          "default": [
-            "exe",
-            "bat",
-            "cmd",
-            "com",
-            "ps1",
-            "vbs"
-          ],
+          "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
           "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
           "type": "array",
           "items": {
@@ -1865,9 +1804,7 @@
               }
             }
           },
-          "required": [
-            "task"
-          ]
+          "required": ["task"]
         },
         {
           "type": "object",
@@ -1882,9 +1819,7 @@
               "type": "array"
             }
           },
-          "required": [
-            "tasks"
-          ]
+          "required": ["tasks"]
         }
       ]
     },
@@ -2109,9 +2044,7 @@
           "description": "include prerelease versions when resolving this tool"
         }
       },
-      "required": [
-        "version"
-      ],
+      "required": ["version"],
       "type": "object"
     },
     "tool_install_options": {
@@ -2586,11 +2519,7 @@
         "runtime": {
           "description": "runtime-only .NET install type",
           "type": "string",
-          "enum": [
-            "dotnet",
-            "aspnetcore",
-            "windowsdesktop"
-          ]
+          "enum": ["dotnet", "aspnetcore", "windowsdesktop"]
         }
       },
       "type": "object"
@@ -3204,9 +3133,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "task"
-            ],
+            "required": ["task"],
             "type": "object"
           },
           {
@@ -3239,9 +3166,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "task"
-                  ],
+                  "required": ["task"],
                   "type": "object"
                 }
               ]
@@ -3277,14 +3202,10 @@
         },
         "oneOf": [
           {
-            "required": [
-              "run"
-            ]
+            "required": ["run"]
           },
           {
-            "required": [
-              "task"
-            ]
+            "required": ["task"]
           }
         ]
       }
@@ -3393,21 +3314,11 @@
                 },
                 "default": {
                   "description": "default value for confirmation (yes/no/true/false)",
-                  "enum": [
-                    "yes",
-                    "no",
-                    "y",
-                    "n",
-                    "true",
-                    "false"
-                  ],
+                  "enum": ["yes", "no", "y", "n", "true", "false"],
                   "type": "string"
                 }
               },
-              "required": [
-                "message",
-                "default"
-              ],
+              "required": ["message", "default"],
               "unevaluatedProperties": false,
               "type": "object"
             }
@@ -3524,15 +3435,11 @@
               "properties": {
                 "auto": {
                   "description": "automatically touch an internal tracked file instead of specifying outputs",
-                  "enum": [
-                    true
-                  ],
+                  "enum": [true],
                   "type": "boolean"
                 }
               },
-              "required": [
-                "auto"
-              ],
+              "required": ["auto"],
               "type": "object"
             }
           ]
@@ -3550,10 +3457,7 @@
               "type": "boolean"
             },
             {
-              "enum": [
-                "stdout",
-                "stderr"
-              ],
+              "enum": ["stdout", "stderr"],
               "type": "string"
             }
           ]

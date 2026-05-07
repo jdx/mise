@@ -75,21 +75,11 @@
                 },
                 "default": {
                   "description": "default value for confirmation (yes/no/true/false)",
-                  "enum": [
-                    "yes",
-                    "no",
-                    "y",
-                    "n",
-                    "true",
-                    "false"
-                  ],
+                  "enum": ["yes", "no", "y", "n", "true", "false"],
                   "type": "string"
                 }
               },
-              "required": [
-                "message",
-                "default"
-              ],
+              "required": ["message", "default"],
               "unevaluatedProperties": false,
               "type": "object"
             }
@@ -206,15 +196,11 @@
               "properties": {
                 "auto": {
                   "description": "automatically touch an internal tracked file instead of specifying outputs",
-                  "enum": [
-                    true
-                  ],
+                  "enum": [true],
                   "type": "boolean"
                 }
               },
-              "required": [
-                "auto"
-              ],
+              "required": ["auto"],
               "type": "object"
             }
           ]
@@ -232,10 +218,7 @@
               "type": "boolean"
             },
             {
-              "enum": [
-                "stdout",
-                "stderr"
-              ],
+              "enum": ["stdout", "stderr"],
               "type": "string"
             }
           ]
@@ -441,9 +424,7 @@
                 "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
               }
             },
-            "required": [
-              "age"
-            ],
+            "required": ["age"],
             "unevaluatedProperties": false,
             "description": "[experimental] age-encrypted environment variable"
           },
@@ -459,10 +440,7 @@
                   },
                   "format": {
                     "type": "string",
-                    "enum": [
-                      "raw",
-                      "zstd"
-                    ],
+                    "enum": ["raw", "zstd"],
                     "description": "[experimental] compression format for the encrypted value"
                   },
                   "tools": {
@@ -487,16 +465,12 @@
                     "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
                   }
                 },
-                "required": [
-                  "value"
-                ],
+                "required": ["value"],
                 "unevaluatedProperties": false,
                 "description": "[experimental] age-encrypted value (complex format)"
               }
             },
-            "required": [
-              "age"
-            ],
+            "required": ["age"],
             "unevaluatedProperties": false,
             "description": "[experimental] age-encrypted environment variable"
           },
@@ -590,9 +564,7 @@
                           ]
                         }
                       },
-                      "required": [
-                        "path"
-                      ]
+                      "required": ["path"]
                     },
                     {
                       "type": "object",
@@ -604,9 +576,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "paths"
-                      ]
+                      "required": ["paths"]
                     }
                   ]
                 },
@@ -690,9 +660,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "path"
-                      ],
+                      "required": ["path"],
                       "type": "object"
                     }
                   ]
@@ -810,9 +778,7 @@
               }
             }
           },
-          "required": [
-            "task"
-          ]
+          "required": ["task"]
         },
         {
           "type": "object",
@@ -827,9 +793,7 @@
               "type": "array"
             }
           },
-          "required": [
-            "tasks"
-          ]
+          "required": ["tasks"]
         }
       ]
     },
@@ -864,9 +828,7 @@
               }
             }
           },
-          "required": [
-            "task"
-          ],
+          "required": ["task"],
           "unevaluatedProperties": false
         }
       ]
@@ -894,9 +856,7 @@
           "description": "include prerelease versions when resolving this tool"
         }
       },
-      "required": [
-        "version"
-      ],
+      "required": ["version"],
       "type": "object"
     },
     "env_directive": {
@@ -951,9 +911,7 @@
               "$ref": "#/$defs/env_directive/properties/path"
             }
           },
-          "required": [
-            "path"
-          ]
+          "required": ["path"]
         },
         {
           "type": "object",
@@ -962,9 +920,7 @@
               "$ref": "#/$defs/env_directive/properties/paths"
             }
           },
-          "required": [
-            "paths"
-          ]
+          "required": ["paths"]
         }
       ]
     },
@@ -996,13 +952,7 @@
       "description": "operating system or os/arch pair to install on",
       "type": "string",
       "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
-      "examples": [
-        "linux",
-        "macos",
-        "windows",
-        "macos/arm64",
-        "linux/x64"
-      ]
+      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
     }
   }
 }
