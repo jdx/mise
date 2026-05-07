@@ -95,9 +95,13 @@ pub fn parse_version_list(
         }
     }
 
-    // If no versions extracted yet, treat as line-separated or single version
-    // This provides fallback for all cases including failed JSON parsing
-    if versions.is_empty() {
+    // If no versions extracted yet and no explicit extraction method was provided,
+    // treat as line-separated or single version.
+    // When version_regex or version_expr is set, zero matches means the content
+    // didn't contain the expected data — don't fall through to line-splitting
+    // which would emit garbage (e.g. raw HTML lines as "versions").
+    let explicit_method = version_regex.is_some() || version_expr.is_some();
+    if versions.is_empty() && !explicit_method {
         for line in trimmed.lines() {
             let line = line.trim();
             // Skip empty lines and comments
