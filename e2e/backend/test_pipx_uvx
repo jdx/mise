@@ -24,7 +24,7 @@ cat >.mise.toml <<EOF
 python = "3.12.3"
 pipx = "1.5.0"
 uv = "0.5.5"
-"pipx:mkdocs" = "1.6.0"
+"pipx:mkdocs" = { version = "1.6.0", uvx_args = "--with rich" }
 EOF
 
 # Install the tools
@@ -34,5 +34,6 @@ mise install
 # (mkdocs conveniently returns its installation path in with --version)
 assert_contains "mise x -- mkdocs --version" "/mise/installs/pipx-mkdocs/1.6.0/"
 
-assert "mise up --bump python"
+assert_succeed "mise up --bump python"
+assert_succeed "'$MISE_DATA_DIR/installs/pipx-mkdocs/1.6.0/mkdocs/bin/python' -c 'import rich'"
 assert_contains "mise x -- mkdocs --version" "mkdocs, version 1.6.0"

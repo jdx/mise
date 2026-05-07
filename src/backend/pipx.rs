@@ -425,34 +425,24 @@ impl PIPXBackend {
     }
 
     pub async fn reinstall_all(config: &Arc<Config>) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(config).await?;
+        let ts = Arc::new(ToolsetBuilder::new().build(config).await?);
         let pipx_tools = ts
             .list_installed_versions(config)
             .await?
             .into_iter()
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
             .collect_vec();
-        if Settings::get().pipx.uvx != Some(false) {
-            let pr = MultiProgressReport::get().add("reinstalling pipx tools with uvx");
-            for (b, tv) in pipx_tools {
-                for (cmd, tool) in &[
-                    ("uninstall", tv.ba().tool_name.to_string()),
-                    ("install", format!("{}=={}", tv.ba().tool_name, tv.version)),
-                ] {
-                    let args = &["tool", cmd, tool];
-                    Self::uvx_cmd(config, args, &*b, &tv, &ts, pr.as_ref())
-                        .await?
-                        .execute()?;
-                }
-            }
-        } else {
-            let pr = MultiProgressReport::get().add("reinstalling pipx tools");
-            for (b, tv) in pipx_tools {
-                let args = &["reinstall", &tv.ba().tool_name];
-                Self::pipx_cmd(config, args, &*b, &tv, &ts, pr.as_ref())
-                    .await?
-                    .execute()?;
-            }
+        for (b, tv) in pipx_tools {
+            let ctx = InstallContext {
+                config: config.clone(),
+                ts: ts.clone(),
+                pr: MultiProgressReport::get().add(&format!("reinstalling {}", tv.style())),
+                force: true,
+                dry_run: false,
+                locked: false,
+                before_date: None,
+            };
+            b.install_version(ctx, tv).await?;
         }
         Ok(())
     }
