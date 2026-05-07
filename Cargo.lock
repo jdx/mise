@@ -240,7 +240,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "aqua-registry"
-version = "2026.5.0"
+version = "2026.5.1"
 dependencies = [
  "expr-lang",
  "eyre",
@@ -249,7 +249,6 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "serde",
- "serde_derive",
  "serde_yaml",
  "strum 0.28.0",
  "thiserror 2.0.18",
@@ -5653,11 +5652,10 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.5.1"
+version = "2026.5.2"
 dependencies = [
  "age",
  "aho-corasick",
- "anyhow",
  "aqua-registry",
  "async-backtrace",
  "async-trait",
@@ -5743,7 +5741,6 @@ dependencies = [
  "seccompiler",
  "self_update",
  "serde",
- "serde_derive",
  "serde_ignored",
  "serde_json",
  "serde_yaml",

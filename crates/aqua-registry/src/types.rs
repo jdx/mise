@@ -2,7 +2,7 @@ use expr::{Context, Environment, Program, Value};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use versions::Versioning;
@@ -67,22 +67,42 @@ struct AquaOverride {
     pkg: AquaPackage,
     goos: Option<String>,
     goarch: Option<String>,
+    #[serde(default)]
+    variants: Vec<AquaVariant>,
+}
+
+/// Runtime variant selector for an override.
+#[derive(Debug, Deserialize, Clone)]
+struct AquaVariant {
+    key: String,
+    value: String,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct AquaRuntime<'a> {
+    libc: Option<&'a str>,
 }
 
 /// Variable definition for Aqua templates
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct AquaVar {
     pub name: String,
-    pub default: Option<serde_yaml::Value>,
+    /// Aqua's schema allows arbitrary YAML defaults, but mise intentionally
+    /// supports only string defaults to keep variable resolution simple.
+    #[serde(default)]
+    pub default: Option<String>,
     #[serde(default)]
     pub required: bool,
 }
 
 /// File definition within a package
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
+    pub link: Option<String>,
+    #[serde(default)]
+    pub hard: bool,
 }
 
 /// Checksum algorithm options
@@ -232,20 +252,36 @@ impl Default for AquaPackage {
 
 impl AquaPackage {
     /// Apply version-specific configurations and overrides
-    pub fn with_version(mut self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
+    pub fn with_version(self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
+        self.with_version_runtime(versions, os, arch, AquaRuntime::default())
+    }
+
+    /// Apply version-specific configurations and overrides for a libc runtime variant.
+    pub fn with_version_libc(
+        self,
+        versions: &[&str],
+        os: &str,
+        arch: &str,
+        libc: Option<&str>,
+    ) -> AquaPackage {
+        self.with_version_runtime(versions, os, arch, AquaRuntime { libc })
+    }
+
+    fn with_version_runtime(
+        mut self,
+        versions: &[&str],
+        os: &str,
+        arch: &str,
+        runtime: AquaRuntime<'_>,
+    ) -> AquaPackage {
         self = apply_override(self.clone(), self.version_override(versions));
-        if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
-            if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
-                goos == os && goarch == arch
-            } else if let Some(goos) = &o.goos {
-                goos == os
-            } else if let Some(goarch) = &o.goarch {
-                goarch == arch
-            } else {
-                false
-            }
-        }) {
-            self = apply_override(self, &avo.pkg)
+        if let Some(pkg) = self
+            .overrides
+            .iter()
+            .find(|o| o.matches(os, arch, runtime))
+            .map(|o| o.pkg.clone())
+        {
+            self = apply_override(self, &pkg)
         }
         self
     }
@@ -457,10 +493,7 @@ impl AquaPackage {
         if let Some(value) = self.var_values.get(&var.name) {
             return Ok(Some(value.clone()));
         }
-        var.default
-            .as_ref()
-            .map(|value| yaml_var_to_string(&var.name, value))
-            .transpose()
+        Ok(var.default.clone())
     }
 
     /// Set up version filter expression if configured
@@ -530,31 +563,51 @@ impl AquaPackage {
     }
 }
 
-fn yaml_var_to_string(name: &str, value: &serde_yaml::Value) -> Result<String> {
-    match value {
-        serde_yaml::Value::String(s) => Ok(s.clone()),
-        serde_yaml::Value::Null => Ok(String::new()),
-        serde_yaml::Value::Tagged(tagged) => yaml_var_to_string(name, &tagged.value),
-        value => Err(eyre!(
-            "aqua var `{}` must be a string, got {}",
-            name,
-            yaml_value_kind(value)
-        )),
+impl AquaOverride {
+    fn matches(&self, os: &str, arch: &str, runtime: AquaRuntime<'_>) -> bool {
+        let platform_matches = if let (Some(goos), Some(goarch)) = (&self.goos, &self.goarch) {
+            goos == os && goarch == arch
+        } else if let Some(goos) = &self.goos {
+            goos == os
+        } else if let Some(goarch) = &self.goarch {
+            goarch == arch
+        } else {
+            false
+        };
+
+        platform_matches
+            && self
+                .variants
+                .iter()
+                .all(|variant| variant.matches(os, runtime))
     }
 }
 
-fn yaml_value_kind(value: &serde_yaml::Value) -> &'static str {
-    match value {
-        serde_yaml::Value::String(_) => "string",
-        serde_yaml::Value::Number(_) => "number",
-        serde_yaml::Value::Bool(_) => "boolean",
-        serde_yaml::Value::Sequence(_) => "array",
-        serde_yaml::Value::Mapping(_) => "object",
-        serde_yaml::Value::Null => "null",
-        serde_yaml::Value::Tagged(tagged) => yaml_value_kind(&tagged.value),
+impl AquaVariant {
+    fn matches(&self, os: &str, runtime: AquaRuntime<'_>) -> bool {
+        match self.key.as_str() {
+            "libc" => match (
+                normalize_libc(runtime.libc),
+                normalize_libc(Some(&self.value)),
+            ) {
+                (Some(actual), Some(expected)) => os == "linux" && actual == expected,
+                _ => false,
+            },
+            key => {
+                log::debug!("unsupported aqua override variant key: {key}");
+                false
+            }
+        }
     }
 }
 
+fn normalize_libc(libc: Option<&str>) -> Option<&str> {
+    match libc? {
+        "glibc" | "gnu" => Some("gnu"),
+        "musl" => Some("musl"),
+        _ => None,
+    }
+}
 /// splits a version number into an optional prefix and the remaining version string
 fn split_version_prefix(version: &str) -> (String, String) {
     version
@@ -582,8 +635,13 @@ fn split_version_prefix(version: &str) -> (String, String) {
 }
 
 impl AquaFile {
-    /// Get the source path for this file within the package
-    pub fn src(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+    fn template_ctx(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<HashMap<String, String>> {
         let asset = pkg.asset(v, os, arch)?;
         let asset = asset.strip_suffix(".tar.gz").unwrap_or(&asset);
         let asset = asset.strip_suffix(".tar.xz").unwrap_or(asset);
@@ -601,10 +659,24 @@ impl AquaFile {
         let mut ctx = HashMap::new();
         ctx.insert("AssetWithoutExt".to_string(), asset.to_string());
         ctx.insert("FileName".to_string(), self.name.to_string());
+        Ok(ctx)
+    }
 
+    /// Get the source path for this file within the package
+    pub fn src(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+        let ctx = self.template_ctx(pkg, v, os, arch)?;
         self.src
             .as_ref()
             .map(|src| pkg.parse_aqua_str(src, v, &ctx, os, arch))
+            .transpose()
+    }
+
+    /// Get the link path for this file.
+    pub fn link(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+        let ctx = self.template_ctx(pkg, v, os, arch)?;
+        self.link
+            .as_ref()
+            .map(|link| pkg.parse_aqua_str(link, v, &ctx, os, arch))
             .transpose()
     }
 }
@@ -1000,8 +1072,8 @@ impl AquaGithubArtifactAttestations {
 mod tests {
     use super::*;
 
-    fn default_str(value: &str) -> Option<serde_yaml::Value> {
-        Some(serde_yaml::Value::String(value.to_string()))
+    fn default_str(value: &str) -> Option<String> {
+        Some(value.to_string())
     }
 
     #[test]
@@ -1016,6 +1088,7 @@ mod tests {
         let file = AquaFile {
             name: "gradle".to_string(),
             src: Some("{{.AssetWithoutExt | trimSuffix \"-bin\"}}/bin/gradle".to_string()),
+            ..Default::default()
         };
 
         let result = file.src(&pkg, "8.14.3", "darwin", "arm64").unwrap();
@@ -1038,6 +1111,7 @@ mod tests {
         let file = AquaFile {
             name: "sccache".to_string(),
             src: Some("{{.AssetWithoutExt}}/sccache".to_string()),
+            ..Default::default()
         };
 
         let result = file.src(&pkg, "brew", "darwin", "arm64").unwrap();
@@ -1132,6 +1206,24 @@ mod tests {
     }
 
     #[test]
+    fn test_aqua_file_link_template() {
+        let pkg = AquaPackage {
+            repo_owner: "example".to_string(),
+            repo_name: "tool".to_string(),
+            asset: "tool-{{.Version}}.tar.gz".to_string(),
+            ..Default::default()
+        };
+        let file = AquaFile {
+            name: "tool".to_string(),
+            link: Some("{{.FileName}}-alias".to_string()),
+            ..Default::default()
+        };
+
+        let result = file.link(&pkg, "1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(result, Some("tool-alias".to_string()));
+    }
+
+    #[test]
     fn test_vars_default_value() {
         let pkg = AquaPackage {
             asset: "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string(),
@@ -1166,56 +1258,80 @@ mod tests {
     }
 
     #[test]
-    fn test_vars_default_scalar_value() {
-        let pkg = AquaPackage {
-            asset: "tool-go{{.Vars.go_version}}-{{.Version}}.tar.gz".to_string(),
-            vars: vec![AquaVar {
-                name: "go_version".to_string(),
-                default: Some(serde_yaml::from_str(r#""1.24""#).unwrap()),
-                required: false,
-            }],
-            ..Default::default()
-        };
+    fn test_vars_default_unquoted_yaml_string() {
+        let yml = r#"
+packages:
+  - asset: tool-{{.Vars.channel}}-{{.Version}}.tar.gz
+    vars:
+      - name: channel
+        default: stable
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
         let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
-        assert_eq!(asset, "tool-go1.24-1.0.0.tar.gz");
+        assert_eq!(asset, "tool-stable-1.0.0.tar.gz");
     }
 
     #[test]
-    fn test_vars_default_array_errors() {
-        let pkg = AquaPackage {
-            asset: "tool-{{.Vars.channels}}-{{.Version}}.tar.gz".to_string(),
-            vars: vec![AquaVar {
-                name: "channels".to_string(),
-                default: Some(serde_yaml::from_str("[stable, beta]").unwrap()),
-                required: true,
-            }],
-            ..Default::default()
-        };
-        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("aqua var `channels` must be a string, got array"),
-            "unexpected error: {err}"
-        );
+    fn test_vars_scalar_defaults_deserialize_as_strings() {
+        for (yaml_default, expected) in [("true", "true"), ("123", "123")] {
+            let yml = format!(
+                r#"
+packages:
+  - vars:
+      - name: channel
+        default: {yaml_default}
+"#
+            );
+            let pkg = serde_yaml::from_str::<RegistryYaml>(&yml)
+                .unwrap()
+                .packages
+                .into_iter()
+                .next()
+                .unwrap();
+            assert_eq!(pkg.vars[0].default.as_deref(), Some(expected));
+        }
     }
 
     #[test]
-    fn test_vars_default_object_errors() {
-        let pkg = AquaPackage {
-            asset: "tool-{{.Vars.config}}-{{.Version}}.tar.gz".to_string(),
-            vars: vec![AquaVar {
-                name: "config".to_string(),
-                default: Some(serde_yaml::from_str("{channel: stable, flavor: beta}").unwrap()),
-                required: true,
-            }],
-            ..Default::default()
-        };
-        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("aqua var `config` must be a string, got object"),
-            "unexpected error: {err}"
-        );
+    fn test_vars_sequence_and_mapping_defaults_fail_yaml_parse() {
+        for yaml_default in ["[stable, beta]", "{channel: stable}"] {
+            let yml = format!(
+                r#"
+packages:
+  - vars:
+      - name: channel
+        default: {yaml_default}
+"#
+            );
+            let err = serde_yaml::from_str::<RegistryYaml>(&yml).unwrap_err();
+            assert!(
+                err.to_string().contains("invalid type"),
+                "unexpected error for {yaml_default}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_vars_null_default_deserializes_as_none() {
+        let yml = r#"
+packages:
+  - vars:
+      - name: channel
+        default: null
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
+
+        assert_eq!(pkg.vars[0].default, None);
     }
 
     #[test]
@@ -1319,5 +1435,103 @@ packages:
         let cosign = pkg.cosign.unwrap();
         assert!(cosign.bundle.is_some());
         assert!(cosign.key.is_some());
+    }
+
+    #[test]
+    fn test_override_variants_match_linux_libc() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-{{.Version}}-{{.OS}}-{{.Arch}}-gnu
+    format: raw
+    overrides:
+      - goos: linux
+        variants:
+          - key: libc
+            value: gnu
+      - goos: linux
+        url: https://example.com/tool-{{.Version}}-{{.OS}}-{{.Arch}}-musl
+        variants:
+          - key: libc
+            value: musl
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
+
+        let gnu = pkg
+            .clone()
+            .with_version_libc(&["1.0.0"], "linux", "amd64", Some("gnu"));
+        let musl = pkg.with_version_libc(&["1.0.0"], "linux", "amd64", Some("musl"));
+
+        assert_eq!(
+            gnu.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-1.0.0-linux-amd64-gnu"
+        );
+        assert_eq!(
+            musl.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-1.0.0-linux-amd64-musl"
+        );
+    }
+
+    #[test]
+    fn test_override_variants_skip_unknown_keys() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - goos: linux
+        url: https://example.com/tool-avx2
+        variants:
+          - key: cpu
+            value: avx2
+      - goos: linux
+        url: https://example.com/tool-musl
+        variants:
+          - key: libc
+            value: musl
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_version_libc(&["1.0.0"], "linux", "amd64", Some("musl"));
+
+        assert_eq!(
+            pkg.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-musl"
+        );
+    }
+
+    #[test]
+    fn test_override_variants_do_not_match_without_runtime_libc() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - goos: linux
+        url: https://example.com/tool-musl
+        variants:
+          - key: libc
+            value: musl
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(
+            pkg.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-default"
+        );
     }
 }

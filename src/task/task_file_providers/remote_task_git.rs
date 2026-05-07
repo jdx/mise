@@ -1,7 +1,7 @@
 use crate::Result;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use std::path::PathBuf;
+use std::sync::LazyLock as Lazy;
 
 use async_trait::async_trait;
 

@@ -43,6 +43,10 @@ impl Backend for UbiBackend {
         true
     }
 
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["provider", "api_url", "tag_regex"]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         deprecated_at!(
             "2026.4.0",
@@ -226,13 +230,9 @@ impl Backend for UbiBackend {
 
         // Use lockfile URL if available, otherwise fall back to standard resolution
         if let Some(url) = &lockfile_url {
-            install(url, &v, &bin_dir, extract_all, &opts)
-                .await
-                .map_err(|e| eyre::eyre!(e))?;
+            install(url, &v, &bin_dir, extract_all, &opts).await?;
         } else if name_is_url(&self.tool_name()) {
-            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts)
-                .await
-                .map_err(|e| eyre::eyre!(e))?;
+            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
         } else {
             try_with_v_prefix(&v, None, |candidate| {
                 let opts = opts.clone();
@@ -462,7 +462,7 @@ async fn install(
     bin_dir: &Path,
     extract_all: bool,
     opts: &ToolVersionOptions,
-) -> anyhow::Result<()> {
+) -> eyre::Result<()> {
     let mut builder = UbiBuilder::new().install_dir(bin_dir);
 
     if name_is_url(name) {
@@ -504,7 +504,7 @@ async fn install(
         builder = set_enterprise_token(builder, &forge);
     }
 
-    let mut ubi = builder.build()?;
+    let mut ubi = builder.build().map_err(|e| eyre::eyre!("{e:#}"))?;
 
     // TODO: hacky but does not compile without it
     tokio::task::block_in_place(|| {
@@ -515,5 +515,6 @@ async fn install(
                 .unwrap()
         });
         RT.block_on(async { ubi.install_binary().await })
+            .map_err(|e| eyre::eyre!("{e:#}"))
     })
 }

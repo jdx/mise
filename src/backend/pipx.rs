@@ -48,7 +48,10 @@ impl Backend for PIPXBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        Ok(vec!["pipx"])
+        // python is required because pipx.pyz uses `#!/usr/bin/env python3`
+        // and pipx_cmd relies on dependency_toolset to put python ahead of
+        // any system python on PATH.
+        Ok(vec!["pipx", "python"])
     }
 
     fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {

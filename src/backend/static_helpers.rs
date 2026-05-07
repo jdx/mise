@@ -87,22 +87,6 @@ pub trait VerifiableError: Sized + Send + Sync + 'static {
 
 impl VerifiableError for eyre::Report {
     fn is_not_found(&self) -> bool {
-        self.chain().any(|cause| {
-            if let Some(err) = cause.downcast_ref::<reqwest::Error>() {
-                err.status() == Some(reqwest::StatusCode::NOT_FOUND)
-            } else {
-                false
-            }
-        })
-    }
-
-    fn into_eyre(self) -> eyre::Report {
-        self
-    }
-}
-
-impl VerifiableError for anyhow::Error {
-    fn is_not_found(&self) -> bool {
         if self.to_string().contains("404") {
             return true;
         }
@@ -116,7 +100,7 @@ impl VerifiableError for anyhow::Error {
     }
 
     fn into_eyre(self) -> eyre::Report {
-        eyre::eyre!(self)
+        self
     }
 }
 
@@ -511,7 +495,6 @@ pub fn install_artifact(
         file::untar(file_path, &install_path, &tar_opts)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
-        // This is needed for matching binary names in ZIP archives where exec bits are lost
         let full_tool_name = tv.ba().tool_name.as_str();
         let tool_name = full_tool_name.rsplit('/').next().unwrap_or(full_tool_name);
 
@@ -523,6 +506,7 @@ pub fn install_artifact(
         // bin= values are relative to install_path, so always use install_path or explicit bin_path
         if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
             let search_dir = explicit_bin_path.as_deref().unwrap_or(&install_path);
+            make_configured_bin_executable(search_dir, &bin_name)?;
             rename_executable_in_dir(search_dir, &bin_name, Some(tool_name))?;
         }
 
@@ -542,6 +526,14 @@ pub fn install_artifact(
             };
             rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
         }
+    }
+    Ok(())
+}
+
+fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<()> {
+    let bin_path = search_dir.join(bin_name);
+    if bin_path.is_file() {
+        file::make_executable(bin_path)?;
     }
     Ok(())
 }
@@ -1454,5 +1446,34 @@ bin = "tool.exe"
                 b
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_make_configured_bin_executable_marks_only_exact_bin() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let binary = tmp.path().join("selene");
+        let readme = tmp.path().join("README.md");
+        let config = tmp.path().join("selene.toml");
+        let unrelated = tmp.path().join("counselene");
+        std::fs::write(&binary, b"not-a-binary").unwrap();
+        std::fs::write(&readme, b"not-a-binary").unwrap();
+        std::fs::write(&config, b"not-a-binary").unwrap();
+        std::fs::write(&unrelated, b"not-a-binary").unwrap();
+
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&readme, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&unrelated, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        make_configured_bin_executable(tmp.path(), "selene").unwrap();
+        make_configured_bin_executable(tmp.path(), "missing").unwrap();
+
+        assert!(file::is_executable(&binary));
+        assert!(!file::is_executable(&readme));
+        assert!(!file::is_executable(&config));
+        assert!(!file::is_executable(&unrelated));
     }
 }

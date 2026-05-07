@@ -53,7 +53,8 @@ The following environment variables are passed to the task:
 
 - `MISE_ORIGINAL_CWD`: The original working directory from where the task was run.
 - `MISE_CONFIG_ROOT`: The directory containing the `mise.toml` file where the task was defined or if the config path is something like `~/src/myproj/.config/mise.toml`, it will be `~/src/myproj`.
-- `MISE_PROJECT_ROOT`: The root of the project.
+- `MISE_PROJECT_ROOT`: The root of the project that defines the task. For monorepo subproject tasks this is the subproject's directory and is stable regardless of the directory the task is invoked from.
+- `MISE_MONOREPO_ROOT`: The root of the monorepo (the directory containing the config with `experimental_monorepo_root = true`). Only set inside a monorepo.
 - `MISE_TASK_NAME`: The name of the task being run.
 - `MISE_TASK_DIR`: The directory containing the task script.
 - `MISE_TASK_FILE`: The full path to the task script.
