@@ -8,4 +8,5 @@ pub mod mise_path;
 pub mod parse_legacy_file;
 pub mod post_install;
 pub mod pre_install;
+pub mod pre_uninstall;
 pub mod pre_use;

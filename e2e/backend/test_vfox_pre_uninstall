@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+PLUGIN_DIR="$PWD/vfox-pre-uninstall"
+MARKER="$MISE_DATA_DIR/pre-uninstall-marker"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "pre-uninstall"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/pre-uninstall"
+PLUGIN.license = "MIT"
+PLUGIN.description = "pre uninstall test plugin"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return {
+		version = ctx.version,
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/post_install.lua" <<'LUA'
+function PLUGIN:PostInstall(ctx)
+	os.execute("mkdir -p " .. ctx.rootPath .. "/bin")
+	local bin = io.open(ctx.rootPath .. "/bin/pre-uninstall", "w")
+	if bin then
+		bin:write("#!/bin/sh\necho pre-uninstall\n")
+		bin:close()
+		os.execute("chmod +x " .. ctx.rootPath .. "/bin/pre-uninstall")
+	end
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {
+		{ key = "PATH", value = ctx.path .. "/bin" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_uninstall.lua" <<'LUA'
+function PLUGIN:PreUninstall(ctx)
+	local marker = os.getenv("MISE_DATA_DIR") .. "/pre-uninstall-marker"
+	local file = io.open(marker, "w")
+	if file then
+		file:write(ctx.main.name .. ":" .. ctx.main.version .. ":" .. ctx.sdkInfo[ctx.main.name].path)
+		file:close()
+	end
+end
+LUA
+
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.email=mise@example.com -c user.name=mise commit -m "init"
+
+mise install "vfox:file://$PLUGIN_DIR@1.0.0"
+
+mise uninstall "vfox:file://$PLUGIN_DIR@1.0.0" --dry-run
+if [[ -f $MARKER ]]; then
+  fail "pre_uninstall hook ran during dry-run"
+fi
+
+mise uninstall "vfox:file://$PLUGIN_DIR@1.0.0"
+assert_contains "cat '$MARKER'" "pre-uninstall:1.0.0:"

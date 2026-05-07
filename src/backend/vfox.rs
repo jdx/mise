@@ -271,6 +271,30 @@ impl Backend for VfoxBackend {
         Some(&self.plugin_enum)
     }
 
+    async fn uninstall_version_impl(
+        &self,
+        config: &Arc<Config>,
+        _pr: &dyn crate::ui::progress_report::SingleReport,
+        tv: &ToolVersion,
+    ) -> eyre::Result<()> {
+        if self.is_backend_plugin() || !self.plugin.is_installed() {
+            return Ok(());
+        }
+
+        let (mut vfox, log_rx) = self.plugin.vfox();
+        thread::spawn(|| {
+            for line in log_rx {
+                info!("{}", line);
+            }
+        });
+        if let Ok(dep_env) = self.dependency_env(config).await {
+            vfox.cmd_env = Some(dep_env.into_iter().collect());
+        }
+        vfox.pre_uninstall(&self.pathname, &tv.version, tv.install_path())
+            .await?;
+        Ok(())
+    }
+
     async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         let (vfox, _log_rx) = self.plugin.vfox();
 
