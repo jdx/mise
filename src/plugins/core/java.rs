@@ -21,7 +21,7 @@ use color_eyre::eyre::{Result, eyre};
 use indoc::formatdoc;
 use itertools::Itertools;
 use regex::Regex;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
