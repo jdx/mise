@@ -274,7 +274,7 @@ impl Backend for VfoxBackend {
     async fn uninstall_version_impl(
         &self,
         config: &Arc<Config>,
-        pr: &dyn crate::ui::progress_report::SingleReport,
+        _pr: &dyn crate::ui::progress_report::SingleReport,
         tv: &ToolVersion,
     ) -> eyre::Result<()> {
         if self.is_backend_plugin() || !self.plugin.is_installed() {
@@ -290,7 +290,6 @@ impl Backend for VfoxBackend {
         if let Ok(dep_env) = self.dependency_env(config).await {
             vfox.cmd_env = Some(dep_env.into_iter().collect());
         }
-        pr.set_message("pre_uninstall".into());
         vfox.pre_uninstall(&self.pathname, &tv.version, tv.install_path())
             .await?;
         Ok(())

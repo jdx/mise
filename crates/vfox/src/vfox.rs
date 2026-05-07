@@ -253,13 +253,8 @@ impl Vfox {
         Ok(())
     }
 
-    pub async fn uninstall(&self, sdk: &str, version: &str) -> Result<()> {
+    pub fn uninstall(&self, sdk: &str, version: &str) -> Result<()> {
         let path = self.install_dir.join(sdk).join(version);
-        if self.plugin_dir.join(sdk).exists()
-            || crate::embedded_plugins::get_embedded_plugin(sdk).is_some()
-        {
-            self.pre_uninstall(sdk, version, &path).await?;
-        }
         file::remove_dir_all(&path)?;
         Ok(())
     }
@@ -700,7 +695,7 @@ mod tests {
         vfox.install("dummy", "1.0.0", &install_dir).await.unwrap();
         // dummy plugin doesn't actually install binaries, so we just check the directory
         assert!(vfox.install_dir.join("dummy").join("1.0.0").exists());
-        vfox.uninstall("dummy", "1.0.0").await.unwrap();
+        vfox.uninstall("dummy", "1.0.0").unwrap();
         assert!(!vfox.install_dir.join("dummy").join("1.0.0").exists());
         file::remove_dir_all(vfox.install_dir).unwrap();
         file::remove_dir_all(vfox.download_dir).unwrap();
@@ -767,7 +762,7 @@ mod tests {
         }
         vfox.uninstall_plugin("cmake").unwrap();
         assert!(!vfox.plugin_dir.join("cmake").exists());
-        vfox.uninstall("cmake", "3.21.0").await.unwrap();
+        vfox.uninstall("cmake", "3.21.0").unwrap();
         assert!(!vfox.install_dir.join("cmake").join("3.21.0").exists());
         file::remove_dir_all(vfox.plugin_dir.join("cmake")).unwrap();
         file::remove_dir_all(vfox.install_dir).unwrap();
