@@ -43,7 +43,11 @@ impl Backend for UbiBackend {
         true
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["provider", "api_url", "tag_regex"]
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         deprecated_at!(
             "2026.4.0",
             "2027.1.0",
@@ -56,7 +60,7 @@ impl Backend for UbiBackend {
                 ..Default::default()
             }])
         } else {
-            let opts = self.ba.opts();
+            let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
             let forge = match opts.get("provider") {
                 Some(forge) => ForgeType::from_str(forge)?,
                 None => ForgeType::default(),

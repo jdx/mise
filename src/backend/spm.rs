@@ -6,7 +6,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::git::{CloneOptions, Git};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
 use eyre::WrapErr;
@@ -48,8 +48,13 @@ impl Backend for SPMBackend {
         true
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        let provider = GitProvider::from_ba(&self.ba);
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["provider", "api_url"]
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let versions = match provider.kind {
             GitProviderKind::GitLab => {
@@ -97,7 +102,7 @@ impl Backend for SPMBackend {
             Or install Swift via https://swift.org/download/",
         )
         .await;
-        let provider = GitProvider::from_ba(&self.ba);
+        let provider = GitProvider::from_ba_with_opts(&self.ba, &tv.request.options());
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let revision = if tv.version == "latest" {
             self.latest_version(&ctx.config, None, ctx.before_date)
@@ -327,9 +332,13 @@ pub enum GitProviderKind {
 }
 
 impl GitProvider {
+    #[cfg(test)]
     fn from_ba(ba: &BackendArg) -> Self {
         let opts = ba.opts();
+        Self::from_ba_with_opts(ba, &opts)
+    }
 
+    fn from_ba_with_opts(ba: &BackendArg, opts: &ToolVersionOptions) -> Self {
         let provider = opts
             .get("provider")
             .unwrap_or(GitProviderKind::GitHub.as_ref());
