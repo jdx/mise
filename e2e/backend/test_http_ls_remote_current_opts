@@ -22,7 +22,10 @@ for _i in {1..20}; do
   if [[ -f $HTTP_PORT_FILE ]]; then break; fi
   sleep 0.1
 done
-HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+HTTP_PORT=$(cat "$HTTP_PORT_FILE" 2>/dev/null || true)
+if [[ -z $HTTP_PORT ]]; then
+  fail "HTTP server failed to start"
+fi
 
 cleanup() {
   kill $HTTP_SERVER_PID 2>/dev/null || true

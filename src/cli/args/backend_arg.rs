@@ -491,15 +491,15 @@ impl BackendArg {
     }
 
     pub fn explicit_opts(&self) -> Option<&ToolVersionOptions> {
-        (self.opts_source == Some(ToolOptionSource::InlineBackendArg))
-            .then_some(())
-            .and(self.opts.as_ref())
+        self.opts
+            .as_ref()
+            .filter(|_| self.opts_source == Some(ToolOptionSource::InlineBackendArg))
     }
 
     pub fn install_manifest_opts(&self) -> Option<&ToolVersionOptions> {
-        (self.opts_source == Some(ToolOptionSource::InstallManifest))
-            .then_some(())
-            .and(self.opts.as_ref())
+        self.opts
+            .as_ref()
+            .filter(|_| self.opts_source == Some(ToolOptionSource::InstallManifest))
     }
 
     pub(crate) fn resolved_full_opts(&self) -> Option<ToolVersionOptions> {
