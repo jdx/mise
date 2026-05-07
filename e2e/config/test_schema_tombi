@@ -73,6 +73,22 @@ cat >"$HOME/workdir/mise-os.toml" <<'TOML'
 [tools]
 node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], backend_options = { nested = true } }
 go = { version = "latest", os = "linux/x64" }
+"aqua:casey/just" = { version = "1.46.0", symlink_bins = true, vars = { channel = "stable" }, prerelease = true }
+"cargo:cargo-edit" = { version = "latest", features = "add", default-features = false, locked = false, bin = "cargo-add", crate = "cargo-edit" }
+"conda:ruff" = { version = "latest", channel = "conda-forge" }
+"github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", platforms = { linux-x64 = { asset_pattern = "hello-world-1.0.0.tar.gz", checksum = "sha256:abc123" } } }
+"gitlab:jdxcode/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", filter_bins = "hello-world", api_url = "https://gitlab.com/api/v4" }
+"forgejo:roele/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", strip_components = 1, no_app = true }
+"go:github.com/golang-migrate/migrate/v4/cmd/migrate" = { version = "latest", tags = "postgres" }
+"http:hello" = { version = "1.0.0", url = "https://example.com/hello-{{ version }}.tar.gz", checksum = "sha256:abc123", size = 12345, strip_components = 1, bin = "hello", rename_exe = "hello", format = "tar.gz", version_list_url = "https://example.com/versions.json", version_json_path = ".[].version", version_expr = "split(body, '\\n')", platforms = { linux-x64-musl = { url = "https://example.com/hello-linux.tar.gz", size = 12345 } } }
+"npm:prettier" = { version = "latest", npm_args = "--omit=dev", pnpm_args = "--config.foo=bar", bun_args = "--verbose", aube_args = "--reporter append-only" }
+"pipx:black" = { version = "latest", extras = "colorama", pipx_args = "--include-deps", uvx = false, uvx_args = "--with rich" }
+"s3:internal" = { version = "latest", url = "s3://bucket/hello-{{ version }}.tar.gz", endpoint = "http://localhost:9000", region = "us-east-1", version_list_url = "s3://bucket/versions.json", version_prefix = "hello-", version_regex = "hello-(.*)", version_json_path = ".[].version", version_expr = "split(body, '\\n')", platforms = { linux-x64 = { url = "s3://bucket/hello-linux.tar.gz", checksum = "sha256:abc123" } } }
+"spm:swiftlang/swiftly" = { version = "latest", provider = "github", api_url = "https://api.github.com", filter_bins = ["swiftly"] }
+"ubi:cli/cli" = { version = "latest", exe = "gh", rename_exe = "github", matching = "linux", matching_regex = "linux.*x86_64", provider = "github", api_url = "https://api.github.com", extract_all = true, bin_path = "bin", tag_regex = "^v" }
+python = { version = "3.12", virtualenv = ".venv", patch_sysconfig = false }
+rust = { version = "latest", profile = "minimal", components = "rustfmt,clippy", targets = "wasm32-unknown-unknown" }
+dotnet = { version = "latest", runtime = "dotnet" }
 
 [tasks.build.tools]
 rust = { version = "latest", os = ["linux/x64", "macos/arm64"], profile = "release" }
@@ -110,7 +126,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-tmpl.toml", "mise-bad-os.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-tmpl.toml", "mise-bad-os.toml", "mise-bad-tool-opts.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -142,6 +158,15 @@ node = { version = "latest", os = true }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-os.toml"
+
+cat >"$HOME/workdir/mise-bad-tool-opts.toml" <<'TOML'
+[tools]
+"aqua:casey/just" = { version = "latest", vars = { channel = true } }
+"cargo:cargo-edit" = { version = "latest", features = ["add"] }
+dotnet = { version = "latest", runtime = "invalid-runtime" }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-tool-opts.toml"
 
 cat >"$HOME/workdir/mise-bad-task-os.toml" <<'TOML'
 [build]

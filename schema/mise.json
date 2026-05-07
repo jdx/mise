@@ -35,7 +35,9 @@
               }
             }
           },
-          "required": ["task"],
+          "required": [
+            "task"
+          ],
           "unevaluatedProperties": false
         }
       ]
@@ -44,7 +46,13 @@
       "description": "operating system or os/arch pair to install on",
       "type": "string",
       "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
-      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
+      "examples": [
+        "linux",
+        "macos",
+        "windows",
+        "macos/arm64",
+        "linux/x64"
+      ]
     },
     "os_filter": {
       "description": "operating system filters to install on",
@@ -112,7 +120,9 @@
               "$ref": "#/$defs/env_directive/properties/path"
             }
           },
-          "required": ["path"]
+          "required": [
+            "path"
+          ]
         },
         {
           "type": "object",
@@ -121,7 +131,9 @@
               "$ref": "#/$defs/env_directive/properties/paths"
             }
           },
-          "required": ["paths"]
+          "required": [
+            "paths"
+          ]
         }
       ]
     },
@@ -197,7 +209,9 @@
                 "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
               }
             },
-            "required": ["age"],
+            "required": [
+              "age"
+            ],
             "unevaluatedProperties": false,
             "description": "[experimental] age-encrypted environment variable"
           },
@@ -213,7 +227,10 @@
                   },
                   "format": {
                     "type": "string",
-                    "enum": ["raw", "zstd"],
+                    "enum": [
+                      "raw",
+                      "zstd"
+                    ],
                     "description": "[experimental] compression format for the encrypted value"
                   },
                   "tools": {
@@ -238,12 +255,16 @@
                     "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
                   }
                 },
-                "required": ["value"],
+                "required": [
+                  "value"
+                ],
                 "unevaluatedProperties": false,
                 "description": "[experimental] age-encrypted value (complex format)"
               }
             },
-            "required": ["age"],
+            "required": [
+              "age"
+            ],
             "unevaluatedProperties": false,
             "description": "[experimental] age-encrypted environment variable"
           },
@@ -337,7 +358,9 @@
                           ]
                         }
                       },
-                      "required": ["path"]
+                      "required": [
+                        "path"
+                      ]
                     },
                     {
                       "type": "object",
@@ -349,7 +372,9 @@
                           }
                         }
                       },
-                      "required": ["paths"]
+                      "required": [
+                        "paths"
+                      ]
                     }
                   ]
                 },
@@ -433,7 +458,9 @@
                           }
                         }
                       },
-                      "required": ["path"],
+                      "required": [
+                        "path"
+                      ],
                       "type": "object"
                     }
                   ]
@@ -636,7 +663,13 @@
           "default": "default",
           "description": "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)",
           "type": "string",
-          "enum": ["default", "charm", "base16", "catppuccin", "dracula"]
+          "enum": [
+            "default",
+            "charm",
+            "base16",
+            "catppuccin",
+            "dracula"
+          ]
         },
         "conda": {
           "type": "object",
@@ -1049,7 +1082,11 @@
         "libc": {
           "description": "Libc implementation to use for precompiled Linux binaries.",
           "type": "string",
-          "enum": ["glibc", "gnu", "musl"]
+          "enum": [
+            "glibc",
+            "gnu",
+            "musl"
+          ]
         },
         "libgit2": {
           "default": true,
@@ -1081,7 +1118,13 @@
           "default": "info",
           "description": "Show more/less output.",
           "type": "string",
-          "enum": ["trace", "debug", "info", "warn", "error"]
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
         },
         "minimum_release_age": {
           "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
@@ -1195,7 +1238,13 @@
               "default": "auto",
               "description": "Package manager to use for installing npm packages.",
               "type": "string",
-              "enum": ["auto", "npm", "aube", "bun", "pnpm"]
+              "enum": [
+                "auto",
+                "npm",
+                "aube",
+                "bun",
+                "pnpm"
+              ]
             }
           }
         },
@@ -1324,7 +1373,12 @@
             "uv_venv_auto": {
               "default": false,
               "description": "Integrate with uv to manage project venvs when uv.lock is present.",
-              "enum": [false, "source", "create|source", true],
+              "enum": [
+                false,
+                "source",
+                "create|source",
+                true
+              ],
               "oneOf": [
                 {
                   "type": "boolean"
@@ -1746,7 +1800,14 @@
           "type": "string"
         },
         "windows_executable_extensions": {
-          "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
+          "default": [
+            "exe",
+            "bat",
+            "cmd",
+            "com",
+            "ps1",
+            "vbs"
+          ],
           "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
           "type": "array",
           "items": {
@@ -1804,7 +1865,9 @@
               }
             }
           },
-          "required": ["task"]
+          "required": [
+            "task"
+          ]
         },
         {
           "type": "object",
@@ -1819,7 +1882,9 @@
               "type": "array"
             }
           },
-          "required": ["tasks"]
+          "required": [
+            "tasks"
+          ]
         }
       ]
     },
@@ -1942,80 +2007,83 @@
         }
       }
     },
-    "tool": {
+    "tool_option_scalar": {
       "oneOf": [
         {
-          "description": "version of the tool to install",
           "type": "string"
         },
         {
-          "allOf": [
-            {
-              "$ref": "#/$defs/tool_options"
-            },
-            {
-              "properties": {
-                "install_env": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "boolean"
-                      }
-                    ]
-                  },
-                  "description": "environment variables during tool installation"
-                },
-                "depends": {
-                  "oneOf": [
-                    {
-                      "description": "tools that must be installed before this tool",
-                      "type": "string"
-                    },
-                    {
-                      "description": "tools that must be installed before this tool",
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  ]
-                },
-                "postinstall": {
-                  "description": "command to run after tool installation",
-                  "type": "string"
-                }
-              }
-            }
-          ],
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "tool_option_value": {
+      "description": "backend option value",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "array"
+        },
+        {
           "type": "object",
-          "unevaluatedProperties": {
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "array"
-              },
-              {
-                "type": "object",
-                "additionalProperties": true
-              }
-            ]
+          "additionalProperties": true
+        }
+      ]
+    },
+    "tool_bool_or_string": {
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "tool_string_or_number": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "tool_string_or_string_array": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         }
+      ]
+    },
+    "tool_platform_key": {
+      "description": "platform key for platform-specific tool options",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.+-]+-[A-Za-z0-9_.+-]+(-[A-Za-z0-9_.+-]+)*$",
+      "examples": [
+        "linux-x64",
+        "linux-x64-musl",
+        "macos-arm64",
+        "darwin-aarch64",
+        "windows-amd64"
       ]
     },
     "tool_options": {
@@ -2026,10 +2094,1113 @@
         },
         "os": {
           "$ref": "#/$defs/os_filter"
+        },
+        "minimum_release_age": {
+          "description": "minimum age a tool release must have before mise will install it",
+          "type": "string"
+        },
+        "install_before": {
+          "deprecated": true,
+          "description": "deprecated alias for minimum_release_age",
+          "type": "string"
+        },
+        "prerelease": {
+          "$ref": "#/$defs/tool_bool_or_string",
+          "description": "include prerelease versions when resolving this tool"
         }
       },
-      "required": ["version"],
+      "required": [
+        "version"
+      ],
       "type": "object"
+    },
+    "tool_install_options": {
+      "properties": {
+        "install_env": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/tool_option_scalar"
+          },
+          "description": "environment variables during tool installation"
+        },
+        "depends": {
+          "oneOf": [
+            {
+              "description": "tools that must be installed before this tool",
+              "type": "string"
+            },
+            {
+              "description": "tools that must be installed before this tool",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "postinstall": {
+          "description": "command to run after tool installation",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tool_artifact_platform_options": {
+      "properties": {
+        "url": {
+          "description": "platform-specific download URL",
+          "type": "string"
+        },
+        "checksum": {
+          "description": "platform-specific checksum",
+          "type": "string"
+        },
+        "size": {
+          "$ref": "#/$defs/tool_string_or_number",
+          "description": "platform-specific download size"
+        },
+        "strip_components": {
+          "$ref": "#/$defs/tool_string_or_number",
+          "description": "number of directory components to strip when extracting"
+        },
+        "bin": {
+          "description": "binary name to install or expose",
+          "type": "string"
+        },
+        "rename_exe": {
+          "description": "rename an extracted executable",
+          "type": "string"
+        },
+        "format": {
+          "description": "archive format to use when auto-detection is insufficient",
+          "type": "string"
+        },
+        "bin_path": {
+          "description": "directory containing binaries within the extracted archive",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tool_release_platform_options": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_artifact_platform_options"
+        },
+        {
+          "properties": {
+            "asset_pattern": {
+              "description": "release asset pattern to install on this platform",
+              "type": "string"
+            },
+            "filter_bins": {
+              "description": "comma-separated binaries to expose on PATH",
+              "type": "string"
+            }
+          }
+        }
+      ],
+      "type": "object"
+    },
+    "tool_s3_platform_options": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_artifact_platform_options"
+        },
+        {
+          "properties": {
+            "endpoint": {
+              "description": "custom S3-compatible endpoint",
+              "type": "string"
+            },
+            "region": {
+              "description": "AWS region for the S3 bucket",
+              "type": "string"
+            }
+          }
+        }
+      ],
+      "type": "object"
+    },
+    "tool_platform_map_artifact": {
+      "description": "platform-specific artifact options",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/tool_platform_key"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/tool_artifact_platform_options"
+      }
+    },
+    "tool_platform_map_release": {
+      "description": "platform-specific release asset options",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/tool_platform_key"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/tool_release_platform_options"
+      }
+    },
+    "tool_platform_map_s3": {
+      "description": "platform-specific S3 artifact options",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/tool_platform_key"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/tool_s3_platform_options"
+      }
+    },
+    "tool_platform_map_cargo": {
+      "description": "platform-specific cargo options",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/tool_platform_key"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "bin": {
+            "description": "binary name to install for this platform",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "tool_aqua_options": {
+      "properties": {
+        "symlink_bins": {
+          "$ref": "#/$defs/tool_bool_or_string",
+          "description": "symlink aqua package binaries instead of copying them"
+        },
+        "vars": {
+          "type": "object",
+          "description": "aqua registry variables",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "tool_cargo_options": {
+      "properties": {
+        "features": {
+          "description": "cargo features to enable",
+          "type": "string"
+        },
+        "default-features": {
+          "$ref": "#/$defs/tool_bool_or_string",
+          "description": "whether cargo default features are enabled"
+        },
+        "bin": {
+          "description": "binary name to install",
+          "type": "string"
+        },
+        "crate": {
+          "description": "crate name to install from a git repository",
+          "type": "string"
+        },
+        "locked": {
+          "$ref": "#/$defs/tool_bool_or_string",
+          "description": "whether to pass --locked to cargo install"
+        },
+        "platforms": {
+          "$ref": "#/$defs/tool_platform_map_cargo"
+        },
+        "platform": {
+          "$ref": "#/$defs/tool_platform_map_cargo"
+        }
+      },
+      "type": "object"
+    },
+    "tool_conda_options": {
+      "properties": {
+        "channel": {
+          "description": "conda channel to install from",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tool_go_options": {
+      "properties": {
+        "tags": {
+          "description": "build tags to pass to go install",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tool_npm_options": {
+      "properties": {
+        "npm_args": {
+          "description": "additional arguments to pass to npm installs",
+          "type": "string"
+        },
+        "pnpm_args": {
+          "description": "additional arguments to pass to pnpm installs",
+          "type": "string"
+        },
+        "bun_args": {
+          "description": "additional arguments to pass to bun installs",
+          "type": "string"
+        },
+        "aube_args": {
+          "description": "additional arguments to pass to aube installs",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tool_pipx_options": {
+      "properties": {
+        "extras": {
+          "description": "pip extras to install",
+          "type": "string"
+        },
+        "pipx_args": {
+          "description": "additional arguments to pass to pipx",
+          "type": "string"
+        },
+        "uvx": {
+          "$ref": "#/$defs/tool_bool_or_string",
+          "description": "whether to use uv tool install when uv is available"
+        },
+        "uvx_args": {
+          "description": "additional arguments to pass to uv tool install",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tool_release_options": {
+      "allOf": [
+        {
+          "properties": {
+            "asset_pattern": {
+              "description": "release asset pattern to install",
+              "type": "string"
+            },
+            "version_prefix": {
+              "description": "version tag prefix used by releases",
+              "type": "string"
+            },
+            "checksum": {
+              "description": "checksum for the downloaded asset",
+              "type": "string"
+            },
+            "size": {
+              "$ref": "#/$defs/tool_string_or_number",
+              "description": "downloaded asset size"
+            },
+            "strip_components": {
+              "$ref": "#/$defs/tool_string_or_number",
+              "description": "number of directory components to strip when extracting"
+            },
+            "bin": {
+              "description": "binary name to install or expose",
+              "type": "string"
+            },
+            "rename_exe": {
+              "description": "rename an extracted executable",
+              "type": "string"
+            },
+            "no_app": {
+              "$ref": "#/$defs/tool_bool_or_string",
+              "description": "skip macOS .app bundle assets during autodetection"
+            },
+            "bin_path": {
+              "description": "directory containing binaries within the extracted archive",
+              "type": "string"
+            },
+            "filter_bins": {
+              "description": "comma-separated binaries to expose on PATH",
+              "type": "string"
+            },
+            "api_url": {
+              "description": "custom API URL for self-hosted forge instances",
+              "type": "string"
+            },
+            "url": {
+              "description": "direct platform asset URL",
+              "type": "string"
+            },
+            "format": {
+              "description": "archive format to use when auto-detection is insufficient",
+              "type": "string"
+            },
+            "platforms": {
+              "$ref": "#/$defs/tool_platform_map_release"
+            },
+            "platform": {
+              "$ref": "#/$defs/tool_platform_map_release"
+            }
+          }
+        }
+      ],
+      "type": "object"
+    },
+    "tool_http_options": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_artifact_platform_options"
+        },
+        {
+          "properties": {
+            "version_list_url": {
+              "description": "URL used to discover available versions",
+              "type": "string"
+            },
+            "version_regex": {
+              "description": "regular expression used to extract versions",
+              "type": "string"
+            },
+            "version_json_path": {
+              "description": "JSON path used to extract versions",
+              "type": "string"
+            },
+            "version_expr": {
+              "description": "expr-lang expression used to extract versions",
+              "type": "string"
+            },
+            "platforms": {
+              "$ref": "#/$defs/tool_platform_map_artifact"
+            },
+            "platform": {
+              "$ref": "#/$defs/tool_platform_map_artifact"
+            }
+          }
+        }
+      ],
+      "type": "object"
+    },
+    "tool_s3_options": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_artifact_platform_options"
+        },
+        {
+          "properties": {
+            "endpoint": {
+              "description": "custom S3-compatible endpoint",
+              "type": "string"
+            },
+            "region": {
+              "description": "AWS region for the S3 bucket",
+              "type": "string"
+            },
+            "version_list_url": {
+              "description": "S3 URL used to discover available versions",
+              "type": "string"
+            },
+            "version_prefix": {
+              "description": "S3 object key prefix used to discover versions",
+              "type": "string"
+            },
+            "version_regex": {
+              "description": "regular expression used to extract versions",
+              "type": "string"
+            },
+            "version_json_path": {
+              "description": "JSON path used to extract versions",
+              "type": "string"
+            },
+            "version_expr": {
+              "description": "expr-lang expression used to extract versions",
+              "type": "string"
+            },
+            "platforms": {
+              "$ref": "#/$defs/tool_platform_map_s3"
+            },
+            "platform": {
+              "$ref": "#/$defs/tool_platform_map_s3"
+            }
+          }
+        }
+      ],
+      "type": "object"
+    },
+    "tool_spm_options": {
+      "properties": {
+        "provider": {
+          "description": "forge provider to use for release information",
+          "type": "string"
+        },
+        "api_url": {
+          "description": "custom provider API URL",
+          "type": "string"
+        },
+        "filter_bins": {
+          "$ref": "#/$defs/tool_string_or_string_array",
+          "description": "binaries to expose on PATH"
+        }
+      },
+      "type": "object"
+    },
+    "tool_ubi_options": {
+      "properties": {
+        "exe": {
+          "description": "executable to install from the release artifact",
+          "type": "string"
+        },
+        "rename_exe": {
+          "description": "rename the installed executable",
+          "type": "string"
+        },
+        "matching": {
+          "description": "substring used to match release assets",
+          "type": "string"
+        },
+        "matching_regex": {
+          "description": "regular expression used to match release assets",
+          "type": "string"
+        },
+        "provider": {
+          "description": "forge provider to use for releases",
+          "type": "string"
+        },
+        "api_url": {
+          "description": "custom provider API URL",
+          "type": "string"
+        },
+        "extract_all": {
+          "$ref": "#/$defs/tool_bool_or_string",
+          "description": "extract all files from the release artifact"
+        },
+        "bin_path": {
+          "description": "directory containing binaries within the extracted archive",
+          "type": "string"
+        },
+        "tag_regex": {
+          "description": "regular expression used to filter release tags",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tool_core_python_options": {
+      "properties": {
+        "virtualenv": {
+          "description": "virtualenv path to activate with this Python",
+          "type": "string"
+        },
+        "patch_sysconfig": {
+          "$ref": "#/$defs/tool_bool_or_string",
+          "description": "whether to patch sysconfig for precompiled Python installs"
+        }
+      },
+      "type": "object"
+    },
+    "tool_core_rust_options": {
+      "properties": {
+        "profile": {
+          "description": "rustup profile to install",
+          "type": "string"
+        },
+        "components": {
+          "description": "comma-separated rustup components to install",
+          "type": "string"
+        },
+        "targets": {
+          "description": "comma-separated rustup targets to install",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tool_core_dotnet_options": {
+      "properties": {
+        "runtime": {
+          "description": "runtime-only .NET install type",
+          "type": "string",
+          "enum": [
+            "dotnet",
+            "aspnetcore",
+            "windowsdesktop"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "tool_object_base": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_options"
+        },
+        {
+          "$ref": "#/$defs/tool_install_options"
+        }
+      ],
+      "type": "object"
+    },
+    "tool_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_object"
+        }
+      ]
+    },
+    "tool_value": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool"
+        }
+      ]
+    },
+    "tool_aqua_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_aqua_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_aqua": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_aqua_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_aqua_item"
+        }
+      ]
+    },
+    "tool_aqua_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_aqua_object"
+        }
+      ]
+    },
+    "tool_cargo_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_cargo_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_cargo": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_cargo_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_cargo_item"
+        }
+      ]
+    },
+    "tool_cargo_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_cargo_object"
+        }
+      ]
+    },
+    "tool_conda_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_conda_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_conda": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_conda_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_conda_item"
+        }
+      ]
+    },
+    "tool_conda_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_conda_object"
+        }
+      ]
+    },
+    "tool_go_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_go_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_go": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_go_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_go_item"
+        }
+      ]
+    },
+    "tool_go_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_go_object"
+        }
+      ]
+    },
+    "tool_npm_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_npm_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_npm": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_npm_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_npm_item"
+        }
+      ]
+    },
+    "tool_npm_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_npm_object"
+        }
+      ]
+    },
+    "tool_pipx_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_pipx_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_pipx": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_pipx_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_pipx_item"
+        }
+      ]
+    },
+    "tool_pipx_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_pipx_object"
+        }
+      ]
+    },
+    "tool_release_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_release_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_release": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_release_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_release_item"
+        }
+      ]
+    },
+    "tool_release_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_release_object"
+        }
+      ]
+    },
+    "tool_http_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_http_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_http": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_http_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_http_item"
+        }
+      ]
+    },
+    "tool_http_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_http_object"
+        }
+      ]
+    },
+    "tool_s3_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_s3_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_s3": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_s3_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_s3_item"
+        }
+      ]
+    },
+    "tool_s3_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_s3_object"
+        }
+      ]
+    },
+    "tool_spm_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_spm_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_spm": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_spm_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_spm_item"
+        }
+      ]
+    },
+    "tool_spm_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_spm_object"
+        }
+      ]
+    },
+    "tool_ubi_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_ubi_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_ubi": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_ubi_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_ubi_item"
+        }
+      ]
+    },
+    "tool_ubi_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_ubi_object"
+        }
+      ]
+    },
+    "tool_core_python_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_core_python_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_core_python": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_core_python_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_core_python_item"
+        }
+      ]
+    },
+    "tool_core_python_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_core_python_object"
+        }
+      ]
+    },
+    "tool_core_rust_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_core_rust_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_core_rust": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_core_rust_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_core_rust_item"
+        }
+      ]
+    },
+    "tool_core_rust_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_core_rust_object"
+        }
+      ]
+    },
+    "tool_core_dotnet_object": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/tool_object_base"
+        },
+        {
+          "$ref": "#/$defs/tool_core_dotnet_options"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": {
+        "$ref": "#/$defs/tool_option_value"
+      }
+    },
+    "tool_core_dotnet": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/tool_core_dotnet_item"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/tool_core_dotnet_item"
+        }
+      ]
+    },
+    "tool_core_dotnet_item": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/tool_core_dotnet_object"
+        }
+      ]
     },
     "hooks": {
       "description": "hooks to run",
@@ -2062,7 +3233,9 @@
                 "type": "string"
               }
             },
-            "required": ["task"],
+            "required": [
+              "task"
+            ],
             "type": "object"
           },
           {
@@ -2095,7 +3268,9 @@
                       "type": "string"
                     }
                   },
-                  "required": ["task"],
+                  "required": [
+                    "task"
+                  ],
                   "type": "object"
                 }
               ]
@@ -2131,10 +3306,14 @@
         },
         "oneOf": [
           {
-            "required": ["run"]
+            "required": [
+              "run"
+            ]
           },
           {
-            "required": ["task"]
+            "required": [
+              "task"
+            ]
           }
         ]
       }
@@ -2243,11 +3422,21 @@
                 },
                 "default": {
                   "description": "default value for confirmation (yes/no/true/false)",
-                  "enum": ["yes", "no", "y", "n", "true", "false"],
+                  "enum": [
+                    "yes",
+                    "no",
+                    "y",
+                    "n",
+                    "true",
+                    "false"
+                  ],
                   "type": "string"
                 }
               },
-              "required": ["message", "default"],
+              "required": [
+                "message",
+                "default"
+              ],
               "unevaluatedProperties": false,
               "type": "object"
             }
@@ -2364,11 +3553,15 @@
               "properties": {
                 "auto": {
                   "description": "automatically touch an internal tracked file instead of specifying outputs",
-                  "enum": [true],
+                  "enum": [
+                    true
+                  ],
                   "type": "boolean"
                 }
               },
-              "required": ["auto"],
+              "required": [
+                "auto"
+              ],
               "type": "object"
             }
           ]
@@ -2386,7 +3579,10 @@
               "type": "boolean"
             },
             {
-              "enum": ["stdout", "stderr"],
+              "enum": [
+                "stdout",
+                "stderr"
+              ],
               "type": "string"
             }
           ]
@@ -2828,17 +4024,57 @@
     },
     "tools": {
       "additionalProperties": {
-        "oneOf": [
-          {
-            "items": {
-              "$ref": "#/$defs/tool"
-            },
-            "type": "array"
-          },
-          {
-            "$ref": "#/$defs/tool"
-          }
-        ]
+        "$ref": "#/$defs/tool_value"
+      },
+      "patternProperties": {
+        "^aqua:.+": {
+          "$ref": "#/$defs/tool_aqua"
+        },
+        "^cargo:.+": {
+          "$ref": "#/$defs/tool_cargo"
+        },
+        "^conda:.+": {
+          "$ref": "#/$defs/tool_conda"
+        },
+        "^forgejo:.+": {
+          "$ref": "#/$defs/tool_release"
+        },
+        "^github:.+": {
+          "$ref": "#/$defs/tool_release"
+        },
+        "^gitlab:.+": {
+          "$ref": "#/$defs/tool_release"
+        },
+        "^go:.+": {
+          "$ref": "#/$defs/tool_go"
+        },
+        "^http:.+": {
+          "$ref": "#/$defs/tool_http"
+        },
+        "^npm:.+": {
+          "$ref": "#/$defs/tool_npm"
+        },
+        "^pipx:.+": {
+          "$ref": "#/$defs/tool_pipx"
+        },
+        "^s3:.+": {
+          "$ref": "#/$defs/tool_s3"
+        },
+        "^spm:.+": {
+          "$ref": "#/$defs/tool_spm"
+        },
+        "^ubi:.+": {
+          "$ref": "#/$defs/tool_ubi"
+        },
+        "^(core:)?python$": {
+          "$ref": "#/$defs/tool_core_python"
+        },
+        "^(core:)?rust$": {
+          "$ref": "#/$defs/tool_core_rust"
+        },
+        "^(core:)?dotnet$": {
+          "$ref": "#/$defs/tool_core_dotnet"
+        }
       },
       "description": "dev tools to use",
       "type": "object"
