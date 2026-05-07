@@ -711,21 +711,23 @@ If you want auto-completion/validation in included toml tasks files, you can use
 
 #### Remote Git Includes <Badge type="warning" text="experimental" />
 
-You can include directories of tasks from git repositories using the `git::` URL syntax:
+You can include directories or individual task toml files from git repositories using the `git::` URL syntax:
 
 ::: code-group
 
 ```mise-toml [ssh]
 [task_config]
 includes = [
-    "git::ssh://git@github.com/myorg/shared-tasks.git//tasks?ref=v1.0.0"
+    "git::ssh://git@github.com/myorg/shared-tasks.git//tasks?ref=v1.0.0",
+    "git::ssh://git@github.com/myorg/shared-tasks.git//tasks/release.toml?ref=v1.0.0",
 ]
 ```
 
 ```mise-toml [https]
 [task_config]
 includes = [
-    "git::https://github.com/myorg/shared-tasks.git//tasks?ref=main"
+    "git::https://github.com/myorg/shared-tasks.git//tasks?ref=main",
+    "git::https://github.com/myorg/shared-tasks.git//tasks/release.toml?ref=main",
 ]
 ```
 
@@ -737,13 +739,15 @@ Required fields:
 
 - `protocol`: The git protocol (ssh or https).
 - `url`: The git repository URL.
-- `path`: The path to the directory in the repository.
+- `path`: The path to a directory or a `.toml` task file in the repository.
 
 Optional fields:
 
 - `ref`: The git reference (branch, tag, commit). Defaults to the repository's default branch.
 
-The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the included directory will be loaded as if they were local file tasks. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
+When `path` points at a directory, mise loads both executable file tasks and any `.toml` task files inside that directory. When `path` points at a single `.toml` file, only that file is loaded.
+
+Included `.toml` files use the [task toml file format](#task-config-includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include will be loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
 
 ## Monorepo Support <Badge type="warning" text="experimental" />
 
