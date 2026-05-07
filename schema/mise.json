@@ -2025,21 +2025,53 @@
       "additionalProperties": {
         "oneOf": [
           {
-            "description": "script to run",
+            "description": "script to run with task-style hook run semantics",
             "type": "string"
           },
           {
             "unevaluatedProperties": false,
             "properties": {
-              "script": {
-                "description": "script to run",
-                "type": "string"
+              "run": {
+                "description": "script or task-style run entries to execute",
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/task_run_entry"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/task_run_entry"
+                    }
+                  }
+                ]
+              },
+              "run_windows": {
+                "description": "Windows-specific script or task-style run entries to execute",
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/task_run_entry"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/task_run_entry"
+                    }
+                  }
+                ]
               },
               "shell": {
-                "description": "specify the shell to run the script inside of",
+                "description": "shell command to use for spawned script entries, such as \"bash -c\"",
                 "type": "string"
               }
             },
+            "anyOf": [
+              {
+                "required": ["run"]
+              },
+              {
+                "required": ["run_windows"]
+              }
+            ],
             "type": "object"
           },
           {
@@ -2054,25 +2086,82 @@
             "type": "object"
           },
           {
-            "description": "scripts/tasks to run",
+            "unevaluatedProperties": false,
+            "properties": {
+              "script": {
+                "description": "current-shell script for enter/leave/cd hooks, or deprecated spawned-run alias for install hooks",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "shell": {
+                "description": "current shell for enter/leave/cd hooks; ignored for install hooks that use script",
+                "type": "string"
+              }
+            },
+            "required": ["script"],
+            "type": "object"
+          },
+          {
+            "description": "hook entries to run in order",
             "items": {
               "oneOf": [
                 {
-                  "description": "script to run",
+                  "description": "script to run with task-style hook run semantics",
                   "type": "string"
                 },
                 {
                   "unevaluatedProperties": false,
                   "properties": {
-                    "script": {
-                      "description": "script to run",
-                      "type": "string"
+                    "run": {
+                      "description": "script or task-style run entries to execute",
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/task_run_entry"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/$defs/task_run_entry"
+                          }
+                        }
+                      ]
+                    },
+                    "run_windows": {
+                      "description": "Windows-specific script or task-style run entries to execute",
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/task_run_entry"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/$defs/task_run_entry"
+                          }
+                        }
+                      ]
                     },
                     "shell": {
-                      "description": "specify the shell to run the script inside of",
+                      "description": "shell command to use for spawned script entries, such as \"bash -c\"",
                       "type": "string"
                     }
                   },
+                  "anyOf": [
+                    {
+                      "required": ["run"]
+                    },
+                    {
+                      "required": ["run_windows"]
+                    }
+                  ],
                   "type": "object"
                 },
                 {
@@ -2084,6 +2173,31 @@
                     }
                   },
                   "required": ["task"],
+                  "type": "object"
+                },
+                {
+                  "unevaluatedProperties": false,
+                  "properties": {
+                    "script": {
+                      "description": "current-shell script for enter/leave/cd hooks, or deprecated spawned-run alias for install hooks",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "shell": {
+                      "description": "current shell for enter/leave/cd hooks; ignored for install hooks that use script",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["script"],
                   "type": "object"
                 }
               ]
