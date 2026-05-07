@@ -45,3 +45,11 @@ just_root="$(mise where aqua:casey/just@1.46.0)"
 assert_directory_exists "$just_root/.mise-bins"
 assert "mise which just" "$just_root/.mise-bins/just"
 assert_contains "mise x -- just --version" "just 1.46.0"
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:casey/just" = { version = "1.46", symlink_bins = true }
+EOF
+
+assert "mise bin-paths" "$MISE_DATA_DIR/installs/aqua-casey-just/1.46/.mise-bins"
+assert "mise which just" "$MISE_DATA_DIR/installs/aqua-casey-just/1.46/.mise-bins/just"

@@ -3,6 +3,8 @@ use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
+#[cfg(windows)]
+use crate::backend::runtime_path_for_install_path;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -336,7 +338,10 @@ impl Backend for NPMBackend {
         _config: &Arc<Config>,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        Ok(Self::windows_bin_paths_for_install_path(&tv.install_path()))
+        Ok(Self::windows_bin_paths_for_install_path(&tv.install_path())
+            .into_iter()
+            .map(|path| runtime_path_for_install_path(tv, path))
+            .collect())
     }
 }
 

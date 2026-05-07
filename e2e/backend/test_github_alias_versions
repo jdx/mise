@@ -21,4 +21,13 @@ assert_contains "mise ls-remote tiny" "1.0.0"
 # Installing with @latest should resolve to 1.0.0 from the github releases
 mise install
 assert "mise where tiny" "$MISE_DATA_DIR/installs/tiny/1.0.0"
+assert "mise bin-paths tiny" "$MISE_DATA_DIR/installs/tiny/latest/hello-world-1.0.0/bin"
+assert_contains "mise x -- hello-world" "hello world"
+
+# Once the fuzzy request is recorded in the lockfile, PATH-facing bin paths
+# should use the concrete locked install path so the runtime label cannot drift.
+touch mise.lock
+mise install
+assert_contains "cat mise.lock" "1.0.0"
+assert "mise bin-paths tiny" "$MISE_DATA_DIR/installs/tiny/1.0.0/hello-world-1.0.0/bin"
 assert_contains "mise x -- hello-world" "hello world"
