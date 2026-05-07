@@ -2,8 +2,6 @@ use expr::{Context, Environment, Program, Value};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use serde::Deserializer;
-use serde::de::Error as DeError;
 use serde_derive::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
@@ -91,7 +89,7 @@ pub struct AquaVar {
     pub name: String,
     /// Aqua's schema allows arbitrary YAML defaults, but mise intentionally
     /// supports only string defaults to keep variable resolution simple.
-    #[serde(default, deserialize_with = "deserialize_aqua_var_default")]
+    #[serde(default)]
     pub default: Option<String>,
     #[serde(default)]
     pub required: bool,
@@ -610,42 +608,6 @@ fn normalize_libc(libc: Option<&str>) -> Option<&str> {
         _ => None,
     }
 }
-
-fn deserialize_aqua_var_default<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = <serde_yaml::Value as serde::Deserialize>::deserialize(deserializer)?;
-    aqua_var_default_from_yaml(value).map_err(D::Error::custom)
-}
-
-fn aqua_var_default_from_yaml(
-    value: serde_yaml::Value,
-) -> std::result::Result<Option<String>, String> {
-    match value {
-        serde_yaml::Value::String(s) => Ok(Some(s)),
-        serde_yaml::Value::Tagged(tagged) => aqua_var_default_from_yaml(tagged.value),
-        value => Err(format!(
-            "aqua var default must be a string, got {}",
-            yaml_value_kind(&value)
-        )),
-    }
-}
-
-fn yaml_value_kind(value: &serde_yaml::Value) -> &'static str {
-    match value {
-        serde_yaml::Value::String(_) => "string",
-        serde_yaml::Value::Number(_) => "number",
-        serde_yaml::Value::Bool(_) => "boolean",
-        serde_yaml::Value::Sequence(_) => "array",
-        serde_yaml::Value::Mapping(_) => "object",
-        serde_yaml::Value::Null => "null",
-        serde_yaml::Value::Tagged(tagged) => yaml_value_kind(&tagged.value),
-    }
-}
-
 /// splits a version number into an optional prefix and the remaining version string
 fn split_version_prefix(version: &str) -> (String, String) {
     version
@@ -1315,14 +1277,29 @@ packages:
     }
 
     #[test]
-    fn test_vars_non_string_defaults_fail_yaml_parse() {
-        for (yaml_default, kind) in [
-            ("null", "null"),
-            ("true", "boolean"),
-            ("123", "number"),
-            ("[stable, beta]", "array"),
-            ("{channel: stable}", "object"),
-        ] {
+    fn test_vars_scalar_defaults_deserialize_as_strings() {
+        for (yaml_default, expected) in [("true", "true"), ("123", "123")] {
+            let yml = format!(
+                r#"
+packages:
+  - vars:
+      - name: channel
+        default: {yaml_default}
+"#
+            );
+            let pkg = serde_yaml::from_str::<RegistryYaml>(&yml)
+                .unwrap()
+                .packages
+                .into_iter()
+                .next()
+                .unwrap();
+            assert_eq!(pkg.vars[0].default.as_deref(), Some(expected));
+        }
+    }
+
+    #[test]
+    fn test_vars_sequence_and_mapping_defaults_fail_yaml_parse() {
+        for yaml_default in ["[stable, beta]", "{channel: stable}"] {
             let yml = format!(
                 r#"
 packages:
@@ -1333,11 +1310,28 @@ packages:
             );
             let err = serde_yaml::from_str::<RegistryYaml>(&yml).unwrap_err();
             assert!(
-                err.to_string()
-                    .contains(&format!("aqua var default must be a string, got {kind}")),
+                err.to_string().contains("invalid type"),
                 "unexpected error for {yaml_default}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn test_vars_null_default_deserializes_as_none() {
+        let yml = r#"
+packages:
+  - vars:
+      - name: channel
+        default: null
+"#;
+        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap();
+
+        assert_eq!(pkg.vars[0].default, None);
     }
 
     #[test]
