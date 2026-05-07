@@ -57,6 +57,21 @@ It also supports `.tool-versions`, `.nvmrc` or `.node-version` file to find out 
 
 This makes it a drop-in replacement for `nvm`. See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
 
+::: tip
+`.nvmrc` and `.node-version` are disabled by default and must be explicitly enabled:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools node
+```
+
+Or in `~/.config/mise/config.toml`:
+
+```toml
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+```
+:::
+
 ## Default node packages
 
 mise-node can automatically install a default set of npm packages right after installing a node version. To enable this feature, provide a `$HOME/.default-npm-packages` file that lists one package per line, for example:
