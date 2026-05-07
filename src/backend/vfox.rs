@@ -73,6 +73,14 @@ impl Backend for VfoxBackend {
         !self.is_backend_plugin()
     }
 
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        // TODO: support a vfox backend plugin capability/metadata field for
+        // declaring which tool options affect BackendListVersions. The
+        // vendored plugins do not currently expose version-listing options, so
+        // keep versions-host behavior unchanged until there is a real contract.
+        &[]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let this = self;
         timeout::run_with_timeout_async(

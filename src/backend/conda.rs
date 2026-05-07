@@ -622,6 +622,10 @@ impl Backend for CondaBackend {
         &self.ba
     }
 
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["channel"]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let channel = self.channel(&opts)?;
