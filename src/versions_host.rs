@@ -192,7 +192,7 @@ async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Res
 fn track_install_url(tool: &str) -> String {
     format!(
         "https://mise-versions.jdx.dev/api/tools/{}",
-        urlencoding::encode(tool)
+        crate::url_encoding::encode_component(tool)
     )
 }
 

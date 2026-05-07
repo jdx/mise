@@ -91,6 +91,7 @@ mod tokens;
 mod toml;
 mod toolset;
 mod ui;
+mod url_encoding;
 mod uv;
 mod versions_host;
 mod watch_files;

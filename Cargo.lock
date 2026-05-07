@@ -5771,7 +5771,6 @@ dependencies = [
  "toml_edit",
  "ubi",
  "url",
- "urlencoding",
  "usage-lib",
  "versions",
  "vfox",

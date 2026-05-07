@@ -402,9 +402,7 @@ pub fn get_filename_from_url(url_str: &str) -> String {
             .unwrap_or(url_str)
             .to_string()
     };
-    urlencoding::decode(&filename)
-        .map(|s| s.to_string())
-        .unwrap_or(filename)
+    crate::url_encoding::decode_component(&filename).unwrap_or(filename)
 }
 
 pub fn install_artifact(
