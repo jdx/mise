@@ -409,6 +409,7 @@ Deprecated. Use the `prerelease = true` tool option on a `dotnet:` tool, or the 
 `prereleases` setting, to include pre-release versions.
 
 This legacy setting is a list of flags to extend the search and install abilities of dotnet tools.
+Because it is global, remove it before relying on `prerelease = false` per-tool opt-outs.
 The only supported flag is:
 
 - 'prerelease' : include pre-release versions in search and install

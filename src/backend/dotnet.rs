@@ -107,8 +107,7 @@ impl Backend for DotnetBackend {
     }
 
     fn include_prereleases(&self, opts: &ToolVersionOptions) -> bool {
-        let legacy_enabled = dotnet_legacy_prerelease_package_flag_enabled();
-        include_prereleases(opts) || legacy_enabled
+        include_prereleases(opts) || dotnet_legacy_prerelease_package_flag_enabled()
     }
 }
 
