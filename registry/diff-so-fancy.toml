@@ -1,3 +1,11 @@
-backends = ["github:so-fancy/diff-so-fancy", "npm:diff-so-fancy"]
 description = "Make your diffs human readable instead of machine readable"
 test = { cmd = "diff-so-fancy --version", expected = "Version      : {{version}}" }
+
+[[backends]]
+full = "npm:diff-so-fancy"
+
+[[backends]]
+full = "github:so-fancy/diff-so-fancy"
+
+[backends.options]
+asset_pattern = "diff-so-fancy"
