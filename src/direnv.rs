@@ -10,7 +10,7 @@ use eyre::Result;
 use flate2::Compression;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use itertools::Itertools;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DirenvDiff {

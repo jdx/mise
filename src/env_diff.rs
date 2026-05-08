@@ -11,7 +11,7 @@ use flate2::Compression;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
 use crate::env::PATH_KEY;

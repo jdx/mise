@@ -10,7 +10,7 @@ use crate::platform::Platform;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{Report, Result, bail, eyre};
 use itertools::Itertools;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -193,7 +193,7 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
                     .ok_or_else(|| de::Error::custom("empty provenance table"))?;
                 let result = match key.as_str() {
                     "slsa" => {
-                        #[derive(serde_derive::Deserialize)]
+                        #[derive(serde::Deserialize)]
                         struct SlsaInner {
                             url: Option<String>,
                         }

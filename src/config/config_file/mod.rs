@@ -30,7 +30,7 @@ use crate::{
 use eyre::{Result, eyre};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::IndexMap;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
 

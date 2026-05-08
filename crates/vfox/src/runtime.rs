@@ -1,7 +1,7 @@
 use crate::config::{arch, env_type, os};
 use mlua::{UserData, UserDataFields};
-use once_cell::sync::Lazy;
 use std::path::PathBuf;
+use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
