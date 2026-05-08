@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use bzip2::read::BzDecoder;
 use color_eyre::eyre::{Context, Result};
-use eyre::bail;
+use eyre::{bail, eyre};
 use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
@@ -455,11 +455,31 @@ pub fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
 #[cfg(unix)]
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     trace!("ln -sf {} {}", target.display(), link.display());
-    if link.is_file() || link.is_symlink() {
-        fs::remove_file(link)?;
-    }
-    symlink(target, link)
+    // Create the symlink at a unique sibling path and atomically rename it
+    // into place. `rename(2)` replaces an existing file or symlink atomically,
+    // which makes this safe under concurrent `mise install` against a shared
+    // $MISE_DATA_DIR — for example, multiple Buildkite agents on a single
+    // host racing to install the same tool. The previous "remove then
+    // symlink" sequence had a TOCTOU window in which a sibling process could
+    // recreate the link between the check and the call, so the second
+    // `symlink(2)` failed with EEXIST surfaced as
+    // "failed to ln -sf … File exists (os error 17)".
+    let parent = link.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = link
+        .file_name()
+        .ok_or_else(|| eyre!("symlink path has no file name: {}", link.display()))?;
+    let tmp = parent.join(format!(
+        ".{}.tmp.{}",
+        file_name.to_string_lossy(),
+        std::process::id(),
+    ));
+    symlink(target, &tmp)
         .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
+    if let Err(err) = fs::rename(&tmp, link) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err)
+            .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()));
+    }
     Ok((target.to_path_buf(), link.to_path_buf()))
 }
 
@@ -1794,5 +1814,72 @@ mod tests {
 
         assert!(!src.exists());
         assert_eq!(fs::read(dst.join("nested/bun")).unwrap(), b"hello");
+    }
+
+    /// Regression test for the TOCTOU race in `make_symlink` that surfaced as
+    /// "failed to ln -sf … File exists (os error 17)" when multiple
+    /// `mise install` processes update the same `installs/<tool>/latest`
+    /// symlink concurrently against a shared $MISE_DATA_DIR — e.g. several
+    /// Buildkite agents on a single host writing to /opt/mise/data.
+    ///
+    /// The production race is genuinely cross-process. We `fork(2)` rather
+    /// than re-`exec`ing the test binary so the children inherit the
+    /// already-initialized mise test environment (`#[ctor::ctor] init`)
+    /// and don't race on the shared test HOME during startup.
+    #[test]
+    #[cfg(unix)]
+    fn make_symlink_concurrent_does_not_eexist() {
+        use nix::sys::wait::{WaitStatus, waitpid};
+        use nix::unistd::{ForkResult, fork};
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let target_a = dir.path().join("a");
+        let target_b = dir.path().join("b");
+        fs::create_dir(&target_a).unwrap();
+        fs::create_dir(&target_b).unwrap();
+        let link = dir.path().join("latest");
+
+        let n_procs = 8;
+        let n_iters = 200;
+
+        let mut child_pids = Vec::with_capacity(n_procs);
+        for i in 0..n_procs {
+            let target = if i % 2 == 0 { &target_a } else { &target_b };
+            // SAFETY: between fork and _exit we run only filesystem syscalls
+            // and exit. No allocator games, no panic unwinding back into
+            // libtest.
+            match unsafe { fork() }.expect("fork") {
+                ForkResult::Child => {
+                    for _ in 0..n_iters {
+                        if make_symlink(target, &link).is_err() {
+                            // Surface the error via a non-zero exit code —
+                            // formatting/printing isn't safe here.
+                            unsafe { nix::libc::_exit(1) };
+                        }
+                    }
+                    unsafe { nix::libc::_exit(0) };
+                }
+                ForkResult::Parent { child } => child_pids.push(child),
+            }
+        }
+
+        let mut failures = 0;
+        for pid in child_pids {
+            match waitpid(pid, None).expect("waitpid") {
+                WaitStatus::Exited(_, 0) => {}
+                other => {
+                    eprintln!("child {pid} did not exit cleanly: {other:?}");
+                    failures += 1;
+                }
+            }
+        }
+        assert_eq!(
+            failures, 0,
+            "{failures} child process(es) hit make_symlink races"
+        );
+
+        let resolved = fs::read_link(&link).unwrap();
+        assert!(resolved == target_a || resolved == target_b);
     }
 }
