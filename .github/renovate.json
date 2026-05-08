@@ -25,6 +25,12 @@
       "matchPackageNames": ["taiki-e/install-action"],
       "matchManagers": ["github-actions"],
       "enabled": false
+    },
+    {
+      "description": "rattler crates are tightly version-locked across the workspace; bump together.",
+      "matchPackageNames": ["/^rattler($|_)/"],
+      "matchManagers": ["cargo"],
+      "groupName": "rattler"
     }
   ]
 }
