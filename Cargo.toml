@@ -130,7 +130,7 @@ path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
 rand = "0.10"
 rattler = { version = "0.40", default-features = false }
-rattler_conda_types = { version = "0.44", default-features = false }
+rattler_conda_types = { version = "0.46", default-features = false }
 rattler_repodata_gateway = { version = "0.27", default-features = false, features = [
   "gateway",
 ] }
