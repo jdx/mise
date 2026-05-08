@@ -1,0 +1,3 @@
+backends = ["conda:mysql-client"]
+description = "MySQL Client"
+test = { cmd = "mysql --version", expected = "{{version}}" }
