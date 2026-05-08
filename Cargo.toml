@@ -134,7 +134,7 @@ rattler_conda_types = { version = "0.44", default-features = false }
 rattler_repodata_gateway = { version = "0.27", default-features = false, features = [
   "gateway",
 ] }
-rattler_solve = { version = "5", default-features = false, features = [
+rattler_solve = { version = "6", default-features = false, features = [
   "resolvo",
 ] }
 rattler_package_streaming = { version = "0.24", default-features = false }
