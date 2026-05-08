@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-unset GITHUB_TOKEN GITHUB_API_TOKEN
+unset MISE_GITHUB_TOKEN GITHUB_API_TOKEN GITHUB_TOKEN
 
 # Create a cargo-binstall stub that just outputs the value of GITHUB_TOKEN
 cat >~/bin/cargo-binstall <<'EOF'
@@ -18,3 +18,6 @@ assert_contains "GITHUB_API_TOKEN=foobar mise install -f cargo:eza@0.18.24 2>&1"
 
 # This should prefer GITHUB_API_TOKEN
 assert_contains "GITHUB_API_TOKEN=foobar GITHUB_TOKEN=barquz mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"
+
+# This should prefer MISE_GITHUB_TOKEN
+assert_contains "MISE_GITHUB_TOKEN=foobar GITHUB_API_TOKEN=barquz GITHUB_TOKEN=barquz mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"
