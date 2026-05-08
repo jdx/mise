@@ -1,6 +1,9 @@
 #:schema ./schema/mise.json
 min_version = "2024.1.1"
 
+[settings]
+lockfile = true
+
 [env]
 _.path = ["./target/debug", "./node_modules/.bin"]
 
