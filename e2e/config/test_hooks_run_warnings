@@ -12,6 +12,6 @@ EOF
 output=$(mise install 2>&1)
 assert_contains "echo '$output'" "PRE_SCRIPT"
 assert_contains "echo '$output'" "deprecated [hooks.script_without_shell]"
-assert_contains "echo '$output'" "Use \`run\`"
+assert_contains "echo '$output'" "spawned subprocess"
 assert_contains "echo '$output'" "deprecated [hooks.pre_postinstall_shell]"
 assert_not_contains "echo '$output'" "POST_SHELL"
