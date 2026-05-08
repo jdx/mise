@@ -3,7 +3,7 @@ use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use versions::Versioning;
@@ -12,7 +12,6 @@ use versions::Versioning;
 #[derive(
     Debug,
     Deserialize,
-    Serialize,
     Archive,
     RkyvDeserialize,
     RkyvSerialize,
@@ -38,7 +37,7 @@ pub enum AquaPackageType {
 ///
 /// rkyv archives parsed package data only. Runtime-only fields mirror serde's
 /// skipped behavior with `rkyv::with::Skip`.
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[rkyv(serialize_bounds(
     __S: rkyv::ser::Writer + rkyv::ser::Allocator,
     __S::Error: rkyv::rancor::Source,
@@ -92,7 +91,7 @@ pub struct AquaPackage {
 }
 
 /// Override configuration for specific OS/architecture combinations
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 struct AquaOverride {
     #[serde(flatten)]
     pkg: AquaPackage,
@@ -103,7 +102,7 @@ struct AquaOverride {
 }
 
 /// Runtime variant selector for an override.
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 struct AquaVariant {
     key: String,
     value: String,
@@ -115,9 +114,7 @@ struct AquaRuntime<'a> {
 }
 
 /// Variable definition for Aqua templates
-#[derive(
-    Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone, Default,
-)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone, Default)]
 pub struct AquaVar {
     pub name: String,
     /// Aqua's schema allows arbitrary YAML defaults, but mise intentionally
@@ -129,9 +126,7 @@ pub struct AquaVar {
 }
 
 /// File definition within a package
-#[derive(
-    Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone, Default,
-)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone, Default)]
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
@@ -144,7 +139,6 @@ pub struct AquaFile {
 #[derive(
     Debug,
     Deserialize,
-    Serialize,
     Archive,
     RkyvDeserialize,
     RkyvSerialize,
@@ -162,7 +156,7 @@ pub enum AquaChecksumAlgorithm {
 }
 
 /// Type of checksum source
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaChecksumType {
     GithubRelease,
@@ -170,7 +164,7 @@ pub enum AquaChecksumType {
 }
 
 /// Type of minisign source
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaMinisignType {
     GithubRelease,
@@ -178,7 +172,7 @@ pub enum AquaMinisignType {
 }
 
 /// Cosign signature configuration
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaCosignSignature {
     pub r#type: Option<String>,
     pub repo_owner: Option<String>,
@@ -188,7 +182,7 @@ pub struct AquaCosignSignature {
 }
 
 /// Cosign verification configuration
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaCosign {
     pub enabled: Option<bool>,
     pub signature: Option<AquaCosignSignature>,
@@ -200,7 +194,7 @@ pub struct AquaCosign {
 }
 
 /// SLSA provenance configuration
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaSlsaProvenance {
     pub enabled: Option<bool>,
     pub r#type: Option<String>,
@@ -213,7 +207,7 @@ pub struct AquaSlsaProvenance {
 }
 
 /// Minisign verification configuration
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaMinisign {
     pub enabled: Option<bool>,
     pub r#type: Option<AquaMinisignType>,
@@ -225,14 +219,14 @@ pub struct AquaMinisign {
 }
 
 /// GitHub artifact attestations configuration
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
     pub enabled: Option<bool>,
     pub signer_workflow: Option<String>,
 }
 
 /// Checksum verification configuration
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaChecksum {
     pub r#type: Option<AquaChecksumType>,
     pub algorithm: Option<AquaChecksumAlgorithm>,
@@ -245,14 +239,14 @@ pub struct AquaChecksum {
 }
 
 /// Checksum pattern configuration
-#[derive(Debug, Deserialize, Serialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaChecksumPattern {
     pub checksum: String,
     pub file: Option<String>,
 }
 
 /// Registry YAML file structure
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub struct RegistryYaml {
     pub packages: Vec<AquaPackage>,
 }
