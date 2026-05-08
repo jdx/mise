@@ -48,7 +48,7 @@
     "aliases": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/toolId"
+        "$ref": "#/$defs/toolId"
       },
       "description": "Alternative names for the tool"
     },
@@ -70,7 +70,7 @@
               "platforms": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/os"
+                  "$ref": "#/$defs/os"
                 },
                 "description": "Operating systems this backend supports"
               },
@@ -127,14 +127,14 @@
     "os": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/os"
+        "$ref": "#/$defs/os"
       },
       "description": "Operating systems this tool supports (empty means all)"
     },
     "overrides": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/toolId"
+        "$ref": "#/$defs/toolId"
       },
       "description": "List of tool IDs that this tool overrides"
     },
@@ -152,7 +152,7 @@
         "tools": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/toolId"
+            "$ref": "#/$defs/toolId"
           },
           "description": "Additional mise tools to install before running test.cmd. Used only by mise test-tool."
         }

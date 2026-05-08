@@ -2,7 +2,7 @@ use crate::semver::{chunkify_version, split_version_prefix};
 use crate::toolset;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, config::Config};
-use serde_derive::Serialize;
+use serde::Serialize;
 use std::{
     collections::BTreeSet,
     fmt::{Display, Formatter},

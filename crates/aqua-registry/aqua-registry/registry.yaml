@@ -2325,6 +2325,50 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: github_release
+    repo_owner: DataDog
+    repo_name: pup
+    aliases:
+      - name: datadog-labs/pup
+    description: Give your AI agent a Pup — a CLI companion with 200+ commands across 33+ Datadog products
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.21.0")
+        asset: pup_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: pup_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: pup_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: pup_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/datadog-labs/pup/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: pup_{{trimV .Version}}_checksums.txt.sigstore.json
+        supported_envs:
+          - linux
+          - darwin
   - name: DeNA/unity-meta-check/gh-action
     type: github_release
     repo_owner: DeNA
@@ -7896,6 +7940,7 @@ packages:
           - goos: windows
             format: zip
         github_immutable_release: true
+        github_release_attestations: true
       - version_constraint: Version == "v3.32.0"
         asset: upcloud-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -7909,6 +7954,7 @@ packages:
           - goos: windows
             format: zip
         github_immutable_release: true
+        github_release_attestations: true
       - version_constraint: "true"
         asset: upcloud-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -7924,6 +7970,7 @@ packages:
           - goos: windows
             format: zip
         github_immutable_release: true
+        github_release_attestations: true
   - type: github_release
     repo_owner: Versent
     repo_name: saml2aws
@@ -12802,6 +12849,28 @@ packages:
           - darwin
           - windows
           - amd64
+  - type: github_release
+    repo_owner: anthropics
+    repo_name: anthropic-cli
+    description: The CLI for the Claude API
+    files:
+      - name: ant
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.3.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: ant_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: ant_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
   - type: http
     repo_owner: anthropics
     repo_name: claude-code
@@ -15179,9 +15248,21 @@ packages:
           arm64: aarch64
         supported_envs:
           - linux
-      - version_constraint: "true"
+      - version_constraint: Version == "v1.4.6"
         asset: btop-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tbz
+        files:
+          - name: btop
+            src: btop/bin/btop
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: btop-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
         files:
           - name: btop
             src: btop/bin/btop
@@ -28336,6 +28417,12 @@ packages:
     repo_name: tfocus
     description: Terminal UI for Terraform workspace management
     crate: tfocus
+  - name: crates.io/wasmi_cli
+    type: cargo
+    repo_owner: wasmi-labs
+    repo_name: wasmi
+    description: WebAssembly interpreter
+    crate: wasmi_cli
   - name: crates.io/zizmor
     type: cargo
     repo_owner: zizmorcore
@@ -29907,48 +29994,6 @@ packages:
         supported_envs:
           - darwin
           - amd64
-  - type: github_release
-    repo_owner: datadog-labs
-    repo_name: pup
-    description: Give your AI agent a Pup — a CLI companion with 200+ commands across 33+ Datadog products
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.21.0")
-        asset: pup_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: pup_{{trimV .Version}}_checksums.txt
-          algorithm: sha256
-      - version_constraint: "true"
-        asset: pup_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-        checksum:
-          type: github_release
-          asset: pup_{{trimV .Version}}_checksums.txt
-          algorithm: sha256
-          cosign:
-            opts:
-              - --certificate-identity-regexp
-              - "^https://github\\.com/datadog-labs/pup/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
-              - --certificate-oidc-issuer
-              - https://token.actions.githubusercontent.com
-            bundle:
-              type: github_release
-              asset: pup_{{trimV .Version}}_checksums.txt.sigstore.json
-        supported_envs:
-          - linux
-          - darwin
   - type: github_release
     repo_owner: datadog
     repo_name: managed-kubernetes-auditing-toolkit
@@ -33388,6 +33433,7 @@ packages:
           asset: SHASUMS256.txt
           algorithm: sha256
         github_immutable_release: true
+        github_release_attestations: true
   - type: github_release
     repo_owner: drlau
     repo_name: akashi
@@ -40148,7 +40194,7 @@ packages:
     description: A security layer for Git repositories
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.12.0")
         asset: gittuf_{{trimV .Version}}_{{.OS}}_{{.Arch}}
         format: raw
         checksum:
@@ -40177,6 +40223,24 @@ packages:
             - https://github.com/gittuf/gittuf/releases/download/{{.Version}}/gittuf_{{trimV .Version}}_{{.OS}}_{{.Arch}}.sig
             - --certificate
             - https://github.com/gittuf/gittuf/releases/download/{{.Version}}/gittuf_{{trimV .Version}}_{{.OS}}_{{.Arch}}.pem
+      - version_constraint: Version == "v0.13.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: gittuf_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate-identity
+              - "https://github.com/gittuf/gittuf/.github/workflows/release.yml@refs/tags/{{.Version}}"
   - type: github_release
     repo_owner: gitui-org
     repo_name: gitui
@@ -49176,6 +49240,7 @@ packages:
             files:
               - name: prek
         github_immutable_release: true
+        github_release_attestations: true
       - version_constraint: "true"
         asset: prek-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -49200,6 +49265,7 @@ packages:
         github_artifact_attestations:
           signer_workflow: j178/prek/.github/workflows/release.yml
         github_immutable_release: true
+        github_release_attestations: true
   - type: github_release
     repo_owner: jacek-kurlit
     repo_name: pik
@@ -49550,6 +49616,7 @@ packages:
           - darwin/arm64
           - windows
         github_immutable_release: true
+        github_release_attestations: true
   - type: github_release
     repo_owner: jdx
     repo_name: mise
@@ -49619,6 +49686,7 @@ packages:
           - linux
           - darwin
         github_immutable_release: true
+        github_release_attestations: true
   - type: github_release
     repo_owner: jdx
     repo_name: usage
@@ -49677,6 +49745,7 @@ packages:
           - linux
           - darwin
         github_immutable_release: true
+        github_release_attestations: true
       - version_constraint: "true"
         asset: usage-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -49692,6 +49761,7 @@ packages:
           - goos: windows
             format: zip
         github_immutable_release: true
+        github_release_attestations: true
   - type: github_release
     repo_owner: jedisct1
     repo_name: minisign
@@ -51321,20 +51391,92 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
-  - name: jreleaser/jreleaser
-    type: github_release
+  - type: github_release
     repo_owner: jreleaser
     repo_name: jreleaser
-    description: Release projects quickly and easily with JReleaser
-    complete_windows_ext: false
-    asset: jreleaser-{{trimV .Version}}.zip
-    files:
-      - name: jreleaser
-        src: jreleaser-{{trimV .Version}}/bin/jreleaser
-    checksum:
-      type: github_release
-      asset: jreleaser-{{trimV .Version}}.zip.sha256
-      algorithm: sha256
+    description: ":rocket: Release projects quickly and easily with JReleaser"
+    version_filter: not (Version == "early-access")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.2.0")
+        asset: jreleaser-native-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: jreleaser
+            src: "{{.AssetWithoutExt}}/bin/jreleaser"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.5.1")
+        asset: jreleaser-native-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: jreleaser
+            src: "{{.AssetWithoutExt}}/bin/jreleaser"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.10.0")
+        asset: jreleaser-native-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: jreleaser
+            src: "{{.AssetWithoutExt}}/bin/jreleaser"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.16.0")
+        asset: jreleaser-native-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: jreleaser
+            src: "{{.AssetWithoutExt}}/bin/jreleaser"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: jreleaser-native-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: jreleaser
+            src: "{{.AssetWithoutExt}}/bin/jreleaser"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        overrides:
+          - goos: windows
+            replacements: {}
+        slsa_provenance:
+          type: github_release
+          asset: jreleaser-all-{{trimV .Version}}.intoto.jsonl
+          source_tag: "-"
   - name: jreleaser/jreleaser/standalone
     type: github_release
     repo_owner: jreleaser
@@ -51426,6 +51568,17 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: semver("< 1.13.0")
+        asset: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: checksums_sha256.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
@@ -51437,6 +51590,10 @@ packages:
           type: github_release
           asset: checksums_sha256.txt
           algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: jreleaser-all-{{trimV .Version}}.intoto.jsonl
+          source_tag: "-"
   - type: github_release
     repo_owner: jscaltreto
     repo_name: eks-auth
@@ -67944,6 +68101,41 @@ packages:
           asset: "{{.Asset}}.sha256sum"
           algorithm: sha256
   - type: github_release
+    repo_owner: openclaw
+    repo_name: gogcli
+    aliases:
+      - name: steipete/gogcli
+    description: "Google Suite CLI: Gmail, GCal, GDrive, GContacts"
+    files:
+      - name: gog
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.5.0")
+        asset: gogcli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: gog
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: gogcli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: gog
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: opencontainers
     repo_name: runc
     description: CLI tool for spawning and running containers according to the OCI specification
@@ -71816,6 +72008,7 @@ packages:
           darwin: macos
           windows: win
         github_immutable_release: true
+        github_release_attestations: true
       - version_constraint: semver("<= 11.0.4")
         asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -71828,6 +72021,7 @@ packages:
           - goos: windows
             format: zip
         github_immutable_release: true
+        github_release_attestations: true
       - version_constraint: "true"
         asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -71842,6 +72036,7 @@ packages:
         github_artifact_attestations:
           signer_workflow: pnpm/pnpm/\.github/workflows/release\.yml
         github_immutable_release: true
+        github_release_attestations: true
         supported_envs:
           - linux
           - windows
@@ -73909,6 +74104,31 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
+  - type: http
+    name: racket-lang.org/racket-minimal
+    url: https://download.racket-lang.org/releases/{{.Version}}/installers/racket-minimal-{{.Version}}-{{.Arch}}-{{.OS}}-cs.tgz
+    format: tgz
+    description: Minimal Racket distribution
+    files:
+      - name: racket
+        src: racket/bin/racket
+      - name: raco
+        src: racket/bin/raco
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: macosx
+      linux: linux-buster
+      windows: win32
+    overrides:
+      - goos: windows
+        replacements:
+          arm64: arm64
+        files:
+          - name: racket
+            src: racket/Racket
+          - name: raco
+            src: racket/raco
   - type: github_release
     repo_owner: rajatjindal
     repo_name: krew-release-bot
@@ -75066,6 +75286,25 @@ packages:
           - darwin/arm64
   - type: github_release
     repo_owner: reviewdog
+    repo_name: nightly
+    description: reviewdog nightly releases
+    asset: reviewdog_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    github_immutable_release: true
+    github_release_attestations: true
+    files:
+      - name: reviewdog
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+  - type: github_release
+    repo_owner: reviewdog
     repo_name: reviewdog
     description: Automated code review tool integrated with any code analysis tools regardless of programming language
     version_constraint: "false"
@@ -76010,6 +76249,59 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: github_release
+    repo_owner: runs-on
+    repo_name: cli
+    description: CLI for RunsOn
+    files:
+      - name: roc
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.4"
+        no_asset: true
+      - version_constraint: Version == "v0.1.5"
+        asset: cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: roc
+            src: cli
+        checksum:
+          type: github_release
+          asset: cli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.1.3")
+        asset: roc-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 2.12.6")
+        asset: roc_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 3.0.1")
+        asset: roc_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 3.0.4")
+        no_asset: true
+      - version_constraint: "true"
+        asset: roc_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
   - type: github_release
     repo_owner: rust-cross
     repo_name: cargo-zigbuild
@@ -83173,39 +83465,6 @@ packages:
           type: github_release
           asset: timoni_{{trimV .Version}}_provenance.intoto.jsonl
   - type: github_release
-    repo_owner: steipete
-    repo_name: gogcli
-    description: "Google Suite CLI: Gmail, GCal, GDrive, GContacts"
-    files:
-      - name: gog
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.5.0")
-        asset: gogcli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        files:
-          - name: gog
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-      - version_constraint: "true"
-        asset: gogcli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        files:
-          - name: gog
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-  - type: github_release
     repo_owner: stepchowfun
     repo_name: docuum
     description: Docuum performs least recently used (LRU) eviction of Docker images
@@ -84866,6 +85125,7 @@ packages:
           type: github_release
           asset: multiple.intoto.jsonl
         github_immutable_release: true
+        github_release_attestations: true
         overrides:
           - goos: windows
             format: zip
@@ -85229,6 +85489,7 @@ packages:
         github_artifact_attestations:
           signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
         github_immutable_release: true
+        github_release_attestations: true
         overrides:
           - goos: windows
             format: zip
@@ -91203,6 +91464,7 @@ packages:
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         github_immutable_release: true
+        github_release_attestations: true
       - version_constraint: semver("<= 2.68.1")
         asset: chezmoi_{{trimV .Version}}_{{.OS}}-glibc_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -91231,6 +91493,7 @@ packages:
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         github_immutable_release: true
+        github_release_attestations: true
       - version_constraint: "true"
         asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -91248,6 +91511,7 @@ packages:
           - goos: windows
             format: zip
         github_immutable_release: true
+        github_release_attestations: true
   - type: github_release
     repo_owner: txn2
     repo_name: kubefwd

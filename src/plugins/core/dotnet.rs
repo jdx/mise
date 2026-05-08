@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use eyre::Result;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use versions::Versioning;
 
 use crate::backend::Backend;

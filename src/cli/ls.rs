@@ -2,7 +2,7 @@ use comfy_table::{Attribute, Cell, Color};
 use eyre::{Result, ensure};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use serde_derive::Serialize;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
