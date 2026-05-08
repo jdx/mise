@@ -562,7 +562,6 @@ async fn get_desired_shims(
                         continue;
                     }
                 }
-                shim_owner.insert(shim.clone(), tool_id.clone());
                 shims.insert(shim);
             }
         }

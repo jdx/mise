@@ -601,11 +601,28 @@ impl Backend for AquaBackend {
         } else {
             // For multi-file packages, `files[*].name` is the user-facing
             // command name (the symlink target / dst basename in `srcs_for_platform`).
-            pkg.files
-                .iter()
-                .map(|f| f.name.clone())
-                .filter(|n| !n.is_empty())
-                .collect()
+            // Skip files where `src` evaluates to `None` for this platform —
+            // `file_link_for_version` skips them at install time, so producing
+            // a shim for them would point to a binary that's never on disk.
+            // (We've already returned early above when any `f.link` is set, so
+            // we don't need to handle the explicit_link branch here.)
+            // Template errors propagate as `Ok(None)` overall: safer to fall
+            // back than to make a half-correct prediction.
+            let mut acc = vec![];
+            for f in &pkg.files {
+                match f.src(&pkg, &tv.version, os(), arch()) {
+                    Ok(Some(_)) if !f.name.is_empty() => acc.push(f.name.clone()),
+                    Ok(_) => {}
+                    Err(e) => {
+                        trace!(
+                            "lazy_shim_bin_names: src template failed for {} {}: {:#}",
+                            self.id, f.name, e
+                        );
+                        return Ok(None);
+                    }
+                }
+            }
+            acc
         };
 
         if names.is_empty() {

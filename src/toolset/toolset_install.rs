@@ -667,18 +667,25 @@ fn should_refresh_remote_versions(
 /// invocation-time bin name (e.g. "fancy" on macOS, "fancy.exe" on Windows)
 /// compare equal. Mirrors the transformations applied by
 /// `shim_names_for_platform` in `src/shims.rs`.
+///
+/// On macOS APFS is case-insensitive and shim files are lowercased.
+/// On Windows the filesystem is case-insensitive too, and shim files carry
+/// platform-configured executable extensions (`.exe`, `.cmd`, ...). We
+/// pull the list from `Settings::windows_executable_extensions` so it stays
+/// in sync with mise's overall executable detection.
 fn normalize_lazy_bin_name(name: &str) -> String {
     let mut s = name.to_string();
-    if cfg!(windows) {
-        for ext in [".exe", ".cmd", ".bat", ".ps1"] {
-            if let Some(stripped) = s.strip_suffix(ext) {
+    if cfg!(any(target_os = "macos", target_os = "windows")) {
+        s = s.to_lowercase();
+    }
+    if cfg!(target_os = "windows") {
+        for ext in &Settings::get().windows_executable_extensions {
+            let suffix = format!(".{}", ext.to_lowercase());
+            if let Some(stripped) = s.strip_suffix(&suffix) {
                 s = stripped.to_string();
                 break;
             }
         }
-    }
-    if cfg!(macos) {
-        s = s.to_lowercase();
     }
     s
 }
