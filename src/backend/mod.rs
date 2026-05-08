@@ -666,6 +666,21 @@ mod tests {
     }
 
     #[test]
+    fn test_include_prereleases_accepts_deprecated_plural_alias() {
+        use crate::toolset::ToolVersionOptions;
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("prereleases".to_string(), toml::Value::Boolean(true));
+        assert!(include_prereleases(&opts));
+
+        // The canonical singular opt wins if both spellings are present.
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(false));
+        assert!(!include_prereleases(&opts));
+    }
+
+    #[test]
     fn test_include_prereleases_global_setting_overrides_per_tool_default() {
         use crate::config::settings::SettingsPartial;
         use crate::toolset::ToolVersionOptions;
@@ -766,6 +781,13 @@ pub trait Backend: Debug + Send + Sync {
     /// and should mark regex-shaped versions as prereleases before caching.
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         false
+    }
+
+    /// Whether pre-release versions should be included for this backend and
+    /// current tool options. Backends can override this only for compatibility
+    /// with deprecated backend-specific prerelease settings.
+    fn include_prereleases(&self, opts: &crate::toolset::ToolVersionOptions) -> bool {
+        include_prereleases(opts)
     }
 
     /// Tool option keys whose non-registry overrides change the backend's
@@ -949,7 +971,7 @@ pub trait Backend: Debug + Send + Sync {
         // that honor `prerelease`. When the current opts don't opt in, drop
         // entries with `prerelease = true` before returning so flipping the
         // tool option takes effect without invalidating the cache.
-        let want_prereleases = include_prereleases(opts);
+        let want_prereleases = self.include_prereleases(opts);
 
         if Settings::get().offline() {
             trace!(
@@ -1185,7 +1207,7 @@ pub trait Backend: Debug + Send + Sync {
         let versions = self.list_installed_versions();
         // No async config lookup available here; fall back to inline/registry
         // opts, which is the best we have for a sync path.
-        let filter = !include_prereleases(&self.ba().opts());
+        let filter = !self.include_prereleases(&self.ba().opts());
         self.fuzzy_match_filter(versions, query, filter)
     }
     async fn list_versions_matching(
@@ -1195,7 +1217,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        let filter = !include_prereleases(&opts);
+        let filter = !self.include_prereleases(&opts);
         Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
@@ -1230,7 +1252,7 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        let filter = !include_prereleases(&opts);
+        let filter = !self.include_prereleases(&opts);
         Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
@@ -2556,18 +2578,38 @@ pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
 /// or `--prerelease` on `ls-remote`) is on, or the per-tool `prerelease = true`
 /// option is set. Accepts both TOML booleans (`prerelease = true`) and the
 /// string form (`prerelease = "true"`), since inline backend args normalize
-/// scalars to strings before they reach here. Used by `github:` and `aqua:`
-/// backends to opt in to pre-release versions in `ls-remote`, `latest`
-/// resolution, and fuzzy matching.
+/// scalars to strings before they reach here. The deprecated `prereleases`
+/// tool option spelling is also accepted for compatibility. Used by backends
+/// to opt in to pre-release versions in `ls-remote`, `latest` resolution, and
+/// fuzzy matching.
 pub(crate) fn include_prereleases(opts: &crate::toolset::ToolVersionOptions) -> bool {
     if Settings::get().prereleases {
         return true;
     }
-    opts.opts.get("prerelease").is_some_and(|v| match v {
+
+    if let Some(value) = opts.opts.get("prerelease") {
+        return tool_option_bool(value);
+    }
+
+    if let Some(value) = opts.opts.get("prereleases") {
+        deprecated_at!(
+            "2026.11.0",
+            "2027.11.0",
+            "tool_option.prereleases",
+            "`prereleases` tool option is deprecated. Use `prerelease` instead."
+        );
+        return tool_option_bool(value);
+    }
+
+    false
+}
+
+fn tool_option_bool(value: &toml::Value) -> bool {
+    match value {
         toml::Value::Boolean(b) => *b,
         toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
         _ => false,
-    })
+    }
 }
 
 /// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection

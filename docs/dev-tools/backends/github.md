@@ -277,6 +277,8 @@ When set:
 
 Useful for repositories whose active releases are all pre-releases (e.g. internal tools shipping continuous dev builds), or when you need to track a project's release candidates. Draft releases are always excluded. Has no effect on GitLab/Forgejo.
 
+The legacy `prereleases = true` tool-option spelling is deprecated. Use `prerelease = true`.
+
 ## Self-hosted GitHub
 
 If you are using a self-hosted GitHub instance, set the `api_url` tool option. For authentication, see [GitHub Tokens](/dev-tools/github-tokens.html#github-enterprise).

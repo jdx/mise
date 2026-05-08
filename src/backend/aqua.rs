@@ -289,7 +289,11 @@ impl Backend for AquaBackend {
         Ok(versions)
     }
 
-    async fn latest_stable_version(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        if self.include_prereleases(&opts) {
+            return Ok(None);
+        }
         self.latest_marked_release_version().await
     }
 

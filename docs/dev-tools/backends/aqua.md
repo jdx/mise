@@ -89,6 +89,8 @@ By default, releases flagged `prerelease: true` on GitHub are excluded from `mis
 
 When set, pre-release tags (e.g. `v1.0.0-rc1`, `v0.1.2-dev.86`) appear in `mise ls-remote`, `latest` resolves against the full list including pre-releases, and fuzzy version queries match pre-release tags. Has no effect when a package uses the `github_tag` version source (git tags don't carry a prerelease flag). Draft releases are always excluded. See the [github backend docs](/dev-tools/backends/github.html#prerelease) for more detail.
 
+The legacy `prereleases = true` tool-option spelling is deprecated. Use `prerelease = true`.
+
 ## Settings
 
 <script setup>
