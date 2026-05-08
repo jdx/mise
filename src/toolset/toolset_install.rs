@@ -524,9 +524,18 @@ impl Toolset {
         // so a never-installed aqua tool can be discovered & auto-installed.
         // If multiple configured aqua tools advertise the same bin, skip
         // auto-install entirely — same determinism rule as `get_desired_shims`.
+        //
+        // Name matching mirrors the platform transformations done at shim
+        // generation time (`shim_names_for_platform`):
+        //   - macOS: APFS is case-insensitive and shim files are lowercased,
+        //     so a shim invocation may reach us with a case that differs from
+        //     `pkg.files[*].name` in the registry.
+        //   - Windows: shim names get `.exe`/`.cmd`/etc. appended; the bin
+        //     name from the shim entry point may carry that extension.
         if plugins.is_empty() {
             let settings = Settings::get();
             if settings.experimental && settings.experimental_lazy_shims {
+                let target = normalize_lazy_bin_name(bin_name);
                 let mut lazy_matches = vec![];
                 for (backend, tv) in self.list_current_versions() {
                     if backend.get_type() != BackendType::Aqua {
@@ -536,7 +545,7 @@ impl Toolset {
                         continue;
                     }
                     if let Ok(Some(names)) = backend.lazy_shim_bin_names(config, &tv).await
-                        && names.iter().any(|n| n == bin_name)
+                        && names.iter().any(|n| normalize_lazy_bin_name(n) == target)
                     {
                         lazy_matches.push(backend);
                     }
@@ -652,4 +661,24 @@ fn should_refresh_remote_versions(
         ToolRequest::Sub { orig_version, .. } => orig_version == "latest",
         ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => false,
     }
+}
+
+/// Normalize a binary name so a registry-declared name (e.g. "Fancy") and an
+/// invocation-time bin name (e.g. "fancy" on macOS, "fancy.exe" on Windows)
+/// compare equal. Mirrors the transformations applied by
+/// `shim_names_for_platform` in `src/shims.rs`.
+fn normalize_lazy_bin_name(name: &str) -> String {
+    let mut s = name.to_string();
+    if cfg!(windows) {
+        for ext in [".exe", ".cmd", ".bat", ".ps1"] {
+            if let Some(stripped) = s.strip_suffix(ext) {
+                s = stripped.to_string();
+                break;
+            }
+        }
+    }
+    if cfg!(macos) {
+        s = s.to_lowercase();
+    }
+    s
 }
