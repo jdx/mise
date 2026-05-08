@@ -43,6 +43,8 @@ pub struct JavaPlugin {
     ba: Arc<BackendArg>,
     java_metadata_ea_cache: CacheManager<HashMap<String, JavaMetadata>>,
     java_metadata_ga_cache: CacheManager<HashMap<String, JavaMetadata>>,
+    java_metadata_target_cache:
+        tokio::sync::Mutex<HashMap<(String, String), HashMap<String, JavaMetadata>>>,
 }
 
 impl JavaPlugin {
@@ -60,6 +62,7 @@ impl JavaPlugin {
             )
             .with_fresh_duration(settings.fetch_remote_versions_cache())
             .build(),
+            java_metadata_target_cache: tokio::sync::Mutex::new(HashMap::new()),
             ba,
         }
     }
@@ -96,6 +99,21 @@ impl JavaPlugin {
         release_type: &str,
         target: &PlatformTarget,
     ) -> Result<HashMap<String, JavaMetadata>> {
+        if target.platform == current_java_platform() {
+            return Ok(self.fetch_java_metadata(release_type).await?.clone());
+        }
+
+        let cache_key = (release_type.to_string(), target.to_key());
+        if let Some(metadata) = self
+            .java_metadata_target_cache
+            .lock()
+            .await
+            .get(&cache_key)
+            .cloned()
+        {
+            return Ok(metadata);
+        }
+
         let mut metadata = HashMap::new();
 
         for m in self
@@ -104,6 +122,11 @@ impl JavaPlugin {
         {
             Self::insert_java_metadata(&mut metadata, m, &target.platform);
         }
+
+        self.java_metadata_target_cache
+            .lock()
+            .await
+            .insert(cache_key, metadata.clone());
 
         Ok(metadata)
     }
@@ -655,6 +678,9 @@ fn java_file_type_supported(platform: &Platform, file_type: &str) -> bool {
 
 fn current_java_platform() -> Platform {
     let settings = Settings::get();
+    // Preserve Java's existing host behavior: downloads are selected from the
+    // actual runtime OS, while settings.arch can override architecture. Explicit
+    // cross-platform lock generation uses PlatformTarget instead.
     let qualifier = if OS.as_str() == "linux" && Platform::current().libc() == Some("musl") {
         Some("musl".to_string())
     } else {
