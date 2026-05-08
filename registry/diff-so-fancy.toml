@@ -1,5 +1,5 @@
 description = "Make your diffs human readable instead of machine readable"
-test = { cmd = "diff-so-fancy --version", expected = "Version      : {{version}}" }
+test = { cmd = "diff-so-fancy --debug", expected = "{{version}}" }
 
 [[backends]]
 full = "npm:diff-so-fancy"
