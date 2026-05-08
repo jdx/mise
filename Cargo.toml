@@ -137,7 +137,7 @@ rattler_repodata_gateway = { version = "0.27", default-features = false, feature
 rattler_solve = { version = "5", default-features = false, features = [
   "resolvo",
 ] }
-rattler_package_streaming = { version = "0.24", default-features = false }
+rattler_package_streaming = { version = "0.25", default-features = false }
 rattler_virtual_packages = { version = "2", default-features = false }
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = [
