@@ -666,21 +666,6 @@ mod tests {
     }
 
     #[test]
-    fn test_include_prereleases_accepts_deprecated_plural_alias() {
-        use crate::toolset::ToolVersionOptions;
-
-        let mut opts = ToolVersionOptions::default();
-        opts.opts
-            .insert("prereleases".to_string(), toml::Value::Boolean(true));
-        assert!(include_prereleases(&opts));
-
-        // The canonical singular opt wins if both spellings are present.
-        opts.opts
-            .insert("prerelease".to_string(), toml::Value::Boolean(false));
-        assert!(!include_prereleases(&opts));
-    }
-
-    #[test]
     fn test_include_prereleases_global_setting_overrides_per_tool_default() {
         use crate::config::settings::SettingsPartial;
         use crate::toolset::ToolVersionOptions;
@@ -2578,26 +2563,14 @@ pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
 /// or `--prerelease` on `ls-remote`) is on, or the per-tool `prerelease = true`
 /// option is set. Accepts both TOML booleans (`prerelease = true`) and the
 /// string form (`prerelease = "true"`), since inline backend args normalize
-/// scalars to strings before they reach here. The deprecated `prereleases`
-/// tool option spelling is also accepted for compatibility. Used by backends
-/// to opt in to pre-release versions in `ls-remote`, `latest` resolution, and
-/// fuzzy matching.
+/// scalars to strings before they reach here. Used by backends to opt in to
+/// pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching.
 pub(crate) fn include_prereleases(opts: &crate::toolset::ToolVersionOptions) -> bool {
     if Settings::get().prereleases {
         return true;
     }
 
     if let Some(value) = opts.opts.get("prerelease") {
-        return tool_option_bool(value);
-    }
-
-    if let Some(value) = opts.opts.get("prereleases") {
-        deprecated_at!(
-            "2026.11.0",
-            "2027.11.0",
-            "tool_option.prereleases",
-            "`prereleases` tool option is deprecated. Use `prerelease` instead."
-        );
         return tool_option_bool(value);
     }
 

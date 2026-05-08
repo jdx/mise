@@ -79,5 +79,3 @@ By default, NuGet pre-release versions are excluded from `mise ls-remote` and fr
 ```
 
 The legacy `dotnet.package_flags = ["prerelease"]` setting is deprecated. Prefer the per-tool `prerelease = true` option, or the global `prereleases` setting when every tool should include pre-release versions. Because `dotnet.package_flags` is global, remove it before relying on `prerelease = false` per-tool opt-outs.
-
-The legacy `prereleases = true` tool-option spelling is also deprecated. Use `prerelease = true`.
