@@ -775,6 +775,10 @@
           "description": "Enable experimental mise features which are incomplete or unstable—breakings changes may occur",
           "type": "boolean"
         },
+        "experimental_lazy_shims": {
+          "description": "[experimental] Generate shims for aqua-backed tools before they are installed and auto-install on first invocation.",
+          "type": "boolean"
+        },
         "fetch_remote_versions_cache": {
           "default": "1h",
           "description": "How long to cache remote versions for tools.",
