@@ -166,7 +166,7 @@ jobs:
 
   lint:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
-    timeout-minutes: 15
+    timeout-minutes: 20
     needs: [build-ubuntu]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

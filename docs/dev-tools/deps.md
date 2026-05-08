@@ -44,13 +44,6 @@ auto = true  # Auto-run before mise x/run
 [deps.bundler]
 [deps.composer]
 
-# Custom provider
-[deps.codegen]
-auto = true
-sources = ["schema/*.graphql"]
-outputs = ["src/generated/"]
-run = "npm run codegen"
-
 # Disable specific providers
 [deps]
 disable = ["npm"]

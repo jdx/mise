@@ -1,5 +1,35 @@
 # Changelog
 
+## [2026.5.3](https://github.com/jdx/mise/compare/v2026.5.2..v2026.5.3) - 2026-05-08
+
+### 🐛 Bug Fixes
+
+- **(aqua)** resolve latest from GitHub releases by @risu729 in [#9277](https://github.com/jdx/mise/pull/9277)
+
+### 📦️ Dependency Updates
+
+- update ubuntu:26.04 docker digest to f3d2860 by @renovate[bot] in [#9697](https://github.com/jdx/mise/pull/9697)
+- update ghcr.io/jdx/mise:alpine docker digest to d15f3f9 by @renovate[bot] in [#9694](https://github.com/jdx/mise/pull/9694)
+- update ghcr.io/jdx/mise:rpm docker digest to 9084f68 by @renovate[bot] in [#9696](https://github.com/jdx/mise/pull/9696)
+- update ghcr.io/jdx/mise:deb docker digest to dd8a908 by @renovate[bot] in [#9695](https://github.com/jdx/mise/pull/9695)
+- update rust crate ctor to 0.12 by @renovate[bot] in [#9698](https://github.com/jdx/mise/pull/9698)
+
+### Chore
+
+- **(ci)** increase lint job timeout for clippy by @risu729 in [#9682](https://github.com/jdx/mise/pull/9682)
+- **(hk)** drop jq from schema lint step by @risu729 in [#9681](https://github.com/jdx/mise/pull/9681)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`DataDog/pup`](https://github.com/DataDog/pup)
+- [`reviewdog/nightly`](https://github.com/reviewdog/nightly)
+
+#### Updated Packages (1)
+
+- [`gittuf/gittuf`](https://github.com/gittuf/gittuf)
+
 ## [2026.5.2](https://github.com/jdx/mise/compare/v2026.5.1..v2026.5.2) - 2026-05-07
 
 ### 🚀 Features

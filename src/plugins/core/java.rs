@@ -13,6 +13,7 @@ use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::platform::Platform;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
@@ -508,9 +509,15 @@ impl Backend for JavaPlugin {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
+        // remove -musl feature in favour of alpine-linux OS
+        let query = if Platform::current().libc() == Some("musl") && query.contains("-musl") {
+            query.replace("-musl", "")
+        } else {
+            query.to_string()
+        };
         let is_vendor_prefix = query != "latest" && query.ends_with('-');
-        let query_escaped = regex::escape(query);
-        let query = match query {
+        let query_escaped = regex::escape(&query);
+        let query = match query.as_str() {
             "latest" => "[0-9].*",
             // else; use escaped query
             _ => &query_escaped,
@@ -544,6 +551,8 @@ fn os() -> &'static str {
         "macosx"
     } else if OS.as_str() == "freebsd" {
         "linux"
+    } else if OS.as_str() == "linux" && Platform::current().libc() == Some("musl") {
+        "alpine-linux"
     } else {
         &OS
     }
@@ -593,6 +602,9 @@ impl Display for JavaMetadata {
         }
         if let Some(features) = &self.features {
             for f in features {
+                if Platform::current().libc() == Some("musl") && f == "musl" {
+                    continue;
+                }
                 if JAVA_FEATURES.contains(f) {
                     v.push(f.clone());
                 }
