@@ -346,6 +346,7 @@ mod tests {
         assert!(is_published_release(&release("1.0.0", false, false)));
         assert!(is_published_release(&release("1.1.0-rc1", false, true)));
         assert!(!is_published_release(&release("1.2.0", true, false)));
+        assert!(!is_published_release(&release("1.2.0-rc1", true, true)));
     }
 
     #[test]
