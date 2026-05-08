@@ -5,6 +5,9 @@ export MISE_LOCKFILE=1
 
 detect_platform
 CURRENT_PLATFORM="$MISE_PLATFORM"
+if [[ $MISE_PLATFORM_OS == "linux" ]] && type -P ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; then
+  CURRENT_PLATFORM="$CURRENT_PLATFORM-musl"
+fi
 
 cat <<'EOF' >mise.toml
 [tools]
