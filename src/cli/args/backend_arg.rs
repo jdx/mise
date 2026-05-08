@@ -905,13 +905,13 @@ mod tests {
     #[tokio::test]
     async fn test_opts_with_config_overlays_registry_config_and_inline() {
         let _config = Config::get().await.unwrap();
-        let ba: BackendArg = "graphite[exe=inline,foo=inline]".into();
-        let config_opts = parse_tool_options("exe=config,bar=config");
+        let ba: BackendArg = "solidity[bin=inline,foo=inline]".into();
+        let config_opts = parse_tool_options("bin=config,bar=config");
 
         let opts = ba.opts_with_config(Some(config_opts));
 
-        assert_eq!(ba.registry_opts().get("exe"), Some("gt"));
-        assert_eq!(opts.get("exe"), Some("inline"));
+        assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
+        assert_eq!(opts.get("bin"), Some("inline"));
         assert_eq!(opts.get("bar"), Some("config"));
         assert_eq!(opts.get("foo"), Some("inline"));
     }
@@ -919,14 +919,14 @@ mod tests {
     #[tokio::test]
     async fn test_opts_with_layers_preserves_alias_options() {
         let _config = Config::get().await.unwrap();
-        let ba: BackendArg = "graphite[exe=inline,foo=inline]".into();
-        let alias_opts = parse_tool_options("exe=alias,alias_only=alias");
-        let config_opts = parse_tool_options("exe=config,config_only=config");
+        let ba: BackendArg = "solidity[bin=inline,foo=inline]".into();
+        let alias_opts = parse_tool_options("bin=alias,alias_only=alias");
+        let config_opts = parse_tool_options("bin=config,config_only=config");
 
         let opts = ba.opts_with_layers(Some(alias_opts), Some(config_opts));
 
-        assert_eq!(ba.registry_opts().get("exe"), Some("gt"));
-        assert_eq!(opts.get("exe"), Some("inline"));
+        assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
+        assert_eq!(opts.get("bin"), Some("inline"));
         assert_eq!(opts.get("alias_only"), Some("alias"));
         assert_eq!(opts.get("config_only"), Some("config"));
         assert_eq!(opts.get("foo"), Some("inline"));
@@ -935,17 +935,17 @@ mod tests {
     #[test]
     fn test_opts_include_resolved_full_bracket_options() {
         let ba = BackendArg::new_raw(
-            "graphite".to_string(),
-            Some("github:withgraphite/homebrew-tap[foo=resolved]".to_string()),
-            "withgraphite/homebrew-tap".to_string(),
+            "solidity".to_string(),
+            Some("github:ethereum/solidity[foo=resolved]".to_string()),
+            "ethereum/solidity".to_string(),
             None,
             BackendResolution::new(true),
         );
 
         let opts = ba.opts();
 
-        assert_eq!(ba.registry_opts().get("exe"), Some("gt"));
-        assert_eq!(opts.get("exe"), Some("gt"));
+        assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
+        assert_eq!(opts.get("bin"), Some("solc"));
         assert_eq!(opts.get("foo"), Some("resolved"));
     }
 }
