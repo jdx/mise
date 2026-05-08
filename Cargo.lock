@@ -240,7 +240,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "aqua-registry"
-version = "2026.5.1"
+version = "2026.5.2"
 dependencies = [
  "expr-lang",
  "eyre",
@@ -5636,7 +5636,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.5.2"
+version = "2026.5.3"
 dependencies = [
  "age",
  "aho-corasick",
