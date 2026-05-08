@@ -76,7 +76,10 @@ assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred
 # Test 8e: credential_command still receives host as deprecated $1 compatibility
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo token-for-\$1' mise token github ghe.example.com --unmask" "token-for-ghe.example.com"
 
-# Test 8f: credential_command uses the configured default inline shell
+# Test 8f: credential_command receives host and provider as env vars
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo \$MISE_CREDENTIAL_PROVIDER-\$MISE_CREDENTIAL_HOST' mise token github ghe.example.com --unmask" "github-ghe.example.com"
+
+# Test 8g: credential_command uses the configured default inline shell
 cat >"$HOME/credential-shell" <<'SCRIPT'
 #!/bin/sh
 echo "custom-shell-token"

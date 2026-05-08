@@ -60,12 +60,12 @@ pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, S
 /// The host and provider are passed through `MISE_CREDENTIAL_HOST` and
 /// `MISE_CREDENTIAL_PROVIDER`. Results are cached per provider+host.
 pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Option<String> {
-    if cmd.contains("$1") {
+    if credential_command_uses_legacy_host_arg(cmd) {
         deprecated_at!(
-            "2026.5.0",
-            "2027.5.0",
+            "2026.11.0",
+            "2027.11.0",
             "credential-command-shell-arg",
-            "Use MISE_CREDENTIAL_HOST instead of $1 in {provider} credential_command"
+            "Use MISE_CREDENTIAL_HOST instead of $1/${{1}} in {provider} credential_command"
         );
     }
 
@@ -158,6 +158,10 @@ fn shell_supports_posix_c_arg_passing(program: &str) -> bool {
         _ => basename,
     };
     SHELLS.iter().any(|shell| stem.eq_ignore_ascii_case(shell))
+}
+
+fn credential_command_uses_legacy_host_arg(cmd: &str) -> bool {
+    cmd.contains("$1") || cmd.contains("${1}")
 }
 
 /// Get a token by running `git credential fill`.
@@ -376,5 +380,16 @@ logins:
             r"C:\Program Files\Git\bin\BASH.EXE"
         ));
         assert!(!shell_supports_posix_c_arg_passing("cmd.exe"));
+    }
+
+    #[test]
+    fn test_credential_command_uses_legacy_host_arg() {
+        assert!(credential_command_uses_legacy_host_arg("echo token-for-$1"));
+        assert!(credential_command_uses_legacy_host_arg(
+            "echo token-for-${1}"
+        ));
+        assert!(!credential_command_uses_legacy_host_arg(
+            "echo $MISE_CREDENTIAL_HOST"
+        ));
     }
 }
