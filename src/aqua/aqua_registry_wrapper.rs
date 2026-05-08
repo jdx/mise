@@ -141,13 +141,12 @@ impl MiseRegistryFetcher {
                 self.load_compiled_registry()
                     .await
                     .map_err(|err| {
-                        if self.config.use_baked_registry {
-                            if let Some(registry_url) = self.config.registry_url.as_deref() {
+                        if self.config.use_baked_registry
+                            && let Some(registry_url) = self.config.registry_url.as_deref() {
                                 warn!(
                                     "failed to load aqua registry from {registry_url}: {err}; falling back to baked-in aqua registry"
                                 );
                             }
-                        }
                         err.to_string()
                     })
             })
