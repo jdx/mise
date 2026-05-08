@@ -276,7 +276,7 @@ When set:
 - `latest` resolves to the newest version across stable **and** pre-releases, rather than taking the GitHub `/releases/latest` shortcut (which returns whichever release the repo owner has marked as "Latest" — usually the newest non-prerelease, but it can be any release they've pinned via the API).
 - Fuzzy version queries (e.g. `1.2`) match pre-release tags under that prefix.
 
-Useful for repositories whose active releases are all pre-releases (e.g. internal tools shipping continuous dev builds), or when you need to track a project's release candidates. Draft releases are always excluded. Has no effect on GitLab/Forgejo.
+Useful for repositories whose active releases are all pre-releases (e.g. internal tools shipping continuous dev builds), or when you need to track a project's release candidates. Draft releases are always excluded. Has no effect on GitLab.
 
 ## Self-hosted GitHub
 

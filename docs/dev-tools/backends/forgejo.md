@@ -171,6 +171,23 @@ When `version_prefix` is configured, mise will:
   - User specifies `1.0.0` → mise searches for `1.0.0` tag (no prefix)
   - Useful for repositories that don't use any prefix
 
+### `prerelease`
+
+By default, releases flagged `prerelease: true` on Forgejo are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:
+
+```toml
+[tools]
+"forgejo:user/repo" = { version = "latest", prerelease = true }
+```
+
+When set:
+
+- Pre-release tags (e.g. `v1.0.0-rc1`, `v0.1.2-dev.86`) appear in `mise ls-remote`.
+- `latest` resolves to the newest version across stable and pre-releases, rather than taking the Forgejo `/repos/{owner}/{repo}/releases/latest` shortcut.
+- Fuzzy version queries (e.g. `1.2`) match pre-release tags under that prefix.
+
+Draft releases are always excluded.
+
 ### Platform-specific Asset Patterns
 
 For different asset patterns per platform:

@@ -1712,9 +1712,9 @@ type = "Bool"
 [prereleases]
 description = "Include pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching for all tools."
 docs = """
-By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote`,
+By default, releases flagged `prerelease: true` on GitHub/Forgejo are excluded from `mise ls-remote`,
 `latest` resolution, and fuzzy version matching. Per-tool opt-in is available via the
-`prerelease = true` tool option (currently honored by the `github:`, `aqua:`, and `dotnet:` backends).
+`prerelease = true` tool option (currently honored by the `github:`, `forgejo:`, `aqua:`, and `dotnet:` backends).
 
 Set `prereleases = true` (or `MISE_PRERELEASES=1`) to opt in globally for every tool —
 equivalent to setting `prerelease = true` on each one. Useful for build pipelines that

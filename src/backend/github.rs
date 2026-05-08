@@ -197,7 +197,7 @@ impl Backend for UnifiedGitBackend {
             format!("{}/{}", web_url, repo)
         };
 
-        // Get releases with full metadata from GitHub or GitLab
+        // Get releases with full metadata from GitHub, GitLab, or Forgejo
         let raw_versions: Vec<VersionInfo> = if self.is_gitlab() {
             gitlab::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
@@ -211,7 +211,7 @@ impl Backend for UnifiedGitBackend {
                 })
                 .collect()
         } else if self.is_forgejo() {
-            forgejo::list_releases_from_url(api_url.as_str(), &repo)
+            forgejo::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
@@ -219,6 +219,7 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
                     created_at: Some(r.created_at),
                     release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                    prerelease: r.prerelease,
                     ..Default::default()
                 })
                 .collect()
