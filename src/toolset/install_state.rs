@@ -74,6 +74,30 @@ fn persisted_manifest_opts(opts: &BTreeMap<String, toml::Value>) -> BTreeMap<Str
         .collect()
 }
 
+fn normalized_manifest_metadata(
+    mt: &ManifestTool,
+) -> (Option<String>, BTreeMap<String, toml::Value>, bool) {
+    let mut full = mt.full.clone();
+    let mut opts = persisted_manifest_opts(&mt.opts);
+    let mut should_rewrite = false;
+
+    if let Some(ref f) = full
+        && let Some((stripped_str, opts_str)) = crate::cli::args::split_bracketed_opts(f)
+    {
+        let parsed = parse_tool_options(opts_str);
+        for (k, v) in &parsed.opts {
+            if !should_persist_install_manifest_opt(k) {
+                continue;
+            }
+            opts.entry(k.clone()).or_insert(v.clone());
+        }
+        full = Some(stripped_str.to_string());
+        should_rewrite = true;
+    }
+
+    (full, opts, should_rewrite)
+}
+
 /// Read the consolidated manifest file. Returns empty map if it doesn't exist.
 fn read_manifest() -> Manifest {
     read_manifest_from(&manifest_path())
@@ -238,22 +262,8 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
 
         // Get metadata: prefer manifest, fall back to legacy .mise.backend
         let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
-            let mut full = mt.full.clone();
-            let mut opts = persisted_manifest_opts(&mt.opts);
-            // Backward compat: if opts is empty but full contains [...], extract opts
-            if opts.is_empty()
-                && let Some(ref f) = full
-                && let Some((stripped_str, opts_str)) = crate::cli::args::split_bracketed_opts(f)
-            {
-                let stripped = stripped_str.to_string();
-                let parsed = parse_tool_options(opts_str);
-                for (k, v) in &parsed.opts {
-                    if !should_persist_install_manifest_opt(k) {
-                        continue;
-                    }
-                    opts.insert(k.clone(), v.clone());
-                }
-                full = Some(stripped);
+            let (full, opts, should_rewrite) = normalized_manifest_metadata(mt);
+            if should_rewrite {
                 // Schedule manifest rewrite to migrate to new format
                 let m = updated_manifest.get_or_insert_with(|| manifest.clone());
                 m.insert(
@@ -344,12 +354,8 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             }
 
             let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
-                (
-                    mt.short.clone(),
-                    mt.full.clone(),
-                    mt.explicit_backend,
-                    persisted_manifest_opts(&mt.opts),
-                )
+                let (full, opts, _) = normalized_manifest_metadata(mt);
+                (mt.short.clone(), full, mt.explicit_backend, opts)
             } else {
                 (dir_name.clone(), None, true, BTreeMap::new())
             };
@@ -753,6 +759,48 @@ mod tests {
         assert!(!persisted.contains_key("version_list_url"));
         assert!(!persisted.contains_key("version_json_path"));
         assert!(!persisted.contains_key("postinstall"));
+    }
+
+    #[test]
+    fn test_normalized_manifest_metadata_strips_bracketed_full_with_existing_opts() {
+        use super::{ManifestTool, normalized_manifest_metadata};
+
+        let mut opts = BTreeMap::new();
+        opts.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/table.tar.gz".to_string()),
+        );
+        opts.insert(
+            "version_json_path".to_string(),
+            toml::Value::String(".old".to_string()),
+        );
+
+        let mt = ManifestTool {
+            short: "hello".to_string(),
+            full: Some(
+                "http:hello[url=\"https://example.com/full.tar.gz\",bin_path=\"bin\",version_list_url=\"https://example.com/versions.json\"]"
+                    .to_string(),
+            ),
+            explicit_backend: true,
+            opts,
+        };
+
+        let (full, opts, should_rewrite) = normalized_manifest_metadata(&mt);
+
+        assert_eq!(full.as_deref(), Some("http:hello"));
+        assert!(should_rewrite);
+        assert_eq!(
+            opts.get("url"),
+            Some(&toml::Value::String(
+                "https://example.com/table.tar.gz".to_string()
+            ))
+        );
+        assert_eq!(
+            opts.get("bin_path"),
+            Some(&toml::Value::String("bin".to_string()))
+        );
+        assert!(!opts.contains_key("version_json_path"));
+        assert!(!opts.contains_key("version_list_url"));
     }
 
     #[test]
