@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Tests the experimental lazy-shims feature for aqua-backed tools.
+#
+# When `experimental = true` and `experimental_lazy_shims = true`, mise
+# generates shims for aqua-backed tools that are configured but not yet
+# installed (using executable names from the aqua registry metadata) and
+# auto-installs the tool on first invocation of the shim.
+
+export MISE_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL_LAZY_SHIMS=1
+
+shimdir="$MISE_DATA_DIR/shims"
+mise_bin="$(which mise)"
+
+cat >mise.toml <<'EOF'
+[tools]
+"aqua:BurntSushi/ripgrep" = "14.0.0"
+EOF
+
+# Sanity: tool is configured but not installed.
+assert_not_contains "mise ls --installed" "ripgrep"
+
+# Generate shims. The lazy path should produce an `rg` shim even though
+# ripgrep is not installed.
+mise reshim
+
+assert "readlink $shimdir/rg" "$mise_bin"
+# The tool should still be uninstalled — only the shim was created.
+assert_not_contains "mise ls --installed" "ripgrep"
+
+# Disabling the experimental flag must NOT generate the lazy shim.
+rm -f "$shimdir/rg"
+MISE_EXPERIMENTAL_LAZY_SHIMS=0 mise reshim
+if [ -e "$shimdir/rg" ]; then
+  echo "rg shim should not exist when experimental_lazy_shims is off" >&2
+  exit 1
+fi
+
+# Re-enable and confirm the shim comes back.
+mise reshim
+assert "readlink $shimdir/rg" "$mise_bin"

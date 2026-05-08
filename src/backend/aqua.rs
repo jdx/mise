@@ -545,6 +545,75 @@ impl Backend for AquaBackend {
         Ok(paths)
     }
 
+    /// Determine shim names from aqua registry metadata, *without* requiring
+    /// the package to be installed. Used by `experimental_lazy_shims`.
+    ///
+    /// Returns `Ok(None)` whenever names cannot be determined unambiguously
+    /// from registry data so the caller falls back to current behavior.
+    async fn lazy_shim_bin_names(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<Option<Vec<String>>> {
+        let pkg = match self.package_with_options(tv, &[&tv.version]).await {
+            Ok(p) => p,
+            Err(e) => {
+                trace!(
+                    "lazy_shim_bin_names: failed to load aqua package {}: {:#}",
+                    self.id, e
+                );
+                return Ok(None);
+            }
+        };
+
+        if pkg.no_asset || pkg.error_message.is_some() {
+            return Ok(None);
+        }
+
+        // Skip when any file uses `link` — the install-time symlink-target
+        // resolution is non-trivial (template-evaluated per platform) and we
+        // don't want to risk producing the wrong shim name. Falling back is
+        // safe: the user gets current behavior.
+        if pkg.files.iter().any(|f| f.link.is_some()) {
+            return Ok(None);
+        }
+
+        let names: Vec<String> = if pkg.files.is_empty() {
+            // Single-binary fallback: aqua exposes the package as repo_name (or
+            // the last segment of `name` when set). Mirrors `srcs_for_platform`.
+            let fallback = pkg
+                .name
+                .as_deref()
+                .and_then(|n| n.split('/').next_back())
+                .filter(|n| !n.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    if pkg.repo_name.is_empty() {
+                        None
+                    } else {
+                        Some(pkg.repo_name.clone())
+                    }
+                });
+            match fallback {
+                Some(n) => vec![n],
+                None => return Ok(None),
+            }
+        } else {
+            // For multi-file packages, `files[*].name` is the user-facing
+            // command name (the symlink target / dst basename in `srcs_for_platform`).
+            pkg.files
+                .iter()
+                .map(|f| f.name.clone())
+                .filter(|n| !n.is_empty())
+                .collect()
+        };
+
+        if names.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(names))
+    }
+
     fn resolve_lockfile_options(
         &self,
         request: &ToolRequest,

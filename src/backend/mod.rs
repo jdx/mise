@@ -1729,6 +1729,24 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
 
+    /// Returns the executable shim names this tool would expose, *without* requiring
+    /// the tool to be installed.
+    ///
+    /// Used by the experimental lazy-shims feature
+    /// (`experimental_lazy_shims`) to generate shims for tools whose binary
+    /// names can be determined ahead of installation from registry metadata.
+    ///
+    /// Backends that cannot determine names without installation must return
+    /// `Ok(None)` (the default). Returning `Ok(Some(_))` is a promise that the
+    /// names are deterministic for this `tv`.
+    async fn lazy_shim_bin_names(
+        &self,
+        _config: &Arc<Config>,
+        _tv: &ToolVersion,
+    ) -> Result<Option<Vec<String>>> {
+        Ok(None)
+    }
+
     async fn exec_env(
         &self,
         _config: &Arc<Config>,

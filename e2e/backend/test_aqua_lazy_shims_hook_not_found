@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Tests the experimental lazy-shims feature on the `mise hook-not-found`
+# code path used by `mise activate`'s `command_not_found_handler`.
+#
+# Users running in PATH-based activate mode (no shims on PATH) rely on the
+# shell's `command_not_found` hook to invoke `mise hook-not-found <bin>`,
+# which delegates to `Toolset::install_missing_bin`. This test verifies that
+# the lazy aqua fallback added to `install_missing_bin` makes a never-installed
+# aqua tool installable via this path — without a prior `reshim` and without
+# any installed version of the backend.
+
+export MISE_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL_LAZY_SHIMS=1
+
+cat >mise.toml <<'EOF'
+[tools]
+"aqua:BurntSushi/ripgrep" = "14.0.0"
+EOF
+
+# Sanity: tool is configured but not installed.
+assert_not_contains "mise ls --installed" "ripgrep"
+
+# Drive the activate-mode path directly. `hook-not-found` should locate the
+# aqua-backed tool via lazy registry metadata and install it.
+mise hook-not-found -s zsh -- rg
+
+# Tool must now be installed without us ever generating a shim.
+assert_contains "mise ls --installed" "ripgrep"
+
+# When the experimental flag is off, the same call must NOT trigger an install
+# for a different never-installed tool — confirms the fallback is gated.
+cat >mise.toml <<'EOF'
+[tools]
+"aqua:sharkdp/hyperfine" = "1.18.0"
+EOF
+assert_not_contains "mise ls --installed" "hyperfine"
+
+# `hook-not-found` exits 127 when no provider is found; bash test harness
+# would abort on non-zero, so accept either path here.
+MISE_EXPERIMENTAL_LAZY_SHIMS=0 mise hook-not-found -s zsh -- hyperfine || true
+assert_not_contains "mise ls --installed" "hyperfine"

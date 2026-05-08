@@ -578,6 +578,31 @@ right, try disabling it if you can.
 env = "MISE_EXPERIMENTAL"
 type = "Bool"
 
+[experimental_lazy_shims]
+description = "[experimental] Generate shims for aqua-backed tools before they are installed and auto-install on first invocation."
+docs = """
+[experimental] When set together with `experimental = true`, mise will generate shims for
+aqua-backed tools that are configured but not yet installed, when the executable names
+can be determined unambiguously from the aqua registry metadata.
+
+When such a shim is executed, the underlying tool is installed automatically and then
+the requested binary is run. The same code path is used by `mise activate`'s
+`command_not_found_handler`, so users without shims on PATH are also covered.
+
+Currently this is limited to the aqua backend. The lazy shim is *not* generated when:
+
+- The aqua registry package has no `files` entry and no derivable name
+- Any of the package's files use the `link` field (per-platform template — too risky
+  to resolve ahead of install)
+- The package is unsupported on the current platform (`no_asset` / `error_message`)
+- Two or more configured aqua tools advertise the same executable name
+
+In any of these cases the existing behavior applies (no lazy shim, install required
+before the binary can be invoked).
+"""
+env = "MISE_EXPERIMENTAL_LAZY_SHIMS"
+type = "Bool"
+
 [fetch_remote_versions_cache]
 default = "1h"
 description = "How long to cache remote versions for tools."

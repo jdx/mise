@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::exec::Exec;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
@@ -19,6 +20,7 @@ use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
 use path_absolutize::Absolutize;
+use std::collections::HashMap;
 use tokio::task::JoinSet;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
@@ -490,6 +492,10 @@ async fn get_desired_shims(
 ) -> Result<HashSet<String>> {
     let _mise_bin = mise_bin; // used on Windows only
     let mut shims = HashSet::new();
+    // shim name -> backend short id; tracks which tool owns each generated shim
+    // so lazy shims never overwrite an installed tool's shim.
+    let mut shim_owner: HashMap<String, String> = HashMap::new();
+
     for (t, tv) in toolset.list_installed_versions(config).await? {
         let bins = list_tool_bins(config, t.clone(), &tv)
             .await
@@ -497,12 +503,84 @@ async fn get_desired_shims(
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
             });
-        if cfg!(windows) {
-            #[cfg(windows)]
-            let shim_mode = effective_shim_mode(_mise_bin);
-            #[cfg(not(windows))]
-            let shim_mode = String::new();
-            shims.extend(bins.into_iter().flat_map(|b| {
+        for shim in shim_names_for_platform(bins, _mise_bin) {
+            shim_owner.insert(shim.clone(), t.id().to_string());
+            shims.insert(shim);
+        }
+    }
+
+    // experimental: lazy shims for configured-but-not-installed aqua tools
+    let settings = Settings::get();
+    if settings.experimental && settings.experimental_lazy_shims {
+        // Group lazy candidates by shim name to detect cross-tool conflicts
+        // (two configured aqua tools advertising the same exec name).
+        let mut lazy_candidates: HashMap<String, Vec<String>> = HashMap::new();
+        let mut lazy_buf: Vec<(String, Vec<String>)> = Vec::new();
+
+        for (t, tv) in toolset.list_current_versions() {
+            if t.get_type() != BackendType::Aqua {
+                continue;
+            }
+            if t.is_version_installed(config, &tv, true) {
+                continue;
+            }
+            let names = match t.lazy_shim_bin_names(config, &tv).await {
+                Ok(Some(names)) => names,
+                Ok(None) => continue,
+                Err(e) => {
+                    trace!("lazy shim names error for {tv}: {e:#}");
+                    continue;
+                }
+            };
+            let processed = shim_names_for_platform(names, _mise_bin);
+            for shim in &processed {
+                lazy_candidates
+                    .entry(shim.clone())
+                    .or_default()
+                    .push(t.id().to_string());
+            }
+            lazy_buf.push((t.id().to_string(), processed));
+        }
+
+        for (tool_id, names) in lazy_buf {
+            for shim in names {
+                // Skip if another (installed) tool already claims this shim.
+                if let Some(owner) = shim_owner.get(&shim)
+                    && owner != &tool_id
+                {
+                    trace!("skipping lazy shim {shim} for {tool_id} (owned by installed {owner})");
+                    continue;
+                }
+                // Skip if multiple configured aqua tools would advertise this name.
+                if let Some(claimants) = lazy_candidates.get(&shim) {
+                    let others: Vec<&String> =
+                        claimants.iter().filter(|id| *id != &tool_id).collect();
+                    if !others.is_empty() {
+                        trace!(
+                            "skipping lazy shim {shim} for {tool_id} (also claimed by {others:?})"
+                        );
+                        continue;
+                    }
+                }
+                shim_owner.insert(shim.clone(), tool_id.clone());
+                shims.insert(shim);
+            }
+        }
+    }
+
+    Ok(shims)
+}
+
+/// Apply platform-specific transformations (Windows extensions, macOS case)
+/// to a flat list of bin names.
+fn shim_names_for_platform(bins: Vec<String>, _mise_bin: &Path) -> Vec<String> {
+    if cfg!(windows) {
+        #[cfg(windows)]
+        let shim_mode = effective_shim_mode(_mise_bin);
+        #[cfg(not(windows))]
+        let shim_mode = String::new();
+        bins.into_iter()
+            .flat_map(|b| {
                 let p = PathBuf::from(&b);
                 match shim_mode.as_ref() {
                     "hardlink" | "symlink" => {
@@ -522,15 +600,14 @@ async fn get_desired_shims(
                     }
                     _ => panic!("Unknown shim mode"),
                 }
-            }));
-        } else if cfg!(macos) {
-            // some bins might be uppercased but on mac APFS is case insensitive
-            shims.extend(bins.into_iter().map(|b| b.to_lowercase()));
-        } else {
-            shims.extend(bins);
-        }
+            })
+            .collect()
+    } else if cfg!(macos) {
+        // some bins might be uppercased but on mac APFS is case insensitive
+        bins.into_iter().map(|b| b.to_lowercase()).collect()
+    } else {
+        bins
     }
-    Ok(shims)
 }
 
 // lists all the paths to bins in a tv that shims will be needed for

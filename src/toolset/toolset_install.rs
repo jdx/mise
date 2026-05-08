@@ -7,6 +7,7 @@ use itertools::Itertools;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
+use crate::backend::backend_type::BackendType;
 use crate::config::Config;
 use crate::config::settings::Settings;
 use crate::errors::Error;
@@ -514,6 +515,44 @@ impl Toolset {
                 if let Ok(Some(_bin)) = backend.which(config, tv, bin_name).await {
                     plugins.insert(backend.clone());
                     break;
+                }
+            }
+        }
+
+        // experimental: when no installed backend can provide this bin and
+        // `experimental_lazy_shims` is on, fall back to aqua registry metadata
+        // so a never-installed aqua tool can be discovered & auto-installed.
+        // If multiple configured aqua tools advertise the same bin, skip
+        // auto-install entirely — same determinism rule as `get_desired_shims`.
+        if plugins.is_empty() {
+            let settings = Settings::get();
+            if settings.experimental && settings.experimental_lazy_shims {
+                let mut lazy_matches = vec![];
+                for (backend, tv) in self.list_current_versions() {
+                    if backend.get_type() != BackendType::Aqua {
+                        continue;
+                    }
+                    if backend.is_version_installed(config, &tv, true) {
+                        continue;
+                    }
+                    if let Ok(Some(names)) = backend.lazy_shim_bin_names(config, &tv).await
+                        && names.iter().any(|n| n == bin_name)
+                    {
+                        lazy_matches.push(backend);
+                    }
+                }
+                match lazy_matches.len() {
+                    1 => {
+                        plugins.insert(lazy_matches.into_iter().next().unwrap());
+                    }
+                    n if n > 1 => {
+                        let ids: Vec<_> = lazy_matches.iter().map(|b| b.id().to_string()).collect();
+                        trace!(
+                            "lazy auto-install for {bin_name} skipped: \
+                             advertised by multiple aqua tools {ids:?}"
+                        );
+                    }
+                    _ => {}
                 }
             }
         }
