@@ -236,7 +236,7 @@ serde_yaml = "0.9"
 
 [dev-dependencies]
 clap-sort = "1"
-ctor = "0.10"
+ctor = "0.12"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 pretty_assertions = "1"
