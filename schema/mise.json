@@ -2025,14 +2025,25 @@
       "additionalProperties": {
         "oneOf": [
           {
-            "description": "script to run",
+            "description": "command to run in a spawned subprocess",
             "type": "string"
           },
           {
             "unevaluatedProperties": false,
             "properties": {
+              "run": {
+                "description": "command to run in a spawned subprocess",
+                "type": "string"
+              }
+            },
+            "required": ["run"],
+            "type": "object"
+          },
+          {
+            "unevaluatedProperties": false,
+            "properties": {
               "script": {
-                "description": "script to run",
+                "description": "script to run in the active shell",
                 "type": "string"
               },
               "shell": {
@@ -2040,6 +2051,7 @@
                 "type": "string"
               }
             },
+            "required": ["script"],
             "type": "object"
           },
           {
@@ -2058,14 +2070,25 @@
             "items": {
               "oneOf": [
                 {
-                  "description": "script to run",
+                  "description": "command to run in a spawned subprocess",
                   "type": "string"
                 },
                 {
                   "unevaluatedProperties": false,
                   "properties": {
+                    "run": {
+                      "description": "command to run in a spawned subprocess",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["run"],
+                  "type": "object"
+                },
+                {
+                  "unevaluatedProperties": false,
+                  "properties": {
                     "script": {
-                      "description": "script to run",
+                      "description": "script to run in the active shell",
                       "type": "string"
                     },
                     "shell": {
@@ -2073,6 +2096,7 @@
                       "type": "string"
                     }
                   },
+                  "required": ["script"],
                   "type": "object"
                 },
                 {

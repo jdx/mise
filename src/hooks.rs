@@ -54,12 +54,14 @@ pub enum Hooks {
 /// Represents a hook definition in TOML config.
 /// Supports string, table, task reference, or array formats via serde untagged deserialization.
 #[derive(Debug, Clone, serde::Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum HookDef {
-    /// Simple script string: `enter = "echo hello"`
-    Script(String),
+    /// Simple run string: `enter = "echo hello"`
+    RunString(String),
+    /// Table with run: `enter = { run = "echo hello" }`
+    Run { run: String },
     /// Table with script and optional shell: `enter = { script = "echo hello", shell = "bash" }`
-    Table {
+    Script {
         script: String,
         shell: Option<String>,
     },
@@ -73,20 +75,45 @@ impl HookDef {
     /// Convert to a list of Hook structs with the given hook type
     pub fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
         match self {
-            HookDef::Script(script) => vec![Hook {
+            HookDef::RunString(script) => vec![Hook {
                 hook: hook_type,
                 script,
                 shell: None,
                 task_name: None,
                 global: false,
             }],
-            HookDef::Table { script, shell } => vec![Hook {
+            HookDef::Run { run } => vec![Hook {
                 hook: hook_type,
-                script,
-                shell,
+                script: run,
+                shell: None,
                 task_name: None,
                 global: false,
             }],
+            HookDef::Script { script, shell } => {
+                if shell.is_none() {
+                    deprecated_at!(
+                        "2026.5.0",
+                        "2027.5.0",
+                        "hooks.script_without_shell",
+                        "Hook `script` without `shell` is deprecated. Use `run` to execute a hook in a spawned subprocess."
+                    );
+                }
+                if matches!(hook_type, Hooks::Preinstall | Hooks::Postinstall) && shell.is_some() {
+                    deprecated_at!(
+                        "2026.5.0",
+                        "2027.5.0",
+                        "hooks.pre_postinstall_shell",
+                        "Preinstall and postinstall hooks do not support `shell`. Use `run` or `task` instead."
+                    );
+                }
+                vec![Hook {
+                    hook: hook_type,
+                    script,
+                    shell,
+                    task_name: None,
+                    global: false,
+                }]
+            }
             HookDef::TaskRef { task } => vec![Hook {
                 hook: hook_type,
                 script: String::new(),

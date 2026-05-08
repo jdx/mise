@@ -10,7 +10,7 @@ This hook is run anytimes the directory is changed.
 
 ```toml
 [hooks]
-cd = "echo 'I changed directories'"
+cd = { run = "echo 'I changed directories'" }
 ```
 
 ## Enter hook
@@ -19,7 +19,7 @@ This hook is run when the project is entered. Changing directories while in the 
 
 ```toml
 [hooks]
-enter = "echo 'I entered the project'"
+enter = { run = "echo 'I entered the project'" }
 ```
 
 ## Leave hook
@@ -28,27 +28,28 @@ This hook is run when the project is left. Changing directories while in the pro
 
 ```toml
 [hooks]
-leave = "echo 'I left the project'"
+leave = { run = "echo 'I left the project'" }
 ```
 
 ## Preinstall/postinstall hook
 
 These hooks are run before and after tools are installed (respectively). Unlike other hooks, these hooks do not require `mise activate`.
+They run in spawned subprocesses and do not support `shell`.
 
 ```toml
 [hooks]
-preinstall = "echo 'I am about to install tools'"
-postinstall = "echo 'I just installed tools'"
+preinstall = { run = "echo 'I am about to install tools'" }
+postinstall = { run = "echo 'I just installed tools'" }
 ```
 
 The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed:
 
 ```toml
 [hooks]
-postinstall = '''
+postinstall = { run = '''
 echo "Installed: $MISE_INSTALLED_TOOLS"
 # Example output: [{"name":"node","version":"20.10.0"},{"name":"python","version":"3.12.0"}]
-'''
+''' }
 ```
 
 ## Tool-level postinstall
@@ -86,7 +87,7 @@ You can mix task references with inline scripts in arrays:
 
 ```toml
 [hooks]
-enter = ["echo 'entering project'", { task = "setup" }]
+enter = [{ run = "echo 'entering project'" }, { task = "setup" }]
 ```
 
 Task hooks work with all hook types (`enter`, `leave`, `cd`, `preinstall`, `postinstall`).
@@ -124,6 +125,9 @@ Hooks are executed with the following environment variables set:
 - `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
 - `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed (only for `postinstall` hooks).
 
+Subprocess hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
+(`enter = "echo hi"`) is also executed as a subprocess.
+
 ## Shell hooks
 
 Hooks can be executed in the current shell, for example if you'd like to add bash completions when entering a directory:
@@ -133,6 +137,8 @@ Hooks can be executed in the current shell, for example if you'd like to add bas
 shell = "bash"
 script = "source completions.sh"
 ```
+
+`script` is for shell hooks. Use `run` when the hook should execute in a spawned subprocess.
 
 ::: warning
 I feel this should be obvious but in case it's not, this isn't going to do any sort of cleanup
@@ -152,12 +158,12 @@ You can use arrays to define multiple hooks in the same file:
 ```toml
 [hooks]
 enter = [
-  "echo 'I entered the project'",
-  "echo 'I am in the project'"
+  { run = "echo 'I entered the project'" },
+  { run = "echo 'I am in the project'" }
 ]
 
 [[hooks.cd]]
-script = "echo 'I changed directories'"
+run = "echo 'I changed directories'"
 [[hooks.cd]]
-script = "echo 'I also directories'"
+run = "echo 'I also changed directories'"
 ```
