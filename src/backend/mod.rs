@@ -1989,8 +1989,8 @@ pub trait Backend: Debug + Send + Sync {
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
         let lockfile_enabled = settings.lockfile_enabled();
 
-        // Get the platform key for this tool and platform
-        let platform_key = self.get_platform_key();
+        // Get the platform key for this tool version, respecting per-tool arch options
+        let platform_key = tv.platform_key();
 
         // Get or create asset info for this platform
         let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();

@@ -723,6 +723,37 @@ impl Settings {
         }
     }
 
+    /// Normalizes an arch string to the canonical form used by mise.
+    /// Returns `None` for unrecognized arch strings.
+    pub fn normalize_arch(arch: &str) -> Option<&'static str> {
+        Some(match arch {
+            "x86_64" | "amd64" | "x64" => "x64",
+            "aarch64" | "arm64" => "arm64",
+            "arm" | "arm32" | "armhf" | "armv7l" | "armv6l" => "arm",
+            "x86" | "i386" | "i686" => "x86",
+            "ppc64le" | "powerpc64le" => "ppc64le",
+            "s390x" => "s390x",
+            "riscv64" | "riscv64gc" => "riscv64",
+            "loong64" | "loongarch64" => "loong64",
+            _ => return None,
+        })
+    }
+
+    /// Returns the install path suffix for a given raw arch string when it
+    /// differs from the native arch (e.g. `Some("x64")` on an arm64 machine
+    /// when `arch = "x86_64"`). Returns `None` for native or unknown arches.
+    pub fn arch_suffix_for(arch: &str) -> Option<&'static str> {
+        let normalized = Self::normalize_arch(arch)?;
+        let native = Self::normalize_arch(ARCH)?;
+        if normalized != native { Some(normalized) } else { None }
+    }
+
+    /// Returns the arch suffix when the globally configured arch differs from
+    /// the native arch. Returns `None` when they match.
+    pub fn arch_suffix(&self) -> Option<&'static str> {
+        Self::arch_suffix_for(self.arch())
+    }
+
     pub fn libc(&self) -> Option<&str> {
         match self.libc.as_deref()?.to_ascii_lowercase().as_str() {
             "glibc" | "gnu" => Some("gnu"),
@@ -1201,5 +1232,51 @@ mod tests {
         );
         let result: BTreeSet<PathBuf> = list_by_os_path_separator(input).unwrap();
         assert_eq!(result, [a, b].into_iter().collect());
+    }
+
+    #[test]
+    fn test_normalize_arch() {
+        // x86_64 family
+        assert_eq!(Settings::normalize_arch("x86_64"), Some("x64"));
+        assert_eq!(Settings::normalize_arch("amd64"), Some("x64"));
+        assert_eq!(Settings::normalize_arch("x64"), Some("x64"));
+        // arm64 family
+        assert_eq!(Settings::normalize_arch("aarch64"), Some("arm64"));
+        assert_eq!(Settings::normalize_arch("arm64"), Some("arm64"));
+        // arm32 family
+        assert_eq!(Settings::normalize_arch("arm"), Some("arm"));
+        assert_eq!(Settings::normalize_arch("armhf"), Some("arm"));
+        assert_eq!(Settings::normalize_arch("armv7l"), Some("arm"));
+        assert_eq!(Settings::normalize_arch("armv6l"), Some("arm"));
+        // x86 32-bit
+        assert_eq!(Settings::normalize_arch("x86"), Some("x86"));
+        assert_eq!(Settings::normalize_arch("i386"), Some("x86"));
+        assert_eq!(Settings::normalize_arch("i686"), Some("x86"));
+        // other known arches
+        assert_eq!(Settings::normalize_arch("ppc64le"), Some("ppc64le"));
+        assert_eq!(Settings::normalize_arch("powerpc64le"), Some("ppc64le"));
+        assert_eq!(Settings::normalize_arch("s390x"), Some("s390x"));
+        assert_eq!(Settings::normalize_arch("riscv64"), Some("riscv64"));
+        assert_eq!(Settings::normalize_arch("riscv64gc"), Some("riscv64"));
+        assert_eq!(Settings::normalize_arch("loong64"), Some("loong64"));
+        assert_eq!(Settings::normalize_arch("loongarch64"), Some("loong64"));
+        // unknown
+        assert_eq!(Settings::normalize_arch("mips"), None);
+        assert_eq!(Settings::normalize_arch(""), None);
+    }
+
+    #[test]
+    fn test_arch_suffix_for() {
+        // On any machine, requesting the native arch should produce no suffix.
+        // We can only assert the cross-arch direction portably.
+        // x86_64 aliases all normalize to x64
+        assert_eq!(Settings::normalize_arch("x86_64"), Settings::normalize_arch("amd64"));
+        assert_eq!(Settings::normalize_arch("x86_64"), Settings::normalize_arch("x64"));
+        // arm64 aliases normalize consistently
+        assert_eq!(Settings::normalize_arch("aarch64"), Settings::normalize_arch("arm64"));
+        // unknown arch produces no suffix
+        assert_eq!(Settings::arch_suffix_for("mips"), None);
+        // native arch (whatever the test machine is) produces no suffix
+        assert_eq!(Settings::arch_suffix_for(std::env::consts::ARCH), None);
     }
 }

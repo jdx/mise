@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
+use crate::platform::Platform;
 use crate::env;
 #[cfg(windows)]
 use crate::file;
@@ -247,15 +248,42 @@ impl ToolVersion {
         };
         Ok(version)
     }
+    /// Returns the cross-arch suffix for display (e.g. `"x64"`) when this
+    /// tool version targets a non-native arch, or `None` for native arch.
+    pub fn arch_label(&self) -> Option<&'static str> {
+        let settings = Settings::get();
+        self.request.options().get("arch")
+            .and_then(Settings::arch_suffix_for)
+            .or_else(|| settings.arch_suffix())
+    }
+
+    /// Returns the lockfile platform key for this tool version, using a
+    /// per-tool `arch` option when present instead of the global platform arch.
+    pub fn platform_key(&self) -> String {
+        if let Some(normalized) = self.request.options().get("arch")
+            .and_then(Settings::normalize_arch)
+        {
+            let mut platform = Platform::current();
+            platform.arch = normalized.to_string();
+            platform.to_key()
+        } else {
+            Platform::current().to_key()
+        }
+    }
+
     pub fn style(&self) -> String {
+        let arch = self.arch_label()
+            .map(|a| format!(" [{a}]"))
+            .unwrap_or_default();
         format!(
-            "{}{}",
+            "{}{}{}",
             style(&self.ba().short).blue().for_stderr(),
-            style(&format!("@{}", &self.version)).for_stderr()
+            style(&format!("@{}", &self.version)).for_stderr(),
+            style(&arch).dim().for_stderr(),
         )
     }
     pub fn tv_pathname(&self) -> String {
-        match &self.request {
+        let base = match &self.request {
             ToolRequest::Version { .. } => self.version.to_string(),
             ToolRequest::Prefix { .. } => self.version.to_string(),
             ToolRequest::Sub { .. } => self.version.to_string(),
@@ -275,7 +303,15 @@ impl ToolVersion {
                 "system".to_string()
             }
         }
-        .replace([':', '/'], "-")
+        .replace([':', '/'], "-");
+        let settings = Settings::get();
+        let suffix = self.request.options().get("arch")
+            .and_then(Settings::arch_suffix_for)
+            .or_else(|| settings.arch_suffix());
+        match suffix {
+            Some(arch) => format!("{base}-{arch}"),
+            None => base,
+        }
     }
     fn runtime_pathname(&self) -> Option<String> {
         let pathname = match &self.request {
@@ -283,7 +319,15 @@ impl ToolVersion {
             ToolRequest::Prefix { prefix, .. } => prefix,
             _ => return None,
         };
-        Some(pathname.replace([':', '/'], "-"))
+        let base = pathname.replace([':', '/'], "-");
+        let settings = Settings::get();
+        let suffix = self.request.options().get("arch")
+            .and_then(Settings::arch_suffix_for)
+            .or_else(|| settings.arch_suffix());
+        Some(match suffix {
+            Some(arch) => format!("{base}-{arch}"),
+            None => base,
+        })
     }
     async fn resolve_version(
         config: &Arc<Config>,
@@ -677,6 +721,61 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn make_tv_with_opts(version: &str, opts: ToolVersionOptions) -> ToolVersion {
+        let ba = Arc::new(BackendArg::new_raw(
+            "test-java".into(),
+            None,
+            "test-java".into(),
+            None,
+            BackendResolution::new(false),
+        ));
+        let request = ToolRequest::Version {
+            backend: ba,
+            version: version.into(),
+            options: opts,
+            source: ToolSource::Argument,
+        };
+        ToolVersion::new(request, version.into())
+    }
+
+    #[test]
+    fn tv_pathname_no_arch_option() {
+        let tv = make_tv_with_opts("21.0.3", ToolVersionOptions::default());
+        // Without any arch option or global arch override the pathname is just the version.
+        // On any machine where the global arch setting is native this holds.
+        let pathname = tv.tv_pathname();
+        // The pathname must start with the version string.
+        assert!(pathname.starts_with("21.0.3"), "got: {pathname}");
+    }
+
+    #[test]
+    fn tv_pathname_cross_arch_option() {
+        use std::env::consts::ARCH;
+        // Pick an arch that is NOT the native one so arch_suffix_for returns Some.
+        let cross_arch = if ARCH == "aarch64" { "x86_64" } else { "aarch64" };
+        let expected_suffix = if ARCH == "aarch64" { "x64" } else { "arm64" };
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert("arch".into(), toml::Value::String(cross_arch.into()));
+
+        let tv = make_tv_with_opts("corretto-8.462.08.1", opts);
+        let pathname = tv.tv_pathname();
+        assert_eq!(pathname, format!("corretto-8.462.08.1-{expected_suffix}"));
+    }
+
+    #[test]
+    fn tv_pathname_native_arch_option_no_suffix() {
+        use std::env::consts::ARCH;
+        // Requesting the native arch explicitly should produce the same pathname
+        // as having no arch option at all (no extra suffix appended).
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert("arch".into(), toml::Value::String(ARCH.into()));
+
+        let tv_with = make_tv_with_opts("temurin-21.0.3", opts);
+        let tv_without = make_tv_with_opts("temurin-21.0.3", ToolVersionOptions::default());
+        assert_eq!(tv_with.tv_pathname(), tv_without.tv_pathname());
+    }
 
     #[test]
     fn runtime_path_does_not_return_file_based_runtime_symlink() -> Result<()> {

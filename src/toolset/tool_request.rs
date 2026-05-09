@@ -20,7 +20,7 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
 use crate::{backend, lockfile};
-use crate::{backend::ABackend, config::Config};
+use crate::{backend::ABackend, config::Config, config::Settings};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ToolRequest {
@@ -231,13 +231,21 @@ impl ToolRequest {
     pub fn install_path(&self, config: &Config) -> Option<PathBuf> {
         match self {
             Self::Version {
-                backend, version, ..
+                backend, version, options, ..
             } => {
-                let path = backend.installs_path.join(version);
+                let settings = Settings::get();
+                let suffix = options.get("arch")
+                    .and_then(Settings::arch_suffix_for)
+                    .or_else(|| settings.arch_suffix());
+                let pathname = match suffix {
+                    Some(arch) => format!("{version}-{arch}"),
+                    None => version.clone(),
+                };
+                let path = backend.installs_path.join(&pathname);
                 Some(env::find_in_shared_installs(
                     path,
                     &backend.tool_dir_name(),
-                    version,
+                    &pathname,
                 ))
             }
             Self::Ref {
