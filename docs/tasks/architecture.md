@@ -154,12 +154,20 @@ Use task arguments for conditional behavior:
 [tasks.test]
 depends = ["build"]
 run = '''
+#!/usr/bin/env bash
 if [ "$1" = "--with-lint" ]; then
   mise run lint
 fi
 npm test
 '''
 ```
+
+The shebang ensures the script runs under bash on every platform. Without
+it, mise uses the platform default inline shell (`sh -c` on Unix,
+`cmd /c` on Windows), so the bash `[ ... ]` test would fail to parse on a
+Windows host. For richer argument handling, prefer the
+[`usage` field](/tasks/task-arguments#usage-field) instead of positional
+parameters.
 
 ### Dynamic Dependencies
 
