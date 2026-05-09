@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769
-FROM rust@sha256:a9cfb755b33f5bb872610cbdb25da61f527416b28fc9c052bbce4bef93e7799a AS builder
+FROM rust@sha256:4d4ec51096a63aaf6844866f53c61d04a140e966731ba468dee5f9e9b05e665c AS builder
 LABEL maintainer="jdx"
 LABEL org.opencontainers.image.source=https://github.com/jdx/mise
 LABEL org.opencontainers.image.description="mise is a tool for managing your development environment"
@@ -9,7 +9,7 @@ WORKDIR /usr/src/mise
 COPY . /usr/src/mise/
 RUN cargo build --release
 
-FROM rust@sha256:a9cfb755b33f5bb872610cbdb25da61f527416b28fc9c052bbce4bef93e7799a AS runtime
+FROM rust@sha256:4d4ec51096a63aaf6844866f53c61d04a140e966731ba468dee5f9e9b05e665c AS runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV MISE_DATA_DIR="/mise"
