@@ -2209,12 +2209,13 @@ impl AquaBackend {
             }]);
         }
 
+        let versions = version_candidates(version, pkg.version_prefix.as_deref());
         let files: Vec<AquaFileLink> = pkg
             .files
             .iter()
             .map(|f| {
-                let srcs = version_candidates(version, pkg.version_prefix.as_deref())
-                    .into_iter()
+                let srcs = versions
+                    .iter()
                     .map(|version| {
                         Self::file_link_for_version(
                             f,
@@ -2422,12 +2423,9 @@ fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Co
 fn version_candidates<'a>(version: &'a str, version_prefix: Option<&str>) -> Vec<Cow<'a, str>> {
     let mut candidates = vec![version_with_prefix(version, version_prefix)];
     if let Some(prefix) = version_prefix {
-        if !prefix.is_empty()
-            && !version.starts_with(prefix)
-            && !starts_with_v(version)
-            && !ends_with_v(prefix)
-        {
-            candidates.push(Cow::Owned(format!("{prefix}v{version}")));
+        let base = version.strip_prefix(prefix).unwrap_or(version);
+        if !prefix.is_empty() && !starts_with_v(base) && !ends_with_v(prefix) {
+            candidates.push(Cow::Owned(format!("{prefix}v{base}")));
         }
     } else if !starts_with_v(version) {
         candidates.push(Cow::Owned(format!("v{version}")));
@@ -2500,6 +2498,16 @@ mod tests {
     #[test]
     fn test_version_candidates_include_prefixed_v_tag() {
         let candidates = version_candidates("1.2.3", Some("tool/"))
+            .into_iter()
+            .map(|v| v.into_owned())
+            .collect_vec();
+
+        assert_eq!(candidates, vec!["tool/1.2.3", "tool/v1.2.3"]);
+    }
+
+    #[test]
+    fn test_version_candidates_include_prefixed_v_tag_for_prefixed_version() {
+        let candidates = version_candidates("tool/1.2.3", Some("tool/"))
             .into_iter()
             .map(|v| v.into_owned())
             .collect_vec();
