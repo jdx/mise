@@ -212,7 +212,7 @@ impl Ls {
                 requested: if self.all_sources || source.is_unknown() {
                     None
                 } else {
-                    Some(tv.request.version())
+                    Some(display_requested(&tv))
                 },
                 source: if self.all_sources || source.is_unknown() {
                     None
@@ -479,7 +479,7 @@ fn collect_sources(ts: &Toolset) -> SourcesMap {
             let key = (ba.short.to_string(), tv.tv_pathname());
             let entry = SourceEntry {
                 source: tv.request.source().clone(),
-                requested: tv.request.version(),
+                requested: display_requested(tv),
             };
             let entries = sources_map.entry(key).or_default();
             if !entries.contains(&entry) {
@@ -533,7 +533,7 @@ async fn json_tool_version_from(
         requested_version: if all_sources || source.is_unknown() {
             None
         } else {
-            Some(tv.request.version())
+            Some(display_requested(&tv))
         },
         source: if all_sources || source.is_unknown() {
             None
@@ -575,6 +575,24 @@ async fn version_status_from_sources(
     resolve_version_status(config, ls, p, tv, has_sources).await
 }
 
+/// Returns the version string to display in `mise ls`, appending an arch
+/// label (e.g. `[x64]`) when the tool has a per-tool arch option that differs
+/// from the native arch.
+fn display_version(tv: &ToolVersion) -> String {
+    match tv.arch_label() {
+        Some(arch) => format!("{} [{arch}]", tv.version),
+        None => tv.version.clone(),
+    }
+}
+
+fn display_requested(tv: &ToolVersion) -> String {
+    let version = tv.request.version();
+    match tv.arch_label() {
+        Some(arch) => format!("{version} [{arch}]"),
+        None => version,
+    }
+}
+
 async fn resolve_version_status(
     config: &Arc<Config>,
     ls: &Ls,
@@ -583,10 +601,11 @@ async fn resolve_version_status(
     active: bool,
 ) -> VersionStatus {
     let install_path = tv.install_path();
+    let dv = display_version(tv);
     if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
-        VersionStatus::Symlink(tv.version.clone(), active)
+        VersionStatus::Symlink(dv, active)
     } else if !p.is_version_installed(config, tv, true) {
-        VersionStatus::Missing(tv.version.clone())
+        VersionStatus::Missing(dv)
     } else {
         let category = env::install_path_category(&install_path);
         if category != env::InstallPathCategory::Local {
@@ -595,7 +614,7 @@ async fn resolve_version_status(
                 env::InstallPathCategory::Shared => "shared",
                 _ => unreachable!(),
             };
-            return VersionStatus::Shared(tv.version.clone(), active, label);
+            return VersionStatus::Shared(dv, active, label);
         }
         if active {
             let outdated = if ls.outdated {
@@ -603,9 +622,9 @@ async fn resolve_version_status(
             } else {
                 false
             };
-            VersionStatus::Active(tv.version.clone(), outdated)
+            VersionStatus::Active(dv, outdated)
         } else {
-            VersionStatus::Inactive(tv.version.clone())
+            VersionStatus::Inactive(dv)
         }
     }
 }
