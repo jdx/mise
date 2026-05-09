@@ -1788,19 +1788,19 @@ impl AquaBackend {
             && let Some(status) = self
                 .verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
                 .await?
-            {
-                match status {
-                    GithubAttestationStatus::Verified => {
-                        let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
-                        if pi.provenance.is_none() {
-                            pi.provenance = Some(ProvenanceType::GithubAttestations);
-                        }
-                    }
-                    GithubAttestationStatus::Unavailable => {
-                        github_attestations_unavailable = true;
+        {
+            match status {
+                GithubAttestationStatus::Verified => {
+                    let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+                    if pi.provenance.is_none() {
+                        pi.provenance = Some(ProvenanceType::GithubAttestations);
                     }
                 }
+                GithubAttestationStatus::Unavailable => {
+                    github_attestations_unavailable = true;
+                }
             }
+        }
         if !skip_slsa {
             // Short-circuit: if a higher-priority mechanism already recorded provenance, skip SLSA
             let already_verified = tv
