@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
+use crate::backend::platform_target::PlatformTarget;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
@@ -13,6 +14,7 @@ use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
@@ -534,6 +536,43 @@ impl Backend for JavaPlugin {
             tv.install_path().to_string_lossy().into(),
         )]);
         Ok(map)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let release_type = self.tv_release_type(tv);
+        let java_arch = to_java_api_arch(target.arch_name());
+        let java_os = match target.os_name() {
+            "macos" => "macosx",
+            other => other,
+        };
+        let url = format!(
+            "https://mise-java.jdx.dev/jvm/{}/{}/{}.json",
+            release_type, java_os, java_arch,
+        );
+        let versions = HTTP_FETCH
+            .json::<Vec<JavaMetadata>, _>(url)
+            .await?
+            .into_iter()
+            .filter(|m| {
+                m.file_type
+                    .as_ref()
+                    .is_some_and(|ft| JAVA_FILE_TYPES.contains(ft))
+            })
+            .collect();
+        let map = build_java_metadata_map(versions);
+        let v = self.tv_to_java_version(tv);
+        match map.get(&v) {
+            Some(m) => Ok(PlatformInfo {
+                url: Some(m.url.clone()),
+                checksum: m.checksum.clone(),
+                ..Default::default()
+            }),
+            None => Ok(PlatformInfo::default()),
+        }
     }
 
     fn fuzzy_match_filter(
