@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# Test that package managers from package.json warn even before the package manager has been installed with mise
+
+mise settings set idiomatic_version_file_enable_tools "pnpm"
+
+cat >package.json <<'EOF'
+{
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "9999.9999.9999",
+      "onFail": "error"
+    }
+  }
+}
+EOF
+
+assert_contains "mise hook-env -s bash --force 2>&1" "missing: pnpm@9999.9999.9999"
