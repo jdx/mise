@@ -49,14 +49,14 @@ cat >package.json <<'EOF'
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "10.33.0",
+      "version": "9999.9999.9999",
       "onFail": "error"
     }
   }
 }
 EOF
 
-assert_contains "mise hook-env -s bash --force 2>&1" "missing: pnpm@10.33.0"
+assert_contains "mise hook-env -s bash --force 2>&1" "missing: pnpm@9999.9999.9999"
 
 # Test package.json with no relevant fields doesn't break anything
 cat >package.json <<'EOF'
