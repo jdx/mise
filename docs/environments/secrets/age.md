@@ -77,7 +77,7 @@ mise looks for identities in this order:
 
 Decrypted values are always marked as redacted.
 
-Direct age encryption is strict by default. If no identities are found, the configured identity cannot decrypt the value, or the age payload is invalid, mise fails instead of continuing with a partially resolved environment.
+Age decryption is strict by default. If no identities are found, no available identity can decrypt the value, or the age payload is invalid, mise fails instead of continuing with a partially resolved environment.
 
 To allow commands and tasks to continue when an age value cannot be decrypted, disable strict mode:
 
