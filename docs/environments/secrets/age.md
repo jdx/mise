@@ -13,7 +13,7 @@ This is a simple method of storing encrypted environment variables directly in `
 1. Enable experimental features:
 
 ```bash
-mise settings experimental=true
+mise settings set experimental true
 ```
 
 2. [optional] Generate an age key (if you want to create a new age key and don't want to use your ssh key):
