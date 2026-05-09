@@ -1059,7 +1059,25 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
     fn list_installed_versions(&self) -> Vec<String> {
-        install_state::list_versions(&self.ba().short)
+        // Strip any arch suffix (e.g. -x64) from install directory names before
+        // returning them as version strings. Arch suffixes are an implementation
+        // detail of tv_pathname() — they must never appear in tv.version, or
+        // tv_pathname() would double-apply them.
+        let raw = install_state::list_versions(&self.ba().short);
+        let mut seen = indexmap::IndexSet::new();
+        for v in raw {
+            let base = if let Some(pos) = v.rfind('-') {
+                if Settings::normalize_arch(&v[pos + 1..]).is_some() {
+                    v[..pos].to_string()
+                } else {
+                    v
+                }
+            } else {
+                v
+            };
+            seen.insert(base);
+        }
+        seen.into_iter().collect()
     }
     fn is_version_installed(
         &self,
