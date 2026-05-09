@@ -55,6 +55,6 @@ jobs:
       - run: bun i
       - run: mise run docs:release
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: 6e243906ff257b965bcae8025c2fc344
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_DEPLOY_TOKEN }}
           DRY_RUN: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
