@@ -106,13 +106,15 @@ For monorepos, this makes it easier to see which package or subproject a task ca
 
 Task spans include attributes such as:
 
-| Attribute               | Description                                                        |
-| ----------------------- | ------------------------------------------------------------------ |
-| `mise.task.name`        | Task name                                                          |
-| `mise.task.args`        | CLI arguments passed to the task (space-joined)                    |
-| `mise.task.source`      | Path to the config file defining the task                          |
-| `mise.task.config_root` | Config root directory (for monorepo tasks)                         |
-| `mise.task.skipped`     | `"true"` when the task was skipped because sources were up to date |
+| Attribute               | Description                                                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `mise.task.name`        | Task name                                                                                                   |
+| `mise.task.args`        | CLI arguments passed to the task (space-joined)                                                             |
+| `mise.task.source`      | Path to the config file defining the task                                                                   |
+| `mise.task.config_root` | Config root directory (for monorepo tasks)                                                                  |
+| `mise.task.skipped`     | `true` when the task was skipped because sources were up to date                                            |
+| `process.command_args`  | Full argv as a string array (`["mise", task_name, ...args]`), per OTel CLI semantic conventions             |
+| `process.exit.code`     | Exit code of the task as an integer (`0` for success/skipped, propagated from the failed command otherwise) |
 
 ## Logs
 
@@ -120,7 +122,7 @@ Task stdout and stderr are exported as logs and linked to the corresponding task
 inspect output directly from the trace.
 
 - stdout is exported with severity `INFO`
-- stderr is exported with severity `WARN`
+- stderr is exported with severity `ERROR`
 
 ::: tip
 Log streaming works with any output mode that captures task output line-by-line (`prefix`,

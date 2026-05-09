@@ -1,16 +1,17 @@
 //! Task-aware OpenTelemetry integration.
 //!
 //! This module is the bridge between the generic OTLP primitives
-//! (`TraceContext`, `OtelLogCollector`) and the mise task model. It owns
+//! (`TaskSpanTracker`, `TaskOutputForwarder`) and the mise task model. It owns
 //! the per-`mise run` telemetry lifecycle so that `cli::run` and
 //! `task_executor` don't have to reach into OTEL internals.
 
-use crate::otel::trace_context::StartedSpan;
-use crate::otel::{OtelLogCollector, TraceContext, is_enabled};
+use crate::otel::task_span_tracker::StartedSpan;
+use crate::otel::{TaskOutputForwarder, TaskSpanTracker, is_enabled};
 use crate::task::Task;
 use eyre::Result;
 use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry::trace::{SpanContext, Status, TraceContextExt};
+use opentelemetry::{Array, KeyValue, StringValue, Value};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -20,22 +21,22 @@ use std::time::SystemTime;
 
 /// All OpenTelemetry state attached to a single `mise run` invocation.
 ///
-/// - `trace` is cheaply clonable and can be passed to per-task code.
-/// - `log_collector` is cheaply clonable and is installed on the
+/// - `span_tracker` is cheaply clonable and can be passed to per-task code.
+/// - `output_forwarder` is cheaply clonable and is installed on the
 ///   task executor so it can forward stdout/stderr lines.
 ///
 /// Implements `Drop` to flush logs and emit spans, so traces are
 /// captured even when the future is cancelled (e.g. by `--timeout`).
 /// Defaults to `has_failures = true`; call `set_succeeded()` on
 /// the happy path to mark the root span as OK.
-pub struct RunTrace {
-    pub trace: TraceContext,
-    pub log_collector: OtelLogCollector,
+pub struct TaskRunTelemetry {
+    pub span_tracker: TaskSpanTracker,
+    pub output_forwarder: TaskOutputForwarder,
     has_failures: std::sync::atomic::AtomicBool,
 }
 
-impl RunTrace {
-    /// Initialize a `RunTrace` if otel is configured.
+impl TaskRunTelemetry {
+    /// Initialize a `TaskRunTelemetry` if otel is configured.
     ///
     /// When mise is invoked from another mise run (or any OTEL-aware
     /// parent), the `TRACEPARENT` env var carries W3C Traceparent so
@@ -55,24 +56,26 @@ impl RunTrace {
         let tracer_provider = crate::otel::build_tracer_provider(resource.clone())?;
         let logger_provider = crate::otel::build_logger_provider(resource);
 
-        let trace = match parse_otel_context() {
-            Some(parent_span_context) => TraceContext::from_parent_context(
+        let span_tracker = match parse_otel_context() {
+            Some(parent_span_context) => TaskSpanTracker::from_parent_context(
                 &root_span_name,
                 parent_span_context,
                 tracer_provider,
             ),
-            _ => TraceContext::new(&root_span_name, tracer_provider),
+            _ => TaskSpanTracker::new(&root_span_name, tracer_provider),
         };
-        let log_collector = match logger_provider {
-            Some(lp) => OtelLogCollector::new(lp),
+        let output_forwarder = match logger_provider {
+            Some(lp) => TaskOutputForwarder::new(lp),
             None => {
                 // If no logs URL is configured, create a no-op provider
-                OtelLogCollector::new(opentelemetry_sdk::logs::SdkLoggerProvider::builder().build())
+                TaskOutputForwarder::new(
+                    opentelemetry_sdk::logs::SdkLoggerProvider::builder().build(),
+                )
             }
         };
         Some(Self {
-            trace,
-            log_collector,
+            span_tracker,
+            output_forwarder,
             has_failures: std::sync::atomic::AtomicBool::new(true),
         })
     }
@@ -86,18 +89,18 @@ impl RunTrace {
     }
 }
 
-impl Drop for RunTrace {
+impl Drop for TaskRunTelemetry {
     fn drop(&mut self) {
         let has_failures = *self.has_failures.get_mut();
-        // Shutdown the log collector first to flush all pending log batches.
-        self.log_collector.shutdown();
+        // Shutdown the output forwarder first to flush all pending log batches.
+        self.output_forwarder.shutdown();
         // Then finish the trace which emits root/group spans and shuts down
         // the tracer provider.
-        self.trace.finish(has_failures);
+        self.span_tracker.finish(has_failures);
     }
 }
 
-impl TraceContext {
+impl TaskSpanTracker {
     /// Reserve span IDs for a task. The full span (attributes, timing,
     /// status) is emitted once from `end_task`.
     pub fn start_task(&self, task: &Task, project_root: Option<&PathBuf>) -> StartedSpan {
@@ -122,8 +125,19 @@ impl TraceContext {
             },
         };
         let mut attrs = task_attributes(task, &display_name);
-        if let Ok(false) = result {
-            attrs.push(("mise.task.skipped".to_string(), "true".to_string()));
+        match result {
+            Ok(false) => {
+                attrs.push(KeyValue::new("mise.task.skipped", true));
+                // Skipped tasks didn't run; per CLI semconv, exit code is 0.
+                attrs.push(KeyValue::new("process.exit.code", 0i64));
+            }
+            Ok(true) => {
+                attrs.push(KeyValue::new("process.exit.code", 0i64));
+            }
+            Err(err) => {
+                let code = crate::errors::Error::get_exit_status(err).unwrap_or(1);
+                attrs.push(KeyValue::new("process.exit.code", code as i64));
+            }
         }
         self.end_task_span(started, &display_name, end_time, status, attrs);
     }
@@ -144,28 +158,34 @@ pub fn task_span_name(task: &Task) -> String {
 }
 
 /// Standard OpenTelemetry attributes attached to every task span.
-fn task_attributes(task: &Task, display_name: &str) -> Vec<(String, String)> {
+fn task_attributes(task: &Task, display_name: &str) -> Vec<KeyValue> {
     let mut attrs = vec![
-        ("mise.task.name".to_string(), task.name.clone()),
-        (
-            "mise.task.display_name".to_string(),
-            display_name.to_string(),
-        ),
-        (
-            "mise.task.source".to_string(),
-            task.config_source.display().to_string(),
-        ),
+        KeyValue::new("mise.task.name", task.name.clone()),
+        KeyValue::new("mise.task.display_name", display_name.to_string()),
+        KeyValue::new("mise.task.source", task.config_source.display().to_string()),
     ];
     // Args are exported verbatim, no different from what's already visible in terminal output and process listings.
     if !task.args.is_empty() {
-        attrs.push(("mise.task.args".to_string(), task.args.join(" ")));
+        attrs.push(KeyValue::new("mise.task.args", task.args.join(" ")));
     }
     if let Some(ref cr) = task.config_root {
-        attrs.push((
-            "mise.task.config_root".to_string(),
+        attrs.push(KeyValue::new(
+            "mise.task.config_root",
             cr.display().to_string(),
         ));
     }
+    // CLI semantic conventions: full argv (executable + args) per
+    // https://opentelemetry.io/docs/specs/semconv/cli/cli-spans
+    let mut argv: Vec<StringValue> = Vec::with_capacity(2 + task.args.len());
+    argv.push(StringValue::from("mise"));
+    argv.push(StringValue::from(task.name.clone()));
+    for a in &task.args {
+        argv.push(StringValue::from(a.clone()));
+    }
+    attrs.push(KeyValue::new(
+        "process.command_args",
+        Value::Array(Array::String(argv)),
+    ));
     attrs
 }
 
@@ -223,7 +243,7 @@ fn extract_span_context(carrier: &HashMap<String, String>) -> Option<SpanContext
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::otel::OtelLogCollector;
+    use crate::otel::TaskOutputForwarder;
     use crate::task::Task;
     use opentelemetry::trace::{SpanId, Status, TraceFlags, TraceId, TraceState};
     use opentelemetry_sdk::error::OTelSdkResult;
@@ -259,20 +279,20 @@ mod tests {
         }
     }
 
-    fn test_run_trace() -> (RunTrace, RetainingSpanExporter) {
+    fn test_telemetry() -> (TaskRunTelemetry, RetainingSpanExporter) {
         let exporter = RetainingSpanExporter::default();
         let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_span_processor(SimpleSpanProcessor::new(exporter.clone()))
             .build();
-        let trace = TraceContext::new("mise run //ci", provider);
-        let log_collector =
-            OtelLogCollector::new(opentelemetry_sdk::logs::SdkLoggerProvider::builder().build());
-        let rt = RunTrace {
-            trace,
-            log_collector,
+        let span_tracker = TaskSpanTracker::new("mise run //ci", provider);
+        let output_forwarder =
+            TaskOutputForwarder::new(opentelemetry_sdk::logs::SdkLoggerProvider::builder().build());
+        let t = TaskRunTelemetry {
+            span_tracker,
+            output_forwarder,
             has_failures: std::sync::atomic::AtomicBool::new(true),
         };
-        (rt, exporter)
+        (t, exporter)
     }
 
     fn task_for(name: &str, display: &str, args: &[&str]) -> Task {
@@ -302,24 +322,59 @@ mod tests {
         let mut task = task_for("build", "Build", &["x", "y"]);
         task.config_root = Some(PathBuf::from("/workspace/packages/a"));
         let attrs = task_attributes(&task, "Build x y");
-        let find = |k: &str| {
-            attrs
-                .iter()
-                .find(|(key, _)| key == k)
-                .map(|(_, v)| v.as_str())
+        let find_str = |k: &str| {
+            attrs.iter().find(|kv| kv.key.as_str() == k).map(|kv| {
+                if let opentelemetry::Value::String(s) = &kv.value {
+                    s.as_str().to_string()
+                } else {
+                    panic!("expected string value for {k}");
+                }
+            })
         };
-        assert_eq!(find("mise.task.name"), Some("build"));
-        assert_eq!(find("mise.task.display_name"), Some("Build x y"));
-        assert_eq!(find("mise.task.args"), Some("x y"));
-        assert_eq!(find("mise.task.config_root"), Some("/workspace/packages/a"),);
+        assert_eq!(find_str("mise.task.name").as_deref(), Some("build"));
+        assert_eq!(
+            find_str("mise.task.display_name").as_deref(),
+            Some("Build x y")
+        );
+        assert_eq!(find_str("mise.task.args").as_deref(), Some("x y"));
+        assert_eq!(
+            find_str("mise.task.config_root").as_deref(),
+            Some("/workspace/packages/a")
+        );
+        // CLI semconv: process.command_args is an array of [exe, task name, ...args]
+        let argv = attrs
+            .iter()
+            .find(|kv| kv.key.as_str() == "process.command_args")
+            .expect("missing process.command_args");
+        if let opentelemetry::Value::Array(opentelemetry::Array::String(items)) = &argv.value {
+            let strs: Vec<&str> = items.iter().map(|s| s.as_str()).collect();
+            assert_eq!(strs, vec!["mise", "build", "x", "y"]);
+        } else {
+            panic!("process.command_args should be a string array");
+        }
     }
 
     #[test]
     fn attributes_omit_args_when_empty() {
         let task = task_for("build", "", &[]);
         let attrs = task_attributes(&task, "build");
-        assert!(attrs.iter().all(|(k, _)| k != "mise.task.args"));
-        assert!(attrs.iter().all(|(k, _)| k != "mise.task.config_root"));
+        assert!(attrs.iter().all(|kv| kv.key.as_str() != "mise.task.args"));
+        assert!(
+            attrs
+                .iter()
+                .all(|kv| kv.key.as_str() != "mise.task.config_root")
+        );
+        // process.command_args is still emitted (just exe + task name).
+        let argv = attrs
+            .iter()
+            .find(|kv| kv.key.as_str() == "process.command_args")
+            .expect("missing process.command_args");
+        if let opentelemetry::Value::Array(opentelemetry::Array::String(items)) = &argv.value {
+            let strs: Vec<&str> = items.iter().map(|s| s.as_str()).collect();
+            assert_eq!(strs, vec!["mise", "build"]);
+        } else {
+            panic!("process.command_args should be a string array");
+        }
     }
 
     #[test]
@@ -376,7 +431,7 @@ mod tests {
 
     #[test]
     fn drop_without_set_succeeded_emits_errored_root_span() {
-        let (rt, exporter) = test_run_trace();
+        let (rt, exporter) = test_telemetry();
         // Simulate timeout/cancellation: drop without calling set_succeeded().
         drop(rt);
 
@@ -391,7 +446,7 @@ mod tests {
 
     #[test]
     fn drop_after_set_succeeded_emits_ok_root_span() {
-        let (rt, exporter) = test_run_trace();
+        let (rt, exporter) = test_telemetry();
         rt.set_succeeded();
         drop(rt);
 
