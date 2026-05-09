@@ -1,0 +1,3 @@
+backends = ["github:vectordotdev/vector"]
+description = "A high-performance observability data pipeline."
+test = { cmd = "vector --version", expected = "vector {{version}}" }
