@@ -36,7 +36,7 @@ pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
 pub use tool_version_options::{
     EPHEMERAL_OPT_KEYS, ResolvedToolOptions, ToolOptionSource, ToolVersionOptions,
-    parse_tool_options, serialize_tool_options,
+    parse_tool_options, serialize_tool_options, try_parse_tool_options,
 };
 
 mod builder;
