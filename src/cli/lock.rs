@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
-use crate::toolset::Toolset;
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{cli::args::ToolArg, config::Settings};
+use crate::cli::args::ToolArg;
 use console::style;
 use eyre::{Result, bail};
 use tokio::sync::Semaphore;
@@ -593,11 +593,28 @@ impl Lock {
         }
     }
 
+    /// Returns the effective platform list for a specific tool version.
+    /// When the tool has a per-tool `arch` option (e.g. `arch = "x86_64"`),
+    /// only its own platform key is used. Otherwise the global platform list
+    /// (from `--platform` or the lockfile) applies.
+    fn effective_platforms_for_tool<'a>(
+        tv: &ToolVersion,
+        global_platforms: &'a [Platform],
+    ) -> Vec<Platform> {
+        if tv.request.options().get("arch").and_then(Settings::normalize_arch).is_some() {
+            if let Ok(p) = Platform::parse(&tv.platform_key()) {
+                return vec![p];
+            }
+        }
+        global_platforms.to_vec()
+    }
+
     fn show_dry_run(&self, tools: &[LockTool], platforms: &[Platform]) -> Result<()> {
         miseprintln!("{} Dry run - would update:", style("→").yellow());
         for (ba, tv) in tools {
             let backend = crate::backend::get(ba);
-            for platform in platforms {
+            let effective = Self::effective_platforms_for_tool(tv, platforms);
+            for platform in &effective {
                 // Expand platform variants just like process_tools does
                 let variants = if let Some(ref backend) = backend {
                     backend.platform_variants(platform)
@@ -640,7 +657,8 @@ impl Lock {
         )> = Vec::new();
         for (ba, tv) in tools {
             let backend = crate::backend::get(ba);
-            for platform in platforms {
+            let effective = Self::effective_platforms_for_tool(tv, platforms);
+            for platform in &effective {
                 // Get all variants for this platform from the backend
                 let variants = if let Some(ref backend) = backend {
                     backend.platform_variants(platform)
