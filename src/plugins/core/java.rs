@@ -112,7 +112,7 @@ impl JavaPlugin {
         pr.set_message(format!("download {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr)).await?;
 
-        let platform_key = self.get_platform_key();
+        let platform_key = tv.platform_key();
         if !tv.lock_platforms.contains_key(&platform_key) {
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
             platform_info.url = Some(m.url.clone());
@@ -256,15 +256,49 @@ impl JavaPlugin {
         }
     }
 
-    async fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
-        let v: String = self.tv_to_java_version(tv);
+    async fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<JavaMetadata> {
+        let v = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
-        let m = self
-            .fetch_java_metadata(&release_type)
+        let settings = Settings::get();
+        let java_arch = tv_arch(tv, &settings);
+        let native_arch = arch(&settings);
+
+        if java_arch == native_arch {
+            self.fetch_java_metadata(&release_type)
+                .await?
+                .get(&v)
+                .ok_or_else(|| eyre!("no metadata found for version {}", tv.version))
+                .cloned()
+        } else {
+            self.download_java_metadata_for_arch(&release_type, java_arch)
+                .await?
+                .remove(&v)
+                .ok_or_else(|| eyre!("no metadata found for version {} (arch: {})", tv.version, java_arch))
+        }
+    }
+
+    async fn download_java_metadata_for_arch(
+        &self,
+        release_type: &str,
+        java_api_arch: &str,
+    ) -> Result<HashMap<String, JavaMetadata>> {
+        let url = format!(
+            "https://mise-java.jdx.dev/jvm/{}/{}/{}.json",
+            release_type,
+            os(),
+            java_api_arch,
+        );
+        let versions = HTTP_FETCH
+            .json::<Vec<JavaMetadata>, _>(url)
             .await?
-            .get(&v)
-            .ok_or_else(|| eyre!("no metadata found for version {}", tv.version))?;
-        Ok(m)
+            .into_iter()
+            .filter(|m| {
+                m.file_type
+                    .as_ref()
+                    .is_some_and(|ft| JAVA_FILE_TYPES.contains(ft))
+            })
+            .collect();
+        Ok(build_java_metadata_map(versions))
     }
 
     async fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
@@ -442,8 +476,8 @@ impl Backend for JavaPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        // Check if URL already exists in lockfile platforms first
-        let platform_key = self.get_platform_key();
+        // Use per-tool arch when building the lockfile platform key
+        let platform_key = tv.platform_key();
         let (metadata, tarball_path) =
             if let Some(platform_info) = tv.lock_platforms.get(&platform_key) {
                 if let Some(ref url) = platform_info.url {
@@ -469,20 +503,20 @@ impl Backend for JavaPlugin {
                     // No URL in lockfile, fallback to metadata
                     let metadata = self.tv_to_metadata(&tv).await?;
                     let tarball_path = self
-                        .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
+                        .download(ctx, &mut tv, ctx.pr.as_ref(), &metadata)
                         .await?;
                     (metadata, tarball_path)
                 }
             } else {
                 let metadata = self.tv_to_metadata(&tv).await?;
                 let tarball_path = self
-                    .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
+                    .download(ctx, &mut tv, ctx.pr.as_ref(), &metadata)
                     .await?;
                 (metadata, tarball_path)
             };
 
         ctx.pr.next_operation();
-        self.install(&tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
+        self.install(&tv, ctx.pr.as_ref(), &tarball_path, &metadata)?;
         ctx.pr.next_operation();
         self.verify(&tv, ctx.pr.as_ref())?;
 
@@ -558,6 +592,41 @@ fn arch(settings: &Settings) -> &str {
     }
 }
 
+/// Maps a normalized mise arch (e.g. "x64", "arm64") to the Java metadata API arch string.
+fn to_java_api_arch(normalized_arch: &str) -> &str {
+    match normalized_arch {
+        "x64" => "x86_64",
+        "arm64" => "aarch64",
+        "arm" => "arm32-vfp-hflt",
+        "x86" => "x86",
+        "ppc64le" => "ppc64le",
+        "s390x" => "s390x",
+        other => other,
+    }
+}
+
+/// Returns the Java metadata API arch string for a tool version, respecting
+/// a per-tool `arch` option before falling back to the global settings arch.
+fn tv_arch<'a>(tv: &'a ToolVersion, settings: &'a Settings) -> &'a str {
+    if let Some(normalized) = tv.request.options().get("arch").and_then(Settings::normalize_arch) {
+        to_java_api_arch(normalized)
+    } else {
+        arch(settings)
+    }
+}
+
+
+fn build_java_metadata_map(versions: Vec<JavaMetadata>) -> HashMap<String, JavaMetadata> {
+    let mut map = HashMap::new();
+    for m in versions {
+        if m.vendor == Settings::get().java.shorthand_vendor {
+            map.insert(m.version.to_string(), m.clone());
+        }
+        map.insert(m.to_string(), m);
+    }
+    map
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 struct JavaMetadata {
@@ -624,3 +693,122 @@ static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
 #[cfg(windows)]
 static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["zip"].map(|s| s.to_string())));
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendResolution;
+    use crate::toolset::{ToolSource, ToolVersionOptions};
+
+    fn make_tv(version: &str, arch_opt: Option<&str>) -> ToolVersion {
+        let mut opts = ToolVersionOptions::default();
+        if let Some(a) = arch_opt {
+            opts.opts.insert("arch".into(), toml::Value::String(a.into()));
+        }
+        let ba = Arc::new(crate::cli::args::BackendArg::new_raw(
+            "java".into(),
+            None,
+            "java".into(),
+            None,
+            BackendResolution::new(false),
+        ));
+        let request = crate::toolset::ToolRequest::Version {
+            backend: ba,
+            version: version.into(),
+            options: opts,
+            source: ToolSource::Argument,
+        };
+        ToolVersion::new(request, version.into())
+    }
+
+    #[test]
+    fn test_to_java_api_arch_all_types() {
+        assert_eq!(to_java_api_arch("x64"), "x86_64");
+        assert_eq!(to_java_api_arch("arm64"), "aarch64");
+        assert_eq!(to_java_api_arch("arm"), "arm32-vfp-hflt");
+        assert_eq!(to_java_api_arch("x86"), "x86");
+        assert_eq!(to_java_api_arch("ppc64le"), "ppc64le");
+        assert_eq!(to_java_api_arch("s390x"), "s390x");
+        assert_eq!(to_java_api_arch("riscv64"), "riscv64");
+    }
+
+    #[test]
+    fn test_tv_arch_uses_tool_option() {
+        let settings = Settings::get();
+        // x86_64 option → Java API uses "x86_64"
+        let tv = make_tv("corretto-8.462.08.1", Some("x86_64"));
+        assert_eq!(tv_arch(&tv, &settings), "x86_64");
+
+        // aarch64 option → Java API uses "aarch64"
+        let tv = make_tv("temurin-21", Some("aarch64"));
+        assert_eq!(tv_arch(&tv, &settings), "aarch64");
+
+        // arm option → Java API uses "arm32-vfp-hflt"
+        let tv = make_tv("temurin-21", Some("arm"));
+        assert_eq!(tv_arch(&tv, &settings), "arm32-vfp-hflt");
+
+        // armhf alias → normalizes to arm → Java API uses "arm32-vfp-hflt"
+        let tv = make_tv("temurin-21", Some("armhf"));
+        assert_eq!(tv_arch(&tv, &settings), "arm32-vfp-hflt");
+
+        // ppc64le option
+        let tv = make_tv("temurin-21", Some("ppc64le"));
+        assert_eq!(tv_arch(&tv, &settings), "ppc64le");
+
+        // s390x option
+        let tv = make_tv("temurin-21", Some("s390x"));
+        assert_eq!(tv_arch(&tv, &settings), "s390x");
+    }
+
+    #[test]
+    fn test_tv_arch_falls_back_to_settings() {
+        let settings = Settings::get();
+        let tv = make_tv("temurin-21", None);
+        // Without a tool option, uses the global settings arch mapped through Java's format.
+        assert_eq!(tv_arch(&tv, &settings), arch(&settings));
+    }
+
+    #[test]
+    fn test_tv_platform_key_with_arch_option() {
+        use std::env::consts::ARCH;
+        let cross_arch = if ARCH == "aarch64" { "x86_64" } else { "aarch64" };
+        let expected_arch_in_key = if ARCH == "aarch64" { "x64" } else { "arm64" };
+
+        let tv = make_tv("corretto-8.462.08.1", Some(cross_arch));
+        let key = tv.platform_key();
+        assert!(
+            key.contains(expected_arch_in_key),
+            "platform key '{key}' should contain arch '{expected_arch_in_key}'"
+        );
+    }
+
+    #[test]
+    fn test_tv_platform_key_no_option_matches_current() {
+        let tv = make_tv("temurin-21", None);
+        assert_eq!(tv.platform_key(), crate::platform::Platform::current().to_key());
+    }
+    #[test]
+    fn test_to_java_api_arch_roundtrips_all_types() {
+        // Ensures normalize_arch → to_java_api_arch covers every arch we claim to support
+        for (input, expected_java_arch) in [
+            ("x86_64", "x86_64"),
+            ("amd64", "x86_64"),
+            ("x64", "x86_64"),
+            ("aarch64", "aarch64"),
+            ("arm64", "aarch64"),
+            ("arm", "arm32-vfp-hflt"),
+            ("armhf", "arm32-vfp-hflt"),
+            ("x86", "x86"),
+            ("i386", "x86"),
+            ("ppc64le", "ppc64le"),
+            ("s390x", "s390x"),
+        ] {
+            let normalized = Settings::normalize_arch(input).expect(input);
+            assert_eq!(
+                to_java_api_arch(normalized),
+                expected_java_arch,
+                "input: {input}"
+            );
+        }
+    }
+}
