@@ -644,7 +644,7 @@ impl PythonPlugin {
                 .lock_platforms
                 .get(platform_key)
                 .and_then(|pi| pi.provenance.as_ref());
-            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
+            if !got.is_some_and(|g| g == expected) {
                 let got_str = got
                     .map(|g| g.to_string())
                     .unwrap_or_else(|| "no verification".to_string());
