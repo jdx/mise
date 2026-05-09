@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::backend::Backend;
-use crate::config::{Alias, Config};
+use crate::config::{Alias, Config, Settings};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
@@ -112,6 +112,19 @@ fn migrate_real_dirs_in_dir(
     Ok(())
 }
 
+/// If the install directory name ends with a known arch suffix (e.g. `-x64`),
+/// returns the base name and the suffix string. Otherwise returns the name
+/// unchanged and an empty suffix.
+fn split_arch_suffix(v: &str) -> (&str, &str) {
+    if let Some(pos) = v.rfind('-') {
+        let candidate = &v[pos + 1..];
+        if Settings::normalize_arch(candidate).is_some() {
+            return (&v[..pos], &v[pos..]);
+        }
+    }
+    (v, "")
+}
+
 /// Build symlinks for versions found in a specific install directory.
 fn list_symlinks_for_dir(
     config: &Config,
@@ -124,7 +137,12 @@ fn list_symlinks_for_dir(
         if is_temporary_runtime_label(&v) {
             continue;
         }
-        let (prefix, version) = split_version_prefix(&v);
+        // Strip the arch suffix (e.g. "-x64") before version parsing so that
+        // Versioning does not treat it as a pre-release tag and generate
+        // wrong partial-version symlink names. The suffix is then appended to
+        // every generated symlink name so arch variants stay separate.
+        let (base_v, arch_suffix) = split_arch_suffix(&v);
+        let (prefix, version) = split_version_prefix(base_v);
         let Some(versions) = Versioning::new(version) else {
             continue;
         };
@@ -132,10 +150,10 @@ fn list_symlinks_for_dir(
         while versions.nth(partial.len()).is_some() && versions.nth(partial.len() + 1).is_some() {
             let version = versions.nth(partial.len()).unwrap();
             partial.push(version.to_string());
-            let from = format!("{}{}", prefix, partial.join("."));
+            let from = format!("{}{}{}", prefix, partial.join("."), arch_suffix);
             symlinks.insert(from, rel_path(&v));
         }
-        symlinks.insert(format!("{prefix}latest"), rel_path(&v));
+        symlinks.insert(format!("{prefix}latest{arch_suffix}"), rel_path(&v));
         for (from, to) in &config
             .all_aliases
             .get(&backend.ba().short)
@@ -145,10 +163,10 @@ fn list_symlinks_for_dir(
             if from.contains('/') {
                 continue;
             }
-            if !v.starts_with(to) {
+            if !base_v.starts_with(to) {
                 continue;
             }
-            symlinks.insert(format!("{prefix}{from}"), rel_path(&v));
+            symlinks.insert(format!("{prefix}{from}{arch_suffix}"), rel_path(&v));
         }
     }
     symlinks = symlinks
