@@ -9,7 +9,7 @@ use crate::config::Settings;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::lockfile::{GithubAttestationsStatus, PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -712,7 +712,7 @@ impl Backend for AquaBackend {
 
         // Detect provenance from aqua registry config
         let mut provenance = self.detect_provenance_type(&pkg);
-        let mut github_attestations_unavailable = false;
+        let mut github_attestations = None;
 
         if matches!(provenance, Some(ProvenanceType::GithubAttestations))
             && let Some(digest) = checksum.as_deref().filter(|d| d.starts_with("sha256:"))
@@ -720,10 +720,8 @@ impl Backend for AquaBackend {
             match self.detect_github_attestations(&pkg, digest).await {
                 Ok(true) => {}
                 Ok(false) => {
-                    github_attestations_unavailable = true;
-                    provenance = self
-                        .detect_non_github_provenance_type(&pkg)
-                        .or(Some(ProvenanceType::GithubAttestationsUnavailable));
+                    github_attestations = Some(GithubAttestationsStatus::Unavailable);
+                    provenance = self.detect_non_github_provenance_type(&pkg);
                 }
                 Err(e) => {
                     warn!(
@@ -760,7 +758,7 @@ impl Backend for AquaBackend {
         // For the current platform, verify provenance cryptographically at lock time.
         // This ensures the lockfile's provenance entry is backed by actual verification,
         // not just registry metadata. Cross-platform entries remain detection-only.
-        if provenance.as_ref().is_some_and(ProvenanceType::is_verified)
+        if provenance.is_some()
             && target.is_current()
             && let Some(ref artifact_url) = url
         {
@@ -773,7 +771,10 @@ impl Backend for AquaBackend {
                 )
                 .await
             {
-                Ok(verified) => provenance = Some(verified),
+                Ok((verified, gh_status)) => {
+                    provenance = verified;
+                    github_attestations = gh_status;
+                }
                 Err(e) => {
                     // Clear provenance so install-time verification will run.
                     // If we kept the unverified provenance, has_lockfile_integrity
@@ -783,16 +784,19 @@ impl Backend for AquaBackend {
                          will be verified at install time: {e}",
                         self.id
                     );
-                    provenance = github_attestations_unavailable
-                        .then_some(ProvenanceType::GithubAttestationsUnavailable);
+                    provenance = None;
                 }
             }
+        }
+        if provenance.is_some() {
+            github_attestations = None;
         }
 
         Ok(PlatformInfo {
             url,
             checksum,
             provenance,
+            github_attestations,
             ..Default::default()
         })
     }
@@ -1026,7 +1030,7 @@ impl AquaBackend {
         v: &str,
         artifact_url: &str,
         detected: &ProvenanceType,
-    ) -> Result<ProvenanceType> {
+    ) -> Result<(Option<ProvenanceType>, Option<GithubAttestationsStatus>)> {
         let tmp_dir = tempfile::tempdir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
@@ -1044,27 +1048,29 @@ impl AquaBackend {
                     .run_github_attestation_check(&artifact_path, pkg)
                     .await?
                 {
-                    GithubAttestationStatus::Verified => Ok(ProvenanceType::GithubAttestations),
+                    GithubAttestationStatus::Verified => {
+                        Ok((Some(ProvenanceType::GithubAttestations), None))
+                    }
                     GithubAttestationStatus::Unavailable => {
-                        Ok(ProvenanceType::GithubAttestationsUnavailable)
+                        Ok((None, Some(GithubAttestationsStatus::Unavailable)))
                     }
                 }
-            }
-            ProvenanceType::GithubAttestationsUnavailable => {
-                Ok(ProvenanceType::GithubAttestationsUnavailable)
             }
             ProvenanceType::Slsa { .. } => {
                 let provenance_url = self
                     .run_slsa_check(&artifact_path, pkg, v, tmp_dir.path(), None)
                     .await?;
-                Ok(ProvenanceType::Slsa {
-                    url: Some(provenance_url),
-                })
+                Ok((
+                    Some(ProvenanceType::Slsa {
+                        url: Some(provenance_url),
+                    }),
+                    None,
+                ))
             }
             ProvenanceType::Minisign => {
                 self.run_minisign_check(&artifact_path, &filename, pkg, v, tmp_dir.path(), None)
                     .await?;
-                Ok(ProvenanceType::Minisign)
+                Ok((Some(ProvenanceType::Minisign), None))
             }
             ProvenanceType::Cosign => {
                 if let Some(cosign) = Self::binary_cosign_config(pkg) {
@@ -1080,7 +1086,7 @@ impl AquaBackend {
                     self.run_cosign_check(&checksum_path, cosign, pkg, v, tmp_dir.path(), None)
                         .await?;
                 }
-                Ok(ProvenanceType::Cosign)
+                Ok((Some(ProvenanceType::Cosign), None))
             }
         }
     }
@@ -1766,7 +1772,7 @@ impl AquaBackend {
             .lock_platforms
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
-        let expected_provenance = locked_provenance.as_ref().filter(|p| p.is_verified());
+        let expected_provenance = locked_provenance.as_ref();
         let mut github_attestations_unavailable = skip_cached_absent_attestations;
 
         // When the lockfile specifies a provenance type, only run that specific mechanism.
@@ -1880,7 +1886,7 @@ impl AquaBackend {
                 && pi.checksum.is_some()
                 && pi.provenance.is_none()
             {
-                pi.provenance = Some(ProvenanceType::GithubAttestationsUnavailable);
+                pi.github_attestations = Some(GithubAttestationsStatus::Unavailable);
             }
         }
 
@@ -1921,7 +1927,6 @@ impl AquaBackend {
                 ProvenanceType::GithubAttestations => {
                     !settings.github_attestations || !settings.aqua.github_attestations
                 }
-                ProvenanceType::GithubAttestationsUnavailable => false,
                 ProvenanceType::Slsa { .. } => !settings.slsa || !settings.aqua.slsa,
                 ProvenanceType::Cosign => !settings.aqua.cosign,
                 ProvenanceType::Minisign => !settings.aqua.minisign,

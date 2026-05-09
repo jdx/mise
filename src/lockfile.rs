@@ -62,20 +62,16 @@ pub struct LockfileTool {
     pub platforms: BTreeMap<String, PlatformInfo>,
 }
 
-/// Type of provenance state, ordered by priority (lowest to highest).
+/// Type of provenance, ordered by priority (lowest to highest).
 /// The ordering is significant: during verification, higher-priority verified
 /// mechanisms are tried first, and the lockfile records whichever succeeds.
 /// SLSA carries an optional URL for the provenance file (.intoto.jsonl).
-/// `GithubAttestationsUnavailable` is a negative cache entry, not verified
-/// provenance. It only allows checksum-backed installs to skip a redundant
-/// GitHub attestation probe.
 ///
 /// If adding or reordering verified attestation variants, also update
 /// `VerifiedAttestation` in `crates/vfox/src/hooks/pre_install.rs`.
 #[derive(Debug, Clone, strum::Display, strum::EnumIs)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ProvenanceType {
-    GithubAttestationsUnavailable,
     Minisign,
     Cosign,
     #[strum(serialize = "slsa")]
@@ -89,7 +85,6 @@ impl std::str::FromStr for ProvenanceType {
     type Err = String;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "github-attestations-unavailable" => Ok(Self::GithubAttestationsUnavailable),
             "minisign" => Ok(Self::Minisign),
             "cosign" => Ok(Self::Cosign),
             "slsa" => Ok(Self::Slsa { url: None }),
@@ -122,17 +117,11 @@ impl ProvenanceType {
     /// Discriminant for ordering (lowest = lowest priority)
     fn ordinal(&self) -> u8 {
         match self {
-            Self::GithubAttestationsUnavailable => 0,
             Self::Minisign => 1,
             Self::Cosign => 2,
             Self::Slsa { .. } => 3,
             Self::GithubAttestations => 4,
         }
-    }
-
-    /// Returns true for provenance types backed by successful cryptographic verification.
-    pub fn is_verified(&self) -> bool {
-        !self.is_github_attestations_unavailable()
     }
 
     /// Merge two provenance values, keeping the higher-priority variant.
@@ -224,6 +213,13 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, strum::Display)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum GithubAttestationsStatus {
+    Unavailable,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -241,6 +237,9 @@ pub struct PlatformInfo {
     /// Type of provenance verification that succeeded (SLSA carries its URL)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
+    /// GitHub attestation probe status when no provenance was verified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub github_attestations: Option<GithubAttestationsStatus>,
 }
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
@@ -254,24 +253,18 @@ impl PlatformInfo {
             && self.url_api.is_none()
             && self.conda_deps.is_none()
             && self.provenance.is_none()
+            && self.github_attestations.is_none()
     }
 
     /// True when the lockfile has checksum-backed, successfully verified provenance.
     pub fn has_checksum_and_verified_provenance(&self) -> bool {
-        self.checksum.is_some()
-            && self
-                .provenance
-                .as_ref()
-                .is_some_and(ProvenanceType::is_verified)
+        self.checksum.is_some() && self.provenance.is_some()
     }
 
     /// True when the lockfile records that GitHub attestations were checked and absent.
     pub fn has_checksum_and_github_attestations_unavailable(&self) -> bool {
         self.checksum.is_some()
-            && self
-                .provenance
-                .as_ref()
-                .is_some_and(ProvenanceType::is_github_attestations_unavailable)
+            && self.github_attestations == Some(GithubAttestationsStatus::Unavailable)
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
@@ -317,16 +310,26 @@ impl PlatformInfo {
             self.url_api.clone().or_else(|| other.url_api.clone())
         };
 
+        let provenance = match (self.provenance.clone(), other.provenance.clone()) {
+            (Some(a), Some(b)) => Some(a.merge(b)),
+            (a, b) => a.or(b),
+        };
+        let github_attestations = if provenance.is_some() {
+            None
+        } else if url_changed {
+            self.github_attestations
+        } else {
+            self.github_attestations.or(other.github_attestations)
+        };
+
         PlatformInfo {
             checksum,
             size,
             url: self.url.clone().or_else(|| other.url.clone()),
             url_api,
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
-            provenance: match (self.provenance.clone(), other.provenance.clone()) {
-                (Some(a), Some(b)) => Some(a.merge(b)),
-                (a, b) => a.or(b),
-            },
+            provenance,
+            github_attestations,
         }
     }
 }
@@ -363,6 +366,15 @@ impl TryFrom<toml::Value> for PlatformInfo {
                             .filter_map(|v| v.as_str().map(String::from))
                             .collect(),
                     ),
+                    _ => None,
+                };
+                let github_attestations = match t.remove("github_attestations") {
+                    Some(toml::Value::String(s)) if s == "unavailable" => {
+                        Some(GithubAttestationsStatus::Unavailable)
+                    }
+                    Some(toml::Value::String(s)) => {
+                        bail!("unrecognized github_attestations status {s:?} in lockfile")
+                    }
                     _ => None,
                 };
                 // Legacy: read provenance_url for backwards compat with old lockfiles
@@ -409,6 +421,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     url_api,
                     conda_deps,
                     provenance,
+                    github_attestations,
                 })
             }
             _ => bail!("unsupported asset info format"),
@@ -450,6 +463,14 @@ impl From<PlatformInfo> for toml::Value {
                     table.insert("provenance".to_string(), provenance.to_string().into());
                 }
             }
+        }
+        if platform_info.provenance.is_none()
+            && let Some(github_attestations) = platform_info.github_attestations
+        {
+            table.insert(
+                "github_attestations".to_string(),
+                github_attestations.to_string().into(),
+            );
         }
         toml::Value::Table(table)
     }
@@ -785,6 +806,24 @@ impl Lockfile {
                     && existing.url.is_some()
                     && platform_info.url != existing.url;
                 let preserve_artifact_fields = !url_changed;
+                let provenance = match (
+                    platform_info.provenance.clone(),
+                    existing.provenance.clone(),
+                ) {
+                    (Some(a), Some(b)) => Some(a.merge(b)),
+                    (a, b) => a.or(b),
+                };
+                let github_attestations = if provenance.is_some() {
+                    None
+                } else {
+                    platform_info.github_attestations.or_else(|| {
+                        if preserve_artifact_fields {
+                            existing.github_attestations
+                        } else {
+                            None
+                        }
+                    })
+                };
                 PlatformInfo {
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
@@ -809,10 +848,8 @@ impl Lockfile {
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
-                    provenance: match (platform_info.provenance, existing.provenance.clone()) {
-                        (Some(a), Some(b)) => Some(a.merge(b)),
-                        (a, b) => a.or(b),
-                    },
+                    provenance,
+                    github_attestations,
                 }
             } else {
                 platform_info
@@ -1116,7 +1153,7 @@ fn check_single_tool_provenance(
     platform_key: &str,
     new_provenance: Option<&ProvenanceType>,
 ) -> Option<String> {
-    if new_provenance.is_some_and(ProvenanceType::is_verified) || !backend.starts_with("github:") {
+    if new_provenance.is_some() || !backend.starts_with("github:") {
         return None;
     }
 
@@ -1128,11 +1165,9 @@ fn check_single_tool_provenance(
         .filter(|t| t.version != version)
         .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
         .filter(|t| {
-            t.platforms.get(platform_key).is_some_and(|pi| {
-                pi.provenance
-                    .as_ref()
-                    .is_some_and(ProvenanceType::is_verified)
-            })
+            t.platforms
+                .get(platform_key)
+                .is_some_and(|pi| pi.provenance.is_some())
         })
         .max_by(|a, b| {
             versions::Versioning::new(&a.version).cmp(&versions::Versioning::new(&b.version))
@@ -2769,30 +2804,26 @@ backend = "conda:jq"
         let info = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
             url: Some("https://example.com/tool.tar.gz".to_string()),
-            provenance: Some(ProvenanceType::GithubAttestationsUnavailable),
+            github_attestations: Some(GithubAttestationsStatus::Unavailable),
             ..Default::default()
         };
 
         let toml_val: toml::Value = info.clone().into();
         let table = toml_val.as_table().unwrap();
         assert_eq!(
-            table.get("provenance").unwrap().as_str().unwrap(),
-            "github-attestations-unavailable"
+            table.get("github_attestations").unwrap().as_str().unwrap(),
+            "unavailable"
         );
+        assert!(table.get("provenance").is_none());
 
         let parsed: PlatformInfo = toml_val.try_into().unwrap();
         assert_eq!(
-            parsed.provenance,
-            Some(ProvenanceType::GithubAttestationsUnavailable)
+            parsed.github_attestations,
+            Some(GithubAttestationsStatus::Unavailable)
         );
+        assert!(parsed.provenance.is_none());
         assert!(parsed.has_checksum_and_github_attestations_unavailable());
         assert!(!parsed.has_checksum_and_verified_provenance());
-        assert!(
-            !parsed
-                .provenance
-                .as_ref()
-                .is_some_and(ProvenanceType::is_verified)
-        );
     }
 
     #[test]
@@ -2847,13 +2878,22 @@ backend = "conda:jq"
 
         // A negative GitHub attestation cache entry must not override verified provenance.
         let github_unavailable = PlatformInfo {
-            provenance: Some(ProvenanceType::GithubAttestationsUnavailable),
+            github_attestations: Some(GithubAttestationsStatus::Unavailable),
             ..Default::default()
         };
         let merged = github_unavailable.merge_with(&with_url);
         assert!(merged.provenance.as_ref().unwrap().is_slsa());
+        assert!(merged.github_attestations.is_none());
         let merged = with_url.merge_with(&github_unavailable);
         assert!(merged.provenance.as_ref().unwrap().is_slsa());
+        assert!(merged.github_attestations.is_none());
+
+        // Merging with empty preserves the negative GitHub attestation cache.
+        let merged = github_unavailable.merge_with(&PlatformInfo::default());
+        assert_eq!(
+            merged.github_attestations,
+            Some(GithubAttestationsStatus::Unavailable)
+        );
     }
 
     #[test]
@@ -2865,7 +2905,7 @@ backend = "conda:jq"
         assert!(!info.is_empty());
 
         let info = PlatformInfo {
-            provenance: Some(ProvenanceType::GithubAttestationsUnavailable),
+            github_attestations: Some(GithubAttestationsStatus::Unavailable),
             ..Default::default()
         };
         assert!(!info.is_empty());
@@ -2890,7 +2930,7 @@ backend = "conda:jq"
             "1.1.0",
             "github:owner/repo",
             &platform,
-            Some(&ProvenanceType::GithubAttestationsUnavailable),
+            None,
         )
         .unwrap();
         assert!(err.contains("has no provenance verification"));
@@ -2899,7 +2939,7 @@ backend = "conda:jq"
         prior.platforms.insert(
             platform.clone(),
             PlatformInfo {
-                provenance: Some(ProvenanceType::GithubAttestationsUnavailable),
+                github_attestations: Some(GithubAttestationsStatus::Unavailable),
                 ..Default::default()
             },
         );

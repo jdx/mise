@@ -327,7 +327,9 @@ When `mise lock` generates a lockfile, it records a verified provenance type (e.
 
 By default, when `mise install` sees a lockfile with both a checksum and a verified provenance entry, it trusts the lockfile and skips re-verification. This avoids redundant API calls (e.g., GitHub attestation queries) which can cause rate limit issues in CI. Since the current platform's provenance was already verified during `mise lock`, this is safe.
 
-If GitHub Artifact Attestations are enabled but the GitHub API confirms none exist for a checksum-backed artifact, mise records `github-attestations-unavailable`. This is a negative cache entry, not verified provenance: it only skips the redundant GitHub attestation probe on later installs. Other verification paths such as SLSA, Cosign, Minisign, and checksum verification still run as usual.
+If GitHub Artifact Attestations are enabled but the GitHub API confirms none exist for a checksum-backed artifact, mise may record `github_attestations = "unavailable"`. This is a negative cache entry, not provenance: it only skips the redundant GitHub attestation probe on later installs from that lockfile. Other verification paths such as SLSA, Cosign, Minisign, and checksum verification still run as usual.
+
+GitHub Artifact Attestations are stored by subject digest and can be created or deleted independently of release assets. A later `mise lock` run or `MISE_LOCKED_VERIFY_PROVENANCE=1 mise install` can discover attestations added after the lockfile recorded them as unavailable.
 
 For additional security, you can force provenance re-verification at install time on every install:
 
