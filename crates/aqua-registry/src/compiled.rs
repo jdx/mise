@@ -3,7 +3,6 @@ use crate::types::{AquaPackage, RegistryYaml};
 use crate::{AquaRegistryError, Result};
 use rkyv::rancor::Error as RkyvError;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
-use serde_yaml::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -80,23 +79,6 @@ fn write_index(root: &Path, index: &CompiledRegistryIndex) -> Result<()> {
 
 fn compile_index(source: &str, root: &Path) -> Result<CompiledRegistryIndex> {
     let registry_yaml = serde_yaml::from_str::<RegistryYaml>(source)?;
-    let registry_value = serde_yaml::from_str::<Value>(source)?;
-    let package_values = registry_value
-        .get("packages")
-        .and_then(|packages| packages.as_sequence())
-        .ok_or_else(|| {
-            AquaRegistryError::RegistryNotAvailable(
-                "aqua registry does not contain a packages list".to_string(),
-            )
-        })?;
-
-    if registry_yaml.packages.len() != package_values.len() {
-        return Err(AquaRegistryError::RegistryNotAvailable(format!(
-            "parsed aqua package count mismatch: RegistryYaml has {}, raw YAML has {}",
-            registry_yaml.packages.len(),
-            package_values.len()
-        )));
-    }
 
     let packages_dir = root.join(PACKAGES_DIR);
     fs::create_dir_all(&packages_dir)?;
@@ -104,10 +86,7 @@ fn compile_index(source: &str, root: &Path) -> Result<CompiledRegistryIndex> {
     let package_entries = registry_yaml
         .packages
         .iter()
-        .zip(package_values)
-        .filter_map(|(package, package_value)| {
-            canonical_package_id(package).map(|id| (id, package, package_value))
-        })
+        .filter_map(|row| canonical_package_id(&row.package).map(|id| (id, row)))
         .collect::<Vec<_>>();
 
     if package_entries.is_empty() {
@@ -118,22 +97,22 @@ fn compile_index(source: &str, root: &Path) -> Result<CompiledRegistryIndex> {
 
     let canonical_ids = package_entries
         .iter()
-        .map(|(id, _, _)| id.clone())
+        .map(|(id, _)| id.clone())
         .collect::<HashSet<_>>();
     let mut used_filenames = HashSet::new();
     let mut packages = HashMap::new();
     let mut aliases = HashMap::new();
 
-    for (id, package, package_value) in package_entries {
+    for (id, row) in package_entries {
         let filename = package_filename(&id, &mut used_filenames);
         let path = packages_dir.join(&filename);
-        let content = encode_package_rkyv(package)?;
+        let content = encode_package_rkyv(&row.package)?;
         fs::write(path, content)?;
         packages.insert(id.clone(), filename);
 
-        for alias in package_aliases(package_value) {
-            if alias != id && !canonical_ids.contains(alias.as_str()) {
-                aliases.insert(alias, id.clone());
+        for alias in &row.aliases {
+            if alias != &id && !canonical_ids.contains(alias.as_str()) {
+                aliases.insert(alias.clone(), id.clone());
             }
         }
     }
@@ -155,23 +134,6 @@ fn canonical_package_id(package: &AquaPackage) -> Option<String> {
             }
         })
         .or_else(|| package.path.clone())
-}
-
-fn package_aliases(package: &Value) -> Vec<String> {
-    package
-        .get("aliases")
-        .and_then(|aliases| aliases.as_sequence())
-        .map(|aliases| {
-            aliases
-                .iter()
-                .filter_map(|alias| yaml_string_field(alias, "name"))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn yaml_string_field(value: &Value, key: &str) -> Option<String> {
-    value.get(key)?.as_str().map(str::to_string)
 }
 
 fn package_filename(id: &str, used_filenames: &mut HashSet<String>) -> String {
@@ -231,18 +193,32 @@ mod tests {
         let source = r#"
 packages:
   - type: http
+    name: example/canonical-tool
     repo_owner: example
     repo_name: tool
     url: https://example.com/tool
     aliases:
       - name: example/tool-alias
+    version_overrides:
+      - aliases:
+          - name: example/nested-alias
 "#;
 
         let registry = CompiledRegistry::compile_from_yaml(source, &root).unwrap();
         let package = registry.package("example/tool-alias").unwrap();
 
+        assert_eq!(package.name.as_deref(), Some("example/canonical-tool"));
         assert_eq!(package.repo_owner, "example");
         assert_eq!(package.repo_name, "tool");
+        assert!(registry.package("example/canonical-tool").is_ok());
+        assert!(matches!(
+            registry.package("example/tool"),
+            Err(AquaRegistryError::PackageNotFound(_))
+        ));
+        assert!(matches!(
+            registry.package("example/nested-alias"),
+            Err(AquaRegistryError::PackageNotFound(_))
+        ));
         assert!(root.join(INDEX_FILE).exists());
 
         let packages_dir = root.join(PACKAGES_DIR);
