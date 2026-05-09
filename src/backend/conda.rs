@@ -1,8 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{
-    VersionInfo, filter_cached_prereleases, include_prereleases, mark_prerelease,
-};
+use crate::backend::{VersionInfo, filter_cached_prereleases, mark_prerelease};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
@@ -146,6 +144,7 @@ impl CondaBackend {
             exclude_newer: None,
             strategy: SolveStrategy::Highest,
             dependency_overrides: vec![],
+            cancellation_token: None,
         };
 
         let mut solver = ResolvoSolver;
@@ -676,7 +675,7 @@ impl Backend for CondaBackend {
         _refresh: bool,
     ) -> Result<Vec<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let want_prereleases = include_prereleases(&opts);
+        let want_prereleases = self.include_prereleases(&opts);
         let versions = self
             ._list_remote_versions(config)
             .await?

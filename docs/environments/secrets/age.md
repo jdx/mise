@@ -10,14 +10,20 @@ This is a simple method of storing encrypted environment variables directly in `
 
 ## Quick start
 
-1. [optional] Generate an age key (if you want to create a new age key and don't want to use your ssh key):
+1. Enable experimental features:
+
+```bash
+mise settings set experimental true
+```
+
+2. [optional] Generate an age key (if you want to create a new age key and don't want to use your ssh key):
 
 ```bash
 age-keygen -o ~/.config/mise/age.txt
 # Note the public key output for encryption
 ```
 
-2. Encrypt a value:
+3. Encrypt a value:
 
 ```bash
 mise set --age-encrypt --prompt DB_PASSWORD
@@ -28,14 +34,14 @@ mise set --age-encrypt --prompt DB_PASSWORD
 It's recommended to use `--prompt` to avoid accidentally exposing the value to your shell history. You don't have to though, you can use `mise set --age-encrypt DB_PASSWORD="password123"`.
 :::
 
-3. Values are stored encrypted in `mise.toml` as an age directive:
+4. Values are stored encrypted in `mise.toml` as an age directive:
 
 ```toml
 [env]
 DB_PASSWORD = { age = { value = "<base64>" } }
 ```
 
-4. Decryption happens automatically:
+5. Decryption happens automatically:
 
 ```bash
 mise env  # Variables are decrypted automatically
@@ -71,7 +77,15 @@ mise looks for identities in this order:
 
 Decrypted values are always marked as redacted.
 
-If no identities are found or decryption fails, mise returns the encrypted value as-is (non-strict behavior).
+Age decryption is strict by default. If no identities are found, no available identity can decrypt the value, or the age payload is invalid, mise fails instead of continuing with a partially resolved environment.
+
+To allow commands and tasks to continue when an age value cannot be decrypted, disable strict mode:
+
+```bash
+mise settings set age.strict false
+```
+
+In non-strict mode, mise skips values that cannot be decrypted and continues resolving the rest of the environment.
 
 ## Defaults for recipients (encryption)
 

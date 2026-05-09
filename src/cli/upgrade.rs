@@ -78,6 +78,10 @@ pub struct Upgrade {
     #[clap(long, verbatim_doc_comment)]
     dry_run_code: bool,
 
+    /// Upgrade all tools, including installed-but-inactive tools not present in the current config
+    #[clap(long, verbatim_doc_comment, conflicts_with = "local")]
+    inactive: bool,
+
     /// Only upgrade tools defined in local config files
     ///
     /// This will only upgrade tools that are defined in project-local mise.toml and
@@ -119,6 +123,7 @@ impl Upgrade {
             before_date,
             offline: false,
             refresh_remote_versions: false,
+            inactive: self.inactive,
         };
         // Filter tools to check before doing expensive version lookups
         let filter_tools = if !self.interactive && !self.tool.is_empty() {
@@ -264,6 +269,7 @@ impl Upgrade {
                 before_date,
                 offline: false,
                 refresh_remote_versions: false,
+                inactive: self.inactive,
             },
             ..Default::default()
         };

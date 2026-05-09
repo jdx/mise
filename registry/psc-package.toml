@@ -1,2 +1,0 @@
-backends = ["github:purescript/psc-package", "asdf:nsaunders/asdf-psc-package"]
-description = "A package manager for PureScript based on package sets"

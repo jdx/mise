@@ -1,2 +1,0 @@
-backends = ["github:soracom/soracom-cli", "asdf:gr1m0h/asdf-soracom"]
-description = "Provides `soracom` command, a command line tool for calling SORACOM APIs"

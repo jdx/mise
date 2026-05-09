@@ -84,6 +84,7 @@ within_isolated_env() {
     GIT_COMMITTER_NAME="test" \
     GIT_COMMITTER_EMAIL="test@test.com" \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \
+    MISE_GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-}" \
     GITHUB_TOKEN="${GITHUB_TOKEN:-}" \
     GOPROXY="${GOPROXY:-}" \
     HOME="$TEST_HOME" \
@@ -211,6 +212,7 @@ run_in_docker() {
     -e ROOT=/mise-src
     -e CI="${CI:-}"
     -e GITHUB_ACTION="${GITHUB_ACTION:-}"
+    -e MISE_GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-}"
     -e GITHUB_TOKEN="${GITHUB_TOKEN:-}"
     -e MISE_DEBUG="${MISE_DEBUG:-0}"
     -e MISE_TRACE="${MISE_TRACE:-0}"
