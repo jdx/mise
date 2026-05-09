@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -14,6 +14,61 @@ use crate::toolset::Toolset;
 use crate::toolset::env_cache::{CachedEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::tool_request::ToolRequest;
 use crate::{env, parallel, uv};
+
+fn base_path_env() -> (PathEnv, Vec<PathBuf>) {
+    // A nested mise process can inherit the parent task's direct install paths
+    // before shims. Treat those as prior mise output, not user pre-PATH: current
+    // config paths should win, while inherited install paths remain fallbacks.
+    let shared_install_dirs = env::shared_install_dirs();
+    let mut path_env = PathEnv::from_iter(env::PATH.clone());
+    let demoted_mise_install_paths =
+        path_env.take_pre_matching(|p| is_mise_install_path(p, &shared_install_dirs));
+    (path_env, demoted_mise_install_paths)
+}
+
+fn add_demoted_mise_install_fallbacks(
+    path_env: &mut PathEnv,
+    demoted_mise_install_paths: &[PathBuf],
+) {
+    for path in demoted_mise_install_paths {
+        path_env.add(path.clone());
+    }
+}
+
+fn is_mise_install_path(path: &Path, shared_install_dirs: &[PathBuf]) -> bool {
+    let path = crate::file::replace_path(path);
+    path_starts_with(&path, &env::MISE_INSTALLS_DIR)
+        || path_starts_with(&path, &env::MISE_SYSTEM_INSTALLS_DIR)
+        || shared_install_dirs
+            .iter()
+            .any(|d| path_starts_with(&path, d))
+}
+
+fn path_starts_with(path: &Path, prefix: &Path) -> bool {
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let mut path_components = path.components();
+        let prefix_components = prefix.components();
+        for prefix_component in prefix_components {
+            let Some(path_component) = path_components.next() else {
+                return false;
+            };
+            if path_component.as_os_str().to_string_lossy().to_lowercase()
+                != prefix_component
+                    .as_os_str()
+                    .to_string_lossy()
+                    .to_lowercase()
+            {
+                return false;
+            }
+        }
+        true
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    {
+        path.starts_with(prefix)
+    }
+}
 
 impl Toolset {
     pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
@@ -38,7 +93,7 @@ impl Toolset {
     /// dependency_env to avoid triggering module hooks on a partial PATH.
     pub async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let (mut env, add_paths) = self.env(config).await?;
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let (mut path_env, demoted_mise_install_paths) = base_path_env();
         for p in config.path_dirs().await?.clone() {
             path_env.add(p);
         }
@@ -48,6 +103,7 @@ impl Toolset {
         for p in self.list_paths(config).await {
             path_env.add(p);
         }
+        add_demoted_mise_install_fallbacks(&mut path_env, &demoted_mise_install_paths);
         env.insert(PATH_KEY.to_string(), path_env.to_string());
         Ok(env)
     }
@@ -63,7 +119,7 @@ impl Toolset {
         }
 
         let (mut env, env_results) = self.final_env(config).await?;
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let (mut path_env, demoted_mise_install_paths) = base_path_env();
         // Use split paths so we save a cache compatible with env_with_path_and_split
         let (user_paths, tool_paths) = self
             .list_final_paths_split(config, env_results.clone())
@@ -71,6 +127,7 @@ impl Toolset {
         for p in user_paths.iter().chain(tool_paths.iter()) {
             path_env.add(p.clone());
         }
+        add_demoted_mise_install_fallbacks(&mut path_env, &demoted_mise_install_paths);
         env.insert(PATH_KEY.to_string(), path_env.to_string());
 
         // Save to cache if enabled and no uncacheable directives
@@ -100,10 +157,11 @@ impl Toolset {
             trace!("env_cache: using cached environment with split paths");
             let mut env = cached.env;
             // Reconstruct PATH from cached paths
-            let mut path_env = PathEnv::from_iter(env::PATH.clone());
+            let (mut path_env, demoted_mise_install_paths) = base_path_env();
             for p in cached.user_paths.iter().chain(cached.tool_paths.iter()) {
                 path_env.add(p.clone());
             }
+            add_demoted_mise_install_fallbacks(&mut path_env, &demoted_mise_install_paths);
             env.insert(PATH_KEY.to_string(), path_env.to_string());
             return Ok((
                 env,
@@ -120,10 +178,11 @@ impl Toolset {
             .await?;
 
         // Build PATH
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let (mut path_env, demoted_mise_install_paths) = base_path_env();
         for p in user_paths.iter().chain(tool_paths.iter()) {
             path_env.add(p.clone());
         }
+        add_demoted_mise_install_fallbacks(&mut path_env, &demoted_mise_install_paths);
         env.insert(PATH_KEY.to_string(), path_env.to_string());
 
         // Save to cache if enabled and no uncacheable directives
@@ -153,10 +212,11 @@ impl Toolset {
             Some(cached) => {
                 let mut env = cached.env;
                 // Reconstruct PATH from cached paths
-                let mut path_env = PathEnv::from_iter(env::PATH.clone());
+                let (mut path_env, demoted_mise_install_paths) = base_path_env();
                 for p in cached.user_paths.into_iter().chain(cached.tool_paths) {
                     path_env.add(p);
                 }
+                add_demoted_mise_install_fallbacks(&mut path_env, &demoted_mise_install_paths);
                 env.insert(PATH_KEY.to_string(), path_env.to_string());
                 Ok(Some(env))
             }
@@ -337,7 +397,7 @@ impl Toolset {
         let (mut env, add_paths) = self.env(config).await?;
         let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         tera_env.extend(env.clone());
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let (mut path_env, demoted_mise_install_paths) = base_path_env();
 
         for p in config.path_dirs().await?.clone() {
             path_env.add(p);
@@ -348,6 +408,7 @@ impl Toolset {
         for p in self.list_paths(config).await {
             path_env.add(p);
         }
+        add_demoted_mise_install_fallbacks(&mut path_env, &demoted_mise_install_paths);
         tera_env.insert(PATH_KEY.to_string(), path_env.to_string());
         let mut ctx = config.tera_ctx.clone();
         ctx.insert("env", &tera_env);

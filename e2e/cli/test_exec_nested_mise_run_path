@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+# Regression test: nested `mise exec` inside a `mise run` task should put the
+# nested target tool before the outer task's mise-managed tool path, while still
+# preserving the outer path as a fallback.
+
+mise install dummy@1.0.0 dummy@2.0.0
+
+old_dir="$HOME/old"
+new_dir="$HOME/new"
+mkdir -p "$old_dir/.mise/tasks" "$new_dir"
+
+cat >"$old_dir/mise.toml" <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+cat >"$new_dir/mise.toml" <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+
+old_bin="$MISE_DATA_DIR/installs/dummy/1.0.0/bin"
+new_bin="$MISE_DATA_DIR/installs/dummy/2.0.0/bin"
+new_dummy="$new_bin/dummy"
+shims="$MISE_DATA_DIR/shims"
+original_path="$PATH"
+non_mise_bin="$HOME/non-mise-bin"
+mkdir -p "$non_mise_bin"
+
+cat >"$old_dir/.mise/tasks/probe" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+newdir="$1"
+old_bin="$2"
+new_bin="$3"
+shims="$4"
+
+actual=$(mise -C "$newdir" exec -- bash -c 'command -v dummy')
+if [[ $actual != "$new_bin/dummy" ]]; then
+  echo "expected nested dummy at $new_bin/dummy, got $actual" >&2
+  exit 1
+fi
+
+nested_path=$(mise -C "$newdir" exec -- printenv PATH)
+IFS=: read -r -a parts <<<"$nested_path"
+old_pos=
+new_pos=
+shims_pos=
+for i in "${!parts[@]}"; do
+  case "${parts[$i]}" in
+    "$old_bin") old_pos=$i ;;
+    "$new_bin") new_pos=$i ;;
+    "$shims") shims_pos=$i ;;
+  esac
+done
+
+if [[ -z $new_pos || -z $old_pos || -z $shims_pos ]]; then
+  echo "expected new, old, and shims paths in nested PATH" >&2
+  echo "$nested_path" >&2
+  exit 1
+fi
+
+if (( new_pos >= old_pos )); then
+  echo "expected nested tool path before inherited outer path" >&2
+  echo "$nested_path" >&2
+  exit 1
+fi
+
+if (( old_pos >= shims_pos )); then
+  echo "expected inherited outer path before shims as a direct fallback" >&2
+  echo "$nested_path" >&2
+  exit 1
+fi
+
+printf '%s\n' "$actual"
+EOF
+chmod +x "$old_dir/.mise/tasks/probe"
+
+# Simulate an activated/outer mise environment where the current task's tool bin
+# is already before shims in PATH. The nested exec should still prefer the tool
+# resolved from $new_dir, but keep the inherited tool path as a fallback.
+export PATH="$old_bin:$shims:$original_path"
+
+assert "mise -C '$old_dir' run probe '$new_dir' '$old_bin' '$new_bin' '$shims'" "$new_dummy"
+
+assert_path_order() {
+  local label="$1"
+  local path="$2"
+  local before="$3"
+  local after="$4"
+
+  python3 - "$label" "$path" "$before" "$after" <<'PY'
+import sys
+label, path, before, after = sys.argv[1:]
+parts = path.split(':')
+try:
+    before_pos = parts.index(before)
+    after_pos = parts.index(after)
+except ValueError:
+    print(f"{label}: expected both paths in PATH", file=sys.stderr)
+    print(path, file=sys.stderr)
+    raise SystemExit(1)
+if before_pos >= after_pos:
+    print(f"{label}: expected {before} before {after}", file=sys.stderr)
+    print(path, file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
+# Without an effective shims boundary, PathEnv already places the nested config's
+# paths before inherited PATH. Do not additionally demote inherited mise install
+# paths ahead of earlier non-mise PATH entries.
+no_shims_path=$(PATH="$non_mise_bin:$old_bin:$original_path" mise -C "$new_dir" exec -- printenv PATH)
+assert_path_order "no shims" "$no_shims_path" "$non_mise_bin" "$old_bin"
+
+# activate_aggressive intentionally disables PathEnv's shims boundary. Preserve
+# inherited PATH ordering there as well.
+aggressive_path=$(MISE_ACTIVATE_AGGRESSIVE=1 PATH="$non_mise_bin:$old_bin:$shims:$original_path" mise -C "$new_dir" exec -- printenv PATH)
+assert_path_order "activate aggressive" "$aggressive_path" "$non_mise_bin" "$old_bin"

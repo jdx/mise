@@ -4,7 +4,7 @@ use std::env::{join_paths, split_paths};
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub struct PathEnv {
@@ -28,6 +28,22 @@ impl PathEnv {
         for part in split_paths(&path) {
             self.mise.push(part);
         }
+    }
+
+    pub fn take_pre_matching<F>(&mut self, predicate: F) -> Vec<PathBuf>
+    where
+        F: Fn(&Path) -> bool,
+    {
+        let mut taken = Vec::new();
+        self.pre.retain(|path| {
+            if predicate(path) {
+                taken.push(path.clone());
+                false
+            } else {
+                true
+            }
+        });
+        taken
     }
 
     pub fn to_vec(&self) -> Vec<PathBuf> {
@@ -128,6 +144,21 @@ mod tests {
         assert_eq!(
             path_env.to_string(),
             format!("/before-1:/before-2:/before-3:/1:/2:/3:{shims}:/after-1:/after-2:/after-3")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_path_env_take_pre_matching() {
+        let _config = Config::get().await.unwrap();
+        let shims = dirs::SHIMS.to_str().unwrap();
+        let mut path_env =
+            PathEnv::from_iter(["/before-1", "/before-2", shims, "/after-1"].map(PathBuf::from));
+        let taken = path_env.take_pre_matching(|p| p == Path::new("/before-2"));
+        path_env.add("/tool".into());
+        assert_eq!(taken, vec![PathBuf::from("/before-2")]);
+        assert_eq!(
+            path_env.to_string(),
+            format!("/before-1:/tool:{shims}:/after-1")
         );
     }
 
