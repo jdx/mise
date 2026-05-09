@@ -1,0 +1,4 @@
+backends = ["npm:corepack"]
+description = "Corepack lets you use Yarn, npm, and pnpm without having to install them."
+idiomatic_files = ["package.json"]
+test = { cmd = "corepack --version", expected = "{{version}}" }
