@@ -138,13 +138,20 @@ Use `mise token github` to confirm mise can resolve the token:
 mise token github
 ```
 
-## Native GitHub OAuth
+## Native GitHub OAuth <Badge type="warning" text="experimental" />
 
 mise can create short-lived GitHub App user access tokens directly with GitHub's OAuth device flow. This does not require a personal access token, GitHub App private key, app client secret, `gh`, `ghtkn`, or any other external credential command.
+
+The design was inspired by [ghtkn](https://github.com/suzuki-shunsuke/ghtkn) — if you'd rather run a separate process and have mise pick up its token via `credential_command`, see [Using ghtkn](#using-ghtkn) above.
+
+::: warning
+This feature is experimental. Enable it with `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) before using it. Behavior, settings, and token cache format may change in future releases.
+:::
 
 Create a GitHub App with device flow enabled, then configure its client ID:
 
 ```sh
+mise settings set experimental true
 mise settings set github.oauth_client_id Iv1.yourgithubappclientid
 ```
 

@@ -93,6 +93,9 @@ pub fn inject_token_env(env: &mut EnvMap) {
     let Some(host) = api_host(&settings.github.oauth_api_url) else {
         return;
     };
+    if env.contains_key(var_name) {
+        return;
+    }
     if let Some(token) = resolve_token(&host) {
         env.insert(var_name.to_string(), token);
     }
@@ -104,6 +107,7 @@ pub fn token(req: TokenRequest) -> Result<String> {
 
 async fn token_async(req: TokenRequest) -> Result<String> {
     let settings = Settings::get();
+    settings.ensure_experimental("native GitHub OAuth")?;
     let client_id = settings.github.oauth_client_id.trim();
     let scopes = settings.github.oauth_scopes.trim();
     if client_id.is_empty() {

@@ -837,7 +837,7 @@
             },
             "oauth_client_id": {
               "default": "",
-              "description": "GitHub App client ID for native OAuth device-flow tokens.",
+              "description": "[experimental] GitHub App client ID for native OAuth device-flow tokens.",
               "type": "string"
             },
             "oauth_export_env": {

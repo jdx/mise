@@ -722,14 +722,18 @@ type = "String"
 
 [github.oauth_client_id]
 default = ""
-description = "GitHub App client ID for native OAuth device-flow tokens."
+description = "[experimental] GitHub App client ID for native OAuth device-flow tokens."
 docs = """
+[experimental] Requires `experimental = true`.
+
 When set, mise can create short-lived GitHub App user access tokens using
 GitHub's OAuth device flow. This does not require a GitHub App private key,
 client secret, personal access token, or external credential helper.
 
 Run `mise token github --oauth` once to authorize and cache a token. mise will reuse
 the cached token for GitHub API calls and refresh it when possible.
+
+Inspired by [ghtkn](https://github.com/suzuki-shunsuke/ghtkn).
 """
 env = "MISE_GITHUB_OAUTH_CLIENT_ID"
 type = "String"

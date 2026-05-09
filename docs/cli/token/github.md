@@ -18,7 +18,7 @@ GitHub hostname
 
 ### `--oauth`
 
-Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources
+[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources
 
 ### `--raw`
 

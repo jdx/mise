@@ -13,8 +13,8 @@ pub struct Github {
     #[clap(default_value = "github.com")]
     pub(crate) host: String,
 
-    /// Resolve only via the native GitHub OAuth source (cache, refresh, or
-    /// device-code flow), bypassing other token sources
+    /// [experimental] Resolve only via the native GitHub OAuth source (cache,
+    /// refresh, or device-code flow), bypassing other token sources
     #[clap(long)]
     pub(crate) oauth: bool,
 
