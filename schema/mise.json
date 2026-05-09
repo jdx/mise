@@ -1357,7 +1357,7 @@
         },
         "otel": {
           "type": "object",
-          "additionalProperties": false,
+          "unevaluatedProperties": false,
           "properties": {
             "enabled": {
               "default": false,
