@@ -14,6 +14,8 @@ mise settings set idiomatic_version_file_enable_tools node
 
 mise i node@lts/hydrogen
 mise i -f node
+hydrogen_path="$(mise where node@lts/hydrogen)"
+assert "mise x node@$corepack_version -- $hydrogen_path/bin/npm config get prefix" "$hydrogen_path"
 assert_contains "mise x node@lts/hydrogen -- node --version" "v18."
 assert "mise x -- node --version" "v$corepack_version"
 assert_contains "mise x -- which yarn" "yarn"
