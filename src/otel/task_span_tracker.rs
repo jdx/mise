@@ -18,20 +18,22 @@ fn id_gen() -> &'static RandomIdGenerator {
     &GEN
 }
 
-/// Shared state for collecting spans across concurrent task execution.
+/// Tracks mise-specific span bookkeeping for a single `mise run`:
+/// the run's root span, monorepo group spans, and the IDs reserved
+/// for in-flight task spans.
 ///
 /// Nesting model:
 /// - Tasks with a monorepo `config_root` are grouped under a parent
 ///   span for that config_root.
-/// - All other tasks are direct children of the trace's root span.
+/// - All other tasks are direct children of the run's root span.
 ///
 /// Emission model: every span is created using the SDK tracer with
 /// explicit IDs and timing, then ended immediately. Task spans are
 /// emitted from `end_task_span`. The root span and monorepo-group
 /// spans are emitted from `finish()` with their aggregated duration.
 #[derive(Clone)]
-pub struct TraceContext {
-    inner: Arc<Mutex<TraceContextInner>>,
+pub struct TaskSpanTracker {
+    inner: Arc<Mutex<TaskSpanTrackerInner>>,
     /// Provider lives outside the Mutex — it is Arc-based and
     /// thread-safe on its own. This lets `end_task_span` release the
     /// lock before calling `emit_span`, avoiding any contention with
@@ -39,7 +41,7 @@ pub struct TraceContext {
     tracer_provider: SdkTracerProvider,
 }
 
-struct TraceContextInner {
+struct TaskSpanTrackerInner {
     trace_id: TraceId,
     trace_flags: TraceFlags,
     trace_state: TraceState,
@@ -170,7 +172,7 @@ impl StartedSpan {
     }
 }
 
-impl TraceContext {
+impl TaskSpanTracker {
     pub fn new(root_span_name: &str, provider: SdkTracerProvider) -> Self {
         Self::new_with_parent(
             root_span_name,
@@ -212,7 +214,7 @@ impl TraceContext {
         let root_init_time = SystemTime::now();
 
         Self {
-            inner: Arc::new(Mutex::new(TraceContextInner {
+            inner: Arc::new(Mutex::new(TaskSpanTrackerInner {
                 trace_id,
                 trace_flags,
                 trace_state,
@@ -260,7 +262,11 @@ impl TraceContext {
     }
 
     /// Fold a completed task into the root span's aggregate timing.
-    fn fold_into_root(inner: &mut TraceContextInner, task_start: SystemTime, task_end: SystemTime) {
+    fn fold_into_root(
+        inner: &mut TaskSpanTrackerInner,
+        task_start: SystemTime,
+        task_end: SystemTime,
+    ) {
         inner.root_span.min_start = Some(match inner.root_span.min_start {
             Some(existing) if existing <= task_start => existing,
             _ => task_start,
@@ -273,7 +279,7 @@ impl TraceContext {
 
     /// Fold a completed task into the matching monorepo group's aggregate timing.
     fn fold_into_group(
-        inner: &mut TraceContextInner,
+        inner: &mut TaskSpanTrackerInner,
         parent_span_id: SpanId,
         task_start: SystemTime,
         task_end: SystemTime,
@@ -349,7 +355,7 @@ impl TraceContext {
         task_name: &str,
         end_time: SystemTime,
         status: Status,
-        attributes: Vec<(String, String)>,
+        attributes: Vec<KeyValue>,
     ) {
         // Lock held through emit_span so finish()/shutdown() cannot
         // race between the aggregate update and the span export.
@@ -411,7 +417,7 @@ impl TraceContext {
         self.emit_final_spans_locked(&mut inner, has_failures);
     }
 
-    fn emit_final_spans_locked(&self, inner: &mut TraceContextInner, has_failures: bool) {
+    fn emit_final_spans_locked(&self, inner: &mut TaskSpanTrackerInner, has_failures: bool) {
         let now = SystemTime::now();
         let trace_id = inner.trace_id;
         let root_span_id = inner.root_span.span_id;
@@ -436,11 +442,8 @@ impl TraceContext {
                     end_time: parent.max_end.unwrap_or(now),
                     status: Status::Unset,
                     attributes: vec![
-                        ("mise.span_type".to_string(), "monorepo_group".to_string()),
-                        (
-                            "mise.config_root".to_string(),
-                            config_root.display().to_string(),
-                        ),
+                        KeyValue::new("mise.span_type", "monorepo_group"),
+                        KeyValue::new("mise.config_root", config_root.display().to_string()),
                     ],
                 },
             );
@@ -460,7 +463,7 @@ impl TraceContext {
                     .unwrap_or(inner.root_span.init_time),
                 end_time: inner.root_span.max_end.unwrap_or(now),
                 status: status_from_error(has_failures),
-                attributes: vec![("mise.span_type".to_string(), "run".to_string())],
+                attributes: vec![KeyValue::new("mise.span_type", "run")],
             },
         );
     }
@@ -475,7 +478,7 @@ struct EmitSpanParams {
     start_time: SystemTime,
     end_time: SystemTime,
     status: Status,
-    attributes: Vec<(String, String)>,
+    attributes: Vec<KeyValue>,
 }
 
 /// Create an SDK span with explicit IDs and timing, then end it immediately.
@@ -494,13 +497,7 @@ fn emit_span(provider: &SdkTracerProvider, params: EmitSpanParams) {
     builder.trace_id = Some(params.trace_id);
     builder.span_id = Some(params.span_id);
     builder.start_time = Some(params.start_time);
-    builder.attributes = Some(
-        params
-            .attributes
-            .into_iter()
-            .map(|(k, v)| KeyValue::new(k, v))
-            .collect(),
-    );
+    builder.attributes = Some(params.attributes);
 
     let mut span = tracer.build_with_context(builder, &parent_cx);
     span.set_status(params.status);
@@ -571,7 +568,7 @@ mod tests {
     #[test]
     fn finish_builds_root_and_monorepo_hierarchy() {
         let (provider, exporter) = test_provider();
-        let trace = TraceContext::new("mise run", provider);
+        let trace = TaskSpanTracker::new("mise run", provider);
         let project_root = PathBuf::from("/workspace");
         let monorepo_root = PathBuf::from("/workspace/packages/frontend");
 
@@ -619,7 +616,7 @@ mod tests {
     #[test]
     fn finish_has_failures_does_not_taint_ok_group() {
         let (provider, exporter) = test_provider();
-        let trace = TraceContext::new("mise run", provider);
+        let trace = TaskSpanTracker::new("mise run", provider);
         let project_root = PathBuf::from("/workspace");
         let monorepo_root = PathBuf::from("/workspace/packages/frontend");
 
@@ -644,7 +641,7 @@ mod tests {
     #[test]
     fn finish_group_stays_unset_even_when_child_fails() {
         let (provider, exporter) = test_provider();
-        let trace = TraceContext::new("mise run", provider);
+        let trace = TaskSpanTracker::new("mise run", provider);
         let project_root = PathBuf::from("/workspace");
         let monorepo_root = PathBuf::from("/workspace/packages/frontend");
 
@@ -675,7 +672,7 @@ mod tests {
     #[test]
     fn task_without_config_root_is_direct_child_of_root() {
         let (provider, exporter) = test_provider();
-        let trace = TraceContext::new("mise run", provider);
+        let trace = TaskSpanTracker::new("mise run", provider);
 
         let parent = trace.parent_span_for_task(None, None);
         let started = trace.start_task_span(parent);
@@ -706,7 +703,7 @@ mod tests {
         ]);
         let parent_span_id = SpanId::from_bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]);
 
-        let trace = TraceContext::from_parent_context(
+        let trace = TaskSpanTracker::from_parent_context(
             "mise run nested",
             SpanContext::new(
                 parent_trace_id,
@@ -733,7 +730,7 @@ mod tests {
         let provider = SdkTracerProvider::builder()
             .with_span_processor(SimpleSpanProcessor::new(exporter.clone()))
             .build();
-        let trace = TraceContext::new("mise run", provider);
+        let trace = TaskSpanTracker::new("mise run", provider);
         let project_root = PathBuf::from("/workspace");
         let monorepo_root = PathBuf::from("/workspace/packages/frontend");
 

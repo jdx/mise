@@ -83,8 +83,8 @@ pub struct TaskExecutor {
     pub skip_deps: bool,
     pub sandbox: crate::sandbox::SandboxConfig,
 
-    // OpenTelemetry log collector (when otel is enabled)
-    pub otel_log_collector: Option<crate::otel::OtelLogCollector>,
+    // Forwards task stdout/stderr to the OTEL log pipeline (when otel is enabled).
+    pub output_forwarder: Option<crate::otel::TaskOutputForwarder>,
 }
 
 impl TaskExecutor {
@@ -106,7 +106,7 @@ impl TaskExecutor {
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
             sandbox: config.sandbox,
-            otel_log_collector: None,
+            output_forwarder: None,
         }
     }
 
@@ -211,7 +211,7 @@ impl TaskExecutor {
         dep_ran: bool,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
-        otel_started: Option<crate::otel::trace_context::StartedSpan>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<bool> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
@@ -303,7 +303,7 @@ impl TaskExecutor {
             // nested `mise run` and any OTEL-instrumented tools the task
             // invokes automatically join this distributed trace.
             // https://opentelemetry.io/docs/specs/otel/context/env-carriers/
-            crate::otel::task_trace::inject_otel_context(&mut env, ctx);
+            crate::otel::task_run_telemetry::inject_otel_context(&mut env, ctx);
         }
         if let Some(cwd) = &*crate::dirs::CWD {
             Self::insert_env_excluded_from_nested_mise_diff(
@@ -528,7 +528,7 @@ impl TaskExecutor {
         completed_tasks: &HashSet<TaskKey>,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
-        otel_started: Option<crate::otel::trace_context::StartedSpan>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
@@ -824,7 +824,7 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
-        otel_started: Option<crate::otel::trace_context::StartedSpan>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
@@ -934,7 +934,7 @@ impl TaskExecutor {
         env: &BTreeMap<String, String>,
         prefix: &str,
         extra_vars: Option<IndexMap<String, String>>,
-        otel_started: Option<crate::otel::trace_context::StartedSpan>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
@@ -980,7 +980,7 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
-        otel_started: Option<crate::otel::trace_context::StartedSpan>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         let (program, args) = self.get_file_program_and_args(file, task, args)?;
         self.exec_program(&program, &args, task, env, prefix, otel_started)
@@ -994,7 +994,7 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
-        otel_started: Option<crate::otel::trace_context::StartedSpan>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         const ETXTBUSY_RETRIES: usize = 3;
         const ETXTBUSY_SLEEP_MS: u64 = 50;
@@ -1030,7 +1030,7 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
-        otel_started: Option<crate::otel::trace_context::StartedSpan>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<()> {
         let config = Config::get().await?;
         let program = program.to_executable();
@@ -1074,8 +1074,8 @@ impl TaskExecutor {
         let output = self.output(Some(task));
         cmd.with_pass_signals();
 
-        cmd = crate::otel::OtelLogCollector::attach_hooks(
-            self.otel_log_collector.as_ref(),
+        cmd = crate::otel::TaskOutputForwarder::attach_hooks(
+            self.output_forwarder.as_ref(),
             &task.name,
             &task.args,
             otel_started.as_ref(),
