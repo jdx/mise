@@ -1784,8 +1784,8 @@ impl AquaBackend {
         let skip_minisign = expected_provenance.is_some_and(|l| !l.is_minisign());
         let skip_cosign = expected_provenance.is_some_and(|l| !l.is_cosign());
 
-        if !skip_attestations {
-            if let Some(status) = self
+        if !skip_attestations
+            && let Some(status) = self
                 .verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
                 .await?
             {
@@ -1801,7 +1801,6 @@ impl AquaBackend {
                     }
                 }
             }
-        }
         if !skip_slsa {
             // Short-circuit: if a higher-priority mechanism already recorded provenance, skip SLSA
             let already_verified = tv
