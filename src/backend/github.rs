@@ -15,7 +15,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
-use crate::{backend::Backend, backend::include_prereleases, forgejo, github, gitlab};
+use crate::{backend::Backend, forgejo, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
@@ -274,7 +274,7 @@ impl Backend for UnifiedGitBackend {
         // defaulting to the newest non-prerelease). Returning `None` lets the
         // trait's `latest_version` fall through to `latest_version_for_query`,
         // which resolves against the full list — now including pre-releases.
-        if include_prereleases(&opts) {
+        if self.include_prereleases(&opts) {
             return Ok(None);
         }
 

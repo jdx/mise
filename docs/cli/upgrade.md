@@ -67,6 +67,10 @@ Like --dry-run but exits with code 1 if there are outdated tools
 
 This is useful for scripts to check if tools need to be upgraded.
 
+### `--inactive`
+
+Upgrade all tools, including installed-but-inactive tools not present in the current config
+
 ### `--local`
 
 Only upgrade tools defined in local config files

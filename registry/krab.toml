@@ -1,3 +1,0 @@
-backends = ["aqua:ohkrab/krab", "asdf:ohkrab/asdf-krab"]
-description = "Krab is a migration and automation tool for PostgreSQL based on HCL syntax"
-test = { cmd = "krab --version", expected = "{{version}}" }

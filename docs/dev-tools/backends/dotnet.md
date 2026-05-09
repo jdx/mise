@@ -68,3 +68,14 @@ import Settings from '/components/settings.vue';
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `dotnet` backend—these
 go in `[tools]` in `mise.toml`.
+
+### `prerelease`
+
+By default, NuGet pre-release versions are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:
+
+```toml
+[tools]
+"dotnet:GitVersion.Tool" = { version = "latest", prerelease = true }
+```
+
+The legacy `dotnet.package_flags = ["prerelease"]` setting is deprecated. Prefer the per-tool `prerelease = true` option, or the global `prereleases` setting when every tool should include pre-release versions. Because `dotnet.package_flags` is global, remove it before relying on `prerelease = false` per-tool opt-outs.

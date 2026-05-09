@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::{
-    VersionInfo, filter_cached_prereleases, include_prereleases, mark_prerelease,
-};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
@@ -12,7 +10,6 @@ use crate::toolset::ToolVersionOptions;
 use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
-use jiff::Timestamp;
 
 /// Dotnet backend requires experimental mode to be enabled
 pub const EXPERIMENTAL: bool = true;
@@ -40,24 +37,15 @@ impl Backend for DotnetBackend {
         true
     }
 
-    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
-        // TODO: Once dotnet remote listing always fetches the prerelease
-        // superset and filters at read time, remove this override entirely.
-        // Today `prerelease` changes the NuGet query, but there are no dotnet
-        // backend registry tools using the versions host.
-        &[]
-    }
-
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let feed_url = self.get_search_url().await?;
-        let opts = self.tool_opts(config).await?;
 
         let feed: NugetFeedSearch = HTTP_FETCH
             .json(format!(
                 "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
                 feed_url,
                 &self.tool_name(),
-                self.dotnet_prereleases_enabled(&opts)
+                true
             ))
             .await?;
 
@@ -80,53 +68,6 @@ impl Backend for DotnetBackend {
                 ..Default::default()
             })
             .collect())
-    }
-
-    /// Bypass the shared remote-versions cache because the dotnet package flags
-    /// affect which versions NuGet returns. The override is on `_with_refresh`
-    /// so install-time latest resolution uses the same dotnet-specific
-    /// prerelease filtering as `ls-remote`.
-    async fn list_remote_versions_with_info_with_refresh(
-        &self,
-        config: &Arc<Config>,
-        _refresh: bool,
-    ) -> eyre::Result<Vec<VersionInfo>> {
-        let opts = self.tool_opts(config).await?;
-        let want_prereleases = self.dotnet_prereleases_enabled(&opts);
-        let versions = self
-            ._list_remote_versions(config)
-            .await?
-            .into_iter()
-            .map(mark_prerelease)
-            .collect();
-        Ok(filter_cached_prereleases(versions, want_prereleases))
-    }
-
-    async fn list_versions_matching_with_opts(
-        &self,
-        config: &Arc<Config>,
-        query: &str,
-        before_date: Option<Timestamp>,
-        refresh: bool,
-    ) -> eyre::Result<Vec<String>> {
-        let versions = match before_date {
-            Some(before) => {
-                let versions_with_info = self
-                    .list_remote_versions_with_info_with_refresh(config, refresh)
-                    .await?;
-                VersionInfo::filter_by_date(versions_with_info, before)
-                    .into_iter()
-                    .map(|v| v.version)
-                    .collect()
-            }
-            None => {
-                self.list_remote_versions_with_refresh(config, refresh)
-                    .await?
-            }
-        };
-        let opts = self.tool_opts(config).await?;
-        let filter = !self.dotnet_prereleases_enabled(&opts);
-        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     async fn install_version_(
@@ -164,6 +105,15 @@ impl Backend for DotnetBackend {
 
         Ok(tv)
     }
+
+    fn include_prereleases(&self, opts: &ToolVersionOptions) -> bool {
+        if Settings::get().prereleases {
+            return true;
+        }
+
+        opts.opts.get("prerelease").is_some_and(tool_option_bool)
+            || dotnet_legacy_prerelease_package_flag_enabled()
+    }
 }
 
 impl DotnetBackend {
@@ -191,18 +141,30 @@ impl DotnetBackend {
 
         Ok(feed.id.clone())
     }
+}
 
-    async fn tool_opts(&self, config: &Arc<Config>) -> eyre::Result<ToolVersionOptions> {
-        config.get_tool_opts_with_overrides(&self.ba).await
+fn dotnet_legacy_prerelease_package_flag_enabled() -> bool {
+    let enabled = Settings::get()
+        .dotnet
+        .package_flags
+        .iter()
+        .any(|flag| flag == "prerelease");
+    if enabled {
+        deprecated_at!(
+            "2026.11.0",
+            "2027.11.0",
+            "setting.dotnet.package_flags.prerelease",
+            "`dotnet.package_flags = [\"prerelease\"]` is deprecated. Use the `prerelease = true` tool option instead."
+        );
     }
+    enabled
+}
 
-    fn dotnet_prereleases_enabled(&self, opts: &ToolVersionOptions) -> bool {
-        Settings::get().prereleases
-            || Settings::get()
-                .dotnet
-                .package_flags
-                .contains(&"prerelease".to_string())
-            || include_prereleases(opts)
+fn tool_option_bool(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::Boolean(b) => *b,
+        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
+        _ => false,
     }
 }
 

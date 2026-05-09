@@ -33,8 +33,13 @@ assert_not_contains "mise outdated --local" "tiny"
 # without --local, both should appear
 assert_contains "mise outdated" "dummy"
 assert_contains "mise outdated" "tiny"
-rm -f .tool-versions
+
+# if tiny is installed but no longer active in config, --inactive should still show it
 rm -f "$MISE_CONFIG_DIR/config.toml"
+assert_not_contains "mise outdated" "tiny"
+assert_contains "mise outdated --inactive" "tiny"
+
+rm -f .tool-versions
 
 echo 'dummy 1' >.tool-versions
 mise uninstall dummy --all

@@ -1,2 +1,0 @@
-backends = ["aqua:plexsystems/sinker", "asdf:elementalvoid/asdf-sinker"]
-description = "A tool to sync images from one container registry to another"

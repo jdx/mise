@@ -81,7 +81,58 @@ impl BunPlugin {
             file::make_executable(self.bun_bin(tv))?;
             file::make_symlink(Path::new("./bun"), &tv.install_path().join("bin/bunx"))?;
         }
+        #[cfg(windows)]
+        {
+            self.install_bunx_windows(tv)?;
+        }
         Ok(())
+    }
+
+    /// Create a `bunx` entry next to `bun.exe` on Windows.
+    ///
+    /// Upstream `bun-windows-*.zip` ships only `bun.exe`; the `bunx` entry
+    /// that exists as a symlink in the unix releases is created post-install
+    /// by the bun PowerShell installer (which invokes `bun completions`,
+    /// see oven-sh/bun:src/cli/install_completions_command.zig
+    /// `installBunxSymlinkWindows`). Mirror that step here so users get a
+    /// working `bunx` after `mise install bun`.
+    #[cfg(windows)]
+    fn install_bunx_windows(&self, tv: &ToolVersion) -> Result<()> {
+        let bin_dir = tv.install_path().join("bin");
+        let bun_exe = bin_dir.join("bun.exe");
+        let bunx_exe = bin_dir.join("bunx.exe");
+        let bunx_cmd = bin_dir.join("bunx.cmd");
+
+        // Defensive cleanup: `install()` already wipes the entire install
+        // path before reaching here, but be idempotent for any future caller
+        // that invokes this directly. `file::remove_all` is a no-op when the
+        // target is missing and propagates real errors (e.g. permission /
+        // locked-file failures) so we don't silently leave a stale shim.
+        file::remove_all(&bunx_exe)?;
+        file::remove_all(&bunx_cmd)?;
+
+        // Prefer a hardlink (matches upstream): bun inspects argv[0] and
+        // switches into bunx mode, the same way the unix symlink does.
+        match std::fs::hard_link(&bun_exe, &bunx_exe) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                // Hardlinks can fail across volumes or on filesystems that
+                // disallow them. Fall back to the cmd shim upstream uses.
+                debug!(
+                    "bun: hardlink {bunx_exe} -> {bun_exe} failed ({e}); writing bunx.cmd shim",
+                    bunx_exe = bunx_exe.display(),
+                    bun_exe = bun_exe.display(),
+                );
+                // Quote the expanded path so spaces in the install dir
+                // (e.g. `C:\Users\First Last\...`) don't make cmd.exe
+                // split the command at the first space. Upstream's
+                // literal omits the quotes — that's a latent bug there
+                // too, but mise install paths under `%LOCALAPPDATA%`
+                // commonly contain a user name with spaces, so we cannot
+                // rely on the upstream form being safe in practice.
+                file::write(&bunx_cmd, b"@\"%~dp0bun.exe\" x %*\r\n")
+            }
+        }
     }
 
     fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {

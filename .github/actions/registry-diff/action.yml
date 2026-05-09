@@ -19,8 +19,9 @@ runs:
     - id: diff
       shell: bash
       run: |
-        # Get modified registry files and extract tool names
-        modified=$(git diff --name-only ${{ inputs.base_sha }} HEAD -- 'registry/*.toml' \
+        # Get added/modified registry files and extract tool names
+        # (deleted files are excluded — they can't be tested)
+        modified=$(git diff --name-only --diff-filter=AM ${{ inputs.base_sha }} HEAD -- 'registry/*.toml' \
           | xargs -I{} basename {} .toml \
           | tr '\n' ' ')
 

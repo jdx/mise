@@ -88,6 +88,7 @@ jobs:
     outputs:
       tools: ${{ steps.determine-tools.outputs.tools }}
       tranches: ${{ steps.determine-tools.outputs.tranches }}
+      skip-test-tool: ${{ steps.determine-tools.outputs.skip-test-tool }}
       new_tools: ${{ steps.registry-diff.outputs.new_tools }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -114,9 +115,14 @@ jobs:
 
           tools="${{ steps.registry-diff.outputs.modified_tools }}"
           count=$(echo "$tools" | wc -w)
-          echo "Modified tools count: $(echo "$tools" | wc -w)"
+          echo "Modified tools count: $count"
 
-          if [ "$count" -ge 64 ]; then
+          if [ "$count" -eq 0 ]; then
+            echo "No tools added or modified (deletion-only PR), skipping test-tool"
+            echo "tools=" >> "$GITHUB_OUTPUT"
+            echo "tranches=0" >> "$GITHUB_OUTPUT"
+            echo "skip-test-tool=true" >> "$GITHUB_OUTPUT"
+          elif [ "$count" -ge 64 ]; then
             echo "64 or more tools updated, splitting changed tools across 8 tranches"
             echo "tools=$tools" >> "$GITHUB_OUTPUT"
             echo "tranches=8" >> "$GITHUB_OUTPUT"
@@ -164,7 +170,8 @@ jobs:
       !cancelled() &&
       needs.build.result == 'success' &&
       (needs.list-changed-tools.result == 'success' || needs.list-changed-tools.result == 'skipped') &&
-      (needs.validate-new-tools.result == 'success' || needs.validate-new-tools.result == 'skipped')
+      (needs.validate-new-tools.result == 'success' || needs.validate-new-tools.result == 'skipped') &&
+      needs.list-changed-tools.outputs.skip-test-tool != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -371,7 +378,9 @@ jobs:
             echo "validate-new-tools failed - new tools must include tests"
             exit 1
           fi
-          if [ "${{ needs.test-tool.result }}" != "success" ]; then
+          if [ "${{ needs.list-changed-tools.outputs.skip-test-tool }}" == "true" ]; then
+            echo "test-tool intentionally skipped (deletion-only PR)"
+          elif [ "${{ needs.test-tool.result }}" != "success" ]; then
             echo "test-tool failed or was skipped"
             exit 1
           fi
