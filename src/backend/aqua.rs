@@ -1785,9 +1785,22 @@ impl AquaBackend {
         let skip_cosign = expected_provenance.is_some_and(|l| !l.is_cosign());
 
         if !skip_attestations {
-            github_attestations_unavailable = self
+            if let Some(status) = self
                 .verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
-                .await?;
+                .await?
+            {
+                match status {
+                    GithubAttestationStatus::Verified => {
+                        let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+                        if pi.provenance.is_none() {
+                            pi.provenance = Some(ProvenanceType::GithubAttestations);
+                        }
+                    }
+                    GithubAttestationStatus::Unavailable => {
+                        github_attestations_unavailable = true;
+                    }
+                }
+            }
         }
         if !skip_slsa {
             // Short-circuit: if a higher-priority mechanism already recorded provenance, skip SLSA
@@ -2020,22 +2033,22 @@ impl AquaBackend {
     async fn verify_github_artifact_attestations(
         &self,
         ctx: &InstallContext,
-        tv: &mut ToolVersion,
+        tv: &ToolVersion,
         pkg: &AquaPackage,
         _v: &str,
         filename: &str,
-    ) -> Result<bool> {
+    ) -> Result<Option<GithubAttestationStatus>> {
         // Check if attestations are enabled via global and aqua-specific settings
         let settings = Settings::get();
         if !settings.github_attestations || !settings.aqua.github_attestations {
             debug!("GitHub artifact attestations verification disabled");
-            return Ok(false);
+            return Ok(None);
         }
 
         if let Some(github_attestations) = &pkg.github_artifact_attestations {
             if github_attestations.enabled == Some(false) {
                 debug!("GitHub artifact attestations verification is disabled for {tv}");
-                return Ok(false);
+                return Ok(None);
             }
 
             ctx.pr
@@ -2046,19 +2059,17 @@ impl AquaBackend {
                 .await?
             {
                 GithubAttestationStatus::Verified => {}
-                GithubAttestationStatus::Unavailable => return Ok(true),
+                GithubAttestationStatus::Unavailable => {
+                    return Ok(Some(GithubAttestationStatus::Unavailable));
+                }
             }
 
             ctx.pr
                 .set_message("✓ GitHub artifact attestations verified".to_string());
-            let platform_key = self.get_platform_key();
-            let pi = tv.lock_platforms.entry(platform_key).or_default();
-            if pi.provenance.is_none() {
-                pi.provenance = Some(ProvenanceType::GithubAttestations);
-            }
+            return Ok(Some(GithubAttestationStatus::Verified));
         }
 
-        Ok(false)
+        Ok(None)
     }
 
     async fn cosign_artifact(
