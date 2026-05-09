@@ -1234,17 +1234,21 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
 /// the spawned task body runs inside a separate Linux filesystem where
 /// mise-managed Windows tools aren't visible. Resolution order:
 ///   1. `MISE_BASH_PATH` env var (explicit override).
-///   2. Common Git Bash install locations (`C:\Program Files\Git\bin\bash.exe`,
-///      `C:\Program Files (x86)\Git\bin\bash.exe`, `%LOCALAPPDATA%\Programs\Git\bin\bash.exe`).
-///   3. `which::which_in` over the task env's PATH, with the WSL launcher
-///      excluded from acceptable results.
+///   2. Common Git Bash and MSYS2 install locations
+///      (`C:\Program Files\Git\bin\bash.exe`,
+///      `C:\Program Files (x86)\Git\bin\bash.exe`,
+///      `%LOCALAPPDATA%\Programs\Git\bin\bash.exe`,
+///      `C:\msys64\usr\bin\bash.exe`, `C:\msys32\usr\bin\bash.exe`).
+///   3. `which::which_in_all` over the task env's PATH, picking the first
+///      entry that isn't the WSL launcher. This rescues setups where a real
+///      POSIX bash is on PATH but appears after `C:\Windows\System32`.
 ///
 /// Returns `None` when the program is not a POSIX shell, the env has no PATH,
 /// the PATH is already in Unix form (no `;` and no `\`, so no conversion will
-/// fire), `which` fails to locate the binary, or only a WSL launcher could be
-/// found for `bash` — in those cases the caller keeps the original program
-/// string and lets the stdlib spawn it (which will then fail loudly rather
-/// than silently routing into WSL).
+/// fire), `which` finds nothing, or every PATH match for `bash` is the WSL
+/// launcher — in those cases the caller keeps the original program string and
+/// lets the stdlib spawn it (which will then fail loudly rather than silently
+/// routing into WSL).
 #[cfg(windows)]
 fn resolve_posix_shell_program_path(
     program: &std::ffi::OsStr,
@@ -1258,7 +1262,9 @@ fn resolve_posix_shell_program_path(
         return None;
     }
 
-    if is_bash_basename(program) {
+    let is_bash = is_bash_basename(program);
+
+    if is_bash {
         let override_path = env
             .get("MISE_BASH_PATH")
             .cloned()
@@ -1271,7 +1277,7 @@ fn resolve_posix_shell_program_path(
             }
             warn!("MISE_BASH_PATH={p} does not exist; falling back to other candidates");
         }
-        for candidate in git_bash_candidates(env) {
+        for candidate in bash_candidates(env) {
             if candidate.is_file() {
                 return Some(candidate.into_os_string());
             }
@@ -1279,17 +1285,26 @@ fn resolve_posix_shell_program_path(
     }
 
     let cwd = std::env::current_dir().ok()?;
-    let resolved = which::which_in(program, Some(path_val.as_str()), cwd).ok()?;
 
-    if is_bash_basename(program) && is_wsl_launcher_bash(&resolved) {
+    if is_bash {
+        // For bash, walk every PATH match and pick the first that isn't the
+        // WSL launcher. This rescues setups where a real POSIX bash sits later
+        // on PATH than `C:\Windows\System32\bash.exe` — common under PowerShell
+        // when Git Bash is installed somewhere `bash_candidates` doesn't probe.
+        let mut all = which::which_in_all(program, Some(path_val.as_str()), cwd).ok()?;
+        if let Some(p) = all.find(|p| !is_wsl_launcher_bash(p)) {
+            return Some(p.into_os_string());
+        }
         warn!(
-            "ignoring WSL launcher at {} when resolving bash for a task; \
-             install Git Bash or set MISE_BASH_PATH to a real POSIX bash to silence this",
-            resolved.display()
+            "no real POSIX bash found on PATH (only the WSL launcher) when resolving bash for a task; \
+             install Git Bash or MSYS2, or set MISE_BASH_PATH to a real POSIX bash to silence this"
         );
         return None;
     }
-    Some(resolved.into_os_string())
+
+    which::which_in(program, Some(path_val.as_str()), cwd)
+        .ok()
+        .map(|p| p.into_os_string())
 }
 
 /// Returns true if `program`'s basename (case-insensitive, `.exe` stripped) is `bash`.
@@ -1298,22 +1313,15 @@ fn resolve_posix_shell_program_path(
 /// they don't fire for other POSIX shells we might gain support for later.
 #[cfg(windows)]
 fn is_bash_basename(program: &std::ffi::OsStr) -> bool {
-    let Some(s) = program.to_str() else {
-        return false;
-    };
-    let basename = s.rsplit(['/', '\\']).next().unwrap_or(s);
-    let stem = match basename.rsplit_once('.') {
-        Some((stem, ext)) if ext.eq_ignore_ascii_case("exe") => stem,
-        _ => basename,
-    };
-    stem.eq_ignore_ascii_case("bash")
+    crate::path::program_stem(Path::new(program)).as_deref() == Some("bash")
 }
 
-/// Common Git Bash install locations to probe for a real POSIX bash on Windows,
-/// in preference order. Pure given `env` (no filesystem access), so the caller
-/// can stat each candidate.
+/// Common real-POSIX-bash install locations on Windows (Git Bash + MSYS2), in
+/// preference order. Pure given `env` (no filesystem access), so the caller
+/// stats each candidate. `MISE_BASH_PATH` covers anything outside this list,
+/// including non-`C:` drive installs.
 #[cfg(windows)]
-fn git_bash_candidates(env: &BTreeMap<String, String>) -> Vec<PathBuf> {
+fn bash_candidates(env: &BTreeMap<String, String>) -> Vec<PathBuf> {
     let mut candidates = vec![
         PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
         PathBuf::from(r"C:\Program Files (x86)\Git\bin\bash.exe"),
@@ -1325,6 +1333,9 @@ fn git_bash_candidates(env: &BTreeMap<String, String>) -> Vec<PathBuf> {
     if let Some(local) = local_appdata.filter(|s| !s.is_empty()) {
         candidates.push(PathBuf::from(local).join(r"Programs\Git\bin\bash.exe"));
     }
+    // MSYS2 standalone installs (default `C:\msys64`, 32-bit fallback `C:\msys32`).
+    candidates.push(PathBuf::from(r"C:\msys64\usr\bin\bash.exe"));
+    candidates.push(PathBuf::from(r"C:\msys32\usr\bin\bash.exe"));
     candidates
 }
 
@@ -1545,22 +1556,31 @@ mod tests {
 
     #[test]
     #[cfg(windows)]
-    fn test_git_bash_candidates_includes_program_files() {
+    fn test_bash_candidates_includes_program_files() {
         let env = BTreeMap::new();
-        let candidates = git_bash_candidates(&env);
+        let candidates = bash_candidates(&env);
         assert!(candidates.contains(&PathBuf::from(r"C:\Program Files\Git\bin\bash.exe")));
         assert!(candidates.contains(&PathBuf::from(r"C:\Program Files (x86)\Git\bin\bash.exe")));
     }
 
     #[test]
     #[cfg(windows)]
-    fn test_git_bash_candidates_uses_localappdata_from_env() {
+    fn test_bash_candidates_includes_msys2() {
+        let env = BTreeMap::new();
+        let candidates = bash_candidates(&env);
+        assert!(candidates.contains(&PathBuf::from(r"C:\msys64\usr\bin\bash.exe")));
+        assert!(candidates.contains(&PathBuf::from(r"C:\msys32\usr\bin\bash.exe")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_bash_candidates_uses_localappdata_from_env() {
         let mut env = BTreeMap::new();
         env.insert(
             "LOCALAPPDATA".to_string(),
             r"C:\Users\me\AppData\Local".to_string(),
         );
-        let candidates = git_bash_candidates(&env);
+        let candidates = bash_candidates(&env);
         assert!(candidates.contains(&PathBuf::from(
             r"C:\Users\me\AppData\Local\Programs\Git\bin\bash.exe"
         )));
