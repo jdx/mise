@@ -466,7 +466,8 @@ mod tests {
                 Some(ToolVersionOptions {
                     opts: indexmap![
                         "provider".to_string() => toml::Value::String("gitlab".to_string())
-                    ],
+                    ]
+                    .into(),
                     ..Default::default()
                 })
             )),
@@ -483,7 +484,8 @@ mod tests {
                     opts: indexmap![
                         "api_url".to_string() => toml::Value::String("https://gitlab.acme.com/api/v4".to_string()),
                         "provider".to_string() => toml::Value::String("gitlab".to_string()),
-                    ],
+                    ]
+                    .into(),
                     ..Default::default()
                 })
             )),
@@ -512,7 +514,8 @@ mod tests {
                 Some(ToolVersionOptions {
                     opts: indexmap![
                         "provider".to_string() => toml::Value::String("gitlab".to_string())
-                    ],
+                    ]
+                    .into(),
                     ..Default::default()
                 })
             )),
@@ -538,7 +541,8 @@ mod tests {
                 Some(ToolVersionOptions {
                     opts: indexmap![
                         "api_url".to_string() => toml::Value::String("https://custom-api.acme.com/v3".to_string())
-                    ],
+                    ]
+                    .into(),
                     ..Default::default()
                 })
             )),
@@ -626,7 +630,7 @@ mod tests {
 
     fn opts_with_filter_bins(value: toml::Value) -> ToolVersionOptions {
         ToolVersionOptions {
-            opts: indexmap!["filter_bins".to_string() => value],
+            opts: indexmap!["filter_bins".to_string() => value].into(),
             ..Default::default()
         }
     }

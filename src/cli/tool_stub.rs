@@ -7,7 +7,9 @@ use crate::dirs;
 use crate::file;
 use crate::hash;
 use crate::lockfile::PlatformInfo;
-use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersionOptions};
+use crate::toolset::{
+    CoreToolOptions, InstallOptions, ToolRequest, ToolSource, ToolVersionOptions,
+};
 use clap::Parser;
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::ensure;
@@ -198,10 +200,12 @@ impl ToolStubFile {
         }
 
         let options = ToolVersionOptions {
-            os: self.os.clone(),
-            depends: None,
-            install_env: self.install_env.clone(),
-            opts,
+            core: CoreToolOptions {
+                os: self.os.clone(),
+                depends: None,
+                install_env: self.install_env.clone(),
+            },
+            opts: opts.into(),
         };
 
         // Set options on the BackendArg so they're available to the backend
