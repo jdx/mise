@@ -220,7 +220,7 @@ pub enum GithubAttestationsStatus {
     Unavailable,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
@@ -244,6 +244,16 @@ pub struct PlatformInfo {
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
 pub use crate::backend::conda::CondaPackageInfo;
+
+impl<'de> Deserialize<'de> for PlatformInfo {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = toml::Value::deserialize(deserializer)?;
+        PlatformInfo::try_from(value).map_err(serde::de::Error::custom)
+    }
+}
 
 impl PlatformInfo {
     /// Returns true if this PlatformInfo has no meaningful data (for serde skip)
