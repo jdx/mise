@@ -1,6 +1,7 @@
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
+use crate::config::config_file::idiomatic_version::package_json;
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::env::TERM_WIDTH;
 use crate::lockfile::{Lockfile, lockfile_path_for_config};
@@ -545,15 +546,17 @@ impl Toolset {
     }
 
     pub fn notify_missing_versions(&self, missing_versions: Vec<ToolVersion>) {
-        if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Never {
+        let missing_tools = Settings::get().status.missing_tools();
+        if missing_tools == SettingsStatusMissingTools::Never {
             return;
         }
         let mut missing = vec![];
+        let mut package_json_package_managers = HashMap::new();
         for tv in missing_versions.into_iter() {
             // package.json package managers are project requirements even if the
             // user has never installed that package manager with mise.
-            if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Always
-                || is_package_json_package_manager(&tv)
+            if missing_tools == SettingsStatusMissingTools::Always
+                || is_package_json_package_manager(&tv, &mut package_json_package_managers)
             {
                 missing.push(tv);
                 continue;
@@ -588,15 +591,23 @@ impl Toolset {
     }
 }
 
-fn is_package_json_package_manager(tv: &ToolVersion) -> bool {
+fn is_package_json_package_manager(
+    tv: &ToolVersion,
+    package_json_package_managers: &mut HashMap<PathBuf, HashSet<String>>,
+) -> bool {
+    if !package_json::is_package_manager_tool(tv.short()) {
+        return false;
+    }
     let ToolSource::IdiomaticVersionFile(path) = tv.request.source() else {
         return false;
     };
-    crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
-        && crate::config::config_file::idiomatic_version::package_json::has_package_manager_version(
-            path,
-            tv.short(),
-        )
+    if !package_json::is_package_json(path) {
+        return false;
+    }
+    let package_managers = package_json_package_managers
+        .entry(path.to_path_buf())
+        .or_insert_with(|| package_json::package_manager_names(path));
+    package_managers.contains(tv.short())
 }
 
 impl Display for Toolset {

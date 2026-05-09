@@ -2,6 +2,7 @@ use crate::file;
 use eyre::Result;
 use serde::Deserialize;
 use serde::de::Deserializer;
+use std::collections::HashSet;
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -31,8 +32,14 @@ pub fn is_package_json(path: &Path) -> bool {
         .is_some_and(|file_name| file_name == "package.json")
 }
 
-pub fn has_package_manager_version(path: &Path, tool_name: &str) -> bool {
-    PackageJsonData::parse(path).is_ok_and(|pkg| pkg.package_manager_version(tool_name).is_some())
+pub fn is_package_manager_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "bun" | "npm" | "pnpm" | "yarn")
+}
+
+pub fn package_manager_names(path: &Path) -> HashSet<String> {
+    PackageJsonData::parse(path)
+        .map(|pkg| pkg.package_manager_names())
+        .unwrap_or_default()
 }
 
 /// Deserialize a field that may be a single object or an array (take the first element).
@@ -100,6 +107,14 @@ impl PackageJsonData {
                 }
                 Some(version.to_string())
             })
+    }
+
+    fn package_manager_names(&self) -> HashSet<String> {
+        ["bun", "npm", "pnpm", "yarn"]
+            .into_iter()
+            .filter(|tool_name| self.package_manager_version(tool_name).is_some())
+            .map(str::to_string)
+            .collect()
     }
 }
 
