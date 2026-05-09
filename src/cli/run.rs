@@ -227,7 +227,7 @@ pub struct Run {
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
 
     #[clap(skip)]
-    pub trace_context: Option<otel::TraceContext>,
+    pub span_tracker: Option<otel::TaskSpanTracker>,
 }
 
 impl Run {
@@ -425,8 +425,8 @@ impl Run {
 
         // Initialize OpenTelemetry before the timeout wrapper so traces
         // are finalized even when the run is cancelled by --timeout.
-        // RunTrace implements Drop, so spans are flushed automatically.
-        let run_trace = otel::RunTrace::init_if_enabled(&requested_task_names);
+        // TaskRunTelemetry implements Drop, so spans are flushed automatically.
+        let telemetry = otel::TaskRunTelemetry::init_if_enabled(&requested_task_names);
 
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
@@ -438,12 +438,12 @@ impl Run {
         if let Some(timeout) = timeout {
             tokio::time::timeout(
                 timeout,
-                self.parallelize_tasks(config, resolved_tasks, run_trace),
+                self.parallelize_tasks(config, resolved_tasks, telemetry),
             )
             .await
             .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
         } else {
-            self.parallelize_tasks(config, resolved_tasks, run_trace)
+            self.parallelize_tasks(config, resolved_tasks, telemetry)
                 .await?
         };
 
@@ -463,7 +463,7 @@ impl Run {
         mut self,
         mut config: Arc<Config>,
         tasks: Vec<Task>,
-        run_trace: Option<otel::RunTrace>,
+        telemetry: Option<otel::TaskRunTelemetry>,
     ) -> Result<()> {
         time!("parallelize_tasks start");
 
@@ -483,10 +483,10 @@ impl Run {
         // Step 4: Create TaskExecutor after tool installation
         self.setup_executor()?;
 
-        if let Some(ref rt) = run_trace {
-            self.trace_context = Some(rt.trace.clone());
+        if let Some(ref t) = telemetry {
+            self.span_tracker = Some(t.span_tracker.clone());
             if let Some(ref mut executor) = self.executor {
-                executor.otel_log_collector = Some(rt.log_collector.clone());
+                executor.output_forwarder = Some(t.output_forwarder.clone());
             }
         }
 
@@ -521,8 +521,8 @@ impl Run {
             .await;
 
         // On scheduler-level failure, propagate immediately — don't
-        // wait for in-flight tasks via join_all. RunTrace defaults to
-        // has_failures=true, so Drop will emit an errored root span.
+        // wait for in-flight tasks via join_all. TaskRunTelemetry defaults
+        // to has_failures=true, so Drop will emit an errored root span.
         run_result?;
 
         let join_result = scheduler.join_all(this.continue_on_error).await;
@@ -530,12 +530,12 @@ impl Run {
         // Mark success only when everything actually succeeded.
         if !this.is_stopping()
             && join_result.is_ok()
-            && let Some(ref rt) = run_trace
+            && let Some(ref t) = telemetry
         {
-            rt.set_succeeded();
+            t.set_succeeded();
         }
-        // run_trace is dropped here, triggering finalization.
-        drop(run_trace);
+        // telemetry is dropped here, triggering finalization.
+        drop(telemetry);
 
         join_result?;
 
@@ -627,9 +627,9 @@ impl Run {
             // Reserve otel span IDs so task logs can be correlated to the span.
             // The full span is emitted once from `end_task` below.
             let otel_started = this
-                .trace_context
+                .span_tracker
                 .as_ref()
-                .map(|tc| tc.start_task(&task, ctx.config.project_root.as_ref()));
+                .map(|tracker| tracker.start_task(&task, ctx.config.project_root.as_ref()));
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(
                 &task,
                 &ctx.config,
@@ -693,8 +693,8 @@ impl Run {
             }
 
             // Record completed otel span with real timing and status.
-            if let (Some(trace_ctx), Some(started)) = (&this.trace_context, otel_started) {
-                trace_ctx.end_task(started, &task, otel_end, &result);
+            if let (Some(tracker), Some(started)) = (&this.span_tracker, otel_started) {
+                tracker.end_task(started, &task, otel_end, &result);
             }
 
             if let Some(oh) = &this.output_handler
@@ -857,7 +857,7 @@ impl Run {
         dep_ran: bool,
         semaphore: Arc<tokio::sync::Semaphore>,
         permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
-        otel_started: Option<crate::otel::trace_context::StartedSpan>,
+        otel_started: Option<crate::otel::task_span_tracker::StartedSpan>,
     ) -> Result<bool> {
         self.executor
             .as_ref()

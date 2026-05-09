@@ -1,10 +1,10 @@
-mod log_collector;
-pub(crate) mod task_trace;
-pub(crate) mod trace_context;
+mod task_output_forwarder;
+pub(crate) mod task_run_telemetry;
+pub(crate) mod task_span_tracker;
 
-pub use log_collector::OtelLogCollector;
-pub use task_trace::RunTrace;
-pub use trace_context::TraceContext;
+pub use task_output_forwarder::TaskOutputForwarder;
+pub use task_run_telemetry::TaskRunTelemetry;
+pub use task_span_tracker::TaskSpanTracker;
 
 use crate::config::Settings;
 use opentelemetry_sdk::Resource;

@@ -1,4 +1,4 @@
-use crate::otel::trace_context::StartedSpan;
+use crate::otel::task_span_tracker::StartedSpan;
 use opentelemetry::logs::{LogRecord as _, Logger, Severity};
 use opentelemetry::trace::{SpanId, TraceFlags, TraceId};
 use opentelemetry_sdk::logs::{SdkLogger, SdkLoggerProvider};
@@ -8,19 +8,20 @@ use std::time::SystemTime;
 
 use crate::cmd::CmdLineRunner;
 
-/// Collects task output lines and emits them as OTLP log records via the SDK.
+/// Forwards a task's stdout/stderr lines to the OTEL log pipeline.
 ///
-/// Uses the SDK's `SdkLogger` which delegates to `BatchLogProcessor` for
-/// batching and export. No background task needed — the SDK manages it.
+/// This bridges mise's `CmdLineRunner` line callbacks to the SDK's
+/// `SdkLogger`, which delegates to `BatchLogProcessor` for batching and
+/// export. No background task needed — the SDK manages it.
 #[derive(Clone)]
-pub struct OtelLogCollector {
+pub struct TaskOutputForwarder {
     logger: Arc<SdkLogger>,
     logger_provider: Arc<Mutex<Option<SdkLoggerProvider>>>,
     is_shutdown: Arc<AtomicBool>,
 }
 
-impl OtelLogCollector {
-    /// Create a new log collector backed by the given logger provider.
+impl TaskOutputForwarder {
+    /// Create a new output forwarder backed by the given logger provider.
     pub fn new(provider: SdkLoggerProvider) -> Self {
         use opentelemetry::logs::LoggerProvider;
         let logger = provider.logger("mise.tasks");
@@ -31,7 +32,7 @@ impl OtelLogCollector {
         }
     }
 
-    /// Shut down the collector by shutting down the logger provider,
+    /// Shut down the forwarder by shutting down the logger provider,
     /// which flushes all pending log batches.
     pub fn shutdown(&self) {
         self.is_shutdown.store(true, Ordering::Relaxed);
@@ -71,11 +72,11 @@ impl OtelLogCollector {
             record.set_timestamp(now);
             record.set_observed_timestamp(now);
             record.set_severity_number(if is_stderr {
-                Severity::Warn
+                Severity::Error
             } else {
                 Severity::Info
             });
-            record.set_severity_text(if is_stderr { "WARN" } else { "INFO" });
+            record.set_severity_text(if is_stderr { "ERROR" } else { "INFO" });
             record.set_body(opentelemetry::logs::AnyValue::String(
                 line.to_string().into(),
             ));
@@ -91,20 +92,20 @@ impl OtelLogCollector {
 
     /// Attach stdout/stderr hooks to a `CmdLineRunner` that forward each
     /// line to the OTLP log exporter. Returns the cmd unchanged when either
-    /// the collector or the trace context is absent.
+    /// the forwarder or the trace context is absent.
     pub fn attach_hooks<'a>(
-        collector: Option<&Self>,
+        forwarder: Option<&Self>,
         task_name: &str,
         task_args: &[String],
         started: Option<&StartedSpan>,
         mut cmd: CmdLineRunner<'a>,
     ) -> CmdLineRunner<'a> {
-        let (Some(collector), Some(started)) = (collector, started) else {
+        let (Some(forwarder), Some(started)) = (forwarder, started) else {
             return cmd;
         };
         let task_name: Arc<str> = Arc::from(task_name);
         let task_args: Arc<str> = Arc::from(task_args.join(" "));
-        cmd = cmd.with_stdout_hook(collector.hook(
+        cmd = cmd.with_stdout_hook(forwarder.hook(
             Arc::clone(&task_name),
             Arc::clone(&task_args),
             started.trace_id,
@@ -112,7 +113,7 @@ impl OtelLogCollector {
             started.trace_flags,
             false,
         ));
-        cmd = cmd.with_stderr_hook(collector.hook(
+        cmd = cmd.with_stderr_hook(forwarder.hook(
             task_name,
             task_args,
             started.trace_id,
@@ -177,27 +178,28 @@ mod tests {
     }
 
     #[test]
-    fn attach_hooks_is_noop_without_collector_or_context() {
+    fn attach_hooks_is_noop_without_forwarder_or_context() {
         let ctx = StartedSpan::for_test(TraceId::from_bytes([1; 16]), SpanId::from_bytes([1; 8]));
-        // No collector — cmd passes through unchanged
+        // No forwarder — cmd passes through unchanged
         let cmd = CmdLineRunner::new("true");
-        let cmd = OtelLogCollector::attach_hooks(None, "build", &[], Some(&ctx), cmd);
+        let cmd = TaskOutputForwarder::attach_hooks(None, "build", &[], Some(&ctx), cmd);
         assert!(!cmd.has_stdout_hooks());
 
         // No context — cmd passes through unchanged
-        let collector = OtelLogCollector::new(noop_provider());
+        let forwarder = TaskOutputForwarder::new(noop_provider());
         let cmd = CmdLineRunner::new("true");
-        let cmd = OtelLogCollector::attach_hooks(Some(&collector), "build", &[], None, cmd);
+        let cmd = TaskOutputForwarder::attach_hooks(Some(&forwarder), "build", &[], None, cmd);
         assert!(!cmd.has_stdout_hooks());
-        collector.shutdown();
+        forwarder.shutdown();
     }
 
     #[test]
     fn attach_hooks_registers_both_streams() {
-        let collector = OtelLogCollector::new(noop_provider());
+        let collector = TaskOutputForwarder::new(noop_provider());
         let ctx = StartedSpan::for_test(TraceId::from_bytes([1; 16]), SpanId::from_bytes([1; 8]));
         let cmd = CmdLineRunner::new("true");
-        let cmd = OtelLogCollector::attach_hooks(Some(&collector), "build", &[], Some(&ctx), cmd);
+        let cmd =
+            TaskOutputForwarder::attach_hooks(Some(&collector), "build", &[], Some(&ctx), cmd);
         assert!(cmd.has_stdout_hooks());
         collector.shutdown();
     }
@@ -205,7 +207,7 @@ mod tests {
     #[test]
     fn emitted_logs_include_expected_metadata_and_trace_context() {
         let (provider, exporter) = test_provider();
-        let collector = OtelLogCollector::new(provider);
+        let collector = TaskOutputForwarder::new(provider);
         let trace_id = TraceId::from_bytes([0x11; 16]);
         let span_id = SpanId::from_bytes([0x22; 8]);
 
@@ -242,7 +244,7 @@ mod tests {
             .expect("missing stderr log");
 
         assert_eq!(stdout.0.severity_text(), Some("INFO"));
-        assert_eq!(stderr.0.severity_text(), Some("WARN"));
+        assert_eq!(stderr.0.severity_text(), Some("ERROR"));
         assert_eq!(
             stdout.0.trace_context().map(|cx| cx.trace_id),
             Some(trace_id)
@@ -285,7 +287,7 @@ mod tests {
     #[test]
     fn hook_strips_cr_progress_bar_frames() {
         let (provider, exporter) = test_provider();
-        let collector = OtelLogCollector::new(provider);
+        let collector = TaskOutputForwarder::new(provider);
         let trace_id = TraceId::from_bytes([0x11; 16]);
         let span_id = SpanId::from_bytes([0x22; 8]);
 
@@ -313,7 +315,7 @@ mod tests {
     #[test]
     fn hook_skips_empty_line_after_cr_strip() {
         let (provider, exporter) = test_provider();
-        let collector = OtelLogCollector::new(provider);
+        let collector = TaskOutputForwarder::new(provider);
         let trace_id = TraceId::from_bytes([0x11; 16]);
         let span_id = SpanId::from_bytes([0x22; 8]);
 
@@ -335,7 +337,7 @@ mod tests {
     #[test]
     fn hooks_become_noop_after_shutdown() {
         let (provider, exporter) = test_provider();
-        let collector = OtelLogCollector::new(provider);
+        let collector = TaskOutputForwarder::new(provider);
         let trace_id = TraceId::from_bytes([0x11; 16]);
         let span_id = SpanId::from_bytes([0x22; 8]);
 
