@@ -115,36 +115,46 @@ impl Uninstall {
         let mut tool_versions = Vec::new();
         for ta in runtimes {
             let backend = ta.ba.backend()?;
-            let query = ta.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
-            let installed_versions = backend.list_installed_versions();
-            let exact_match = installed_versions.iter().find(|v| v == &&query);
-            let matches = match exact_match {
-                Some(m) => vec![m],
-                None => installed_versions
-                    .iter()
-                    .filter(|v| v.starts_with(&query))
-                    .collect_vec(),
-            };
-
             let mut tvs = Vec::new();
 
             if let Some(tvr) = &ta.tvr {
+                // Explicit version given — resolve it directly (no config lookup)
+                let query = tvr.version();
+                let installed_versions = backend.list_installed_versions();
+                let exact_match = installed_versions.iter().find(|v| v == &&query);
+                let matches = match exact_match {
+                    Some(m) => vec![m],
+                    None => installed_versions
+                        .iter()
+                        .filter(|v| v.starts_with(&query))
+                        .collect_vec(),
+                };
                 tvs.push((
                     backend.clone(),
                     tvr.resolve(config, &Default::default()).await?,
                 ));
+                tvs.extend(
+                    matches
+                        .into_iter()
+                        .map(|v| {
+                            let tvr =
+                                ToolRequest::new(backend.ba().clone(), v, ToolSource::Unknown)?;
+                            let tv = ToolVersion::new(tvr, v.into());
+                            Ok((backend.clone(), tv))
+                        })
+                        .collect::<Result<Vec<_>>>()?,
+                );
+            } else {
+                // No version given — resolve from the current config context so that
+                // tool options (e.g. arch = "x86_64") are respected. This makes
+                // `mise uninstall java` the exact inverse of `mise install java`.
+                let ts = config.get_toolset().await?;
+                if let Some(tvl) = ts.versions.get(ta.ba.as_ref()) {
+                    for tv in &tvl.versions {
+                        tvs.push((backend.clone(), tv.clone()));
+                    }
+                }
             }
-
-            tvs.extend(
-                matches
-                    .into_iter()
-                    .map(|v| {
-                        let tvr = ToolRequest::new(backend.ba().clone(), v, ToolSource::Unknown)?;
-                        let tv = ToolVersion::new(tvr, v.into());
-                        Ok((backend.clone(), tv))
-                    })
-                    .collect::<Result<Vec<_>>>()?,
-            );
 
             if tvs.is_empty() {
                 warn!(
