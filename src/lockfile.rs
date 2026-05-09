@@ -264,6 +264,7 @@ impl PlatformInfo {
     /// True when the lockfile records that GitHub attestations were checked and absent.
     pub fn has_checksum_and_github_attestations_unavailable(&self) -> bool {
         self.checksum.is_some()
+            && self.provenance.is_none()
             && self.github_attestations == Some(GithubAttestationsStatus::Unavailable)
     }
 
@@ -413,6 +414,11 @@ impl TryFrom<toml::Value> for PlatformInfo {
                         }
                     }
                     _ => None,
+                };
+                let github_attestations = if provenance.is_some() {
+                    None
+                } else {
+                    github_attestations
                 };
                 Ok(PlatformInfo {
                     checksum,
@@ -2824,6 +2830,31 @@ backend = "conda:jq"
         assert!(parsed.provenance.is_none());
         assert!(parsed.has_checksum_and_github_attestations_unavailable());
         assert!(!parsed.has_checksum_and_verified_provenance());
+    }
+
+    #[test]
+    fn test_github_attestations_unavailable_ignored_with_provenance() {
+        let mut table = toml::Table::new();
+        table.insert("checksum".to_string(), "sha256:abc123".into());
+        table.insert("provenance".to_string(), "slsa".into());
+        table.insert("github_attestations".to_string(), "unavailable".into());
+
+        let parsed: PlatformInfo = toml::Value::Table(table).try_into().unwrap();
+        assert!(parsed.provenance.as_ref().unwrap().is_slsa());
+        assert!(parsed.github_attestations.is_none());
+        assert!(!parsed.has_checksum_and_github_attestations_unavailable());
+        assert!(parsed.has_checksum_and_verified_provenance());
+
+        let serialized: toml::Value = PlatformInfo {
+            checksum: Some("sha256:abc123".to_string()),
+            provenance: Some(ProvenanceType::GithubAttestations),
+            github_attestations: Some(GithubAttestationsStatus::Unavailable),
+            ..Default::default()
+        }
+        .into();
+        let table = serialized.as_table().unwrap();
+        assert!(table.get("provenance").is_some());
+        assert!(table.get("github_attestations").is_none());
     }
 
     #[test]

@@ -1901,6 +1901,11 @@ impl AquaBackend {
                 pi.github_attestations = Some(GithubAttestationsStatus::Unavailable);
             }
         }
+        if let Some(pi) = tv.lock_platforms.get_mut(&platform_key)
+            && pi.provenance.is_some()
+        {
+            pi.github_attestations = None;
+        }
 
         // If lockfile recorded verified provenance, verify that the type matches
         // (checked after all verification methods including cosign have had a chance to record)
