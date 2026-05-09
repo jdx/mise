@@ -168,10 +168,11 @@ impl Backend for VfoxBackend {
         // this platform — re-verifying would just be redundant API calls. Unlike aqua/github,
         // the vfox backend doesn't populate PlatformInfo.checksum, so we check provenance alone.
         let platform_key = self.get_platform_key();
-        let has_lockfile_provenance = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(|pi| pi.provenance.is_some());
+        let has_lockfile_provenance = tv.lock_platforms.get(&platform_key).is_some_and(|pi| {
+            pi.provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_verified)
+        });
         vfox.skip_verification = has_lockfile_provenance;
 
         // Save expected provenance before take() so we can detect type changes afterward,
@@ -181,7 +182,8 @@ impl Backend for VfoxBackend {
         let expected_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
-            .and_then(|pi| pi.provenance.take());
+            .and_then(|pi| pi.provenance.take())
+            .filter(ProvenanceType::is_verified);
 
         // Use default vfox behavior for traditional plugins
         let result = vfox

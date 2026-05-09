@@ -62,16 +62,20 @@ pub struct LockfileTool {
     pub platforms: BTreeMap<String, PlatformInfo>,
 }
 
-/// Type of provenance verification, ordered by priority (lowest to highest).
-/// The ordering is significant: during verification, higher-priority mechanisms
-/// are tried first, and the lockfile records whichever succeeds.
+/// Type of provenance state, ordered by priority (lowest to highest).
+/// The ordering is significant: during verification, higher-priority verified
+/// mechanisms are tried first, and the lockfile records whichever succeeds.
 /// SLSA carries an optional URL for the provenance file (.intoto.jsonl).
+/// `GithubAttestationsUnavailable` is a negative cache entry, not verified
+/// provenance. It only allows checksum-backed installs to skip a redundant
+/// GitHub attestation probe.
 ///
-/// If adding or reordering variants, also update `VerifiedAttestation` in
-/// `crates/vfox/src/hooks/pre_install.rs`.
+/// If adding or reordering verified attestation variants, also update
+/// `VerifiedAttestation` in `crates/vfox/src/hooks/pre_install.rs`.
 #[derive(Debug, Clone, strum::Display, strum::EnumIs)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ProvenanceType {
+    GithubAttestationsUnavailable,
     Minisign,
     Cosign,
     #[strum(serialize = "slsa")]
@@ -85,6 +89,7 @@ impl std::str::FromStr for ProvenanceType {
     type Err = String;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
+            "github-attestations-unavailable" => Ok(Self::GithubAttestationsUnavailable),
             "minisign" => Ok(Self::Minisign),
             "cosign" => Ok(Self::Cosign),
             "slsa" => Ok(Self::Slsa { url: None }),
@@ -117,11 +122,17 @@ impl ProvenanceType {
     /// Discriminant for ordering (lowest = lowest priority)
     fn ordinal(&self) -> u8 {
         match self {
-            Self::Minisign => 0,
-            Self::Cosign => 1,
-            Self::Slsa { .. } => 2,
-            Self::GithubAttestations => 3,
+            Self::GithubAttestationsUnavailable => 0,
+            Self::Minisign => 1,
+            Self::Cosign => 2,
+            Self::Slsa { .. } => 3,
+            Self::GithubAttestations => 4,
         }
+    }
+
+    /// Returns true for provenance types backed by successful cryptographic verification.
+    pub fn is_verified(&self) -> bool {
+        !self.is_github_attestations_unavailable()
     }
 
     /// Merge two provenance values, keeping the higher-priority variant.
@@ -243,6 +254,24 @@ impl PlatformInfo {
             && self.url_api.is_none()
             && self.conda_deps.is_none()
             && self.provenance.is_none()
+    }
+
+    /// True when the lockfile has checksum-backed, successfully verified provenance.
+    pub fn has_checksum_and_verified_provenance(&self) -> bool {
+        self.checksum.is_some()
+            && self
+                .provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_verified)
+    }
+
+    /// True when the lockfile records that GitHub attestations were checked and absent.
+    pub fn has_checksum_and_github_attestations_unavailable(&self) -> bool {
+        self.checksum.is_some()
+            && self
+                .provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_github_attestations_unavailable)
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
@@ -1087,7 +1116,7 @@ fn check_single_tool_provenance(
     platform_key: &str,
     new_provenance: Option<&ProvenanceType>,
 ) -> Option<String> {
-    if new_provenance.is_some() || !backend.starts_with("github:") {
+    if new_provenance.is_some_and(ProvenanceType::is_verified) || !backend.starts_with("github:") {
         return None;
     }
 
@@ -1099,9 +1128,11 @@ fn check_single_tool_provenance(
         .filter(|t| t.version != version)
         .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
         .filter(|t| {
-            t.platforms
-                .get(platform_key)
-                .is_some_and(|pi| pi.provenance.is_some())
+            t.platforms.get(platform_key).is_some_and(|pi| {
+                pi.provenance
+                    .as_ref()
+                    .is_some_and(ProvenanceType::is_verified)
+            })
         })
         .max_by(|a, b| {
             versions::Versioning::new(&a.version).cmp(&versions::Versioning::new(&b.version))
@@ -2734,6 +2765,37 @@ backend = "conda:jq"
     }
 
     #[test]
+    fn test_github_attestations_unavailable_roundtrip() {
+        let info = PlatformInfo {
+            checksum: Some("sha256:abc123".to_string()),
+            url: Some("https://example.com/tool.tar.gz".to_string()),
+            provenance: Some(ProvenanceType::GithubAttestationsUnavailable),
+            ..Default::default()
+        };
+
+        let toml_val: toml::Value = info.clone().into();
+        let table = toml_val.as_table().unwrap();
+        assert_eq!(
+            table.get("provenance").unwrap().as_str().unwrap(),
+            "github-attestations-unavailable"
+        );
+
+        let parsed: PlatformInfo = toml_val.try_into().unwrap();
+        assert_eq!(
+            parsed.provenance,
+            Some(ProvenanceType::GithubAttestationsUnavailable)
+        );
+        assert!(parsed.has_checksum_and_github_attestations_unavailable());
+        assert!(!parsed.has_checksum_and_verified_provenance());
+        assert!(
+            !parsed
+                .provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_verified)
+        );
+    }
+
+    #[test]
     fn test_provenance_merge_preserves_existing() {
         let with_provenance = PlatformInfo {
             provenance: Some(ProvenanceType::GithubAttestations),
@@ -2782,6 +2844,16 @@ backend = "conda:jq"
             }
             _ => panic!("expected Slsa provenance"),
         }
+
+        // A negative GitHub attestation cache entry must not override verified provenance.
+        let github_unavailable = PlatformInfo {
+            provenance: Some(ProvenanceType::GithubAttestationsUnavailable),
+            ..Default::default()
+        };
+        let merged = github_unavailable.merge_with(&with_url);
+        assert!(merged.provenance.as_ref().unwrap().is_slsa());
+        let merged = with_url.merge_with(&github_unavailable);
+        assert!(merged.provenance.as_ref().unwrap().is_slsa());
     }
 
     #[test]
@@ -2791,6 +2863,58 @@ backend = "conda:jq"
             ..Default::default()
         };
         assert!(!info.is_empty());
+
+        let info = PlatformInfo {
+            provenance: Some(ProvenanceType::GithubAttestationsUnavailable),
+            ..Default::default()
+        };
+        assert!(!info.is_empty());
+    }
+
+    #[test]
+    fn test_github_attestations_unavailable_counts_as_missing_for_regression() {
+        let platform = Platform::current().to_key();
+        let mut prior = basic_tool("1.0.0", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let existing = vec![prior];
+
+        let err = check_single_tool_provenance(
+            Some(&existing),
+            "tool",
+            "1.1.0",
+            "github:owner/repo",
+            &platform,
+            Some(&ProvenanceType::GithubAttestationsUnavailable),
+        )
+        .unwrap();
+        assert!(err.contains("has no provenance verification"));
+
+        let mut prior = basic_tool("1.0.0", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestationsUnavailable),
+                ..Default::default()
+            },
+        );
+        let existing = vec![prior];
+        assert!(
+            check_single_tool_provenance(
+                Some(&existing),
+                "tool",
+                "1.1.0",
+                "github:owner/repo",
+                &platform,
+                None,
+            )
+            .is_none()
+        );
     }
 
     #[test]

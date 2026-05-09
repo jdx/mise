@@ -414,7 +414,9 @@ impl Backend for UnifiedGitBackend {
                 // For the current platform, verify provenance cryptographically at lock time.
                 // This ensures the lockfile's provenance entry is backed by actual verification,
                 // not just an API query. Cross-platform entries remain detection-only.
-                if provenance.is_some() && target.is_current() {
+                if provenance.as_ref().is_some_and(ProvenanceType::is_verified)
+                    && target.is_current()
+                {
                     match self
                         .verify_provenance_at_lock_time(tv, &opts, &repo, &api_url, &asset)
                         .await
@@ -472,6 +474,7 @@ impl UnifiedGitBackend {
         let settings = Settings::get();
         let version = &tv.version;
         let version_prefix = opts.get("version_prefix");
+        let mut github_attestations_unavailable = false;
 
         let release =
             try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
@@ -498,7 +501,9 @@ impl UnifiedGitBackend {
                 .await
                 {
                     Ok(true) => return Some(ProvenanceType::GithubAttestations),
-                    Ok(false) => {}
+                    Ok(false) => {
+                        github_attestations_unavailable = true;
+                    }
                     Err(crate::github::sigstore::DetectError::SourceCreation(e)) => {
                         warn!(
                             "Failed to create GitHub attestation source for {owner}/{repo_name}: {e}. \
@@ -533,6 +538,10 @@ impl UnifiedGitBackend {
                     .map(|a| a.browser_download_url.clone());
                 return Some(ProvenanceType::Slsa { url });
             }
+        }
+
+        if github_attestations_unavailable {
+            return Some(ProvenanceType::GithubAttestationsUnavailable);
         }
 
         None
@@ -575,6 +584,7 @@ impl UnifiedGitBackend {
             .await?;
 
         let settings = Settings::get();
+        let mut github_attestations_unavailable = false;
 
         // Try GitHub artifact attestations first (highest priority)
         if settings.github_attestations
@@ -603,6 +613,7 @@ impl UnifiedGitBackend {
                         ));
                     }
                     Err(crate::github::sigstore::AttestationError::NoAttestations) => {
+                        github_attestations_unavailable = true;
                         debug!("no GitHub attestations found at lock time, trying SLSA");
                     }
                     Err(e) => {
@@ -677,9 +688,13 @@ impl UnifiedGitBackend {
             }
         }
 
-        Err(eyre::eyre!(
-            "provenance was detected but could not be verified at lock time"
-        ))
+        if github_attestations_unavailable {
+            Ok(ProvenanceType::GithubAttestationsUnavailable)
+        } else {
+            Err(eyre::eyre!(
+                "provenance was detected but could not be verified at lock time"
+            ))
+        }
     }
 
     fn is_gitlab(&self) -> bool {
@@ -805,7 +820,7 @@ impl UnifiedGitBackend {
         let has_lockfile_integrity = tv
             .lock_platforms
             .get(&platform_key)
-            .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
+            .is_some_and(PlatformInfo::has_checksum_and_verified_provenance);
 
         self.verify_checksum(ctx, tv, &file_path)?;
 
@@ -1419,9 +1434,10 @@ impl UnifiedGitBackend {
                 ProvenanceType::GithubAttestations => {
                     Ok(!settings.github_attestations || !settings.github.github_attestations)
                 }
+                ProvenanceType::GithubAttestationsUnavailable => Ok(false),
                 ProvenanceType::Slsa { .. } => Ok(!settings.slsa || !settings.github.slsa),
-                // The github backend only writes GithubAttestations and Slsa; reaching here
-                // means a lockfile was hand-edited or migrated incorrectly.
+                // The github backend only writes GithubAttestations, GithubAttestationsUnavailable,
+                // and Slsa; reaching here means a lockfile was hand-edited or migrated incorrectly.
                 _ => Err(eyre::eyre!(
                     "Lockfile has unexpected provenance type {provenance} for github backend tool {tv}. \
                      Update the lockfile to remove the stale provenance entry."
@@ -1453,10 +1469,17 @@ impl UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|pi| pi.provenance.clone());
+        let expected_provenance = locked_provenance.as_ref().filter(|p| p.is_verified());
+        let skip_cached_absent_attestations = !settings.force_provenance_verify()
+            && tv
+                .lock_platforms
+                .get(&platform_key)
+                .is_some_and(PlatformInfo::has_checksum_and_github_attestations_unavailable);
+        let mut github_attestations_unavailable = skip_cached_absent_attestations;
 
         // Only verify for GitHub repos (not GitLab/Forgejo)
         if self.is_gitlab() || self.is_forgejo() {
-            if let Some(ref expected) = locked_provenance {
+            if let Some(expected) = expected_provenance {
                 return Err(eyre::eyre!(
                     "Lockfile requires {expected} provenance for {tv} but verification is not available \
                      for GitLab/Forgejo backends. This may indicate a downgrade attack."
@@ -1466,10 +1489,9 @@ impl UnifiedGitBackend {
         }
 
         // When the lockfile specifies a provenance type, only run that specific mechanism
-        let skip_attestations = locked_provenance
-            .as_ref()
-            .is_some_and(|l| !l.is_github_attestations());
-        let skip_slsa = locked_provenance.as_ref().is_some_and(|l| !l.is_slsa());
+        let skip_attestations = skip_cached_absent_attestations
+            || expected_provenance.is_some_and(|l| !l.is_github_attestations());
+        let skip_slsa = expected_provenance.is_some_and(|l| !l.is_slsa());
 
         // If the lockfile expects github-attestations but the configured api_url
         // doesn't support them (e.g. GHE Server), surface a clear, actionable
@@ -1477,7 +1499,7 @@ impl UnifiedGitBackend {
         // path below.
         let api_url = self.get_api_url(&tv.request.options());
         if !attestations_supported(&api_url)
-            && let Some(ref expected) = locked_provenance
+            && let Some(expected) = expected_provenance
             && expected.is_github_attestations()
         {
             return Err(eyre::eyre!(
@@ -1499,7 +1521,7 @@ impl UnifiedGitBackend {
             {
                 Ok(true) => {
                     // Defense-in-depth: verify the result matches the lockfile expectation
-                    if let Some(ref expected) = locked_provenance
+                    if let Some(expected) = expected_provenance
                         && !expected.is_github_attestations()
                     {
                         return Err(eyre::eyre!(
@@ -1517,6 +1539,7 @@ impl UnifiedGitBackend {
                 }
                 Err(VerificationStatus::NoAttestations) => {
                     // No attestations - fall through to try SLSA
+                    github_attestations_unavailable = true;
                     debug!("No GitHub artifact attestations found for {tv}, trying SLSA");
                 }
                 Err(VerificationStatus::Error(e)) => {
@@ -1533,7 +1556,7 @@ impl UnifiedGitBackend {
             match self.try_verify_slsa(ctx, tv, file_path, &api_url).await {
                 Ok((true, provenance_url)) => {
                     // Defense-in-depth: verify the result matches the lockfile expectation
-                    if let Some(ref expected) = locked_provenance
+                    if let Some(expected) = expected_provenance
                         && !expected.is_slsa()
                     {
                         return Err(eyre::eyre!(
@@ -1561,7 +1584,7 @@ impl UnifiedGitBackend {
         }
 
         // If lockfile recorded provenance but no verification succeeded, it's a downgrade attack
-        if let Some(ref expected) = locked_provenance {
+        if let Some(expected) = expected_provenance {
             return Err(eyre::eyre!(
                 "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
                  This may indicate a downgrade attack. Enable the corresponding verification setting \
@@ -1569,7 +1592,16 @@ impl UnifiedGitBackend {
             ));
         }
 
-        Ok(None)
+        if github_attestations_unavailable
+            && tv
+                .lock_platforms
+                .get(&platform_key)
+                .is_some_and(|pi| pi.checksum.is_some())
+        {
+            Ok(Some(ProvenanceType::GithubAttestationsUnavailable))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Try to verify GitHub artifact attestations. Returns:
