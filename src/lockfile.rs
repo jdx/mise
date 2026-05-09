@@ -816,7 +816,7 @@ impl Lockfile {
                 let github_attestations = if provenance.is_some() {
                     None
                 } else {
-                    platform_info.github_attestations.or_else(|| {
+                    platform_info.github_attestations.or({
                         if preserve_artifact_fields {
                             existing.github_attestations
                         } else {
