@@ -277,7 +277,7 @@ Use `rename_exe` for archives where the binary inside has a different name than 
 
 ### `no_app`
 
-Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle and a standalone command-line tool:
+Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
 
 ```toml
 [tools."gitlab:myorg/mytool"]
@@ -287,8 +287,9 @@ no_app = true
 
 When `no_app = true`:
 
-- Assets containing `.app.` are penalized during autodetection
+- Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
 - Standalone archives are preferred
+- This is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
 - Only affects autodetection; explicit `asset_pattern` values are used as-is
 
 ### `bin_path`
@@ -328,7 +329,7 @@ When enabled:
 
 ### `api_url`
 
-For self-hosted GitLab instances, specify the API URL. mise uses this URL for release listing, release asset lookup, and API downloads for private or self-hosted assets:
+For self-hosted GitLab instances, specify the API URL. mise uses this URL for release listing and release asset lookup, and may also use it to download assets when browser download URLs are not reachable or when using custom/private instances:
 
 ```toml
 [tools]
