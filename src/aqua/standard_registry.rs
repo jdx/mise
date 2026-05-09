@@ -94,9 +94,19 @@ mod tests {
             Some("Automattic/harper/harper-ls")
         );
 
-        let package = package(alias).unwrap().unwrap();
+        let alias_package = package(alias).unwrap().unwrap();
+        let canonical_package = package("Automattic/harper/harper-ls").unwrap().unwrap();
 
-        assert_eq!(package.name.as_deref(), Some("Automattic/harper/harper-ls"));
+        assert_eq!(
+            alias_package.name.as_deref(),
+            Some("Automattic/harper/harper-ls")
+        );
+        assert_eq!(
+            alias_package.name.as_deref(),
+            canonical_package.name.as_deref()
+        );
+        assert_eq!(alias_package.repo_owner, canonical_package.repo_owner);
+        assert_eq!(alias_package.repo_name, canonical_package.repo_name);
     }
 
     #[test]

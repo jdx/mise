@@ -3,7 +3,7 @@ use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use versions::Versioning;
@@ -65,6 +65,7 @@ pub struct AquaPackage {
     pub supported_envs: Vec<String>,
     pub files: Vec<AquaFile>,
     pub vars: Vec<AquaVar>,
+    #[serde(default, deserialize_with = "deserialize_string_map")]
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
     version_filter: Option<String>,
@@ -119,7 +120,7 @@ pub struct AquaVar {
     pub name: String,
     /// Aqua's schema allows arbitrary YAML defaults, but mise intentionally
     /// supports only string defaults to keep variable resolution simple.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_scalar_string")]
     pub default: Option<String>,
     #[serde(default)]
     pub required: bool,
@@ -248,7 +249,94 @@ pub struct AquaChecksumPattern {
 /// Registry YAML file structure
 #[derive(Debug, Deserialize)]
 pub struct RegistryYaml {
-    pub packages: Vec<AquaPackage>,
+    pub packages: Vec<RegistryPackageRow>,
+}
+
+/// Top-level package row in a merged aqua registry YAML file.
+#[derive(Debug, Deserialize)]
+pub struct RegistryPackageRow {
+    #[serde(flatten)]
+    pub package: AquaPackage,
+    #[serde(default, deserialize_with = "deserialize_registry_aliases")]
+    pub aliases: Vec<String>,
+}
+
+fn deserialize_registry_aliases<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let aliases = Option::<serde_yaml::Value>::deserialize(deserializer)?;
+    Ok(aliases
+        .and_then(|aliases| {
+            aliases
+                .as_sequence()
+                .map(|aliases| aliases.iter().filter_map(registry_alias_name).collect())
+        })
+        .unwrap_or_default())
+}
+
+fn registry_alias_name(alias: &serde_yaml::Value) -> Option<String> {
+    alias.get("name")?.as_str().map(str::to_string)
+}
+
+fn deserialize_optional_scalar_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_yaml::Value>::deserialize(deserializer)?;
+    match value {
+        None | Some(serde_yaml::Value::Null) => Ok(None),
+        Some(value) => yaml_scalar_to_string(value).map(Some).ok_or_else(|| {
+            <D::Error as serde::de::Error>::custom("invalid type: expected a scalar string default")
+        }),
+    }
+}
+
+fn deserialize_string_map<'de, D>(
+    deserializer: D,
+) -> std::result::Result<HashMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_yaml::Value>::deserialize(deserializer)?;
+    let Some(value) = value else {
+        return Ok(HashMap::new());
+    };
+    let serde_yaml::Value::Mapping(mapping) = value else {
+        return Err(<D::Error as serde::de::Error>::custom(
+            "invalid type: expected a string map",
+        ));
+    };
+
+    mapping
+        .into_iter()
+        .map(|(key, value)| {
+            let key = yaml_scalar_to_string(key).ok_or_else(|| {
+                <D::Error as serde::de::Error>::custom(
+                    "invalid type: expected a scalar string map key",
+                )
+            })?;
+            let value = yaml_scalar_to_string(value).ok_or_else(|| {
+                <D::Error as serde::de::Error>::custom(
+                    "invalid type: expected a scalar string map value",
+                )
+            })?;
+            Ok((key, value))
+        })
+        .collect()
+}
+
+fn yaml_scalar_to_string(value: serde_yaml::Value) -> Option<String> {
+    match value {
+        serde_yaml::Value::String(value) => Some(value),
+        serde_yaml::Value::Bool(value) => Some(value.to_string()),
+        serde_yaml::Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    }
 }
 
 impl Default for AquaPackage {
@@ -1115,6 +1203,54 @@ mod tests {
         Some(value.to_string())
     }
 
+    fn first_registry_package(yml: &str) -> AquaPackage {
+        serde_yaml::from_str::<RegistryYaml>(yml)
+            .unwrap()
+            .packages
+            .into_iter()
+            .next()
+            .unwrap()
+            .package
+    }
+
+    #[test]
+    fn test_registry_package_row_aliases_are_top_level_only() {
+        let yml = r#"
+packages:
+  - name: example/canonical
+    aliases:
+      - name: example/alias
+      - name: 123
+      - other: ignored
+    unsupported_field: ignored
+    version_overrides:
+      - aliases:
+          - name: example/nested-alias
+"#;
+        let registry = serde_yaml::from_str::<RegistryYaml>(yml).unwrap();
+        let row = registry.packages.into_iter().next().unwrap();
+
+        assert_eq!(row.package.name.as_deref(), Some("example/canonical"));
+        assert_eq!(row.aliases, vec!["example/alias"]);
+        assert_eq!(row.package.version_overrides.len(), 1);
+    }
+
+    #[test]
+    fn test_registry_package_row_preserves_yaml_scalar_coercions() {
+        let yml = r#"
+packages:
+  - replacements:
+      386: i686
+    vars:
+      - name: enabled
+        default: true
+"#;
+        let pkg = first_registry_package(yml);
+
+        assert_eq!(pkg.replacements.get("386"), Some(&"i686".to_string()));
+        assert_eq!(pkg.vars[0].default.as_deref(), Some("true"));
+    }
+
     #[test]
     fn test_aqua_file_src_gradle() {
         // Test the gradle package src template: {{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle
@@ -1305,12 +1441,7 @@ packages:
       - name: channel
         default: stable
 "#;
-        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
-            .unwrap()
-            .packages
-            .into_iter()
-            .next()
-            .unwrap();
+        let pkg = first_registry_package(yml);
         let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
         assert_eq!(asset, "tool-stable-1.0.0.tar.gz");
     }
@@ -1326,12 +1457,7 @@ packages:
         default: {yaml_default}
 "#
             );
-            let pkg = serde_yaml::from_str::<RegistryYaml>(&yml)
-                .unwrap()
-                .packages
-                .into_iter()
-                .next()
-                .unwrap();
+            let pkg = first_registry_package(&yml);
             assert_eq!(pkg.vars[0].default.as_deref(), Some(expected));
         }
     }
@@ -1344,12 +1470,7 @@ packages:
       - name: channel
         default: null
 "#;
-        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
-            .unwrap()
-            .packages
-            .into_iter()
-            .next()
-            .unwrap();
+        let pkg = first_registry_package(yml);
         assert_eq!(pkg.vars[0].default, None);
     }
 
@@ -1435,12 +1556,7 @@ packages:
         type: github_release
         asset: "{{.Asset}}.sigstore.json"
 "#;
-        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
-            .unwrap()
-            .packages
-            .into_iter()
-            .next()
-            .unwrap();
+        let pkg = first_registry_package(yml);
         assert!(pkg.cosign.is_some());
         assert!(pkg.checksum.is_none());
     }
@@ -1463,13 +1579,7 @@ packages:
             type: github_release
             asset: cosign.pub
 "#;
-        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
-            .unwrap()
-            .packages
-            .into_iter()
-            .next()
-            .unwrap()
-            .with_version(&["v1.0.0"], "linux", "amd64");
+        let pkg = first_registry_package(yml).with_version(&["v1.0.0"], "linux", "amd64");
         let cosign = pkg.cosign.unwrap();
         assert!(cosign.bundle.is_some());
         assert!(cosign.key.is_some());
@@ -1492,12 +1602,7 @@ packages:
           - key: libc
             value: musl
 "#;
-        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
-            .unwrap()
-            .packages
-            .into_iter()
-            .next()
-            .unwrap();
+        let pkg = first_registry_package(yml);
 
         let gnu = pkg
             .clone()
@@ -1532,13 +1637,12 @@ packages:
           - key: libc
             value: musl
 "#;
-        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
-            .unwrap()
-            .packages
-            .into_iter()
-            .next()
-            .unwrap()
-            .with_version_libc(&["1.0.0"], "linux", "amd64", Some("musl"));
+        let pkg = first_registry_package(yml).with_version_libc(
+            &["1.0.0"],
+            "linux",
+            "amd64",
+            Some("musl"),
+        );
 
         assert_eq!(
             pkg.url("1.0.0", "linux", "amd64").unwrap(),
@@ -1559,13 +1663,7 @@ packages:
           - key: libc
             value: musl
 "#;
-        let pkg = serde_yaml::from_str::<RegistryYaml>(yml)
-            .unwrap()
-            .packages
-            .into_iter()
-            .next()
-            .unwrap()
-            .with_version(&["1.0.0"], "linux", "amd64");
+        let pkg = first_registry_package(yml).with_version(&["1.0.0"], "linux", "amd64");
 
         assert_eq!(
             pkg.url("1.0.0", "linux", "amd64").unwrap(),

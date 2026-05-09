@@ -8,22 +8,23 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use aqua_registry::encode_package_rkyv;
-use aqua_registry::types::{AquaPackage, RegistryYaml};
+use aqua_registry::types::{AquaPackage, RegistryPackageRow, RegistryYaml};
 use eyre::{Result, WrapErr, eyre};
 use serde_yaml::Value;
 
-fn main() {
+fn main() -> Result<()> {
     cfg_aliases::cfg_aliases! {
         asdf: { any(feature = "asdf", not(target_os = "windows")) },
         macos: { target_os = "macos" },
         linux: { target_os = "linux" },
         vfox: { any(feature = "vfox", target_os = "windows") },
     }
-    built::write_built_file().expect("Failed to acquire build-time information");
+    built::write_built_file().wrap_err("Failed to acquire build-time information")?;
 
     codegen_settings();
     codegen_registry();
-    codegen_aqua_standard_registry().expect("failed to generate baked aqua standard registry");
+    codegen_aqua_standard_registry().wrap_err("failed to generate baked aqua standard registry")?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -346,23 +347,8 @@ fn codegen_aqua_standard_registry() -> Result<()> {
             registry_file.display()
         )
     })?;
-    let registry_value = serde_yaml::from_str::<Value>(&content).wrap_err_with(|| {
-        format!(
-            "Failed to parse aqua registry file {}",
-            registry_file.display()
-        )
-    })?;
-    let package_values = registry_value
-        .get("packages")
-        .and_then(|packages| packages.as_sequence())
-        .ok_or_else(|| {
-            eyre!(
-                "Aqua registry file {} does not contain a packages list",
-                registry_file.display()
-            )
-        })?;
 
-    let registries = aqua_package_registries(&registry_yaml.packages, package_values)?;
+    let registries = aqua_package_registries(&registry_yaml.packages)?;
     if registries.is_empty() {
         return Err(eyre!(
             "Aqua registry file {} contains no packages",
@@ -413,30 +399,19 @@ fn codegen_aqua_standard_registry() -> Result<()> {
     Ok(())
 }
 
-fn aqua_package_registries(
-    packages: &[AquaPackage],
-    package_values: &[Value],
-) -> Result<Vec<AquaPackageRegistry>> {
-    if packages.len() != package_values.len() {
-        return Err(eyre!(
-            "parsed aqua package count mismatch: RegistryYaml has {}, raw YAML has {}",
-            packages.len(),
-            package_values.len()
-        ));
-    }
-
+fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackageRegistry>> {
     let mut registries = Vec::new();
-    for (package, package_value) in packages.iter().zip(package_values) {
+    for row in rows {
+        let package = &row.package;
         let Some(id) = aqua_canonical_package_id(package) else {
             continue;
         };
         let content = encode_package_rkyv(package)
             .wrap_err_with(|| format!("Failed to encode baked package {id}"))?;
-        let aliases = aqua_package_aliases(package_value);
         registries.push(AquaPackageRegistry {
             id,
             content,
-            aliases,
+            aliases: row.aliases.clone(),
         });
     }
     Ok(registries)
@@ -534,19 +509,6 @@ fn aqua_canonical_package_id(package: &AquaPackage) -> Option<String> {
             }
         })
         .or_else(|| package.path.clone())
-}
-
-fn aqua_package_aliases(package: &Value) -> Vec<String> {
-    package
-        .get("aliases")
-        .and_then(|aliases| aliases.as_sequence())
-        .map(|aliases| {
-            aliases
-                .iter()
-                .filter_map(|alias| yaml_string_field(alias, "name"))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn yaml_string_field(value: &Value, key: &str) -> Option<String> {

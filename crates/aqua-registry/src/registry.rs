@@ -120,6 +120,7 @@ impl RegistryFetcher for DefaultRegistryFetcher {
                 .packages
                 .into_iter()
                 .next()
+                .map(|row| row.package)
                 .ok_or_else(|| AquaRegistryError::PackageNotFound(package_id.to_string()));
         }
 
