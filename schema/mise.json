@@ -2025,18 +2025,18 @@
       "additionalProperties": {
         "oneOf": [
           {
-            "description": "command to run in a spawned subprocess",
+            "description": "inline hook command to run",
             "type": "string"
           },
           {
             "unevaluatedProperties": false,
             "properties": {
               "run": {
-                "description": "command to run in a spawned subprocess",
+                "description": "inline hook command to run",
                 "type": "string"
               },
               "shell": {
-                "description": "shell command to use for spawned run hooks, such as \"bash -c\"",
+                "description": "inline shell command to use for run hooks, such as \"bash -c\"",
                 "type": "string"
               }
             },
@@ -2047,11 +2047,11 @@
             "unevaluatedProperties": false,
             "properties": {
               "script": {
-                "description": "current-shell script for enter/leave/cd hooks, or deprecated spawned-run alias for install hooks",
+                "description": "current-shell script for enter/leave/cd hooks",
                 "type": "string"
               },
               "shell": {
-                "description": "current shell for enter/leave/cd hooks; ignored for install hooks that use script",
+                "description": "current shell name for script hooks, such as \"bash\"",
                 "type": "string"
               }
             },
@@ -2074,18 +2074,18 @@
             "items": {
               "oneOf": [
                 {
-                  "description": "command to run in a spawned subprocess",
+                  "description": "inline hook command to run",
                   "type": "string"
                 },
                 {
                   "unevaluatedProperties": false,
                   "properties": {
                     "run": {
-                      "description": "command to run in a spawned subprocess",
+                      "description": "inline hook command to run",
                       "type": "string"
                     },
                     "shell": {
-                      "description": "shell command to use for spawned run hooks, such as \"bash -c\"",
+                      "description": "inline shell command to use for run hooks, such as \"bash -c\"",
                       "type": "string"
                     }
                   },
@@ -2096,11 +2096,11 @@
                   "unevaluatedProperties": false,
                   "properties": {
                     "script": {
-                      "description": "current-shell script for enter/leave/cd hooks, or deprecated spawned-run alias for install hooks",
+                      "description": "current-shell script for enter/leave/cd hooks",
                       "type": "string"
                     },
                     "shell": {
-                      "description": "current shell for enter/leave/cd hooks; ignored for install hooks that use script",
+                      "description": "current shell name for script hooks, such as \"bash\"",
                       "type": "string"
                     }
                   },

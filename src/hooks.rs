@@ -52,14 +52,14 @@ pub enum Hooks {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(untagged)]
 pub enum HookDef {
     /// Simple run string: `enter = "echo hello"`
     RunString(String),
     /// Table with run: `enter = { run = "echo hello" }`
     Run { run: String, shell: Option<String> },
     /// Table with script and optional shell: `enter = { script = "echo hello", shell = "bash" }`
-    Script {
+    ScriptTable {
         script: String,
         shell: Option<String>,
     },
@@ -76,7 +76,7 @@ impl HookDef {
             HookDef::RunString(script) => vec![Hook {
                 hook: hook_type,
                 action: HookAction::Run {
-                    script,
+                    run: script,
                     shell: None,
                     legacy_script: false,
                     ignored_shell: None,
@@ -86,21 +86,21 @@ impl HookDef {
             HookDef::Run { run, shell } => vec![Hook {
                 hook: hook_type,
                 action: HookAction::Run {
-                    script: run,
+                    run,
                     shell,
                     legacy_script: false,
                     ignored_shell: None,
                 },
                 global: false,
             }],
-            HookDef::Script { script, shell } => vec![Hook {
+            HookDef::ScriptTable { script, shell } => vec![Hook {
                 hook: hook_type,
                 action: match (hook_type, shell) {
                     (Hooks::Enter | Hooks::Leave | Hooks::Cd, Some(shell)) => {
                         HookAction::CurrentShell { script, shell }
                     }
                     (_, shell) => HookAction::Run {
-                        script,
+                        run: script,
                         shell: None,
                         legacy_script: true,
                         ignored_shell: shell,
@@ -132,7 +132,7 @@ pub struct Hook {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum HookAction {
     Run {
-        script: String,
+        run: String,
         shell: Option<String>,
         legacy_script: bool,
         ignored_shell: Option<String>,
@@ -153,12 +153,12 @@ impl Hook {
     {
         match &mut self.action {
             HookAction::Run {
-                script,
+                run,
                 shell,
                 ignored_shell,
                 ..
             } => {
-                *script = render(script)?;
+                *run = render(run)?;
                 if let Some(s) = shell {
                     *s = render(s)?;
                 }
@@ -401,7 +401,7 @@ async fn execute(
 ) -> Result<()> {
     Settings::get().ensure_experimental("hooks")?;
     let HookAction::Run {
-        script,
+        run,
         shell,
         legacy_script,
         ignored_shell,
@@ -420,7 +420,7 @@ async fn execute(
     if ignored_shell.is_some() && matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
         let hook_name = hook.hook.to_string().to_lowercase();
         warn!(
-            "`shell` is ignored for {} hooks that use `script`; use `run = ...` with `shell = \"bash -c\"` to choose a spawned shell.",
+            "`shell` is ignored for {} hooks that use `script`; use `run = ...` with `shell = \"bash -c\"` to choose an inline shell command.",
             hook_name
         );
     }
@@ -443,7 +443,7 @@ async fn execute(
         (ctx, env)
     };
     let mut tera = get_tera(Some(root));
-    let rendered_script = tera.render_str(script, &tera_ctx)?;
+    let rendered_script = tera.render_str(run, &tera_ctx)?;
 
     let args = shell
         .iter()
