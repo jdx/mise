@@ -104,8 +104,8 @@ Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`
 Remove the plugin(s) from config file
 
 Examples:
-```
 
+```
 # run with no arguments to use the interactive selector
 $ mise use
 

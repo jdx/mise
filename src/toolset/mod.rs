@@ -289,8 +289,18 @@ impl Toolset {
         filter_tools: Option<&[crate::cli::args::ToolArg]>,
         exclude_tools: Option<&[crate::cli::args::ToolArg]>,
     ) -> Vec<OutdatedInfo> {
-        let versions = self
-            .list_current_versions()
+        let list_versions = if opts.inactive {
+            match self.list_all_versions(config).await {
+                Ok(v) => v,
+                Err(err) => {
+                    warn!("Failed to list all versions: {err:#}");
+                    vec![]
+                }
+            }
+        } else {
+            self.list_current_versions()
+        };
+        let versions = list_versions
             .into_iter()
             // Filter to only check specified tools if provided
             .filter(|(_, tv)| {

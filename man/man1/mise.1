@@ -1698,6 +1698,11 @@ show other 20.x versions, not 21.x or 22.x versions.
 
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
 .TP
+\fB\-\-inactive\fR
+Show outdated tools including installed\-but\-inactive tools not present in the current config
+
+By default, `mise outdated` only shows tools that come from the current config.
+.TP
 \fB\-\-local\fR
 Only show outdated tools defined in local config files
 
@@ -3348,6 +3353,9 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 Like \-\-dry\-run but exits with code 1 if there are outdated tools
 
 This is useful for scripts to check if tools need to be upgraded.
+.TP
+\fB\-\-inactive\fR
+Upgrade all tools, including installed\-but\-inactive tools not present in the current config
 .TP
 \fB\-\-local\fR
 Only upgrade tools defined in local config files

@@ -1,3 +1,0 @@
-backends = ["npm:esy"]
-description = "Easy package management for native Reason, OCaml and more"
-test = { cmd = "esy --version", expected = "{{version}}" }

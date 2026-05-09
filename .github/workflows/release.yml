@@ -359,6 +359,15 @@ jobs:
             mise x -- git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
             echo "RELEASE_TITLE=$VERSION" >> "$GITHUB_ENV"
           fi
+          # Strip any pre-existing sponsor section from the generated notes
+          # (communique has at times included its own) and trim trailing blanks,
+          # so the heredoc below always produces exactly one canonical block.
+          awk '
+            /^## (💚 )?Sponsor mise[[:space:]]*$/ { exit }
+            /^[[:space:]]*$/ { blanks++; next }
+            { while (blanks-- > 0) print ""; blanks = 0; print }
+          ' /tmp/release-notes.txt > /tmp/release-notes-trimmed.txt
+          mv /tmp/release-notes-trimmed.txt /tmp/release-notes.txt
           cat >> /tmp/release-notes.txt <<'EOF'
 
           ## 💚 Sponsor mise
