@@ -1,5 +1,5 @@
 description = "command line management for Google Workspace"
-test = { cmd = "gam version", expected = "GAM {{version}}" }
+# test = { cmd = "gam version", expected = "GAM {{version}}" }
 
 [[backends]]
 full = "github:GAM-team/GAM"

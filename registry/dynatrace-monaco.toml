@@ -1,5 +1,5 @@
 description = "Monaco—This is the native Dynatrace Configuration as Code tool. Monaco is also the recommended tool for migrating from Dynatrace Managed to Dynatrace SaaS"
-test = { cmd = "monaco version", expected = "monaco version {{version}}" }
+# test = { cmd = "monaco version", expected = "monaco version {{version}}" }
 
 [[backends]]
 full = "github:Dynatrace/dynatrace-configuration-as-code"

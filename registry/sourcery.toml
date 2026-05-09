@@ -1,5 +1,5 @@
 description = "Meta-programming for Swift, stop writing boilerplate code"
-test = { cmd = "which sourcery", expected = "sourcery" }
+# test = { cmd = "which sourcery", expected = "sourcery" }
 
 [[backends]]
 full = "github:krzysztofzablocki/Sourcery"

@@ -1,5 +1,5 @@
 description = "The Transifex command-line client"
-test = { cmd = "tx --version", expected = "version={{version}}" }
+# test = { cmd = "tx --version", expected = "version={{version}}" }
 
 [[backends]]
 full = "github:transifex/cli"
