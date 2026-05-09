@@ -173,6 +173,8 @@ fn sanitize_filename_prefix(id: &str) -> String {
     }
 }
 
+/// Hashes the canonical package ID with FNV-1a 64-bit to keep compiled cache
+/// filenames deterministic. The sanitized ID prefix is only for readability.
 fn fnv1a64(value: &str) -> u64 {
     let mut hash = 0xcbf29ce484222325u64;
     for byte in value.as_bytes() {
