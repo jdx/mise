@@ -1,0 +1,3 @@
+backends = ["npm:azurite"]
+description = "The Azurite emulator for local Azure Storage development"
+test = { cmd = "azurite --version", expected = "{{version}}" }
