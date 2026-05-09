@@ -211,6 +211,7 @@ When `no_app = true`:
 - Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
 - Standalone archives (e.g., `tool.zip`, `tool-macos.tar.gz`) are preferred
 - Only affects macOS; has no effect on Linux/Windows
+- Only affects autodetection; explicit `asset_pattern` values are used as-is
 
 ::: info
 Without this option, mise's autodetection might select .app bundles on macOS, which can be problematic if the bundle contains a GUI application or Xcode extension rather than a standalone CLI tool.
@@ -253,7 +254,7 @@ When enabled:
 
 ### `api_url`
 
-For GitHub Enterprise or self-hosted GitHub instances, specify the API URL:
+For GitHub Enterprise or self-hosted GitHub instances, specify the API URL. mise uses this URL for release listing, release asset lookup, and API download fallback for private or self-hosted assets:
 
 ```toml
 [tools]

@@ -275,6 +275,22 @@ rename_exe = "mytool"  # Rename the extracted binary to mytool
 Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
 :::
 
+### `no_app`
+
+Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle and a standalone command-line tool:
+
+```toml
+[tools."gitlab:myorg/mytool"]
+version = "latest"
+no_app = true
+```
+
+When `no_app = true`:
+
+- Assets containing `.app.` are penalized during autodetection
+- Standalone archives are preferred
+- Only affects autodetection; explicit `asset_pattern` values are used as-is
+
 ### `bin_path`
 
 ::: v-pre
@@ -312,7 +328,7 @@ When enabled:
 
 ### `api_url`
 
-For self-hosted GitLab instances, specify the API URL:
+For self-hosted GitLab instances, specify the API URL. mise uses this URL for release listing, release asset lookup, and API downloads for private or self-hosted assets:
 
 ```toml
 [tools]
