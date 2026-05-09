@@ -258,7 +258,7 @@ impl ToolVersionOptions {
                 self.opts.insert(
                     key.to_string(),
                     toml::Value::String(scalar_value_to_string(value).ok_or_else(|| {
-                        format!("{key} must be a string, integer, boolean, or float")
+                        format!("{key} must be a string, integer, boolean, float, or datetime")
                     })?),
                 );
                 Ok(true)
@@ -428,13 +428,13 @@ fn scalar_value_to_string(value: &toml::Value) -> Option<String> {
 }
 
 pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
-    match try_parse_tool_options(s) {
-        Ok(options) => options,
-        Err(err) => {
-            warn!("{err}");
-            ToolVersionOptions::default()
-        }
+    // Keep this legacy entry point forgiving: callers use it for registry/cache
+    // paths where dropping every backend option because one core key is malformed
+    // is worse than skipping only the invalid key.
+    if let Some(options) = parse_as_toml_lenient(s) {
+        return options;
     }
+    parse_tool_options_manual_lenient(s)
 }
 
 pub fn try_parse_tool_options(s: &str) -> Result<ToolVersionOptions, String> {
@@ -497,9 +497,38 @@ fn try_parse_as_toml(s: &str) -> Option<Result<ToolVersionOptions, String>> {
     Some(Ok(tvo))
 }
 
+fn parse_as_toml_lenient(s: &str) -> Option<ToolVersionOptions> {
+    let toml_str = format!("_x_ = {{ {s} }}");
+    let value: toml::Value = toml::from_str(&toml_str).ok()?;
+    let table = value.get("_x_")?.as_table()?;
+    let mut tvo = ToolVersionOptions::default();
+    for (key, value) in table {
+        insert_option_lenient(&mut tvo, key.clone(), value.clone());
+    }
+    Some(tvo)
+}
+
 /// Legacy manual parser for option strings with unquoted values (e.g. `exe=rg,match=musl`).
 /// Splits by commas, but segments without `=` are appended to the previous key's value.
 fn parse_tool_options_manual(s: &str) -> Result<ToolVersionOptions, String> {
+    let raw = parse_manual_tool_options_raw(s);
+    let mut tvo = ToolVersionOptions::default();
+    for (key, value) in raw {
+        tvo.insert_option(key, value)?;
+    }
+    Ok(tvo)
+}
+
+fn parse_tool_options_manual_lenient(s: &str) -> ToolVersionOptions {
+    let raw = parse_manual_tool_options_raw(s);
+    let mut tvo = ToolVersionOptions::default();
+    for (key, value) in raw {
+        insert_option_lenient(&mut tvo, key, value);
+    }
+    tvo
+}
+
+fn parse_manual_tool_options_raw(s: &str) -> IndexMap<String, toml::Value> {
     let mut raw = IndexMap::new();
     let mut current_key: Option<String> = None;
     for opt in split_tool_option_segments(s) {
@@ -520,11 +549,13 @@ fn parse_tool_options_manual(s: &str) -> Result<ToolVersionOptions, String> {
         }
     }
 
-    let mut tvo = ToolVersionOptions::default();
-    for (key, value) in raw {
-        tvo.insert_option(key, value)?;
+    raw
+}
+
+fn insert_option_lenient(options: &mut ToolVersionOptions, key: String, value: toml::Value) {
+    if let Err(err) = options.insert_option(key, value) {
+        warn!("{err}");
     }
-    Ok(tvo)
 }
 
 fn split_tool_option_segments(s: &str) -> Vec<String> {
@@ -728,6 +759,18 @@ mod tests {
         assert!(!opts.opts.contains_key("depends"));
         assert!(!opts.opts.contains_key("os"));
         assert!(!opts.opts.contains_key("install_env"));
+    }
+
+    #[test]
+    fn test_parse_tool_options_skips_invalid_core_option_without_dropping_backend_opts() {
+        let input = r#"exe="rg",depends={ name = "dummy" },match="musl""#;
+        let opts = parse_tool_options(input);
+
+        assert_eq!(opts.get("exe"), Some("rg"));
+        assert_eq!(opts.get("match"), Some("musl"));
+        assert_eq!(opts.depends, None);
+        assert!(!opts.opts.contains_key("depends"));
+        assert!(try_parse_tool_options(input).is_err());
     }
 
     #[test]

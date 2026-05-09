@@ -80,6 +80,10 @@ fn normalize_option_template_value(value: toml::Value) -> toml::Value {
     }
 }
 
+fn should_normalize_option_template(key: &str) -> bool {
+    !matches!(key, "os" | "depends" | "install_env") && !key.starts_with("install_env.")
+}
+
 fn insert_tool_option<E>(
     options: &mut ToolVersionOptions,
     key: String,
@@ -88,9 +92,12 @@ fn insert_tool_option<E>(
 where
     E: de::Error,
 {
-    options
-        .insert_option(key, normalize_option_template_value(value))
-        .map_err(de::Error::custom)
+    let value = if should_normalize_option_template(&key) {
+        normalize_option_template_value(value)
+    } else {
+        value
+    };
+    options.insert_option(key, value).map_err(de::Error::custom)
 }
 
 fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
@@ -1995,6 +2002,37 @@ mod tests {
             "{:#?}",
             cf.to_tool_request_set().unwrap().tools
         )));
+    }
+
+    #[tokio::test]
+    async fn test_core_options_do_not_normalize_version_placeholder() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [tools]
+        node = { version = "1.0.0", depends = ["{{version}}"], install_env = { FOO = "{{version}}" }, url = "https://example.com/{{version}}" }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let node_req = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "node")
+            .and_then(|(_, reqs)| reqs.first())
+            .unwrap();
+        let opts = node_req.options();
+
+        assert_eq!(opts.depends, Some(vec!["{{version}}".to_string()]));
+        assert_eq!(
+            opts.install_env.get("FOO").map(String::as_str),
+            Some("{{version}}")
+        );
+        assert_eq!(opts.get("url"), Some("https://example.com/{version}"));
+        file::remove_file(&p).unwrap();
     }
 
     #[tokio::test]
