@@ -173,7 +173,8 @@ async fn create_device_code() -> Result<DeviceCodeResponse> {
     if !scopes.is_empty() {
         form.push(("scope", scopes));
     }
-    Ok(http_client()?
+    Ok(crate::http::HTTP
+        .reqwest()
         .post(url)
         .header("Accept", "application/json")
         .form(&form)
@@ -193,7 +194,7 @@ async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse>
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
     let client_id = settings.github.oauth_client_id.trim();
-    let client = http_client()?;
+    let client = crate::http::HTTP.reqwest();
 
     loop {
         if chrono::Utc::now() >= deadline {
@@ -261,7 +262,8 @@ async fn refresh_token(cached: &CachedToken) -> Result<Option<CachedToken>> {
         "{}/access_token",
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
-    let response = http_client()?
+    let response = crate::http::HTTP
+        .reqwest()
         .post(url)
         .header("Accept", "application/json")
         .form(&[
@@ -392,14 +394,6 @@ fn api_host(oauth_api_url: &str) -> Option<String> {
 
 fn default_poll_interval() -> u64 {
     5
-}
-
-fn http_client() -> Result<reqwest::Client> {
-    let timeout = Settings::get().http_timeout();
-    Ok(reqwest::Client::builder()
-        .read_timeout(timeout)
-        .connect_timeout(timeout)
-        .build()?)
 }
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
