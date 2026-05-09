@@ -550,7 +550,11 @@ impl Toolset {
         }
         let mut missing = vec![];
         for tv in missing_versions.into_iter() {
-            if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Always {
+            // package.json package managers are project requirements even if the
+            // user has never installed that package manager with mise.
+            if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Always
+                || is_package_json_package_manager(&tv)
+            {
                 missing.push(tv);
                 continue;
             }
@@ -582,6 +586,17 @@ impl Toolset {
         !ba.is_os_supported()
             || !tool_enabled(enable_tools.as_ref(), &disable_tools, &ba.short.to_string())
     }
+}
+
+fn is_package_json_package_manager(tv: &ToolVersion) -> bool {
+    let ToolSource::IdiomaticVersionFile(path) = tv.request.source() else {
+        return false;
+    };
+    crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
+        && crate::config::config_file::idiomatic_version::package_json::has_package_manager_version(
+            path,
+            tv.short(),
+        )
 }
 
 impl Display for Toolset {

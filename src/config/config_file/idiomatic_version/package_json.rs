@@ -31,6 +31,10 @@ pub fn is_package_json(path: &Path) -> bool {
         .is_some_and(|file_name| file_name == "package.json")
 }
 
+pub fn has_package_manager_version(path: &Path, tool_name: &str) -> bool {
+    PackageJsonData::parse(path).is_ok_and(|pkg| pkg.package_manager_version(tool_name).is_some())
+}
+
 /// Deserialize a field that may be a single object or an array (take the first element).
 /// The npm devEngines spec allows both forms.
 fn deserialize_one_or_first<'de, D>(

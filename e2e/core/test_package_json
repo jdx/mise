@@ -43,6 +43,21 @@ EOF
 
 assert_contains "mise current pnpm" "10."
 
+# Test devEngines.packageManager warns when the package manager is missing
+cat >package.json <<'EOF'
+{
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "10.33.0",
+      "onFail": "error"
+    }
+  }
+}
+EOF
+
+assert_contains "mise hook-env -s bash --force 2>&1" "missing: pnpm@10.33.0"
+
 # Test package.json with no relevant fields doesn't break anything
 cat >package.json <<'EOF'
 {
