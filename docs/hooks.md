@@ -34,13 +34,22 @@ leave = { run = "echo 'I left the project'" }
 ## Preinstall/postinstall hook
 
 These hooks are run before and after tools are installed (respectively). Unlike other hooks, these hooks do not require `mise activate`.
-They run in spawned subprocesses and do not support `shell`.
+They run in spawned subprocesses.
 
 ```toml
 [hooks]
 preinstall = { run = "echo 'I am about to install tools'" }
 postinstall = { run = "echo 'I just installed tools'" }
 ```
+
+String hooks are shorthand for `run` hooks. Use a hook table when you need to select the spawned shell command:
+
+```toml
+[hooks]
+postinstall = { run = "echo 'installed'", shell = "bash -c" }
+```
+
+For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the spawned shell. The `script` alias for spawned hooks is deprecated starting in mise `2026.9.0` and will be removed in `2027.3.0`.
 
 The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed:
 
@@ -126,11 +135,12 @@ Hooks are executed with the following environment variables set:
 - `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed (only for `postinstall` hooks).
 
 Subprocess hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
-(`enter = "echo hi"`) is also executed as a subprocess.
+(`enter = "echo hi"`) is also executed as a subprocess. Add `shell = "bash -c"` to a `run`
+hook table to choose the spawned shell command.
 
 ## Shell hooks
 
-Hooks can be executed in the current shell, for example if you'd like to add bash completions when entering a directory:
+`enter`, `leave`, and `cd` hooks can be executed in the current shell, for example if you'd like to add bash completions when entering a directory:
 
 ```toml
 [hooks.enter]
@@ -138,7 +148,7 @@ shell = "bash"
 script = "source completions.sh"
 ```
 
-`script` is for shell hooks. Use `run` when the hook should execute in a spawned subprocess.
+`script` with `shell` is for current-shell hooks. Use `run` when the hook should execute in a spawned subprocess.
 
 ::: warning
 I feel this should be obvious but in case it's not, this isn't going to do any sort of cleanup
@@ -158,7 +168,7 @@ You can use arrays to define multiple hooks in the same file:
 ```toml
 [hooks]
 enter = [
-  { run = "echo 'I entered the project'" },
+  "echo 'I entered the project'",
   { run = "echo 'I am in the project'" }
 ]
 

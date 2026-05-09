@@ -2034,6 +2034,10 @@
               "run": {
                 "description": "command to run in a spawned subprocess",
                 "type": "string"
+              },
+              "shell": {
+                "description": "shell command to use for spawned run hooks, such as \"bash -c\"",
+                "type": "string"
               }
             },
             "required": ["run"],
@@ -2043,11 +2047,11 @@
             "unevaluatedProperties": false,
             "properties": {
               "script": {
-                "description": "script to run in the active shell",
+                "description": "current-shell script for enter/leave/cd hooks, or deprecated spawned-run alias for install hooks",
                 "type": "string"
               },
               "shell": {
-                "description": "specify the shell to run the script inside of",
+                "description": "current shell for enter/leave/cd hooks; ignored for install hooks that use script",
                 "type": "string"
               }
             },
@@ -2079,6 +2083,10 @@
                     "run": {
                       "description": "command to run in a spawned subprocess",
                       "type": "string"
+                    },
+                    "shell": {
+                      "description": "shell command to use for spawned run hooks, such as \"bash -c\"",
+                      "type": "string"
                     }
                   },
                   "required": ["run"],
@@ -2088,11 +2096,11 @@
                   "unevaluatedProperties": false,
                   "properties": {
                     "script": {
-                      "description": "script to run in the active shell",
+                      "description": "current-shell script for enter/leave/cd hooks, or deprecated spawned-run alias for install hooks",
                       "type": "string"
                     },
                     "shell": {
-                      "description": "specify the shell to run the script inside of",
+                      "description": "current shell for enter/leave/cd hooks; ignored for install hooks that use script",
                       "type": "string"
                     }
                   },
