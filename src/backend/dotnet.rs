@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::{VersionInfo, include_prereleases};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
@@ -107,7 +107,12 @@ impl Backend for DotnetBackend {
     }
 
     fn include_prereleases(&self, opts: &ToolVersionOptions) -> bool {
-        include_prereleases(opts) || dotnet_legacy_prerelease_package_flag_enabled()
+        if Settings::get().prereleases {
+            return true;
+        }
+
+        opts.opts.get("prerelease").is_some_and(tool_option_bool)
+            || dotnet_legacy_prerelease_package_flag_enabled()
     }
 }
 
@@ -153,6 +158,14 @@ fn dotnet_legacy_prerelease_package_flag_enabled() -> bool {
         );
     }
     enabled
+}
+
+fn tool_option_bool(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::Boolean(b) => *b,
+        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
+        _ => false,
+    }
 }
 
 #[derive(serde::Deserialize)]

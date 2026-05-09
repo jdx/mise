@@ -640,29 +640,30 @@ mod tests {
     fn test_include_prereleases_accepts_bool_and_string_values() {
         use crate::toolset::ToolVersionOptions;
 
+        let backend = TestBackend::default();
         let mut opts = ToolVersionOptions::default();
-        assert!(!include_prereleases(&opts));
+        assert!(!backend.include_prereleases(&opts));
 
         // Inline backend args normalize scalars to strings — cover that shape.
         opts.opts
             .insert("prerelease".to_string(), toml::Value::String("true".into()));
-        assert!(include_prereleases(&opts));
+        assert!(backend.include_prereleases(&opts));
 
         opts.opts.insert(
             "prerelease".to_string(),
             toml::Value::String("false".into()),
         );
-        assert!(!include_prereleases(&opts));
+        assert!(!backend.include_prereleases(&opts));
 
         // Defense-in-depth: also accept a native TOML boolean, in case a future
         // config path stores the value without string normalization.
         opts.opts
             .insert("prerelease".to_string(), toml::Value::Boolean(true));
-        assert!(include_prereleases(&opts));
+        assert!(backend.include_prereleases(&opts));
 
         opts.opts
             .insert("prerelease".to_string(), toml::Value::Boolean(false));
-        assert!(!include_prereleases(&opts));
+        assert!(!backend.include_prereleases(&opts));
     }
 
     #[test]
@@ -671,9 +672,10 @@ mod tests {
         use crate::toolset::ToolVersionOptions;
         use confique::Layer;
 
+        let backend = TestBackend::default();
         let opts = ToolVersionOptions::default();
         // Sanity: with no per-tool opt and no setting, prereleases stay filtered.
-        assert!(!include_prereleases(&opts));
+        assert!(!backend.include_prereleases(&opts));
 
         // Flipping the global setting takes effect without any per-tool config —
         // this is the path `MISE_PRERELEASES=1` and `mise ls-remote --prerelease`
@@ -681,9 +683,44 @@ mod tests {
         let mut partial = SettingsPartial::empty();
         partial.prereleases = Some(true);
         Settings::reset(Some(partial));
-        let res = include_prereleases(&opts);
+        let res = backend.include_prereleases(&opts);
         Settings::reset(None);
         assert!(res);
+    }
+
+    #[derive(Debug)]
+    struct TestBackend {
+        ba: Arc<BackendArg>,
+    }
+
+    impl Default for TestBackend {
+        fn default() -> Self {
+            Self {
+                ba: Arc::new("test".into()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Backend for TestBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            Ok(vec![])
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            tv: ToolVersion,
+        ) -> Result<ToolVersion> {
+            Ok(tv)
+        }
     }
 }
 
@@ -772,7 +809,15 @@ pub trait Backend: Debug + Send + Sync {
     /// current tool options. Backends can override this only for compatibility
     /// with deprecated backend-specific prerelease settings.
     fn include_prereleases(&self, opts: &crate::toolset::ToolVersionOptions) -> bool {
-        include_prereleases(opts)
+        if Settings::get().prereleases {
+            return true;
+        }
+
+        if let Some(value) = opts.opts.get("prerelease") {
+            return tool_option_bool(value);
+        }
+
+        false
     }
 
     /// Tool option keys whose non-registry overrides change the backend's
@@ -2555,26 +2600,6 @@ pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
         version.prerelease = true;
     }
     version
-}
-
-/// Whether pre-release versions should be included for the current tool.
-///
-/// Returns true if either the global `prereleases` setting (`MISE_PRERELEASES=1`,
-/// or `--prerelease` on `ls-remote`) is on, or the per-tool `prerelease = true`
-/// option is set. Accepts both TOML booleans (`prerelease = true`) and the
-/// string form (`prerelease = "true"`), since inline backend args normalize
-/// scalars to strings before they reach here. Used by backends to opt in to
-/// pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching.
-pub(crate) fn include_prereleases(opts: &crate::toolset::ToolVersionOptions) -> bool {
-    if Settings::get().prereleases {
-        return true;
-    }
-
-    if let Some(value) = opts.opts.get("prerelease") {
-        return tool_option_bool(value);
-    }
-
-    false
 }
 
 fn tool_option_bool(value: &toml::Value) -> bool {
