@@ -34,7 +34,7 @@ pub fn package_ids() -> Vec<&'static str> {
 }
 
 pub fn package(package_id: &str) -> Option<Result<AquaPackage>> {
-    baked_registry_file(package_id).map(|content| decode_baked_package(package_id, content))
+    baked_registry_file(package_id).map(|content| decode_package_rkyv(package_id, content))
 }
 
 fn baked_registry_file(package_id: &str) -> Option<&'static [u8]> {
@@ -46,10 +46,6 @@ fn baked_registry_file(package_id: &str) -> Option<&'static [u8]> {
         .get(package_id)
         .and_then(|canonical| AQUA_STANDARD_REGISTRY_FILES.get(*canonical))
         .copied()
-}
-
-fn decode_baked_package(package_id: &str, bytes: &[u8]) -> Result<AquaPackage> {
-    decode_package_rkyv(package_id, bytes)
 }
 
 #[cfg(test)]

@@ -215,3 +215,47 @@ pub fn aqua_suggest(query: &str) -> Vec<String> {
 pub use aqua_registry::{
     AquaChecksum, AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage, AquaPackageType,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn test_fetcher(cache_dir: PathBuf, use_baked_registry: bool) -> MiseRegistryFetcher {
+        MiseRegistryFetcher {
+            config: AquaRegistryConfig {
+                cache_dir,
+                registry_url: Some("https://example.com/custom-aqua-registry".to_string()),
+                use_baked_registry,
+                prefer_offline: false,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn test_custom_registry_falls_back_to_baked_registry_when_enabled() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(temp.path().join(".git")).unwrap();
+
+        let package = test_fetcher(temp.path().to_path_buf(), true)
+            .fetch_package("01mf02/jaq")
+            .await
+            .unwrap();
+
+        assert_eq!(package.repo_owner, "01mf02");
+        assert_eq!(package.repo_name, "jaq");
+    }
+
+    #[tokio::test]
+    async fn test_custom_registry_does_not_fall_back_when_baked_registry_disabled() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(temp.path().join(".git")).unwrap();
+
+        let err = test_fetcher(temp.path().to_path_buf(), false)
+            .fetch_package("01mf02/jaq")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AquaRegistryError::RegistryNotAvailable(_)));
+    }
+}

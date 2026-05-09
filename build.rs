@@ -2,14 +2,12 @@ use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use serde::Serialize as _;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use aqua_registry::encode_package_rkyv;
 use aqua_registry::types::{AquaPackage, RegistryPackageRow, RegistryYaml};
-use eyre::{Result, WrapErr, eyre};
+use eyre::{Result, eyre};
 use serde_yaml::Value;
 
 fn main() -> Result<()> {
@@ -19,11 +17,11 @@ fn main() -> Result<()> {
         linux: { target_os = "linux" },
         vfox: { any(feature = "vfox", target_os = "windows") },
     }
-    built::write_built_file().wrap_err("Failed to acquire build-time information")?;
+    built::write_built_file()?;
 
     codegen_settings();
     codegen_registry();
-    codegen_aqua_standard_registry().wrap_err("failed to generate baked aqua standard registry")?;
+    codegen_aqua_standard_registry()?;
     Ok(())
 }
 
@@ -323,30 +321,19 @@ fn codegen_registry() {
 }
 
 fn codegen_aqua_standard_registry() -> Result<()> {
-    let out_dir = env::var("OUT_DIR").wrap_err("OUT_DIR environment variable must be set")?;
+    let out_dir = env::var("OUT_DIR")?;
     let files_dest_path = Path::new(&out_dir).join("aqua_standard_registry_files.rs");
     let aliases_dest_path = Path::new(&out_dir).join("aqua_standard_registry_aliases.rs");
     let metadata_dest_path = Path::new(&out_dir).join("aqua_standard_registry_metadata.rs");
     let packages_dir = Path::new(&out_dir).join("aqua_standard_registry_packages");
 
-    let registry_file = aqua_registry_file("registry.yml");
-    let metadata_file = aqua_registry_file("metadata.json");
+    let registry_file = Path::new("vendor/aqua-registry/registry.yml");
+    let metadata_file = Path::new("vendor/aqua-registry/metadata.json");
 
     println!("cargo:rerun-if-changed={}", registry_file.display());
     println!("cargo:rerun-if-changed={}", metadata_file.display());
 
-    let content = fs::read_to_string(&registry_file).wrap_err_with(|| {
-        format!(
-            "Failed to read aqua registry file {}",
-            registry_file.display()
-        )
-    })?;
-    let registry_yaml = serde_yaml::from_str::<RegistryYaml>(&content).wrap_err_with(|| {
-        format!(
-            "Failed to parse aqua registry file {} as RegistryYaml",
-            registry_file.display()
-        )
-    })?;
+    let registry_yaml = serde_yaml::from_str::<RegistryYaml>(&fs::read_to_string(registry_file)?)?;
 
     let registries = aqua_package_registries(&registry_yaml.packages)?;
     if registries.is_empty() {
@@ -356,27 +343,14 @@ fn codegen_aqua_standard_registry() -> Result<()> {
         ));
     }
 
-    fs::create_dir_all(&packages_dir).wrap_err("Failed to create baked registry package dir")?;
+    fs::create_dir_all(&packages_dir)?;
     fs::write(
         files_dest_path,
         aqua_registry_files_code(&registries, &packages_dir)?,
-    )
-    .wrap_err("Failed to write baked registry files")?;
-    fs::write(aliases_dest_path, aqua_registry_aliases_code(&registries))
-        .wrap_err("Failed to write baked registry aliases")?;
+    )?;
+    fs::write(aliases_dest_path, aqua_registry_aliases_code(&registries))?;
 
-    let metadata_content = fs::read_to_string(&metadata_file).wrap_err_with(|| {
-        format!(
-            "Failed to read aqua registry metadata file {}",
-            metadata_file.display()
-        )
-    })?;
-    let metadata = serde_yaml::from_str::<Value>(&metadata_content).wrap_err_with(|| {
-        format!(
-            "Failed to parse aqua registry metadata file {}",
-            metadata_file.display()
-        )
-    })?;
+    let metadata = serde_yaml::from_str::<Value>(&fs::read_to_string(metadata_file)?)?;
     let repository = yaml_string_field(&metadata, "repository").ok_or_else(|| {
         eyre!(
             "Aqua registry metadata file {} does not contain a repository",
@@ -393,8 +367,7 @@ fn codegen_aqua_standard_registry() -> Result<()> {
     fs::write(
         metadata_dest_path,
         format!("AquaRegistryMetadata {{ repository: {repository:?}, tag: {tag:?} }}"),
-    )
-    .wrap_err("Failed to write baked registry metadata")?;
+    )?;
 
     Ok(())
 }
@@ -406,8 +379,7 @@ fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackag
         let Some(id) = aqua_canonical_package_id(package) else {
             continue;
         };
-        let content = encode_package_rkyv(package)
-            .wrap_err_with(|| format!("Failed to encode baked package {id}"))?;
+        let content = encode_package_rkyv(package)?;
         registries.push(AquaPackageRegistry {
             id,
             content,
@@ -434,10 +406,7 @@ fn aqua_registry_files_code(
             }
             let filename = format!("{stem}.rkyv");
             let path = packages_dir.join(filename);
-            let mut file = File::create(&path)
-                .wrap_err_with(|| format!("Failed to write baked package {}", path.display()))?;
-            file.write_all(&registry.content)
-                .wrap_err_with(|| format!("Failed to write baked package {}", path.display()))?;
+            fs::write(&path, &registry.content)?;
             Ok((registry.id.clone(), path))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -458,6 +427,8 @@ fn aqua_registry_bytes_map_code(entries: &[(String, PathBuf)]) -> String {
     code
 }
 
+/// Hashes the canonical package ID with FNV-1a 64-bit to generate compact,
+/// deterministic baked package filenames without leaking path separators.
 fn aqua_package_file_stem(id: &str) -> String {
     let mut hash = 0xcbf29ce484222325u64;
     for byte in id.as_bytes() {
@@ -513,10 +484,6 @@ fn aqua_canonical_package_id(package: &AquaPackage) -> Option<String> {
 
 fn yaml_string_field(value: &Value, key: &str) -> Option<String> {
     value.get(key)?.as_str().map(str::to_string)
-}
-
-fn aqua_registry_file(file_name: &str) -> PathBuf {
-    Path::new("vendor").join("aqua-registry").join(file_name)
 }
 
 fn codegen_settings() {
