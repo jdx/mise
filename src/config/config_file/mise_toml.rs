@@ -30,7 +30,7 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::task::{Task, TaskTemplate};
+use crate::task::{RunEntry, Task, TaskPlatformOverride, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
@@ -1722,6 +1722,94 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
     }
 }
 
+/// Parse a platform subtable with `run`/`shell` keys into a platform override.
+fn parse_platform_override(val: &toml::Value) -> eyre::Result<TaskPlatformOverride> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PlatformOverride {
+        #[serde(default, deserialize_with = "deserialize_arr")]
+        run: Vec<RunEntry>,
+        #[serde(default)]
+        shell: Option<String>,
+    }
+
+    if let toml::Value::Table(t) = val {
+        if let Some(extra) = t
+            .keys()
+            .find(|key| !matches!(key.as_str(), "run" | "shell"))
+        {
+            return Err(eyre!("unknown field `{extra}`, expected `run` or `shell`"));
+        }
+        let platform: PlatformOverride = val
+            .clone()
+            .try_into()
+            .wrap_err("failed to deserialize platform override")?;
+        return Ok(TaskPlatformOverride {
+            run: t.contains_key("run").then_some(platform.run),
+            shell: platform.shell,
+        });
+    }
+
+    Err(eyre!(
+        "platform override must be a table with `run` and/or `shell`"
+    ))
+}
+
+fn split_platform_tasks(
+    table: toml::Table,
+) -> eyre::Result<(toml::Table, BTreeMap<String, TaskPlatformOverride>)> {
+    let mut platform_tasks = BTreeMap::new();
+    let mut task_table = toml::Table::new();
+    for (key, value) in table {
+        if crate::task::is_platform_key(&key) {
+            let platform = parse_platform_override(&value)?;
+            platform_tasks.insert(key, platform);
+        } else {
+            task_table.insert(key, value);
+        }
+    }
+    Ok((task_table, platform_tasks))
+}
+
+fn is_task_template_key(key: &str) -> bool {
+    matches!(
+        key,
+        "allow_env"
+            | "allow_net"
+            | "allow_read"
+            | "allow_write"
+            | "alias"
+            | "confirm"
+            | "deny_all"
+            | "deny_env"
+            | "deny_net"
+            | "deny_read"
+            | "deny_write"
+            | "depends"
+            | "depends_post"
+            | "description"
+            | "dir"
+            | "env"
+            | "file"
+            | "hide"
+            | "interactive"
+            | "outputs"
+            | "quiet"
+            | "raw"
+            | "raw_args"
+            | "run"
+            | "run_windows"
+            | "shell"
+            | "silent"
+            | "sources"
+            | "timeout"
+            | "tools"
+            | "usage"
+            | "vars"
+            | "wait_for"
+    )
+}
+
 impl<'de> de::Deserialize<'de> for Tasks {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -1776,14 +1864,26 @@ impl<'de> de::Deserialize<'de> for Tasks {
                                 }))
                             }
 
-                            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+                            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
                             where
                                 M: de::MapAccess<'de>,
                             {
-                                let t = de::Deserialize::deserialize(
-                                    de::value::MapAccessDeserializer::new(map),
-                                )?;
-                                Ok(TaskDef(t))
+                                let mut table = toml::Table::new();
+                                while let Some(key) = map.next_key::<String>()? {
+                                    let value = map.next_value::<toml::Value>()?;
+                                    table.insert(key, value);
+                                }
+
+                                let (task_table, platform_tasks) =
+                                    split_platform_tasks(table).map_err(de::Error::custom)?;
+
+                                let task_str =
+                                    toml::to_string(&task_table).map_err(de::Error::custom)?;
+                                let mut task: Task =
+                                    toml::from_str(&task_str).map_err(de::Error::custom)?;
+                                task.platform_tasks = platform_tasks;
+
+                                Ok(TaskDef(task))
                             }
                         }
                         deserializer.deserialize_any(TaskDefVisitor)
@@ -1822,7 +1922,27 @@ impl<'de> de::Deserialize<'de> for TaskTemplates {
             {
                 let mut templates = IndexMap::new();
                 while let Some(name) = map.next_key::<String>()? {
-                    let template: TaskTemplate = map.next_value()?;
+                    let value = map.next_value::<toml::Value>()?;
+                    let template: TaskTemplate = match value {
+                        toml::Value::Table(table) => {
+                            let (template_table, platform_tasks) =
+                                split_platform_tasks(table).map_err(de::Error::custom)?;
+                            if let Some(unknown) =
+                                template_table.keys().find(|key| !is_task_template_key(key))
+                            {
+                                return Err(de::Error::custom(format!(
+                                    "unknown field `{unknown}`"
+                                )));
+                            }
+                            let template_str =
+                                toml::to_string(&template_table).map_err(de::Error::custom)?;
+                            let mut template: TaskTemplate =
+                                toml::from_str(&template_str).map_err(de::Error::custom)?;
+                            template.platform_tasks = platform_tasks;
+                            template
+                        }
+                        value => value.try_into().map_err(de::Error::custom)?,
+                    };
                     templates.insert(name, template);
                 }
                 Ok(TaskTemplates(templates))

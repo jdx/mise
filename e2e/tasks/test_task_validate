@@ -11,6 +11,19 @@ EOF
 
 assert_contains "mise tasks validate" "✓ All 2 task(s) validated successfully"
 
+# Test that a platform override with empty run does not trigger no-execution on Linux
+cat <<EOF >mise.toml
+[tasks.default]
+run = "echo default"
+
+[tasks.default.linux]
+run = []
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_not_contains "mise tasks validate 2>&1 || true" "no-execution"
+fi
+
 # Test circular dependency detection
 cat <<EOF >mise.toml
 [tasks.a]
@@ -136,6 +149,58 @@ assert_contains "mise tasks validate --json 2>&1 || true" '"tasks_validated": 2'
 assert_contains "mise tasks validate --json 2>&1 || true" '"errors": 1'
 assert_contains "mise tasks validate --json 2>&1 || true" '"category": "missing-dependency"'
 
+# Test non-current platform run references are validated
+cat <<EOF >mise.toml
+[tasks.helper]
+run = "echo helper"
+
+[tasks.foo]
+run = "echo foo"
+
+[tasks.foo.windows]
+run = { task = "missing-task" }
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "missing-task"
+assert_contains "mise tasks validate 2>&1 || true" "missing-task-reference"
+
+# Test current shell absolute paths are validated
+cat <<EOF >mise.toml
+[tasks.bad-shell]
+run = "echo bad"
+shell = "/definitely/not/mise-shell -c"
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "invalid-shell"
+assert_contains "mise tasks validate 2>&1 || true" "Shell command not found"
+
+# Test non-current platform shell paths are syntax-checked but not required locally
+cat <<EOF >mise.toml
+[tasks.platform-shell]
+run = "echo ok"
+
+[tasks.platform-shell.macos]
+shell = "/definitely/not/macos-shell -c"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise tasks validate" "✓ All 1 task(s) validated successfully"
+fi
+
+# Test a selected platform shell suppresses base-shell path validation
+cat <<EOF >mise.toml
+[tasks.platform-shell-override]
+run = "echo ok"
+shell = "/definitely/not/base-shell -c"
+
+[tasks.platform-shell-override.linux]
+shell = "bash -c"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise tasks validate" "✓ All 1 task(s) validated successfully"
+fi
+
 # Test errors-only flag
 cat <<EOF >mise.toml
 [tasks.error-task]
@@ -178,6 +243,8 @@ EOF
 
 assert_contains "mise tasks validate filetask" "✓ All 1 task(s) validated successfully"
 
+rm -rf mise-tasks
+
 # Test missing file
 cat <<EOF >mise.toml
 [tasks.missing-file]
@@ -187,8 +254,21 @@ EOF
 assert_contains "mise tasks validate 2>&1 || true" "Task file not found"
 assert_contains "mise tasks validate 2>&1 || true" "missing-file"
 
+# Test selected platform run suppresses file validation on that platform
+cat <<EOF >mise.toml
+[tasks.file-platform-override]
+file = "./does-not-exist.sh"
+
+[tasks.file-platform-override.linux]
+run = "echo platform"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise tasks validate" "✓ All 1 task(s) validated successfully"
+fi
+
 # Clean up before next test
-rm -rf mise-tasks non-executable.sh
+rm -f non-executable.sh
 
 # Test that run entries can reference tasks by alias (not just by name)
 cat <<'EOF' >mise.toml

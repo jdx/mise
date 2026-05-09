@@ -791,7 +791,8 @@ impl Run {
     fn validate_task(&self, task: &Task) -> Result<()> {
         use crate::file;
         use crate::ui;
-        if let Some(path) = &task.file
+        if task.selected_platform_run().is_none()
+            && let Some(path) = &task.file
             && path.exists()
             && !file::is_executable(path)
         {

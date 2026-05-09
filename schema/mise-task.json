@@ -36,6 +36,11 @@
               }
             }
           ],
+          "patternProperties": {
+            "^(linux|macos|windows)(/(x64|arm64))?$": {
+              "$ref": "#/$defs/task_platform_override"
+            }
+          },
           "unevaluatedProperties": false,
           "type": "object"
         }
@@ -239,30 +244,10 @@
           "type": "boolean"
         },
         "run": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/task_run_entry"
-            },
-            {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/task_run_entry"
-              }
-            }
-          ]
+          "$ref": "#/$defs/task_run"
         },
         "run_windows": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/task_run_entry"
-            },
-            {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/task_run_entry"
-              }
-            }
-          ]
+          "$ref": "#/$defs/task_run"
         },
         "file": {
           "description": "Execute an external script",
@@ -351,6 +336,20 @@
         }
       },
       "type": "object"
+    },
+    "task_platform_override": {
+      "description": "platform-specific task run and shell override",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "run": {
+          "$ref": "#/$defs/task_run"
+        },
+        "shell": {
+          "description": "platform-specific shell command to run the script with",
+          "type": "string"
+        }
+      }
     },
     "env": {
       "additionalProperties": {
@@ -661,6 +660,55 @@
         "type": "string"
       }
     },
+    "task_run": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/task_run_entry"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/task_run_entry"
+          }
+        }
+      ]
+    },
+    "task_dependency_item": {
+      "description": "task name and args",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "task": {
+              "type": "string"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["task"],
+          "unevaluatedProperties": false
+        }
+      ]
+    },
     "task_run_entry": {
       "oneOf": [
         {
@@ -706,42 +754,6 @@
             }
           },
           "required": ["tasks"]
-        }
-      ]
-    },
-    "task_dependency_item": {
-      "description": "task name and args",
-      "oneOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        {
-          "type": "object",
-          "properties": {
-            "task": {
-              "type": "string"
-            },
-            "args": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "env": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
-            }
-          },
-          "required": ["task"],
-          "unevaluatedProperties": false
         }
       ]
     },

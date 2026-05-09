@@ -733,7 +733,11 @@ impl Settings {
     }
 
     pub fn default_inline_shell(&self) -> Result<Vec<String>> {
-        let sa = if cfg!(windows) {
+        self.default_inline_shell_for_os(self.host_os())
+    }
+
+    pub fn default_inline_shell_for_os(&self, os: &str) -> Result<Vec<String>> {
+        let sa = if os == "windows" {
             &self.windows_default_inline_shell_args
         } else {
             &self.unix_default_inline_shell_args
@@ -742,7 +746,11 @@ impl Settings {
     }
 
     pub fn default_file_shell(&self) -> Result<Vec<String>> {
-        let sa = if cfg!(windows) {
+        self.default_file_shell_for_os(self.host_os())
+    }
+
+    pub fn default_file_shell_for_os(&self, os: &str) -> Result<Vec<String>> {
+        let sa = if os == "windows" {
             &self.windows_default_file_shell_args
         } else {
             &self.unix_default_file_shell_args
@@ -751,20 +759,19 @@ impl Settings {
     }
 
     pub fn os(&self) -> &str {
-        match self.os.as_deref().unwrap_or(OS) {
-            "darwin" | "macos" => "macos",
-            "linux" => "linux",
-            "windows" => "windows",
-            other => other,
-        }
+        normalize_os(self.os.as_deref().unwrap_or(OS))
     }
 
     pub fn arch(&self) -> &str {
-        match self.arch.as_deref().unwrap_or(ARCH) {
-            "x86_64" | "amd64" => "x64",
-            "aarch64" | "arm64" => "arm64",
-            other => other,
-        }
+        normalize_arch(self.arch.as_deref().unwrap_or(ARCH))
+    }
+
+    pub fn host_os(&self) -> &'static str {
+        normalize_os(OS)
+    }
+
+    pub fn host_arch(&self) -> &'static str {
+        normalize_arch(ARCH)
     }
 
     pub fn libc(&self) -> Option<&str> {
@@ -806,6 +813,23 @@ impl Settings {
                     .iter()
                     .take_while(|a| *a != "--")
                     .any(|a| a == "--no-hooks")
+    }
+}
+
+fn normalize_os(os: &str) -> &str {
+    match os {
+        "darwin" | "macos" => "macos",
+        "linux" => "linux",
+        "windows" => "windows",
+        other => other,
+    }
+}
+
+fn normalize_arch(arch: &str) -> &str {
+    match arch {
+        "x86_64" | "amd64" => "x64",
+        "aarch64" | "arm64" => "arm64",
+        other => other,
     }
 }
 

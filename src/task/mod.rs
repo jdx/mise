@@ -112,7 +112,7 @@ impl TaskToolValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum RunEntry {
     /// Shell script entry
     Script(String),
@@ -126,6 +126,12 @@ pub enum RunEntry {
     },
     /// Run multiple tasks in parallel
     TaskGroup { tasks: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TaskPlatformOverride {
+    pub run: Option<Vec<RunEntry>>,
+    pub shell: Option<String>,
 }
 
 impl std::hash::Hash for RunEntry {
@@ -347,6 +353,19 @@ impl Display for RunEntry {
     }
 }
 
+/// Valid platform spec patterns: `linux`, `macos`, `windows`, `linux/x64`, etc.
+pub fn is_platform_key(key: &str) -> bool {
+    let valid_os = ["linux", "macos", "windows"];
+    if valid_os.contains(&key) {
+        return true;
+    }
+    if let Some((os, arch)) = key.split_once('/') {
+        let valid_arch = ["x64", "arm64"];
+        return valid_os.contains(&os) && valid_arch.contains(&arch);
+    }
+    false
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
@@ -432,6 +451,11 @@ pub struct Task {
 
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub run_windows: Vec<RunEntry>,
+
+    /// Resolved platform-specific task overrides, populated post-deserialization.
+    /// Key: platform spec ("linux", "macos", "windows", "linux/x64", etc.)
+    #[serde(skip)]
+    pub platform_tasks: BTreeMap<String, TaskPlatformOverride>,
 
     // command type
     // pub command: Option<String>,
@@ -773,12 +797,46 @@ impl Task {
         format!("[{}]", console::truncate_str(&inner, max_width, "…"))
     }
 
-    pub fn run(&self) -> &Vec<RunEntry> {
-        if cfg!(windows) && !self.run_windows.is_empty() {
-            &self.run_windows
-        } else {
-            &self.run
+    fn selected_platform_value<'a, T>(
+        &'a self,
+        get: impl Fn(&'a TaskPlatformOverride) -> Option<&'a T>,
+    ) -> Option<&'a T> {
+        let settings = crate::config::settings::Settings::get();
+        let os = settings.host_os();
+        let arch = settings.host_arch();
+
+        // 1. Platform-specific: <os>/<arch> (most specific)
+        let key = format!("{}/{}", os, arch);
+        if let Some(value) = self.platform_tasks.get(&key).and_then(&get) {
+            return Some(value);
         }
+
+        // 2. OS-level: <os> (applies to all arches)
+        self.platform_tasks.get(os).and_then(get)
+    }
+
+    pub fn selected_platform_run(&self) -> Option<&Vec<RunEntry>> {
+        self.selected_platform_value(|platform| platform.run.as_ref())
+    }
+
+    fn selected_platform_shell(&self) -> Option<&String> {
+        self.selected_platform_value(|platform| platform.shell.as_ref())
+    }
+
+    pub fn run(&self) -> &Vec<RunEntry> {
+        if let Some(run_entries) = self.selected_platform_run() {
+            return run_entries;
+        }
+
+        // Legacy run_windows (backward compat)
+        if crate::config::settings::Settings::get().host_os() == "windows"
+            && !self.run_windows.is_empty()
+        {
+            return &self.run_windows;
+        }
+
+        // Default
+        &self.run
     }
 
     /// Returns only the script strings from the run entries (without rendering)
@@ -959,7 +1017,9 @@ impl Task {
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<(usage::Spec, Vec<String>)> {
-        let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
+        let (mut spec, scripts) = if self.selected_platform_run().is_none()
+            && let Some(file) = self.file_path(config).await?
+        {
             let spec = usage::Spec::parse_script(&file)
                 .inspect_err(|e| {
                     warn!(
@@ -994,7 +1054,9 @@ impl Task {
     /// Parse usage spec for display purposes without expensive environment rendering
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
-        let mut spec = if let Some(file) = self.file_path(config).await? {
+        let mut spec = if self.selected_platform_run().is_none()
+            && let Some(file) = self.file_path(config).await?
+        {
             usage::Spec::parse_script(&file)
                 .inspect_err(|e| {
                     warn!(
@@ -1239,7 +1301,8 @@ impl Task {
     }
 
     pub fn shell(&self) -> eyre::Result<Option<Vec<String>>> {
-        let Some(shell) = self.shell.as_ref() else {
+        let shell = self.selected_platform_shell().or(self.shell.as_ref());
+        let Some(shell) = shell else {
             return Ok(None);
         };
         // A malformed explicit shell (e.g. an unbalanced quote in a path with
@@ -1317,6 +1380,7 @@ impl Task {
         self.depends.extend(other.depends);
         self.depends_post.extend(other.depends_post);
         self.wait_for.extend(other.wait_for);
+        self.platform_tasks.extend(other.platform_tasks);
         if other.dir.is_some() {
             self.dir = other.dir;
         }
@@ -1413,6 +1477,12 @@ impl Task {
                 .shell
                 .as_ref()
                 .is_some_and(|s| contains_template_syntax(s))
+            || self.platform_tasks.values().any(|platform| {
+                platform
+                    .shell
+                    .as_ref()
+                    .is_some_and(|s| contains_template_syntax(s))
+            })
             || self.allow_read.iter().any(|p| path_contains_template(p))
             || self.allow_write.iter().any(|p| path_contains_template(p))
             || tools_have_template
@@ -1495,6 +1565,13 @@ impl Task {
             && contains_template_syntax(shell)
         {
             *shell = render_str(&mut tera, shell, &tera_ctx)?;
+        }
+        for platform in self.platform_tasks.values_mut() {
+            if let Some(shell) = &mut platform.shell
+                && contains_template_syntax(shell)
+            {
+                *shell = render_str(&mut tera, shell, &tera_ctx)?;
+            }
         }
         let mut render_sandbox_paths = |paths: &mut Vec<PathBuf>| -> Result<()> {
             let mut rendered = Vec::with_capacity(paths.len());
@@ -1891,6 +1968,7 @@ impl Default for Task {
             depends_raw: None,
             depends_post_raw: None,
             wait_for_raw: None,
+            platform_tasks: BTreeMap::new(),
         }
     }
 }
@@ -2254,12 +2332,13 @@ pub async fn parse_usage_values_from_task(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::sync::Mutex;
 
-    use crate::task::Task;
+    use crate::task::{Task, TaskPlatformOverride};
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
@@ -2333,6 +2412,29 @@ mod tests {
 
         assert_eq!(task.allow_read, vec![crate::env::HOME.join("read")]);
         assert_eq!(task.allow_write, vec![crate::env::HOME.join("write")]);
+    }
+
+    #[tokio::test]
+    async fn test_render_platform_shell() {
+        let config = Config::get().await.unwrap();
+        let mut task = Task {
+            platform_tasks: BTreeMap::from([(
+                "linux".to_string(),
+                TaskPlatformOverride {
+                    run: None,
+                    shell: Some("{{ env.HOME }}/bin/bash -c".to_string()),
+                },
+            )]),
+            ..Default::default()
+        };
+
+        task.render(&config, Path::new(".")).await.unwrap();
+
+        let expected = format!("{}/bin/bash -c", crate::env::HOME.display());
+        assert_eq!(
+            task.platform_tasks["linux"].shell.as_deref(),
+            Some(expected.as_str())
+        );
     }
 
     #[test]

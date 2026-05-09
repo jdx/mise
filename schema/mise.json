@@ -1859,6 +1859,33 @@
         }
       ]
     },
+    "task_run": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/task_run_entry"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/task_run_entry"
+          }
+        }
+      ]
+    },
+    "task_platform_override": {
+      "description": "platform-specific task run and shell override",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "run": {
+          "$ref": "#/$defs/task_run"
+        },
+        "shell": {
+          "description": "platform-specific shell command to run the script with",
+          "type": "string"
+        }
+      }
+    },
     "task": {
       "oneOf": [
         {
@@ -1887,6 +1914,11 @@
               }
             }
           ],
+          "patternProperties": {
+            "^(linux|macos|windows)(/(x64|arm64))?$": {
+              "$ref": "#/$defs/task_platform_override"
+            }
+          },
           "unevaluatedProperties": false,
           "type": "object"
         }
@@ -2513,30 +2545,10 @@
           "type": "boolean"
         },
         "run": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/task_run_entry"
-            },
-            {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/task_run_entry"
-              }
-            }
-          ]
+          "$ref": "#/$defs/task_run"
         },
         "run_windows": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/task_run_entry"
-            },
-            {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/task_run_entry"
-              }
-            }
-          ]
+          "$ref": "#/$defs/task_run"
         },
         "file": {
           "description": "Execute an external script",
@@ -2633,6 +2645,11 @@
           "$ref": "#/$defs/task_props"
         }
       ],
+      "patternProperties": {
+        "^(linux|macos|windows)(/(x64|arm64))?$": {
+          "$ref": "#/$defs/task_platform_override"
+        }
+      },
       "unevaluatedProperties": false,
       "type": "object"
     }

@@ -37,17 +37,52 @@ run = "echo hello"
 run = ["echo hello"]
 ```
 
-### `run_windows`
+### Platform-specific overrides
 
-- **Type**: `string | (string | { task: string, args?: string[], env?: { [key]: string } } | { tasks: string[] })[]`
+You can define OS-specific or platform-specific variants of `run` and `shell` using
+dot-syntax sub-tables. If a matching platform override exists it takes precedence;
+the base `run` value is the fallback for all unmatched platforms.
 
-Windows-specific variant of `run` supporting the same structured syntax:
+**Platform keys**: `linux`, `macos`, `windows`, or `<os>/<arch>` (e.g. `linux/x64`,
+`linux/arm64`, `macos/x64`, `macos/arm64`, `windows/x64`, `windows/arm64`).
+Task platform matching uses the host OS/architecture, not `MISE_OS`/`MISE_ARCH`
+overrides used for tool binary selection.
+
+**Matching order** (most specific wins, evaluated independently for `run` and
+`shell`):
+
+1. `<os>/<arch>` — exact platform (e.g. `linux/x64`)
+2. `<os>` — all architectures on that OS (e.g. `linux`, `macos`)
+3. Base `run` — everything else
 
 ```mise-toml
 [tasks.build]
 run = "cargo build"
-run_windows = "cargo build --features windows"
+
+[tasks.build.linux]
+run = "cargo build --release"
+
+[tasks.build."linux/x64"]
+run = "cargo build --target x86_64-unknown-linux-gnu"
+
+[tasks.build.windows]
+run = "cargo build --features windows"
+shell = "pwsh -Command"
 ```
+
+All other task fields (`description`, `depends`, `env`, `dir`, etc.) are inherited
+from the base task definition. Platform subtables only support `run` and `shell`;
+put run entries under the subtable's `run` key.
+
+If `shell` is omitted, inline tasks use [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
+by default. Windows-specific tasks use [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
+when selected.
+
+For file-backed tasks, a selected platform-specific `run` overrides the `file`
+execution on that platform.
+
+> **Deprecated**: `run_windows` is still supported for backward compatibility
+> but is equivalent to `[tasks.<name>.windows]`. Prefer the new platform-specific syntax.
 
 ### `description`
 

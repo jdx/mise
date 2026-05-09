@@ -1,9 +1,12 @@
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::deserialize_arr;
 use crate::task::task_sources::TaskOutputs;
-use crate::task::{RunEntry, Silent, Task, TaskConfirm, TaskDep, TaskToolValue};
+use crate::task::{
+    RunEntry, Silent, Task, TaskConfirm, TaskDep, TaskPlatformOverride, TaskToolValue,
+};
 use indexmap::IndexMap;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 /// A task template definition that can be extended by tasks via `extends`
 /// Templates are defined in [task_templates.*] sections of mise.toml
@@ -32,6 +35,10 @@ pub struct TaskTemplate {
     #[serde(default)]
     pub raw: Option<bool>,
     #[serde(default)]
+    pub raw_args: Option<bool>,
+    #[serde(default)]
+    pub interactive: Option<bool>,
+    #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
@@ -51,6 +58,8 @@ pub struct TaskTemplate {
     pub run: Vec<RunEntry>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub run_windows: Vec<RunEntry>,
+    #[serde(skip)]
+    pub platform_tasks: BTreeMap<String, TaskPlatformOverride>,
     #[serde(default)]
     pub file: Option<String>,
     /// Block reads, writes, network, and env vars
@@ -82,12 +91,24 @@ pub struct TaskTemplate {
     pub allow_env: Vec<String>,
 }
 
+fn platform_key_covers(local_key: &str, template_key: &str) -> bool {
+    if local_key == template_key {
+        return true;
+    }
+    if !local_key.contains('/') {
+        return template_key
+            .strip_prefix(local_key)
+            .is_some_and(|rest| rest.starts_with('/'));
+    }
+    false
+}
+
 impl Task {
     /// Merge a template into this task, using template values only where the task
     /// doesn't already have values set. This allows tasks to override template values.
     ///
     /// Merge semantics:
-    /// - run, run_windows: Local overrides completely (if non-empty)
+    /// - run, run_windows, platform override fields: Local overrides where set
     /// - tools: Deep merge (local tools added/override template)
     /// - env: Deep merge (template first, then local overrides)
     /// - vars: Deep merge (template first, then local overrides)
@@ -96,15 +117,80 @@ impl Task {
     /// - sources, outputs: Local overrides completely (if non-empty)
     /// - Other fields: Local overrides template (if set)
     pub fn merge_template(&mut self, template: &TaskTemplate) {
+        let has_local_run = !self.run.is_empty();
+        let has_local_shell = self.shell.is_some();
+
         // run: only use template if local is empty
-        if self.run.is_empty() {
+        if !has_local_run {
             self.run = template.run.clone();
         }
 
-        // run_windows: only use template if local is empty
-        if self.run_windows.is_empty() {
+        let local_run_windows = !self.run_windows.is_empty();
+        let local_platform_tasks = self.platform_tasks.clone();
+
+        // run_windows: only use template if local run/run_windows/windows platform run overrides are empty
+        if !has_local_run
+            && !local_run_windows
+            && !local_platform_tasks.iter().any(|(key, platform)| {
+                platform.run.is_some() && platform_key_covers(key, "windows")
+            })
+        {
             self.run_windows = template.run_windows.clone();
         }
+
+        // platform_tasks: merge per field. A local base `run` suppresses all
+        // template platform runs, but not template platform shells. A local
+        // platform `run` only overrides covered template `run` fields; a local
+        // `shell` only overrides covered template `shell` fields. Legacy local
+        // run_windows also overrides template Windows platform runs, but not
+        // template Windows shells.
+        let mut platform_tasks = BTreeMap::new();
+
+        for (template_key, template_platform) in &template.platform_tasks {
+            let local_run_covers =
+                local_platform_tasks
+                    .iter()
+                    .any(|(local_key, local_platform)| {
+                        local_platform.run.is_some() && platform_key_covers(local_key, template_key)
+                    });
+            let local_shell_covers =
+                local_platform_tasks
+                    .iter()
+                    .any(|(local_key, local_platform)| {
+                        local_platform.shell.is_some()
+                            && platform_key_covers(local_key, template_key)
+                    });
+
+            let run = if has_local_run
+                || local_run_covers
+                || (local_run_windows && platform_key_covers("windows", template_key))
+            {
+                None
+            } else {
+                template_platform.run.clone()
+            };
+            let shell = if has_local_shell || local_shell_covers {
+                None
+            } else {
+                template_platform.shell.clone()
+            };
+
+            if run.is_some() || shell.is_some() {
+                platform_tasks.insert(template_key.clone(), TaskPlatformOverride { run, shell });
+            }
+        }
+
+        for (local_key, local_platform) in local_platform_tasks {
+            let platform = platform_tasks.entry(local_key).or_default();
+            if local_platform.run.is_some() {
+                platform.run = local_platform.run;
+            }
+            if local_platform.shell.is_some() {
+                platform.shell = local_platform.shell;
+            }
+        }
+
+        self.platform_tasks = platform_tasks;
 
         // tools: deep merge (template first, then local overrides)
         let mut merged_tools = template.tools.clone();
@@ -178,6 +264,13 @@ impl Task {
         // Therefore, we do NOT merge these boolean fields from templates to avoid the case
         // where a task explicitly sets `quiet = false` but gets overridden by a template's
         // `quiet = true`. Users must explicitly set these in their task if needed.
+
+        if template.raw_args == Some(true) {
+            self.raw_args = true;
+        }
+        if template.interactive == Some(true) {
+            self.interactive = true;
+        }
 
         // silent: use template only if local is Off (Silent is an enum, so we can distinguish)
         if matches!(self.silent, Silent::Off)
@@ -253,6 +346,194 @@ mod tests {
         // Template run should be used when local is empty
         assert_eq!(task.run.len(), 1);
         assert!(matches!(&task.run[0], RunEntry::Script(s) if s == "template command"));
+    }
+
+    #[test]
+    fn test_merge_template_platform_overrides_per_key() {
+        let mut task = Task {
+            platform_tasks: BTreeMap::from([(
+                "linux".to_string(),
+                TaskPlatformOverride {
+                    run: Some(vec![RunEntry::Script("local linux".to_string())]),
+                    shell: None,
+                },
+            )]),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            platform_tasks: BTreeMap::from([
+                (
+                    "linux".to_string(),
+                    TaskPlatformOverride {
+                        run: Some(vec![RunEntry::Script("template linux".to_string())]),
+                        shell: None,
+                    },
+                ),
+                (
+                    "windows".to_string(),
+                    TaskPlatformOverride {
+                        run: Some(vec![RunEntry::Script("template windows".to_string())]),
+                        shell: None,
+                    },
+                ),
+            ]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(matches!(
+            &task.platform_tasks["linux"].run.as_ref().unwrap()[0],
+            RunEntry::Script(s) if s == "local linux"
+        ));
+        assert!(matches!(
+            &task.platform_tasks["windows"].run.as_ref().unwrap()[0],
+            RunEntry::Script(s) if s == "template windows"
+        ));
+    }
+
+    #[test]
+    fn test_merge_template_platform_overrides_per_field() {
+        let mut task = Task {
+            platform_tasks: BTreeMap::from([(
+                "linux".to_string(),
+                TaskPlatformOverride {
+                    run: None,
+                    shell: Some("bash -c".to_string()),
+                },
+            )]),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            platform_tasks: BTreeMap::from([(
+                "linux".to_string(),
+                TaskPlatformOverride {
+                    run: Some(vec![RunEntry::Script("template linux".to_string())]),
+                    shell: Some("sh -c".to_string()),
+                },
+            )]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        let linux = &task.platform_tasks["linux"];
+        assert!(matches!(
+            &linux.run.as_ref().unwrap()[0],
+            RunEntry::Script(s) if s == "template linux"
+        ));
+        assert_eq!(linux.shell.as_deref(), Some("bash -c"));
+    }
+
+    #[test]
+    fn test_merge_template_run_windows_keeps_template_windows_platform_shell() {
+        let mut task = Task {
+            run_windows: vec![RunEntry::Script("local windows".to_string())],
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            platform_tasks: BTreeMap::from([(
+                "windows".to_string(),
+                TaskPlatformOverride {
+                    run: Some(vec![RunEntry::Script("template windows".to_string())]),
+                    shell: Some("pwsh -Command".to_string()),
+                },
+            )]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert_eq!(task.run_windows.len(), 1);
+        let windows = &task.platform_tasks["windows"];
+        assert!(windows.run.is_none());
+        assert_eq!(windows.shell.as_deref(), Some("pwsh -Command"));
+    }
+
+    #[test]
+    fn test_merge_template_local_run_keeps_template_platform_shell() {
+        let mut task = Task {
+            run: vec![RunEntry::Script("local run".to_string())],
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            platform_tasks: BTreeMap::from([(
+                "windows".to_string(),
+                TaskPlatformOverride {
+                    run: Some(vec![RunEntry::Script("template windows".to_string())]),
+                    shell: Some("pwsh -Command".to_string()),
+                },
+            )]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert_eq!(task.run.len(), 1);
+        let windows = &task.platform_tasks["windows"];
+        assert!(windows.run.is_none());
+        assert_eq!(windows.shell.as_deref(), Some("pwsh -Command"));
+    }
+
+    #[test]
+    fn test_merge_template_local_shell_overrides_template_platform_shell() {
+        let mut task = Task {
+            shell: Some("bash -c".to_string()),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            platform_tasks: BTreeMap::from([(
+                "windows".to_string(),
+                TaskPlatformOverride {
+                    run: None,
+                    shell: Some("pwsh -Command".to_string()),
+                },
+            )]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert_eq!(task.shell.as_deref(), Some("bash -c"));
+        assert!(!task.platform_tasks.contains_key("windows"));
+    }
+
+    #[test]
+    fn test_merge_template_run_windows_overrides_template_windows_platform() {
+        let mut task = Task {
+            run_windows: vec![RunEntry::Script("local windows".to_string())],
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            platform_tasks: BTreeMap::from([(
+                "windows".to_string(),
+                TaskPlatformOverride {
+                    run: Some(vec![RunEntry::Script("template windows".to_string())]),
+                    shell: None,
+                },
+            )]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert_eq!(task.run_windows.len(), 1);
+        assert!(!task.platform_tasks.contains_key("windows"));
+    }
+
+    #[test]
+    fn test_merge_template_raw_args_and_interactive() {
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            raw_args: Some(true),
+            interactive: Some(true),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(task.raw_args);
+        assert!(task.interactive);
     }
 
     #[test]

@@ -31,6 +31,47 @@ EOF
 # Basic template extension should work
 assert "mise run build" "building python"
 
+# Test platform-specific template run override is inherited
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo template build"
+
+[task_templates."python:build".linux]
+run = "echo linux template build"
+
+[tasks.build]
+extends = "python:build"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert "mise run build" "linux template build"
+else
+  assert "mise run build" "template build"
+fi
+
+# Test platform-specific template fields merge independently
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build".linux]
+run = 'echo $0'
+shell = "sh -c"
+
+[tasks.build]
+extends = "python:build"
+
+[tasks.build.linux]
+shell = "bash -c"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise run build" "bash"
+fi
+
 # Test local override of run command
 cat <<'EOF' >mise.toml
 [settings]
@@ -46,6 +87,103 @@ run = "echo local build"
 EOF
 
 assert "mise run build" "local build"
+
+# Test local platform override wins over template run_windows on Linux
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo template build"
+run_windows = "echo template windows build"
+
+[tasks.build]
+extends = "python:build"
+
+[tasks.build.linux]
+run = "echo local-linux"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert "mise run build" "local-linux"
+fi
+
+# Test task-local run_windows wins over template Windows platform override
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo template build"
+
+[task_templates."python:build".windows]
+run = "echo template windows build"
+
+[tasks.build]
+extends = "python:build"
+run_windows = "echo local windows build"
+EOF
+
+if [[ "$(uname -s)" == "MINGW"* ]] || [[ "$(uname -s)" == "MSYS"* ]] || [[ "$(uname -s)" == "CYGWIN"* ]]; then
+  assert "mise run build" "local windows build"
+fi
+
+# Test task-local base run suppresses template platform run but preserves platform shell
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build".linux]
+run = "echo template platform build"
+shell = "bash -c"
+
+[tasks.build]
+extends = "python:build"
+run = 'echo $0'
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise run build" "bash"
+  assert_not_contains "mise run build" "template platform build"
+fi
+
+# Test task-local base shell overrides template platform shell
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build".linux]
+shell = "sh -c"
+
+[tasks.build]
+extends = "python:build"
+run = 'echo $0'
+shell = "bash -c"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise run build" "bash"
+fi
+
+# Test task-local run overrides a platform-specific template run on Linux
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo template build"
+
+[task_templates."python:build".linux]
+run = "echo linux template build"
+
+[tasks.build]
+extends = "python:build"
+run = "echo local build"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert "mise run build" "local build"
+fi
 
 # Test tools deep merge
 cat <<'EOF' >mise.toml
@@ -180,5 +318,19 @@ extends = "rust:cargo:build"
 EOF
 
 assert "mise run build" "cargo build"
+
+# Test invalid platform key in a task template fails with unknown field
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo build"
+
+[task_templates."python:build".linxu]
+run = "echo bad"
+EOF
+
+assert_fail "mise run build" "unknown field"
 
 echo '' >mise.toml

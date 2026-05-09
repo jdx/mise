@@ -108,13 +108,21 @@ run = [
 ]
 ```
 
-You can specify an alternate command to run on Windows by using the `run_windows` key:
+You can define platform-specific run commands using dot-syntax sub-tables:
 
 ```mise-toml
 [tasks.test]
 run = 'cargo test'
-run_windows = 'cargo test --features windows'
+
+[tasks.test.linux]
+run = 'cargo test --target x86_64-unknown-linux-gnu'
+
+[tasks.test.windows]
+run = 'cargo test --features windows'
 ```
+
+For each platform-specific field, the most specific match wins: `<os>/<arch>` → `<os>` → base.
+See [Platform-specific overrides](/tasks/task-configuration.html#platform-specific-overrides) for details.
 
 ### Specifying which directory to use
 

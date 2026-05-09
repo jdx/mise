@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+
+# Default task (all platforms)
+cat <<EOF >mise.toml
+[tasks.hello]
+run = "echo default"
+[tasks.hello.linux]
+run = "echo linux"
+[tasks.hello."linux/x64"]
+run = "echo linux-x64"
+[tasks.hello.macos]
+run = "echo macos"
+[tasks.hello.windows]
+run = "echo windows"
+EOF
+
+# On linux/x64, the most specific match should win
+if [[ "$(uname -s)" == "Linux" ]]; then
+  if [[ "$(uname -m)" == "x86_64" ]]; then
+    assert "mise run hello" "linux-x64"
+  elif [[ "$(uname -m)" == "aarch64" ]]; then
+    assert "mise run hello" "linux"
+  fi
+elif [[ "$(uname -s)" == "Darwin" ]]; then
+  if [[ "$(uname -m)" == "x86_64" ]]; then
+    assert "mise run hello" "macos"
+  elif [[ "$(uname -m)" == "arm64" ]]; then
+    assert "mise run hello" "macos"
+  fi
+fi
+
+# Test that unknown platform keys cause a helpful error
+cat <<EOF >mise.toml
+[tasks.test]
+run = "echo default"
+[tasks.test.notaplatform]
+run = "echo bad"
+EOF
+
+assert_fail "mise run test" "unknown field"
+
+# Test that unsupported extra keys in a platform table are rejected
+cat <<EOF >mise.toml
+[tasks.extra]
+run = "echo default"
+[tasks.extra.linux]
+run = "echo linux"
+env.FOO = "bar"
+EOF
+
+assert_fail "mise run extra" "unknown field"
+
+# Test run_windows backward compat still works (on non-windows, uses run)
+cat <<EOF >mise.toml
+[tasks.legacy]
+run = "echo default"
+run_windows = "echo windows-legacy"
+EOF
+
+# On non-windows, should use the default run
+if [[ "$(uname -s)" != "MINGW"* ]] && [[ "$(uname -s)" != "MSYS"* ]] && [[ "$(uname -s)" != "CYGWIN"* ]]; then
+  assert "mise run legacy" "default"
+fi
+
+# Test that platform task only overrides run, not other fields like description
+cat <<EOF >mise.toml
+[tasks.partial]
+run = "echo default"
+description = "A task"
+[tasks.partial.linux]
+run = "echo linux-only"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert "mise run partial" "linux-only"
+fi
+assert_contains "mise tasks ls --json" "A task"
+
+# Test platform-specific shell override
+cat <<'EOF' >mise.toml
+[tasks.shell-default]
+run = 'echo default shell'
+
+[tasks.shell-default.linux]
+shell = "bash -c"
+run = 'echo $0'
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise run shell-default" "bash"
+fi
+
+# Test platform-specific shell supports templates
+cat <<'EOF' >mise.toml
+[tasks.templated-platform-shell]
+run = "echo default"
+
+[tasks.templated-platform-shell.linux]
+shell = "bash {{ '-c' }}"
+run = 'echo $0'
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise run templated-platform-shell" "bash"
+fi
+
+# Test MISE_OS is for tool binary selection, not task runtime platform selection
+cat <<EOF >mise.toml
+[tasks.mise_os_ignored]
+run = "echo default"
+
+[tasks.mise_os_ignored.windows]
+run = "echo windows"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert "MISE_OS=windows mise run mise_os_ignored" "default"
+fi
+
+# Test platform run/shell fallback is field-specific
+if [[ "$(uname -s)" == "Linux" ]]; then
+  case "$(uname -m)" in
+  x86_64) platform_key="linux/x64" ;;
+  aarch64 | arm64) platform_key="linux/arm64" ;;
+  *) platform_key="" ;;
+  esac
+
+  if [[ -n "$platform_key" ]]; then
+    cat <<EOF >mise.toml
+[tasks.field_run_fallback]
+run = "echo base"
+
+[tasks.field_run_fallback.linux]
+run = "echo linux-run"
+
+[tasks.field_run_fallback."$platform_key"]
+shell = "bash -c"
+
+[tasks.field_shell_fallback]
+run = "echo base"
+
+[tasks.field_shell_fallback.linux]
+shell = "bash -c"
+
+[tasks.field_shell_fallback."$platform_key"]
+run = 'echo \$0'
+EOF
+
+    assert "mise run field_run_fallback" "linux-run"
+    assert_contains "mise run field_shell_fallback" "bash"
+  fi
+fi
+
+# Test platform run overrides file-backed execution
+cat <<'SCRIPT' >file-task.sh
+echo file-task
+SCRIPT
+cat <<EOF >mise.toml
+[tasks.file_platform]
+file = "file-task.sh"
+
+[tasks.file_platform.linux]
+run = "echo platform-run"
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert "mise run file_platform" "platform-run"
+fi
+
+# Test platform overrides with array and structured run entries
+cat <<EOF >mise.toml
+[tasks.child]
+run = "echo child"
+
+[tasks.platform_array]
+run = "echo default"
+[tasks.platform_array.linux]
+run = ["echo a", "echo b"]
+
+[tasks.platform_structured]
+run = "echo default"
+[tasks.platform_structured.linux]
+run = { task = "child" }
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise run platform_array" "a"
+  assert_contains "mise run platform_array" "b"
+  assert "mise run platform_structured" "child"
+fi
+
+# Test structured platform run tables reject unsupported fields
+cat <<EOF >mise.toml
+[tasks.child]
+run = "echo child"
+
+[tasks.parent]
+run = "echo default"
+[tasks.parent.linux]
+task = "child"
+dir = "subdir"
+EOF
+
+assert_fail "mise run parent" "unknown field"
+
+# Test direct platform values are rejected; platform subtables only support run/shell
+cat <<EOF >mise.toml
+[tasks.direct_platform]
+run = "echo default"
+linux = "echo direct"
+EOF
+
+assert_fail "mise run direct_platform" "platform override must be a table"
+
+# Test that an explicit empty platform run array overrides the base task
+cat <<EOF >mise.toml
+[tasks.empty]
+run = "echo default"
+[tasks.empty.linux]
+run = []
+EOF
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_empty "mise run empty"
+fi
+
+# Test that tasks without platform overrides still work as before
+cat <<EOF >mise.toml
+tasks.simple = "echo simple"
+EOF
+
+assert "mise run simple" "simple"

@@ -400,7 +400,9 @@ impl TaskExecutor {
 
         let timer = std::time::Instant::now();
 
-        if let Some(file) = task.file_path(config).await? {
+        if task.selected_platform_run().is_none()
+            && let Some(file) = task.file_path(config).await?
+        {
             let exec_start = std::time::Instant::now();
             self.exec_file(config, &file, task, &env, &prefix, extra_vars)
                 .await?;
@@ -857,11 +859,14 @@ impl TaskExecutor {
         args: &[String],
     ) -> Result<(String, Vec<String>)> {
         let display = file.display().to_string();
-        if !Settings::get().use_file_shell_for_executable_tasks && can_execute_directly(file) {
+        let explicit_shell = task.shell()?;
+        if explicit_shell.is_none()
+            && !Settings::get().use_file_shell_for_executable_tasks
+            && can_execute_directly(file)
+        {
             return Ok((display, args.to_vec()));
         }
-        let shell = task
-            .shell()?
+        let shell = explicit_shell
             .or_else(|| shell_from_shebang(file))
             .or_else(|| shell_from_extension(file))
             .unwrap_or(Settings::get().default_file_shell()?);

@@ -387,6 +387,12 @@ impl TasksValidate {
     fn validate_file_existence(&self, task: &Task) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
+        // A current-platform `run` override replaces file-backed execution, so
+        // the file is not required for this platform.
+        if task.selected_platform_run().is_some() {
+            return issues;
+        }
+
         if let Some(ref file) = task.file {
             if !file.exists() {
                 issues.push(ValidationIssue {
@@ -465,11 +471,55 @@ impl TasksValidate {
     fn validate_shell(&self, task: &Task) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
-        if let Some(ref shell) = task.shell {
-            // Parse shell command (could be "bash -c" or just "bash")
-            let shell_parts: Vec<&str> = shell.split_whitespace().collect();
-            if let Some(shell_cmd) = shell_parts.first() {
-                // Check if it's an absolute path
+        let settings = crate::config::settings::Settings::get();
+        let os = settings.host_os();
+        let arch = settings.host_arch();
+        let platform_key = format!("{}/{}", os, arch);
+        let selected_platform_shell = if task
+            .platform_tasks
+            .get(&platform_key)
+            .and_then(|platform| platform.shell.as_ref())
+            .is_some()
+        {
+            Some(platform_key.as_str())
+        } else if task
+            .platform_tasks
+            .get(os)
+            .and_then(|platform| platform.shell.as_ref())
+            .is_some()
+        {
+            Some(os)
+        } else {
+            None
+        };
+
+        let mut validate = |shell: &str, details: Option<String>, check_exists: bool| {
+            let shell_parts = match crate::path::split_shell_command(shell) {
+                Ok(shell_parts) => shell_parts,
+                Err(err) => {
+                    issues.push(ValidationIssue {
+                        task: task.name.clone(),
+                        severity: Severity::Error,
+                        category: "invalid-shell".to_string(),
+                        message: format!("Invalid shell command: {}", shell),
+                        details: details.or_else(|| Some(err.to_string())),
+                    });
+                    return;
+                }
+            };
+
+            let Some(shell_cmd) = shell_parts.first().filter(|cmd| !cmd.trim().is_empty()) else {
+                issues.push(ValidationIssue {
+                    task: task.name.clone(),
+                    severity: Severity::Error,
+                    category: "invalid-shell".to_string(),
+                    message: format!("Invalid shell command: {}", shell),
+                    details,
+                });
+                return;
+            };
+
+            if check_exists {
                 let shell_path = PathBuf::from(shell_cmd);
                 if shell_path.is_absolute() && !shell_path.exists() {
                     issues.push(ValidationIssue {
@@ -477,9 +527,22 @@ impl TasksValidate {
                         severity: Severity::Error,
                         category: "invalid-shell".to_string(),
                         message: format!("Shell command not found: {}", shell_cmd),
-                        details: Some(format!("Full shell: {}", shell)),
+                        details: details.or_else(|| Some(format!("Full shell: {}", shell))),
                     });
                 }
+            }
+        };
+
+        if let Some(ref shell) = task.shell {
+            validate(shell, None, selected_platform_shell.is_none());
+        }
+        for (platform, platform_override) in &task.platform_tasks {
+            if let Some(shell) = &platform_override.shell {
+                validate(
+                    shell,
+                    Some(format!("Platform: {platform}, full shell: {shell}")),
+                    selected_platform_shell == Some(platform.as_str()),
+                );
             }
         }
 
@@ -541,57 +604,83 @@ impl TasksValidate {
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
-        // Validate run entries
-        for entry in task.run() {
-            match entry {
-                crate::task::RunEntry::Script(script) => {
-                    // Check if script is empty
-                    if script.trim().is_empty() {
-                        issues.push(ValidationIssue {
-                            task: task.name.clone(),
-                            severity: Severity::Warning,
-                            category: "empty-script".to_string(),
-                            message: "Task contains empty script entry".to_string(),
-                            details: None,
-                        });
+        let mut validate_entries = |entries: &[crate::task::RunEntry], details: Option<&str>| {
+            for entry in entries {
+                match entry {
+                    crate::task::RunEntry::Script(script) => {
+                        // Check if script is empty
+                        if script.trim().is_empty() {
+                            issues.push(ValidationIssue {
+                                task: task.name.clone(),
+                                severity: Severity::Warning,
+                                category: "empty-script".to_string(),
+                                message: "Task contains empty script entry".to_string(),
+                                details: details.map(str::to_string),
+                            });
+                        }
                     }
-                }
-                crate::task::RunEntry::SingleTask {
-                    task: task_name, ..
-                } => {
-                    // Strip inline arguments before checking existence, matching runtime behavior
-                    let (name, _) = crate::task::task_list::split_task_spec(task_name);
-                    if !Self::task_exists(all_tasks, name) {
-                        issues.push(ValidationIssue {
-                            task: task.name.clone(),
-                            severity: Severity::Error,
-                            category: "missing-task-reference".to_string(),
-                            message: format!("Task '{}' referenced in run entry not found", name),
-                            details: None,
-                        });
-                    }
-                }
-                crate::task::RunEntry::TaskGroup { tasks } => {
-                    // Strip inline arguments before checking existence, matching runtime behavior
-                    for task_name in tasks {
+                    crate::task::RunEntry::SingleTask {
+                        task: task_name, ..
+                    } => {
+                        // Strip inline arguments before checking existence, matching runtime behavior
                         let (name, _) = crate::task::task_list::split_task_spec(task_name);
                         if !Self::task_exists(all_tasks, name) {
                             issues.push(ValidationIssue {
                                 task: task.name.clone(),
                                 severity: Severity::Error,
                                 category: "missing-task-reference".to_string(),
-                                message: format!("Task '{}' in task group not found", name),
-                                details: Some("Referenced in parallel task group".to_string()),
+                                message: format!(
+                                    "Task '{}' referenced in run entry not found",
+                                    name
+                                ),
+                                details: details.map(str::to_string),
                             });
                         }
                     }
+                    crate::task::RunEntry::TaskGroup { tasks } => {
+                        // Strip inline arguments before checking existence, matching runtime behavior
+                        for task_name in tasks {
+                            let (name, _) = crate::task::task_list::split_task_spec(task_name);
+                            if !Self::task_exists(all_tasks, name) {
+                                issues.push(ValidationIssue {
+                                    task: task.name.clone(),
+                                    severity: Severity::Error,
+                                    category: "missing-task-reference".to_string(),
+                                    message: format!("Task '{}' in task group not found", name),
+                                    details: Some(
+                                        details
+                                            .map(|d| {
+                                                format!("{d}; referenced in parallel task group")
+                                            })
+                                            .unwrap_or_else(|| {
+                                                "Referenced in parallel task group".to_string()
+                                            }),
+                                    ),
+                                });
+                            }
+                        }
+                    }
                 }
+            }
+        };
+
+        validate_entries(&task.run, None);
+        validate_entries(&task.run_windows, Some("run_windows"));
+        for (platform, platform_override) in &task.platform_tasks {
+            if let Some(run) = &platform_override.run {
+                validate_entries(run, Some(&format!("platform {platform}")));
             }
         }
 
         // Check if task has no run entries and no file
         // Allow tasks with dependencies but no run entries (meta/group tasks)
-        if task.run().is_empty()
+        let has_declared_run = !task.run.is_empty()
+            || !task.run_windows.is_empty()
+            || task
+                .platform_tasks
+                .values()
+                .any(|platform| platform.run.is_some());
+        if !has_declared_run
             && task.file.is_none()
             && task.depends.is_empty()
             && task.depends_post.is_empty()
