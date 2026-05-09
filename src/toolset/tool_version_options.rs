@@ -344,6 +344,9 @@ impl ToolOptions {
         Ok(())
     }
 
+    /// Returns true for keys owned by mise's option parser. A few install-time
+    /// scalar keys are still stored in raw opts after validation because
+    /// downstream install code reads them from that map.
     fn insert_core_option(&mut self, key: &str, value: &toml::Value) -> Result<bool, String> {
         match key {
             "os" => {
