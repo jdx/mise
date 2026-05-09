@@ -378,6 +378,7 @@ impl ToolVersionOptions {
             toml::Value::Integer(i) => Some(i.to_string()),
             toml::Value::Boolean(b) => Some(b.to_string()),
             toml::Value::Float(f) => Some(f.to_string()),
+            toml::Value::Datetime(d) => Some(d.to_string()),
             _ => None,
         }
     }
@@ -421,6 +422,7 @@ fn scalar_value_to_string(value: &toml::Value) -> Option<String> {
         toml::Value::Integer(i) => Some(i.to_string()),
         toml::Value::Boolean(b) => Some(b.to_string()),
         toml::Value::Float(f) => Some(f.to_string()),
+        toml::Value::Datetime(d) => Some(d.to_string()),
         _ => None,
     }
 }
@@ -726,6 +728,13 @@ mod tests {
         assert!(!opts.opts.contains_key("depends"));
         assert!(!opts.opts.contains_key("os"));
         assert!(!opts.opts.contains_key("install_env"));
+    }
+
+    #[test]
+    fn test_parse_tool_options_install_before_unquoted_date() {
+        let opts = parse_tool_options("install_before=2024-06-01");
+
+        assert_eq!(opts.get("install_before"), Some("2024-06-01"));
     }
 
     #[test]
