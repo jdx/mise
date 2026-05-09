@@ -94,7 +94,9 @@ where
 }
 
 fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
-    if let Some(os) = options.os {
+    if let Some(os) = options.os
+        && !os.is_empty()
+    {
         let mut arr = Array::new();
         for o in os {
             arr.push(Value::from(o));
@@ -657,7 +659,7 @@ impl ConfigFile for MiseToml {
         let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
         let existing = tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
-            if opts.os.is_some()
+            if opts.os.as_ref().is_some_and(|o| !o.is_empty())
                 || opts.depends.as_ref().is_some_and(|d| !d.is_empty())
                 || !opts.install_env.is_empty()
             {
@@ -2551,6 +2553,45 @@ run = 'echo "template"'
             dump.contains("install_env"),
             "install_env should be written back"
         );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_omits_empty_os() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".replace-empty-os.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy = "dummy".into();
+        let options = ToolVersionOptions {
+            os: Some(vec![]),
+            ..Default::default()
+        };
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new_opts(
+                    Arc::new("dummy".into()),
+                    "1.0.1",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains(r#"dummy = "1.0.1""#));
+        assert!(!dump.contains("os"), "empty os should not be written back");
         file::remove_file(&p).unwrap();
     }
 }
