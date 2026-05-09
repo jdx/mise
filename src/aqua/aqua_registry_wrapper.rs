@@ -172,7 +172,9 @@ impl MiseRegistryFetcher {
         }
 
         info!("compiling aqua registry from {registry_url}");
-        let registry = CompiledRegistry::compile_from_yaml(&source, &compiled_dir)?;
+        let registry = measure!("aqua_registry::compile_from_yaml", {
+            CompiledRegistry::compile_from_yaml(&source, &compiled_dir)
+        })?;
         prune_stale_compiled_registries(&compiled_dir);
         Ok(Some(registry))
     }
@@ -534,6 +536,24 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(err, AquaRegistryError::RegistryNotAvailable(_)));
+    }
+
+    #[tokio::test]
+    async fn compiles_bundled_registry_from_local_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let registry_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("vendor/aqua-registry");
+        let fetcher = test_fetcher(
+            temp.path().to_path_buf(),
+            Some(registry_dir.display().to_string()),
+            false,
+        );
+
+        let registry = fetcher.load_compiled_registry().await.unwrap().unwrap();
+        let package = registry.package("01mf02/jaq").unwrap();
+
+        assert_eq!(package.repo_owner, "01mf02");
+        assert_eq!(package.repo_name, "jaq");
+        assert!(temp.path().join("compiled").exists());
     }
 
     fn test_fetcher(
