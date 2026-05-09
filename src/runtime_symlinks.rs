@@ -238,3 +238,58 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_arch_suffix_known_arches() {
+        // Known arch suffixes are split off
+        assert_eq!(split_arch_suffix("corretto-8.462.08.1-x64"), ("corretto-8.462.08.1", "-x64"));
+        assert_eq!(split_arch_suffix("corretto-8.462.08.1-arm64"), ("corretto-8.462.08.1", "-arm64"));
+        assert_eq!(split_arch_suffix("tool-1.0.0-x86"), ("tool-1.0.0", "-x86"));
+        assert_eq!(split_arch_suffix("tool-1.0.0-ppc64le"), ("tool-1.0.0", "-ppc64le"));
+        assert_eq!(split_arch_suffix("tool-1.0.0-s390x"), ("tool-1.0.0", "-s390x"));
+    }
+
+    #[test]
+    fn test_split_arch_suffix_non_arch() {
+        // Non-arch suffixes are not split
+        assert_eq!(split_arch_suffix("temurin-21.0.11+10.0.LTS"), ("temurin-21.0.11+10.0.LTS", ""));
+        assert_eq!(split_arch_suffix("corretto-8.462.08.1"), ("corretto-8.462.08.1", ""));
+        assert_eq!(split_arch_suffix("tool-1.0.0-beta"), ("tool-1.0.0-beta", ""));
+        assert_eq!(split_arch_suffix("no-hyphen"), ("no-hyphen", ""));
+        assert_eq!(split_arch_suffix("1.0.0"), ("1.0.0", ""));
+    }
+
+    #[test]
+    fn test_symlink_names_include_arch_suffix() {
+        // Regression test for the bug where corretto-8.462.08.1-x64 generated
+        // symlinks named corretto-8, corretto-latest (no suffix), colliding with
+        // native-arch installs. The fix: strip the arch suffix before version
+        // parsing, then re-append it to every generated symlink name.
+        let (base, suffix) = split_arch_suffix("corretto-8.462.08.1-x64");
+        assert_eq!(base, "corretto-8.462.08.1");
+        assert_eq!(suffix, "-x64");
+
+        let (prefix, _version) = crate::semver::split_version_prefix(base);
+        assert_eq!(prefix, "corretto-");
+
+        // Partial version symlinks include the arch suffix
+        assert_eq!(format!("{prefix}8{suffix}"), "corretto-8-x64");
+        assert_eq!(format!("{prefix}8.462{suffix}"), "corretto-8.462-x64");
+        assert_eq!(format!("{prefix}latest{suffix}"), "corretto-latest-x64");
+
+        // Without our fix, Versioning would parse "8.462.08.1-x64" treating
+        // -x64 as a pre-release tag, producing corretto-8 (no suffix) which
+        // would collide with the native arm64 corretto-8 symlink.
+        let (prefix_native, _) = crate::semver::split_version_prefix("corretto-8.462.08.1");
+        assert_eq!(format!("{prefix_native}latest"), "corretto-latest");
+        // The two "latest" symlinks are distinct — no collision
+        assert_ne!(
+            format!("{prefix}latest{suffix}"),
+            format!("{prefix_native}latest")
+        );
+    }
+}

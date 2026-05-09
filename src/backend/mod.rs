@@ -399,9 +399,64 @@ pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
         .join("\n")
 }
 
+/// Strip trailing known-arch segments (e.g. `-x64`, `-arm64`) from install
+/// directory names and deduplicate. This ensures version strings returned to
+/// callers never contain an arch suffix that `tv_pathname()` would re-add,
+/// which would produce double-suffixed paths like `corretto-8.462.08.1-x64-x64`.
+pub(crate) fn strip_arch_suffixes_from_versions(raw: Vec<String>) -> Vec<String> {
+    let mut seen = indexmap::IndexSet::new();
+    for v in raw {
+        let base = if let Some(pos) = v.rfind('-') {
+            if Settings::normalize_arch(&v[pos + 1..]).is_some() {
+                v[..pos].to_string()
+            } else {
+                v
+            }
+        } else {
+            v
+        };
+        seen.insert(base);
+    }
+    seen.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strip_arch_suffixes_from_versions() {
+        // Cross-arch suffix is stripped, leaving canonical version
+        assert_eq!(
+            strip_arch_suffixes_from_versions(vec!["corretto-8.462.08.1-x64".into()]),
+            vec!["corretto-8.462.08.1"]
+        );
+        assert_eq!(
+            strip_arch_suffixes_from_versions(vec!["corretto-8.462.08.1-arm64".into()]),
+            vec!["corretto-8.462.08.1"]
+        );
+        // Non-arch suffixes are left intact
+        assert_eq!(
+            strip_arch_suffixes_from_versions(vec!["temurin-21.0.11+10.0.LTS".into()]),
+            vec!["temurin-21.0.11+10.0.LTS"]
+        );
+        // Native and cross-arch of same version deduplicate to one entry
+        assert_eq!(
+            strip_arch_suffixes_from_versions(vec![
+                "corretto-8.462.08.1".into(),
+                "corretto-8.462.08.1-x64".into(),
+            ]),
+            vec!["corretto-8.462.08.1"]
+        );
+        // Multiple distinct versions are preserved
+        let result = strip_arch_suffixes_from_versions(vec![
+            "corretto-8.462.08.1-x64".into(),
+            "temurin-21.0.11+10.0.LTS".into(),
+        ]);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"corretto-8.462.08.1".to_string()));
+        assert!(result.contains(&"temurin-21.0.11+10.0.LTS".to_string()));
+    }
 
     #[test]
     fn test_normalize_idiomatic_contents() {
@@ -1059,25 +1114,8 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
     fn list_installed_versions(&self) -> Vec<String> {
-        // Strip any arch suffix (e.g. -x64) from install directory names before
-        // returning them as version strings. Arch suffixes are an implementation
-        // detail of tv_pathname() — they must never appear in tv.version, or
-        // tv_pathname() would double-apply them.
         let raw = install_state::list_versions(&self.ba().short);
-        let mut seen = indexmap::IndexSet::new();
-        for v in raw {
-            let base = if let Some(pos) = v.rfind('-') {
-                if Settings::normalize_arch(&v[pos + 1..]).is_some() {
-                    v[..pos].to_string()
-                } else {
-                    v
-                }
-            } else {
-                v
-            };
-            seen.insert(base);
-        }
-        seen.into_iter().collect()
+        strip_arch_suffixes_from_versions(raw)
     }
     fn is_version_installed(
         &self,
