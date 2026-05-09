@@ -146,6 +146,7 @@ impl CondaBackend {
             exclude_newer: None,
             strategy: SolveStrategy::Highest,
             dependency_overrides: vec![],
+            cancellation_token: None,
         };
 
         let mut solver = ResolvoSolver;

@@ -220,44 +220,95 @@ pub async fn run_one_hook_with_context(
                 _ => {}
             }
         }
-        if h.task_name.is_some() {
-            if let Err(e) = execute_task(config, ts, root, h, installed_tools).await {
-                warn!("{hook} hook in {} failed: {e}", root.display());
-            }
-        } else if h.shell.is_some() {
-            if let Some(shell) = shell {
-                // Set hook environment variables so shell hooks can access them
-                println!(
-                    "{}",
-                    shell.set_env("MISE_PROJECT_ROOT", &root.to_string_lossy())
-                );
-                println!(
-                    "{}",
-                    shell.set_env("MISE_CONFIG_ROOT", &root.to_string_lossy())
-                );
-                if let Some(cwd) = dirs::CWD.as_ref() {
-                    println!(
-                        "{}",
-                        shell.set_env("MISE_ORIGINAL_CWD", &cwd.to_string_lossy())
-                    );
-                }
-                if let Some((Some(old), _new)) = hook_env::dir_change() {
-                    println!(
-                        "{}",
-                        shell.set_env("MISE_PREVIOUS_DIR", &old.to_string_lossy())
-                    );
-                }
-                if let Some(tools) = installed_tools
-                    && let Ok(json) = serde_json::to_string(tools)
-                {
-                    println!("{}", shell.set_env("MISE_INSTALLED_TOOLS", &json));
-                }
-            }
-            println!("{}", h.script);
-        } else if let Err(e) = execute(config, ts, root, h, installed_tools).await {
-            // Warn but continue running remaining hooks of this type
-            warn!("{hook} hook in {} failed: {e}", root.display());
+        run_matched_hook(config, ts, root, h, shell, installed_tools).await;
+    }
+}
+
+pub async fn run_enter_hooks_for_newly_loaded_configs(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    shell: &dyn Shell,
+) {
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+        return;
+    }
+    if hook_env::dir_change().is_some() {
+        return;
+    }
+    let Some(cwd) = dirs::CWD.as_ref() else {
+        return;
+    };
+    let newly_loaded_roots = config
+        .config_files
+        .iter()
+        .filter(|(path, _)| !hook_env::PREV_SESSION.loaded_configs.contains(*path))
+        .filter_map(|(_, cf)| cf.project_root())
+        .filter(|root| cwd.starts_with(root))
+        .collect::<IndexSet<_>>();
+    if newly_loaded_roots.is_empty() {
+        return;
+    }
+    let shell_name = shell.to_string();
+    for (root, h) in config.hooks().await.cloned().unwrap_or_default() {
+        if h.hook != Hooks::Enter || h.global || !cwd.starts_with(&root) {
+            continue;
         }
+        if h.shell.as_ref().is_some_and(|s| s != &shell_name) {
+            continue;
+        }
+        if !newly_loaded_roots.contains(&root) {
+            continue;
+        }
+        run_matched_hook(config, ts, &root, &h, Some(shell), None).await;
+    }
+}
+
+async fn run_matched_hook(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    root: &Path,
+    hook: &Hook,
+    shell: Option<&dyn Shell>,
+    installed_tools: Option<&[InstalledToolInfo]>,
+) {
+    let hook_type = hook.hook;
+    if hook.task_name.is_some() {
+        if let Err(e) = execute_task(config, ts, root, hook, installed_tools).await {
+            warn!("{hook_type} hook in {} failed: {e}", root.display());
+        }
+    } else if hook.shell.is_some() {
+        if let Some(shell) = shell {
+            // Set hook environment variables so shell hooks can access them
+            println!(
+                "{}",
+                shell.set_env("MISE_PROJECT_ROOT", &root.to_string_lossy())
+            );
+            println!(
+                "{}",
+                shell.set_env("MISE_CONFIG_ROOT", &root.to_string_lossy())
+            );
+            if let Some(cwd) = dirs::CWD.as_ref() {
+                println!(
+                    "{}",
+                    shell.set_env("MISE_ORIGINAL_CWD", &cwd.to_string_lossy())
+                );
+            }
+            if let Some((Some(old), _new)) = hook_env::dir_change() {
+                println!(
+                    "{}",
+                    shell.set_env("MISE_PREVIOUS_DIR", &old.to_string_lossy())
+                );
+            }
+            if let Some(tools) = installed_tools
+                && let Ok(json) = serde_json::to_string(tools)
+            {
+                println!("{}", shell.set_env("MISE_INSTALLED_TOOLS", &json));
+            }
+        }
+        println!("{}", hook.script);
+    } else if let Err(e) = execute(config, ts, root, hook, installed_tools).await {
+        // Warn but continue running remaining hooks of this type
+        warn!("{hook_type} hook in {} failed: {e}", root.display());
     }
 }
 
