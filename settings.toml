@@ -2089,6 +2089,12 @@ description = "If true, fail when sops decryption fails (including when sops is 
 env = "MISE_SOPS_STRICT"
 type = "Bool"
 
+[spm.artifactbundle_only]
+default = false
+description = "Only use SwiftPM artifact bundles for installation, fail if no matching bundle is available."
+env = "MISE_SPM_ARTIFACTBUNDLE_ONLY"
+type = "Bool"
+
 [status.missing_tools]
 default = "if_other_versions_installed"
 description = "Show a warning if tools are not installed when entering a directory with a mise.toml file."

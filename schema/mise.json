@@ -1475,6 +1475,17 @@
             }
           }
         },
+        "spm": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "artifactbundle_only": {
+              "default": false,
+              "description": "Only use SwiftPM artifact bundles for installation, fail if no matching bundle is available.",
+              "type": "boolean"
+            }
+          }
+        },
         "status": {
           "type": "object",
           "unevaluatedProperties": false,
