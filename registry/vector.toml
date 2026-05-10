@@ -1,4 +1,3 @@
 backends = ["github:vectordotdev/vector"]
 description = "A high-performance observability data pipeline."
-idiomatic_files = ["vector.yaml", "vector.json", "vector.toml"]
 test = { cmd = "vector --version", expected = "vector {{version}}" }
