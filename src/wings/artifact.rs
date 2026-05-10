@@ -33,6 +33,7 @@ const DOCKER_TAR_GZIP_LAYER_MEDIA_TYPE: &str = "application/vnd.docker.image.roo
 const ZIP_LAYER_MEDIA_TYPE: &str = "application/zip";
 const BINARY_LAYER_MEDIA_TYPE: &str = "application/octet-stream";
 const MOCITO_BIN_DIR: &str = ".mise-bins";
+const MOCITO_ENV_FILE: &str = ".mise-mocito-env.json";
 const RESOLVE_PENDING_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const RESOLVE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -553,16 +554,7 @@ impl MocitoConfig {
         for link in &self.bin_links {
             link.validate()?;
         }
-        for (key, value) in &self.env {
-            ensure!(
-                !key.trim().is_empty() && !key.contains('=') && !key.contains('\0'),
-                "wings MOCITO config env key {key:?} is invalid"
-            );
-            ensure!(
-                !value.contains('\0'),
-                "wings MOCITO config env value for {key:?} contains a NUL byte"
-            );
-        }
+        validate_mocito_env(&self.env)?;
         Ok(())
     }
 
@@ -665,6 +657,46 @@ fn install_mocito_artifact(
     }
     validate_mocito_bins(&install_path, config)?;
     create_mocito_bin_links(&install_path, &config.bin_links)?;
+    write_mocito_env_file(&install_path, &config.env)?;
+    Ok(())
+}
+
+pub(crate) fn installed_env(tv: &ToolVersion) -> Result<BTreeMap<String, String>> {
+    read_mocito_env_file(&tv.install_path())
+}
+
+fn write_mocito_env_file(install_path: &Path, env: &BTreeMap<String, String>) -> Result<()> {
+    if env.is_empty() {
+        return Ok(());
+    }
+    validate_mocito_env(env)?;
+    let path = install_path.join(MOCITO_ENV_FILE);
+    file::write(&path, serde_json::to_string_pretty(env)?)?;
+    Ok(())
+}
+
+fn read_mocito_env_file(install_path: &Path) -> Result<BTreeMap<String, String>> {
+    let path = install_path.join(MOCITO_ENV_FILE);
+    if !path.exists() {
+        return Ok(BTreeMap::new());
+    }
+    let env: BTreeMap<String, String> = serde_json::from_slice(&file::read(&path)?)
+        .wrap_err_with(|| format!("decoding wings MOCITO env file {}", path.display()))?;
+    validate_mocito_env(&env)?;
+    Ok(env)
+}
+
+fn validate_mocito_env(env: &BTreeMap<String, String>) -> Result<()> {
+    for (key, value) in env {
+        ensure!(
+            !key.trim().is_empty() && !key.contains('=') && !key.contains('\0'),
+            "wings MOCITO config env key {key:?} is invalid"
+        );
+        ensure!(
+            !value.contains('\0'),
+            "wings MOCITO config env value for {key:?} contains a NUL byte"
+        );
+    }
     Ok(())
 }
 
@@ -1062,6 +1094,28 @@ mod tests {
             .unwrap_err();
 
         assert!(err.to_string().contains("must not escape"));
+    }
+
+    #[test]
+    fn mocito_env_round_trips_from_install_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut env = BTreeMap::new();
+        env.insert("CC".into(), "clang".into());
+        env.insert("MISE_ADD_PATH".into(), "libexec/bin".into());
+
+        write_mocito_env_file(dir.path(), &env).unwrap();
+
+        assert_eq!(read_mocito_env_file(dir.path()).unwrap(), env);
+    }
+
+    #[test]
+    fn mocito_env_file_revalidates_on_read() {
+        let dir = tempfile::tempdir().unwrap();
+        file::write(dir.path().join(MOCITO_ENV_FILE), r#"{"BAD=KEY":"value"}"#).unwrap();
+
+        let err = read_mocito_env_file(dir.path()).unwrap_err();
+
+        assert!(err.to_string().contains("env key"));
     }
 
     fn manifest_with_annotations(annotations: indexmap::IndexMap<String, String>) -> WingsManifest {

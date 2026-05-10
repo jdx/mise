@@ -288,16 +288,21 @@ impl Toolset {
 
         let envs = parallel::parallel(items, |(config, this, b, tv)| async move {
             let backend_id = b.id().to_string();
-            match b.exec_env(&config, &this, &tv).await {
-                Ok(env) => Ok(env
-                    .into_iter()
-                    .map(|(k, v)| (k, v, backend_id.clone()))
-                    .collect::<Vec<_>>()),
+            let mut env = match b.exec_env(&config, &this, &tv).await {
+                Ok(env) => env,
                 Err(e) => {
                     warn!("Error running exec-env: {:#}", e);
-                    Ok(Vec::new())
+                    BTreeMap::new()
                 }
+            };
+            match crate::wings::artifact::installed_env(&tv) {
+                Ok(wings_env) => env.extend(wings_env),
+                Err(e) => warn!("Error loading wings MOCITO env: {:#}", e),
             }
+            Ok(env
+                .into_iter()
+                .map(|(k, v)| (k, v, backend_id.clone()))
+                .collect::<Vec<_>>())
         })
         .await
         .unwrap_or_default();
