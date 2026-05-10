@@ -1,5 +1,39 @@
 # Changelog
 
+## [2026.5.5](https://github.com/jdx/mise/compare/v2026.5.4..v2026.5.5) - 2026-05-10
+
+### 🚀 Features
+
+- add --inactive option to outdated and upgrade commands for inactive tools by @roele in [#9640](https://github.com/jdx/mise/pull/9640)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** resolve bin paths for prefixed v tags by @risu729 in [#9759](https://github.com/jdx/mise/pull/9759)
+- **(bun)** create bunx alongside bun.exe on Windows install by @JamBalaya56562 in [#9732](https://github.com/jdx/mise/pull/9732)
+- **(dotnet)** use shared prerelease tool option by @risu729 in [#9720](https://github.com/jdx/mise/pull/9720)
+- **(node)** use matching node in npm shim by @jdx in [#9749](https://github.com/jdx/mise/pull/9749)
+- **(task)** resolve bash deterministically on Windows to avoid WSL launcher by @JamBalaya56562 in [#9750](https://github.com/jdx/mise/pull/9750)
+
+### 📚 Documentation
+
+- **(secrets)** clarify age strict mode default by @risu729 in [#9737](https://github.com/jdx/mise/pull/9737)
+- **(tasks)** add bash shebang to conditional-dependencies example by @JamBalaya56562 in [#9747](https://github.com/jdx/mise/pull/9747)
+- update backend tool option docs by @risu729 in [#9738](https://github.com/jdx/mise/pull/9738)
+
+### 📦 Registry
+
+- remove tools with zero users by @jdx in [#9725](https://github.com/jdx/mise/pull/9725)
+- add scalafmt ([github:scalameta/scalafmt](https://github.com/scalameta/scalafmt)) by @pokir in [#9757](https://github.com/jdx/mise/pull/9757)
+- remove flarectl by @risu729 in [#9756](https://github.com/jdx/mise/pull/9756)
+
+### Chore
+
+- **(release)** strip pre-existing sponsor block before appending canonical one by @jdx in [#9745](https://github.com/jdx/mise/pull/9745)
+
+### New Contributors
+
+- @pokir made their first contribution in [#9757](https://github.com/jdx/mise/pull/9757)
+
 ## [2026.5.4](https://github.com/jdx/mise/compare/v2026.5.3..v2026.5.4) - 2026-05-09
 
 ### 🚀 Features
