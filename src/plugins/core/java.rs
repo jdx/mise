@@ -640,6 +640,7 @@ fn to_java_api_arch(normalized_arch: &str) -> &str {
         "x86" => "x86",
         "ppc64le" => "ppc64le",
         "s390x" => "s390x",
+        "loong64" => "loongarch64",
         other => other,
     }
 }
@@ -769,6 +770,7 @@ mod tests {
         assert_eq!(to_java_api_arch("ppc64le"), "ppc64le");
         assert_eq!(to_java_api_arch("s390x"), "s390x");
         assert_eq!(to_java_api_arch("riscv64"), "riscv64");
+        assert_eq!(to_java_api_arch("loong64"), "loongarch64");
     }
 
     #[test]
@@ -841,6 +843,8 @@ mod tests {
             ("i386", "x86"),
             ("ppc64le", "ppc64le"),
             ("s390x", "s390x"),
+            ("loong64", "loongarch64"),
+            ("loongarch64", "loongarch64"),
         ] {
             let normalized = Settings::normalize_arch(input).expect(input);
             assert_eq!(
