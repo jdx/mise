@@ -394,8 +394,22 @@ mod tests {
     async fn test_from_final_env() {
         let _config = Config::get().await.unwrap();
         let path_key = PATH_KEY.as_str();
+        let pristine_paths = [PathBuf::from("/usr/bin"), PathBuf::from("/bin")];
+        let final_paths = [
+            PathBuf::from("/tool/bin"),
+            PathBuf::from("/usr/bin"),
+            PathBuf::from("/bin"),
+        ];
+        let pristine_path = std::env::join_paths(pristine_paths.iter())
+            .unwrap()
+            .into_string()
+            .unwrap();
+        let final_path = std::env::join_paths(final_paths.iter())
+            .unwrap()
+            .into_string()
+            .unwrap();
         let pristine: EnvMap = [
-            (path_key, "/usr/bin:/bin"),
+            (path_key, pristine_path.as_str()),
             ("EXISTING", "old"),
             ("__MISE_DIFF", "outer-diff"),
         ]
@@ -403,7 +417,7 @@ mod tests {
         .map(|(k, v)| (k.into(), v.into()))
         .collect();
         let final_env: EnvMap = [
-            (path_key, "/tool/bin:/usr/bin:/bin"),
+            (path_key, final_path.as_str()),
             ("EXISTING", "new"),
             ("ADDED", "yes"),
             ("__MISE_DIFF", "should-be-ignored"),
@@ -444,11 +458,10 @@ mod tests {
         assert_eq!(restored.get("EXISTING"), Some(&"old".to_string()));
         assert!(!restored.contains_key("ADDED"));
         let to_remove: std::collections::HashSet<_> = diff.path.iter().collect();
-        let restored_path: Vec<_> = crate::env::split_paths(&final_env[path_key])
+        let restored_path: Vec<PathBuf> = crate::env::split_paths(&final_env[path_key])
             .filter(|p| !to_remove.contains(p))
-            .map(|p| p.to_string_lossy().to_string())
             .collect();
-        assert_eq!(restored_path.join(":"), pristine[path_key]);
+        assert_eq!(restored_path, pristine_paths);
     }
 
     #[tokio::test]
