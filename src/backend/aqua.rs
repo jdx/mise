@@ -2142,7 +2142,7 @@ impl AquaBackend {
             }
         }
 
-        let srcs = Self::srcs(pkg, tv)?;
+        let srcs = Self::srcs_for_platform(pkg, v, &install_path, os(), arch())?;
         for link in &srcs {
             if link.src != link.dst && link.src.exists() {
                 Self::create_file_link(link)?;
@@ -2209,22 +2209,14 @@ impl AquaBackend {
             }]);
         }
 
+        let versions = version_candidates(version, pkg.version_prefix.as_deref());
         let files: Vec<AquaFileLink> = pkg
             .files
             .iter()
             .map(|f| {
-                let version = version_with_prefix(version, pkg.version_prefix.as_deref());
-                let srcs = if pkg.version_prefix.is_some() {
-                    vec![Self::file_link_for_version(
-                        f,
-                        pkg,
-                        version.as_ref(),
-                        install_path,
-                        os,
-                        arch,
-                    )?]
-                } else {
-                    vec![
+                let srcs = versions
+                    .iter()
+                    .map(|version| {
                         Self::file_link_for_version(
                             f,
                             pkg,
@@ -2232,17 +2224,9 @@ impl AquaBackend {
                             install_path,
                             os,
                             arch,
-                        )?,
-                        Self::file_link_for_version(
-                            f,
-                            pkg,
-                            &format!("v{version}"),
-                            install_path,
-                            os,
-                            arch,
-                        )?,
-                    ]
-                };
+                        )
+                    })
+                    .collect::<Result<Vec<_>>>()?;
                 Ok(srcs.into_iter().flatten())
             })
             .flatten_ok()
@@ -2436,6 +2420,27 @@ fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Co
     }
 }
 
+fn version_candidates<'a>(version: &'a str, version_prefix: Option<&str>) -> Vec<Cow<'a, str>> {
+    let mut candidates = vec![version_with_prefix(version, version_prefix)];
+    if let Some(prefix) = version_prefix {
+        let base = version.strip_prefix(prefix).unwrap_or(version);
+        if !prefix.is_empty() && !starts_with_v(base) && !ends_with_v(prefix) {
+            candidates.push(Cow::Owned(format!("{prefix}v{base}")));
+        }
+    } else if !starts_with_v(version) {
+        candidates.push(Cow::Owned(format!("v{version}")));
+    }
+    candidates.into_iter().unique().collect()
+}
+
+fn starts_with_v(s: &str) -> bool {
+    s.starts_with('v') || s.starts_with('V')
+}
+
+fn ends_with_v(s: &str) -> bool {
+    s.ends_with('v') || s.ends_with('V')
+}
+
 fn complete_windows_ext(path: PathBuf, complete: bool, target_os: &str) -> PathBuf {
     if target_os == "windows" && complete && path.extension().is_none() {
         path.with_extension("exe")
@@ -2488,6 +2493,36 @@ mod tests {
             version_with_prefix("tool-1.0.0", Some("tool-")),
             "tool-1.0.0"
         );
+    }
+
+    #[test]
+    fn test_version_candidates_include_prefixed_v_tag() {
+        let candidates = version_candidates("1.2.3", Some("tool/"))
+            .into_iter()
+            .map(|v| v.into_owned())
+            .collect_vec();
+
+        assert_eq!(candidates, vec!["tool/1.2.3", "tool/v1.2.3"]);
+    }
+
+    #[test]
+    fn test_version_candidates_include_prefixed_v_tag_for_prefixed_version() {
+        let candidates = version_candidates("tool/1.2.3", Some("tool/"))
+            .into_iter()
+            .map(|v| v.into_owned())
+            .collect_vec();
+
+        assert_eq!(candidates, vec!["tool/1.2.3", "tool/v1.2.3"]);
+    }
+
+    #[test]
+    fn test_version_candidates_do_not_double_v_prefix() {
+        let candidates = version_candidates("1.2.3", Some("tool-v"))
+            .into_iter()
+            .map(|v| v.into_owned())
+            .collect_vec();
+
+        assert_eq!(candidates, vec!["tool-v1.2.3"]);
     }
 
     #[test]
@@ -2716,6 +2751,71 @@ mod tests {
                 dst: PathBuf::from("install").join("bin/pnpm-hard"),
                 hard: true,
                 explicit_link: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_srcs_include_prefixed_v_version_paths() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz".to_string();
+        pkg.version_prefix = Some("tool-".to_string());
+        pkg.files = vec![AquaFile {
+            name: "tool".to_string(),
+            src: Some("{{.AssetWithoutExt}}/bin/tool".to_string()),
+            ..Default::default()
+        }];
+
+        let links =
+            AquaBackend::srcs_for_platform(&pkg, "1.2.3", Path::new("install"), "linux", "amd64")
+                .unwrap();
+
+        assert_eq!(
+            links,
+            vec![
+                AquaFileLink {
+                    src: PathBuf::from("install").join("tool-tool-1.2.3-linux-amd64/bin/tool"),
+                    dst: PathBuf::from("install").join("tool-tool-1.2.3-linux-amd64/bin/tool"),
+                    hard: false,
+                    explicit_link: false,
+                },
+                AquaFileLink {
+                    src: PathBuf::from("install").join("tool-tool-v1.2.3-linux-amd64/bin/tool"),
+                    dst: PathBuf::from("install").join("tool-tool-v1.2.3-linux-amd64/bin/tool"),
+                    hard: false,
+                    explicit_link: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_srcs_resolved_tag_version_does_not_add_extra_candidates() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz".to_string();
+        pkg.version_prefix = Some("tool-".to_string());
+        pkg.files = vec![AquaFile {
+            name: "tool".to_string(),
+            src: Some("{{.AssetWithoutExt}}/bin/tool".to_string()),
+            ..Default::default()
+        }];
+
+        let links = AquaBackend::srcs_for_platform(
+            &pkg,
+            "tool-v1.2.3",
+            Path::new("install"),
+            "linux",
+            "amd64",
+        )
+        .unwrap();
+
+        assert_eq!(
+            links,
+            vec![AquaFileLink {
+                src: PathBuf::from("install").join("tool-tool-v1.2.3-linux-amd64/bin/tool"),
+                dst: PathBuf::from("install").join("tool-tool-v1.2.3-linux-amd64/bin/tool"),
+                hard: false,
+                explicit_link: false,
             }]
         );
     }
