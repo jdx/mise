@@ -59,18 +59,14 @@ impl OutdatedInfo {
     ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
-        let (prefix, _) = split_version_prefix(&tv.request.version());
+        let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
         let use_backend_latest =
             bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown);
 
         let latest_result = if use_backend_latest {
+            let prefix = prefixed_latest_query(&prefix, &prefix_version);
             // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
-            t.latest_version(
-                config,
-                Some(prefix.clone()).filter(|s| !s.is_empty()),
-                opts.before_date,
-            )
-            .await
+            t.latest_version(config, prefix, opts.before_date).await
         } else {
             tv.latest_version_with_opts(config, opts)
                 .await
@@ -192,6 +188,21 @@ impl Display for OutdatedInfo {
         }
         write!(f, "{})", self.source)
     }
+}
+
+fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
+    let prefix = prefix.trim();
+    if prefix.is_empty() || prefix_version.is_empty() || prefix.contains(':') {
+        return None;
+    }
+
+    let query_version = chunkify_version(prefix_version)
+        .into_iter()
+        .next()
+        .filter(|version| !version.is_empty())
+        .unwrap_or_else(|| prefix_version.to_string());
+
+    Some(format!("{prefix}{query_version}"))
 }
 
 /// check if the new version is a bump from the old version and return the new version
@@ -371,7 +382,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use test_log::test;
 
-    use super::{check_semver_bump, is_outdated_version};
+    use super::{check_semver_bump, is_outdated_version, prefixed_latest_query};
 
     #[test]
     fn test_is_outdated_version() {
@@ -448,5 +459,24 @@ mod tests {
             check_semver_bump("beta", "1.0.0-beta.1"),
             Some("beta".to_string())
         );
+    }
+
+    #[test]
+    fn test_prefixed_latest_query() {
+        assert_eq!(
+            prefixed_latest_query("temurin-", "17.0.7+7"),
+            Some("temurin-17".to_string())
+        );
+        assert_eq!(
+            prefixed_latest_query("temurin-", "17-ea"),
+            Some("temurin-17".to_string())
+        );
+        assert_eq!(
+            prefixed_latest_query("corretto-", "2024-09-16"),
+            Some("corretto-2024".to_string())
+        );
+        assert_eq!(prefixed_latest_query("prefix:1.", "24"), None);
+        assert_eq!(prefixed_latest_query("", "17.0.7"), None);
+        assert_eq!(prefixed_latest_query("temurin-", ""), None);
     }
 }
