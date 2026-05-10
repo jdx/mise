@@ -132,9 +132,8 @@ pub async fn start_device_login(key: &DeviceKey) -> Result<DeviceStartResponse> 
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
     };
-    let mut resp: DeviceStartResponse =
+    let resp: DeviceStartResponse =
         post_json(&url, &body, &reqwest::header::HeaderMap::new()).await?;
-    canonicalize_device_start_urls(&mut resp);
     Ok(resp)
 }
 
@@ -229,27 +228,6 @@ async fn device_challenge(device_id: &str) -> Result<String> {
 
 fn hostname_label() -> String {
     sys_info::hostname().unwrap_or_else(|_| "unknown".into())
-}
-
-fn canonicalize_device_start_urls(resp: &mut DeviceStartResponse) {
-    resp.verification_uri = canonical_dashboard_uri(&resp.verification_uri);
-    resp.verification_uri_complete = canonical_dashboard_uri(&resp.verification_uri_complete);
-}
-
-fn canonical_dashboard_uri(raw: &str) -> String {
-    let Ok(mut url) = url::Url::parse(raw) else {
-        return raw.to_string();
-    };
-    let Some(host) = url.host_str() else {
-        return raw.to_string();
-    };
-    let Some(apex_host) = host.strip_prefix("app.").map(str::to_owned) else {
-        return raw.to_string();
-    };
-    if url.set_host(Some(&apex_host)).is_err() {
-        return raw.to_string();
-    }
-    url.to_string()
 }
 
 /// Revoke every active wings session for the calling user.
@@ -361,35 +339,4 @@ pub(crate) async fn post_json<B: Serialize, R: for<'de> Deserialize<'de>>(
         .await
         .wrap_err_with(|| format!("decoding {url} response body"))?;
     Ok(parsed)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn canonical_dashboard_uri_drops_app_subdomain() {
-        assert_eq!(
-            canonical_dashboard_uri(
-                "https://app.mise-wings-staging.en.dev/cli-device?code=2FD6320D"
-            ),
-            "https://mise-wings-staging.en.dev/cli-device?code=2FD6320D",
-        );
-        assert_eq!(
-            canonical_dashboard_uri("https://app.eu.mise-wings.en.dev/cli-device"),
-            "https://eu.mise-wings.en.dev/cli-device",
-        );
-    }
-
-    #[test]
-    fn canonical_dashboard_uri_leaves_other_urls_alone() {
-        assert_eq!(
-            canonical_dashboard_uri("https://mise-wings.en.dev/cli-device"),
-            "https://mise-wings.en.dev/cli-device",
-        );
-        assert_eq!(
-            canonical_dashboard_uri("https://api.mise-wings.en.dev/auth/dev/device/start"),
-            "https://api.mise-wings.en.dev/auth/dev/device/start",
-        );
-    }
 }
