@@ -1523,6 +1523,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: true,
         },
         {
+          name: "--dry-run-code",
+          description:
+            "Like --dry-run but exits with code 1 if there are tools to install",
+          isRepeatable: false,
+        },
+        {
           name: "--minimum-release-age",
           description:
             "Only install versions released before this date or older than this duration",
@@ -1530,12 +1536,6 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "minimum_release_age",
           },
-        },
-        {
-          name: "--dry-run-code",
-          description:
-            "Like --dry-run but exits with code 1 if there are tools to install",
-          isRepeatable: false,
         },
         {
           name: "--raw",
@@ -4109,15 +4109,6 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
-          name: "--minimum-release-age",
-          description:
-            "Only upgrade to versions released before this date or older than this duration",
-          isRepeatable: false,
-          args: {
-            name: "minimum_release_age",
-          },
-        },
-        {
           name: "--dry-run-code",
           description:
             "Like --dry-run but exits with code 1 if there are outdated tools",
@@ -4133,6 +4124,15 @@ const completionSpec: Fig.Spec = {
           name: "--local",
           description: "Only upgrade tools defined in local config files",
           isRepeatable: false,
+        },
+        {
+          name: "--minimum-release-age",
+          description:
+            "Only upgrade to versions released before this date or older than this duration",
+          isRepeatable: false,
+          args: {
+            name: "minimum_release_age",
+          },
         },
         {
           name: "--raw",
@@ -4199,15 +4199,6 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
-          name: "--minimum-release-age",
-          description:
-            "Only install versions released before this date or older than this duration",
-          isRepeatable: false,
-          args: {
-            name: "minimum_release_age",
-          },
-        },
-        {
           name: "--dry-run-code",
           description:
             "Like --dry-run but exits with code 1 if there are changes to make",
@@ -4217,6 +4208,15 @@ const completionSpec: Fig.Spec = {
           name: "--fuzzy",
           description: "Save fuzzy version to config file",
           isRepeatable: false,
+        },
+        {
+          name: "--minimum-release-age",
+          description:
+            "Only install versions released before this date or older than this duration",
+          isRepeatable: false,
+          args: {
+            name: "minimum_release_age",
+          },
         },
         {
           name: "--pin",

@@ -62,16 +62,6 @@ pub struct Upgrade {
     #[clap(long, short = 'x', value_name = "INSTALLED_TOOL", verbatim_doc_comment)]
     exclude: Vec<ToolArg>,
 
-    /// Only upgrade to versions released before this date or older than this duration
-    ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    /// This can be useful for reproducibility or security purposes.
-    ///
-    /// This only affects fuzzy version matches like "20" or "latest".
-    /// Explicitly pinned versions like "22.5.0" are not filtered.
-    #[clap(long, alias = "before", verbatim_doc_comment)]
-    minimum_release_age: Option<String>,
-
     /// Like --dry-run but exits with code 1 if there are outdated tools
     ///
     /// This is useful for scripts to check if tools need to be upgraded.
@@ -88,6 +78,16 @@ pub struct Upgrade {
     /// will skip tools defined in the global config (~/.config/mise/config.toml).
     #[clap(long, verbatim_doc_comment)]
     local: bool,
+
+    /// Only upgrade to versions released before this date or older than this duration
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    /// This can be useful for reproducibility or security purposes.
+    ///
+    /// This only affects fuzzy version matches like "20" or "latest".
+    /// Explicitly pinned versions like "22.5.0" are not filtered.
+    #[clap(long, alias = "before", verbatim_doc_comment)]
+    minimum_release_age: Option<String>,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1

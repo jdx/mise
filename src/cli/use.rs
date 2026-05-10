@@ -81,12 +81,6 @@ pub struct Use {
     #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
-    /// Only install versions released before this date or older than this duration
-    ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[clap(long, alias = "before", verbatim_doc_comment)]
-    minimum_release_age: Option<String>,
-
     /// Like --dry-run but exits with code 1 if there are changes to make
     ///
     /// This is useful for scripts to check if tools need to be added or removed.
@@ -99,6 +93,12 @@ pub struct Use {
     /// this is the default behavior unless `MISE_PIN=1`
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
+
+    /// Only install versions released before this date or older than this duration
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(long, alias = "before", verbatim_doc_comment)]
+    minimum_release_age: Option<String>,
 
     /// Save exact version to config file
     /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
