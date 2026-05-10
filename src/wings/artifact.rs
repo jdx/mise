@@ -747,15 +747,43 @@ fn merge_mocito_layer(layer_dir: &Path, install_path: &Path) -> Result<()> {
         let entry = entry?;
         let src = entry.path();
         let dst = install_path.join(entry.file_name());
-        file::remove_all(&dst)?;
-        std::fs::rename(&src, &dst).wrap_err_with(|| {
+        merge_mocito_entry(&src, &dst)?;
+    }
+    Ok(())
+}
+
+fn merge_mocito_entry(src: &Path, dst: &Path) -> Result<()> {
+    let src_meta = std::fs::symlink_metadata(src)?;
+    if src_meta.is_dir()
+        && dst
+            .symlink_metadata()
+            .is_ok_and(|dst_meta| dst_meta.is_dir())
+    {
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            merge_mocito_entry(&entry.path(), &dst.join(entry.file_name()))?;
+        }
+        std::fs::remove_dir(src).wrap_err_with(|| {
             format!(
-                "failed to move wings MOCITO layer entry {} to {}",
-                src.display(),
-                dst.display()
+                "failed to remove merged wings MOCITO layer directory {}",
+                src.display()
             )
         })?;
+        return Ok(());
     }
+
+    if dst.exists() || dst.is_symlink() {
+        file::remove_all(dst)?;
+    } else if let Some(parent) = dst.parent() {
+        file::create_dir_all(parent)?;
+    }
+    std::fs::rename(src, dst).wrap_err_with(|| {
+        format!(
+            "failed to move wings MOCITO layer entry {} to {}",
+            src.display(),
+            dst.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -1116,6 +1144,36 @@ mod tests {
         let err = read_mocito_env_file(dir.path()).unwrap_err();
 
         assert!(err.to_string().contains("env key"));
+    }
+
+    #[test]
+    fn mocito_layer_merge_preserves_sibling_directory_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let install_path = dir.path().join("install");
+        let layer0 = dir.path().join("layer0");
+        let layer1 = dir.path().join("layer1");
+        file::create_dir_all(layer0.join("bin")).unwrap();
+        file::create_dir_all(layer1.join("bin")).unwrap();
+        file::write(layer0.join("bin").join("alpha"), "alpha").unwrap();
+        file::write(layer0.join("bin").join("shared"), "old").unwrap();
+        file::write(layer1.join("bin").join("beta"), "beta").unwrap();
+        file::write(layer1.join("bin").join("shared"), "new").unwrap();
+
+        merge_mocito_layer(&layer0, &install_path).unwrap();
+        merge_mocito_layer(&layer1, &install_path).unwrap();
+
+        assert_eq!(
+            file::read_to_string(install_path.join("bin").join("alpha")).unwrap(),
+            "alpha"
+        );
+        assert_eq!(
+            file::read_to_string(install_path.join("bin").join("beta")).unwrap(),
+            "beta"
+        );
+        assert_eq!(
+            file::read_to_string(install_path.join("bin").join("shared")).unwrap(),
+            "new"
+        );
     }
 
     fn manifest_with_annotations(annotations: indexmap::IndexMap<String, String>) -> WingsManifest {
