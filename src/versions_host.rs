@@ -29,7 +29,7 @@ static PLUGINS_USE_VERSION_HOST: LazyLock<HashSet<&str>> = LazyLock::new(|| {
     CORE_PLUGINS
         .keys()
         .map(|name| name.as_str())
-        .chain(REGISTRY.keys().copied())
+        .chain(REGISTRY.keys())
         .filter(|name| !matches!(*name, "java" | "python"))
         .collect()
 });
@@ -40,7 +40,7 @@ static PLUGINS_TRACK_DOWNLOADS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
     CORE_PLUGINS
         .keys()
         .map(|name| name.as_str())
-        .chain(REGISTRY.keys().copied())
+        .chain(REGISTRY.keys())
         .collect()
 });
 

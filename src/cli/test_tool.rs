@@ -267,7 +267,7 @@ impl TestTool {
         } else if self.all {
             REGISTRY
                 .iter()
-                .filter(|(short, rt)| rt.short == **short) // Filter out aliases
+                .filter(|(short, rt)| rt.short == *short) // Filter out aliases
                 .map(|(short, rt)| short.parse().map(|s| (s, rt)))
                 .collect()
         } else if self.all_config {

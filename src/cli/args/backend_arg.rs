@@ -269,7 +269,7 @@ impl BackendArg {
                 );
             }
 
-            let registry_shorts: Vec<&str> = REGISTRY.keys().copied().collect();
+            let registry_shorts: Vec<&str> = REGISTRY.keys().collect();
             let mut suggestions: Vec<String> =
                 xx::suggest::similar_n_with_threshold(&self.short, &registry_shorts, 3, 0.8)
                     .into_iter()

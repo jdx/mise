@@ -131,6 +131,7 @@ openssl = { version = "0.10", optional = true }
 os-release = "0.1"
 path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
+phf = "0.11"
 rand = "0.10"
 rattler = { version = "0.42", default-features = false }
 rattler_conda_types = { version = "0.46", default-features = false }
@@ -236,6 +237,7 @@ cfg_aliases = "0.2"
 eyre = "0.6"
 heck = "0.5"
 indexmap = "2"
+phf_codegen = "0.11"
 serde = "1"
 serde_yaml = "0.9"
 toml = "1.0"
@@ -295,7 +297,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl"]
+ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "phf_codegen"]
 
 [package.metadata.release]
 pre-release-replacements = [

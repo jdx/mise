@@ -1,7 +1,7 @@
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use serde::Serialize as _;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
@@ -115,10 +115,7 @@ fn load_registry_tools() -> toml::map::Map<String, toml::Value> {
 fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
-    let mut lines = vec![
-        "{".to_string(),
-        "    let mut m = std::collections::BTreeMap::new();".to_string(),
-    ];
+    let mut generated_entries = BTreeMap::new();
 
     let tools = load_registry_tools();
     for (short, info) in &tools {
@@ -309,15 +306,39 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
         );
-        lines.push(format!(r#"    m.insert("{short}", {rt});"#));
+        generated_entries.insert(short.clone(), rt.clone());
         for alias in aliases {
-            lines.push(format!(r#"    m.insert("{alias}", {rt});"#));
+            generated_entries.insert(alias, rt.clone());
         }
     }
-    lines.push("    m".to_string());
-    lines.push("}".to_string());
 
-    fs::write(&dest_path, lines.join("\n")).unwrap();
+    let entries = generated_entries.into_iter().collect::<Vec<_>>();
+    fs::write(&dest_path, registry_code(&entries)).unwrap();
+}
+
+fn registry_code(entries: &[(String, String)]) -> String {
+    let mut code = String::from("Registry {\n    entries: &[\n");
+    for (key, tool) in entries {
+        code.push_str(&format!("        ({key:?}, {tool}),\n"));
+    }
+    code.push_str("    ],\n    lookup: ");
+    code.push_str(&phf_usize_map_code(
+        entries
+            .iter()
+            .enumerate()
+            .map(|(index, (key, _))| (key.clone(), index.to_string()))
+            .collect::<Vec<_>>(),
+    ));
+    code.push_str(",\n}");
+    code
+}
+
+fn phf_usize_map_code(entries: Vec<(String, String)>) -> String {
+    let mut map = phf_codegen::Map::new();
+    for (key, value) in &entries {
+        map.entry(key, value);
+    }
+    map.build().to_string()
 }
 
 fn codegen_aqua_standard_registry() -> Result<()> {

@@ -5753,6 +5753,8 @@ dependencies = [
  "os-release",
  "path-absolutize",
  "petgraph",
+ "phf",
+ "phf_codegen",
  "pretty_assertions",
  "rand 0.10.1",
  "rattler",
