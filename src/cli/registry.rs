@@ -113,11 +113,12 @@ impl Registry {
         }
     }
 
-    fn filtered_tools(&self) -> impl Iterator<Item = (&'static str, &RegistryTool)> {
+    fn filtered_tools(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
+        let hide_aliased = self.hide_aliased;
         REGISTRY
             .iter()
             .filter(|(short, _)| filter_enabled(short))
-            .filter(|(short, rt)| !self.hide_aliased || *short == rt.short)
+            .filter(move |(short, rt)| !hide_aliased || *short == rt.short)
     }
 
     fn display_table(&self) -> Result<()> {

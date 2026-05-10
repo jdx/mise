@@ -22,7 +22,7 @@ pub struct Registry {
 }
 
 impl Registry {
-    pub fn get(&self, name: &str) -> Option<&RegistryTool> {
+    pub fn get(&self, name: &str) -> Option<&'static RegistryTool> {
         self.lookup.get(name).map(|index| &self.entries[*index].1)
     }
 
@@ -30,7 +30,7 @@ impl Registry {
         self.lookup.contains_key(name)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &RegistryTool)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
         self.entries.iter().map(|(name, tool)| (*name, tool))
     }
 
@@ -38,7 +38,7 @@ impl Registry {
         self.entries.iter().map(|(name, _)| *name)
     }
 
-    pub fn values(&self) -> impl Iterator<Item = &RegistryTool> {
+    pub fn values(&self) -> impl Iterator<Item = &'static RegistryTool> {
         self.entries.iter().map(|(_, tool)| tool)
     }
 }
@@ -281,6 +281,20 @@ mod tests {
             &BTreeSet::from(["cargo"]),
             &name
         ));
+    }
+
+    #[test]
+    fn test_registry_iteration_is_sorted() {
+        use super::*;
+
+        // The interactive tool selector and --all test-tool path consume registry
+        // iteration order directly, so keep PHF lookup separate from sorted output.
+        let keys = REGISTRY.keys().collect::<Vec<_>>();
+        let mut sorted = keys.clone();
+        sorted.sort_unstable();
+
+        assert!(!keys.is_empty());
+        assert_eq!(keys, sorted);
     }
 
     #[test]
