@@ -101,6 +101,7 @@ mise install --minimum-release-age 2019-01-01
 assert_contains "mise ls --installed jq" "1.6"
 
 # Test: legacy --before flag remains supported as a hidden alias
+rm -f mise.toml
 assert_contains "mise install tiny@latest --before 2020-01-01 --dry-run 2>&1" "tiny"
 assert_contains "mise install --help" "--minimum-release-age"
 assert_not_contains "mise install --help" "--before"
