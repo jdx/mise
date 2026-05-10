@@ -1,7 +1,7 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::{lookup_platform_key, try_with_v_prefix};
+use crate::backend::static_helpers::{VerifiableError, lookup_platform_key, try_with_v_prefix};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::env::{
@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use eyre::bail;
 use regex::Regex;
 use std::collections::BTreeMap;
+use std::fmt::{Display, Formatter};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -230,9 +231,13 @@ impl Backend for UbiBackend {
 
         // Use lockfile URL if available, otherwise fall back to standard resolution
         if let Some(url) = &lockfile_url {
-            install(url, &v, &bin_dir, extract_all, &opts).await?;
+            install(url, &v, &bin_dir, extract_all, &opts)
+                .await
+                .map_err(|e| e.into_eyre())?;
         } else if name_is_url(&self.tool_name()) {
-            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
+            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts)
+                .await
+                .map_err(|e| e.into_eyre())?;
         } else {
             try_with_v_prefix(&v, None, |candidate| {
                 let opts = opts.clone();
@@ -462,7 +467,7 @@ async fn install(
     bin_dir: &Path,
     extract_all: bool,
     opts: &ToolVersionOptions,
-) -> eyre::Result<()> {
+) -> std::result::Result<(), UbiInstallError> {
     let mut builder = UbiBuilder::new().install_dir(bin_dir);
 
     if name_is_url(name) {
@@ -490,7 +495,7 @@ async fn install(
     }
 
     let forge = match opts.get("provider") {
-        Some(forge) => ForgeType::from_str(forge)?,
+        Some(forge) => ForgeType::from_str(forge).map_err(UbiInstallError::from_display)?,
         None => ForgeType::default(),
     };
     builder = builder.forge(forge.clone());
@@ -504,7 +509,7 @@ async fn install(
         builder = set_enterprise_token(builder, &forge);
     }
 
-    let mut ubi = builder.build().map_err(|e| eyre::eyre!("{e:#}"))?;
+    let mut ubi = builder.build().map_err(UbiInstallError::from_anyhow)?;
 
     // TODO: hacky but does not compile without it
     tokio::task::block_in_place(|| {
@@ -515,6 +520,59 @@ async fn install(
                 .unwrap()
         });
         RT.block_on(async { ubi.install_binary().await })
-            .map_err(|e| eyre::eyre!("{e:#}"))
+            .map_err(UbiInstallError::from_anyhow)
     })
+}
+
+#[derive(Debug)]
+struct UbiInstallError {
+    message: String,
+    retry_without_v: bool,
+}
+
+impl UbiInstallError {
+    fn from_anyhow(error: anyhow::Error) -> Self {
+        let retry_without_v = error.chain().any(|cause| {
+            cause
+                .downcast_ref::<reqwest::Error>()
+                .is_some_and(|err| err.status() == Some(reqwest::StatusCode::NOT_FOUND))
+        });
+        let message = format!("{error:#}");
+        let retry_without_v = retry_without_v || Self::message_indicates_missing_asset(&message);
+        Self {
+            message,
+            retry_without_v,
+        }
+    }
+
+    fn from_display(error: impl Display) -> Self {
+        let message = format!("{error:#}");
+        let retry_without_v = Self::message_indicates_missing_asset(&message);
+        Self {
+            message,
+            retry_without_v,
+        }
+    }
+
+    fn message_indicates_missing_asset(message: &str) -> bool {
+        message.contains("404")
+            || message.contains("could not find a release asset")
+            || message.contains("the asset isn't found")
+    }
+}
+
+impl Display for UbiInstallError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl VerifiableError for UbiInstallError {
+    fn is_not_found(&self) -> bool {
+        self.retry_without_v
+    }
+
+    fn into_eyre(self) -> eyre::Report {
+        eyre::eyre!("{}", self.message)
+    }
 }
