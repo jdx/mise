@@ -8,15 +8,16 @@ mise checks the following sources in order. The first token found wins:
 
 **github.com:**
 
-| Priority | Source                             |
-| -------- | ---------------------------------- |
-| 1        | `MISE_GITHUB_TOKEN` env var        |
-| 2        | `GITHUB_API_TOKEN` env var         |
-| 3        | `GITHUB_TOKEN` env var             |
-| 4        | `credential_command` (if set)      |
-| 5        | `github_tokens.toml` (per-host)    |
-| 6        | gh CLI token (from `hosts.yml`)    |
-| 7        | `git credential fill` (if enabled) |
+| Priority | Source                              |
+| -------- | ----------------------------------- |
+| 1        | `MISE_GITHUB_TOKEN` env var         |
+| 2        | `GITHUB_API_TOKEN` env var          |
+| 3        | `GITHUB_TOKEN` env var              |
+| 4        | `credential_command` (if set)       |
+| 5        | native GitHub OAuth (if configured) |
+| 6        | `github_tokens.toml` (per-host)     |
+| 7        | gh CLI token (from `hosts.yml`)     |
+| 8        | `git credential fill` (if enabled)  |
 
 **GitHub Enterprise hosts:**
 
@@ -25,9 +26,10 @@ mise checks the following sources in order. The first token found wins:
 | 1        | `MISE_GITHUB_ENTERPRISE_TOKEN` env var                             |
 | 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars |
 | 3        | `credential_command` (if set)                                      |
-| 4        | `github_tokens.toml` (per-host)                                    |
-| 5        | gh CLI token (from `hosts.yml`, matched by hostname)               |
-| 6        | `git credential fill` (if enabled)                                 |
+| 4        | native GitHub OAuth (if configured)                                |
+| 5        | `github_tokens.toml` (per-host)                                    |
+| 6        | gh CLI token (from `hosts.yml`, matched by hostname)               |
+| 7        | `git credential fill` (if enabled)                                 |
 
 ::: tip
 The github.com env vars (`MISE_GITHUB_TOKEN`, etc.) are also used as a fallback for GHE when `MISE_GITHUB_ENTERPRISE_TOKEN` is not set. If you need different tokens for github.com and a GHE instance, set `MISE_GITHUB_ENTERPRISE_TOKEN` explicitly or use the gh CLI integration.
@@ -136,6 +138,53 @@ Use `mise token github` to confirm mise can resolve the token:
 mise token github
 ```
 
+## Native GitHub OAuth <Badge type="warning" text="experimental" />
+
+mise can create short-lived GitHub App user access tokens directly with GitHub's OAuth device flow. This does not require a personal access token, GitHub App private key, app client secret, `gh`, `ghtkn`, or any other external credential command.
+
+The design was inspired by [ghtkn](https://github.com/suzuki-shunsuke/ghtkn) — if you'd rather run a separate process and have mise pick up its token via `credential_command`, see [Using ghtkn](#using-ghtkn) above.
+
+::: warning
+This feature is experimental. Enable it with `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) before using it. Behavior, settings, and token cache format may change in future releases.
+:::
+
+Create a GitHub App with device flow enabled, then configure its client ID:
+
+```sh
+mise settings set experimental true
+mise settings set github.oauth_client_id Iv1.yourgithubappclientid
+```
+
+Authorize once:
+
+```sh
+mise token github --oauth
+```
+
+After that, mise reuses the cached token for its own GitHub API calls and refreshes it when GitHub returns a refresh token. While the cached token is valid, mise also exports it to your shell as `GITHUB_TOKEN` (via `mise activate` / `mise hook-env` / `mise env` / `mise exec`) so tools like `gh`, `git`, and `cargo publish` see it without any extra wiring:
+
+```sh
+gh pr list # uses the OAuth token automatically
+```
+
+To use a different variable name (for example, `gh`'s preferred `GH_TOKEN`), set `github.oauth_export_env`. Setting it to an empty string disables the auto-export.
+
+You can still print a raw token explicitly when you need to pipe it somewhere:
+
+```sh
+export MISE_GITHUB_TOKEN="$(mise token github --oauth --raw)"
+```
+
+Optional settings:
+
+```toml
+[settings.github]
+oauth_client_id = "Iv1.yourgithubappclientid"
+oauth_scopes = "" # usually empty for GitHub App user access tokens
+oauth_open_browser = true
+oauth_export_env = "GITHUB_TOKEN" # set to "" to disable automatic export
+```
+
 ## Git Credential Helpers
 
 mise can use your existing git credential helpers to obtain GitHub tokens. This is **opt-in** and acts as a last-resort fallback after all other token sources.
@@ -179,9 +228,10 @@ For authentication, mise checks (in order):
 1. `MISE_GITHUB_ENTERPRISE_TOKEN` env var
 2. `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars
 3. `credential_command` for the API hostname
-4. `github_tokens.toml` for the API hostname
-5. gh CLI token for the API hostname
-6. `git credential fill` for the API hostname
+4. native GitHub OAuth for the configured API hostname
+5. `github_tokens.toml` for the API hostname
+6. gh CLI token for the API hostname
+7. `git credential fill` for the API hostname
 
 If you have **multiple** GHE instances, `MISE_GITHUB_ENTERPRISE_TOKEN` (a single value) won't work. Use `github_tokens.toml`, the gh CLI integration, `credential_command`, or git credential helpers instead:
 

@@ -14,6 +14,7 @@ mise use -g tombi@$TOMBI_VERSION
 SCHEMA_PATH="$ROOT/schema/mise.json"
 TASK_SCHEMA_PATH="$ROOT/schema/mise-task.json"
 TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
+TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
 assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
 
 # Set up tombi config pointing to local schema
@@ -70,11 +71,11 @@ TOML
 
 cat >"$HOME/workdir/mise-os.toml" <<'TOML'
 [tools]
-node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"] }
+node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], backend_options = { nested = true } }
 go = { version = "latest", os = "linux/x64" }
 
 [tasks.build.tools]
-rust = { version = "latest", os = ["linux/x64", "macos/arm64"] }
+rust = { version = "latest", os = ["linux/x64", "macos/arm64"], profile = "release" }
 TOML
 
 cat >"$HOME/workdir/mise-task-os.toml" <<'TOML'
@@ -82,15 +83,15 @@ cat >"$HOME/workdir/mise-task-os.toml" <<'TOML'
 run = "echo ok"
 
 [build.tools]
-node = { version = "latest", os = ["linux/x64", "macos/arm64"] }
+node = { version = "latest", os = ["linux/x64", "macos/arm64"], profile = "release" }
 TOML
 
 # tombi lint should succeed with no errors (warnings about table order are ok)
 cd "$HOME/workdir"
-assert_succeed "$TOMBI lint --offline --no-cache --quiet mise.toml"
-assert_succeed "$TOMBI lint --offline --no-cache --quiet mise-age.toml"
-assert_succeed "$TOMBI lint --offline --no-cache --quiet mise-os.toml"
-assert_succeed "$TOMBI lint --offline --no-cache --quiet mise-task-os.toml"
+assert_succeed "$TOMBI_LINT mise.toml"
+assert_succeed "$TOMBI_LINT mise-age.toml"
+assert_succeed "$TOMBI_LINT mise-os.toml"
+assert_succeed "$TOMBI_LINT mise-task-os.toml"
 
 # Verify that invalid properties on tasks are rejected
 cat >"$HOME/workdir/mise-bad.toml" <<'TOML'
@@ -113,10 +114,10 @@ include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-tmpl.toml", "mise-bad
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
-include = ["mise-bad-task-os.toml"]
+include = ["mise-bad-task-os.toml", "mise-bad-task-tool-extra.toml"]
 EOF
 
-assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad.toml"
+assert_fail "$TOMBI_LINT mise-bad.toml"
 
 # Verify that options for complex age values must be nested inside age
 cat >"$HOME/workdir/mise-bad-age.toml" <<'TOML'
@@ -124,7 +125,7 @@ cat >"$HOME/workdir/mise-bad-age.toml" <<'TOML'
 SECRET = { age = { value = "AGE-SECRET" }, tools = true }
 TOML
 
-assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad-age.toml"
+assert_fail "$TOMBI_LINT mise-bad-age.toml"
 
 # Verify that extends is rejected on task_templates (not supported at runtime)
 cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'
@@ -133,14 +134,14 @@ extends = "base"
 quiet = true
 TOML
 
-assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad-tmpl.toml"
+assert_fail "$TOMBI_LINT mise-bad-tmpl.toml"
 
 cat >"$HOME/workdir/mise-bad-os.toml" <<'TOML'
 [tools]
 node = { version = "latest", os = true }
 TOML
 
-assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad-os.toml"
+assert_fail "$TOMBI_LINT mise-bad-os.toml"
 
 cat >"$HOME/workdir/mise-bad-task-os.toml" <<'TOML'
 [build]
@@ -150,4 +151,14 @@ run = "echo ok"
 node = { version = "latest", os = true }
 TOML
 
-assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad-task-os.toml"
+assert_fail "$TOMBI_LINT mise-bad-task-os.toml"
+
+cat >"$HOME/workdir/mise-bad-task-tool-extra.toml" <<'TOML'
+[build]
+run = "echo ok"
+
+[build.tools]
+node = { version = "latest", os = "linux/x64", backend_options = { nested = true } }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-task-tool-extra.toml"

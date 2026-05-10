@@ -40,7 +40,7 @@ cat <<'EOF' >mise.toml
 run = 'echo MIXED-TASK-RAN'
 
 [hooks]
-enter = ["echo MIXED-SCRIPT-RAN", { task = "my-task" }]
+enter = [{ run = "echo MIXED-SCRIPT-RAN" }, { task = "my-task" }]
 EOF
 
 cd ~ || exit 1

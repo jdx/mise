@@ -6,7 +6,7 @@ use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{
     EPHEMERAL_OPT_KEYS, ToolVersionOptions, install_state, parse_tool_options,
-    serialize_tool_options,
+    serialize_tool_options, try_parse_tool_options,
 };
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
@@ -17,6 +17,7 @@ use std::env;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 /// Metadata about how a backend was resolved.
 /// This struct is designed for extensibility - additional fields can be added
@@ -157,6 +158,25 @@ fn parse_backend_components(
     let short = strip_opts(&short);
 
     (short, tool_name.to_string(), opts)
+}
+
+fn parse_backend_components_fallible(
+    short: &str,
+    full: Option<&String>,
+) -> Result<(String, String, Option<ToolVersionOptions>)> {
+    let short = unalias_backend(short).to_string();
+    let source = full.unwrap_or(&short);
+    let (source, opts) = match split_bracketed_opts(source) {
+        Some((name, opts_str)) => (
+            name,
+            Some(try_parse_tool_options(opts_str).map_err(|err| eyre::eyre!(err))?),
+        ),
+        None => (source.as_str(), None),
+    };
+    let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
+    let short = strip_opts(&short);
+
+    Ok((short, tool_name.to_string(), opts))
 }
 
 impl BackendArg {
@@ -605,6 +625,27 @@ impl BackendArg {
     }
 }
 
+impl FromStr for BackendArg {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let short = unalias_backend(s).to_string();
+        let explicit = if let Some((prefix, _)) = short.split_once(':') {
+            BackendType::guess(prefix) != BackendType::Unknown
+        } else {
+            false
+        };
+        let (short_parsed, tool_name, opts) = parse_backend_components_fallible(&short, None)?;
+        Ok(Self::new_raw(
+            short_parsed,
+            None,
+            tool_name,
+            opts,
+            BackendResolution::new(explicit),
+        ))
+    }
+}
+
 impl Display for BackendArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.short)
@@ -768,8 +809,8 @@ mod tests {
 
         // start with a normal full like "npm:prettier" and attach opts via set_opts
         let mut fa: BackendArg = "npm:prettier".into();
-        fa.set_opts(Some(parse_tool_options("a=1,install_env=ignored,b=2")));
-        // install_env should be filtered out, remaining order preserved
+        fa.set_opts(Some(parse_tool_options("a=1,postinstall=ignored,b=2")));
+        // postinstall should be filtered out, remaining order preserved
         assert_str_eq!("npm:prettier[a=1,b=2]", fa.full_with_opts());
 
         fa = "http:hello-lock".into();
@@ -899,6 +940,36 @@ mod tests {
         assert_eq!(
             ba.opts().get("api_url"),
             Some("https://inline.example/api/v3")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_backend_opts_core_fields() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg =
+            "pipx:ruff[depends=python,os=linux,install_env.PIPX_HOME=/tmp/pipx]".into();
+        let opts = ba.opts();
+
+        assert_eq!(opts.depends, Some(vec!["python".to_string()]));
+        assert_eq!(opts.os, Some(vec!["linux".to_string()]));
+        assert_eq!(
+            opts.install_env.get("PIPX_HOME").map(String::as_str),
+            Some("/tmp/pipx")
+        );
+        assert!(!opts.opts.contains_key("depends"));
+        assert!(!opts.opts.contains_key("os"));
+        assert!(!opts.opts.contains_key("install_env.PIPX_HOME"));
+    }
+
+    #[test]
+    fn test_parse_backend_opts_rejects_invalid_core_fields() {
+        let err = "pipx:ruff[depends={ name = \"python\" }]"
+            .parse::<BackendArg>()
+            .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("depends must be a string or array")
         );
     }
 

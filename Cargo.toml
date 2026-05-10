@@ -8,7 +8,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.5.4"
+version = "2026.5.5"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -32,6 +32,9 @@ include = [
   "/src/**/*.rs",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
+  "/vendor/aqua-registry/LICENSE",
+  "/vendor/aqua-registry/metadata.json",
+  "/vendor/aqua-registry/registry.yml",
 ]
 build = "build.rs"
 rust-version = "1.91"
@@ -142,6 +145,7 @@ rattler_virtual_packages = { version = "2", default-features = false }
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
+  "form",
   "gzip",
   "zstd",
   "charset",
@@ -226,13 +230,15 @@ sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 
 [build-dependencies]
+aqua-registry = { path = "crates/aqua-registry" }
 built = { version = "0.8", features = ["chrono"] }
 cfg_aliases = "0.2"
+eyre = "0.6"
 heck = "0.5"
-toml = "1.0"
 indexmap = "2"
 serde = "1"
 serde_yaml = "0.9"
+toml = "1.0"
 
 [dev-dependencies]
 clap-sort = "1"

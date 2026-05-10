@@ -706,6 +706,78 @@ does not implement the attestations endpoint.
 env = "MISE_GITHUB_GITHUB_ATTESTATIONS"
 type = "Bool"
 
+[github.oauth_api_url]
+default = "https://api.github.com"
+description = "GitHub API base URL for native OAuth token validation."
+docs = """
+GitHub API base URL used to validate native OAuth tokens and associate them
+with the configured host.
+"""
+env = "MISE_GITHUB_OAUTH_API_URL"
+type = "String"
+
+[github.oauth_auth_url]
+default = "https://github.com/login/oauth"
+description = "GitHub OAuth endpoint base URL for native device-flow tokens."
+docs = """
+OAuth endpoint base URL used by native GitHub device flow. The default is for
+github.com. Set this for GitHub Enterprise instances that support device flow.
+"""
+env = "MISE_GITHUB_OAUTH_AUTH_URL"
+type = "String"
+
+[github.oauth_client_id]
+default = ""
+description = "[experimental] GitHub App client ID for native OAuth device-flow tokens."
+docs = """
+[experimental] Requires `experimental = true`.
+
+When set, mise can create short-lived GitHub App user access tokens using
+GitHub's OAuth device flow. This does not require a GitHub App private key,
+client secret, personal access token, or external credential helper.
+
+Run `mise token github --oauth` once to authorize and cache a token. mise will reuse
+the cached token for GitHub API calls and refresh it when possible.
+
+Inspired by [ghtkn](https://github.com/suzuki-shunsuke/ghtkn).
+"""
+env = "MISE_GITHUB_OAUTH_CLIENT_ID"
+type = "String"
+
+[github.oauth_export_env]
+default = "GITHUB_TOKEN"
+description = "Environment variable name to export the native GitHub OAuth token under (empty disables)."
+docs = """
+When `github.oauth_client_id` is configured and a cached or refreshable token
+is available, mise exports the token under this environment variable so other
+tools (`gh`, `git`, `cargo`, etc.) can pick it up without an explicit
+`$(mise token github --oauth --raw)` call. Set to `GH_TOKEN` to use the gh
+CLI's preferred name, or to an empty string to disable the auto-export.
+"""
+env = "MISE_GITHUB_OAUTH_EXPORT_ENV"
+type = "String"
+
+[github.oauth_open_browser]
+default = true
+description = "Open the browser during native GitHub OAuth device flow."
+docs = """
+When enabled, `mise token github --oauth` will attempt to open GitHub's
+verification URL in the default browser when the device-code flow is triggered.
+"""
+env = "MISE_GITHUB_OAUTH_OPEN_BROWSER"
+type = "Bool"
+
+[github.oauth_scopes]
+default = ""
+description = "OAuth scopes requested for native GitHub device-flow tokens."
+docs = """
+Optional OAuth scope string passed to GitHub's device-code endpoint. GitHub App
+user access tokens are primarily governed by the app's permissions and
+installation access, so this usually remains empty.
+"""
+env = "MISE_GITHUB_OAUTH_SCOPES"
+type = "String"
+
 [github.slsa]
 default = true
 description = "Enable SLSA provenance verification for github backend tools."

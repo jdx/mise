@@ -104,7 +104,8 @@ impl Doctor {
                 .collect(),
         );
         let mut aqua = serde_json::Map::new();
-        let aqua_registry_metadata = aqua_registry::AQUA_STANDARD_REGISTRY_METADATA;
+        let aqua_registry_metadata =
+            crate::aqua::standard_registry::AQUA_STANDARD_REGISTRY_METADATA;
         aqua.insert(
             "baked_in_registry_repository".into(),
             aqua_registry_metadata.repository.into(),
@@ -711,11 +712,11 @@ fn shell() -> String {
 }
 
 fn aqua_registry_count() -> usize {
-    aqua_registry::AQUA_STANDARD_REGISTRY_FILES.len()
+    crate::aqua::standard_registry::AQUA_STANDARD_REGISTRY_FILES.len()
 }
 
 fn aqua_registry_count_str() -> String {
-    let metadata = aqua_registry::AQUA_STANDARD_REGISTRY_METADATA;
+    let metadata = crate::aqua::standard_registry::AQUA_STANDARD_REGISTRY_METADATA;
     format!(
         "baked in registry: {}@{}\nbaked in registry tools: {}",
         metadata.repository,

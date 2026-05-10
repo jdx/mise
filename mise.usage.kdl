@@ -436,6 +436,8 @@ cmd github hide=#true subcommand_required=#true help="GitHub related commands" {
     cmd token hide=#true help="Display the GitHub token mise will use for a given host" {
         long_help "Display the GitHub token mise will use for a given host\n\nShows which token source mise would use, useful for debugging\nauthentication issues. The token is masked by default."
         after_long_help "Examples:\n\n    $ mise github token\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise github token --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise github token github.mycompany.com\n    github.mycompany.com: (none)\n"
+        flag --oauth help="Force native GitHub OAuth device flow instead of normal token resolution"
+        flag --raw help="Print only the token value"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
@@ -1265,6 +1267,8 @@ cmd token subcommand_required=#true help="Display git provider tokens mise will 
     }
     cmd github help="GitHub token" {
         after_long_help "Examples:\n\n    $ mise token github\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise token github --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise token github github.mycompany.com\n    github.mycompany.com: (none)\n"
+        flag --oauth help="[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources"
+        flag --raw help="Print only the token value"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }

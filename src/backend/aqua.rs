@@ -9,7 +9,7 @@ use crate::config::Settings;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::lockfile::{GithubAttestationsStatus, PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -53,6 +53,12 @@ struct AquaFileLink {
     dst: PathBuf,
     hard: bool,
     explicit_link: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GithubAttestationStatus {
+    Verified,
+    Unavailable,
 }
 
 #[async_trait]
@@ -710,6 +716,26 @@ impl Backend for AquaBackend {
 
         // Detect provenance from aqua registry config
         let mut provenance = self.detect_provenance_type(&pkg);
+        let mut github_attestations = None;
+
+        if matches!(provenance, Some(ProvenanceType::GithubAttestations))
+            && let Some(digest) = checksum.as_deref().filter(|d| d.starts_with("sha256:"))
+        {
+            match self.detect_github_attestations(&pkg, digest).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    github_attestations = Some(GithubAttestationsStatus::Unavailable);
+                    provenance = self.detect_non_github_provenance_type(&pkg);
+                }
+                Err(e) => {
+                    warn!(
+                        "GitHub attestation API query failed for {}/{}: {e}. \
+                         Lockfile may not record github-attestations provenance.",
+                        pkg.repo_owner, pkg.repo_name
+                    );
+                }
+            }
+        }
 
         // Resolve SLSA provenance URL for all platforms (not just current).
         // This ensures deterministic lockfile output regardless of host platform.
@@ -749,7 +775,10 @@ impl Backend for AquaBackend {
                 )
                 .await
             {
-                Ok(verified) => provenance = Some(verified),
+                Ok((verified, gh_status)) => {
+                    provenance = verified;
+                    github_attestations = gh_status;
+                }
                 Err(e) => {
                     // Clear provenance so install-time verification will run.
                     // If we kept the unverified provenance, has_lockfile_integrity
@@ -763,11 +792,15 @@ impl Backend for AquaBackend {
                 }
             }
         }
+        if provenance.is_some() {
+            github_attestations = None;
+        }
 
         Ok(PlatformInfo {
             url,
             checksum,
             provenance,
+            github_attestations,
             ..Default::default()
         })
     }
@@ -921,8 +954,8 @@ impl AquaBackend {
     /// Detect provenance type from aqua registry package config.
     ///
     /// Returns the highest-priority provenance type that is configured and
-    /// enabled for the package, based on the `ProvenanceType` priority order:
-    /// GithubAttestations (3) > Slsa (2) > Cosign (1) > Minisign (0).
+    /// enabled for the package, based on the verified `ProvenanceType` priority
+    /// order: GithubAttestations > Slsa > Cosign > Minisign.
     ///
     /// This detection is based on registry metadata only — no cryptographic
     /// verification happens here. Actual verification occurs at install time
@@ -943,6 +976,12 @@ impl AquaBackend {
         {
             return Some(ProvenanceType::GithubAttestations);
         }
+
+        self.detect_non_github_provenance_type(pkg)
+    }
+
+    fn detect_non_github_provenance_type(&self, pkg: &AquaPackage) -> Option<ProvenanceType> {
+        let settings = Settings::get();
 
         // Check for SLSA provenance
         if settings.slsa
@@ -975,6 +1014,17 @@ impl AquaBackend {
         None
     }
 
+    async fn detect_github_attestations(&self, pkg: &AquaPackage, digest: &str) -> Result<bool> {
+        crate::github::sigstore::detect_attestations(
+            &pkg.repo_owner,
+            &pkg.repo_name,
+            github::API_URL,
+            digest,
+        )
+        .await
+        .map_err(|e| eyre!("{e}"))
+    }
+
     /// Verify provenance at lock time by downloading the artifact to a temp directory
     /// and running the appropriate cryptographic verification. Only called for the
     /// current platform during `mise lock`.
@@ -984,7 +1034,7 @@ impl AquaBackend {
         v: &str,
         artifact_url: &str,
         detected: &ProvenanceType,
-    ) -> Result<ProvenanceType> {
+    ) -> Result<(Option<ProvenanceType>, Option<GithubAttestationsStatus>)> {
         let tmp_dir = tempfile::tempdir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
@@ -998,22 +1048,33 @@ impl AquaBackend {
 
         match detected {
             ProvenanceType::GithubAttestations => {
-                self.run_github_attestation_check(&artifact_path, pkg)
-                    .await?;
-                Ok(ProvenanceType::GithubAttestations)
+                match self
+                    .run_github_attestation_check(&artifact_path, pkg)
+                    .await?
+                {
+                    GithubAttestationStatus::Verified => {
+                        Ok((Some(ProvenanceType::GithubAttestations), None))
+                    }
+                    GithubAttestationStatus::Unavailable => {
+                        Ok((None, Some(GithubAttestationsStatus::Unavailable)))
+                    }
+                }
             }
             ProvenanceType::Slsa { .. } => {
                 let provenance_url = self
                     .run_slsa_check(&artifact_path, pkg, v, tmp_dir.path(), None)
                     .await?;
-                Ok(ProvenanceType::Slsa {
-                    url: Some(provenance_url),
-                })
+                Ok((
+                    Some(ProvenanceType::Slsa {
+                        url: Some(provenance_url),
+                    }),
+                    None,
+                ))
             }
             ProvenanceType::Minisign => {
                 self.run_minisign_check(&artifact_path, &filename, pkg, v, tmp_dir.path(), None)
                     .await?;
-                Ok(ProvenanceType::Minisign)
+                Ok((Some(ProvenanceType::Minisign), None))
             }
             ProvenanceType::Cosign => {
                 if let Some(cosign) = Self::binary_cosign_config(pkg) {
@@ -1029,7 +1090,7 @@ impl AquaBackend {
                     self.run_cosign_check(&checksum_path, cosign, pkg, v, tmp_dir.path(), None)
                         .await?;
                 }
-                Ok(ProvenanceType::Cosign)
+                Ok((Some(ProvenanceType::Cosign), None))
             }
         }
     }
@@ -1041,7 +1102,7 @@ impl AquaBackend {
         &self,
         artifact_path: &Path,
         pkg: &AquaPackage,
-    ) -> Result<()> {
+    ) -> Result<GithubAttestationStatus> {
         // The aqua registry stores signer_workflow as a regex pattern (e.g. `\.github/workflows/release\.yaml`).
         // sigstore-verification's verify_attestations() uses plain str::contains(), not regex, so we must
         // unescape regex metacharacter escapes (e.g. `\.` → `.`) before passing the value through.
@@ -1064,11 +1125,14 @@ impl AquaBackend {
                     "GitHub attestations verified for {}/{}",
                     pkg.repo_owner, pkg.repo_name
                 );
-                Ok(())
+                Ok(GithubAttestationStatus::Verified)
             }
             Ok(false) => Err(eyre!(
                 "GitHub artifact attestations verification returned false"
             )),
+            Err(crate::github::sigstore::AttestationError::NoAttestations) => {
+                Ok(GithubAttestationStatus::Unavailable)
+            }
             Err(e) => Err(eyre!(
                 "GitHub artifact attestations verification failed: {e}"
             )),
@@ -1680,7 +1744,7 @@ impl AquaBackend {
         let has_lockfile_integrity = tv
             .lock_platforms
             .get(&platform_key)
-            .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
+            .is_some_and(PlatformInfo::has_checksum_and_verified_provenance);
         if has_lockfile_integrity && !force_verify {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else {
@@ -1703,24 +1767,43 @@ impl AquaBackend {
         // Check if the lockfile expects provenance for this platform, then clear it
         // so we can detect whether verification actually re-set it
         let platform_key = self.get_platform_key();
+        let skip_cached_absent_attestations = !Settings::get().force_provenance_verify()
+            && tv
+                .lock_platforms
+                .get(&platform_key)
+                .is_some_and(PlatformInfo::has_checksum_and_github_attestations_unavailable);
         let locked_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
+        let expected_provenance = locked_provenance.as_ref();
+        let mut github_attestations_unavailable = skip_cached_absent_attestations;
 
         // When the lockfile specifies a provenance type, only run that specific mechanism.
         // This prevents false-positive downgrade errors when a tool supports multiple mechanisms
         // (e.g., both minisign and cosign) that would otherwise compete for the provenance slot.
-        let skip_attestations = locked_provenance
-            .as_ref()
-            .is_some_and(|l| !l.is_github_attestations());
-        let skip_slsa = locked_provenance.as_ref().is_some_and(|l| !l.is_slsa());
-        let skip_minisign = locked_provenance.as_ref().is_some_and(|l| !l.is_minisign());
-        let skip_cosign = locked_provenance.as_ref().is_some_and(|l| !l.is_cosign());
+        let skip_attestations = skip_cached_absent_attestations
+            || expected_provenance.is_some_and(|l| !l.is_github_attestations());
+        let skip_slsa = expected_provenance.is_some_and(|l| !l.is_slsa());
+        let skip_minisign = expected_provenance.is_some_and(|l| !l.is_minisign());
+        let skip_cosign = expected_provenance.is_some_and(|l| !l.is_cosign());
 
-        if !skip_attestations {
-            self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
-                .await?;
+        if !skip_attestations
+            && let Some(status) = self
+                .verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
+                .await?
+        {
+            match status {
+                GithubAttestationStatus::Verified => {
+                    let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+                    if pi.provenance.is_none() {
+                        pi.provenance = Some(ProvenanceType::GithubAttestations);
+                    }
+                }
+                GithubAttestationStatus::Unavailable => {
+                    github_attestations_unavailable = true;
+                }
+            }
         }
         if !skip_slsa {
             // Short-circuit: if a higher-priority mechanism already recorded provenance, skip SLSA
@@ -1813,9 +1896,24 @@ impl AquaBackend {
                 platform_info.checksum = Some(checksum_val);
             }
         }
-        // If lockfile recorded provenance, verify that the type matches
+        if github_attestations_unavailable {
+            let platform_key = self.get_platform_key();
+            if let Some(pi) = tv.lock_platforms.get_mut(&platform_key)
+                && pi.checksum.is_some()
+                && pi.provenance.is_none()
+            {
+                pi.github_attestations = Some(GithubAttestationsStatus::Unavailable);
+            }
+        }
+        if let Some(pi) = tv.lock_platforms.get_mut(&platform_key)
+            && pi.provenance.is_some()
+        {
+            pi.github_attestations = None;
+        }
+
+        // If lockfile recorded verified provenance, verify that the type matches
         // (checked after all verification methods including cosign have had a chance to record)
-        if let Some(ref expected) = locked_provenance {
+        if let Some(expected) = expected_provenance {
             let platform_key = self.get_platform_key();
             let got = tv
                 .lock_platforms
@@ -1943,40 +2041,43 @@ impl AquaBackend {
     async fn verify_github_artifact_attestations(
         &self,
         ctx: &InstallContext,
-        tv: &mut ToolVersion,
+        tv: &ToolVersion,
         pkg: &AquaPackage,
         _v: &str,
         filename: &str,
-    ) -> Result<()> {
+    ) -> Result<Option<GithubAttestationStatus>> {
         // Check if attestations are enabled via global and aqua-specific settings
         let settings = Settings::get();
         if !settings.github_attestations || !settings.aqua.github_attestations {
             debug!("GitHub artifact attestations verification disabled");
-            return Ok(());
+            return Ok(None);
         }
 
         if let Some(github_attestations) = &pkg.github_artifact_attestations {
             if github_attestations.enabled == Some(false) {
                 debug!("GitHub artifact attestations verification is disabled for {tv}");
-                return Ok(());
+                return Ok(None);
             }
 
             ctx.pr
                 .set_message("verify GitHub artifact attestations".to_string());
             let artifact_path = tv.download_path().join(filename);
-            self.run_github_attestation_check(&artifact_path, pkg)
-                .await?;
+            match self
+                .run_github_attestation_check(&artifact_path, pkg)
+                .await?
+            {
+                GithubAttestationStatus::Verified => {}
+                GithubAttestationStatus::Unavailable => {
+                    return Ok(Some(GithubAttestationStatus::Unavailable));
+                }
+            }
 
             ctx.pr
                 .set_message("✓ GitHub artifact attestations verified".to_string());
-            let platform_key = self.get_platform_key();
-            let pi = tv.lock_platforms.entry(platform_key).or_default();
-            if pi.provenance.is_none() {
-                pi.provenance = Some(ProvenanceType::GithubAttestations);
-            }
+            return Ok(Some(GithubAttestationStatus::Verified));
         }
 
-        Ok(())
+        Ok(None)
     }
 
     async fn cosign_artifact(
@@ -2142,7 +2243,7 @@ impl AquaBackend {
             }
         }
 
-        let srcs = Self::srcs(pkg, tv)?;
+        let srcs = Self::srcs_for_platform(pkg, v, &install_path, os(), arch())?;
         for link in &srcs {
             if link.src != link.dst && link.src.exists() {
                 Self::create_file_link(link)?;
@@ -2209,22 +2310,14 @@ impl AquaBackend {
             }]);
         }
 
+        let versions = version_candidates(version, pkg.version_prefix.as_deref());
         let files: Vec<AquaFileLink> = pkg
             .files
             .iter()
             .map(|f| {
-                let version = version_with_prefix(version, pkg.version_prefix.as_deref());
-                let srcs = if pkg.version_prefix.is_some() {
-                    vec![Self::file_link_for_version(
-                        f,
-                        pkg,
-                        version.as_ref(),
-                        install_path,
-                        os,
-                        arch,
-                    )?]
-                } else {
-                    vec![
+                let srcs = versions
+                    .iter()
+                    .map(|version| {
                         Self::file_link_for_version(
                             f,
                             pkg,
@@ -2232,17 +2325,9 @@ impl AquaBackend {
                             install_path,
                             os,
                             arch,
-                        )?,
-                        Self::file_link_for_version(
-                            f,
-                            pkg,
-                            &format!("v{version}"),
-                            install_path,
-                            os,
-                            arch,
-                        )?,
-                    ]
-                };
+                        )
+                    })
+                    .collect::<Result<Vec<_>>>()?;
                 Ok(srcs.into_iter().flatten())
             })
             .flatten_ok()
@@ -2436,6 +2521,27 @@ fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Co
     }
 }
 
+fn version_candidates<'a>(version: &'a str, version_prefix: Option<&str>) -> Vec<Cow<'a, str>> {
+    let mut candidates = vec![version_with_prefix(version, version_prefix)];
+    if let Some(prefix) = version_prefix {
+        let base = version.strip_prefix(prefix).unwrap_or(version);
+        if !prefix.is_empty() && !starts_with_v(base) && !ends_with_v(prefix) {
+            candidates.push(Cow::Owned(format!("{prefix}v{base}")));
+        }
+    } else if !starts_with_v(version) {
+        candidates.push(Cow::Owned(format!("v{version}")));
+    }
+    candidates.into_iter().unique().collect()
+}
+
+fn starts_with_v(s: &str) -> bool {
+    s.starts_with('v') || s.starts_with('V')
+}
+
+fn ends_with_v(s: &str) -> bool {
+    s.ends_with('v') || s.ends_with('V')
+}
+
 fn complete_windows_ext(path: PathBuf, complete: bool, target_os: &str) -> PathBuf {
     if target_os == "windows" && complete && path.extension().is_none() {
         path.with_extension("exe")
@@ -2488,6 +2594,36 @@ mod tests {
             version_with_prefix("tool-1.0.0", Some("tool-")),
             "tool-1.0.0"
         );
+    }
+
+    #[test]
+    fn test_version_candidates_include_prefixed_v_tag() {
+        let candidates = version_candidates("1.2.3", Some("tool/"))
+            .into_iter()
+            .map(|v| v.into_owned())
+            .collect_vec();
+
+        assert_eq!(candidates, vec!["tool/1.2.3", "tool/v1.2.3"]);
+    }
+
+    #[test]
+    fn test_version_candidates_include_prefixed_v_tag_for_prefixed_version() {
+        let candidates = version_candidates("tool/1.2.3", Some("tool/"))
+            .into_iter()
+            .map(|v| v.into_owned())
+            .collect_vec();
+
+        assert_eq!(candidates, vec!["tool/1.2.3", "tool/v1.2.3"]);
+    }
+
+    #[test]
+    fn test_version_candidates_do_not_double_v_prefix() {
+        let candidates = version_candidates("1.2.3", Some("tool-v"))
+            .into_iter()
+            .map(|v| v.into_owned())
+            .collect_vec();
+
+        assert_eq!(candidates, vec!["tool-v1.2.3"]);
     }
 
     #[test]
@@ -2721,6 +2857,71 @@ mod tests {
     }
 
     #[test]
+    fn test_srcs_include_prefixed_v_version_paths() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz".to_string();
+        pkg.version_prefix = Some("tool-".to_string());
+        pkg.files = vec![AquaFile {
+            name: "tool".to_string(),
+            src: Some("{{.AssetWithoutExt}}/bin/tool".to_string()),
+            ..Default::default()
+        }];
+
+        let links =
+            AquaBackend::srcs_for_platform(&pkg, "1.2.3", Path::new("install"), "linux", "amd64")
+                .unwrap();
+
+        assert_eq!(
+            links,
+            vec![
+                AquaFileLink {
+                    src: PathBuf::from("install").join("tool-tool-1.2.3-linux-amd64/bin/tool"),
+                    dst: PathBuf::from("install").join("tool-tool-1.2.3-linux-amd64/bin/tool"),
+                    hard: false,
+                    explicit_link: false,
+                },
+                AquaFileLink {
+                    src: PathBuf::from("install").join("tool-tool-v1.2.3-linux-amd64/bin/tool"),
+                    dst: PathBuf::from("install").join("tool-tool-v1.2.3-linux-amd64/bin/tool"),
+                    hard: false,
+                    explicit_link: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_srcs_resolved_tag_version_does_not_add_extra_candidates() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz".to_string();
+        pkg.version_prefix = Some("tool-".to_string());
+        pkg.files = vec![AquaFile {
+            name: "tool".to_string(),
+            src: Some("{{.AssetWithoutExt}}/bin/tool".to_string()),
+            ..Default::default()
+        }];
+
+        let links = AquaBackend::srcs_for_platform(
+            &pkg,
+            "tool-v1.2.3",
+            Path::new("install"),
+            "linux",
+            "amd64",
+        )
+        .unwrap();
+
+        assert_eq!(
+            links,
+            vec![AquaFileLink {
+                src: PathBuf::from("install").join("tool-tool-v1.2.3-linux-amd64/bin/tool"),
+                dst: PathBuf::from("install").join("tool-tool-v1.2.3-linux-amd64/bin/tool"),
+                hard: false,
+                explicit_link: false,
+            }]
+        );
+    }
+
+    #[test]
     fn test_relative_path_between_link_and_source() {
         assert_eq!(
             relative_path(
@@ -2906,9 +3107,10 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
                     .unwrap_or_default()
             )
         }
-        AquaPackageType::GoInstall => {
+        AquaPackageType::GoInstall | AquaPackageType::GoBuild => {
             bail!(
-                "package type `go_install` is not supported in the aqua backend. Use the go backend instead{}.",
+                "package type `{}` is not supported in the aqua backend. Use the go backend instead{}.",
+                pkg.r#type,
                 pkg.path
                     .as_ref()
                     .map(|path| format!(": go:{path}"))

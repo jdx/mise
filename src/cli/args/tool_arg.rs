@@ -34,7 +34,7 @@ impl FromStr for ToolArg {
     fn from_str(input: &str) -> eyre::Result<Self> {
         let (backend_input, version) = parse_input(input);
 
-        let ba: Arc<BackendArg> = Arc::new(backend_input.into());
+        let ba: Arc<BackendArg> = Arc::new(backend_input.parse()?);
         let version_type = match version.as_ref() {
             Some(version) => version.parse()?,
             None => ToolVersionType::Version(String::from("latest")),

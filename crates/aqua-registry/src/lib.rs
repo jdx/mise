@@ -3,15 +3,14 @@
 //! This crate provides functionality for working with Aqua package registry files.
 //! It can load registry data from baked-in files, local repositories, or remote HTTP sources.
 
+mod codec;
 mod registry;
 mod template;
-mod types;
+pub mod types;
 
 // Re-export only what's needed by the main mise crate
-pub use registry::{
-    AQUA_STANDARD_REGISTRY_FILES, AQUA_STANDARD_REGISTRY_METADATA, AquaRegistry,
-    AquaRegistryMetadata, DefaultRegistryFetcher, FileCacheStore, NoOpCacheStore, package_ids,
-};
+pub use codec::{decode_package_rkyv, encode_package_rkyv};
+pub use registry::{AquaRegistry, DefaultRegistryFetcher, FileCacheStore, NoOpCacheStore};
 pub use types::{
     AquaChecksum, AquaChecksumType, AquaCosign, AquaFile, AquaMinisignType, AquaPackage,
     AquaPackageType, AquaVar, RegistryYaml,
@@ -62,11 +61,11 @@ impl Default for AquaRegistryConfig {
     }
 }
 
-/// Trait for fetching registry files from various sources
+/// Trait for fetching aqua packages from various sources
 #[allow(async_fn_in_trait)]
 pub trait RegistryFetcher {
-    /// Fetch and parse a registry YAML file for the given package ID
-    async fn fetch_registry(&self, package_id: &str) -> Result<crate::types::RegistryYaml>;
+    /// Fetch and parse a package definition for the given package ID.
+    async fn fetch_package(&self, package_id: &str) -> Result<crate::types::AquaPackage>;
 }
 
 /// Trait for caching registry data

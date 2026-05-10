@@ -41,6 +41,15 @@ preinstall = "echo 'I am about to install tools'"
 postinstall = "echo 'I just installed tools'"
 ```
 
+String hooks are shorthand for `run` hooks. Use a hook table when you need to select the inline shell command:
+
+```toml
+[hooks]
+postinstall = { run = "echo 'installed'", shell = "bash -c" }
+```
+
+For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` alias for install hooks is deprecated.
+
 The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed:
 
 ```toml
@@ -124,15 +133,33 @@ Hooks are executed with the following environment variables set:
 - `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
 - `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed (only for `postinstall` hooks).
 
+Inline `run` hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
+(`enter = "echo hi"`) is equivalent to `{ run = "echo hi" }`.
+
+`run` hooks execute in a subprocess using the default inline shell:
+[`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
+or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args).
+Add `shell = "bash -c"` to a `run` hook table to choose a different inline shell command. Like task
+`shell`, the value should include both the program and the argument that evaluates the inline command
+such as `bash -c`, `zsh -c`, or `pwsh -Command`.
+
 ## Shell hooks
 
-Hooks can be executed in the current shell, for example if you'd like to add bash completions when entering a directory:
+`enter`, `leave`, and `cd` hooks can be executed in the current shell, for example if you'd like to add bash completions when entering a directory:
 
 ```toml
 [hooks.enter]
 shell = "bash"
 script = "source completions.sh"
 ```
+
+`script` with `shell` is for current-shell hooks. Here, `shell` is a shell-name selector such as
+`bash`, `zsh`, or `fish`, not an inline shell command like `bash -c`. mise only prints the script
+when the active `mise activate` shell matches.
+
+Use `run` when the hook should execute as an inline command in a subprocess. `preinstall` and
+`postinstall` do not have a current shell, so `script` is only kept there as a legacy alias for `run`;
+if `shell` is set with `script` on those hooks, it is ignored.
 
 ::: warning
 I feel this should be obvious but in case it's not, this isn't going to do any sort of cleanup
@@ -153,11 +180,11 @@ You can use arrays to define multiple hooks in the same file:
 [hooks]
 enter = [
   "echo 'I entered the project'",
-  "echo 'I am in the project'"
+  { run = "echo 'I am in the project'" }
 ]
 
 [[hooks.cd]]
-script = "echo 'I changed directories'"
+run = "echo 'I changed directories'"
 [[hooks.cd]]
-script = "echo 'I also directories'"
+run = "echo 'I also changed directories'"
 ```
