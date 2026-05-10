@@ -1,6 +1,10 @@
 //! Catalog resolve + OCI registry install path for mise-wings.
 
-use std::{path::Path, time::Duration};
+use std::{
+    collections::BTreeMap,
+    path::{Component, Path, PathBuf},
+    time::Duration,
+};
 
 use eyre::{Context, Result, bail, ensure, eyre};
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
@@ -10,8 +14,8 @@ use url::Url;
 
 use crate::backend::Backend;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::{get_filename_from_url, install_artifact};
-use crate::file::TarFormat;
+use crate::backend::static_helpers::get_filename_from_url;
+use crate::file::{self, TarFormat};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
@@ -20,10 +24,15 @@ use crate::wings::client;
 
 pub(crate) const MEDIA_TYPE_OCI_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
 pub(crate) const MEDIA_TYPE_OCI_IMAGE_INDEX: &str = "application/vnd.oci.image.index.v1+json";
-pub(crate) const MISE_SOURCE_LAYER_MEDIA_TYPE: &str = "application/vnd.mise-wings.artifact.v1";
+pub(crate) const MOCITO_TOOL_ARTIFACT_TYPE: &str = "application/vnd.mise.tool.v1";
+pub(crate) const MOCITO_TOOL_CONFIG_MEDIA_TYPE: &str = "application/vnd.mise.tool.config.v1+json";
 const OCI_TAR_LAYER_MEDIA_TYPE: &str = "application/vnd.oci.image.layer.v1.tar";
 const OCI_TAR_GZIP_LAYER_MEDIA_TYPE: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
+const OCI_TAR_ZSTD_LAYER_MEDIA_TYPE: &str = "application/vnd.oci.image.layer.v1.tar+zstd";
 const DOCKER_TAR_GZIP_LAYER_MEDIA_TYPE: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
+const ZIP_LAYER_MEDIA_TYPE: &str = "application/zip";
+const BINARY_LAYER_MEDIA_TYPE: &str = "application/octet-stream";
+const MOCITO_BIN_DIR: &str = ".mise-bins";
 const RESOLVE_PENDING_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const RESOLVE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -367,45 +376,61 @@ async fn pull_and_install(
     ensure_digest(manifest_bytes, &artifact.digest, "manifest")?;
     let manifest: WingsManifest =
         serde_json::from_slice(manifest_bytes).wrap_err("decoding wings OCI manifest")?;
-    ensure!(
-        manifest.layers.len() == 1,
-        "wings artifact {} has {} layers; expected 1",
-        artifact.ref_,
-        manifest.layers.len()
-    );
-    let layer = &manifest.layers[0];
-    let blob_url = format!(
+    manifest.validate_mocito(&artifact.ref_)?;
+
+    let config_url = format!(
         "https://{}/v2/{}/blobs/{}",
-        reference.registry, reference.repository, layer.digest
+        reference.registry, reference.repository, manifest.config.digest
     );
-    let filename = filename_for_layer(&manifest, layer)?;
-    let layer_path = tv.download_path().join(filename);
+    let blob_headers = registry_headers(token, &[])?;
+    let config_bytes = crate::http::HTTP
+        .get_bytes_with_headers(&config_url, &blob_headers)
+        .await
+        .wrap_err_with(|| format!("fetching wings MOCITO config {}", manifest.config.digest))?;
+    let config_bytes = config_bytes.as_ref();
+    manifest
+        .config
+        .ensure_bytes(config_bytes, "config")
+        .wrap_err("verifying wings MOCITO config descriptor")?;
+    let config: MocitoConfig =
+        serde_json::from_slice(config_bytes).wrap_err("decoding wings MOCITO config")?;
+    config.validate(tv)?;
 
     ctx.pr.set_message("wings download".into());
-    let blob_headers = registry_headers(token, &[])?;
-    crate::http::HTTP
-        .download_file_with_headers(&blob_url, &layer_path, &blob_headers, Some(ctx.pr.as_ref()))
-        .await
-        .wrap_err_with(|| format!("fetching wings OCI layer {}", layer.digest))?;
-    ensure_file_digest(&layer_path, &layer.digest, "layer")?;
+    let mut layers = Vec::with_capacity(manifest.layers.len());
+    for (idx, layer) in manifest.layers.iter().enumerate() {
+        let blob_url = format!(
+            "https://{}/v2/{}/blobs/{}",
+            reference.registry, reference.repository, layer.digest
+        );
+        let filename = filename_for_layer(&manifest, layer, idx)?;
+        let layer_path = tv.download_path().join(filename);
+        crate::http::HTTP
+            .download_file_with_headers(
+                &blob_url,
+                &layer_path,
+                &blob_headers,
+                Some(ctx.pr.as_ref()),
+            )
+            .await
+            .wrap_err_with(|| format!("fetching wings OCI layer {}", layer.digest))?;
+        layer
+            .ensure_file(&layer_path, "layer")
+            .wrap_err_with(|| format!("verifying wings OCI layer {}", layer.digest))?;
+        layers.push((layer, layer_path));
+    }
 
     ctx.pr.next_operation();
     ctx.pr.set_message("wings install".into());
-    let opts = tv.request.options();
-    match layer.media_type.as_str() {
-        OCI_TAR_GZIP_LAYER_MEDIA_TYPE
-        | DOCKER_TAR_GZIP_LAYER_MEDIA_TYPE
-        | OCI_TAR_LAYER_MEDIA_TYPE
-        | MISE_SOURCE_LAYER_MEDIA_TYPE => {
-            install_artifact(tv, &layer_path, &opts, Some(ctx.pr.as_ref()))?;
-        }
-        other => bail!("wings artifact layer media type {other} is not installable"),
-    }
+    install_mocito_artifact(tv, &config, &layers, Some(ctx.pr.as_ref()))?;
     Ok(())
 }
 
 #[derive(Debug, Deserialize)]
 struct WingsManifest {
+    #[serde(rename = "artifactType")]
+    artifact_type: String,
+    config: WingsDescriptor,
     layers: Vec<WingsDescriptor>,
     #[serde(default)]
     annotations: indexmap::IndexMap<String, String>,
@@ -416,25 +441,196 @@ struct WingsDescriptor {
     #[serde(rename = "mediaType")]
     media_type: String,
     digest: String,
+    size: u64,
 }
 
-fn filename_for_layer(manifest: &WingsManifest, layer: &WingsDescriptor) -> Result<String> {
-    if let Some(filename) = manifest
-        .annotations
-        .get("dev.mise-wings.source.url")
-        .map(|url| get_filename_from_url(url))
-        .filter(|name| !name.is_empty())
+impl WingsManifest {
+    fn validate_mocito(&self, artifact_ref: &str) -> Result<()> {
+        ensure!(
+            self.artifact_type == MOCITO_TOOL_ARTIFACT_TYPE,
+            "wings artifact {artifact_ref} has artifactType {}; expected {}",
+            self.artifact_type,
+            MOCITO_TOOL_ARTIFACT_TYPE
+        );
+        ensure!(
+            self.config.media_type == MOCITO_TOOL_CONFIG_MEDIA_TYPE,
+            "wings artifact {artifact_ref} config has media type {}; expected {}",
+            self.config.media_type,
+            MOCITO_TOOL_CONFIG_MEDIA_TYPE
+        );
+        ensure!(
+            !self.layers.is_empty(),
+            "wings artifact {artifact_ref} has no payload layers"
+        );
+        for layer in &self.layers {
+            ensure_installable_layer_media_type(&layer.media_type)?;
+        }
+        Ok(())
+    }
+}
+
+impl WingsDescriptor {
+    fn ensure_bytes(&self, bytes: &[u8], label: &str) -> Result<()> {
+        ensure!(
+            bytes.len() as u64 == self.size,
+            "wings {label} size mismatch: expected {}, got {}",
+            self.size,
+            bytes.len()
+        );
+        ensure_digest(bytes, &self.digest, label)
+    }
+
+    fn ensure_file(&self, path: &Path, label: &str) -> Result<()> {
+        let size = std::fs::metadata(path)?.len();
+        ensure!(
+            size == self.size,
+            "wings {label} size mismatch: expected {}, got {}",
+            self.size,
+            size
+        );
+        ensure_file_digest(path, &self.digest, label)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct MocitoConfig {
+    #[serde(rename = "schemaVersion")]
+    schema_version: u8,
+    namespace: String,
+    tool: String,
+    version: String,
+    platform: String,
+    #[serde(default, rename = "stripComponents")]
+    strip_components: usize,
+    #[serde(default)]
+    bin: Vec<String>,
+    #[serde(default, rename = "binLinks")]
+    bin_links: Vec<MocitoBinLink>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MocitoBinLink {
+    name: String,
+    src: Option<String>,
+    link: Option<String>,
+    #[serde(default)]
+    hard: bool,
+}
+
+impl MocitoConfig {
+    fn validate(&self, tv: &ToolVersion) -> Result<()> {
+        ensure!(
+            self.schema_version == 1,
+            "wings MOCITO config schemaVersion {} is not supported",
+            self.schema_version
+        );
+        ensure!(
+            !self.namespace.trim().is_empty(),
+            "wings MOCITO config namespace is empty"
+        );
+        ensure!(
+            !self.tool.trim().is_empty(),
+            "wings MOCITO config tool is empty"
+        );
+        ensure!(
+            self.version == tv.version,
+            "wings MOCITO config version {} does not match requested {}",
+            self.version,
+            tv.version
+        );
+        let expected_platform = PlatformTarget::from_current().to_key();
+        ensure!(
+            self.platform == expected_platform,
+            "wings MOCITO config platform {} does not match current platform {}",
+            self.platform,
+            expected_platform
+        );
+        for bin in &self.bin {
+            safe_relative_path(bin.trim_end_matches('/'), "bin")?;
+        }
+        for link in &self.bin_links {
+            link.validate()?;
+        }
+        for (key, value) in &self.env {
+            ensure!(
+                !key.trim().is_empty() && !key.contains('=') && !key.contains('\0'),
+                "wings MOCITO config env key {key:?} is invalid"
+            );
+            ensure!(
+                !value.contains('\0'),
+                "wings MOCITO config env value for {key:?} contains a NUL byte"
+            );
+        }
+        Ok(())
+    }
+
+    fn raw_binary_dest(&self) -> Result<PathBuf> {
+        if let Some(bin) = self.bin.iter().find(|bin| !bin.ends_with('/')) {
+            return safe_relative_path(bin, "bin");
+        }
+        if let Some(link) = self.bin_links.first() {
+            return link.source_path();
+        }
+        bail!(
+            "wings MOCITO raw binary payload requires a non-directory bin entry or binLinks source"
+        )
+    }
+}
+
+impl MocitoBinLink {
+    fn validate(&self) -> Result<()> {
+        ensure!(
+            !self.name.trim().is_empty(),
+            "wings MOCITO binLinks entry has empty name"
+        );
+        safe_relative_path(&self.name, "binLinks.name")?;
+        if let Some(src) = &self.src {
+            safe_relative_path(src, "binLinks.src")?;
+        }
+        if let Some(link) = &self.link {
+            safe_relative_path(link, "binLinks.link")?;
+        }
+        Ok(())
+    }
+
+    fn source_path(&self) -> Result<PathBuf> {
+        safe_relative_path(self.src.as_deref().unwrap_or(&self.name), "binLinks.src")
+    }
+
+    fn link_path(&self) -> Result<PathBuf> {
+        match self.link.as_deref() {
+            Some(link) => safe_relative_path(link, "binLinks.link"),
+            None => Ok(PathBuf::from(MOCITO_BIN_DIR).join(&self.name)),
+        }
+    }
+}
+
+fn filename_for_layer(
+    manifest: &WingsManifest,
+    layer: &WingsDescriptor,
+    layer_index: usize,
+) -> Result<String> {
+    if layer_index == 0
+        && let Some(filename) = manifest
+            .annotations
+            .get("dev.mise.mocito.source.url")
+            .map(|url| get_filename_from_url(url))
+            .filter(|name| !name.is_empty())
     {
         ensure_installable_source_filename(&filename)?;
         return Ok(filename);
     }
 
-    ensure!(
-        layer.media_type != MISE_SOURCE_LAYER_MEDIA_TYPE,
-        "wings source artifact layer is missing dev.mise-wings.source.url annotation"
-    );
-
-    Ok(filename_for_layer_media_type(&layer.media_type).to_string())
+    let Some(expected) = layer.digest.strip_prefix("sha256:") else {
+        bail!("wings layer digest is not sha256: {}", layer.digest);
+    };
+    Ok(format!(
+        "artifact-{layer_index}-{}.{}",
+        &expected[..12],
+        extension_for_layer_media_type(&layer.media_type)?
+    ))
 }
 
 fn ensure_installable_source_filename(filename: &str) -> Result<()> {
@@ -454,12 +650,189 @@ fn ensure_installable_source_filename(filename: &str) -> Result<()> {
     Ok(())
 }
 
-fn filename_for_layer_media_type(media_type: &str) -> &'static str {
-    match media_type {
-        OCI_TAR_GZIP_LAYER_MEDIA_TYPE | DOCKER_TAR_GZIP_LAYER_MEDIA_TYPE => "artifact.tar.gz",
-        OCI_TAR_LAYER_MEDIA_TYPE => "artifact.tar",
-        _ => "artifact",
+fn install_mocito_artifact(
+    tv: &ToolVersion,
+    config: &MocitoConfig,
+    layers: &[(&WingsDescriptor, PathBuf)],
+    pr: Option<&dyn crate::ui::progress_report::SingleReport>,
+) -> Result<()> {
+    let install_path = tv.install_path();
+    file::remove_all(&install_path)?;
+    file::create_dir_all(&install_path)?;
+
+    for (layer, path) in layers {
+        install_mocito_layer(tv, config, layer, path, pr)?;
     }
+    validate_mocito_bins(&install_path, config)?;
+    create_mocito_bin_links(&install_path, &config.bin_links)?;
+    Ok(())
+}
+
+fn install_mocito_layer(
+    tv: &ToolVersion,
+    config: &MocitoConfig,
+    layer: &WingsDescriptor,
+    layer_path: &Path,
+    pr: Option<&dyn crate::ui::progress_report::SingleReport>,
+) -> Result<()> {
+    let install_path = tv.install_path();
+    match layer_format(&layer.media_type)? {
+        TarFormat::Raw => {
+            let dest = install_path.join(config.raw_binary_dest()?);
+            if let Some(parent) = dest.parent() {
+                file::create_dir_all(parent)?;
+            }
+            file::copy(layer_path, &dest)?;
+            file::make_executable(&dest)?;
+        }
+        format => {
+            let layer_dir = tv.download_path().join(format!(
+                ".mocito-layer-{}",
+                layer
+                    .digest
+                    .trim_start_matches("sha256:")
+                    .chars()
+                    .take(12)
+                    .collect::<String>()
+            ));
+            file::remove_all(&layer_dir)?;
+            file::create_dir_all(&layer_dir)?;
+            let opts = file::TarOptions {
+                strip_components: config.strip_components,
+                pr,
+                ..file::TarOptions::new(format)
+            };
+            file::untar(layer_path, &layer_dir, &opts)?;
+            merge_mocito_layer(&layer_dir, &install_path)?;
+            file::remove_all(&layer_dir)?;
+        }
+    }
+    Ok(())
+}
+
+fn merge_mocito_layer(layer_dir: &Path, install_path: &Path) -> Result<()> {
+    for entry in std::fs::read_dir(layer_dir)? {
+        let entry = entry?;
+        let src = entry.path();
+        let dst = install_path.join(entry.file_name());
+        file::remove_all(&dst)?;
+        std::fs::rename(&src, &dst).wrap_err_with(|| {
+            format!(
+                "failed to move wings MOCITO layer entry {} to {}",
+                src.display(),
+                dst.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn validate_mocito_bins(install_path: &Path, config: &MocitoConfig) -> Result<()> {
+    for entry in &config.bin {
+        let is_dir_entry = entry.ends_with('/');
+        let path = install_path.join(safe_relative_path(entry.trim_end_matches('/'), "bin")?);
+        if is_dir_entry {
+            ensure!(
+                path.is_dir(),
+                "wings MOCITO bin directory {} does not exist after install",
+                path.display()
+            );
+        } else {
+            ensure!(
+                path.is_file(),
+                "wings MOCITO bin file {} does not exist after install",
+                path.display()
+            );
+            file::make_executable(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn create_mocito_bin_links(install_path: &Path, links: &[MocitoBinLink]) -> Result<()> {
+    if links.is_empty() {
+        return Ok(());
+    }
+    let symlink_dir = install_path.join(MOCITO_BIN_DIR);
+    file::create_dir_all(&symlink_dir)?;
+
+    for link in links {
+        let src = install_path.join(link.source_path()?);
+        ensure!(
+            src.is_file(),
+            "wings MOCITO binLinks source {} does not exist after install",
+            src.display()
+        );
+        file::make_executable(&src)?;
+        let dst = install_path.join(link.link_path()?);
+        if let Some(parent) = dst.parent() {
+            file::create_dir_all(parent)?;
+        }
+        if link.hard {
+            if dst.exists() || dst.is_symlink() {
+                file::remove_file(&dst)?;
+            }
+            std::fs::hard_link(&src, &dst).wrap_err_with(|| {
+                format!("failed to hard link {} to {}", src.display(), dst.display())
+            })?;
+        } else {
+            file::make_symlink_or_copy(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
+fn layer_format(media_type: &str) -> Result<TarFormat> {
+    match media_type {
+        OCI_TAR_GZIP_LAYER_MEDIA_TYPE | DOCKER_TAR_GZIP_LAYER_MEDIA_TYPE => Ok(TarFormat::TarGz),
+        OCI_TAR_LAYER_MEDIA_TYPE => Ok(TarFormat::Tar),
+        OCI_TAR_ZSTD_LAYER_MEDIA_TYPE => Ok(TarFormat::TarZst),
+        ZIP_LAYER_MEDIA_TYPE => Ok(TarFormat::Zip),
+        BINARY_LAYER_MEDIA_TYPE => Ok(TarFormat::Raw),
+        other => bail!("wings artifact layer media type {other} is not installable"),
+    }
+}
+
+fn ensure_installable_layer_media_type(media_type: &str) -> Result<()> {
+    layer_format(media_type).map(|_| ())
+}
+
+fn extension_for_layer_media_type(media_type: &str) -> Result<&'static str> {
+    match layer_format(media_type)? {
+        TarFormat::TarGz => Ok("tar.gz"),
+        TarFormat::Tar => Ok("tar"),
+        TarFormat::TarZst => Ok("tar.zst"),
+        TarFormat::Zip => Ok("zip"),
+        TarFormat::Raw => Ok("bin"),
+        other => bail!("wings artifact layer media type for {other:?} is not supported"),
+    }
+}
+
+fn safe_relative_path(value: &str, field: &str) -> Result<PathBuf> {
+    ensure!(
+        !value.trim().is_empty(),
+        "wings MOCITO config {field} path is empty"
+    );
+    let path = Path::new(value);
+    ensure!(
+        !path.is_absolute(),
+        "wings MOCITO config {field} path {value:?} must be relative"
+    );
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => normalized.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => bail!(
+                "wings MOCITO config {field} path {value:?} must not escape the install directory"
+            ),
+        }
+    }
+    ensure!(
+        !normalized.as_os_str().is_empty(),
+        "wings MOCITO config {field} path is empty"
+    );
+    Ok(normalized)
 }
 
 pub(crate) fn registry_headers(token: &str, accept: &[&str]) -> Result<HeaderMap> {
@@ -626,39 +999,16 @@ mod tests {
     }
 
     #[test]
-    fn source_layer_requires_source_url_for_filename() {
-        let manifest = WingsManifest {
-            layers: vec![],
-            annotations: indexmap::IndexMap::new(),
-        };
-        let layer = WingsDescriptor {
-            media_type: MISE_SOURCE_LAYER_MEDIA_TYPE.into(),
-            digest: "sha256:abc".into(),
-        };
-        let err = filename_for_layer(&manifest, &layer).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("missing dev.mise-wings.source.url annotation")
-        );
-    }
-
-    #[test]
     fn source_layer_rejects_unknown_archive_extension() {
         let mut annotations = indexmap::IndexMap::new();
         annotations.insert(
-            "dev.mise-wings.source.url".into(),
+            "dev.mise.mocito.source.url".into(),
             "https://example.com/tool.deb".into(),
         );
-        let manifest = WingsManifest {
-            layers: vec![],
-            annotations,
-        };
-        let layer = WingsDescriptor {
-            media_type: MISE_SOURCE_LAYER_MEDIA_TYPE.into(),
-            digest: "sha256:abc".into(),
-        };
+        let manifest = manifest_with_annotations(annotations);
+        let layer = layer(OCI_TAR_GZIP_LAYER_MEDIA_TYPE);
 
-        let err = filename_for_layer(&manifest, &layer).unwrap_err();
+        let err = filename_for_layer(&manifest, &layer, 0).unwrap_err();
         assert!(err.to_string().contains("unsupported archive extension"));
     }
 
@@ -683,19 +1033,70 @@ mod tests {
     fn source_layer_allows_extensionless_raw_binary() {
         let mut annotations = indexmap::IndexMap::new();
         annotations.insert(
-            "dev.mise-wings.source.url".into(),
+            "dev.mise.mocito.source.url".into(),
             "https://example.com/tool".into(),
         );
-        let manifest = WingsManifest {
+        let manifest = manifest_with_annotations(annotations);
+        let layer = layer(BINARY_LAYER_MEDIA_TYPE);
+
+        assert_eq!(filename_for_layer(&manifest, &layer, 0).unwrap(), "tool");
+    }
+
+    #[test]
+    fn layer_without_source_url_gets_stable_filename() {
+        let manifest = manifest_with_annotations(indexmap::IndexMap::new());
+        let layer = layer(OCI_TAR_GZIP_LAYER_MEDIA_TYPE);
+
+        assert_eq!(
+            filename_for_layer(&manifest, &layer, 1).unwrap(),
+            "artifact-1-abcdef012345.tar.gz"
+        );
+    }
+
+    #[test]
+    fn mocito_config_rejects_unsafe_paths() {
+        let mut config = mocito_config();
+        config.bin = vec!["../bin/tool".into()];
+        let err = config
+            .validate(&tool_version("foo", Some("github:foo/bar")))
+            .unwrap_err();
+
+        assert!(err.to_string().contains("must not escape"));
+    }
+
+    fn manifest_with_annotations(annotations: indexmap::IndexMap<String, String>) -> WingsManifest {
+        WingsManifest {
+            artifact_type: MOCITO_TOOL_ARTIFACT_TYPE.into(),
+            config: WingsDescriptor {
+                media_type: MOCITO_TOOL_CONFIG_MEDIA_TYPE.into(),
+                digest: "sha256:config".into(),
+                size: 1,
+            },
             layers: vec![],
             annotations,
-        };
-        let layer = WingsDescriptor {
-            media_type: MISE_SOURCE_LAYER_MEDIA_TYPE.into(),
-            digest: "sha256:abc".into(),
-        };
+        }
+    }
 
-        assert_eq!(filename_for_layer(&manifest, &layer).unwrap(), "tool");
+    fn layer(media_type: &str) -> WingsDescriptor {
+        WingsDescriptor {
+            media_type: media_type.into(),
+            digest: "sha256:abcdef0123456789".into(),
+            size: 1,
+        }
+    }
+
+    fn mocito_config() -> MocitoConfig {
+        MocitoConfig {
+            schema_version: 1,
+            namespace: "github".into(),
+            tool: "foo/bar".into(),
+            version: "1.0.0".into(),
+            platform: PlatformTarget::from_current().to_key(),
+            strip_components: 0,
+            bin: vec![],
+            bin_links: vec![],
+            env: BTreeMap::new(),
+        }
     }
 
     fn tool_version(short: &str, full: Option<&str>) -> ToolVersion {
