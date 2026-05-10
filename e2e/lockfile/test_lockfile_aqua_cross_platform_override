@@ -46,7 +46,8 @@ cat <<'EOF_MISE' >mise.toml
 "aqua:example/testtool" = "1.0.0"
 EOF_MISE
 
-output=$(mise lock --platform "$TARGET_PLATFORM" 2>&1)
+output=$(MISE_TIMINGS=1 mise lock --platform "$TARGET_PLATFORM" 2>&1)
+printf '%s\n' "$output"
 assert_contains "echo '$output'" "Targeting 1 platform(s)"
 assert_contains "echo '$output'" "$TARGET_PLATFORM"
 
