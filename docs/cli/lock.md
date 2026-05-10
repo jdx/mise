@@ -40,6 +40,11 @@ Comma-separated list of platforms to target
 e.g.: linux-x64,macos-arm64,windows-x64
 If not specified, all platforms already in lockfile will be updated
 
+### `--local`
+
+Update mise.local.lock instead of mise.lock
+Use for tools defined in .local.toml configs
+
 ### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
 
 Only lock versions released before this age or date
@@ -48,11 +53,6 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
 This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
 Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
-
-### `--local`
-
-Update mise.local.lock instead of mise.lock
-Use for tools defined in .local.toml configs
 
 Examples:
 

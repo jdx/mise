@@ -53,6 +53,11 @@ pub struct Lock {
     #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
     pub platform: Vec<String>,
 
+    /// Update mise.local.lock instead of mise.lock
+    /// Use for tools defined in .local.toml configs
+    #[clap(long, verbatim_doc_comment)]
+    pub local: bool,
+
     /// Only lock versions released before this age or date
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
@@ -66,11 +71,6 @@ pub struct Lock {
         verbatim_doc_comment
     )]
     pub minimum_release_age: Option<String>,
-
-    /// Update mise.local.lock instead of mise.lock
-    /// Use for tools defined in .local.toml configs
-    #[clap(long, verbatim_doc_comment)]
-    pub local: bool,
 }
 
 impl Lock {

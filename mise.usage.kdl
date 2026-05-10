@@ -567,11 +567,11 @@ cmd lock help="Update lockfile checksums and URLs for all specified platforms" {
     flag "-p --platform" help="Comma-separated list of platforms to target\ne.g.: linux-x64,macos-arm64,windows-x64\nIf not specified, all platforms already in lockfile will be updated" var=#true {
         arg <PLATFORM>
     }
+    flag --local help="Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs"
     flag --minimum-release-age help="Only lock versions released before this age or date" {
         long_help "Only lock versions released before this age or date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\".\nThis only affects fuzzy version matches like \"20\" or \"latest\".\nExplicitly pinned versions like \"22.5.0\" are not filtered.\nExisting matching lockfile entries are preserved and are not downgraded solely by this flag."
         arg <MINIMUM_RELEASE_AGE>
     }
-    flag --local help="Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs"
     arg "[TOOL]…" help="Tool(s) to update in lockfile\ne.g.: node python\nIf not specified, all tools in lockfile will be updated" required=#false var=#true
 }
 cmd ls help="List installed and active tool versions" {
