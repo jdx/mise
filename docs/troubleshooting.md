@@ -145,6 +145,29 @@ mise ERROR command failed: exit code 1
 mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information
 ```
 
+### `shell = "bash -c"` task fails with `command not found` from PowerShell
+
+If a task pinned to `shell = "bash -c"` works from Git Bash but fails with
+`command not found` from PowerShell, mise is most likely resolving `bash` to
+the WSL launcher at `C:\Windows\System32\bash.exe` instead of a real POSIX
+bash. The launcher dispatches into the WSL distribution's Linux user-space,
+where mise-managed Windows tools aren't visible.
+
+mise prefers a real POSIX bash (Git Bash / MSYS2) automatically when it can
+find one in a standard install location. If yours is installed elsewhere, set
+`MISE_BASH_PATH` to override:
+
+```powershell
+$env:MISE_BASH_PATH = "C:\tools\msys64\usr\bin\bash.exe"
+mise run my-bash-task
+```
+
+```toml
+# Alternatively, scope it to one project from mise.toml
+[env]
+MISE_BASH_PATH = "C:/tools/msys64/usr/bin/bash.exe"
+```
+
 ## mise isn't working when calling from tmux or another shell initialization script
 
 `mise activate` will not update PATH until the shell prompt is displayed. So if you need to access a

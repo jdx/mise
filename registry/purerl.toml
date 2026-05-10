@@ -1,2 +1,0 @@
-backends = ["github:purerl/purerl", "asdf:GoNZooo/asdf-purerl"]
-description = "Erlang backend for the PureScript compiler"

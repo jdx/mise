@@ -1,3 +1,0 @@
-backends = ["npm:zbctl"]
-description = "zbctl is a command line interface designed to create and read resources inside zeebe broker."
-test = { cmd = "zbctl version", expected = "zbctl {{version}}" }

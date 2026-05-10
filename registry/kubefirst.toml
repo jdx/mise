@@ -1,2 +1,0 @@
-backends = ["github:konstructio/kubefirst", "asdf:Claywd/asdf-kubefirst"]
-description = "The Kubefirst CLI creates instant GitOps platforms that integrate some of the best tools in cloud native from scratch in minutes"

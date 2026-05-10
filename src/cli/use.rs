@@ -146,6 +146,7 @@ impl Use {
             before_date: self.get_before_date()?,
             offline: false,
             refresh_remote_versions: false,
+            inactive: false,
         };
         let versions: Vec<_> = self
             .tool
@@ -378,7 +379,7 @@ impl Use {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-    
+
     # run with no arguments to use the interactive selector
     $ <bold>mise use</bold>
 

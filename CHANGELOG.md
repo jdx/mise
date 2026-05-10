@@ -1,5 +1,53 @@
 # Changelog
 
+## [2026.5.4](https://github.com/jdx/mise/compare/v2026.5.3..v2026.5.4) - 2026-05-09
+
+### 🚀 Features
+
+- **(java)** remove musl feature in favor of autom. musl detection and alpine-linux versions by @roele in [#9688](https://github.com/jdx/mise/pull/9688)
+
+### 🚜 Refactor
+
+- **(schema)** stop patching task_template in render script by @risu729 in [#9680](https://github.com/jdx/mise/pull/9680)
+
+### 📚 Documentation
+
+- **(deps)** drop codegen example from configuration section by @jdx in [6b2d851](https://github.com/jdx/mise/commit/6b2d8518c338b0176f82330e8fd85fb1ef16c697)
+
+### ⚡ Performance
+
+- avoid spawning process to set exit code by @vemoo in [#9723](https://github.com/jdx/mise/pull/9723)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:rpm docker digest to b8b0b72 by @renovate[bot] in [#9711](https://github.com/jdx/mise/pull/9711)
+- update ghcr.io/jdx/mise:alpine docker digest to f130900 by @renovate[bot] in [#9709](https://github.com/jdx/mise/pull/9709)
+- update ghcr.io/jdx/mise:deb docker digest to 71bda11 by @renovate[bot] in [#9710](https://github.com/jdx/mise/pull/9710)
+- bump rattler crates together by @jdx in [#9721](https://github.com/jdx/mise/pull/9721)
+- update rust crate junction to v2 by @renovate[bot] in [#9726](https://github.com/jdx/mise/pull/9726)
+- update rust docker digest to 4d4ec51 by @renovate[bot] in [#9734](https://github.com/jdx/mise/pull/9734)
+
+### 📦 Registry
+
+- use symlink_bins in ibmcloud by @dnwe in [#9685](https://github.com/jdx/mise/pull/9685)
+
+### Chore
+
+- **(ci)** pass mise github token to tests by @risu729 in [#9684](https://github.com/jdx/mise/pull/9684)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`DataDog/managed-kubernetes-auditing-toolkit`](https://github.com/DataDog/managed-kubernetes-auditing-toolkit)
+- `oracle.com/sqlcl`
+
+#### Updated Packages (3)
+
+- [`alltuner/mise-completions-sync`](https://github.com/alltuner/mise-completions-sync)
+- [`iann0036/iamlive`](https://github.com/iann0036/iamlive)
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+
 ## [2026.5.3](https://github.com/jdx/mise/compare/v2026.5.2..v2026.5.3) - 2026-05-08
 
 ### 🐛 Bug Fixes
