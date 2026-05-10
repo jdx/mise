@@ -162,11 +162,9 @@ pub async fn poll_device_login(device_code: &str) -> Result<DevicePoll> {
         .json()
         .await
         .wrap_err_with(|| format!("decoding {url} response body"))?;
-    let (user_id, org) = resp
-        .user_id
-        .clone()
-        .zip(resp.org.clone())
-        .unwrap_or_else(|| extract_identity_from_wings_jwt(&resp.token));
+    let (jwt_user_id, jwt_org) = extract_identity_from_wings_jwt(&resp.token);
+    let user_id = resp.user_id.clone().unwrap_or(jwt_user_id);
+    let org = resp.org.clone().unwrap_or(jwt_org);
     Ok(DevicePoll::Authorized(Credentials::from_dev_auth(
         DevAuthCredentials {
             host: crate::wings::host().to_string(),

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -279,7 +279,6 @@ impl Toolset {
 
     pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
         let this = Arc::new(self.clone());
-        let load_wings_env = Settings::get().wings.enabled;
         let items: Vec<_> = self
             .list_current_installed_versions(config)
             .into_iter()
@@ -296,11 +295,23 @@ impl Toolset {
                     BTreeMap::new()
                 }
             };
-            if load_wings_env {
-                match crate::wings::artifact::installed_env(&tv) {
-                    Ok(wings_env) => env.extend(wings_env),
-                    Err(e) => warn!("Error loading wings MOCITO env: {:#}", e),
+            match crate::wings::artifact::installed_env(&tv) {
+                Ok(wings_env) => {
+                    for (key, value) in wings_env {
+                        match env.entry(key) {
+                            Entry::Vacant(slot) => {
+                                slot.insert(value);
+                            }
+                            Entry::Occupied(slot) => {
+                                debug!(
+                                    "wings MOCITO env skipped {}; backend exec-env already set it",
+                                    slot.key()
+                                );
+                            }
+                        }
+                    }
                 }
+                Err(e) => warn!("Error loading wings MOCITO env: {:#}", e),
             }
             Ok(env
                 .into_iter()

@@ -36,6 +36,7 @@ const MOCITO_BIN_DIR: &str = ".mise-bins";
 const MOCITO_ENV_FILE: &str = ".mise-mocito-env.json";
 const RESOLVE_PENDING_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const RESOLVE_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const RESOLVE_TRANSIENT_RETRIES: u32 = 5;
 
 pub async fn try_install<B: Backend + ?Sized>(
     backend: &B,
@@ -234,6 +235,17 @@ struct Artifact {
     digest: String,
 }
 
+#[derive(Debug)]
+struct ResolveTransientError(String);
+
+impl std::fmt::Display for ResolveTransientError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for ResolveTransientError {}
+
 #[derive(Debug, Deserialize)]
 struct PendingJob {
     id: String,
@@ -273,6 +285,7 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
     let url = format!("https://api.{}/v1/catalog/resolve", crate::wings::host());
     let headers = bearer_headers(token)?;
     let deadline = tokio::time::Instant::now() + RESOLVE_PENDING_TIMEOUT;
+    let mut transient_failures = 0;
     loop {
         if crate::ui::ctrlc::is_cancelled() {
             bail!("wings resolve cancelled by user");
@@ -288,8 +301,22 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
         // server deduplicates pending/running jobs by
         // (org, backend, tool, version, platform) and returns the existing
         // job/progress until the catalog row is available.
-        let response: ResolveResponse = match client::post_json(&url, &body, &headers).await {
-            Ok(response) => response,
+        let response = match post_resolve(&url, &body, &headers).await {
+            Ok(response) => {
+                transient_failures = 0;
+                response
+            }
+            Err(e) if e.downcast_ref::<ResolveTransientError>().is_some() => {
+                transient_failures += 1;
+                if transient_failures > RESOLVE_TRANSIENT_RETRIES {
+                    return Err(e.wrap_err("wings resolver request failed"));
+                }
+                let delay = Duration::from_secs(2_u64.pow(transient_failures - 1))
+                    .min(RESOLVE_POLL_INTERVAL);
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                tokio::time::sleep(remaining.min(delay)).await;
+                continue;
+            }
             Err(e) => return Err(e.wrap_err("wings resolver request failed")),
         };
         match response {
@@ -326,6 +353,40 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
             }
         }
     }
+}
+
+async fn post_resolve(
+    url: &str,
+    body: &ResolveRequest,
+    headers: &HeaderMap,
+) -> Result<ResolveResponse> {
+    let resp = client::http_client()?
+        .post(url)
+        .headers(headers.clone())
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() || e.is_connect() || e.is_request() {
+                ResolveTransientError(format!("POST {url}: {e}")).into()
+            } else {
+                eyre!(e).wrap_err(format!("POST {url}"))
+            }
+        })?;
+    let status = resp.status();
+    if !status.is_success() {
+        let response_body = resp.text().await.unwrap_or_default();
+        if status.is_server_error() {
+            return Err(ResolveTransientError(format!(
+                "wings {url} returned {status}: {response_body}"
+            ))
+            .into());
+        }
+        bail!("wings {url} returned {status}: {response_body}");
+    }
+    resp.json()
+        .await
+        .wrap_err_with(|| format!("decoding {url} response body"))
 }
 
 fn normalize_libc(libc: &str) -> String {
@@ -636,15 +697,21 @@ fn ensure_installable_source_filename(filename: &str) -> Result<()> {
         "wings source artifact filename {filename:?} must not contain path separators or parent directory segments"
     );
     let format = TarFormat::from_file_name(filename);
-    let has_extension = Path::new(filename)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| !ext.is_empty());
     ensure!(
-        format != TarFormat::Raw || !has_extension,
-        "wings source artifact filename {filename:?} has unsupported archive extension; expected tar, tar.gz, tar.xz, tar.bz2, tar.zst, zip, 7z, gz, xz, bz2, zst, or an extensionless raw binary"
+        format != TarFormat::Raw || !has_unsupported_archive_extension(filename),
+        "wings source artifact filename {filename:?} has unsupported archive extension; expected tar, tar.gz, tar.xz, tar.bz2, tar.zst, zip, 7z, gz, xz, bz2, zst, or a raw binary"
     );
     Ok(())
+}
+
+fn has_unsupported_archive_extension(filename: &str) -> bool {
+    let Some(ext) = Path::new(filename).extension().and_then(|ext| ext.to_str()) else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "apk" | "deb" | "dmg" | "exe" | "msi" | "pkg" | "rpm"
+    )
 }
 
 fn install_mocito_artifact(
@@ -1105,6 +1172,22 @@ mod tests {
         let layer = layer(BINARY_LAYER_MEDIA_TYPE);
 
         assert_eq!(filename_for_layer(&manifest, &layer, 0).unwrap(), "tool");
+    }
+
+    #[test]
+    fn source_layer_allows_dotted_raw_binary_filename() {
+        let mut annotations = indexmap::IndexMap::new();
+        annotations.insert(
+            "dev.mise.mocito.source.url".into(),
+            "https://example.com/gh_2.40.0_linux_amd64".into(),
+        );
+        let manifest = manifest_with_annotations(annotations);
+        let layer = layer(BINARY_LAYER_MEDIA_TYPE);
+
+        assert_eq!(
+            filename_for_layer(&manifest, &layer, 0).unwrap(),
+            "gh_2.40.0_linux_amd64"
+        );
     }
 
     #[test]

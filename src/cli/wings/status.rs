@@ -20,7 +20,7 @@
 use eyre::Result;
 
 use crate::config::Settings;
-use crate::wings::{auth, ci, credentials};
+use crate::wings::{auth, ci, client, credentials};
 
 /// Show the current mise-wings configuration + auth state.
 ///
@@ -114,11 +114,7 @@ impl Status {
         // 3. Connectivity (best-effort)
         if wings.enabled {
             let url = format!("https://api.{host}/health");
-            let client = reqwest::Client::builder()
-                .timeout(settings.http_timeout())
-                .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
-                .build()?;
-            match client.get(&url).send().await {
+            match client::http_client()?.get(&url).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     miseprintln!("connectivity:  OK ({})", resp.status());
                 }

@@ -51,8 +51,6 @@ use std::env;
 use eyre::{Context, Result};
 use serde::Deserialize;
 
-use crate::config::Settings;
-
 /// GHA exposes two env vars to fetch the runner's OIDC
 /// token: a one-time URL to GET, and a Bearer secret. Both
 /// must be present; if either is missing, this is not an
@@ -134,11 +132,7 @@ async fn exchange_runner_oidc() -> Result<String> {
         .wrap_err_with(|| format!("env var {ID_TOKEN_REQUEST_TOKEN_ENV} not set"))?;
     let host = crate::wings::host();
 
-    let client = reqwest::Client::builder()
-        .timeout(Settings::get().http_timeout())
-        .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
-        .build()
-        .wrap_err("building HTTP client for wings CI auth")?;
+    let client = crate::wings::client::http_client()?;
 
     // Step 1: fetch the runner's OIDC token, scoped to the
     // wings audience. GHA returns `{value: "<jwt>"}`.

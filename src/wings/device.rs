@@ -60,13 +60,22 @@ impl DeviceKey {
     }
 
     pub fn load_or_generate() -> Result<Self> {
-        if let Some(key) = Self::load_for_current_host()? {
-            return Ok(key);
+        let host = crate::wings::host();
+        if let Some(key) = Self::load()? {
+            if key.host == host {
+                return Ok(key);
+            }
+            log::warn!(
+                "wings device key is for {}; generating a new key for {}. \
+                 The old server-side device registration may need to be revoked from the dashboard.",
+                key.host,
+                host
+            );
         }
         let seed: [u8; 32] = rand::random();
         let key = Self {
             version: DEVICE_SCHEMA_VERSION,
-            host: crate::wings::host().to_string(),
+            host: host.to_string(),
             key_kind: "ed25519-software".into(),
             hardware_backed: false,
             seed: STANDARD.encode(seed),
