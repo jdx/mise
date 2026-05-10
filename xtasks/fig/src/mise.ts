@@ -1649,18 +1649,18 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--local",
+          description:
+            "Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs",
+          isRepeatable: false,
+        },
+        {
           name: "--minimum-release-age",
           description: "Only lock versions released before this age or date",
           isRepeatable: false,
           args: {
             name: "minimum_release_age",
           },
-        },
-        {
-          name: "--local",
-          description:
-            "Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs",
-          isRepeatable: false,
         },
       ],
       args: {
