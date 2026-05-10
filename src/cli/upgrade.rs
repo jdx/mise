@@ -62,15 +62,15 @@ pub struct Upgrade {
     #[clap(long, short = 'x', value_name = "INSTALLED_TOOL", verbatim_doc_comment)]
     exclude: Vec<ToolArg>,
 
-    /// Only upgrade to versions released before this date
+    /// Only upgrade to versions released before this date or older than this duration
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
     /// This can be useful for reproducibility or security purposes.
     ///
     /// This only affects fuzzy version matches like "20" or "latest".
     /// Explicitly pinned versions like "22.5.0" are not filtered.
-    #[clap(long, verbatim_doc_comment)]
-    before: Option<String>,
+    #[clap(long, alias = "before", verbatim_doc_comment)]
+    minimum_release_age: Option<String>,
 
     /// Like --dry-run but exits with code 1 if there are outdated tools
     ///
@@ -471,11 +471,11 @@ impl Upgrade {
         }
     }
 
-    /// Get the before_date from the CLI --before flag only.
+    /// Get the before_date from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(before) = &self.before {
-            return Ok(Some(parse_into_timestamp(before)?));
+        if let Some(minimum_release_age) = &self.minimum_release_age {
+            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
         }
         Ok(None)
     }

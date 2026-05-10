@@ -67,9 +67,9 @@ Specify a path to a config file or directory
 
 If a directory is specified, it will look for a config file in that directory following the rules above.
 
-### `--before <BEFORE>`
+### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
 
-Only install versions released before this date
+Only install versions released before this date or older than this duration
 
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 

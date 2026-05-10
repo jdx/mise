@@ -1340,7 +1340,7 @@ cutoff date.
 Some package-manager backends also forward the cutoff to transitive dependency resolution during
 install. This includes `npm:` and `pipx:` tools.
 
-Can be overridden with the `--before` CLI flag or per-tool with the `minimum_release_age` tool option.
+Can be overridden with the `--minimum-release-age` CLI flag or per-tool with the `minimum_release_age` tool option.
 
 ```toml
 [tools.trivy]

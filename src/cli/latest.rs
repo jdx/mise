@@ -26,12 +26,17 @@ pub struct Latest {
     #[clap(short, long)]
     installed: bool,
 
-    /// Only consider versions released before this date
+    /// Only consider versions released before this date or older than this duration
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
     /// Overrides per-tool `minimum_release_age` options and the global `minimum_release_age` setting.
-    #[clap(long, verbatim_doc_comment, conflicts_with = "installed")]
-    before: Option<String>,
+    #[clap(
+        long,
+        alias = "before",
+        verbatim_doc_comment,
+        conflicts_with = "installed"
+    )]
+    minimum_release_age: Option<String>,
 }
 
 impl Latest {
@@ -41,9 +46,12 @@ impl Latest {
             tool,
             asdf_version,
             installed,
-            before,
+            minimum_release_age,
         } = self;
-        let before_date = before.as_deref().map(parse_into_timestamp).transpose()?;
+        let before_date = minimum_release_age
+            .as_deref()
+            .map(parse_into_timestamp)
+            .transpose()?;
         let mut prefix = match &tool.tvr {
             None => asdf_version,
             Some(ToolRequest::Version { version, .. }) => Some(version.clone()),
@@ -81,6 +89,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise latest node</bold>     # get the latest stable version of node
     20.0.0
 
-    $ <bold>mise latest node --before 2024-01-01</bold>  # latest stable node released before 2024-01-01
+    $ <bold>mise latest node --minimum-release-age 2024-01-01</bold>  # latest stable node released before 2024-01-01
 "#
 );

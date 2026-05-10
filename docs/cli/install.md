@@ -42,9 +42,9 @@ Show installation output
 
 This argument will print backend output such as download, configuration, and compilation output.
 
-### `--before <BEFORE>`
+### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
 
-Only install versions released before this date
+Only install versions released before this date or older than this duration
 
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 

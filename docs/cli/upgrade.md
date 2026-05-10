@@ -51,9 +51,9 @@ Just print what would be done, don't actually do it
 Tool(s) to exclude from upgrading
 e.g.: go python
 
-### `--before <BEFORE>`
+### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
 
-Only upgrade to versions released before this date
+Only upgrade to versions released before this date or older than this duration
 
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 This can be useful for reproducibility or security purposes.
