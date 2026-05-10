@@ -33,8 +33,14 @@ pub struct Run {
     from: Option<String>,
 
     /// Use an already-built OCI image layout instead of building fresh
-    #[clap(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise"])]
+    #[clap(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise", "include_global"])]
     image_dir: Option<PathBuf>,
+
+    /// Also include tools from the global / system config (default: project-only)
+    ///
+    /// See `mise oci build --help` for details.
+    #[clap(long)]
+    include_global: bool,
 
     /// Keep the loaded image in the engine's storage after the run
     ///
@@ -125,7 +131,7 @@ impl Run {
                     mount_point: self.mount_point.clone(),
                     include_mise: !self.no_mise,
                 };
-                let built = perform_build(opts).await?;
+                let built = perform_build(opts, self.include_global).await?;
                 info!("built image: {}", built.manifest_digest);
                 (out_dir, Some(td))
             };
