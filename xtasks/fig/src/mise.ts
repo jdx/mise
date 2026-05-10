@@ -1523,11 +1523,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: true,
         },
         {
-          name: "--before",
-          description: "Only install versions released before this date",
+          name: "--minimum-release-age",
+          description:
+            "Only install versions released before this date or older than this duration",
           isRepeatable: false,
           args: {
-            name: "before",
+            name: "minimum_release_age",
           },
         },
         {
@@ -1593,11 +1594,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--before",
-          description: "Only consider versions released before this date",
+          name: "--minimum-release-age",
+          description:
+            "Only consider versions released before this date or older than this duration",
           isRepeatable: false,
           args: {
-            name: "before",
+            name: "minimum_release_age",
           },
         },
       ],
@@ -4107,11 +4109,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
-          name: "--before",
-          description: "Only upgrade to versions released before this date",
+          name: "--minimum-release-age",
+          description:
+            "Only upgrade to versions released before this date or older than this duration",
           isRepeatable: false,
           args: {
-            name: "before",
+            name: "minimum_release_age",
           },
         },
         {
@@ -4196,11 +4199,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
-          name: "--before",
-          description: "Only install versions released before this date",
+          name: "--minimum-release-age",
+          description:
+            "Only install versions released before this date or older than this duration",
           isRepeatable: false,
           args: {
-            name: "before",
+            name: "minimum_release_age",
           },
         },
         {
