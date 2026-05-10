@@ -171,21 +171,26 @@ impl EnvDiff {
     /// Build an EnvDiff describing the transformation from `pristine` → `final_env`,
     /// suitable for serialization into `__MISE_DIFF`. PATH is excluded from
     /// `old`/`new` and instead tracked in `path` (entries present in `final_env`'s
-    /// PATH but not in `pristine`'s PATH). This mirrors what `mise hook-env` writes
-    /// during shell activation, so nested `mise` invocations can reverse it via
-    /// `get_pristine_env` and avoid stacking outer tool paths on top of inner ones.
+    /// PATH but not in `pristine`'s PATH). `__MISE_DIFF` itself is also excluded
+    /// so an inherited value can't end up nested inside the diff we're about to
+    /// write. This mirrors what `mise hook-env` writes during shell activation,
+    /// so nested `mise` invocations can reverse it via `get_pristine_env` and
+    /// avoid stacking outer tool paths on top of inner ones.
     pub fn from_final_env(pristine: &EnvMap, final_env: &EnvMap) -> EnvDiff {
         use std::collections::HashSet;
 
-        let mut additions = final_env.clone();
-        additions.remove(PATH_KEY.as_str());
+        let path_key = PATH_KEY.as_str();
+        let additions = final_env
+            .iter()
+            .filter(|(k, _)| k.as_str() != path_key && k.as_str() != "__MISE_DIFF")
+            .map(|(k, v)| (k.clone(), v.clone()));
         let mut diff = EnvDiff::new(pristine, additions);
 
         let pristine_paths: HashSet<PathBuf> = pristine
-            .get(PATH_KEY.as_str())
+            .get(path_key)
             .map(|p| crate::env::split_paths(p).collect())
             .unwrap_or_default();
-        if let Some(final_path) = final_env.get(PATH_KEY.as_str()) {
+        if let Some(final_path) = final_env.get(path_key) {
             diff.path = crate::env::split_paths(final_path)
                 .filter(|p| !pristine_paths.contains(p))
                 .collect();
@@ -383,6 +388,67 @@ mod tests {
         let serialized = diff.serialize().unwrap();
         let deserialized = EnvDiff::deserialize(&serialized).unwrap();
         assert_debug_snapshot!(deserialized.to_patches());
+    }
+
+    #[tokio::test]
+    async fn test_from_final_env() {
+        let _config = Config::get().await.unwrap();
+        let path_key = PATH_KEY.as_str();
+        let pristine: EnvMap = [
+            (path_key, "/usr/bin:/bin"),
+            ("EXISTING", "old"),
+            ("__MISE_DIFF", "outer-diff"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect();
+        let final_env: EnvMap = [
+            (path_key, "/tool/bin:/usr/bin:/bin"),
+            ("EXISTING", "new"),
+            ("ADDED", "yes"),
+            ("__MISE_DIFF", "should-be-ignored"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect();
+
+        let diff = EnvDiff::from_final_env(&pristine, &final_env);
+
+        // PATH entries new in final_env land in diff.path; shared entries don't.
+        assert_eq!(diff.path, vec![PathBuf::from("/tool/bin")]);
+        // Non-PATH adds/changes are tracked in diff.new (with diff.old for changes).
+        assert_eq!(diff.new.get("ADDED"), Some(&"yes".to_string()));
+        assert_eq!(diff.new.get("EXISTING"), Some(&"new".to_string()));
+        assert_eq!(diff.old.get("EXISTING"), Some(&"old".to_string()));
+        // PATH and __MISE_DIFF are filtered out of old/new.
+        assert!(!diff.new.contains_key(path_key));
+        assert!(!diff.old.contains_key(path_key));
+        assert!(!diff.new.contains_key("__MISE_DIFF"));
+        assert!(!diff.old.contains_key("__MISE_DIFF"));
+
+        // Round-trip: applying the reversed diff to final_env should restore pristine
+        // for the keys we tracked, and stripping diff.path from final's PATH should
+        // give us pristine's PATH back.
+        let reversed = diff.reverse();
+        let mut restored: EnvMap = final_env.clone();
+        for patch in reversed.to_patches() {
+            match patch {
+                EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+                    restored.insert(k, v);
+                }
+                EnvDiffOperation::Remove(k) => {
+                    restored.remove(&k);
+                }
+            }
+        }
+        assert_eq!(restored.get("EXISTING"), Some(&"old".to_string()));
+        assert!(!restored.contains_key("ADDED"));
+        let to_remove: std::collections::HashSet<_> = diff.path.iter().collect();
+        let restored_path: Vec<_> = crate::env::split_paths(&final_env[path_key])
+            .filter(|p| !to_remove.contains(p))
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(restored_path.join(":"), pristine[path_key]);
     }
 
     #[tokio::test]
