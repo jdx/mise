@@ -279,6 +279,7 @@ impl Toolset {
 
     pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
         let this = Arc::new(self.clone());
+        let load_wings_env = Settings::get().wings.enabled;
         let items: Vec<_> = self
             .list_current_installed_versions(config)
             .into_iter()
@@ -286,7 +287,7 @@ impl Toolset {
             .map(|(b, tv)| (config.clone(), this.clone(), b, tv))
             .collect();
 
-        let envs = parallel::parallel(items, |(config, this, b, tv)| async move {
+        let envs = parallel::parallel(items, move |(config, this, b, tv)| async move {
             let backend_id = b.id().to_string();
             let mut env = match b.exec_env(&config, &this, &tv).await {
                 Ok(env) => env,
@@ -295,9 +296,11 @@ impl Toolset {
                     BTreeMap::new()
                 }
             };
-            match crate::wings::artifact::installed_env(&tv) {
-                Ok(wings_env) => env.extend(wings_env),
-                Err(e) => warn!("Error loading wings MOCITO env: {:#}", e),
+            if load_wings_env {
+                match crate::wings::artifact::installed_env(&tv) {
+                    Ok(wings_env) => env.extend(wings_env),
+                    Err(e) => warn!("Error loading wings MOCITO env: {:#}", e),
+                }
             }
             Ok(env
                 .into_iter()
