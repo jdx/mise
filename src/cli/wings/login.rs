@@ -20,7 +20,7 @@ use crate::wings::{client, credentials, device::DeviceKey};
 /// $ mise wings login
 /// To sign in to mise-wings, open:
 ///
-/// https://app.mise-wings.en.dev/cli-device?code=AB12CD34
+/// https://mise-wings.en.dev/cli-device?code=AB12CD34
 ///
 /// Enter code: AB12-CD34
 /// Waiting for browser approval...
