@@ -618,6 +618,11 @@ fn filename_for_layer(
     let Some(expected) = layer.digest.strip_prefix("sha256:") else {
         bail!("wings layer digest is not sha256: {}", layer.digest);
     };
+    ensure!(
+        expected.len() == 64 && expected.chars().all(|c| c.is_ascii_hexdigit()),
+        "wings layer digest must be a 64-character sha256 hex digest: {}",
+        layer.digest
+    );
     Ok(format!(
         "artifact-{layer_index}-{}.{}",
         &expected[..12],
@@ -1114,6 +1119,16 @@ mod tests {
     }
 
     #[test]
+    fn layer_without_source_url_rejects_short_digest_without_panic() {
+        let manifest = manifest_with_annotations(indexmap::IndexMap::new());
+        let mut layer = layer(OCI_TAR_GZIP_LAYER_MEDIA_TYPE);
+        layer.digest = "sha256:abc".into();
+
+        let err = filename_for_layer(&manifest, &layer, 1).unwrap_err();
+        assert!(err.to_string().contains("64-character sha256"));
+    }
+
+    #[test]
     fn mocito_config_rejects_unsafe_paths() {
         let mut config = mocito_config();
         config.bin = vec!["../bin/tool".into()];
@@ -1192,7 +1207,8 @@ mod tests {
     fn layer(media_type: &str) -> WingsDescriptor {
         WingsDescriptor {
             media_type: media_type.into(),
-            digest: "sha256:abcdef0123456789".into(),
+            digest: "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+                .into(),
             size: 1,
         }
     }

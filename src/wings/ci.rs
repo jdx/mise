@@ -91,8 +91,9 @@ pub fn gha_runner_present() -> bool {
 ///
 /// `None` covers any failure in the exchange chain — OIDC
 /// fetch, proxy POST, JSON decode, 402 (no subscription),
-/// 503, etc. Logged at `debug!` so a non-subscribed CI run
-/// doesn't pollute the workflow logs after the user opted in.
+/// 503, etc. Logged at `warn!` because the user explicitly
+/// opted into Wings for this run and should see why it is
+/// unavailable.
 /// The HTTP hook treats `None` the same as "no credentials"
 /// and passes the request through unchanged.
 pub async fn cached_ci_token() -> Option<String> {
@@ -101,7 +102,7 @@ pub async fn cached_ci_token() -> Option<String> {
             match exchange_runner_oidc().await {
                 Ok(t) => Some(t),
                 Err(e) => {
-                    log::debug!("wings: CI OIDC exchange failed (proceeding without wings): {e:#}");
+                    log::warn!("wings: CI OIDC exchange failed (proceeding without wings): {e:#}");
                     None
                 }
             }
