@@ -193,7 +193,12 @@ impl MiseRegistryFetcher {
 
         if self.config.prefer_offline {
             trace!("using cached aqua registry source due to prefer-offline mode");
-            return std::fs::read_to_string(&source_path).map_err(Into::into);
+            return std::fs::read_to_string(&source_path).map_err(|err| {
+                AquaRegistryError::RegistryNotAvailable(format!(
+                    "failed to read cached aqua registry source {} while prefer-offline mode is enabled: {err}",
+                    source_path.display()
+                ))
+            });
         }
 
         let source = download_registry_source(registry_url).await?;
@@ -248,12 +253,12 @@ fn write_registry_source(path: &Path, source: &str) -> aqua_registry::Result<()>
     if let Ok(existing) = std::fs::read_to_string(path)
         && existing == source
     {
-        file::touch_file(path).map_err(|err| {
-            AquaRegistryError::RegistryNotAvailable(format!(
+        if let Err(err) = file::touch_file(path) {
+            debug!(
                 "failed to touch cached aqua registry source {}: {err}",
                 path.display()
-            ))
-        })?;
+            );
+        }
         return Ok(());
     }
 
@@ -600,6 +605,24 @@ mod tests {
 
         assert!(first.contains("example/first"));
         assert!(second.contains("example/second"));
+    }
+
+    #[tokio::test]
+    async fn prefer_offline_missing_source_has_clear_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut fetcher = test_fetcher(
+            temp.path().to_path_buf(),
+            Some("https://example.com/aqua-registry".to_string()),
+            false,
+        );
+        fetcher.config.prefer_offline = true;
+
+        let err = fetcher
+            .registry_source(fetcher.config.registry_url.as_deref().unwrap())
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("prefer-offline mode is enabled"));
     }
 
     fn test_fetcher(
