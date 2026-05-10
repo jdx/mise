@@ -26,6 +26,7 @@ impl CompiledRegistry {
     pub fn load(root: impl AsRef<Path>) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
         let index = read_index(&root)?;
+        validate_package_files(&root, &index)?;
         Ok(Self { root, index })
     }
 
@@ -61,6 +62,20 @@ fn read_index(root: &Path) -> Result<CompiledRegistryIndex> {
             path.display()
         ))
     })
+}
+
+fn validate_package_files(root: &Path, index: &CompiledRegistryIndex) -> Result<()> {
+    let packages_dir = root.join(PACKAGES_DIR);
+    for filename in index.packages.values() {
+        let path = packages_dir.join(filename);
+        if !path.is_file() {
+            return Err(AquaRegistryError::RegistryNotAvailable(format!(
+                "compiled aqua registry package file is missing: {}",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn write_index(root: &Path, index: &CompiledRegistryIndex) -> Result<()> {
@@ -249,6 +264,32 @@ packages:
         let package = registry.package("example/named-tool").unwrap();
 
         assert_eq!(package.name.as_deref(), Some("example/named-tool"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn load_rejects_missing_package_blob() {
+        let root = temp_cache_dir("compiled-aqua-registry-missing-package");
+        let source = r#"
+packages:
+  - type: http
+    name: example/missing-package
+    url: https://example.com/tool
+"#;
+
+        CompiledRegistry::compile_from_yaml(source, &root).unwrap();
+        let packages_dir = root.join(PACKAGES_DIR);
+        let package_file = fs::read_dir(&packages_dir)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        fs::remove_file(package_file).unwrap();
+
+        let err = CompiledRegistry::load(&root).unwrap_err();
+        assert!(matches!(err, AquaRegistryError::RegistryNotAvailable(_)));
 
         fs::remove_dir_all(root).unwrap();
     }

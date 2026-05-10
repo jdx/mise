@@ -15,6 +15,7 @@ use url::Url;
 
 static AQUA_REGISTRY_PATH: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("aqua-registry"));
 static AQUA_DEFAULT_REGISTRY_URL: &str = "https://github.com/aquaproj/aqua-registry";
+const COMPILED_REGISTRY_CACHE_VERSION: &str = "v1";
 
 pub static AQUA_REGISTRY: Lazy<MiseAquaRegistry> = Lazy::new(|| {
     MiseAquaRegistry::standard().unwrap_or_else(|err| {
@@ -180,6 +181,10 @@ impl MiseRegistryFetcher {
     }
 
     async fn registry_source(&self, registry_url: &str) -> aqua_registry::Result<String> {
+        if registry_url_is_local(registry_url) {
+            return download_registry_source(registry_url).await;
+        }
+
         let source_path = registry_source_cache_path(&self.config.cache_dir, registry_url);
 
         if source_is_fresh(&source_path) {
@@ -211,6 +216,7 @@ fn compiled_registry_cache_dir(cache_dir: &Path, registry_url: &str, source_hash
     cache_dir
         .join("compiled")
         .join(hash::hash_to_str(&registry_url))
+        .join(COMPILED_REGISTRY_CACHE_VERSION)
         .join(source_hash)
 }
 
@@ -310,6 +316,10 @@ fn local_registry_source_path(registry_url: &str, file_name: &str) -> Option<Pat
     }
 
     Some(PathBuf::from(registry_url).join(file_name))
+}
+
+fn registry_url_is_local(registry_url: &str) -> bool {
+    local_registry_source_path(registry_url, "registry.yaml").is_some()
 }
 
 fn registry_file_url(registry_url: &str, file_name: &str) -> aqua_registry::Result<Url> {
@@ -554,6 +564,42 @@ mod tests {
         assert_eq!(package.repo_owner, "01mf02");
         assert_eq!(package.repo_name, "jaq");
         assert!(temp.path().join("compiled").exists());
+    }
+
+    #[tokio::test]
+    async fn local_registry_source_bypasses_download_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        let registry_dir = temp.path().join("custom-registry");
+        std::fs::create_dir(&registry_dir).unwrap();
+        let registry_path = registry_dir.join("registry.yaml");
+        std::fs::write(
+            &registry_path,
+            "packages:\n  - name: example/first\n    url: https://example.com/first\n",
+        )
+        .unwrap();
+
+        let fetcher = test_fetcher(
+            temp.path().join("cache"),
+            Some(format!("file://{}", registry_dir.display())),
+            false,
+        );
+        let first = fetcher
+            .registry_source(fetcher.config.registry_url.as_deref().unwrap())
+            .await
+            .unwrap();
+
+        std::fs::write(
+            registry_path,
+            "packages:\n  - name: example/second\n    url: https://example.com/second\n",
+        )
+        .unwrap();
+        let second = fetcher
+            .registry_source(fetcher.config.registry_url.as_deref().unwrap())
+            .await
+            .unwrap();
+
+        assert!(first.contains("example/first"));
+        assert!(second.contains("example/second"));
     }
 
     fn test_fetcher(
