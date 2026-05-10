@@ -45,11 +45,16 @@ pub struct LsRemote {
     #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
     pub all: bool,
 
-    /// Only show versions released before this date
+    /// Only show versions released before this age or date
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[clap(long, verbatim_doc_comment)]
-    pub before: Option<String>,
+    #[clap(
+        long,
+        alias = "before",
+        value_name = "MINIMUM_RELEASE_AGE",
+        verbatim_doc_comment
+    )]
+    pub minimum_release_age: Option<String>,
 
     /// Output in JSON format (includes version metadata like created_at timestamps when available)
     #[clap(short = 'J', long, verbatim_doc_comment)]
@@ -87,7 +92,7 @@ impl LsRemote {
         backend::set_strict_metadata(self.strict_metadata);
         let config = Config::get().await?;
         let before_date = self
-            .before
+            .minimum_release_age
             .as_deref()
             .map(parse_into_timestamp)
             .transpose()?;
@@ -207,7 +212,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     20.0.0
     20.1.0
 
-    $ <bold>mise ls-remote node --before 2024-01-01</bold>
+    $ <bold>mise ls-remote node --minimum-release-age 2024-01-01</bold>
     20.0.0
 
     $ <bold>mise ls-remote github:cli/cli --json</bold>

@@ -53,14 +53,19 @@ pub struct Lock {
     #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
     pub platform: Vec<String>,
 
-    /// Only lock versions released before this date
+    /// Only lock versions released before this age or date
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
     /// This only affects fuzzy version matches like "20" or "latest".
     /// Explicitly pinned versions like "22.5.0" are not filtered.
     /// Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
-    #[clap(long, verbatim_doc_comment)]
-    pub before: Option<String>,
+    #[clap(
+        long,
+        alias = "before",
+        value_name = "MINIMUM_RELEASE_AGE",
+        verbatim_doc_comment
+    )]
+    pub minimum_release_age: Option<String>,
 
     /// Update mise.local.lock instead of mise.lock
     /// Use for tools defined in .local.toml configs
@@ -254,11 +259,11 @@ impl Lock {
         Ok(())
     }
 
-    /// Get the before_date from the CLI --before flag only.
+    /// Get the before_date from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled during tool request resolution.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(before) = &self.before {
-            return Ok(Some(parse_into_timestamp(before)?));
+        if let Some(minimum_release_age) = &self.minimum_release_age {
+            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
         }
         Ok(None)
     }
@@ -784,7 +789,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise lock node python</bold>           # update only node and python
     $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
     $ <bold>mise lock --dry-run</bold>             # show what would be updated
-    $ <bold>mise lock --before 2024-01-01</bold>   # lock latest/fuzzy versions released before 2024-01-01
+    $ <bold>mise lock --minimum-release-age 2024-01-01</bold>   # lock latest/fuzzy versions released before 2024-01-01
     $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
     $ <bold>mise lock --global</bold>              # update only global config lockfiles
 "#
@@ -811,7 +816,7 @@ mod tests {
             platform: vec![],
             local: false,
             global: false,
-            before: None,
+            minimum_release_age: None,
         }
     }
 

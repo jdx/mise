@@ -1649,11 +1649,11 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
-          name: "--before",
-          description: "Only lock versions released before this date",
+          name: "--minimum-release-age",
+          description: "Only lock versions released before this age or date",
           isRepeatable: false,
           args: {
-            name: "before",
+            name: "minimum_release_age",
           },
         },
         {
@@ -1765,11 +1765,11 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--before",
-          description: "Only show versions released before this date",
+          name: "--minimum-release-age",
+          description: "Only show versions released before this age or date",
           isRepeatable: false,
           args: {
-            name: "before",
+            name: "minimum_release_age",
           },
         },
         {

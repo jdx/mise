@@ -1438,8 +1438,8 @@ Comma\-separated list of platforms to target
 e.g.: linux\-x64,macos\-arm64,windows\-x64
 If not specified, all platforms already in lockfile will be updated
 .TP
-\fB\-\-before\fR \fI<BEFORE>\fR
-Only lock versions released before this date
+\fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
+Only lock versions released before this age or date
 
 Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 This only affects fuzzy version matches like "20" or "latest".
@@ -1525,8 +1525,8 @@ Note that the results may be cached, run `mise cache clean` to clear the cache a
 \fB\-\-all\fR
 Show all installed plugins and versions
 .TP
-\fB\-\-before\fR \fI<BEFORE>\fR
-Only show versions released before this date
+\fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
+Only show versions released before this age or date
 
 Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 .TP

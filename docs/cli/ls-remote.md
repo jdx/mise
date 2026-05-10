@@ -25,9 +25,9 @@ same as the first argument after the "@"
 
 Show all installed plugins and versions
 
-### `--before <BEFORE>`
+### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
 
-Only show versions released before this date
+Only show versions released before this age or date
 
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 
@@ -70,7 +70,7 @@ $ mise ls-remote node 20
 20.0.0
 20.1.0
 
-$ mise ls-remote node --before 2024-01-01
+$ mise ls-remote node --minimum-release-age 2024-01-01
 20.0.0
 
 $ mise ls-remote github:cli/cli --json

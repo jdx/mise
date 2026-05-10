@@ -19,7 +19,7 @@ use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
 use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
-use crate::install_before::{resolve_before_date, resolve_before_date_for_backend};
+use crate::install_before::resolve_before_date;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -1088,7 +1088,7 @@ pub trait Backend: Debug + Send + Sync {
     /// Backend-specific fast path for the absolute latest stable version.
     ///
     /// Do not call this from CLI/toolset code. Use `latest_version` instead so
-    /// `minimum_release_age` / `--before` cutoffs are handled around this fast path.
+    /// release-date cutoffs are handled around this fast path.
     ///
     /// Return `Ok(None)` when the backend does not have a fast path result.
     /// `latest_version` centrally falls back to the shared version-list path,
@@ -1106,7 +1106,7 @@ pub trait Backend: Debug + Send + Sync {
     /// `ToolVersion::resolve_version` uses this as a last resort after normal
     /// latest resolution fails, and only when the backend's unfiltered remote
     /// version list is empty. If remote versions exist but are all filtered out by
-    /// `minimum_release_age` / `--before`, this hook is not used.
+    /// a release-date cutoff, this hook is not used.
     fn unresolved_latest_version(&self) -> Option<String> {
         None
     }
@@ -1270,7 +1270,7 @@ pub trait Backend: Debug + Send + Sync {
                 // Warn if no versions have timestamps
                 if filtered.iter().all(|v| v.created_at.is_none()) && !filtered.is_empty() {
                     debug!(
-                        "Backend {} does not provide release dates; --before filter may not work as expected",
+                        "Backend {} does not provide release dates; release-date filter may not work as expected",
                         self.id()
                     );
                 }
@@ -1350,7 +1350,7 @@ pub trait Backend: Debug + Send + Sync {
         before_date: Option<Timestamp>,
         refresh: bool,
     ) -> eyre::Result<Option<String>> {
-        let before_date = resolve_before_date_for_backend(config, self, before_date).await?;
+        let before_date = effective_latest_before_date(self, config, before_date).await?;
         let resolved_query = query.as_deref().unwrap_or("latest");
         let mut fallback_refresh = refresh;
         if resolved_query == "latest"
