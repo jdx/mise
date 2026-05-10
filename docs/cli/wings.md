@@ -22,7 +22,7 @@ summary as `mise wings status`.
 ## Subcommands
 
 - [`mise wings inspect <SUBCOMMAND>`](/cli/wings/inspect.md)
-- [`mise wings login [--token <TOKEN>] [--token-stdin]`](/cli/wings/login.md)
+- [`mise wings login`](/cli/wings/login.md)
 - [`mise wings logout [FLAGS]`](/cli/wings/logout.md)
 - [`mise wings status`](/cli/wings/status.md)
 - [`mise wings whoami`](/cli/wings/whoami.md)

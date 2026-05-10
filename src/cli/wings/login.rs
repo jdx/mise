@@ -7,14 +7,12 @@
 
 use eyre::{Context, Result, bail};
 
-use crate::cli::wings::read_token_from_stdin;
 use crate::wings::{client, credentials, device::DeviceKey};
 
 /// Authenticate with mise-wings
 ///
 /// By default, starts device-code auth and stores a device-bound
-/// credential. `--token` remains as a legacy/manual fallback for
-/// internal debugging.
+/// credential.
 ///
 /// Examples:
 ///
@@ -29,75 +27,13 @@ use crate::wings::{client, credentials, device::DeviceKey};
 /// Signed in to mise-wings as user_123 (acme).
 /// ```
 ///
-/// Preferred token flow:
-///
-/// ```sh
-/// $ pbpaste | mise wings login --token-stdin
-/// Signed in to mise-wings as user_123 (acme).
-/// Set `wings.enabled = true` (or `MISE_WINGS_ENABLED=1`) to start routing tool installs through the cache.
-/// ```
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct Login {
-    /// Clerk frontend session JWT, pasted from the dashboard's
-    /// "CLI sign-in" page. Use `--token-stdin` to read from
-    /// stdin instead of the command line — important so a
-    /// secret token doesn't land in shell history.
-    #[clap(long, conflicts_with = "token_stdin")]
-    token: Option<String>,
-    /// Read the Clerk session JWT from stdin (one line, no
-    /// surrounding whitespace). Preferred over `--token` because
-    /// the secret won't show up in shell history.
-    #[clap(long)]
-    token_stdin: bool,
-}
+pub struct Login {}
 
 impl Login {
     pub async fn run(self) -> Result<()> {
-        // `clap`'s `conflicts_with` rejects `--token` +
-        // `--token-stdin` before we ever reach `run()`, so
-        // the only three reachable shapes are: token only,
-        // stdin only, neither. Greptile flagged the previous
-        // unreachable `(Some(_), true)` arm on PR review.
-        let token = match (self.token, self.token_stdin) {
-            (Some(t), _) => t,
-            (None, true) => read_token_from_stdin()?,
-            (None, false) => {
-                return run_device_login().await;
-            }
-        };
-
-        let token = token.trim();
-        if token.is_empty() {
-            bail!("Clerk session token is empty");
-        }
-        if token.split('.').count() != 3 {
-            // JWT shape is 3 dot-separated segments. A non-JWT
-            // string would 401 at the proxy anyway; failing
-            // fast with a clear message saves a network round
-            // trip and gives a better error than the proxy's
-            // "invalid clerk session token" generic.
-            bail!(
-                "value passed to --token doesn't look like a JWT \
-                 (expected three dot-separated segments). Make sure \
-                 you copied the *session* JWT, not a publishable \
-                 key or template variable."
-            );
-        }
-
-        let creds = client::exchange_clerk_session(token)
-            .await
-            .wrap_err("exchanging Clerk session for wings session")?;
-        let user_id = creds.user_id.clone();
-        let org = creds.org.clone();
-        credentials::store(creds)?;
-
-        miseprintln!(
-            "Signed in to mise-wings as {user_id} ({org}).\n\
-             Set `wings.enabled = true` (or `MISE_WINGS_ENABLED=1`) to start \
-             routing tool installs through the cache."
-        );
-        Ok(())
+        run_device_login().await
     }
 }
 

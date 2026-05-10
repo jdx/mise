@@ -1,5 +1,5 @@
 //! Typed HTTP calls against the wings proxy's dev-auth surface.
-//! Three endpoints, each a thin wrapper around the shared
+//! Each endpoint is a thin wrapper around the shared
 //! `crate::http::HTTP` client with the right body shape and
 //! error mapping.
 //!
@@ -31,8 +31,7 @@ fn api_url(path: &str) -> String {
     format!("https://api.{host}{path}")
 }
 
-/// Request body for `POST /auth/dev/refresh`. Single field —
-/// the refresh token plaintext — sent over HTTPS.
+/// Request body for `POST /auth/dev/refresh`.
 #[derive(Serialize)]
 struct RefreshRequest<'a> {
     refresh_token: &'a str,
@@ -44,9 +43,9 @@ struct RefreshRequest<'a> {
     signature: Option<String>,
 }
 
-/// Response shape for `POST /auth/dev` and `POST /auth/dev/refresh`.
-/// Identical between the two endpoints by design — the client
-/// flow stamps the same fields into [`Credentials`] either way.
+/// Response shape for device login and `POST /auth/dev/refresh`.
+/// The client flow stamps the same fields into [`Credentials`]
+/// either way.
 #[derive(Deserialize)]
 struct DevAuthResponse {
     /// Wings session JWT.
@@ -78,10 +77,10 @@ struct DevAuthResponse {
 
 #[derive(Serialize)]
 struct DeviceStartRequest<'a> {
-    public_key: &'a str,
+    session_public_key: &'a str,
     key_kind: &'a str,
     hardware_backed: bool,
-    device_label: String,
+    hostname: String,
     os: String,
     arch: String,
 }
@@ -122,58 +121,14 @@ pub enum DevicePoll {
     SlowDown,
 }
 
-/// Exchange a Clerk frontend session JWT for a wings session.
-/// The Clerk JWT comes from the user's browser-side sign-in;
-/// this is the only point on the CLI that talks to Clerk-
-/// originated credentials.
-///
-/// ## Identity extraction
-///
-/// `user_id` and `org` aren't in the proxy's response yet — we
-/// pull them from the Clerk JWT body (`sub` claim, and from the
-/// proxy's stamped `org` claim by re-decoding the *returned*
-/// wings JWT). The wings JWT body has `org` and `user_id`
-/// fields; cheaper to read those than parse Clerk's claims a
-/// second time. JWT bodies are unverified locally — the proxy
-/// is the trust boundary; we just need the values for `whoami`.
-pub async fn exchange_clerk_session(clerk_session_jwt: &str) -> Result<Credentials> {
-    let url = api_url("/auth/dev");
-    let mut headers = reqwest::header::HeaderMap::new();
-    let auth = format!("Bearer {clerk_session_jwt}");
-    headers.insert(
-        reqwest::header::AUTHORIZATION,
-        reqwest::header::HeaderValue::from_str(&auth)
-            .wrap_err("clerk session token contains invalid header characters")?,
-    );
-
-    let resp: DevAuthResponse = post_json(&url, &serde_json::json!({}), &headers).await?;
-
-    let (user_id, org) = resp
-        .user_id
-        .clone()
-        .zip(resp.org.clone())
-        .unwrap_or_else(|| extract_identity_from_wings_jwt(&resp.token));
-
-    Credentials::from_dev_auth(DevAuthCredentials {
-        host: crate::wings::host().to_string(),
-        access_token: resp.token,
-        expires_in: resp.expires_in,
-        refresh_token: resp.refresh_token,
-        refresh_expires_in: resp.refresh_expires_in,
-        user_id,
-        org,
-        device_id: resp.device_id,
-    })
-}
-
 pub async fn start_device_login(key: &DeviceKey) -> Result<DeviceStartResponse> {
     let url = api_url("/auth/dev/device/start");
     let public_key = key.public_key_base64()?;
     let body = DeviceStartRequest {
-        public_key: &public_key,
+        session_public_key: &public_key,
         key_kind: key.key_kind(),
         hardware_backed: key.hardware_backed(),
-        device_label: hostname_label(),
+        hostname: hostname_label(),
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
     };

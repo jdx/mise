@@ -5,8 +5,8 @@
 //!
 //!   - [`inspect`] — inspect Wings OCI manifests, referrers,
 //!     and evidence blobs such as SBOMs.
-//!   - [`login`] — exchange a Clerk frontend session JWT for
-//!     a wings session JWT (+ refresh token), persist locally.
+//!   - [`login`] — enroll this machine as a device and persist
+//!     the returned wings session JWT (+ refresh token) locally.
 //!   - [`logout`] — revoke every active wings session for the
 //!     calling user; delete the local credentials file.
 //!   - [`whoami`] — print the active user / org / token expiry.
@@ -33,15 +33,10 @@ mod status;
 mod whoami;
 
 /// Read one line from stdin, trim trailing whitespace.
-/// Shared between `wings login --token-stdin` and
-/// `wings logout --token-stdin` so secrets don't land in
-/// shell history. Returns `Err` only on read failure (EOF
+/// Used by `wings logout --token-stdin` so secrets don't land
+/// in shell history. Returns `Err` only on read failure (EOF
 /// returns `""`, which the caller rejects with a clearer
 /// message than "stdin closed unexpectedly").
-///
-/// Lifted to the parent module so the two subcommands don't
-/// each carry their own copy. Greptile flagged the
-/// duplication on PR review.
 pub(super) fn read_token_from_stdin() -> Result<String> {
     use std::io::BufRead;
     let stdin = std::io::stdin();

@@ -4205,44 +4205,6 @@ Subject manifest digest when the reference does not include one
 .TP
 \fB<REFERENCE>\fR
 Wings OCI reference, including @sha256:<digest> or paired with \-\-digest
-.SH "MISE WINGS LOGIN"
-Authenticate with mise\-wings
-
-By default, starts device\-code auth and stores a device\-bound
-credential. `\-\-token` remains as a legacy/manual fallback for
-internal debugging.
-
-Examples:
-
-```sh
-$ mise wings login
-To sign in to mise\-wings, open:
-
-https://app.mise\-wings.en.dev/cli\-device?code=AB12CD34
-
-Enter code: AB12\-CD34
-Waiting for browser approval...
-Signed in to mise\-wings as user_123 (acme).
-```
-
-Preferred token flow:
-
-```sh
-$ pbpaste | mise wings login \-\-token\-stdin
-Signed in to mise\-wings as user_123 (acme).
-Set `wings.enabled = true` (or `MISE_WINGS_ENABLED=1`) to start routing tool installs through the cache.
-```
-.PP
-\fBUsage:\fR mise wings login [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-\-token\fR \fI<TOKEN>\fR
-Clerk frontend session JWT, pasted from the dashboard's "CLI sign\-in" page. Use `\-\-token\-stdin` to read from stdin instead of the command line — important so a secret token doesn't land in shell history
-.TP
-\fB\-\-token\-stdin\fR
-Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `\-\-token` because the secret won't show up in shell history
 .SH "MISE WINGS LOGOUT"
 Sign out of mise\-wings.
 
@@ -4284,7 +4246,7 @@ mise wings logout \-\-token\-stdin
 Skip the server\-side revoke; only delete the local credentials file. Use this when you don't have a fresh Clerk session JWT handy and just want this machine signed out — the wings session JWT remains valid on the server until its `exp` (24 h default)
 .TP
 \fB\-\-token\fR \fI<TOKEN>\fR
-Clerk session JWT for the server\-side revoke. Same shape as `mise wings login \-\-token`
+Clerk session JWT for the server\-side revoke
 .TP
 \fB\-\-token\-stdin\fR
-Read the Clerk session JWT from stdin (avoids shell history). Same shape as `mise wings login \-\-token\-stdin`
+Read the Clerk session JWT from stdin (avoids shell history)

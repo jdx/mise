@@ -72,12 +72,11 @@ pub struct Logout {
     /// the server until its `exp` (24 h default).
     #[clap(long, conflicts_with_all = ["token", "token_stdin"])]
     local_only: bool,
-    /// Clerk session JWT for the server-side revoke. Same
-    /// shape as `mise wings login --token`.
+    /// Clerk session JWT for the server-side revoke.
     #[clap(long, conflicts_with = "token_stdin")]
     token: Option<String>,
     /// Read the Clerk session JWT from stdin (avoids shell
-    /// history). Same shape as `mise wings login --token-stdin`.
+    /// history).
     #[clap(long)]
     token_stdin: bool,
 }
@@ -101,9 +100,8 @@ impl Logout {
         }
 
         // `clap`'s `conflicts_with` rejects `--token` +
-        // `--token-stdin` before `run()` — same shape as the
-        // login subcommand. Greptile flagged the unreachable
-        // `(Some(_), true)` arm on PR review.
+        // `--token-stdin` before `run()`. Greptile flagged the
+        // unreachable `(Some(_), true)` arm on PR review.
         let token = match (self.token, self.token_stdin) {
             (Some(t), _) => t,
             (None, true) => read_token_from_stdin()?,

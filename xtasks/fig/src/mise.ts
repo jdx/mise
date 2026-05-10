@@ -4696,23 +4696,6 @@ const completionSpec: Fig.Spec = {
         {
           name: "login",
           description: "Authenticate with mise-wings",
-          options: [
-            {
-              name: "--token",
-              description:
-                "Clerk frontend session JWT, pasted from the dashboard's \"CLI sign-in\" page. Use `--token-stdin` to read from stdin instead of the command line — important so a secret token doesn't land in shell history",
-              isRepeatable: false,
-              args: {
-                name: "token",
-              },
-            },
-            {
-              name: "--token-stdin",
-              description:
-                "Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history",
-              isRepeatable: false,
-            },
-          ],
         },
         {
           name: "logout",
@@ -4726,8 +4709,7 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: "--token",
-              description:
-                "Clerk session JWT for the server-side revoke. Same shape as `mise wings login --token`",
+              description: "Clerk session JWT for the server-side revoke",
               isRepeatable: false,
               args: {
                 name: "token",
@@ -4736,7 +4718,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--token-stdin",
               description:
-                "Read the Clerk session JWT from stdin (avoids shell history). Same shape as `mise wings login --token-stdin`",
+                "Read the Clerk session JWT from stdin (avoids shell history)",
               isRepeatable: false,
             },
           ],

@@ -43,8 +43,8 @@ Skip the server-side revoke; only delete the local credentials file. Use this wh
 
 ### `--token <TOKEN>`
 
-Clerk session JWT for the server-side revoke. Same shape as `mise wings login --token`
+Clerk session JWT for the server-side revoke
 
 ### `--token-stdin`
 
-Read the Clerk session JWT from stdin (avoids shell history). Same shape as `mise wings login --token-stdin`
+Read the Clerk session JWT from stdin (avoids shell history)

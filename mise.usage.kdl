@@ -1656,19 +1656,15 @@ cmd wings help="Manage `mise wings` authentication" {
         }
     }
     cmd login help="Authenticate with mise-wings" {
-        long_help "Authenticate with mise-wings\n\nBy default, starts device-code auth and stores a device-bound\ncredential. `--token` remains as a legacy/manual fallback for\ninternal debugging.\n\nExamples:\n\n```sh\n$ mise wings login\nTo sign in to mise-wings, open:\n\nhttps://app.mise-wings.en.dev/cli-device?code=AB12CD34\n\nEnter code: AB12-CD34\nWaiting for browser approval...\nSigned in to mise-wings as user_123 (acme).\n```\n\nPreferred token flow:\n\n```sh\n$ pbpaste | mise wings login --token-stdin\nSigned in to mise-wings as user_123 (acme).\nSet `wings.enabled = true` (or `MISE_WINGS_ENABLED=1`) to start routing tool installs through the cache.\n```"
-        flag --token help="Clerk frontend session JWT, pasted from the dashboard's \"CLI sign-in\" page. Use `--token-stdin` to read from stdin instead of the command line — important so a secret token doesn't land in shell history" {
-            arg <TOKEN>
-        }
-        flag --token-stdin help="Read the Clerk session JWT from stdin (one line, no surrounding whitespace). Preferred over `--token` because the secret won't show up in shell history"
+        long_help "Authenticate with mise-wings\n\nBy default, starts device-code auth and stores a device-bound\ncredential.\n\nExamples:\n\n```sh\n$ mise wings login\nTo sign in to mise-wings, open:\n\nhttps://app.mise-wings.en.dev/cli-device?code=AB12CD34\n\nEnter code: AB12-CD34\nWaiting for browser approval...\nSigned in to mise-wings as user_123 (acme).\n```"
     }
     cmd logout help="Sign out of mise-wings." {
         long_help "Sign out of mise-wings.\n\nDeletes the local credentials file. With `--token-stdin`\nor `--token`, also POSTs to `/auth/dev/revoke` to invalidate\nevery wings session belonging to the calling user\n(including ones on other machines).\n\nExamples:\n\n```sh\n$ mise wings logout --local-only\nLocal mise-wings credentials cleared.\n```\n\nRevoke all server-side sessions for the current user:\n\n```sh\n$ pbpaste | mise wings logout --token-stdin\nRevoked every active mise-wings session for your user.\n```\n\nWithout a token, logout still clears local credentials:\n\n```sh\n$ mise wings logout\nLocal mise-wings credentials cleared. Server-side revoke skipped (no Clerk session token).\nTo revoke every session for your user (including other machines), run:\n\nmise wings logout --token-stdin\n```"
         flag --local-only help="Skip the server-side revoke; only delete the local credentials file. Use this when you don't have a fresh Clerk session JWT handy and just want this machine signed out — the wings session JWT remains valid on the server until its `exp` (24 h default)"
-        flag --token help="Clerk session JWT for the server-side revoke. Same shape as `mise wings login --token`" {
+        flag --token help="Clerk session JWT for the server-side revoke" {
             arg <TOKEN>
         }
-        flag --token-stdin help="Read the Clerk session JWT from stdin (avoids shell history). Same shape as `mise wings login --token-stdin`"
+        flag --token-stdin help="Read the Clerk session JWT from stdin (avoids shell history)"
     }
     cmd status help="Show the current mise-wings configuration + auth state." {
         long_help "Show the current mise-wings configuration + auth state.\n\nExamples:\n\n```sh\n$ mise wings status\nwings.enabled: yes\nhost:          mise-wings.en.dev\ncredentials:   user=user_123 org=acme (dev login)\nconnectivity:  OK (200 OK)\n```\n\nWhen Wings is not enabled:\n\n```sh\n$ mise wings status\nwings.enabled: no\nhost:          mise-wings.en.dev\ncredentials:   none\n\nRun `mise wings login` to sign in for local dev.\n```"
