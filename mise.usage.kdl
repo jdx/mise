@@ -615,12 +615,15 @@ cmd oci subcommand_required=#true help="[experimental] Build OCI container image
     long_help "[experimental] Build OCI container images from a mise.toml\n\nEach tool becomes its own OCI layer, so bumping any single tool version\nonly invalidates one content-addressable blob — unlike a Dockerfile where\nchanging an early `RUN` invalidates every layer above it.\n\nThis command is experimental and requires `mise settings experimental=true`\n(or `MISE_EXPERIMENTAL=1`). Behavior, flags, and output layout may change\nin future releases."
     cmd build help="[experimental] Build an OCI image from the current mise.toml" {
         long_help "[experimental] Build an OCI image from the current mise.toml\n\nEach tool version becomes its own content-addressable OCI layer. Bumping a\ntool version only invalidates that tool's layer — other tools, the base\nimage, and config are reused unchanged. The output directory conforms to\nthe OCI image-layout spec and can be consumed by `skopeo`, `crane`, or\n`podman load`.\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`)."
-        after_long_help "Examples:\n\n    Build with defaults (debian:bookworm-slim base):\n    $ mise oci build\n\n    Build with a specific base image and tag:\n    $ mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img\n\n    Inspect the result with skopeo:\n    $ skopeo inspect oci:./mise-oci\n\n    Push to a registry:\n    $ skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest\n\nNotes:\n\n    - asdf and vfox plugins are not supported in v1; use a different backend\n      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
+        after_long_help "Examples:\n\n    Build with defaults (debian:bookworm-slim base):\n    $ mise oci build\n\n    Build with a specific base image and tag:\n    $ mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img\n\n    Inspect the result with skopeo:\n    $ skopeo inspect oci:./mise-oci\n\n    Push to a registry:\n    $ skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest\n\nNotes:\n\n    - The image only contains tools from the project's mise config (and\n      any configs at-or-below the project root). Tools from\n      `~/.config/mise/config.toml` are not included; pass --include-global\n      to package them too.\n    - asdf and vfox plugins are not supported in v1; use a different backend\n      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
         flag "-o --output" help="Output directory for the OCI image layout" default="./mise-oci" {
             arg <OUTPUT>
         }
         flag --from help="Base image reference (overrides [oci].from and the oci.default_from setting)" {
             arg <FROM>
+        }
+        flag --include-global help="Also include tools from the global / system config (default: project-only)" {
+            long_help "Also include tools from the global / system config (default: project-only)\n\nBy default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at-or-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `--include-global` to revert to the old \"merge all loaded configs\" behavior."
         }
         flag "-t --tag" help="Tag to record in the image index (the org.opencontainers.image.ref.name annotation)" {
             arg <TAG>
@@ -638,6 +641,9 @@ cmd oci subcommand_required=#true help="[experimental] Build OCI container image
         }
         flag --image-dir help="Push an already-built OCI image layout (skip the build step)" {
             arg <IMAGE_DIR>
+        }
+        flag --include-global help="Also include tools from the global / system config (default: project-only)" {
+            long_help "Also include tools from the global / system config (default: project-only)\n\nSee `mise oci build --help` for details."
         }
         flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
             arg <MOUNT_POINT>
@@ -663,6 +669,9 @@ cmd oci subcommand_required=#true help="[experimental] Build OCI container image
         }
         flag --image-dir help="Use an already-built OCI image layout instead of building fresh" {
             arg <IMAGE_DIR>
+        }
+        flag --include-global help="Also include tools from the global / system config (default: project-only)" {
+            long_help "Also include tools from the global / system config (default: project-only)\n\nSee `mise oci build --help` for details."
         }
         flag --keep help="Keep the loaded image in the engine's storage after the run" {
             long_help "Keep the loaded image in the engine's storage after the run\n\nBy default, both the container (`--rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `--keep` to retain the image under the tag mise used (`mise-oci:run-*` for docker; the pulled image ID for podman)."

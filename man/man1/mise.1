@@ -1570,6 +1570,11 @@ Output directory for the OCI image layout
 \fB\-\-from\fR \fI<FROM>\fR
 Base image reference (overrides [oci].from and the oci.default_from setting)
 .TP
+\fB\-\-include\-global\fR
+Also include tools from the global / system config (default: project\-only)
+
+By default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at\-or\-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `\-\-include\-global` to revert to the old "merge all loaded configs" behavior.
+.TP
 \fB\-t, \-\-tag\fR \fI<TAG>\fR
 Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
 .TP
@@ -1600,6 +1605,11 @@ Base image for the build (ignored with \-\-image\-dir)
 .TP
 \fB\-\-image\-dir\fR \fI<IMAGE_DIR>\fR
 Push an already\-built OCI image layout (skip the build step)
+.TP
+\fB\-\-include\-global\fR
+Also include tools from the global / system config (default: project\-only)
+
+See `mise oci build \-\-help` for details.
 .TP
 \fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
 Override in\-image mount point (ignored with \-\-image\-dir)
@@ -1644,6 +1654,11 @@ Base image reference for the build (ignored with \-\-image\-dir)
 .TP
 \fB\-\-image\-dir\fR \fI<IMAGE_DIR>\fR
 Use an already\-built OCI image layout instead of building fresh
+.TP
+\fB\-\-include\-global\fR
+Also include tools from the global / system config (default: project\-only)
+
+See `mise oci build \-\-help` for details.
 .TP
 \fB\-\-keep\fR
 Keep the loaded image in the engine's storage after the run

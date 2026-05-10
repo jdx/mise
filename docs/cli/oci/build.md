@@ -26,6 +26,12 @@ Output directory for the OCI image layout
 
 Base image reference (overrides [oci].from and the oci.default_from setting)
 
+### `--include-global`
+
+Also include tools from the global / system config (default: project-only)
+
+By default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at-or-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `--include-global` to revert to the old "merge all loaded configs" behavior.
+
 ### `-t --tag <TAG>`
 
 Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
@@ -57,6 +63,10 @@ $ skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest
 Notes:
 
 ```
+- The image only contains tools from the project's mise config (and
+  any configs at-or-below the project root). Tools from
+  `~/.config/mise/config.toml` are not included; pass --include-global
+  to package them too.
 - asdf and vfox plugins are not supported in v1; use a different backend
   (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.
 - The host mise binary is embedded at /usr/local/bin/mise by default;

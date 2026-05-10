@@ -1830,6 +1830,12 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
+              name: "--include-global",
+              description:
+                "Also include tools from the global / system config (default: project-only)",
+              isRepeatable: false,
+            },
+            {
               name: ["-t", "--tag"],
               description:
                 "Tag to record in the image index (the org.opencontainers.image.ref.name annotation)",
@@ -1878,6 +1884,12 @@ const completionSpec: Fig.Spec = {
                 name: "image_dir",
                 template: "folders",
               },
+            },
+            {
+              name: "--include-global",
+              description:
+                "Also include tools from the global / system config (default: project-only)",
+              isRepeatable: false,
             },
             {
               name: "--mount-point",
@@ -1948,6 +1960,12 @@ const completionSpec: Fig.Spec = {
                 name: "image_dir",
                 template: "folders",
               },
+            },
+            {
+              name: "--include-global",
+              description:
+                "Also include tools from the global / system config (default: project-only)",
+              isRepeatable: false,
             },
             {
               name: "--keep",
