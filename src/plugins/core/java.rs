@@ -623,12 +623,7 @@ fn os() -> &'static str {
 }
 
 fn arch(settings: &Settings) -> &str {
-    match settings.arch() {
-        "x64" => "x86_64",
-        "arm64" => "aarch64",
-        "arm" => "arm32-vfp-hflt",
-        other => other,
-    }
+    to_java_api_arch(settings.arch())
 }
 
 /// Maps a normalized mise arch (e.g. "x64", "arm64") to the Java metadata API arch string.
