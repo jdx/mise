@@ -555,6 +555,9 @@ impl UbiInstallError {
     }
 
     fn message_indicates_missing_asset(message: &str) -> bool {
+        // UBI exposes asset-selection misses as anyhow strings, not typed errors.
+        // Keep these substrings in sync with UBI 0.9.0's picker errors:
+        // https://github.com/houseabsolute/ubi/blob/v0.9.0/src/picker.rs
         message.contains("404")
             || message.contains("could not find a release asset")
             || message.contains("the asset isn't found")
