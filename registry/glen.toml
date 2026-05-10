@@ -1,3 +1,0 @@
-backends = ["github:lingrino/glen", "asdf:bradym/asdf-glen"]
-description = "cli to export gitlab variables"
-test = { cmd = "glen version", expected = "{{version}}" }

@@ -1,2 +1,0 @@
-backends = ["aqua:zaquestion/lab", "asdf:particledecay/asdf-lab"]
-description = "Lab wraps Git or Hub, making it simple to clone, fork, and interact with repositories on GitLab"

@@ -400,13 +400,19 @@ type = "Bool"
 
 [dotnet.package_flags]
 default = []
-description = "Extends dotnet search and install abilities."
+deprecated = "Use the `prerelease = true` tool option or the global `prereleases` setting instead."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
+description = "[deprecated] Extends dotnet search and install abilities."
 docs = """
-This is a list of flags to extend the search and install abilities of dotnet tools.
+Deprecated. Use the `prerelease = true` tool option on a `dotnet:` tool, or the global
+`prereleases` setting, to include pre-release versions.
 
-Here are the available flags:
+This legacy setting is a list of flags to extend the search and install abilities of dotnet tools.
+Because it is global, remove it before relying on `prerelease = false` per-tool opt-outs.
+The only supported flag is:
 
-- 'prerelease' : include prerelease versions in search and install
+- 'prerelease' : include pre-release versions in search and install
 """
 env = "MISE_DOTNET_PACKAGE_FLAGS"
 parse_env = "list_by_comma"
@@ -1636,7 +1642,7 @@ description = "Include pre-release versions in `ls-remote`, `latest` resolution,
 docs = """
 By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote`,
 `latest` resolution, and fuzzy version matching. Per-tool opt-in is available via the
-`prerelease = true` tool option (currently honored by the `github:` and `aqua:` backends).
+`prerelease = true` tool option (currently honored by the `github:`, `aqua:`, and `dotnet:` backends).
 
 Set `prereleases = true` (or `MISE_PRERELEASES=1`) to opt in globally for every tool —
 equivalent to setting `prerelease = true` on each one. Useful for build pipelines that

@@ -2034,6 +2034,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--inactive",
+          description:
+            "Show outdated tools including installed-but-inactive tools not present in the current config",
+          isRepeatable: false,
+        },
+        {
           name: "--local",
           description: "Only show outdated tools defined in local config files",
           isRepeatable: false,
@@ -4032,6 +4038,12 @@ const completionSpec: Fig.Spec = {
           name: "--dry-run-code",
           description:
             "Like --dry-run but exits with code 1 if there are outdated tools",
+          isRepeatable: false,
+        },
+        {
+          name: "--inactive",
+          description:
+            "Upgrade all tools, including installed-but-inactive tools not present in the current config",
           isRepeatable: false,
         },
         {

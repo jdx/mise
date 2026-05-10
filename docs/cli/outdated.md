@@ -31,6 +31,12 @@ show other 20.x versions, not 21.x or 22.x versions.
 
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
 
+### `--inactive`
+
+Show outdated tools including installed-but-inactive tools not present in the current config
+
+By default, `mise outdated` only shows tools that come from the current config.
+
 ### `--local`
 
 Only show outdated tools defined in local config files

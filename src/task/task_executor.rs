@@ -1228,10 +1228,27 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
 /// the child process gets an absolute path argument and does not need PATH
 /// search at the OS level.
 ///
+/// For `bash` specifically, prefer a real POSIX bash (Git Bash / MSYS2) over
+/// the WSL launcher at `C:\Windows\System32\bash.exe`. The WSL launcher is on
+/// PATH first when mise is invoked from PowerShell, and routing into WSL means
+/// the spawned task body runs inside a separate Linux filesystem where
+/// mise-managed Windows tools aren't visible. Resolution order:
+///   1. `MISE_BASH_PATH` env var (explicit override).
+///   2. Common Git Bash and MSYS2 install locations
+///      (`C:\Program Files\Git\bin\bash.exe`,
+///      `C:\Program Files (x86)\Git\bin\bash.exe`,
+///      `%LOCALAPPDATA%\Programs\Git\bin\bash.exe`,
+///      `C:\msys64\usr\bin\bash.exe`, `C:\msys32\usr\bin\bash.exe`).
+///   3. `which::which_in_all` over the task env's PATH, picking the first
+///      entry that isn't the WSL launcher. This rescues setups where a real
+///      POSIX bash is on PATH but appears after `C:\Windows\System32`.
+///
 /// Returns `None` when the program is not a POSIX shell, the env has no PATH,
 /// the PATH is already in Unix form (no `;` and no `\`, so no conversion will
-/// fire), or `which` fails to locate the binary — in those cases the caller
-/// keeps the original program string and lets the stdlib spawn it.
+/// fire), `which` finds nothing, or every PATH match for `bash` is the WSL
+/// launcher — in those cases the caller keeps the original program string and
+/// lets the stdlib spawn it (which will then fail loudly rather than silently
+/// routing into WSL).
 #[cfg(windows)]
 fn resolve_posix_shell_program_path(
     program: &std::ffi::OsStr,
@@ -1244,10 +1261,97 @@ fn resolve_posix_shell_program_path(
     if !path_val.contains(';') && !path_val.contains('\\') {
         return None;
     }
+
+    let is_bash = is_bash_basename(program);
+
+    if is_bash {
+        let override_path = env
+            .get("MISE_BASH_PATH")
+            .cloned()
+            .or_else(|| std::env::var("MISE_BASH_PATH").ok())
+            .filter(|s| !s.is_empty());
+        if let Some(p) = override_path {
+            let path = PathBuf::from(&p);
+            if path.is_file() {
+                return Some(path.into_os_string());
+            }
+            warn!("MISE_BASH_PATH={p} does not exist; falling back to other candidates");
+        }
+        for candidate in bash_candidates(env) {
+            if candidate.is_file() {
+                return Some(candidate.into_os_string());
+            }
+        }
+    }
+
     let cwd = std::env::current_dir().ok()?;
+
+    if is_bash {
+        // For bash, walk every PATH match and pick the first that isn't the
+        // WSL launcher. This rescues setups where a real POSIX bash sits later
+        // on PATH than `C:\Windows\System32\bash.exe` — common under PowerShell
+        // when Git Bash is installed somewhere `bash_candidates` doesn't probe.
+        let mut all = which::which_in_all(program, Some(path_val.as_str()), cwd).ok()?;
+        if let Some(p) = all.find(|p| !is_wsl_launcher_bash(p)) {
+            return Some(p.into_os_string());
+        }
+        warn!(
+            "no real POSIX bash found on PATH (only the WSL launcher) when resolving bash for a task; \
+             install Git Bash or MSYS2, or set MISE_BASH_PATH to a real POSIX bash to silence this"
+        );
+        return None;
+    }
+
     which::which_in(program, Some(path_val.as_str()), cwd)
         .ok()
         .map(|p| p.into_os_string())
+}
+
+/// Returns true if `program`'s basename (case-insensitive, `.exe` stripped) is `bash`.
+/// More specific than [`crate::path::is_posix_shell_program`], which also accepts
+/// sh/zsh/fish/ksh/dash. Used to scope the Windows bash-resolution heuristics so
+/// they don't fire for other POSIX shells we might gain support for later.
+#[cfg(windows)]
+fn is_bash_basename(program: &std::ffi::OsStr) -> bool {
+    crate::path::program_stem(Path::new(program)).as_deref() == Some("bash")
+}
+
+/// Common real-POSIX-bash install locations on Windows (Git Bash + MSYS2), in
+/// preference order. Pure given `env` (no filesystem access), so the caller
+/// stats each candidate. `MISE_BASH_PATH` covers anything outside this list,
+/// including non-`C:` drive installs.
+#[cfg(windows)]
+fn bash_candidates(env: &BTreeMap<String, String>) -> Vec<PathBuf> {
+    let mut candidates = vec![
+        PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
+        PathBuf::from(r"C:\Program Files (x86)\Git\bin\bash.exe"),
+    ];
+    let local_appdata = env
+        .get("LOCALAPPDATA")
+        .cloned()
+        .or_else(|| std::env::var("LOCALAPPDATA").ok());
+    if let Some(local) = local_appdata.filter(|s| !s.is_empty()) {
+        candidates.push(PathBuf::from(local).join(r"Programs\Git\bin\bash.exe"));
+    }
+    // MSYS2 standalone installs (default `C:\msys64`, 32-bit fallback `C:\msys32`).
+    candidates.push(PathBuf::from(r"C:\msys64\usr\bin\bash.exe"));
+    candidates.push(PathBuf::from(r"C:\msys32\usr\bin\bash.exe"));
+    candidates
+}
+
+/// Returns true if `path` looks like the Windows-shipped WSL launcher rather
+/// than a real POSIX bash. Matches `C:\Windows\System32\bash.exe` and the
+/// `WindowsApps\bash.exe` shim that App Execution Aliases install. Both
+/// dispatch into a WSL distribution's Linux userspace, which is the wrong
+/// place to run a task that uses mise-managed Windows tools.
+#[cfg(windows)]
+fn is_wsl_launcher_bash(path: &Path) -> bool {
+    let Some(s) = path.to_str() else {
+        return false;
+    };
+    let lower = s.to_ascii_lowercase().replace('/', "\\");
+    lower.ends_with(r"\windows\system32\bash.exe")
+        || lower.contains(r"\microsoft\windowsapps\bash.exe")
 }
 
 /// On Windows, when spawning a POSIX-style shell (bash/sh/zsh/...) for a task, the
@@ -1380,5 +1484,142 @@ mod tests {
         let env = env_with_path("/usr/bin:/bin");
         let out = maybe_convert_env_for_msys_shell(Path::new("bash"), &env);
         assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/usr/bin:/bin");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_bash_basename_accepts_bash_variants() {
+        use std::ffi::OsStr;
+        assert!(is_bash_basename(OsStr::new("bash")));
+        assert!(is_bash_basename(OsStr::new("bash.exe")));
+        assert!(is_bash_basename(OsStr::new("BASH.EXE")));
+        assert!(is_bash_basename(OsStr::new(
+            r"C:\Program Files\Git\bin\bash.exe"
+        )));
+        assert!(is_bash_basename(OsStr::new("/usr/bin/bash")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_bash_basename_rejects_other_shells() {
+        use std::ffi::OsStr;
+        assert!(!is_bash_basename(OsStr::new("sh")));
+        assert!(!is_bash_basename(OsStr::new("zsh.exe")));
+        assert!(!is_bash_basename(OsStr::new("fish")));
+        assert!(!is_bash_basename(OsStr::new("dash")));
+        assert!(!is_bash_basename(OsStr::new("cmd.exe")));
+        assert!(!is_bash_basename(OsStr::new("bashfoo")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_wsl_launcher_bash_detects_system32() {
+        assert!(is_wsl_launcher_bash(Path::new(
+            r"C:\Windows\System32\bash.exe"
+        )));
+        assert!(is_wsl_launcher_bash(Path::new(
+            r"C:\WINDOWS\system32\bash.exe"
+        )));
+        assert!(is_wsl_launcher_bash(Path::new(
+            r"D:\Windows\System32\bash.exe"
+        )));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_wsl_launcher_bash_detects_windows_apps() {
+        assert!(is_wsl_launcher_bash(Path::new(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps\bash.exe"
+        )));
+        // Forward slashes still match — `which::which_in` may produce them.
+        assert!(is_wsl_launcher_bash(Path::new(
+            "C:/Users/me/AppData/Local/Microsoft/WindowsApps/bash.exe"
+        )));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_wsl_launcher_bash_accepts_real_bash() {
+        assert!(!is_wsl_launcher_bash(Path::new(
+            r"C:\Program Files\Git\bin\bash.exe"
+        )));
+        assert!(!is_wsl_launcher_bash(Path::new(
+            r"C:\Program Files\Git\usr\bin\bash.exe"
+        )));
+        assert!(!is_wsl_launcher_bash(Path::new(
+            r"C:\msys64\usr\bin\bash.exe"
+        )));
+        assert!(!is_wsl_launcher_bash(Path::new(
+            r"C:\Users\me\scoop\apps\git\current\bin\bash.exe"
+        )));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_bash_candidates_includes_program_files() {
+        let env = BTreeMap::new();
+        let candidates = bash_candidates(&env);
+        assert!(candidates.contains(&PathBuf::from(r"C:\Program Files\Git\bin\bash.exe")));
+        assert!(candidates.contains(&PathBuf::from(r"C:\Program Files (x86)\Git\bin\bash.exe")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_bash_candidates_includes_msys2() {
+        let env = BTreeMap::new();
+        let candidates = bash_candidates(&env);
+        assert!(candidates.contains(&PathBuf::from(r"C:\msys64\usr\bin\bash.exe")));
+        assert!(candidates.contains(&PathBuf::from(r"C:\msys32\usr\bin\bash.exe")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_bash_candidates_uses_localappdata_from_env() {
+        let mut env = BTreeMap::new();
+        env.insert(
+            "LOCALAPPDATA".to_string(),
+            r"C:\Users\me\AppData\Local".to_string(),
+        );
+        let candidates = bash_candidates(&env);
+        assert!(candidates.contains(&PathBuf::from(
+            r"C:\Users\me\AppData\Local\Programs\Git\bin\bash.exe"
+        )));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_uses_mise_bash_path_override() {
+        // SAFETY: tests in this module run sequentially within the cargo test runner;
+        // env mutation is scoped via a guard.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bash_path = tmp.path().join("custom-bash.exe");
+        std::fs::write(&bash_path, b"").expect("write fake bash");
+
+        let mut env = env_with_path(r"C:\Windows\System32;C:\Program Files\Git\bin");
+        env.insert(
+            "MISE_BASH_PATH".to_string(),
+            bash_path.to_string_lossy().into_owned(),
+        );
+
+        let resolved = resolve_posix_shell_program_path(std::ffi::OsStr::new("bash"), &env)
+            .expect("override should resolve");
+        assert_eq!(PathBuf::from(&resolved), bash_path);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_skips_when_not_posix_shell() {
+        let env = env_with_path(r"C:\Windows\System32");
+        assert!(resolve_posix_shell_program_path(std::ffi::OsStr::new("cmd.exe"), &env).is_none());
+        assert!(
+            resolve_posix_shell_program_path(std::ffi::OsStr::new("notepad.exe"), &env).is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_skips_when_path_already_unix() {
+        let env = env_with_path("/c/foo:/d/bar");
+        assert!(resolve_posix_shell_program_path(std::ffi::OsStr::new("bash"), &env).is_none());
     }
 }

@@ -69,12 +69,13 @@ should_reshim() {
 
 wrap_npm_if_reshim_is_needed() {
   local npm_cli="$plugin_dir/lib/node_modules/npm/bin/npm-cli.js"
+  local node_bin="$plugin_dir/bin/node"
   if should_reshim "$@"; then
-    node "$npm_cli" "$@"
+    "$node_bin" "$npm_cli" "$@"
     printf "Reshimming mise %s...\n" "$plugin_name" >&2
     mise reshim
   else
-    exec node "$npm_cli" "$@"
+    exec "$node_bin" "$npm_cli" "$@"
   fi
 }
 

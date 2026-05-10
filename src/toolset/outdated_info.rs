@@ -60,9 +60,11 @@ impl OutdatedInfo {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
         let (prefix, _) = split_version_prefix(&tv.request.version());
-        let latest_result = if bump {
-            // Note: Backend's latest_version takes individual parameters,
-            // not a ResolveOptions struct like ToolVersion's method
+        let use_backend_latest =
+            bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown);
+
+        let latest_result = if use_backend_latest {
+            // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
             t.latest_version(
                 config,
                 Some(prefix.clone()).filter(|s| !s.is_empty()),
@@ -86,6 +88,15 @@ impl OutdatedInfo {
             }
         };
         let mut oi = Self::new(config, tv, latest)?;
+        if opts.inactive && oi.source == ToolSource::Unknown {
+            // Installed-but-inactive tools have no config source, so their request
+            // is usually pinned to the currently installed version. With --no-source we
+            // want to install the discovered latest version instead.
+            let backend = oi.tool_request.ba().clone();
+            let source = oi.tool_request.source().clone();
+            let options = oi.tool_request.options();
+            oi.tool_request = ToolRequest::new_opts(backend, &oi.latest, options, source)?;
+        }
         if oi
             .current
             .as_ref()

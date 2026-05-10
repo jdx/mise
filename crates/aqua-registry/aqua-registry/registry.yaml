@@ -2327,6 +2327,42 @@ packages:
           - darwin
   - type: github_release
     repo_owner: DataDog
+    repo_name: managed-kubernetes-auditing-toolkit
+    aliases:
+      - name: datadog/managed-kubernetes-auditing-toolkit
+    description: All-in-one auditing toolkit for identifying common security issues in managed Kubernetes environments. Currently supports Amazon EKS
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.1")
+        asset: managed-kubernetes-auditing-toolkit_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: mkat
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: managed-kubernetes-auditing-toolkit_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: mkat
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+  - type: github_release
+    repo_owner: DataDog
     repo_name: pup
     aliases:
       - name: datadog-labs/pup
@@ -11767,7 +11803,7 @@ packages:
     description: Automatically sync shell completions for tools managed by mise
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.5.1")
         asset: mise-completions-sync-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
@@ -11787,6 +11823,17 @@ packages:
               linux: unknown-linux-gnu
           - goos: windows
             format: zip
+      - version_constraint: "true"
+        asset: mise-completions-sync-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
   - type: github_release
     repo_owner: allyring
     repo_name: pvw
@@ -29995,40 +30042,6 @@ packages:
           - darwin
           - amd64
   - type: github_release
-    repo_owner: datadog
-    repo_name: managed-kubernetes-auditing-toolkit
-    description: All-in-one auditing toolkit for identifying common security issues in managed Kubernetes environments. Currently supports Amazon EKS
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.1.1")
-        asset: managed-kubernetes-auditing-toolkit_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        files:
-          - name: mkat
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-      - version_constraint: "true"
-        asset: managed-kubernetes-auditing-toolkit_{{.OS}}_{{.Arch}}.{{.Format}}
-        files:
-          - name: mkat
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-  - type: github_release
     repo_owner: datanymizer
     repo_name: datanymizer
     asset: pg_datanymizer-{{.OS}}-{{.Arch}}.{{.Format}}
@@ -47145,16 +47158,22 @@ packages:
   - type: github_release
     repo_owner: iann0036
     repo_name: iamlive
-    asset: iamlive-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-    format: zip
     description: Generate an IAM policy from AWS calls using client-side monitoring (CSM) or embedded proxy
-    overrides:
-      - goos: linux
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.27")
+        asset: iamlive-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: "true"
+        asset: iamlive_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
   - type: github_release
     repo_owner: iawia002
     repo_name: lux
@@ -69010,6 +69029,12 @@ packages:
           - darwin
           - windows
           - amd64
+  - type: http
+    name: oracle.com/sqlcl
+    url: https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-{{.Version}}.zip
+    files:
+      - name: sql
+        src: sqlcl/bin/sql
   - type: github_release
     repo_owner: orangekame3
     repo_name: stree
@@ -71995,7 +72020,7 @@ packages:
           amd64: x64
           darwin: macos
           windows: win
-      - version_constraint: semver("<= 10.33.2")
+      - version_constraint: semver("< 11.0.0")
         asset: pnpm-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true

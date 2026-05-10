@@ -1,3 +1,0 @@
-backends = ["github:chenrui333/terradozer"]
-description = "Terraform destroy without configuration files"
-os = ["linux", "macos"]
