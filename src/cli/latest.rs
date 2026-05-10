@@ -1,4 +1,5 @@
 use color_eyre::eyre::{Result, bail};
+use jiff::Timestamp;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
@@ -41,17 +42,14 @@ pub struct Latest {
 
 impl Latest {
     pub async fn run(self) -> Result<()> {
+        let before_date = self.get_before_date()?;
         let config = Config::get().await?;
         let Self {
             tool,
             asdf_version,
             installed,
-            minimum_release_age,
+            minimum_release_age: _,
         } = self;
-        let before_date = minimum_release_age
-            .as_deref()
-            .map(parse_into_timestamp)
-            .transpose()?;
         let mut prefix = match &tool.tvr {
             None => asdf_version,
             Some(ToolRequest::Version { version, .. }) => Some(version.clone()),
@@ -77,6 +75,15 @@ impl Latest {
             miseprintln!("{}", version);
         }
         Ok(())
+    }
+
+    /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
+    /// Per-tool and global setting fallbacks are handled by backend latest resolution.
+    fn get_before_date(&self) -> Result<Option<Timestamp>> {
+        if let Some(minimum_release_age) = &self.minimum_release_age {
+            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
+        }
+        Ok(None)
     }
 }
 

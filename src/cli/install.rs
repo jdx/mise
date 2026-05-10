@@ -253,7 +253,7 @@ impl Install {
         })
     }
 
-    /// Get the before_date from the CLI --minimum-release-age flag only.
+    /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
         if let Some(minimum_release_age) = &self.minimum_release_age {
