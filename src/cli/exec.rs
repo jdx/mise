@@ -14,6 +14,7 @@ use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::deps::{DepsEngine, DepsOptions};
 use crate::env;
+use crate::env_diff::EnvDiff;
 use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
@@ -166,6 +167,15 @@ impl Exec {
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
 
         let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
+
+        // Embed __MISE_DIFF so a nested mise invocation can recover the pristine
+        // env (and pristine PATH) instead of stacking our tool dirs on top of its
+        // own. Without this, `mise -C <new> exec -- ...` invoked from inside our
+        // child process would inherit our tool dirs as user-pre-PATH and they
+        // would outrank the inner toolset's resolved tool. See discussion #9754.
+        if let Ok(serialized) = EnvDiff::from_final_env(&env::PRISTINE_ENV, &env).serialize() {
+            env.insert("__MISE_DIFF".to_string(), serialized);
+        }
 
         // Run auto-enabled deps steps (unless --no-deps)
         if !self.no_deps {

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/9754
+#
+# Inside a `mise run` task whose toolset selected dummy@1.0.0, a nested
+# `mise -C <other> exec -- ...` should resolve <other>'s tool (dummy@2.0.0),
+# not the outer task's. The bug was that the outer task's install path
+# leaked into the inner mise's PATH ahead of shims, where PathEnv classified
+# it as user-pre-PATH and it outranked the inner toolset's resolved tool.
+#
+# Fix: the outer mise task now embeds __MISE_DIFF in its child env so the
+# nested mise can recover the pristine PATH (mirrors what `mise activate`
+# does for shells). See src/task/task_executor.rs and src/cli/exec.rs.
+
+mise install dummy@1.0.0 dummy@2.0.0
+
+old_dir="$HOME/old"
+new_dir="$HOME/new"
+mkdir -p "$old_dir/.mise/tasks" "$new_dir"
+
+cat >"$old_dir/mise.toml" <<EOF
+[tools]
+dummy = "1.0.0"
+EOF
+
+cat >"$new_dir/mise.toml" <<EOF
+[tools]
+dummy = "2.0.0"
+EOF
+
+new_bin="$MISE_DATA_DIR/installs/dummy/2.0.0/bin"
+
+cat >"$old_dir/.mise/tasks/probe" <<TASK
+#!/usr/bin/env bash
+set -euo pipefail
+mise -C "$new_dir" exec -- bash -c 'command -v dummy'
+TASK
+chmod +x "$old_dir/.mise/tasks/probe"
+
+# Put shims in PATH ahead of the rest. Without shims as a separator, PathEnv
+# wouldn't have classified the outer install dir as pre-PATH, so the bug
+# wouldn't manifest. With shims present, this is the discussion's scenario.
+shims="$MISE_DATA_DIR/shims"
+mkdir -p "$shims"
+export PATH="$shims:$PATH"
+
+assert "mise -C '$old_dir' run probe" "$new_bin/dummy"

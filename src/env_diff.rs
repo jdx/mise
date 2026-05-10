@@ -167,6 +167,32 @@ impl EnvDiff {
             path: self.path.clone(),
         }
     }
+
+    /// Build an EnvDiff describing the transformation from `pristine` → `final_env`,
+    /// suitable for serialization into `__MISE_DIFF`. PATH is excluded from
+    /// `old`/`new` and instead tracked in `path` (entries present in `final_env`'s
+    /// PATH but not in `pristine`'s PATH). This mirrors what `mise hook-env` writes
+    /// during shell activation, so nested `mise` invocations can reverse it via
+    /// `get_pristine_env` and avoid stacking outer tool paths on top of inner ones.
+    pub fn from_final_env(pristine: &EnvMap, final_env: &EnvMap) -> EnvDiff {
+        use std::collections::HashSet;
+
+        let mut additions = final_env.clone();
+        additions.remove(PATH_KEY.as_str());
+        let mut diff = EnvDiff::new(pristine, additions);
+
+        let pristine_paths: HashSet<PathBuf> = pristine
+            .get(PATH_KEY.as_str())
+            .map(|p| crate::env::split_paths(p).collect())
+            .unwrap_or_default();
+        if let Some(final_path) = final_env.get(PATH_KEY.as_str()) {
+            diff.path = crate::env::split_paths(final_path)
+                .filter(|p| !pristine_paths.contains(p))
+                .collect();
+        }
+
+        diff
+    }
 }
 
 fn invalid_key(k: &str, opts: &EnvDiffOptions) -> bool {

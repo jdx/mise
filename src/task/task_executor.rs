@@ -2,6 +2,7 @@ use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
+use crate::env_diff::EnvDiff;
 use crate::file::{display_path, is_executable};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskKey;
@@ -320,6 +321,16 @@ impl TaskExecutor {
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();
             env.insert("__MISE_ENV_CACHE_KEY".into(), key);
+        }
+
+        // Embed __MISE_DIFF so a nested `mise` invocation inside this task can
+        // recover the pristine env (and pristine PATH) instead of stacking our
+        // tool dirs on top of its own. Without this, nested `mise -C <new> exec`
+        // would inherit our tool dirs as user-pre-PATH and they would outrank
+        // the inner toolset's resolved tool. See discussion #9754.
+        if let Ok(serialized) = EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env).serialize()
+        {
+            env.insert("__MISE_DIFF".into(), serialized);
         }
 
         let timer = std::time::Instant::now();
