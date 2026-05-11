@@ -53,13 +53,13 @@ pub async fn try_install<B: Backend + ?Sized>(
     }
 
     let fallback_blocked = fallback_blocked(tv);
-    let Some(token) = crate::wings::auth::session_token().await? else {
+    if crate::wings::auth::session_token().await?.is_none() {
         return fallback_or_false(
             tv,
             fallback_blocked,
             "wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
         );
-    };
+    }
 
     let Some(source) = (match resolve_source(backend, tv).await {
         Ok(source) => source,
@@ -75,7 +75,7 @@ pub async fn try_install<B: Backend + ?Sized>(
     };
 
     ctx.pr.set_message("wings resolve".into());
-    let Some(artifact) = (match resolve_until_allowed(backend, ctx, tv, &source, &token).await {
+    let Some(artifact) = (match resolve_until_allowed(backend, ctx, tv, &source).await {
         Ok(artifact) => artifact,
         Err(e) if e.downcast_ref::<WingsBlockedError>().is_some() => return Err(e),
         Err(e) => return fallback_or_error(tv, fallback_blocked, "wings resolve failed", e),
@@ -83,6 +83,13 @@ pub async fn try_install<B: Backend + ?Sized>(
         return fallback_or_false(tv, fallback_blocked, "wings did not provide an artifact");
     };
 
+    let Some(token) = crate::wings::auth::session_token().await? else {
+        return fallback_or_false(
+            tv,
+            fallback_blocked,
+            "wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
+        );
+    };
     ctx.pr.set_message("wings pull oci".into());
     if let Err(e) = pull_and_install(ctx, tv, &artifact, &token).await {
         if fallback_blocked {
@@ -290,11 +297,9 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
     ctx: &InstallContext,
     tv: &ToolVersion,
     source: &SourceInfo,
-    token: &str,
 ) -> Result<Option<Artifact>> {
     let body = resolve_request(backend, tv, source);
     let url = format!("https://api.{}/v1/catalog/resolve", crate::wings::host());
-    let headers = bearer_headers(token)?;
     let deadline = tokio::time::Instant::now() + RESOLVE_PENDING_TIMEOUT;
     let mut transient_failures = 0;
     loop {
@@ -308,6 +313,10 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
                 RESOLVE_PENDING_TIMEOUT.as_secs()
             ));
         }
+        let Some(token) = crate::wings::auth::session_token().await? else {
+            bail!("wings authentication is not available; run `mise wings login`");
+        };
+        let headers = bearer_headers(&token)?;
         // Re-posting the same resolve request is the poll contract: the
         // server deduplicates pending/running jobs by
         // (org, backend, tool, version, platform) and returns the existing
