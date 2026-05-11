@@ -263,7 +263,7 @@ async fn refresh_token(cached: &CachedToken) -> Result<Option<CachedToken>> {
 
     let settings = Settings::get();
     let url = format!(
-        "{}/access_token",
+        "{}/oauth/access_token",
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
     let response = crate::http::HTTP
