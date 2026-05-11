@@ -1084,11 +1084,17 @@ fn ensure_installable_layer_media_type(media_type: &str) -> Result<()> {
 fn extension_for_layer_media_type(media_type: &str) -> Result<&'static str> {
     match layer_format(media_type)? {
         TarFormat::TarGz => Ok("tar.gz"),
+        TarFormat::Gz => Ok("gz"),
+        TarFormat::TarXz => Ok("tar.xz"),
+        TarFormat::Xz => Ok("xz"),
+        TarFormat::TarBz2 => Ok("tar.bz2"),
+        TarFormat::Bz2 => Ok("bz2"),
         TarFormat::Tar => Ok("tar"),
         TarFormat::TarZst => Ok("tar.zst"),
+        TarFormat::Zst => Ok("zst"),
         TarFormat::Zip => Ok("zip"),
+        TarFormat::SevenZip => Ok("7z"),
         TarFormat::Raw => Ok("bin"),
-        other => bail!("wings artifact layer media type for {other:?} is not supported"),
     }
 }
 

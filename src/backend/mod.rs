@@ -1743,7 +1743,6 @@ pub trait Backend: Debug + Send + Sync {
 
         self.create_install_dirs(&tv)?;
 
-        let old_tv = tv.clone();
         let tv = match crate::wings::artifact::try_install(self, &ctx, &mut tv).await {
             Ok(true) => tv.clone(),
             Ok(false) => {
@@ -1758,6 +1757,7 @@ pub trait Backend: Debug + Send + Sync {
                 }
             }
             Err(e) => {
+                let old_tv = tv.clone();
                 self.cleanup_install_dirs_on_error(&old_tv);
                 return Err(e);
             }
