@@ -7,8 +7,8 @@ full = "http:oc"
 
 [backends.options]
 bin = "oc"
-version_regex = 'href="(\d+\.\d+\.\d+)/"'
 version_list_url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/"
+version_regex = 'href="(\d+\.\d+\.\d+)/"'
 
 [backends.options.platforms.linux-x64]
 url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-client-linux-{{ version }}.tar.gz"
