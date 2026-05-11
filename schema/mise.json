@@ -60,48 +60,89 @@
         }
       ]
     },
-    "env_directive": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
+    "env_value": {
+      "oneOf": [
+        {
+          "type": "string"
         },
-        "paths": {
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "env_path": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
           "type": "array",
           "items": {
             "type": "string"
           }
+        }
+      ]
+    },
+    "env_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "env_tools": {
+      "type": "boolean",
+      "description": "load tools before resolving"
+    },
+    "env_redact": {
+      "type": "boolean",
+      "description": "redact the value from logs"
+    },
+    "env_required": {
+      "oneOf": [
+        {
+          "type": "boolean",
+          "description": "require this environment variable to be defined before mise runs or in a later config file"
+        },
+        {
+          "type": "string",
+          "description": "require this environment variable with user help text on how to set it"
+        }
+      ],
+      "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+    },
+    "env_age": {
+      "type": "string",
+      "description": "[experimental] age-encrypted value (simplified format)"
+    },
+    "env_age_value": {
+      "type": "string",
+      "description": "[experimental] age-encrypted value"
+    },
+    "env_age_format": {
+      "type": "string",
+      "enum": ["raw", "zstd"],
+      "description": "[experimental] compression format for the encrypted value"
+    },
+    "env_directive": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/env_path"
+        },
+        "paths": {
+          "$ref": "#/$defs/env_paths"
         },
         "tools": {
-          "type": "boolean",
-          "description": "load tools before resolving"
+          "$ref": "#/$defs/env_tools"
         },
         "redact": {
-          "type": "boolean",
-          "description": "redact the value from logs"
+          "$ref": "#/$defs/env_redact"
         },
         "required": {
-          "oneOf": [
-            {
-              "type": "boolean",
-              "description": "require this environment variable to be defined before mise runs or in a later config file"
-            },
-            {
-              "type": "string",
-              "description": "require this environment variable with user help text on how to set it"
-            }
-          ],
-          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+          "$ref": "#/$defs/env_required"
         }
       },
       "oneOf": [
@@ -109,7 +150,7 @@
           "type": "object",
           "properties": {
             "path": {
-              "$ref": "#/$defs/env_directive/properties/path"
+              "$ref": "#/$defs/env_path"
             }
           },
           "required": ["path"]
@@ -118,7 +159,7 @@
           "type": "object",
           "properties": {
             "paths": {
-              "$ref": "#/$defs/env_directive/properties/paths"
+              "$ref": "#/$defs/env_paths"
             }
           },
           "required": ["paths"]
@@ -132,38 +173,16 @@
             "type": "object",
             "properties": {
               "value": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "boolean"
-                  }
-                ]
+                "$ref": "#/$defs/env_value"
               },
               "tools": {
-                "type": "boolean",
-                "description": "load tools before resolving"
+                "$ref": "#/$defs/env_tools"
               },
               "redact": {
-                "type": "boolean",
-                "description": "redact the value from logs"
+                "$ref": "#/$defs/env_redact"
               },
               "required": {
-                "oneOf": [
-                  {
-                    "type": "boolean",
-                    "description": "require this environment variable to be defined before mise runs or in a later config file"
-                  },
-                  {
-                    "type": "string",
-                    "description": "require this environment variable with user help text on how to set it"
-                  }
-                ],
-                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+                "$ref": "#/$defs/env_required"
               }
             },
             "unevaluatedProperties": false
@@ -172,29 +191,16 @@
             "type": "object",
             "properties": {
               "age": {
-                "type": "string",
-                "description": "[experimental] age-encrypted value (simplified format)"
+                "$ref": "#/$defs/env_age"
               },
               "tools": {
-                "type": "boolean",
-                "description": "load tools before resolving"
+                "$ref": "#/$defs/env_tools"
               },
               "redact": {
-                "type": "boolean",
-                "description": "redact the value from logs"
+                "$ref": "#/$defs/env_redact"
               },
               "required": {
-                "oneOf": [
-                  {
-                    "type": "boolean",
-                    "description": "require this environment variable to be defined before mise runs or in a later config file"
-                  },
-                  {
-                    "type": "string",
-                    "description": "require this environment variable with user help text on how to set it"
-                  }
-                ],
-                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+                "$ref": "#/$defs/env_required"
               }
             },
             "required": ["age"],
@@ -208,34 +214,19 @@
                 "type": "object",
                 "properties": {
                   "value": {
-                    "type": "string",
-                    "description": "[experimental] age-encrypted value"
+                    "$ref": "#/$defs/env_age_value"
                   },
                   "format": {
-                    "type": "string",
-                    "enum": ["raw", "zstd"],
-                    "description": "[experimental] compression format for the encrypted value"
+                    "$ref": "#/$defs/env_age_format"
                   },
                   "tools": {
-                    "type": "boolean",
-                    "description": "load tools before resolving"
+                    "$ref": "#/$defs/env_tools"
                   },
                   "redact": {
-                    "type": "boolean",
-                    "description": "redact the value from logs"
+                    "$ref": "#/$defs/env_redact"
                   },
                   "required": {
-                    "oneOf": [
-                      {
-                        "type": "boolean",
-                        "description": "require this environment variable to be defined before mise runs or in a later config file"
-                      },
-                      {
-                        "type": "string",
-                        "description": "require this environment variable with user help text on how to set it"
-                      }
-                    ],
-                    "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+                    "$ref": "#/$defs/env_required"
                   }
                 },
                 "required": ["value"],
@@ -296,27 +287,13 @@
                   "type": "object",
                   "properties": {
                     "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
+                      "$ref": "#/$defs/env_path"
                     },
                     "paths": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
+                      "$ref": "#/$defs/env_paths"
                     },
                     "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
+                      "$ref": "#/$defs/env_tools"
                     }
                   },
                   "oneOf": [
@@ -324,17 +301,7 @@
                       "type": "object",
                       "properties": {
                         "path": {
-                          "oneOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            }
-                          ]
+                          "$ref": "#/$defs/env_path"
                         }
                       },
                       "required": ["path"]
@@ -343,10 +310,7 @@
                       "type": "object",
                       "properties": {
                         "paths": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
+                          "$ref": "#/$defs/env_paths"
                         }
                       },
                       "required": ["paths"]
@@ -370,21 +334,10 @@
                         "type": "object",
                         "properties": {
                           "path": {
-                            "oneOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              }
-                            ]
+                            "$ref": "#/$defs/env_path"
                           },
                           "tools": {
-                            "type": "boolean",
-                            "description": "load tools before resolving"
+                            "$ref": "#/$defs/env_tools"
                           }
                         }
                       }

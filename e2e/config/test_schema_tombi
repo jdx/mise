@@ -27,7 +27,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise.toml", "mise-age.toml", "mise-os.toml"]
+include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -65,8 +65,16 @@ TOML
 # placeholder values while running tombi through `mise x`.
 cat >"$HOME/workdir/mise-age.toml" <<'TOML'
 [env]
+VALUE_OBJECT = { value = 123, tools = true, redact = true, required = "set VALUE_OBJECT" }
 SECRET_SIMPLE = { age = "AGE-SECRET", tools = true }
 SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", tools = true, redact = true } }
+TOML
+
+cat >"$HOME/workdir/mise-env-directives.toml" <<'TOML'
+[env]
+_.file = { path = ".env", tools = true, redact = true, required = true }
+_.source = [{ path = "env.sh", tools = true, redact = true, required = "source env.sh" }]
+_.path = { paths = ["./bin", "./scripts"], tools = true }
 TOML
 
 cat >"$HOME/workdir/mise-os.toml" <<'TOML'
@@ -90,6 +98,7 @@ TOML
 cd "$HOME/workdir"
 assert_succeed "$TOMBI_LINT mise.toml"
 assert_succeed "$TOMBI_LINT mise-age.toml"
+assert_succeed "$TOMBI_LINT mise-env-directives.toml"
 assert_succeed "$TOMBI_LINT mise-os.toml"
 assert_succeed "$TOMBI_LINT mise-task-os.toml"
 
@@ -110,7 +119,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-tmpl.toml", "mise-bad-os.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-directive.toml", "mise-bad-tmpl.toml", "mise-bad-os.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -123,9 +132,17 @@ assert_fail "$TOMBI_LINT mise-bad.toml"
 cat >"$HOME/workdir/mise-bad-age.toml" <<'TOML'
 [env]
 SECRET = { age = { value = "AGE-SECRET" }, tools = true }
+SECRET_FORMAT = { age = { value = "AGE-SECRET", format = "zip" } }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-age.toml"
+
+cat >"$HOME/workdir/mise-bad-env-directive.toml" <<'TOML'
+[env]
+_.file = { path = ".env", required = 123 }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-env-directive.toml"
 
 # Verify that extends is rejected on task_templates (not supported at runtime)
 cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'

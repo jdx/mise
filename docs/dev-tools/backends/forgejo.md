@@ -76,7 +76,11 @@ You can provide a shell command that prints a token to stdout:
 credential_command = "op read 'op://Private/Forgejo Token/credential'"
 ```
 
-The target hostname is passed as `$1` to the command.
+mise executes this command with the configured default inline shell. The target hostname is available as `MISE_CREDENTIAL_HOST`, and the provider name (`forgejo`) is available as `MISE_CREDENTIAL_PROVIDER`. For compatibility, recognized sh-compatible shells (`ash`, `bash`, `dash`, `ksh`, `sh`, and `zsh`) also receive the hostname as `$1`/`${1}`.
+
+:::: warning Planned deprecation
+The legacy `$1`/`${1}` hostname argument is deprecated. Use `MISE_CREDENTIAL_HOST` instead. mise will start warning in `2026.11.0`, and `$1` compatibility will be removed in `2027.11.0`.
+::::
 
 ### `fj` CLI integration
 

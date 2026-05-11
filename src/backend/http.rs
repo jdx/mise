@@ -1,6 +1,7 @@
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     clean_binary_name, get_filename_from_url, list_available_platforms_with_key,
     lookup_platform_key, rename_executable_in_dir, template_string, verify_artifact,
@@ -739,22 +740,23 @@ impl Backend for HttpBackend {
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
         let opts = tv.request.options();
+        let install_path = tv.install_path();
 
         // Check for explicit bin_path
         if let Some(bin_path_template) = get_opt(&opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
-            return Ok(vec![tv.install_path().join(bin_path)]);
+            return Ok(vec![tv.runtime_path().join(bin_path)]);
         }
 
         // Check for bin directory
-        let bin_dir = tv.install_path().join("bin");
+        let bin_dir = install_path.join("bin");
         if bin_dir.exists() {
-            return Ok(vec![bin_dir]);
+            return Ok(vec![tv.runtime_path().join("bin")]);
         }
 
         // Search subdirectories for bin directories
         let mut paths = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(tv.install_path()) {
+        if let Ok(entries) = std::fs::read_dir(&install_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
@@ -767,9 +769,12 @@ impl Backend for HttpBackend {
         }
 
         if paths.is_empty() {
-            Ok(vec![tv.install_path()])
+            Ok(vec![tv.runtime_path()])
         } else {
-            Ok(paths)
+            Ok(paths
+                .into_iter()
+                .map(|path| runtime_path_for_install_path(tv, path))
+                .collect())
         }
     }
 }

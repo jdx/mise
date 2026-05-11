@@ -9,10 +9,10 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use tokio::sync::RwLock;
 
-use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::{Backend, runtime_path_for_install_path};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
@@ -251,9 +251,11 @@ impl Backend for VfoxBackend {
             .find(|(k, _)| k.to_uppercase() == "PATH")
             .map(|(_, v)| v.to_string());
         if let Some(path) = path {
-            Ok(env::split_paths(&path).collect())
+            Ok(env::split_paths(&path)
+                .map(|path| runtime_path_for_install_path(tv, path))
+                .collect())
         } else {
-            Ok(vec![tv.install_path().join("bin")])
+            Ok(vec![tv.runtime_path().join("bin")])
         }
     }
 

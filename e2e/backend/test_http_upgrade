@@ -64,6 +64,25 @@ if [[ ! -L $INSTALL_PATH ]]; then
 fi
 echo "Verified: Install path is a symlink (HTTP backend caching)"
 
+cat <<EOF >mise.toml
+[tools."http:hello-upgrade"]
+version = "1.0.0"
+url = "https://mise.en.dev/test-fixtures/hello-world-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
+bin_path = "hello-world-1.0.0/bin"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
+
+[tools."http:hello-upgrade-latest"]
+version = "latest"
+url = "https://mise.en.dev/test-fixtures/hello-world-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
+bin_path = "hello-world-{{version}}/bin"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-\$MISE_TOOL_VERSION/bin/hello-world"
+EOF
+
+mise install
+assert "mise bin-paths http:hello-upgrade-latest" "$MISE_DATA_DIR/installs/http-hello-upgrade-latest/latest/hello-world-2.0.0/bin"
+
 # Test 2: Verify mise latest sees the newer version
 echo "Test 2: Check that mise latest sees version 2.0.0"
 assert "mise latest http:hello-upgrade" "2.0.0"
