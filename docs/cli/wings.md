@@ -24,5 +24,6 @@ summary as `mise wings status`.
 - [`mise wings inspect <SUBCOMMAND>`](/cli/wings/inspect.md)
 - [`mise wings login`](/cli/wings/login.md)
 - [`mise wings logout [FLAGS]`](/cli/wings/logout.md)
+- [`mise wings rebuild <TOOL@VERSION>`](/cli/wings/rebuild.md)
 - [`mise wings status`](/cli/wings/status.md)
 - [`mise wings whoami`](/cli/wings/whoami.md)

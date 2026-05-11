@@ -421,6 +421,9 @@ export const commands: { [key: string]: Command } = {
       logout: {
         hide: false,
       },
+      rebuild: {
+        hide: false,
+      },
       status: {
         hide: false,
       },

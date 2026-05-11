@@ -1666,6 +1666,10 @@ cmd wings help="Manage `mise wings` authentication" {
         }
         flag --token-stdin help="Read the Clerk session JWT from stdin (avoids shell history)"
     }
+    cmd rebuild help="Rebuild a Wings artifact for a tool version." {
+        long_help "Rebuild a Wings artifact for a tool version.\n\nResolves the tool exactly like an install would, asks the Wings API to evict\nthe current packaged catalog row for this org/tool/platform, and queues a\nfresh server-side packaging job.\n\nExamples:\n\n```sh\n$ mise wings rebuild jq@1.7.1\n```"
+        arg <TOOL@VERSION> help="Tool version to rebuild e.g.: node@20"
+    }
     cmd status help="Show the current mise-wings configuration + auth state." {
         long_help "Show the current mise-wings configuration + auth state.\n\nExamples:\n\n```sh\n$ mise wings status\nwings.enabled: yes\nhost:          mise-wings.en.dev\ncredentials:   user=user_123 org=acme (dev login)\nconnectivity:  OK (200 OK)\n```\n\nWhen Wings is not enabled:\n\n```sh\n$ mise wings status\nwings.enabled: no\nhost:          mise-wings.en.dev\ncredentials:   none\n\nRun `mise wings login` to sign in for local dev.\n```"
     }

@@ -571,6 +571,9 @@ Authenticate with mise\-wings
 \fBwings logout\fR
 Sign out of mise\-wings.
 .TP
+\fBwings rebuild\fR
+Rebuild a Wings artifact for a tool version.
+.TP
 \fBwings status\fR
 Show the current mise\-wings configuration + auth state.
 .TP
@@ -4250,3 +4253,23 @@ Clerk session JWT for the server\-side revoke
 .TP
 \fB\-\-token\-stdin\fR
 Read the Clerk session JWT from stdin (avoids shell history)
+.SH "MISE WINGS REBUILD"
+Rebuild a Wings artifact for a tool version.
+
+Resolves the tool exactly like an install would, asks the Wings API to evict
+the current packaged catalog row for this org/tool/platform, and queues a
+fresh server\-side packaging job.
+
+Examples:
+
+```sh
+$ mise wings rebuild jq@1.7.1
+```
+.PP
+\fBUsage:\fR mise wings rebuild <TOOL@VERSION>
+.PP
+\fBArguments:\fR
+.PP
+.TP
+\fB<TOOL@VERSION>\fR
+Tool version to rebuild e.g.: node@20

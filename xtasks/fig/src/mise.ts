@@ -4724,6 +4724,16 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
+          name: "rebuild",
+          description: "Rebuild a Wings artifact for a tool version.",
+          args: {
+            name: "tool@version",
+            description: "Tool version to rebuild e.g.: node@20",
+            generators: toolVersionGenerator,
+            debounce: true,
+          },
+        },
+        {
           name: "status",
           description:
             "Show the current mise-wings configuration + auth state.",
