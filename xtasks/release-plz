@@ -65,6 +65,15 @@ get_latest_crates_version() {
 	cargo info --registry "crates-io" --color never --quiet "$crate" 2>/dev/null | grep "^version:" | cut -d' ' -f2 || echo ""
 }
 
+use_published_aqua_registry() {
+	local version="$1"
+
+	cargo rm aqua-registry
+	cargo rm --build aqua-registry
+	cargo add "aqua-registry@$version"
+	cargo add --build "aqua-registry@$version"
+}
+
 # Check if a directory has uncommitted changes (staged or unstaged)
 has_uncommitted_changes() {
 	local dir="$1"
@@ -188,7 +197,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add "vfox@$VFOX_VERSION"
 
 	bump_and_publish_subcrate "aqua-registry" "crates/aqua-registry" "AQUA_REGISTRY_VERSION"
-	cargo add "aqua-registry@$AQUA_REGISTRY_VERSION"
+	use_published_aqua_registry "$AQUA_REGISTRY_VERSION"
 
 	# Copy schema into crate directory so cargo publish verification can find it
 	cp schema/mise.json crates/mise-interactive-config/mise.json
