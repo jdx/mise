@@ -24,6 +24,7 @@ use crate::wings::client;
 
 pub(crate) const MEDIA_TYPE_OCI_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
 pub(crate) const MEDIA_TYPE_OCI_IMAGE_INDEX: &str = "application/vnd.oci.image.index.v1+json";
+const MEDIA_TYPE_OCI_ARTIFACT_MANIFEST: &str = "application/vnd.oci.artifact.manifest.v1+json";
 pub(crate) const MOCITO_TOOL_ARTIFACT_TYPE: &str = "application/vnd.mise.tool.v1";
 pub(crate) const MOCITO_TOOL_CONFIG_MEDIA_TYPE: &str = "application/vnd.mise.tool.config.v1+json";
 const OCI_TAR_LAYER_MEDIA_TYPE: &str = "application/vnd.oci.image.layer.v1.tar";
@@ -529,6 +530,7 @@ async fn pull_and_install(
     let manifest: WingsManifest =
         serde_json::from_slice(manifest_bytes).wrap_err("decoding wings OCI manifest")?;
     manifest.validate_mocito(&artifact.ref_)?;
+    verify_mocito_referrers(&reference, &artifact.digest, token).await?;
 
     let config_url = format!(
         "https://{}/v2/{}/blobs/{}",
@@ -596,6 +598,49 @@ struct WingsDescriptor {
     size: u64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReferrersIndex {
+    schema_version: u8,
+    media_type: String,
+    manifests: Vec<ReferrerDescriptor>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReferrerDescriptor {
+    media_type: String,
+    #[serde(default)]
+    artifact_type: Option<String>,
+    digest: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReferrerManifest {
+    #[serde(default)]
+    artifact_type: Option<String>,
+    subject: ReferrerSubject,
+    #[serde(default)]
+    blobs: Vec<ReferrerBlob>,
+    #[serde(default)]
+    layers: Vec<ReferrerBlob>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReferrerSubject {
+    media_type: String,
+    digest: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReferrerBlob {
+    media_type: String,
+    digest: String,
+}
+
 impl WingsManifest {
     fn validate_mocito(&self, artifact_ref: &str) -> Result<()> {
         ensure!(
@@ -642,6 +687,120 @@ impl WingsDescriptor {
         );
         ensure_file_digest(path, &self.digest, label)
     }
+}
+
+async fn verify_mocito_referrers(
+    reference: &WingsReference,
+    subject_digest: &str,
+    token: &str,
+) -> Result<()> {
+    let url = format!(
+        "https://{}/v2/{}/referrers/{}",
+        reference.registry, reference.repository, subject_digest
+    );
+    let headers = registry_headers(token, &[MEDIA_TYPE_OCI_IMAGE_INDEX])?;
+    let bytes = crate::http::HTTP
+        .get_bytes_with_headers(&url, &headers)
+        .await
+        .wrap_err_with(|| format!("fetching wings OCI referrers {subject_digest}"))?;
+    let index: ReferrersIndex =
+        serde_json::from_slice(bytes.as_ref()).wrap_err("decoding wings OCI referrers index")?;
+    validate_referrers_index(&index, subject_digest)?;
+
+    for descriptor in &index.manifests {
+        let url = format!(
+            "https://{}/v2/{}/manifests/{}",
+            reference.registry, reference.repository, descriptor.digest
+        );
+        let headers = registry_headers(token, &[MEDIA_TYPE_OCI_ARTIFACT_MANIFEST])?;
+        let bytes = crate::http::HTTP
+            .get_bytes_with_headers(&url, &headers)
+            .await
+            .wrap_err_with(|| format!("fetching wings OCI referrer {}", descriptor.digest))?;
+        ensure_digest(bytes.as_ref(), &descriptor.digest, "referrer manifest")?;
+        let manifest: ReferrerManifest = serde_json::from_slice(bytes.as_ref())
+            .wrap_err("decoding wings OCI referrer manifest")?;
+        validate_referrer_manifest(descriptor, &manifest, subject_digest)?;
+    }
+
+    Ok(())
+}
+
+fn validate_referrers_index(index: &ReferrersIndex, subject_digest: &str) -> Result<()> {
+    ensure!(
+        index.schema_version == 2,
+        "wings OCI referrers index schemaVersion {} is not supported",
+        index.schema_version
+    );
+    ensure!(
+        index.media_type == MEDIA_TYPE_OCI_IMAGE_INDEX,
+        "wings OCI referrers index mediaType {}; expected {}",
+        index.media_type,
+        MEDIA_TYPE_OCI_IMAGE_INDEX
+    );
+    ensure!(
+        !index.manifests.is_empty(),
+        "wings artifact {subject_digest} has no OCI evidence referrers"
+    );
+    for descriptor in &index.manifests {
+        ensure!(
+            descriptor.media_type == MEDIA_TYPE_OCI_ARTIFACT_MANIFEST,
+            "wings OCI referrer {} has mediaType {}; expected {}",
+            descriptor.digest,
+            descriptor.media_type,
+            MEDIA_TYPE_OCI_ARTIFACT_MANIFEST
+        );
+        ensure_sha256_digest(&descriptor.digest)?;
+        ensure!(
+            descriptor
+                .artifact_type
+                .as_deref()
+                .is_some_and(|t| !t.is_empty()),
+            "wings OCI referrer {} has no artifactType",
+            descriptor.digest
+        );
+    }
+    Ok(())
+}
+
+fn validate_referrer_manifest(
+    descriptor: &ReferrerDescriptor,
+    manifest: &ReferrerManifest,
+    subject_digest: &str,
+) -> Result<()> {
+    ensure!(
+        manifest.artifact_type == descriptor.artifact_type,
+        "wings OCI referrer {} artifactType does not match its descriptor",
+        descriptor.digest
+    );
+    ensure!(
+        manifest.subject.media_type == MEDIA_TYPE_OCI_MANIFEST,
+        "wings OCI referrer {} subject mediaType {}; expected {}",
+        descriptor.digest,
+        manifest.subject.media_type,
+        MEDIA_TYPE_OCI_MANIFEST
+    );
+    ensure!(
+        manifest.subject.digest == subject_digest,
+        "wings OCI referrer {} subject digest {}; expected {}",
+        descriptor.digest,
+        manifest.subject.digest,
+        subject_digest
+    );
+    ensure!(
+        !manifest.blobs.is_empty() || !manifest.layers.is_empty(),
+        "wings OCI referrer {} has no evidence blob",
+        descriptor.digest
+    );
+    for blob in manifest.blobs.iter().chain(manifest.layers.iter()) {
+        ensure!(
+            !blob.media_type.trim().is_empty(),
+            "wings OCI referrer {} has an evidence blob with empty mediaType",
+            descriptor.digest
+        );
+        ensure_sha256_digest(&blob.digest)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -1221,6 +1380,17 @@ pub(crate) fn ensure_digest(bytes: &[u8], expected: &str, label: &str) -> Result
     Ok(())
 }
 
+fn ensure_sha256_digest(digest: &str) -> Result<()> {
+    let Some(hex) = digest.strip_prefix("sha256:") else {
+        bail!("wings digest is not sha256: {digest}");
+    };
+    ensure!(
+        hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()),
+        "wings digest must be a 64-character sha256 hex digest: {digest}"
+    );
+    Ok(())
+}
+
 fn ensure_file_digest(path: &std::path::Path, expected: &str, label: &str) -> Result<()> {
     let Some(expected) = expected.strip_prefix("sha256:") else {
         bail!("wings {label} digest is not sha256: {expected}");
@@ -1606,6 +1776,55 @@ mod tests {
         );
     }
 
+    #[test]
+    fn referrers_index_requires_evidence_descriptors() {
+        let subject = digest("a");
+        let index = ReferrersIndex {
+            schema_version: 2,
+            media_type: MEDIA_TYPE_OCI_IMAGE_INDEX.into(),
+            manifests: vec![ReferrerDescriptor {
+                media_type: MEDIA_TYPE_OCI_ARTIFACT_MANIFEST.into(),
+                artifact_type: Some("application/vnd.dsse.envelope.v1+json".into()),
+                digest: digest("b"),
+            }],
+        };
+
+        validate_referrers_index(&index, &subject).unwrap();
+
+        let empty = ReferrersIndex {
+            manifests: vec![],
+            ..index
+        };
+        let err = validate_referrers_index(&empty, &subject).unwrap_err();
+        assert!(err.to_string().contains("no OCI evidence referrers"));
+    }
+
+    #[test]
+    fn referrer_manifest_must_point_at_subject_digest() {
+        let descriptor = ReferrerDescriptor {
+            media_type: MEDIA_TYPE_OCI_ARTIFACT_MANIFEST.into(),
+            artifact_type: Some("application/vnd.dsse.envelope.v1+json".into()),
+            digest: digest("b"),
+        };
+        let manifest = ReferrerManifest {
+            artifact_type: descriptor.artifact_type.clone(),
+            subject: ReferrerSubject {
+                media_type: MEDIA_TYPE_OCI_MANIFEST.into(),
+                digest: digest("a"),
+            },
+            blobs: vec![ReferrerBlob {
+                media_type: "application/vnd.dsse.envelope.v1+json".into(),
+                digest: digest("c"),
+            }],
+            layers: vec![],
+        };
+
+        validate_referrer_manifest(&descriptor, &manifest, &digest("a")).unwrap();
+
+        let err = validate_referrer_manifest(&descriptor, &manifest, &digest("d")).unwrap_err();
+        assert!(err.to_string().contains("subject digest"));
+    }
+
     fn manifest_with_annotations(annotations: indexmap::IndexMap<String, String>) -> WingsManifest {
         WingsManifest {
             artifact_type: MOCITO_TOOL_ARTIFACT_TYPE.into(),
@@ -1626,6 +1845,10 @@ mod tests {
                 .into(),
             size: 1,
         }
+    }
+
+    fn digest(ch: &str) -> String {
+        format!("sha256:{}", ch.repeat(64))
     }
 
     fn mocito_config() -> MocitoConfig {
