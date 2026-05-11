@@ -77,7 +77,7 @@ enum Commands {
     Inspect(inspect::Inspect),
     Login(login::Login),
     Logout(logout::Logout),
-    Rebuild(rebuild::Rebuild),
+    Rebuild(Box<rebuild::Rebuild>),
     Status(status::Status),
     Whoami(whoami::Whoami),
 }
