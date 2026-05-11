@@ -37,6 +37,7 @@ const MOCITO_ENV_FILE: &str = ".mise-mocito-env.json";
 const RESOLVE_PENDING_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const RESOLVE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const RESOLVE_TRANSIENT_RETRIES: u32 = 5;
+const RESOLVE_TRANSIENT_BACKOFF_MAX: Duration = Duration::from_secs(16);
 
 pub async fn try_install<B: Backend + ?Sized>(
     backend: &B,
@@ -313,8 +314,7 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
                 if transient_failures > RESOLVE_TRANSIENT_RETRIES {
                     return Err(e.wrap_err("wings resolver request failed"));
                 }
-                let delay = Duration::from_secs(2_u64.pow(transient_failures - 1))
-                    .min(RESOLVE_POLL_INTERVAL);
+                let delay = transient_retry_delay(transient_failures);
                 let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
                 tokio::time::sleep(remaining.min(delay)).await;
                 continue;
@@ -469,6 +469,12 @@ fn progress_message(job: &PendingJob) -> String {
     } else {
         job.message.clone()
     }
+}
+
+fn transient_retry_delay(failures: u32) -> Duration {
+    Duration::from_secs(2_u64.pow(failures.saturating_sub(1)))
+        .max(RESOLVE_POLL_INTERVAL)
+        .min(RESOLVE_TRANSIENT_BACKOFF_MAX)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1195,6 +1201,16 @@ mod tests {
         assert!(message.contains("mise wings login"));
         assert!(message.contains("GitHub Actions OIDC"));
         assert!(message.contains("wings.required blocks fallback"));
+    }
+
+    #[test]
+    fn transient_retry_delay_backs_off_past_poll_interval() {
+        assert_eq!(transient_retry_delay(1), Duration::from_secs(2));
+        assert_eq!(transient_retry_delay(2), Duration::from_secs(2));
+        assert_eq!(transient_retry_delay(3), Duration::from_secs(4));
+        assert_eq!(transient_retry_delay(4), Duration::from_secs(8));
+        assert_eq!(transient_retry_delay(5), Duration::from_secs(16));
+        assert_eq!(transient_retry_delay(6), Duration::from_secs(16));
     }
 
     #[test]
