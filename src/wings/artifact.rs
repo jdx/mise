@@ -76,12 +76,10 @@ pub async fn try_install<B: Backend + ?Sized>(
     };
 
     ctx.pr.set_message("wings resolve".into());
-    let Some(artifact) = (match resolve_until_allowed(backend, ctx, tv, &source).await {
+    let artifact = match resolve_until_allowed(backend, ctx, tv, &source).await {
         Ok(artifact) => artifact,
         Err(e) if e.downcast_ref::<WingsBlockedError>().is_some() => return Err(e),
         Err(e) => return fallback_or_error(tv, fallback_blocked, "wings resolve failed", e),
-    }) else {
-        return fallback_or_false(tv, fallback_blocked, "wings did not provide an artifact");
     };
 
     let Some(token) = crate::wings::auth::session_token().await? else {
@@ -298,7 +296,7 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
     ctx: &InstallContext,
     tv: &ToolVersion,
     source: &SourceInfo,
-) -> Result<Option<Artifact>> {
+) -> Result<Artifact> {
     let body = resolve_request(backend, tv, source);
     let url = format!("https://api.{}/v1/catalog/resolve", crate::wings::host());
     let deadline = tokio::time::Instant::now() + RESOLVE_PENDING_TIMEOUT;
@@ -346,7 +344,7 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
                     "wings resolver returned unsupported transport {}",
                     artifact.transport
                 );
-                return Ok(Some(artifact));
+                return Ok(artifact);
             }
             ResolveResponse::Blocked { reason, job } => {
                 if let Some(job) = job {
@@ -379,7 +377,7 @@ pub(crate) async fn rebuild<B: Backend + ?Sized>(
     backend: &B,
     tv: &mut ToolVersion,
 ) -> Result<RebuildJob> {
-    let Some(token) = crate::wings::auth::session_token().await? else {
+    let Some(token) = crate::wings::auth::session_token_for_cli().await? else {
         bail!("wings authentication is not available; run `mise wings login`");
     };
     let Some(source) = resolve_source(backend, tv).await? else {
@@ -609,21 +607,23 @@ struct WingsDescriptor {
     size: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ReferrersIndex {
-    schema_version: u8,
-    media_type: String,
-    manifests: Vec<ReferrerDescriptor>,
+pub(crate) struct ReferrersIndex {
+    pub(crate) schema_version: u8,
+    pub(crate) media_type: String,
+    pub(crate) manifests: Vec<ReferrerDescriptor>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ReferrerDescriptor {
-    media_type: String,
+pub(crate) struct ReferrerDescriptor {
+    pub(crate) media_type: String,
     #[serde(default)]
-    artifact_type: Option<String>,
-    digest: String,
+    pub(crate) artifact_type: Option<String>,
+    pub(crate) digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) size: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -724,7 +724,10 @@ async fn verify_mocito_referrers(
             "https://{}/v2/{}/manifests/{}",
             reference.registry, reference.repository, descriptor.digest
         );
-        let headers = registry_headers(token, &[MEDIA_TYPE_OCI_ARTIFACT_MANIFEST])?;
+        let headers = registry_headers(
+            token,
+            &[MEDIA_TYPE_OCI_ARTIFACT_MANIFEST, MEDIA_TYPE_OCI_MANIFEST],
+        )?;
         let bytes = crate::http::HTTP
             .get_bytes_with_headers(&url, &headers)
             .await
@@ -757,11 +760,12 @@ fn validate_referrers_index(index: &ReferrersIndex, _subject_digest: &str) -> Re
     );
     for descriptor in &index.manifests {
         ensure!(
-            descriptor.media_type == MEDIA_TYPE_OCI_ARTIFACT_MANIFEST,
-            "wings OCI referrer {} has mediaType {}; expected {}",
+            referrer_manifest_media_type(&descriptor.media_type),
+            "wings OCI referrer {} has mediaType {}; expected {} or {}",
             descriptor.digest,
             descriptor.media_type,
-            MEDIA_TYPE_OCI_ARTIFACT_MANIFEST
+            MEDIA_TYPE_OCI_ARTIFACT_MANIFEST,
+            MEDIA_TYPE_OCI_MANIFEST
         );
         ensure_sha256_digest(&descriptor.digest)?;
         ensure!(
@@ -774,6 +778,13 @@ fn validate_referrers_index(index: &ReferrersIndex, _subject_digest: &str) -> Re
         );
     }
     Ok(())
+}
+
+fn referrer_manifest_media_type(media_type: &str) -> bool {
+    matches!(
+        media_type,
+        MEDIA_TYPE_OCI_ARTIFACT_MANIFEST | MEDIA_TYPE_OCI_MANIFEST
+    )
 }
 
 fn annotation_bool(annotations: &indexmap::IndexMap<String, String>, key: &str) -> bool {
@@ -1817,6 +1828,7 @@ mod tests {
                 media_type: MEDIA_TYPE_OCI_ARTIFACT_MANIFEST.into(),
                 artifact_type: Some("application/vnd.dsse.envelope.v1+json".into()),
                 digest: digest("b"),
+                size: None,
             }],
         };
 
@@ -1833,11 +1845,29 @@ mod tests {
     }
 
     #[test]
+    fn referrers_index_allows_image_manifest_referrers() {
+        let subject = digest("a");
+        let index = ReferrersIndex {
+            schema_version: 2,
+            media_type: MEDIA_TYPE_OCI_IMAGE_INDEX.into(),
+            manifests: vec![ReferrerDescriptor {
+                media_type: MEDIA_TYPE_OCI_MANIFEST.into(),
+                artifact_type: Some("application/vnd.dsse.envelope.v1+json".into()),
+                digest: digest("b"),
+                size: Some(42),
+            }],
+        };
+
+        validate_referrers_index(&index, &subject).unwrap();
+    }
+
+    #[test]
     fn referrer_manifest_must_point_at_subject_digest() {
         let descriptor = ReferrerDescriptor {
             media_type: MEDIA_TYPE_OCI_ARTIFACT_MANIFEST.into(),
             artifact_type: Some("application/vnd.dsse.envelope.v1+json".into()),
             digest: digest("b"),
+            size: None,
         };
         let manifest = ReferrerManifest {
             artifact_type: descriptor.artifact_type.clone(),

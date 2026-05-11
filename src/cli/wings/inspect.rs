@@ -5,11 +5,11 @@
 //! surface Wings serves for installs: manifests, referrers, and blobs.
 
 use eyre::{Context, Result, bail, ensure};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::wings::artifact::{
-    MEDIA_TYPE_OCI_IMAGE_INDEX, MEDIA_TYPE_OCI_MANIFEST, WingsReference, ensure_digest,
-    registry_headers,
+    MEDIA_TYPE_OCI_IMAGE_INDEX, MEDIA_TYPE_OCI_MANIFEST, ReferrerDescriptor, ReferrersIndex,
+    WingsReference, ensure_digest, registry_headers,
 };
 
 const MEDIA_TYPE_SPDX_SBOM: &str = "application/spdx+json";
@@ -146,7 +146,7 @@ impl Sbom {
         let Some(descriptor) = index
             .manifests
             .iter()
-            .find(|descriptor| descriptor.is_sbom())
+            .find(|descriptor| descriptor_is_sbom(descriptor))
         else {
             bail!(
                 "no SBOM referrer found for {}; Wings may not have published SBOM referrers for this artifact yet",
@@ -221,31 +221,14 @@ impl InspectTarget {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ReferrersIndex {
-    schema_version: u8,
-    media_type: String,
-    manifests: Vec<ReferrerDescriptor>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ReferrerDescriptor {
-    media_type: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    artifact_type: Option<String>,
-    digest: String,
-    size: u64,
-}
-
-impl ReferrerDescriptor {
-    fn is_sbom(&self) -> bool {
-        matches!(
-            self.artifact_type.as_deref().unwrap_or(&self.media_type),
-            MEDIA_TYPE_SPDX_SBOM | MEDIA_TYPE_CYCLONEDX_SBOM
-        )
-    }
+fn descriptor_is_sbom(descriptor: &ReferrerDescriptor) -> bool {
+    matches!(
+        descriptor
+            .artifact_type
+            .as_deref()
+            .unwrap_or(&descriptor.media_type),
+        MEDIA_TYPE_SPDX_SBOM | MEDIA_TYPE_CYCLONEDX_SBOM
+    )
 }
 
 #[derive(Debug, Deserialize)]
