@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use clx::progress::{self, ProgressJobBuilder, ProgressOutput};
+use clx::progress::{self, ProgressJob, ProgressJobBuilder, ProgressOutput};
 
 use crate::cli::version::VERSION_PLAIN;
 use crate::config::Settings;
@@ -15,6 +15,11 @@ pub struct MultiProgressReport {
     completed_count: Mutex<usize>,
     /// Header job for updating progress display
     header_job: Mutex<Option<Arc<progress::ProgressJob>>>,
+    /// Jobs added via `add_with_options`, retained so they can be removed
+    /// from clx's global JOBS list in `footer_finish`. Without this, completed
+    /// jobs stay registered and get re-rendered when a subsequent job starts
+    /// (e.g. an uninstall after `mise upgrade` finishes installing).
+    tracked_jobs: Mutex<Vec<Arc<ProgressJob>>>,
 }
 
 static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
@@ -79,6 +84,7 @@ impl MultiProgressReport {
             total_count: Mutex::new(0),
             completed_count: Mutex::new(0),
             header_job: Mutex::new(None),
+            tracked_jobs: Mutex::new(Vec::new()),
         }
     }
 
@@ -98,7 +104,9 @@ impl MultiProgressReport {
                 "add_with_options[{}]: creating ProgressReport with clx",
                 prefix
             );
-            Box::new(ProgressReport::new(prefix.into()))
+            let report = ProgressReport::new(prefix.into());
+            self.tracked_jobs.lock().unwrap().push(report.job.clone());
+            Box::new(report)
         } else {
             progress_trace!(
                 "add_with_options[{}]: creating VerboseReport (use_progress_ui={}, dry_run={})",
@@ -184,8 +192,18 @@ impl MultiProgressReport {
         // Stop clx progress
         progress::stop();
 
+        // Remove this session's jobs from clx's global JOBS list so they are
+        // not re-rendered when a subsequent job is added (e.g. an "uninstall"
+        // job after `mise upgrade` finishes installing). `progress::stop()`
+        // renders the final state but leaves completed jobs registered.
+        if let Some(header) = self.header_job.lock().unwrap().take() {
+            header.remove();
+        }
+        for job in self.tracked_jobs.lock().unwrap().drain(..) {
+            job.remove();
+        }
+
         // Reset state for subsequent install operations (e.g., in daemon mode)
-        *self.header_job.lock().unwrap() = None;
         *self.completed_count.lock().unwrap() = 0;
         *self.total_count.lock().unwrap() = 0;
     }
