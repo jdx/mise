@@ -7,6 +7,7 @@
 
 use eyre::{Context, Result, bail};
 
+use crate::config::Settings;
 use crate::wings::{client, credentials, device::DeviceKey};
 
 /// Authenticate with mise-wings
@@ -64,11 +65,15 @@ async fn run_device_login() -> Result<()> {
                 let user_id = creds.user_id.clone();
                 let org = creds.org.clone();
                 credentials::store(creds)?;
-                miseprintln!(
-                    "Signed in to mise-wings as {user_id} ({org}).\n\
-                     Set `wings.enabled = true` (or `MISE_WINGS_ENABLED=1`) to start \
-                     routing tool installs through the cache."
-                );
+                if Settings::get().wings.enabled {
+                    miseprintln!("Signed in to mise-wings as {user_id} ({org}).");
+                } else {
+                    miseprintln!(
+                        "Signed in to mise-wings as {user_id} ({org}).\n\
+                         Set `wings.enabled = true` (or `MISE_WINGS_ENABLED=1`) to start \
+                         routing tool installs through the cache."
+                    );
+                }
                 return Ok(());
             }
             Ok(client::DevicePoll::Pending) => {
