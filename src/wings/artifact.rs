@@ -565,7 +565,7 @@ async fn pull_and_install(
 
     ctx.pr.next_operation();
     ctx.pr.set_message("wings install".into());
-    install_mocito_artifact(tv, &config, &layers, &artifact, Some(ctx.pr.as_ref()))?;
+    install_mocito_artifact(tv, &config, &layers, artifact, Some(ctx.pr.as_ref()))?;
     Ok(())
 }
 
