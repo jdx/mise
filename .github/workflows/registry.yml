@@ -118,8 +118,10 @@ jobs:
         run: |
           if [ "${{ steps.workflow-check.outputs.modified }}" == "true" ]; then
             echo "Workflow modified, running all tests"
-            echo "tools=" >> "$GITHUB_OUTPUT"
-            echo "tranches=8" >> "$GITHUB_OUTPUT"
+            {
+              echo "tools="
+              echo "tranches=8"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -129,16 +131,22 @@ jobs:
 
           if [ "$count" -eq 0 ]; then
             echo "No tools added or modified (deletion-only PR), skipping test-tool"
-            echo "tools=" >> "$GITHUB_OUTPUT"
-            echo "tranches=0" >> "$GITHUB_OUTPUT"
-            echo "skip-test-tool=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "tools="
+              echo "tranches=0"
+              echo "skip-test-tool=true"
+            } >> "$GITHUB_OUTPUT"
           elif [ "$count" -ge 64 ]; then
             echo "64 or more tools updated, splitting changed tools across 8 tranches"
-            echo "tools=$tools" >> "$GITHUB_OUTPUT"
-            echo "tranches=8" >> "$GITHUB_OUTPUT"
+            {
+              echo "tools=$tools"
+              echo "tranches=8"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "tools=$tools" >> "$GITHUB_OUTPUT"
-            echo "tranches=1" >> "$GITHUB_OUTPUT"
+            {
+              echo "tools=$tools"
+              echo "tranches=1"
+            } >> "$GITHUB_OUTPUT"
           fi
 
   validate-new-tools:

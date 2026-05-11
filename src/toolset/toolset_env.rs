@@ -295,15 +295,13 @@ impl Toolset {
                     BTreeMap::new()
                 }
             };
-            if Settings::get().wings.enabled {
-                match crate::wings::artifact::installed_env(&tv) {
-                    Ok(wings_env) => {
-                        for (key, value) in wings_env {
-                            merge_wings_env(&mut env, key, value);
-                        }
+            match crate::wings::artifact::installed_env(&tv) {
+                Ok(wings_env) => {
+                    for (key, value) in wings_env {
+                        merge_wings_env(&mut env, key, value);
                     }
-                    Err(e) => warn!("Error loading wings MOCITO env: {:#}", e),
                 }
+                Err(e) => warn!("Error loading wings MOCITO env: {:#}", e),
             }
             Ok(env
                 .into_iter()

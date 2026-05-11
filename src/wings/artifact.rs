@@ -102,6 +102,13 @@ pub async fn try_install<B: Backend + ?Sized>(
         Err(e) => return fallback_or_error(tv, fallback_blocked, "wings resolve failed", e),
     };
 
+    let Some(token) = crate::wings::auth::session_token().await? else {
+        return fallback_or_false(
+            tv,
+            fallback_blocked,
+            "wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
+        );
+    };
     ctx.pr.set_message("wings pull oci".into());
     if let Err(e) = pull_and_install(ctx, tv, &artifact, &token).await {
         if fallback_blocked {
@@ -469,10 +476,16 @@ fn resolve_request<B: Backend + ?Sized>(
             checksum: source.checksum.clone(),
             published_at: None,
         },
-        context: PolicyContext {
-            repository: None,
-            teams: vec![],
-        },
+        context: policy_context(),
+    }
+}
+
+fn policy_context() -> PolicyContext {
+    PolicyContext {
+        repository: std::env::var("GITHUB_REPOSITORY")
+            .ok()
+            .filter(|repository| !repository.trim().is_empty()),
+        teams: vec![],
     }
 }
 
@@ -1148,7 +1161,12 @@ fn replace_install_dir(staging_path: &Path, install_path: &Path) -> Result<()> {
 
     match std::fs::rename(staging_path, install_path) {
         Ok(()) => {
-            file::remove_all(&backup_path)?;
+            if let Err(e) = file::remove_all(&backup_path) {
+                log::warn!(
+                    "wings: failed to remove backup dir {}: {e:#}",
+                    backup_path.display()
+                );
+            }
             Ok(())
         }
         Err(rename_err) => {
@@ -1802,6 +1820,7 @@ mod tests {
 
         let installed = install_path.join("jq-macos-arm64");
         assert_eq!(file::read_to_string(&installed).unwrap(), "tool");
+        #[cfg(unix)]
         assert!(file::is_executable(&installed));
         assert!(install_path.join(WINGS_INSTALL_MARKER_FILE).exists());
     }
