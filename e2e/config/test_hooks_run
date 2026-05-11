@@ -8,6 +8,7 @@ dummy = "1"
 PREINSTALL_TOOL_EXEC = { value = "{{ exec(command='dummy') }}", tools = true }
 
 [tasks.setup]
+env = { FOO = "task" }
 run = 'echo TASK-SETUP FOO=${FOO:-unset} "$@"'
 
 [tasks.alpha]

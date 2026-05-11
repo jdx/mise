@@ -540,7 +540,7 @@ async fn execute(
         })
         .collect_vec();
     let mut task = Task {
-        name: format!("hook:{}", hook.hook),
+        name: hook_task_name(config, root, hook.hook),
         display_name: format!("hook:{}", hook.hook),
         config_source: root.join("mise.toml"),
         config_root: Some(root.to_path_buf()),
@@ -557,6 +557,11 @@ async fn execute(
     } else {
         render_run_entries_for_hook(config, ts, hook.hook, root, &env, &mut task.run).await?;
     }
+    let rendered_run_scripts = task
+        .run_script_strings()
+        .into_iter()
+        .map(|script| (script, vec![]))
+        .collect_vec();
     let output_handler = OutputHandler::new(OutputHandlerConfig {
         output: Some(TaskOutput::Quiet),
         silent: false,
@@ -581,34 +586,52 @@ async fn execute(
             sandbox: Default::default(),
         },
     );
-    if should_execute_entries_without_task_executor(config, root, hook.hook, task.run()) {
-        execute_run_entries_without_task_executor(root, &task, &env)?;
+    if should_execute_task_entries_with_mise_subprocess(config, root, task.run()) {
+        execute_run_entries_with_mise_subprocess(root, &task, &env)?;
     } else {
         executor
-            .run_task_run_entries(config, &task, &env, &task_env)
+            .run_task_run_entries(config, &task, &env, &task_env, rendered_run_scripts)
             .await?;
     }
     Ok(())
 }
 
-fn should_execute_entries_without_task_executor(
+fn hook_task_name(config: &Config, root: &Path, hook: Hooks) -> String {
+    let name = format!("hook:{hook}");
+    let Some(monorepo_root) = config.monorepo_root() else {
+        return name;
+    };
+    let Ok(path) = root.strip_prefix(monorepo_root) else {
+        return name;
+    };
+    let path = path
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    format!("//{path}:{name}")
+}
+
+fn should_execute_task_entries_with_mise_subprocess(
     config: &Arc<Config>,
     root: &Path,
-    hook: Hooks,
     entries: &[RunEntry],
 ) -> bool {
-    if entries.is_empty() {
-        return false;
-    }
     let has_task_entries = entries
         .iter()
         .any(|entry| !matches!(entry, RunEntry::Script(_)));
-    // Preinstall runs before tools=true env directives are safe to resolve, so
-    // avoid the task executor's full task tera context for every run entry.
-    hook == Hooks::Preinstall || (has_task_entries && config.project_root.as_deref() != Some(root))
+    // Leave hooks can come from configs that were loaded in the previous shell
+    // session but are no longer part of the current Config. For those roots,
+    // the in-process task executor has no task graph to resolve against.
+    has_task_entries && !config_has_hook_root(config, root)
 }
 
-fn execute_run_entries_without_task_executor(
+fn config_has_hook_root(config: &Config, root: &Path) -> bool {
+    config.config_files.values().any(|cf| {
+        let hook_root = cf.project_root().unwrap_or_else(|| cf.config_root());
+        hook_root == root
+    })
+}
+
+fn execute_run_entries_with_mise_subprocess(
     root: &Path,
     task: &Task,
     env: &BTreeMap<String, String>,

@@ -118,22 +118,25 @@ impl TaskExecutor {
         failed.push((task, status.or(Some(1))));
     }
 
+    /// Execute an already-rendered run-entry list for a synthetic task.
+    ///
+    /// Hooks render script entries before calling this so preinstall hooks can
+    /// use the preinstall-safe tera context without resolving `tools = true`
+    /// env directives.
     pub async fn run_task_run_entries(
         &self,
         config: &Arc<Config>,
         task: &Task,
         env: &BTreeMap<String, String>,
         task_env: &[(String, String)],
+        rendered_run_scripts: Vec<(String, Vec<String>)>,
     ) -> Result<()> {
-        let rendered_run_scripts = task
-            .render_run_scripts_with_args(config, self.cd.clone(), &task.args, env, None)
-            .await?;
         let prefix = task.estyled_prefix();
 
         let mut scheduler = crate::task::task_scheduler::Scheduler::new(self.output_handler.jobs());
         let sched_tx = scheduler.sched_tx.clone();
         let semaphore = scheduler.semaphore.clone();
-        let main_deps = Arc::new(Mutex::new(Deps::new(config, vec![]).await?));
+        let main_deps = Arc::new(Mutex::new(Deps::empty()));
         let (main_done_tx, mut main_done_rx) = tokio::sync::watch::channel(false);
         let spawn_context = scheduler.spawn_context(config.clone());
         let executor = Arc::new(self.clone());

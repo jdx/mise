@@ -47,6 +47,20 @@ pub fn task_key(task: &Task) -> TaskKey {
 
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
+    pub fn empty() -> Self {
+        let (tx, _) = mpsc::unbounded_channel();
+        Self {
+            graph: DiGraph::new(),
+            tx,
+            sent: HashSet::new(),
+            removed: HashSet::new(),
+            executed: HashSet::new(),
+            ran: HashSet::new(),
+            dep_edges: HashMap::new(),
+            post_dep_parents: HashMap::new(),
+        }
+    }
+
     pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
