@@ -374,6 +374,7 @@ fn codegen_aqua_standard_registry() -> Result<()> {
 
 fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackageRegistry>> {
     let mut registries = Vec::new();
+    let mut canonical_ids = HashMap::new();
     for (index, row) in rows.iter().enumerate() {
         let package = &row.package;
         let Some(id) = aqua_canonical_package_id(package) else {
@@ -382,6 +383,11 @@ fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackag
             );
             continue;
         };
+        if let Some(existing) = canonical_ids.insert(id.clone(), index) {
+            return Err(eyre!(
+                "baked aqua registry package id collision for {id:?}: rows {existing} and {index}"
+            ));
+        }
         let content = encode_package_rkyv(package)?;
         registries.push(AquaPackageRegistry {
             id,
