@@ -55,21 +55,13 @@ pub async fn try_install<B: Backend + ?Sized>(
 
     let fallback_blocked = fallback_blocked(tv);
     let locked_artifact = locked_wings_artifact(tv)?;
-    let Some(token) = crate::wings::auth::session_token().await? else {
-        if locked_artifact.is_some() {
+    if let Some(artifact) = locked_artifact {
+        let Some(token) = crate::wings::auth::session_token().await? else {
             bail!(
                 "mise.lock pins a wings artifact for {}, but wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
                 tv.style()
             );
-        }
-        return fallback_or_false(
-            tv,
-            fallback_blocked,
-            "wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
-        );
-    };
-
-    if let Some(artifact) = locked_artifact {
+        };
         ctx.pr.set_message("wings pull locked oci".into());
         return pull_and_install(ctx, tv, &artifact, &token)
             .await
@@ -118,8 +110,6 @@ pub async fn try_install<B: Backend + ?Sized>(
             )));
         }
         log::warn!("wings install failed; falling back to normal installer: {e:#}");
-        backend.cleanup_install_dirs_on_error(tv);
-        backend.create_install_dirs(tv)?;
         return Ok(false);
     }
     Ok(true)
@@ -1078,6 +1068,10 @@ fn install_mocito_artifact(
         create_mocito_bin_links(&staging_path, &config.bin_links)?;
         write_mocito_env_file(&staging_path, &config.env)?;
         write_wings_install_marker(&staging_path, artifact)?;
+        // Keep every fallible metadata/write step above this point. Once the
+        // staging directory is swapped into place, Wings has committed the
+        // install and fallback must not run on top of partially committed
+        // state.
         replace_install_dir(&staging_path, &install_path)?;
         Ok(())
     })();
