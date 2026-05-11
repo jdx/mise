@@ -318,8 +318,6 @@ fn detect_tools() -> Vec<DetectedTool> {
         }
     }
 
-    // Sort by tool name for consistent output
-    detected.sort_by(|a, b| a.name.cmp(&b.name));
     detected
 }
 
