@@ -1,4 +1,4 @@
-use crate::types::{AquaPackage, RegistryYaml};
+use crate::types::AquaPackage;
 use crate::{AquaRegistryConfig, AquaRegistryError, CacheStore, RegistryFetcher, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -17,15 +17,11 @@ where
     fetcher: F,
     #[allow(dead_code)]
     cache_store: C,
-    #[allow(dead_code)]
-    repo_exists: bool,
 }
 
 /// Default implementation of RegistryFetcher
 #[derive(Debug, Clone)]
-pub struct DefaultRegistryFetcher {
-    config: AquaRegistryConfig,
-}
+pub struct DefaultRegistryFetcher;
 
 /// No-op implementation of CacheStore
 #[derive(Debug, Clone, Default)]
@@ -40,15 +36,11 @@ pub struct FileCacheStore {
 impl AquaRegistry {
     /// Create a new AquaRegistry with the given configuration
     pub fn new(config: AquaRegistryConfig) -> Self {
-        let repo_exists = Self::check_repo_exists(&config.cache_dir);
-        let fetcher = DefaultRegistryFetcher {
-            config: config.clone(),
-        };
+        let fetcher = DefaultRegistryFetcher;
         Self {
             config,
             fetcher,
             cache_store: NoOpCacheStore,
-            repo_exists,
         }
     }
 
@@ -62,17 +54,11 @@ impl AquaRegistry {
         F: RegistryFetcher,
         C: CacheStore,
     {
-        let repo_exists = Self::check_repo_exists(&config.cache_dir);
         AquaRegistry {
             config,
             fetcher,
             cache_store,
-            repo_exists,
         }
-    }
-
-    fn check_repo_exists(cache_dir: &std::path::Path) -> bool {
-        cache_dir.join(".git").exists()
     }
 }
 
@@ -100,30 +86,6 @@ where
 
 impl RegistryFetcher for DefaultRegistryFetcher {
     async fn fetch_package(&self, package_id: &str) -> Result<AquaPackage> {
-        let path_id = package_id
-            .split('/')
-            .collect::<Vec<_>>()
-            .join(std::path::MAIN_SEPARATOR_STR);
-        let path = self
-            .config
-            .cache_dir
-            .join("pkgs")
-            .join(&path_id)
-            .join("registry.yaml");
-
-        // Try to read from local repository first
-        if self.config.cache_dir.join(".git").exists() && path.exists() {
-            log::trace!("reading aqua-registry for {package_id} from repo at {path:?}");
-            let contents = std::fs::read_to_string(&path)?;
-            let registry = serde_yaml::from_str::<RegistryYaml>(&contents)?;
-            return registry
-                .packages
-                .into_iter()
-                .next()
-                .map(|row| row.package)
-                .ok_or_else(|| AquaRegistryError::PackageNotFound(package_id.to_string()));
-        }
-
         Err(AquaRegistryError::RegistryNotAvailable(format!(
             "no aqua-registry found for {package_id}"
         )))

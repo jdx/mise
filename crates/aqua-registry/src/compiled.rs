@@ -16,6 +16,12 @@ pub struct CompiledRegistry {
     index: CompiledRegistryIndex,
 }
 
+#[derive(Debug, Clone)]
+pub struct ParsedRegistry {
+    packages: HashMap<String, AquaPackage>,
+    aliases: HashMap<String, String>,
+}
+
 #[derive(Debug, Clone, Archive, RkyvDeserialize, RkyvSerialize)]
 struct CompiledRegistryIndex {
     packages: HashMap<String, String>,
@@ -31,9 +37,7 @@ impl CompiledRegistry {
     }
 
     pub fn compile_from_yaml(source: &str, root: impl AsRef<Path>) -> Result<Self> {
-        let root = root.as_ref().to_path_buf();
-        let index = compile_index(source, &root)?;
-        Ok(Self { root, index })
+        ParsedRegistry::parse_yaml(source)?.write_compiled_cache(root)
     }
 
     pub fn package(&self, package_id: &str) -> Result<AquaPackage> {
@@ -50,6 +54,62 @@ impl CompiledRegistry {
         let path = self.root.join(PACKAGES_DIR).join(filename);
         let bytes = fs::read(&path)?;
         decode_package_rkyv(resolved_id, &bytes)
+    }
+}
+
+impl ParsedRegistry {
+    pub fn parse_yaml(source: &str) -> Result<Self> {
+        let registry_yaml = serde_yaml::from_str::<RegistryYaml>(source)?;
+        Self::from_registry_yaml(registry_yaml)
+    }
+
+    pub fn package(&self, package_id: &str) -> Result<AquaPackage> {
+        let resolved_id = self
+            .aliases
+            .get(package_id)
+            .map_or(package_id, String::as_str);
+        self.packages
+            .get(resolved_id)
+            .cloned()
+            .ok_or_else(|| AquaRegistryError::PackageNotFound(package_id.to_string()))
+    }
+
+    pub fn write_compiled_cache(&self, root: impl AsRef<Path>) -> Result<CompiledRegistry> {
+        let root = root.as_ref().to_path_buf();
+        let index = write_compiled_index(self, &root)?;
+        Ok(CompiledRegistry { root, index })
+    }
+
+    fn from_registry_yaml(registry_yaml: RegistryYaml) -> Result<Self> {
+        let package_entries = registry_yaml
+            .packages
+            .into_iter()
+            .filter_map(|row| canonical_package_id(&row.package).map(|id| (id, row)))
+            .collect::<Vec<_>>();
+
+        if package_entries.is_empty() {
+            return Err(AquaRegistryError::RegistryNotAvailable(
+                "aqua registry contains no packages".to_string(),
+            ));
+        }
+
+        let canonical_ids = package_entries
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect::<HashSet<_>>();
+        let mut packages = HashMap::new();
+        let mut aliases = HashMap::new();
+
+        for (id, row) in package_entries {
+            for alias in &row.aliases {
+                if alias != &id && !canonical_ids.contains(alias.as_str()) {
+                    aliases.insert(alias.clone(), id.clone());
+                }
+            }
+            packages.insert(id, row.package);
+        }
+
+        Ok(Self { packages, aliases })
     }
 }
 
@@ -92,47 +152,25 @@ fn write_index(root: &Path, index: &CompiledRegistryIndex) -> Result<()> {
     Ok(())
 }
 
-fn compile_index(source: &str, root: &Path) -> Result<CompiledRegistryIndex> {
-    let registry_yaml = serde_yaml::from_str::<RegistryYaml>(source)?;
-
+fn write_compiled_index(registry: &ParsedRegistry, root: &Path) -> Result<CompiledRegistryIndex> {
     let packages_dir = root.join(PACKAGES_DIR);
     fs::create_dir_all(&packages_dir)?;
 
-    let package_entries = registry_yaml
-        .packages
-        .iter()
-        .filter_map(|row| canonical_package_id(&row.package).map(|id| (id, row)))
-        .collect::<Vec<_>>();
-
-    if package_entries.is_empty() {
-        return Err(AquaRegistryError::RegistryNotAvailable(
-            "aqua registry contains no packages".to_string(),
-        ));
-    }
-
-    let canonical_ids = package_entries
-        .iter()
-        .map(|(id, _)| id.clone())
-        .collect::<HashSet<_>>();
     let mut used_filenames = HashSet::new();
     let mut packages = HashMap::new();
-    let mut aliases = HashMap::new();
 
-    for (id, row) in package_entries {
-        let filename = package_filename(&id, &mut used_filenames);
+    for (id, package) in &registry.packages {
+        let filename = package_filename(id, &mut used_filenames);
         let path = packages_dir.join(&filename);
-        let content = encode_package_rkyv(&row.package)?;
+        let content = encode_package_rkyv(package)?;
         fs::write(path, content)?;
         packages.insert(id.clone(), filename);
-
-        for alias in &row.aliases {
-            if alias != &id && !canonical_ids.contains(alias.as_str()) {
-                aliases.insert(alias.clone(), id.clone());
-            }
-        }
     }
 
-    let index = CompiledRegistryIndex { packages, aliases };
+    let index = CompiledRegistryIndex {
+        packages,
+        aliases: registry.aliases.clone(),
+    };
     write_index(root, &index)?;
     Ok(index)
 }
@@ -247,6 +285,27 @@ packages:
         assert!(files[0].file_type().unwrap().is_file());
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn parsed_registry_resolves_packages_before_cache_is_written() {
+        let source = r#"
+packages:
+  - type: http
+    name: example/canonical-tool
+    url: https://example.com/tool
+    aliases:
+      - name: example/tool-alias
+"#;
+
+        let registry = ParsedRegistry::parse_yaml(source).unwrap();
+        let package = registry.package("example/tool-alias").unwrap();
+
+        assert_eq!(package.name.as_deref(), Some("example/canonical-tool"));
+        assert!(matches!(
+            registry.package("example/missing"),
+            Err(AquaRegistryError::PackageNotFound(_))
+        ));
     }
 
     #[test]

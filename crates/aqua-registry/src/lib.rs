@@ -11,7 +11,7 @@ pub mod types;
 
 // Re-export only what's needed by the main mise crate
 pub use codec::{decode_package_rkyv, encode_package_rkyv};
-pub use compiled::CompiledRegistry;
+pub use compiled::{CompiledRegistry, ParsedRegistry};
 pub use registry::{AquaRegistry, DefaultRegistryFetcher, FileCacheStore, NoOpCacheStore};
 pub use types::{
     AquaChecksum, AquaChecksumType, AquaCosign, AquaFile, AquaMinisignType, AquaPackage,
