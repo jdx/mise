@@ -79,7 +79,7 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
 /// clx-based progress report implementation
 #[derive(Debug)]
 pub struct ProgressReport {
-    pub(crate) job: Arc<ProgressJob>,
+    job: Arc<ProgressJob>,
 }
 
 impl ProgressReport {
