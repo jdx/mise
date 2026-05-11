@@ -155,6 +155,15 @@ struct SourceInfo {
     checksum: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct RebuildJob {
+    pub id: String,
+    pub status: String,
+    pub progress_percent: u8,
+    pub message: String,
+    pub blocked_reason: Option<String>,
+}
+
 async fn resolve_source<B: Backend + ?Sized>(
     backend: &B,
     tv: &mut ToolVersion,
@@ -255,6 +264,18 @@ struct PendingJob {
     message: String,
 }
 
+impl From<PendingJob> for RebuildJob {
+    fn from(job: PendingJob) -> Self {
+        Self {
+            id: job.id,
+            status: job.status,
+            progress_percent: job.progress_percent,
+            message: job.message,
+            blocked_reason: None,
+        }
+    }
+}
+
 async fn resolve_until_allowed<B: Backend + ?Sized>(
     backend: &B,
     ctx: &InstallContext,
@@ -262,26 +283,7 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
     source: &SourceInfo,
     token: &str,
 ) -> Result<Option<Artifact>> {
-    let target = PlatformTarget::from_current();
-    let body = ResolveRequest {
-        backend: backend.get_type().to_string(),
-        tool: backend.tool_name(),
-        requested_version: tv.request.version(),
-        resolved_version: tv.version.clone(),
-        os: target.os_name().to_string(),
-        arch: target.arch_name().to_string(),
-        libc: target.libc().map(normalize_libc),
-        source: ResolveSource {
-            url: source.url.clone(),
-            checksum: source.checksum.clone(),
-            published_at: None,
-        },
-        context: PolicyContext {
-            repository: None,
-            teams: vec![],
-        },
-    };
-
+    let body = resolve_request(backend, tv, source);
     let url = format!("https://api.{}/v1/catalog/resolve", crate::wings::host());
     let headers = bearer_headers(token)?;
     let deadline = tokio::time::Instant::now() + RESOLVE_PENDING_TIMEOUT;
@@ -352,6 +354,71 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
                 tokio::time::sleep(remaining.min(RESOLVE_POLL_INTERVAL)).await;
             }
         }
+    }
+}
+
+pub(crate) async fn rebuild<B: Backend + ?Sized>(
+    backend: &B,
+    tv: &mut ToolVersion,
+) -> Result<RebuildJob> {
+    let Some(token) = crate::wings::auth::session_token().await? else {
+        bail!("wings authentication is not available; run `mise wings login`");
+    };
+    let Some(source) = resolve_source(backend, tv).await? else {
+        bail!(
+            "wings could not resolve an installable source for {}",
+            tv.style()
+        );
+    };
+
+    let body = resolve_request(backend, tv, &source);
+    let url = format!("https://api.{}/v1/catalog/rebuild", crate::wings::host());
+    let headers = bearer_headers(&token)?;
+    match post_resolve(&url, &body, &headers)
+        .await
+        .wrap_err("wings rebuild request failed")?
+    {
+        ResolveResponse::Pending { job } => Ok(job.into()),
+        ResolveResponse::Blocked { reason, job } => match job {
+            Some(job) => Ok(RebuildJob {
+                blocked_reason: Some(reason),
+                ..job.into()
+            }),
+            None => Err(WingsBlockedError {
+                tool: tv.style().to_string(),
+                reason,
+            }
+            .into()),
+        },
+        ResolveResponse::Allow { .. } => {
+            bail!("wings rebuild returned an existing artifact instead of a rebuild job")
+        }
+    }
+}
+
+fn resolve_request<B: Backend + ?Sized>(
+    backend: &B,
+    tv: &ToolVersion,
+    source: &SourceInfo,
+) -> ResolveRequest {
+    let target = PlatformTarget::from_current();
+    ResolveRequest {
+        backend: backend.get_type().to_string(),
+        tool: backend.tool_name(),
+        requested_version: tv.request.version(),
+        resolved_version: tv.version.clone(),
+        os: target.os_name().to_string(),
+        arch: target.arch_name().to_string(),
+        libc: target.libc().map(normalize_libc),
+        source: ResolveSource {
+            url: source.url.clone(),
+            checksum: source.checksum.clone(),
+            published_at: None,
+        },
+        context: PolicyContext {
+            repository: None,
+            teams: vec![],
+        },
     }
 }
 

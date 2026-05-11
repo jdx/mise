@@ -9,6 +9,8 @@
 //!     the returned wings session JWT (+ refresh token) locally.
 //!   - [`logout`] — revoke every active wings session for the
 //!     calling user; delete the local credentials file.
+//!   - [`rebuild`] — evict a catalog artifact and enqueue a
+//!     fresh server-side package job.
 //!   - [`whoami`] — print the active user / org / token expiry.
 //!   - [`status`] — verify credentials are live by hitting an
 //!     authenticated proxy endpoint.
@@ -29,6 +31,7 @@ use eyre::{Context, Result};
 mod inspect;
 mod login;
 mod logout;
+mod rebuild;
 mod status;
 mod whoami;
 
@@ -74,6 +77,7 @@ enum Commands {
     Inspect(inspect::Inspect),
     Login(login::Login),
     Logout(logout::Logout),
+    Rebuild(rebuild::Rebuild),
     Status(status::Status),
     Whoami(whoami::Whoami),
 }
@@ -84,6 +88,7 @@ impl Commands {
             Self::Inspect(cmd) => cmd.run().await,
             Self::Login(cmd) => cmd.run().await,
             Self::Logout(cmd) => cmd.run().await,
+            Self::Rebuild(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Whoami(cmd) => cmd.run().await,
         }
