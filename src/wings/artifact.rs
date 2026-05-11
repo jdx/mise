@@ -959,7 +959,7 @@ fn install_mocito_layer(
                 ..file::TarOptions::new(format)
             };
             file::untar(layer_path, &layer_dir, &opts)?;
-            merge_mocito_layer(&layer_dir, &install_path)?;
+            merge_mocito_layer(&layer_dir, install_path)?;
             file::remove_all(&layer_dir)?;
         }
     }
