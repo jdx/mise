@@ -709,16 +709,18 @@ impl MocitoConfig {
         Ok(())
     }
 
-    fn raw_binary_dest(&self) -> Result<PathBuf> {
+    fn raw_binary_dest(&self, layer_path: &Path) -> Result<PathBuf> {
         if let Some(bin) = self.bin.iter().find(|bin| !bin.ends_with('/')) {
             return safe_relative_path(bin, "bin");
         }
         if let Some(link) = self.bin_links.first() {
             return link.source_path();
         }
-        bail!(
-            "wings MOCITO raw binary payload requires a non-directory bin entry or binLinks source"
-        )
+        let filename = layer_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| eyre!("wings MOCITO raw binary layer has no filename"))?;
+        safe_relative_path(filename, "layer filename")
     }
 }
 
@@ -998,7 +1000,7 @@ fn install_mocito_layer(
 ) -> Result<()> {
     match layer_format(&layer.media_type)? {
         TarFormat::Raw => {
-            let dest = install_path.join(config.raw_binary_dest()?);
+            let dest = install_path.join(config.raw_binary_dest(layer_path)?);
             if let Some(parent) = dest.parent() {
                 file::create_dir_all(parent)?;
             }
@@ -1487,6 +1489,31 @@ mod tests {
         write_wings_install_marker(dir.path(), &artifact()).unwrap();
 
         assert_eq!(installed_env(&tv).unwrap(), env);
+    }
+
+    #[test]
+    fn raw_binary_installs_to_layer_filename_without_bin_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let install_path = dir.path().join("install");
+        let tv = tool_version_with_install_path(&install_path);
+        let layer_path = dir.path().join("jq-macos-arm64");
+        file::write(&layer_path, "tool").unwrap();
+        let descriptor = layer(BINARY_LAYER_MEDIA_TYPE);
+        let config = mocito_config();
+
+        install_mocito_artifact(
+            &tv,
+            &config,
+            &[(&descriptor, layer_path)],
+            &artifact(),
+            None,
+        )
+        .unwrap();
+
+        let installed = install_path.join("jq-macos-arm64");
+        assert_eq!(file::read_to_string(&installed).unwrap(), "tool");
+        assert!(file::is_executable(&installed));
+        assert!(install_path.join(WINGS_INSTALL_MARKER_FILE).exists());
     }
 
     #[test]
