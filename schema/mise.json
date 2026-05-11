@@ -826,6 +826,36 @@
               "description": "Enable GitHub Artifact Attestations verification for github backend tools.",
               "type": "boolean"
             },
+            "oauth_api_url": {
+              "default": "https://api.github.com",
+              "description": "GitHub API base URL for native OAuth token validation.",
+              "type": "string"
+            },
+            "oauth_auth_url": {
+              "default": "https://github.com/login/oauth",
+              "description": "GitHub OAuth endpoint base URL for native device-flow tokens.",
+              "type": "string"
+            },
+            "oauth_client_id": {
+              "default": "",
+              "description": "[experimental] GitHub App client ID for native OAuth device-flow tokens.",
+              "type": "string"
+            },
+            "oauth_export_env": {
+              "default": "GITHUB_TOKEN",
+              "description": "Environment variable name to export the native GitHub OAuth token under (empty disables).",
+              "type": "string"
+            },
+            "oauth_open_browser": {
+              "default": true,
+              "description": "Open the browser during native GitHub OAuth device flow.",
+              "type": "boolean"
+            },
+            "oauth_scopes": {
+              "default": "",
+              "description": "OAuth scopes requested for native GitHub device-flow tokens.",
+              "type": "string"
+            },
             "slsa": {
               "default": true,
               "description": "Enable SLSA provenance verification for github backend tools.",
@@ -1950,54 +1980,53 @@
           "type": "string"
         },
         {
-          "properties": {
-            "version": {
-              "description": "version of the tool to install",
-              "type": "string"
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool_options"
             },
-            "os": {
-              "$ref": "#/$defs/os_filter"
-            },
-            "install_env": {
-              "type": "object",
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "type": "string"
+            {
+              "properties": {
+                "install_env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
                   },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "description": "environment variables during tool installation"
-            },
-            "depends": {
-              "oneOf": [
-                {
-                  "description": "tools that must be installed before this tool",
-                  "type": "string"
+                  "description": "environment variables during tool installation"
                 },
-                {
-                  "description": "tools that must be installed before this tool",
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
+                "depends": {
+                  "oneOf": [
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "string"
+                    },
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "postinstall": {
+                  "description": "command to run after tool installation",
+                  "type": "string"
                 }
-              ]
-            },
-            "postinstall": {
-              "description": "command to run after tool installation",
-              "type": "string"
+              }
             }
-          },
-          "required": ["version"],
+          ],
           "type": "object",
-          "additionalProperties": {
+          "unevaluatedProperties": {
             "oneOf": [
               {
                 "type": "string"
@@ -2020,27 +2049,56 @@
         }
       ]
     },
+    "tool_options": {
+      "properties": {
+        "version": {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        "os": {
+          "$ref": "#/$defs/os_filter"
+        }
+      },
+      "required": ["version"],
+      "type": "object"
+    },
     "hooks": {
       "description": "hooks to run",
       "type": "object",
       "additionalProperties": {
         "oneOf": [
           {
-            "description": "script to run",
+            "description": "inline hook command to run",
             "type": "string"
           },
           {
             "unevaluatedProperties": false,
             "properties": {
-              "script": {
-                "description": "script to run",
+              "run": {
+                "description": "inline hook command to run",
                 "type": "string"
               },
               "shell": {
-                "description": "specify the shell to run the script inside of",
+                "description": "inline shell command to use for run hooks, such as \"bash -c\"",
                 "type": "string"
               }
             },
+            "required": ["run"],
+            "type": "object"
+          },
+          {
+            "unevaluatedProperties": false,
+            "properties": {
+              "script": {
+                "description": "current-shell script for enter/leave/cd hooks",
+                "type": "string"
+              },
+              "shell": {
+                "description": "current shell name for script hooks, such as \"bash\"",
+                "type": "string"
+              }
+            },
+            "required": ["script"],
             "type": "object"
           },
           {
@@ -2059,21 +2117,37 @@
             "items": {
               "oneOf": [
                 {
-                  "description": "script to run",
+                  "description": "inline hook command to run",
                   "type": "string"
                 },
                 {
                   "unevaluatedProperties": false,
                   "properties": {
-                    "script": {
-                      "description": "script to run",
+                    "run": {
+                      "description": "inline hook command to run",
                       "type": "string"
                     },
                     "shell": {
-                      "description": "specify the shell to run the script inside of",
+                      "description": "inline shell command to use for run hooks, such as \"bash -c\"",
                       "type": "string"
                     }
                   },
+                  "required": ["run"],
+                  "type": "object"
+                },
+                {
+                  "unevaluatedProperties": false,
+                  "properties": {
+                    "script": {
+                      "description": "current-shell script for enter/leave/cd hooks",
+                      "type": "string"
+                    },
+                    "shell": {
+                      "description": "current shell name for script hooks, such as \"bash\"",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["script"],
                   "type": "object"
                 },
                 {
@@ -2311,18 +2385,13 @@
                 "type": "string"
               },
               {
-                "properties": {
-                  "version": {
-                    "description": "version of the tool to install",
-                    "type": "string"
-                  },
-                  "os": {
-                    "$ref": "#/$defs/os_filter"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/tool_options"
                   }
-                },
-                "required": ["version"],
+                ],
                 "type": "object",
-                "additionalProperties": {
+                "unevaluatedProperties": {
                   "oneOf": [
                     {
                       "type": "string"

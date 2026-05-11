@@ -81,7 +81,7 @@ function __zsh_like_cd()
   if
     builtin "$@"
   then
-    for __zsh_like_cd_hook in chpwd "${chpwd_functions[@]}"
+    for __zsh_like_cd_hook in chpwd ${chpwd_functions[@]+"${chpwd_functions[@]}"}
     do
       if \typeset -f "$__zsh_like_cd_hook" >/dev/null 2>&1
       then "$__zsh_like_cd_hook" || break # finish on first failed hook

@@ -59,3 +59,54 @@ cat >mise.toml <<EOF
 "asdf:some-plugin" = "1.0.0"
 EOF
 assert_fail "mise oci build --from scratch -o ./out-bad" "does not support asdf/vfox"
+
+# --- 6. Global config tools are NOT packaged by default (#9690) ---
+# Pin mise.toml back to a buildable project, then drop a *different* tool
+# into the global config. The global tool isn't installed; if the project
+# scope filter regresses, mise oci build will try to package it and fail.
+cat >mise.toml <<EOF
+[tools]
+jq = "1.8.1"
+EOF
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+"asdf:some-plugin" = "1.0.0"
+EOF
+assert_succeed "mise oci build -o ./out-scope --from scratch"
+# Only the project tool (jq) should be in the manifest — the asdf plugin from
+# the global config must be filtered out, both as a packaged layer and as a
+# trigger for the asdf/vfox rejection check.
+mf="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-scope/index.json)"
+assert "jq -r '[.layers[] | select(.annotations.\"dev.mise.tool.short\") | .annotations.\"dev.mise.tool.short\"] | sort | unique | join(\",\")' ./out-scope/blobs/sha256/$mf" "jq"
+
+# --- 7. --include-global reverses the scope filter ---
+# With the asdf plugin now back in scope, the asdf/vfox rejection should fire.
+assert_fail "mise oci build --include-global -o ./out-incl --from scratch" "does not support asdf/vfox"
+
+# --- 8. [oci] settings from global config are also project-scoped by default ---
+# Replace the asdf-plugin-in-global with a bogus [oci].from that would fail to
+# resolve if it were inherited. With project-only scope (the default) the
+# project's own --from scratch wins, so the build succeeds. With
+# --include-global the global from would be merged in and shadowed by --from
+# anyway, so this test asserts the *non-include* path doesn't even read the
+# global [oci].
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[oci]
+mount_point = "/should-not-appear"
+EOF
+assert_succeed "mise oci build -o ./out-oci-scope --from scratch"
+mf_oci="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-oci-scope/index.json)"
+config_oci_digest="$(jq -r '.config.digest | ltrimstr("sha256:")' "./out-oci-scope/blobs/sha256/$mf_oci")"
+assert_not_contains "jq -r '.config.Env | join(\"\n\")' ./out-oci-scope/blobs/sha256/$config_oci_digest" "/should-not-appear"
+
+# --- 9. No project config + no --include-global → clear error ---
+# Error message is shared between build/run/push, so it must NOT name a
+# specific subcommand (just "mise oci").
+rm -f mise.toml
+assert_fail "mise oci build -o ./out-none --from scratch" "no project mise config"
+assert_fail "mise oci build -o ./out-none --from scratch" "mise oci:"
+
+# Cleanup so later assertions in this file (none currently, but also so a
+# rerun under the same workdir doesn't carry global state forward) start fresh.
+rm -f "$MISE_CONFIG_DIR/config.toml"

@@ -113,11 +113,12 @@ impl Registry {
         }
     }
 
-    fn filtered_tools(&self) -> impl Iterator<Item = (&&'static str, &RegistryTool)> {
+    fn filtered_tools(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
+        let hide_aliased = self.hide_aliased;
         REGISTRY
             .iter()
             .filter(|(short, _)| filter_enabled(short))
-            .filter(|(short, rt)| !self.hide_aliased || **short == rt.short)
+            .filter(move |(short, rt)| !hide_aliased || *short == rt.short)
     }
 
     fn display_table(&self) -> Result<()> {
@@ -126,7 +127,6 @@ impl Registry {
             .filtered_tools()
             .map(|(short, rt)| (short.to_string(), self.filter_backends(rt).join(" ")))
             .filter(|(_, backends)| !backends.is_empty())
-            .sorted_by(|(a, _), (b, _)| a.cmp(b))
             .map(|(short, backends)| vec![short, backends])
             .collect_vec();
         for row in data {
@@ -145,7 +145,6 @@ impl Registry {
                         .unwrap_or_default(),
                 )
             })
-            .sorted_by(|(a, _), (b, _)| a.cmp(b))
             .for_each(|(short, description)| {
                 println!(
                     "{}:{}",
@@ -179,12 +178,12 @@ impl Registry {
             while let Some(result) = jset.join_next().await {
                 outputs.push(result?);
             }
+            outputs.sort_by(|a, b| a.short.cmp(&b.short));
         } else {
             for tool in tools {
                 outputs.push(to_output(tool, false).await);
             }
         }
-        outputs.sort_by(|a, b| a.short.cmp(&b.short));
         miseprintln!("{}", serde_json::to_string_pretty(&outputs)?);
         Ok(())
     }

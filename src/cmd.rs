@@ -90,13 +90,11 @@ where
     let program = program.to_executable();
     let args: Vec<OsString> = args.into_iter().map(Into::<OsString>::into).collect();
 
-    let display_name = program.to_string_lossy();
-    let display_args = args
-        .iter()
-        .map(|s| s.to_string_lossy())
+    let display_command = std::iter::once(&program)
+        .chain(&args)
+        .map(|s| shell_escape::escape(s.to_string_lossy()))
         .collect::<Vec<_>>()
         .join(" ");
-    let display_command = [display_name.into(), display_args].join(" ");
     debug!("$ {display_command}");
 
     duct::cmd(program, args)

@@ -96,7 +96,11 @@ impl Backend for VfoxBackend {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
-                    let opts = config.get_tool_opts_with_overrides(&this.ba).await?.opts;
+                    let opts = config
+                        .get_tool_opts_with_overrides(&this.ba)
+                        .await?
+                        .into_backend_options()
+                        .into_map();
                     let versions = vfox
                         .backend_list_versions(&this.pathname, tool_name, opts)
                         .await
@@ -157,7 +161,7 @@ impl Backend for VfoxBackend {
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
-                tool_opts.opts,
+                tool_opts.into_backend_options().into_map(),
             )
             .await
             .wrap_err("Backend install method failed")?;
@@ -269,6 +273,30 @@ impl Backend for VfoxBackend {
 
     fn plugin(&self) -> Option<&PluginEnum> {
         Some(&self.plugin_enum)
+    }
+
+    async fn uninstall_version_impl(
+        &self,
+        config: &Arc<Config>,
+        _pr: &dyn crate::ui::progress_report::SingleReport,
+        tv: &ToolVersion,
+    ) -> eyre::Result<()> {
+        if self.is_backend_plugin() || !self.plugin.is_installed() {
+            return Ok(());
+        }
+
+        let (mut vfox, log_rx) = self.plugin.vfox();
+        thread::spawn(|| {
+            for line in log_rx {
+                info!("{}", line);
+            }
+        });
+        if let Ok(dep_env) = self.dependency_env(config).await {
+            vfox.cmd_env = Some(dep_env.into_iter().collect());
+        }
+        vfox.pre_uninstall(&self.pathname, &tv.version, tv.install_path())
+            .await?;
+        Ok(())
     }
 
     async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
@@ -445,12 +473,12 @@ impl VfoxBackend {
                         tool_name,
                         &tv.version,
                         tv.install_path(),
-                        opts.opts.clone(),
+                        opts.backend_options().clone().into_map(),
                     )
                     .await
                     .wrap_err("Backend exec env method failed")?
                 } else {
-                    vfox.env_keys(&self.pathname, &tv.version, &opts.opts)
+                    vfox.env_keys(&self.pathname, &tv.version, opts.backend_options().as_map())
                         .await?
                 };
 

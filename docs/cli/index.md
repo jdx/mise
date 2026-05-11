@@ -173,7 +173,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise test-tool [FLAGS] [TOOLS]…`](/cli/test-tool.md)
 - [`mise token <SUBCOMMAND>`](/cli/token.md)
 - [`mise token forgejo [--unmask] [HOST]`](/cli/token/forgejo.md)
-- [`mise token github [--unmask] [HOST]`](/cli/token/github.md)
+- [`mise token github [FLAGS] [HOST]`](/cli/token/github.md)
 - [`mise token gitlab [--unmask] [HOST]`](/cli/token/gitlab.md)
 - [`mise tool [FLAGS] <TOOL>`](/cli/tool.md)
 - [`mise tool-stub <FILE> [ARGS]…`](/cli/tool-stub.md)

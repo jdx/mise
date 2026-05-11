@@ -1,10 +1,10 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
-use crate::toolset::ToolVersionOptions;
+use crate::toolset::{RawBackendOptions, ToolVersionOptions};
 use heck::ToShoutySnakeCase;
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::env;
 use std::env::consts::{ARCH, OS};
 use std::fmt::Display;
@@ -14,8 +14,34 @@ use strum::IntoEnumIterator;
 use url::Url;
 
 // the registry is generated from registry/ in the project root
-pub static REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> =
-    Lazy::new(|| include!(concat!(env!("OUT_DIR"), "/registry.rs")));
+pub static REGISTRY: Registry = include!(concat!(env!("OUT_DIR"), "/registry.rs"));
+
+pub struct Registry {
+    entries: &'static [(&'static str, RegistryTool)],
+    lookup: phf::Map<&'static str, usize>,
+}
+
+impl Registry {
+    pub fn get(&self, name: &str) -> Option<&'static RegistryTool> {
+        self.lookup.get(name).map(|index| &self.entries[*index].1)
+    }
+
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.lookup.contains_key(name)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
+        self.entries.iter().map(|(name, tool)| (*name, tool))
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &'static str> {
+        self.entries.iter().map(|(name, _)| *name)
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &'static RegistryTool> {
+        self.entries.iter().map(|(_, tool)| tool)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RegistryTool {
@@ -145,7 +171,7 @@ impl RegistryTool {
         }
 
         ToolVersionOptions {
-            opts,
+            opts: RawBackendOptions::from(opts),
             ..Default::default()
         }
     }
@@ -255,6 +281,20 @@ mod tests {
             &BTreeSet::from(["cargo"]),
             &name
         ));
+    }
+
+    #[test]
+    fn test_registry_iteration_is_sorted() {
+        use super::*;
+
+        // The interactive tool selector and --all test-tool path consume registry
+        // iteration order directly, so keep PHF lookup separate from sorted output.
+        let keys = REGISTRY.keys().collect::<Vec<_>>();
+        let mut sorted = keys.clone();
+        sorted.sort_unstable();
+
+        assert!(!keys.is_empty());
+        assert_eq!(keys, sorted);
     }
 
     #[test]

@@ -8,6 +8,9 @@ unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN MISE_GITHUB_ENTERPRISE_TOK
 # Test 1: No token configured — should return (none)
 assert_contains "mise token github" "(none)"
 
+# --raw with no token should exit non-zero (so $(...) capture fails loudly)
+assert_fail "mise token github --raw"
+
 # Test 2: GITHUB_TOKEN env var
 assert_contains "GITHUB_TOKEN=env-test-token mise token github --unmask" "env-test-token"
 assert_contains "GITHUB_TOKEN=env-test-token mise token github --unmask" "GITHUB_TOKEN"
@@ -73,7 +76,51 @@ assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred
 # Test 8e: credential_command receives host as $1
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo token-for-\$1' mise token github ghe.example.com --unmask" "token-for-ghe.example.com"
 
-# Test 9: git credential fill
+# Test 9a: OAuth configured but no cached token — must not prompt for device flow
+# during normal token resolution (would hang on the unreachable URL otherwise).
+NO_DEVICE_OAUTH="MISE_EXPERIMENTAL=1 MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:1/login/oauth MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:1/api"
+assert_contains "$NO_DEVICE_OAUTH mise token github 127.0.0.1" "(none)"
+
+# OAuth is experimental — calling --oauth without experimental enabled must fail
+assert_fail "MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock mise token github --oauth"
+
+# Test 9: native GitHub OAuth device flow via token alias
+MOCK_PORT_FILE="$HOME/mock-github-oauth-port"
+MOCK_GITHUB_OAUTH_PORT_FILE="$MOCK_PORT_FILE" python3 "$ROOT/e2e/fixtures/mock-github-oauth.py" &
+MOCK_PID=$!
+for _ in $(seq 1 30); do
+  if [ -f "$MOCK_PORT_FILE" ]; then
+    break
+  fi
+  sleep 0.1
+done
+MOCK_PORT="$(cat "$MOCK_PORT_FILE")"
+OAUTH_ENV="MISE_EXPERIMENTAL=1 MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:$MOCK_PORT/login/oauth MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:$MOCK_PORT/api"
+assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --oauth --raw" "ghu-native-oauth-token"
+assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --unmask" "GitHub OAuth"
+
+# Test 9b: cached OAuth token is auto-exported as GITHUB_TOKEN
+assert_contains "$OAUTH_ENV mise env --shell bash" "export GITHUB_TOKEN=ghu-native-oauth-token"
+
+# Test 9c: oauth_export_env can pick a different variable name
+assert_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_EXPORT_ENV=GH_TOKEN mise env --shell bash" "export GH_TOKEN=ghu-native-oauth-token"
+
+# Test 9d: empty oauth_export_env disables auto-export
+assert_not_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_EXPORT_ENV= mise env --shell bash" "ghu-native-oauth-token"
+
+# Test 9e: an explicit GITHUB_TOKEN in [env] must take precedence over the OAuth-injected token
+mkdir -p "$MISE_CONFIG_DIR"
+cat >mise.toml <<'EOF'
+[env]
+GITHUB_TOKEN = "user-set-token"
+EOF
+assert_contains "$OAUTH_ENV mise env --shell bash" "export GITHUB_TOKEN=user-set-token"
+assert_not_contains "$OAUTH_ENV mise env --shell bash" "ghu-native-oauth-token"
+rm mise.toml
+
+kill "$MOCK_PID"
+
+# Test 10: git credential fill
 
 # Create a standalone credential helper script
 cat >"$HOME/git-cred-helper" <<'SCRIPT'
@@ -90,5 +137,5 @@ GIT_CRED_ENV="GIT_CONFIG_NOSYSTEM=1 MISE_GITHUB_USE_GIT_CREDENTIALS=true"
 assert_contains "$GIT_CRED_ENV mise token github --unmask" "git-cred-token"
 assert_contains "$GIT_CRED_ENV mise token github --unmask" "git credential fill"
 
-# Test 10: git credential disabled via setting
+# Test 11: git credential disabled via setting
 assert_contains "GIT_CONFIG_NOSYSTEM=1 MISE_GITHUB_USE_GIT_CREDENTIALS=false mise token github" "(none)"

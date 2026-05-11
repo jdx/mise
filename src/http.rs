@@ -73,6 +73,15 @@ impl Client {
         })
     }
 
+    /// Underlying reqwest client. Use sparingly — most callers should reach for
+    /// the higher-level `get_*`/`json_*`/`post_json_*` helpers instead. This
+    /// exists for callers that need request shapes those helpers don't cover
+    /// (e.g. form-encoded POST in the GitHub OAuth flow) but still want the
+    /// shared timeouts, gzip, and user-agent.
+    pub fn reqwest(&self) -> &reqwest::Client {
+        &self.reqwest
+    }
+
     fn _new() -> ClientBuilder {
         let v = &*version::VERSION;
         let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();

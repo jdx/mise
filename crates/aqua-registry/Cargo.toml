@@ -10,15 +10,7 @@ homepage = "https://mise.en.dev"
 readme = "README.md"
 keywords = ["mise", "aqua", "registry", "package-manager"]
 categories = ["development-tools"]
-build = "build.rs"
-include = [
-  "/README.md",
-  "/build.rs",
-  "/src/**/*.rs",
-  "/aqua-registry/LICENSE",
-  "/aqua-registry/metadata.json",
-  "/aqua-registry/registry.yaml",
-]
+include = ["/README.md", "/src/**/*.rs"]
 
 [package.metadata.cargo-machete]
 ignored = ["serde"]
@@ -34,12 +26,13 @@ thiserror = "2"
 eyre = "0.6"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.14"
+rkyv = { version = "0.8", features = ["unaligned"] }
 strum = { version = "0.28", features = ["derive"] }
 
 # Template parsing and evaluation
 expr-lang = "1"
-versions = { version = "7", features = ["serde"] }
 heck = "0.5"
+versions = { version = "7", features = ["serde"] }
 
 # Async runtime
 tokio = { version = "1", features = ["sync"] }
@@ -50,7 +43,3 @@ log = "0.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
-
-[build-dependencies]
-eyre = "0.6"
-serde_yaml = "0.9"

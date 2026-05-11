@@ -1654,6 +1654,14 @@ const completionSpec: Fig.Spec = {
             "Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs",
           isRepeatable: false,
         },
+        {
+          name: "--minimum-release-age",
+          description: "Only lock versions released before this age or date",
+          isRepeatable: false,
+          args: {
+            name: "minimum_release_age",
+          },
+        },
       ],
       args: {
         name: "tool",
@@ -1757,6 +1765,14 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--minimum-release-age",
+          description: "Only show versions released before this age or date",
+          isRepeatable: false,
+          args: {
+            name: "minimum_release_age",
+          },
+        },
+        {
           name: ["-J", "--json"],
           description:
             "Output in JSON format (includes version metadata like created_at timestamps when available)",
@@ -1830,6 +1846,12 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
+              name: "--include-global",
+              description:
+                "Also include tools from the global / system config (default: project-only)",
+              isRepeatable: false,
+            },
+            {
               name: ["-t", "--tag"],
               description:
                 "Tag to record in the image index (the org.opencontainers.image.ref.name annotation)",
@@ -1878,6 +1900,12 @@ const completionSpec: Fig.Spec = {
                 name: "image_dir",
                 template: "folders",
               },
+            },
+            {
+              name: "--include-global",
+              description:
+                "Also include tools from the global / system config (default: project-only)",
+              isRepeatable: false,
             },
             {
               name: "--mount-point",
@@ -1948,6 +1976,12 @@ const completionSpec: Fig.Spec = {
                 name: "image_dir",
                 template: "folders",
               },
+            },
+            {
+              name: "--include-global",
+              description:
+                "Also include tools from the global / system config (default: project-only)",
+              isRepeatable: false,
             },
             {
               name: "--keep",
@@ -3738,6 +3772,17 @@ const completionSpec: Fig.Spec = {
           name: "github",
           description: "GitHub token",
           options: [
+            {
+              name: "--oauth",
+              description:
+                "[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources",
+              isRepeatable: false,
+            },
+            {
+              name: "--raw",
+              description: "Print only the token value",
+              isRepeatable: false,
+            },
             {
               name: "--unmask",
               description: "Show the full unmasked token",

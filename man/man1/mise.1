@@ -1441,6 +1441,14 @@ If not specified, all platforms already in lockfile will be updated
 \fB\-\-local\fR
 Update mise.local.lock instead of mise.lock
 Use for tools defined in .local.toml configs
+.TP
+\fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
+Only lock versions released before this age or date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
+This only affects fuzzy version matches like "20" or "latest".
+Explicitly pinned versions like "22.5.0" are not filtered.
+Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
 \fBArguments:\fR
 .PP
 .TP
@@ -1517,6 +1525,11 @@ Note that the results may be cached, run `mise cache clean` to clear the cache a
 \fB\-\-all\fR
 Show all installed plugins and versions
 .TP
+\fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
+Only show versions released before this age or date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
+.TP
 \fB\-J, \-\-json\fR
 Output in JSON format (includes version metadata like created_at timestamps when available)
 .TP
@@ -1570,6 +1583,11 @@ Output directory for the OCI image layout
 \fB\-\-from\fR \fI<FROM>\fR
 Base image reference (overrides [oci].from and the oci.default_from setting)
 .TP
+\fB\-\-include\-global\fR
+Also include tools from the global / system config (default: project\-only)
+
+By default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at\-or\-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `\-\-include\-global` to revert to the old "merge all loaded configs" behavior.
+.TP
 \fB\-t, \-\-tag\fR \fI<TAG>\fR
 Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
 .TP
@@ -1600,6 +1618,11 @@ Base image for the build (ignored with \-\-image\-dir)
 .TP
 \fB\-\-image\-dir\fR \fI<IMAGE_DIR>\fR
 Push an already\-built OCI image layout (skip the build step)
+.TP
+\fB\-\-include\-global\fR
+Also include tools from the global / system config (default: project\-only)
+
+See `mise oci build \-\-help` for details.
 .TP
 \fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
 Override in\-image mount point (ignored with \-\-image\-dir)
@@ -1644,6 +1667,11 @@ Base image reference for the build (ignored with \-\-image\-dir)
 .TP
 \fB\-\-image\-dir\fR \fI<IMAGE_DIR>\fR
 Use an already\-built OCI image layout instead of building fresh
+.TP
+\fB\-\-include\-global\fR
+Also include tools from the global / system config (default: project\-only)
+
+See `mise oci build \-\-help` for details.
 .TP
 \fB\-\-keep\fR
 Keep the loaded image in the engine's storage after the run
@@ -3079,6 +3107,12 @@ GitHub token
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-\-oauth\fR
+[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device\-code flow), bypassing other token sources
+.TP
+\fB\-\-raw\fR
+Print only the token value
 .TP
 \fB\-\-unmask\fR
 Show the full unmasked token

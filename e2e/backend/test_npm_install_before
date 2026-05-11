@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test minimum_release_age with npm backend (dist-tag fallback)
+# Test minimum_release_age with npm backend (dist-tag date fallback)
 # Regression test for https://github.com/jdx/mise/discussions/9136
 
 export NPM_CONFIG_FUND=false
@@ -9,8 +9,8 @@ mise use node
 # Test: mise latest with minimum_release_age should resolve to an older version
 # prettier 3.0.0 was released 2023-07-05, 2.8.8 was released 2023-05-23
 # Setting minimum_release_age to 2023-06-01 should give us 2.8.8 (not 3.x)
-# This must bypass NPMBackend::latest_stable_version because npm dist-tags
-# always return the absolute latest version.
+# This must fall back after detecting NPMBackend::latest_stable_version is
+# newer than the cutoff, because npm dist-tags return the absolute latest.
 export MISE_MINIMUM_RELEASE_AGE="2023-06-01"
 assert_contains "mise latest npm:prettier" "2.8.8"
 unset MISE_MINIMUM_RELEASE_AGE

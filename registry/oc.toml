@@ -1,3 +1,32 @@
-backends = ["conda:openshift-cli", "asdf:mise-plugins/mise-oc"]
 description = "OpenShift Client CLI (oc)"
+os = ["linux", "macos", "windows"]
 test = { cmd = "oc version --client", expected = "{{version}}" }
+
+[[backends]]
+full = "http:oc"
+
+[backends.options]
+bin = "oc"
+version_list_url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/"
+version_regex = 'href="(\d+\.\d+\.\d+)/"'
+
+[backends.options.platforms.linux-x64]
+url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-client-linux-{{ version }}.tar.gz"
+
+[backends.options.platforms.linux-arm64]
+url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-client-linux-arm64-{{ version }}.tar.gz"
+
+[backends.options.platforms.macos-x64]
+url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-client-mac-{{ version }}.tar.gz"
+
+[backends.options.platforms.macos-arm64]
+url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-client-mac-arm64-{{ version }}.tar.gz"
+
+[backends.options.platforms.windows-x64]
+url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-client-windows-{{ version }}.zip"
+
+[[backends]]
+full = "conda:openshift-cli"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-oc"

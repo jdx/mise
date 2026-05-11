@@ -66,7 +66,14 @@ async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<Forg
     RELEASE_CACHE.read().await
 }
 
-pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<ForgejoRelease>> {
+/// Lists releases, including releases flagged `prerelease: true`. Drafts are
+/// always filtered out. The cache stores this non-draft superset so callers can
+/// apply the current `prerelease` option at read time without invalidating
+/// cached release metadata.
+pub async fn list_releases_including_prereleases_from_url(
+    api_url: &str,
+    repo: &str,
+) -> Result<Vec<ForgejoRelease>> {
     let key = format!("{api_url}-{repo}").to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -93,9 +100,13 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<ForgejoRelease>
             headers = h;
         }
     }
-    releases.retain(|r| !r.draft && !r.prerelease);
+    releases.retain(is_published_release);
 
     Ok(releases)
+}
+
+fn is_published_release(release: &ForgejoRelease) -> bool {
+    !release.draft
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
@@ -318,6 +329,25 @@ fn parse_fj_keys(contents: &str) -> Option<HashMap<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn release(tag_name: &str, draft: bool, prerelease: bool) -> ForgejoRelease {
+        ForgejoRelease {
+            id: 1,
+            tag_name: tag_name.to_string(),
+            draft,
+            prerelease,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            assets: vec![],
+        }
+    }
+
+    #[test]
+    fn test_is_published_release_keeps_prereleases() {
+        assert!(is_published_release(&release("1.0.0", false, false)));
+        assert!(is_published_release(&release("1.1.0-rc1", false, true)));
+        assert!(!is_published_release(&release("1.2.0", true, false)));
+        assert!(!is_published_release(&release("1.2.0-rc1", true, true)));
+    }
 
     #[test]
     fn test_parse_forgejo_tokens() {

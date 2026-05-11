@@ -436,6 +436,8 @@ cmd github hide=#true subcommand_required=#true help="GitHub related commands" {
     cmd token hide=#true help="Display the GitHub token mise will use for a given host" {
         long_help "Display the GitHub token mise will use for a given host\n\nShows which token source mise would use, useful for debugging\nauthentication issues. The token is masked by default."
         after_long_help "Examples:\n\n    $ mise github token\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise github token --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise github token github.mycompany.com\n    github.mycompany.com: (none)\n"
+        flag --oauth help="Force native GitHub OAuth device flow instead of normal token resolution"
+        flag --raw help="Print only the token value"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
@@ -556,7 +558,7 @@ cmd local hide=#true help="Sets/gets tool version in local .tool-versions or mis
 }
 cmd lock help="Update lockfile checksums and URLs for all specified platforms" {
     long_help "Update lockfile checksums and URLs for all specified platforms\n\nUpdates checksums and download URLs for all platforms already specified in the lockfile.\nIf no lockfile exists, shows what would be created based on the current configuration.\nThis allows you to refresh lockfile data for platforms other than the one you're currently on.\nOperates on the lockfile in the current config root. Use TOOL arguments to target specific tools."
-    after_long_help "Examples:\n\n    $ mise lock                       # update lockfile for all common platforms\n    $ mise lock node python           # update only node and python\n    $ mise lock --platform linux-x64  # update only linux-x64 platform\n    $ mise lock --dry-run             # show what would be updated\n    $ mise lock --local               # update mise.local.lock for local configs\n    $ mise lock --global              # update only global config lockfiles\n"
+    after_long_help "Examples:\n\n    $ mise lock                       # update lockfile for all common platforms\n    $ mise lock node python           # update only node and python\n    $ mise lock --platform linux-x64  # update only linux-x64 platform\n    $ mise lock --dry-run             # show what would be updated\n    $ mise lock --minimum-release-age 2024-01-01   # lock latest/fuzzy versions released before 2024-01-01\n    $ mise lock --local               # update mise.local.lock for local configs\n    $ mise lock --global              # update only global config lockfiles\n"
     flag "-g --global" help="Target only global config lockfiles (~/.config/mise/mise.lock and system config)\nBy default, only the active project config root is locked"
     flag "-j --jobs" help="Number of jobs to run in parallel" {
         arg <JOBS>
@@ -566,6 +568,10 @@ cmd lock help="Update lockfile checksums and URLs for all specified platforms" {
         arg <PLATFORM>
     }
     flag --local help="Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs"
+    flag --minimum-release-age help="Only lock versions released before this age or date" {
+        long_help "Only lock versions released before this age or date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\".\nThis only affects fuzzy version matches like \"20\" or \"latest\".\nExplicitly pinned versions like \"22.5.0\" are not filtered.\nExisting matching lockfile entries are preserved and are not downgraded solely by this flag."
+        arg <MINIMUM_RELEASE_AGE>
+    }
     arg "[TOOL]…" help="Tool(s) to update in lockfile\ne.g.: node python\nIf not specified, all tools in lockfile will be updated" required=#false var=#true
 }
 cmd ls help="List installed and active tool versions" {
@@ -594,8 +600,12 @@ cmd ls help="List installed and active tool versions" {
 cmd ls-remote help="List runtime versions available for install." {
     alias list-all list-remote hide=#true
     long_help "List runtime versions available for install.\n\nNote that the results may be cached, run `mise cache clean` to clear the cache and get fresh results."
-    after_long_help "Examples:\n\n    $ mise ls-remote node\n    18.0.0\n    20.0.0\n\n    $ mise ls-remote node@20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote node 20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote github:cli/cli --json\n    [{\"version\":\"2.62.0\",\"created_at\":\"2024-11-14T15:40:35Z\",\"prerelease\":false},{\"version\":\"2.61.0\",\"created_at\":\"2024-10-23T19:22:15Z\",\"prerelease\":false}]\n"
+    after_long_help "Examples:\n\n    $ mise ls-remote node\n    18.0.0\n    20.0.0\n\n    $ mise ls-remote node@20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote node 20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote node --minimum-release-age 2024-01-01\n    20.0.0\n\n    $ mise ls-remote github:cli/cli --json\n    [{\"version\":\"2.62.0\",\"created_at\":\"2024-11-14T15:40:35Z\",\"prerelease\":false},{\"version\":\"2.61.0\",\"created_at\":\"2024-10-23T19:22:15Z\",\"prerelease\":false}]\n"
     flag --all help="Show all installed plugins and versions"
+    flag --minimum-release-age help="Only show versions released before this age or date" {
+        long_help "Only show versions released before this age or date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\"."
+        arg <MINIMUM_RELEASE_AGE>
+    }
     flag "-J --json" help="Output in JSON format (includes version metadata like created_at timestamps when available)"
     flag --no-versions-host help="Disable checking the mise-versions host"
     flag --prerelease help="Include pre-release versions in the output for backends that report\nupstream prerelease metadata or opt in to regex-based prerelease\ndetection. Equivalent to setting `MISE_PRERELEASES=1` or the\n`prereleases` setting for the duration of this command."
@@ -613,12 +623,15 @@ cmd oci subcommand_required=#true help="[experimental] Build OCI container image
     long_help "[experimental] Build OCI container images from a mise.toml\n\nEach tool becomes its own OCI layer, so bumping any single tool version\nonly invalidates one content-addressable blob — unlike a Dockerfile where\nchanging an early `RUN` invalidates every layer above it.\n\nThis command is experimental and requires `mise settings experimental=true`\n(or `MISE_EXPERIMENTAL=1`). Behavior, flags, and output layout may change\nin future releases."
     cmd build help="[experimental] Build an OCI image from the current mise.toml" {
         long_help "[experimental] Build an OCI image from the current mise.toml\n\nEach tool version becomes its own content-addressable OCI layer. Bumping a\ntool version only invalidates that tool's layer — other tools, the base\nimage, and config are reused unchanged. The output directory conforms to\nthe OCI image-layout spec and can be consumed by `skopeo`, `crane`, or\n`podman load`.\n\nRequires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`)."
-        after_long_help "Examples:\n\n    Build with defaults (debian:bookworm-slim base):\n    $ mise oci build\n\n    Build with a specific base image and tag:\n    $ mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img\n\n    Inspect the result with skopeo:\n    $ skopeo inspect oci:./mise-oci\n\n    Push to a registry:\n    $ skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest\n\nNotes:\n\n    - asdf and vfox plugins are not supported in v1; use a different backend\n      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
+        after_long_help "Examples:\n\n    Build with defaults (debian:bookworm-slim base):\n    $ mise oci build\n\n    Build with a specific base image and tag:\n    $ mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img\n\n    Inspect the result with skopeo:\n    $ skopeo inspect oci:./mise-oci\n\n    Push to a registry:\n    $ skopeo copy oci:./mise-oci docker://ghcr.io/me/dev:latest\n\nNotes:\n\n    - The image only contains tools from the project's mise config (and\n      any configs at-or-below the project root). Tools from\n      `~/.config/mise/config.toml` are not included; pass --include-global\n      to package them too.\n    - asdf and vfox plugins are not supported in v1; use a different backend\n      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
         flag "-o --output" help="Output directory for the OCI image layout" default="./mise-oci" {
             arg <OUTPUT>
         }
         flag --from help="Base image reference (overrides [oci].from and the oci.default_from setting)" {
             arg <FROM>
+        }
+        flag --include-global help="Also include tools from the global / system config (default: project-only)" {
+            long_help "Also include tools from the global / system config (default: project-only)\n\nBy default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at-or-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `--include-global` to revert to the old \"merge all loaded configs\" behavior."
         }
         flag "-t --tag" help="Tag to record in the image index (the org.opencontainers.image.ref.name annotation)" {
             arg <TAG>
@@ -636,6 +649,9 @@ cmd oci subcommand_required=#true help="[experimental] Build OCI container image
         }
         flag --image-dir help="Push an already-built OCI image layout (skip the build step)" {
             arg <IMAGE_DIR>
+        }
+        flag --include-global help="Also include tools from the global / system config (default: project-only)" {
+            long_help "Also include tools from the global / system config (default: project-only)\n\nSee `mise oci build --help` for details."
         }
         flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
             arg <MOUNT_POINT>
@@ -661,6 +677,9 @@ cmd oci subcommand_required=#true help="[experimental] Build OCI container image
         }
         flag --image-dir help="Use an already-built OCI image layout instead of building fresh" {
             arg <IMAGE_DIR>
+        }
+        flag --include-global help="Also include tools from the global / system config (default: project-only)" {
+            long_help "Also include tools from the global / system config (default: project-only)\n\nSee `mise oci build --help` for details."
         }
         flag --keep help="Keep the loaded image in the engine's storage after the run" {
             long_help "Keep the loaded image in the engine's storage after the run\n\nBy default, both the container (`--rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `--keep` to retain the image under the tag mise used (`mise-oci:run-*` for docker; the pulled image ID for podman)."
@@ -1265,6 +1284,8 @@ cmd token subcommand_required=#true help="Display git provider tokens mise will 
     }
     cmd github help="GitHub token" {
         after_long_help "Examples:\n\n    $ mise token github\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise token github --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise token github github.mycompany.com\n    github.mycompany.com: (none)\n"
+        flag --oauth help="[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources"
+        flag --raw help="Print only the token value"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
