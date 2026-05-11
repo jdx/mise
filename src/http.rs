@@ -424,7 +424,7 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
     ) -> Result<Response> {
-        self.send_once_inner(method, url, headers, verb_label, true)
+        self.send_once_inner(method, url, headers, verb_label, true, true)
             .await
     }
 
@@ -435,8 +435,11 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
         use_netrc: bool,
+        use_url_replacements: bool,
     ) -> Result<Response> {
-        apply_url_replacements(&mut url);
+        if use_url_replacements {
+            apply_url_replacements(&mut url);
+        }
         let request_url = url.clone();
 
         let netrc = if use_netrc {
@@ -513,6 +516,7 @@ impl Client {
                     request_url,
                     &headers,
                     verb_label,
+                    false,
                     false,
                 ))
                 .await;

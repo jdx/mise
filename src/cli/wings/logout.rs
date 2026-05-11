@@ -86,9 +86,13 @@ impl Logout {
         // Always delete local credentials, even if the server-
         // side revoke fails (or is skipped) — "logged out
         // locally" is the principal contract of the command.
-        let had_local = credentials::cached().is_some();
-        credentials::clear()?;
-        DeviceKey::delete()?;
+        let had_local;
+        {
+            let _refresh_guard = credentials::lock_refresh().await;
+            had_local = credentials::cached().is_some();
+            credentials::clear()?;
+            DeviceKey::delete()?;
+        }
 
         if self.local_only {
             if had_local {

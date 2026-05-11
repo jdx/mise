@@ -812,17 +812,58 @@ fn install_mocito_artifact(
     pr: Option<&dyn crate::ui::progress_report::SingleReport>,
 ) -> Result<()> {
     let install_path = tv.install_path();
-    file::remove_all(&install_path)?;
-    file::create_dir_all(&install_path)?;
+    let staging_path = staging_install_path(&install_path)?;
+    file::remove_all(&staging_path)?;
+    file::create_dir_all(&staging_path)?;
 
-    for (layer, path) in layers {
-        install_mocito_layer(tv, config, layer, path, pr)?;
+    let result: Result<()> = (|| -> Result<()> {
+        for (layer, path) in layers {
+            install_mocito_layer(tv, &staging_path, config, layer, path, pr)?;
+        }
+        validate_mocito_bins(&staging_path, config)?;
+        create_mocito_bin_links(&staging_path, &config.bin_links)?;
+        write_mocito_env_file(&staging_path, &config.env)?;
+        write_wings_install_marker(&staging_path, artifact)?;
+        file::remove_all(&install_path)?;
+        std::fs::rename(&staging_path, &install_path).wrap_err_with(|| {
+            format!(
+                "failed to move wings MOCITO staging install {} to {}",
+                staging_path.display(),
+                install_path.display()
+            )
+        })?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = file::remove_all(&staging_path);
     }
-    validate_mocito_bins(&install_path, config)?;
-    create_mocito_bin_links(&install_path, &config.bin_links)?;
-    write_mocito_env_file(&install_path, &config.env)?;
-    write_wings_install_marker(&install_path, artifact)?;
+    result?;
     Ok(())
+}
+
+fn staging_install_path(install_path: &Path) -> Result<PathBuf> {
+    let parent = install_path.parent().ok_or_else(|| {
+        eyre!(
+            "wings install path {} has no parent",
+            install_path.display()
+        )
+    })?;
+    let name = install_path
+        .file_name()
+        .ok_or_else(|| {
+            eyre!(
+                "wings install path {} has no file name",
+                install_path.display()
+            )
+        })?
+        .to_string_lossy();
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos();
+    Ok(parent.join(format!(
+        ".{name}.wings-staging-{}-{nonce}",
+        std::process::id()
+    )))
 }
 
 pub(crate) fn installed_env(tv: &ToolVersion) -> Result<BTreeMap<String, String>> {
@@ -885,12 +926,12 @@ fn validate_mocito_env(env: &BTreeMap<String, String>) -> Result<()> {
 
 fn install_mocito_layer(
     tv: &ToolVersion,
+    install_path: &Path,
     config: &MocitoConfig,
     layer: &WingsDescriptor,
     layer_path: &Path,
     pr: Option<&dyn crate::ui::progress_report::SingleReport>,
 ) -> Result<()> {
-    let install_path = tv.install_path();
     match layer_format(&layer.media_type)? {
         TarFormat::Raw => {
             let dest = install_path.join(config.raw_binary_dest()?);
@@ -1376,6 +1417,36 @@ mod tests {
         write_wings_install_marker(dir.path(), &artifact()).unwrap();
 
         assert_eq!(installed_env(&tv).unwrap(), env);
+    }
+
+    #[test]
+    fn mocito_install_failure_preserves_existing_install_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let install_path = dir.path().join("install");
+        file::create_dir_all(&install_path).unwrap();
+        file::write(install_path.join("backend-state"), "keep").unwrap();
+        let tv = tool_version_with_install_path(&install_path);
+        let layer_path = dir.path().join("tool");
+        file::write(&layer_path, "tool").unwrap();
+        let descriptor = layer(BINARY_LAYER_MEDIA_TYPE);
+        let mut config = mocito_config();
+        config.bin = vec!["bin/tool".into()];
+        config.env.insert("BAD=KEY".into(), "value".into());
+
+        let err = install_mocito_artifact(
+            &tv,
+            &config,
+            &[(&descriptor, layer_path)],
+            &artifact(),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("env key"));
+        assert_eq!(
+            file::read_to_string(install_path.join("backend-state")).unwrap(),
+            "keep"
+        );
     }
 
     #[test]

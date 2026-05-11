@@ -37,10 +37,11 @@ async fn session_token_from_credentials() -> Result<Option<String>> {
     if let Some(creds) = credentials::cached() {
         if creds.host != host {
             log::warn!(
-                "wings: stored credentials are for {}, but current host is {}; ignoring cached credentials",
+                "wings: stored credentials are for {}, but current host is {}; run `mise wings login` for the current host",
                 creds.host,
                 host,
             );
+            return Ok(None);
         } else {
             return usable_access_token(creds).await;
         }
