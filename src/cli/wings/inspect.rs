@@ -223,12 +223,13 @@ impl InspectTarget {
 
 fn descriptor_is_sbom(descriptor: &ReferrerDescriptor) -> bool {
     matches!(
-        descriptor
-            .artifact_type
-            .as_deref()
-            .unwrap_or(&descriptor.media_type),
-        MEDIA_TYPE_SPDX_SBOM | MEDIA_TYPE_CYCLONEDX_SBOM
+        descriptor.artifact_type.as_deref(),
+        Some(MEDIA_TYPE_SPDX_SBOM | MEDIA_TYPE_CYCLONEDX_SBOM)
     )
+}
+
+fn media_type_is_sbom(media_type: &str) -> bool {
+    matches!(media_type, MEDIA_TYPE_SPDX_SBOM | MEDIA_TYPE_CYCLONEDX_SBOM)
 }
 
 #[derive(Debug, Deserialize)]
@@ -251,10 +252,7 @@ struct EvidenceDescriptor {
 
 impl EvidenceDescriptor {
     fn is_sbom(&self) -> bool {
-        matches!(
-            self.media_type.as_str(),
-            MEDIA_TYPE_SPDX_SBOM | MEDIA_TYPE_CYCLONEDX_SBOM
-        )
+        media_type_is_sbom(&self.media_type)
     }
 
     fn accept(&self) -> &str {
@@ -338,15 +336,6 @@ async fn resolve_sbom_blob(
     descriptor: &ReferrerDescriptor,
     token: &str,
 ) -> Result<EvidenceDescriptor> {
-    if descriptor.media_type == MEDIA_TYPE_SPDX_SBOM
-        || descriptor.media_type == MEDIA_TYPE_CYCLONEDX_SBOM
-    {
-        return Ok(EvidenceDescriptor {
-            media_type: descriptor.media_type.clone(),
-            digest: descriptor.digest.clone(),
-        });
-    }
-
     let target = InspectTarget {
         reference: reference.clone(),
         reference_or_digest: descriptor.digest.clone(),
@@ -358,9 +347,10 @@ async fn resolve_sbom_blob(
     let manifest: EvidenceManifest = serde_json::from_slice(&manifest_bytes)
         .wrap_err("decoding wings SBOM referrer manifest")?;
     ensure!(
-        manifest.artifact_type.as_deref().is_some_and(|media_type| {
-            media_type == MEDIA_TYPE_SPDX_SBOM || media_type == MEDIA_TYPE_CYCLONEDX_SBOM
-        }),
+        manifest
+            .artifact_type
+            .as_deref()
+            .is_some_and(media_type_is_sbom),
         "referrer {} is not an SBOM artifact",
         descriptor.digest
     );
@@ -433,6 +423,25 @@ mod tests {
         ensure_sha256_digest(&digest).unwrap();
         assert!(ensure_sha256_digest("sha256:abc").is_err());
         assert!(ensure_sha256_digest("sha512:abc").is_err());
+    }
+
+    #[test]
+    fn sbom_referrer_detection_uses_artifact_type() {
+        let descriptor = ReferrerDescriptor {
+            media_type: MEDIA_TYPE_OCI_MANIFEST.into(),
+            artifact_type: Some(MEDIA_TYPE_SPDX_SBOM.into()),
+            digest: format!("sha256:{}", "a".repeat(64)),
+            size: Some(42),
+        };
+
+        assert!(descriptor_is_sbom(&descriptor));
+
+        let generic_descriptor = ReferrerDescriptor {
+            artifact_type: None,
+            ..descriptor
+        };
+
+        assert!(!descriptor_is_sbom(&generic_descriptor));
     }
 
     #[test]
