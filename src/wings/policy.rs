@@ -83,6 +83,9 @@ pub(crate) async fn fetch_cached_or_remote(token: &str) -> Result<PolicyBundlePa
     {
         return Ok(policy);
     }
+    if let Ok(policy) = load_cached_for_host(host) {
+        return Ok(policy);
+    }
 
     let url = format!("https://api.{host}/v1/wings/policy");
     let mut headers = HeaderMap::new();
@@ -205,19 +208,24 @@ fn cache_dir() -> PathBuf {
 }
 
 fn cache_path(host: &str, org: &str) -> Result<PathBuf> {
-    let safe = |value: &str| {
-        value
-            .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect::<String>()
-    };
-    Ok(cache_dir().join(format!("{}-{}.json", safe(host), safe(org))))
+    Ok(cache_dir().join(format!(
+        "{}-{}.json",
+        safe_cache_key(host),
+        safe_cache_key(org)
+    )))
+}
+
+fn safe_cache_key(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn load_cached(host: &str, org: &str) -> Result<PolicyBundlePayload> {
@@ -225,6 +233,26 @@ fn load_cached(host: &str, org: &str) -> Result<PolicyBundlePayload> {
     let bundle: SignedPolicyBundle = serde_json::from_slice(&file::read(&path)?)
         .wrap_err_with(|| format!("decoding wings policy cache {}", path.display()))?;
     verify_policy_jws(&bundle.policy, host)
+}
+
+fn load_cached_for_host(host: &str) -> Result<PolicyBundlePayload> {
+    let prefix = format!("{}-", safe_cache_key(host));
+    for entry in std::fs::read_dir(cache_dir()).wrap_err("reading wings policy cache directory")? {
+        let entry = entry?;
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !file_name.starts_with(&prefix) || !file_name.ends_with(".json") {
+            continue;
+        }
+        let bundle: SignedPolicyBundle = serde_json::from_slice(&file::read(&path)?)
+            .wrap_err_with(|| format!("decoding wings policy cache {}", path.display()))?;
+        if let Ok(policy) = verify_policy_jws(&bundle.policy, host) {
+            return Ok(policy);
+        }
+    }
+    bail!("no valid wings policy cache entry found for {host}")
 }
 
 fn store_cached(host: &str, org: &str, bundle: &SignedPolicyBundle) -> Result<()> {

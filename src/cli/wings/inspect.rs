@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::wings::artifact::{
     MEDIA_TYPE_OCI_IMAGE_INDEX, MEDIA_TYPE_OCI_MANIFEST, ReferrerDescriptor, ReferrersIndex,
-    WingsReference, ensure_digest, registry_headers,
+    WingsReference, ensure_digest, ensure_sha256_digest, registry_headers,
 };
 
 const MEDIA_TYPE_SPDX_SBOM: &str = "application/spdx+json";
@@ -383,17 +383,6 @@ fn tag_from_reference(reference: &str) -> Option<String> {
         Some((_, tag)) if !tag.contains('/') => Some(tag.to_string()),
         _ => None,
     }
-}
-
-fn ensure_sha256_digest(digest: &str) -> Result<()> {
-    let Some(hex) = digest.strip_prefix("sha256:") else {
-        bail!("expected sha256 digest, got {digest}");
-    };
-    ensure!(
-        hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()),
-        "expected sha256 digest, got {digest}"
-    );
-    Ok(())
 }
 
 #[cfg(test)]

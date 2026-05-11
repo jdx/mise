@@ -1478,7 +1478,7 @@ pub(crate) fn ensure_digest(bytes: &[u8], expected: &str, label: &str) -> Result
     Ok(())
 }
 
-fn ensure_sha256_digest(digest: &str) -> Result<()> {
+pub(crate) fn ensure_sha256_digest(digest: &str) -> Result<()> {
     let Some(hex) = digest.strip_prefix("sha256:") else {
         bail!("wings digest is not sha256: {digest}");
     };
