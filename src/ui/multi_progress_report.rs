@@ -192,25 +192,29 @@ impl MultiProgressReport {
         // Stop clx progress
         progress::stop();
 
-        // Remove this session's jobs from clx's global JOBS list so they are
-        // not re-rendered when a subsequent job is added (e.g. an "uninstall"
-        // job after `mise upgrade` finishes installing). `progress::stop()`
-        // renders the final state but leaves completed jobs registered.
+        self.reset_jobs();
+    }
+
+    pub fn stop(&self) -> eyre::Result<()> {
+        progress::stop_clear();
+        self.reset_jobs();
+        Ok(())
+    }
+
+    /// Remove this MPR's jobs from clx's global JOBS list and reset session
+    /// counters. Neither `progress::stop()` nor `progress::stop_clear()`
+    /// removes jobs from clx, so without this a later `mpr.add(...)` would
+    /// re-render the previously-completed jobs (or `init_footer` would
+    /// silently no-op because `header_job` is still `Some`).
+    fn reset_jobs(&self) {
         if let Some(header) = self.header_job.lock().unwrap().take() {
             header.remove();
         }
         for job in self.tracked_jobs.lock().unwrap().drain(..) {
             job.remove();
         }
-
-        // Reset state for subsequent install operations (e.g., in daemon mode)
         *self.completed_count.lock().unwrap() = 0;
         *self.total_count.lock().unwrap() = 0;
-    }
-
-    pub fn stop(&self) -> eyre::Result<()> {
-        progress::stop_clear();
-        Ok(())
     }
 }
 
