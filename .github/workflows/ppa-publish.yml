@@ -113,7 +113,9 @@ jobs:
           [source.vendored-sources]
           directory = "vendor"
           EOF
-          cargo vendor vendor/
+          # --no-delete preserves the git-tracked vendor/aqua-registry/ directory
+          # (consumed by build.rs); without it, cargo vendor wipes the directory.
+          cargo vendor --no-delete vendor/
 
           # Clear all vendor checksums — dpkg-source strips .o, .a, .git*, *.orig and
           # other files, which breaks cargo's checksum verification. With --frozen cargo

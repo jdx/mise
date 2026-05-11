@@ -1,3 +1,4 @@
+use crate::config::Settings;
 use crate::env;
 use serde::Deserialize;
 use serde_yaml::Value;
@@ -56,8 +57,18 @@ pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, S
 
 /// Get a token by running a provider-specific `credential_command`.
 ///
-/// The host is passed as `$1` to the command. Results are cached per provider+host.
+/// The host and provider are passed through `MISE_CREDENTIAL_HOST` and
+/// `MISE_CREDENTIAL_PROVIDER`. Results are cached per provider+host.
 pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Option<String> {
+    if credential_command_uses_legacy_host_arg(cmd) {
+        deprecated_at!(
+            "2026.11.0",
+            "2027.11.0",
+            "credential-command-shell-arg",
+            "Use MISE_CREDENTIAL_HOST instead of $1/${{1}} in {provider} credential_command"
+        );
+    }
+
     let cache_key = format!("{provider}:{host}");
     let mut cache = CREDENTIAL_COMMAND_CACHE
         .lock()
@@ -67,13 +78,20 @@ pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Op
     }
 
     let path_without_shims = path_env_without_shims();
-    let result = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .arg("mise-credential-helper") // $0
-        .arg(host) // $1
+    let (program, args) = match credential_command_shell(cmd, host) {
+        Some(command) => command,
+        None => {
+            debug!("{provider} credential_command skipped: default inline shell is empty");
+            cache.insert(cache_key, None);
+            return None;
+        }
+    };
+    let result = std::process::Command::new(program)
+        .args(args)
         .env("PATH", &path_without_shims)
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("MISE_CREDENTIAL_HOST", host)
+        .env("MISE_CREDENTIAL_PROVIDER", provider)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -104,6 +122,46 @@ pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Op
     );
     cache.insert(cache_key, result.clone());
     result
+}
+
+fn credential_command_shell(cmd: &str, host: &str) -> Option<(String, Vec<String>)> {
+    let shell = match Settings::get().default_inline_shell() {
+        Ok(shell) => shell,
+        Err(e) => {
+            debug!("failed to parse default inline shell for credential_command: {e}");
+            return None;
+        }
+    };
+    credential_command_shell_from(&shell, cmd, host)
+}
+
+fn credential_command_shell_from(
+    shell: &[String],
+    cmd: &str,
+    host: &str,
+) -> Option<(String, Vec<String>)> {
+    let (program, shell_args) = shell.split_first()?;
+    let mut args = shell_args.to_vec();
+    args.push(cmd.to_string());
+    if shell_supports_posix_c_arg_passing(program) {
+        args.push("mise-credential-helper".to_string()); // $0
+        args.push(host.to_string()); // deprecated $1 compatibility
+    }
+    Some((program.to_string(), args))
+}
+
+fn shell_supports_posix_c_arg_passing(program: &str) -> bool {
+    const SHELLS: &[&str] = &["ash", "bash", "dash", "ksh", "sh", "zsh"];
+    let basename = program.rsplit(['/', '\\']).next().unwrap_or(program);
+    let stem = match basename.rsplit_once('.') {
+        Some((stem, ext)) if ext.eq_ignore_ascii_case("exe") => stem,
+        _ => basename,
+    };
+    SHELLS.iter().any(|shell| stem.eq_ignore_ascii_case(shell))
+}
+
+fn credential_command_uses_legacy_host_arg(cmd: &str) -> bool {
+    cmd.contains("$1") || cmd.contains("${1}")
 }
 
 /// Get a token by running `git credential fill`.
@@ -282,5 +340,56 @@ logins:
         let result = yaml_hosts_to_tokens(yaml).unwrap();
         assert_eq!(result.get("codeberg.org").unwrap(), "token1");
         assert_eq!(result.get("forgejo.local").unwrap(), "token2");
+    }
+
+    #[test]
+    fn test_credential_command_shell_preserves_sh_host_arg() {
+        let shell = shell_words::split("sh -c -o errexit").unwrap();
+        let (program, args) =
+            credential_command_shell_from(&shell, "echo token-for-$1", "ghe.example.com").unwrap();
+
+        assert_eq!(program, "sh");
+        assert_eq!(
+            args,
+            vec![
+                "-c",
+                "-o",
+                "errexit",
+                "echo token-for-$1",
+                "mise-credential-helper",
+                "ghe.example.com"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_credential_command_shell_does_not_append_args_for_cmd() {
+        let shell = shell_words::split("cmd /c").unwrap();
+        let (program, args) =
+            credential_command_shell_from(&shell, "echo %MISE_CREDENTIAL_HOST%", "github.com")
+                .unwrap();
+
+        assert_eq!(program, "cmd");
+        assert_eq!(args, vec!["/c", "echo %MISE_CREDENTIAL_HOST%"]);
+    }
+
+    #[test]
+    fn test_shell_supports_posix_c_arg_passing_matches_windows_bash_path() {
+        assert!(shell_supports_posix_c_arg_passing("ash"));
+        assert!(shell_supports_posix_c_arg_passing(
+            r"C:\Program Files\Git\bin\BASH.EXE"
+        ));
+        assert!(!shell_supports_posix_c_arg_passing("cmd.exe"));
+    }
+
+    #[test]
+    fn test_credential_command_uses_legacy_host_arg() {
+        assert!(credential_command_uses_legacy_host_arg("echo token-for-$1"));
+        assert!(credential_command_uses_legacy_host_arg(
+            "echo token-for-${1}"
+        ));
+        assert!(!credential_command_uses_legacy_host_arg(
+            "echo $MISE_CREDENTIAL_HOST"
+        ));
     }
 }

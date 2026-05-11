@@ -73,8 +73,19 @@ assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' MISE_GITHU
 # Test 8d: env var still beats credential_command
 assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise token github --unmask" "env-wins"
 
-# Test 8e: credential_command receives host as $1
+# Test 8e: credential_command still receives host as deprecated $1 compatibility
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo token-for-\$1' mise token github ghe.example.com --unmask" "token-for-ghe.example.com"
+
+# Test 8f: credential_command receives host and provider as env vars
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo \$MISE_CREDENTIAL_PROVIDER-\$MISE_CREDENTIAL_HOST' mise token github ghe.example.com --unmask" "github-ghe.example.com"
+
+# Test 8g: credential_command uses the configured default inline shell
+cat >"$HOME/credential-shell" <<'SCRIPT'
+#!/bin/sh
+echo "custom-shell-token"
+SCRIPT
+chmod +x "$HOME/credential-shell"
+assert_contains "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='$HOME/credential-shell -c' MISE_GITHUB_CREDENTIAL_COMMAND='ignored' mise token github --unmask" "custom-shell-token"
 
 # Test 9a: OAuth configured but no cached token — must not prompt for device flow
 # during normal token resolution (would hang on the unreachable URL otherwise).

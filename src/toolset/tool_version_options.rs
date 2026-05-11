@@ -1,9 +1,10 @@
 use indexmap::IndexMap;
+use std::ops::{Deref, DerefMut};
 
 /// Option keys that are only relevant during initial installation and should not
 /// be persisted in the manifest or included in `full_with_opts()`.
-// install_env is a named field on ToolVersionOptions (serde puts it in self.install_env),
-// but parse_tool_options() can still place it in opts, so we filter it here as well.
+// install_env is a core field on CoreToolOptions, but parse_tool_options()
+// can still place it in opts, so we filter it here as well.
 pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "postinstall",
     "install_env",
@@ -12,18 +13,119 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "minimum_release_age",
 ];
 
-#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct ToolVersionOptions {
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct CoreToolOptions {
+    #[serde(default)]
     pub os: Option<Vec<String>>,
+    #[serde(default)]
     pub depends: Option<Vec<String>>,
+    #[serde(default)]
     pub install_env: IndexMap<String, String>,
-    #[serde(flatten)]
-    pub opts: IndexMap<String, toml::Value>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct RawBackendOptions {
+    #[serde(flatten, default)]
+    pub values: IndexMap<String, toml::Value>,
+}
+
+impl Eq for RawBackendOptions {}
+
+impl RawBackendOptions {
+    pub fn as_map(&self) -> &IndexMap<String, toml::Value> {
+        &self.values
+    }
+
+    pub fn into_map(self) -> IndexMap<String, toml::Value> {
+        self.values
+    }
+}
+
+impl Deref for RawBackendOptions {
+    type Target = IndexMap<String, toml::Value>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+impl DerefMut for RawBackendOptions {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
+    }
+}
+
+impl From<IndexMap<String, toml::Value>> for RawBackendOptions {
+    fn from(values: IndexMap<String, toml::Value>) -> Self {
+        Self { values }
+    }
+}
+
+impl FromIterator<(String, toml::Value)> for RawBackendOptions {
+    fn from_iter<T: IntoIterator<Item = (String, toml::Value)>>(iter: T) -> Self {
+        Self {
+            values: iter.into_iter().collect(),
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a RawBackendOptions {
+    type Item = (&'a String, &'a toml::Value);
+    type IntoIter = indexmap::map::Iter<'a, String, toml::Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut RawBackendOptions {
+    type Item = (&'a String, &'a mut toml::Value);
+    type IntoIter = indexmap::map::IterMut<'a, String, toml::Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter_mut()
+    }
+}
+
+impl IntoIterator for RawBackendOptions {
+    type Item = (String, toml::Value);
+    type IntoIter = indexmap::map::IntoIter<String, toml::Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.into_iter()
+    }
+}
+
+/// User-specified tool options split into mise-owned core control-plane options
+/// and raw backend options. `ToolVersionOptions` remains as a compatibility
+/// alias while call sites move to the clearer names.
+#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct ToolOptions {
+    #[serde(flatten, default)]
+    pub core: CoreToolOptions,
+    #[serde(flatten, default)]
+    pub opts: RawBackendOptions,
 }
 
 // toml::Value doesn't implement Eq (due to floats), but we control the values
 // and won't have NaN, so this is safe in practice.
-impl Eq for ToolVersionOptions {}
+impl Eq for ToolOptions {}
+
+pub type ToolVersionOptions = ToolOptions;
+
+impl Deref for ToolOptions {
+    type Target = CoreToolOptions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl DerefMut for ToolOptions {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolOptionSource {
@@ -113,7 +215,7 @@ fn option_key_matches(key: &str, expected: &str) -> bool {
 }
 
 // Implement Hash manually to ensure deterministic hashing across IndexMap
-impl std::hash::Hash for ToolVersionOptions {
+impl std::hash::Hash for ToolOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.os.hash(state);
         self.depends.hash(state);
@@ -153,7 +255,15 @@ fn hash_toml_value<H: std::hash::Hasher>(v: &toml::Value, state: &mut H) {
     }
 }
 
-impl ToolVersionOptions {
+impl ToolOptions {
+    pub fn backend_options(&self) -> &RawBackendOptions {
+        &self.opts
+    }
+
+    pub fn into_backend_options(self) -> RawBackendOptions {
+        self.opts
+    }
+
     pub fn is_empty(&self) -> bool {
         self.os.as_ref().is_none_or(|os| os.is_empty())
             && self.depends.as_ref().is_none_or(|d| d.is_empty())
@@ -234,6 +344,9 @@ impl ToolVersionOptions {
         Ok(())
     }
 
+    /// Returns true for keys owned by mise's option parser. A few install-time
+    /// scalar keys are still stored in raw opts after validation because
+    /// downstream install code reads them from that map.
     fn insert_core_option(&mut self, key: &str, value: &toml::Value) -> Result<bool, String> {
         match key {
             "os" => {
@@ -809,6 +922,29 @@ mod tests {
     }
 
     #[test]
+    fn test_serde_splits_core_and_backend_options() {
+        let opts: ToolVersionOptions = toml::from_str(
+            r#"
+            os = ["linux"]
+            depends = ["node"]
+            install_env = { FOO = "bar" }
+            exe = "rg"
+            strip_components = 1
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(opts.os, Some(vec!["linux".to_string()]));
+        assert_eq!(opts.depends, Some(vec!["node".to_string()]));
+        assert_eq!(opts.install_env.get("FOO").map(String::as_str), Some("bar"));
+        assert_eq!(opts.get("exe"), Some("rg"));
+        assert_eq!(opts.get_string("strip_components"), Some("1".to_string()));
+        assert!(!opts.opts.contains_key("os"));
+        assert!(!opts.opts.contains_key("depends"));
+        assert!(!opts.opts.contains_key("install_env"));
+    }
+
+    #[test]
     fn test_serialize_tool_options_quotes_comma_strings() {
         let mut opts = IndexMap::new();
         opts.insert(
@@ -923,7 +1059,7 @@ mod tests {
         opts.insert("platforms".to_string(), toml::Value::Table(platforms));
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -970,7 +1106,7 @@ mod tests {
         opts.insert("config".to_string(), toml::Value::Table(config));
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1009,7 +1145,7 @@ mod tests {
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1033,7 +1169,7 @@ mod tests {
         opts.insert("platforms".to_string(), toml::Value::Table(platforms));
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1045,15 +1181,17 @@ mod tests {
     #[test]
     fn test_contains_key_with_named_fields() {
         let tool_opts = ToolVersionOptions {
-            os: Some(vec!["linux".to_string()]),
-            depends: Some(vec!["node".to_string()]),
-            install_env: [(
-                "NPM_CONFIG_REGISTRY".to_string(),
-                "https://example.com".to_string(),
-            )]
-            .iter()
-            .cloned()
-            .collect(),
+            core: CoreToolOptions {
+                os: Some(vec!["linux".to_string()]),
+                depends: Some(vec!["node".to_string()]),
+                install_env: [(
+                    "NPM_CONFIG_REGISTRY".to_string(),
+                    "https://example.com".to_string(),
+                )]
+                .iter()
+                .cloned()
+                .collect(),
+            },
             ..Default::default()
         };
 
@@ -1067,19 +1205,25 @@ mod tests {
     #[test]
     fn test_resolved_tool_options_tracks_named_field_sources() {
         let config_opts = ToolVersionOptions {
-            os: Some(vec!["linux".to_string()]),
-            install_env: [("CONFIG_ONLY".to_string(), "1".to_string())]
-                .iter()
-                .cloned()
-                .collect(),
+            core: CoreToolOptions {
+                os: Some(vec!["linux".to_string()]),
+                install_env: [("CONFIG_ONLY".to_string(), "1".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let inline_opts = ToolVersionOptions {
-            depends: Some(vec!["node".to_string()]),
-            install_env: [("INLINE_ONLY".to_string(), "2".to_string())]
-                .iter()
-                .cloned()
-                .collect(),
+            core: CoreToolOptions {
+                depends: Some(vec!["node".to_string()]),
+                install_env: [("INLINE_ONLY".to_string(), "2".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect(),
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -1120,7 +1264,7 @@ mod tests {
         opts.insert("platforms".to_string(), toml::Value::Table(platforms));
 
         let mut tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1150,7 +1294,7 @@ mod tests {
         opts.insert("platforms".to_string(), toml::Value::Table(platforms));
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1180,7 +1324,10 @@ mod tests {
     #[test]
     fn test_depends_field() {
         let tvo = ToolVersionOptions {
-            depends: Some(vec!["python".to_string(), "node".to_string()]),
+            core: CoreToolOptions {
+                depends: Some(vec!["python".to_string(), "node".to_string()]),
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert_eq!(
@@ -1193,7 +1340,10 @@ mod tests {
     #[test]
     fn test_depends_none_is_empty() {
         let tvo = ToolVersionOptions {
-            depends: None,
+            core: CoreToolOptions {
+                depends: None,
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert!(tvo.is_empty());
@@ -1202,7 +1352,10 @@ mod tests {
     #[test]
     fn test_depends_empty_vec_is_empty() {
         let tvo = ToolVersionOptions {
-            depends: Some(vec![]),
+            core: CoreToolOptions {
+                depends: Some(vec![]),
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert!(tvo.is_empty());
@@ -1211,7 +1364,10 @@ mod tests {
     #[test]
     fn test_os_field_is_not_empty() {
         let tvo = ToolVersionOptions {
-            os: Some(vec!["linux".to_string()]),
+            core: CoreToolOptions {
+                os: Some(vec!["linux".to_string()]),
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert!(!tvo.is_empty());
@@ -1220,12 +1376,14 @@ mod tests {
     #[test]
     fn test_apply_overrides_replaces_existing_values() {
         let mut base = ToolVersionOptions {
-            os: Some(vec!["linux".to_string()]),
-            depends: Some(vec!["node".to_string()]),
-            install_env: [("BASE".to_string(), "1".to_string())]
-                .iter()
-                .cloned()
-                .collect(),
+            core: CoreToolOptions {
+                os: Some(vec!["linux".to_string()]),
+                depends: Some(vec!["node".to_string()]),
+                install_env: [("BASE".to_string(), "1".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect(),
+            },
             opts: [
                 ("api_url".to_string(), s("https://config.example")),
                 ("version_prefix".to_string(), s("v")),
@@ -1235,12 +1393,14 @@ mod tests {
             .collect(),
         };
         let overrides = ToolVersionOptions {
-            os: Some(vec!["macos".to_string()]),
-            depends: Some(vec!["python".to_string()]),
-            install_env: [("BASE".to_string(), "2".to_string())]
-                .iter()
-                .cloned()
-                .collect(),
+            core: CoreToolOptions {
+                os: Some(vec!["macos".to_string()]),
+                depends: Some(vec!["python".to_string()]),
+                install_env: [("BASE".to_string(), "2".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect(),
+            },
             opts: [("api_url".to_string(), s("https://inline.example"))]
                 .iter()
                 .cloned()

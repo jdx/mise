@@ -3,6 +3,3 @@ test = { cmd = "localstack --version", expected = "LocalStack CLI {{version}}" }
 
 [[backends]]
 full = "github:localstack/localstack-cli"
-
-[backends.options]
-exe = "localstack"

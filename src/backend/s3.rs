@@ -42,7 +42,7 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_with_fallback, template_string, verify_artifact,
 };
 use crate::backend::version_list;
-use crate::backend::{Backend, VersionInfo};
+use crate::backend::{Backend, VersionInfo, runtime_path_for_install_path};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file;
@@ -526,13 +526,16 @@ impl Backend for S3Backend {
         // Check for explicit bin_path
         if let Some(bin_path_template) = lookup_with_fallback(&opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
-            return Ok(vec![tv.install_path().join(bin_path)]);
+            return Ok(vec![runtime_path_for_install_path(
+                tv,
+                tv.install_path().join(bin_path),
+            )]);
         }
 
         // Check for bin directory
         let bin_dir = tv.install_path().join("bin");
         if bin_dir.exists() {
-            return Ok(vec![bin_dir]);
+            return Ok(vec![runtime_path_for_install_path(tv, bin_dir)]);
         }
 
         // Search subdirectories for bin directories
@@ -550,9 +553,12 @@ impl Backend for S3Backend {
         }
 
         if paths.is_empty() {
-            Ok(vec![tv.install_path()])
+            Ok(vec![tv.runtime_path()])
         } else {
-            Ok(paths)
+            Ok(paths
+                .into_iter()
+                .map(|path| runtime_path_for_install_path(tv, path))
+                .collect())
         }
     }
 }

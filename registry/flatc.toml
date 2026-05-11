@@ -4,8 +4,5 @@ test = { cmd = "flatc --version", expected = "flatc version" }
 [[backends]]
 full = "github:google/flatbuffers"
 
-[backends.options]
-exe = "flatc"
-
 [[backends]]
 full = "asdf:TheOpenDictionary/asdf-flatc"

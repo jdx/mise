@@ -1,10 +1,11 @@
 description = "Meta-programming for Swift, stop writing boilerplate code"
+# test = { cmd = "which sourcery", expected = "sourcery" }
 
 [[backends]]
 full = "github:krzysztofzablocki/Sourcery"
 
 [backends.options]
-exe = "bin/sourcery"
+format = "tar.gz"
 
 [[backends]]
 full = "asdf:mise-plugins/mise-sourcery"

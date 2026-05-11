@@ -101,7 +101,8 @@ where
 }
 
 fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
-    if let Some(os) = options.os
+    let core = options.core;
+    if let Some(os) = core.os
         && !os.is_empty()
     {
         let mut arr = Array::new();
@@ -110,7 +111,7 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
         }
         table.insert("os", Value::Array(arr));
     }
-    if let Some(depends) = options.depends
+    if let Some(depends) = core.depends
         && !depends.is_empty()
     {
         let mut arr = Array::new();
@@ -119,9 +120,9 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
         }
         table.insert("depends", Value::Array(arr));
     }
-    if !options.install_env.is_empty() {
+    if !core.install_env.is_empty() {
         let mut env = InlineTable::new();
-        for (k, v) in options.install_env {
+        for (k, v) in core.install_env {
             env.insert(k, v.into());
         }
         table.insert("install_env", env.into());
@@ -1925,7 +1926,7 @@ mod tests {
     use crate::dirs;
     use crate::file;
     use crate::test::replace_path;
-    use crate::toolset::ToolRequest;
+    use crate::toolset::{CoreToolOptions, ToolRequest};
     use crate::{config::Config, dirs::CWD};
 
     use super::*;
@@ -2552,8 +2553,11 @@ run = 'echo "template"'
         let cf = MiseToml::from_file(&p).unwrap();
         let needs_dummy = "needs-dummy".into();
         let mut options = ToolVersionOptions {
-            os: Some(vec!["linux".to_string()]),
-            depends: Some(vec!["dummy".to_string()]),
+            core: CoreToolOptions {
+                os: Some(vec!["linux".to_string()]),
+                depends: Some(vec!["dummy".to_string()]),
+                ..Default::default()
+            },
             ..Default::default()
         };
         options
@@ -2603,7 +2607,10 @@ run = 'echo "template"'
         let cf = MiseToml::from_file(&p).unwrap();
         let dummy = "dummy".into();
         let options = ToolVersionOptions {
-            os: Some(vec![]),
+            core: CoreToolOptions {
+                os: Some(vec![]),
+                ..Default::default()
+            },
             ..Default::default()
         };
 

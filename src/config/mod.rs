@@ -31,8 +31,8 @@ use crate::task::{Task, TaskTemplate};
 use crate::tera::take_tera_accessed_files;
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ResolvedToolOptions, ToolOptionSource, ToolRequestSet, ToolRequestSetBuilder, ToolVersion,
-    ToolVersionOptions, Toolset, install_state,
+    ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
+    ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -316,7 +316,7 @@ impl Config {
     pub async fn get_tool_opts(
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
-    ) -> Result<Option<ToolVersionOptions>> {
+    ) -> Result<Option<ToolOptions>> {
         let trs = self.get_tool_request_set().await?;
         let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
         let tool_request = short_match.or_else(|| {
@@ -340,7 +340,7 @@ impl Config {
     pub async fn get_tool_opts_with_overrides(
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
-    ) -> Result<ToolVersionOptions> {
+    ) -> Result<ToolOptions> {
         Ok(self
             .resolve_tool_opts_with_overrides(backend_arg)
             .await?
@@ -1747,7 +1747,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
             .wrap_err("failed to rebuild shims")?;
     });
     measure!("rebuilding runtime symlinks", {
-        runtime_symlinks::rebuild(config)
+        runtime_symlinks::rebuild_for_toolset(config, ts)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
     });

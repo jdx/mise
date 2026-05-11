@@ -1,10 +1,11 @@
 description = "Solidity, the Smart Contract Programming Language"
+# test = { cmd = "solc --version", expected = "Version: {{version}}" }
 
 [[backends]]
 full = "github:ethereum/solidity"
 
 [backends.options]
-exe = "solc"
+bin = "solc"
 
 [[backends]]
 full = "asdf:diegodorado/asdf-solidity"

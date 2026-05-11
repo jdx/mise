@@ -3,6 +3,3 @@ test = { cmd = "astro version", expected = "Astro CLI Version: {{version}}" }
 
 [[backends]]
 full = "github:astronomer/astro-cli"
-
-[backends.options]
-exe = "astro"

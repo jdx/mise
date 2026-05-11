@@ -1,6 +1,9 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{VersionInfo, filter_cached_prereleases, mark_prerelease};
+use crate::backend::{
+    MISE_BINS_DIR, VersionInfo, filter_cached_prereleases, mark_prerelease,
+    runtime_path_for_install_path,
+};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
@@ -541,7 +544,7 @@ impl CondaBackend {
     /// Uses the PathsEntry list returned by rattler's link_package to identify which files
     /// belong to the main package (excluding transitive dependency binaries).
     fn create_symlink_bin_dir(&self, tv: &ToolVersion, main_paths: &[PathsEntry]) -> Result<()> {
-        let symlink_dir = tv.install_path().join(".mise-bins");
+        let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
         file::create_dir_all(&symlink_dir)?;
 
         let install_path = tv.install_path();
@@ -770,23 +773,28 @@ impl Backend for CondaBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        let mise_bins = tv.install_path().join(".mise-bins");
+        let install_path = tv.install_path();
+        let mise_bins = install_path.join(MISE_BINS_DIR);
         if mise_bins.exists() {
-            return Ok(vec![mise_bins]);
+            return Ok(vec![runtime_path_for_install_path(tv, mise_bins)]);
         }
 
         // Fallback for tools installed before this change
-        let install_path = tv.install_path();
-        if cfg!(windows) {
+        let bin_paths = if cfg!(windows) {
             // Conda packages on Windows can put binaries in either location
             // depending on the build variant (MSVC vs MSYS2/MinGW)
-            Ok(vec![
+            vec![
                 install_path.join("Library").join("bin"),
                 install_path.join("bin"),
-            ])
+            ]
         } else {
-            Ok(vec![install_path.join("bin")])
-        }
+            vec![install_path.join("bin")]
+        };
+
+        Ok(bin_paths
+            .into_iter()
+            .map(|path| runtime_path_for_install_path(tv, path))
+            .collect())
     }
 }
 

@@ -1,7 +1,5 @@
 description = "OpenBao exists to provide a software solution to manage, store, and distribute sensitive data including secrets, certificates, and keys"
+# test = { cmd = "bao version", expected = "OpenBao v{{version}}" }
 
 [[backends]]
 full = "github:openbao/openbao"
-
-[backends.options]
-exe = "bao"

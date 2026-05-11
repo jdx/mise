@@ -1183,7 +1183,7 @@ mod tests {
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1233,7 +1233,7 @@ size = "5120"
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1268,7 +1268,7 @@ size = "5120"
         opts.insert("size".to_string(), toml::Value::String("512".to_string()));
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1301,7 +1301,7 @@ bin_path = "."
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1340,7 +1340,7 @@ bin = "xmake.exe"
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1377,7 +1377,7 @@ bin = "tool.exe"
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1401,7 +1401,7 @@ bin = "tool.exe"
         opts.insert("symlink_bins".to_string(), toml::Value::Boolean(true));
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1432,7 +1432,7 @@ bin = "tool.exe"
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 

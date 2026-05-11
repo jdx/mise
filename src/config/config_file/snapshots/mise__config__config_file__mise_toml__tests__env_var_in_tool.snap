@@ -7,11 +7,15 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
         Version {
             backend: BackendArg(terraform),
             version: "1.0.0",
-            options: ToolVersionOptions {
-                os: None,
-                depends: None,
-                install_env: {},
-                opts: {},
+            options: ToolOptions {
+                core: CoreToolOptions {
+                    os: None,
+                    depends: None,
+                    install_env: {},
+                },
+                opts: RawBackendOptions {
+                    values: {},
+                },
             },
             source: MiseToml(
                 "~/cwd/.test.mise.toml",
@@ -22,11 +26,15 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
         Prefix {
             backend: BackendArg(jq),
             prefix: "1.6",
-            options: ToolVersionOptions {
-                os: None,
-                depends: None,
-                install_env: {},
-                opts: {},
+            options: ToolOptions {
+                core: CoreToolOptions {
+                    os: None,
+                    depends: None,
+                    install_env: {},
+                },
+                opts: RawBackendOptions {
+                    values: {},
+                },
             },
             source: MiseToml(
                 "~/cwd/.test.mise.toml",
