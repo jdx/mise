@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use eyre::{Context, Result, bail, ensure, eyre};
+use eyre::{Context, Report, Result, bail, ensure, eyre};
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -824,14 +824,7 @@ fn install_mocito_artifact(
         create_mocito_bin_links(&staging_path, &config.bin_links)?;
         write_mocito_env_file(&staging_path, &config.env)?;
         write_wings_install_marker(&staging_path, artifact)?;
-        file::remove_all(&install_path)?;
-        std::fs::rename(&staging_path, &install_path).wrap_err_with(|| {
-            format!(
-                "failed to move wings MOCITO staging install {} to {}",
-                staging_path.display(),
-                install_path.display()
-            )
-        })?;
+        replace_install_dir(&staging_path, &install_path)?;
         Ok(())
     })();
     if result.is_err() {
@@ -864,6 +857,77 @@ fn staging_install_path(install_path: &Path) -> Result<PathBuf> {
         ".{name}.wings-staging-{}-{nonce}",
         std::process::id()
     )))
+}
+
+fn backup_install_path(install_path: &Path) -> Result<PathBuf> {
+    let parent = install_path.parent().ok_or_else(|| {
+        eyre!(
+            "wings install path {} has no parent",
+            install_path.display()
+        )
+    })?;
+    let name = install_path
+        .file_name()
+        .ok_or_else(|| {
+            eyre!(
+                "wings install path {} has no file name",
+                install_path.display()
+            )
+        })?
+        .to_string_lossy();
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos();
+    Ok(parent.join(format!(
+        ".{name}.wings-backup-{}-{nonce}",
+        std::process::id()
+    )))
+}
+
+fn replace_install_dir(staging_path: &Path, install_path: &Path) -> Result<()> {
+    if !install_path.exists() && !install_path.is_symlink() {
+        return std::fs::rename(staging_path, install_path).wrap_err_with(|| {
+            format!(
+                "failed to move wings MOCITO staging install {} to {}",
+                staging_path.display(),
+                install_path.display()
+            )
+        });
+    }
+
+    let backup_path = backup_install_path(install_path)?;
+    file::remove_all(&backup_path)?;
+    std::fs::rename(install_path, &backup_path).wrap_err_with(|| {
+        format!(
+            "failed to move existing wings install {} to backup {}",
+            install_path.display(),
+            backup_path.display()
+        )
+    })?;
+
+    match std::fs::rename(staging_path, install_path) {
+        Ok(()) => {
+            file::remove_all(&backup_path)?;
+            Ok(())
+        }
+        Err(rename_err) => {
+            if let Err(restore_err) = std::fs::rename(&backup_path, install_path) {
+                return Err(eyre!(
+                    "failed to move wings MOCITO staging install {} to {}: {}; additionally failed to restore backup {}: {}",
+                    staging_path.display(),
+                    install_path.display(),
+                    rename_err,
+                    backup_path.display(),
+                    restore_err
+                ));
+            }
+            Err(Report::new(rename_err).wrap_err(format!(
+                "failed to move wings MOCITO staging install {} to {}",
+                staging_path.display(),
+                install_path.display()
+            )))
+        }
+    }
 }
 
 pub(crate) fn installed_env(tv: &ToolVersion) -> Result<BTreeMap<String, String>> {
@@ -1451,6 +1515,26 @@ mod tests {
         assert!(err.to_string().contains("env key"));
         assert_eq!(
             file::read_to_string(install_path.join("backend-state")).unwrap(),
+            "keep"
+        );
+    }
+
+    #[test]
+    fn replace_install_dir_restores_existing_install_when_staging_rename_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let install_path = dir.path().join("install");
+        let missing_staging_path = dir.path().join("missing-staging");
+        file::create_dir_all(&install_path).unwrap();
+        file::write(install_path.join("existing"), "keep").unwrap();
+
+        let err = replace_install_dir(&missing_staging_path, &install_path).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("failed to move wings MOCITO staging install")
+        );
+        assert_eq!(
+            file::read_to_string(install_path.join("existing")).unwrap(),
             "keep"
         );
     }

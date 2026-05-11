@@ -299,17 +299,7 @@ impl Toolset {
                 match crate::wings::artifact::installed_env(&tv) {
                     Ok(wings_env) => {
                         for (key, value) in wings_env {
-                            match env.entry(key) {
-                                Entry::Vacant(slot) => {
-                                    slot.insert(value);
-                                }
-                                Entry::Occupied(slot) => {
-                                    debug!(
-                                        "wings MOCITO env skipped {}; backend exec-env already set it",
-                                        slot.key()
-                                    );
-                                }
-                            }
+                            merge_wings_env(&mut env, key, value);
                         }
                     }
                     Err(e) => warn!("Error loading wings MOCITO env: {:#}", e),
@@ -453,5 +443,60 @@ impl Toolset {
             debug!("{env_results:?}");
         }
         Ok(env_results)
+    }
+}
+
+fn merge_wings_env(env: &mut BTreeMap<String, String>, key: String, value: String) {
+    match env.entry(key) {
+        Entry::Vacant(slot) => {
+            slot.insert(value);
+        }
+        Entry::Occupied(mut slot)
+            if matches!(slot.key().as_str(), "MISE_ADD_PATH" | "RTX_ADD_PATH") =>
+        {
+            let mut paths = env::split_paths(slot.get()).collect::<Vec<_>>();
+            paths.extend(env::split_paths(&value));
+            match env::join_paths(paths) {
+                Ok(joined) => {
+                    slot.insert(joined.to_string_lossy().into_owned());
+                }
+                Err(e) => warn!("Error merging wings MOCITO {}: {e:#}", slot.key()),
+            }
+        }
+        Entry::Occupied(slot) => {
+            debug!(
+                "wings MOCITO env skipped {}; backend exec-env already set it",
+                slot.key()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_wings_env_combines_add_path_entries() {
+        let mut env = BTreeMap::new();
+        env.insert("MISE_ADD_PATH".into(), "/backend/bin".into());
+
+        merge_wings_env(&mut env, "MISE_ADD_PATH".into(), "/wings/bin".into());
+
+        let paths = env::split_paths(env.get("MISE_ADD_PATH").unwrap()).collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            vec![PathBuf::from("/backend/bin"), PathBuf::from("/wings/bin")]
+        );
+    }
+
+    #[test]
+    fn merge_wings_env_keeps_backend_env_precedence() {
+        let mut env = BTreeMap::new();
+        env.insert("CC".into(), "backend-cc".into());
+
+        merge_wings_env(&mut env, "CC".into(), "wings-cc".into());
+
+        assert_eq!(env.get("CC").unwrap(), "backend-cc");
     }
 }
