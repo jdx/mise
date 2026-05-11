@@ -54,12 +54,32 @@ pub async fn try_install<B: Backend + ?Sized>(
     }
 
     let fallback_blocked = fallback_blocked(tv);
-    if crate::wings::auth::session_token().await?.is_none() {
+    let locked_artifact = locked_wings_artifact(tv)?;
+    let Some(token) = crate::wings::auth::session_token().await? else {
+        if locked_artifact.is_some() {
+            bail!(
+                "mise.lock pins a wings artifact for {}, but wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
+                tv.style()
+            );
+        }
         return fallback_or_false(
             tv,
             fallback_blocked,
             "wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
         );
+    };
+
+    if let Some(artifact) = locked_artifact {
+        ctx.pr.set_message("wings pull locked oci".into());
+        return pull_and_install(ctx, tv, &artifact, &token)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "mise.lock pins wings artifact {}@{}, refusing to resolve a different artifact",
+                    artifact.ref_, artifact.digest
+                )
+            })
+            .map(|_| true);
     }
 
     let Some(source) = (match resolve_source(backend, tv).await {
@@ -82,13 +102,6 @@ pub async fn try_install<B: Backend + ?Sized>(
         Err(e) => return fallback_or_error(tv, fallback_blocked, "wings resolve failed", e),
     };
 
-    let Some(token) = crate::wings::auth::session_token().await? else {
-        return fallback_or_false(
-            tv,
-            fallback_blocked,
-            "wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
-        );
-    };
     ctx.pr.set_message("wings pull oci".into());
     if let Err(e) = pull_and_install(ctx, tv, &artifact, &token).await {
         if fallback_blocked {
@@ -200,6 +213,31 @@ fn source_from_platform_info(info: &PlatformInfo) -> Option<SourceInfo> {
         url: url.clone(),
         checksum: info.checksum.clone(),
     })
+}
+
+fn locked_wings_artifact(tv: &ToolVersion) -> Result<Option<Artifact>> {
+    let platform_key = PlatformTarget::from_current().to_key();
+    let Some(info) = tv.lock_platforms.get(&platform_key) else {
+        return Ok(None);
+    };
+
+    match (&info.wings_artifact_ref, &info.wings_artifact_digest) {
+        (Some(ref_), Some(digest)) => {
+            ensure_sha256_digest(digest)?;
+            WingsReference::parse(ref_)?;
+            Ok(Some(Artifact {
+                transport: "oci".into(),
+                ref_: ref_.clone(),
+                digest: digest.clone(),
+            }))
+        }
+        (Some(_), None) | (None, Some(_)) => {
+            bail!(
+                "mise.lock has an incomplete wings artifact pin for {platform_key}; expected both wings_artifact_ref and wings_artifact_digest"
+            )
+        }
+        (None, None) => Ok(None),
+    }
 }
 
 #[derive(Serialize)]
@@ -1655,6 +1693,46 @@ mod tests {
 
         let err = filename_for_layer(&manifest, &layer, 1).unwrap_err();
         assert!(err.to_string().contains("64-character sha256"));
+    }
+
+    #[test]
+    fn lockfile_wings_artifact_pin_replays_current_platform_digest() {
+        let mut tv = tool_version("node", Some("core:node"));
+        let platform_key = PlatformTarget::from_current().to_key();
+        tv.lock_platforms.insert(
+            platform_key,
+            PlatformInfo {
+                wings_artifact_ref: Some("registry.mise.run/org/acme/core/node:20".into()),
+                wings_artifact_digest: Some(digest("a")),
+                ..Default::default()
+            },
+        );
+
+        let artifact = locked_wings_artifact(&tv).unwrap().unwrap();
+
+        assert_eq!(artifact.transport, "oci");
+        assert_eq!(
+            artifact.ref_,
+            "registry.mise.run/org/acme/core/node:20".to_string()
+        );
+        assert_eq!(artifact.digest, digest("a"));
+    }
+
+    #[test]
+    fn lockfile_wings_artifact_pin_rejects_partial_current_platform_pin() {
+        let mut tv = tool_version("node", Some("core:node"));
+        let platform_key = PlatformTarget::from_current().to_key();
+        tv.lock_platforms.insert(
+            platform_key,
+            PlatformInfo {
+                wings_artifact_ref: Some("registry.mise.run/org/acme/core/node:20".into()),
+                ..Default::default()
+            },
+        );
+
+        let err = locked_wings_artifact(&tv).unwrap_err();
+
+        assert!(err.to_string().contains("incomplete wings artifact pin"));
     }
 
     #[test]
