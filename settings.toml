@@ -717,7 +717,7 @@ env = "MISE_GITHUB_OAUTH_API_URL"
 type = "String"
 
 [github.oauth_auth_url]
-default = "https://github.com/login/oauth"
+default = "https://github.com/login"
 description = "GitHub OAuth endpoint base URL for native device-flow tokens."
 docs = """
 OAuth endpoint base URL used by native GitHub device flow. The default is for
