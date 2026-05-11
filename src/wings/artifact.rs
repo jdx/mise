@@ -34,6 +34,7 @@ const ZIP_LAYER_MEDIA_TYPE: &str = "application/zip";
 const BINARY_LAYER_MEDIA_TYPE: &str = "application/octet-stream";
 const MOCITO_BIN_DIR: &str = ".mise-bins";
 const MOCITO_ENV_FILE: &str = ".mise-mocito-env.json";
+const WINGS_INSTALL_MARKER_FILE: &str = ".mise-wings-install.json";
 const RESOLVE_PENDING_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const RESOLVE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const RESOLVE_TRANSIENT_RETRIES: u32 = 5;
@@ -243,6 +244,13 @@ struct Artifact {
     #[serde(rename = "ref")]
     ref_: String,
     digest: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WingsInstallMarker {
+    schema: u8,
+    artifact_ref: String,
+    artifact_digest: String,
 }
 
 #[derive(Debug)]
@@ -557,7 +565,7 @@ async fn pull_and_install(
 
     ctx.pr.next_operation();
     ctx.pr.set_message("wings install".into());
-    install_mocito_artifact(tv, &config, &layers, Some(ctx.pr.as_ref()))?;
+    install_mocito_artifact(tv, &config, &layers, &artifact, Some(ctx.pr.as_ref()))?;
     Ok(())
 }
 
@@ -791,6 +799,7 @@ fn install_mocito_artifact(
     tv: &ToolVersion,
     config: &MocitoConfig,
     layers: &[(&WingsDescriptor, PathBuf)],
+    artifact: &Artifact,
     pr: Option<&dyn crate::ui::progress_report::SingleReport>,
 ) -> Result<()> {
     let install_path = tv.install_path();
@@ -803,11 +812,16 @@ fn install_mocito_artifact(
     validate_mocito_bins(&install_path, config)?;
     create_mocito_bin_links(&install_path, &config.bin_links)?;
     write_mocito_env_file(&install_path, &config.env)?;
+    write_wings_install_marker(&install_path, artifact)?;
     Ok(())
 }
 
 pub(crate) fn installed_env(tv: &ToolVersion) -> Result<BTreeMap<String, String>> {
-    read_mocito_env_file(&tv.install_path())
+    let install_path = tv.install_path();
+    if !has_wings_install_marker(&install_path) {
+        return Ok(BTreeMap::new());
+    }
+    read_mocito_env_file(&install_path)
 }
 
 fn write_mocito_env_file(install_path: &Path, env: &BTreeMap<String, String>) -> Result<()> {
@@ -829,6 +843,21 @@ fn read_mocito_env_file(install_path: &Path) -> Result<BTreeMap<String, String>>
         .wrap_err_with(|| format!("decoding wings MOCITO env file {}", path.display()))?;
     validate_mocito_env(&env)?;
     Ok(env)
+}
+
+fn write_wings_install_marker(install_path: &Path, artifact: &Artifact) -> Result<()> {
+    let marker = WingsInstallMarker {
+        schema: 1,
+        artifact_ref: artifact.ref_.clone(),
+        artifact_digest: artifact.digest.clone(),
+    };
+    let path = install_path.join(WINGS_INSTALL_MARKER_FILE);
+    file::write(&path, serde_json::to_string_pretty(&marker)?)?;
+    Ok(())
+}
+
+fn has_wings_install_marker(install_path: &Path) -> bool {
+    install_path.join(WINGS_INSTALL_MARKER_FILE).exists()
 }
 
 fn validate_mocito_env(env: &BTreeMap<String, String>) -> Result<()> {
@@ -1318,6 +1347,29 @@ mod tests {
     }
 
     #[test]
+    fn installed_env_ignores_env_file_without_wings_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let tv = tool_version_with_install_path(dir.path());
+        let mut env = BTreeMap::new();
+        env.insert("CC".into(), "clang".into());
+        write_mocito_env_file(dir.path(), &env).unwrap();
+
+        assert!(installed_env(&tv).unwrap().is_empty());
+    }
+
+    #[test]
+    fn installed_env_reads_env_file_with_wings_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let tv = tool_version_with_install_path(dir.path());
+        let mut env = BTreeMap::new();
+        env.insert("CC".into(), "clang".into());
+        write_mocito_env_file(dir.path(), &env).unwrap();
+        write_wings_install_marker(dir.path(), &artifact()).unwrap();
+
+        assert_eq!(installed_env(&tv).unwrap(), env);
+    }
+
+    #[test]
     fn mocito_env_file_revalidates_on_read() {
         let dir = tempfile::tempdir().unwrap();
         file::write(dir.path().join(MOCITO_ENV_FILE), r#"{"BAD=KEY":"value"}"#).unwrap();
@@ -1413,5 +1465,20 @@ mod tests {
             source: ToolSource::Unknown,
         };
         ToolVersion::new(request, "1.0.0".into())
+    }
+
+    fn tool_version_with_install_path(path: &Path) -> ToolVersion {
+        let mut tv = tool_version("foo", Some("github:foo/bar"));
+        tv.install_path = Some(path.to_path_buf());
+        tv
+    }
+
+    fn artifact() -> Artifact {
+        Artifact {
+            transport: "oci".into(),
+            ref_: "registry.example.com/org/acme/wings/github/foo-bar:1.0.0-darwin-arm64".into(),
+            digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .into(),
+        }
     }
 }
