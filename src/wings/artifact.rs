@@ -20,7 +20,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::wildcard::Wildcard;
-use crate::wings::client;
+use crate::wings::{client, policy};
 
 pub(crate) const MEDIA_TYPE_OCI_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
 pub(crate) const MEDIA_TYPE_OCI_IMAGE_INDEX: &str = "application/vnd.oci.image.index.v1+json";
@@ -504,7 +504,7 @@ struct WingsBlockedError {
 
 async fn pull_and_install(
     ctx: &InstallContext,
-    tv: &ToolVersion,
+    tv: &mut ToolVersion,
     artifact: &Artifact,
     token: &str,
 ) -> Result<()> {
@@ -530,7 +530,17 @@ async fn pull_and_install(
     let manifest: WingsManifest =
         serde_json::from_slice(manifest_bytes).wrap_err("decoding wings OCI manifest")?;
     manifest.validate_mocito(&artifact.ref_)?;
-    verify_mocito_referrers(&reference, &artifact.digest, token).await?;
+    let mut evidence = verify_mocito_referrers(&reference, &artifact.digest, token).await?;
+    let platform_key = PlatformTarget::from_current().to_key();
+    evidence.source_checksum = tv
+        .lock_platforms
+        .get(&platform_key)
+        .and_then(|info| info.checksum.clone());
+    evidence.scanned = annotation_bool(&manifest.annotations, "dev.mise-wings.scanned");
+    evidence.approved = annotation_bool(&manifest.annotations, "dev.mise-wings.approved");
+    evidence.managed = annotation_bool(&manifest.annotations, "dev.mise-wings.managed");
+    let policy_bundle = policy::fetch_cached_or_remote(token).await?;
+    let policy_decision = policy::evaluate(&policy_bundle, &evidence)?;
 
     let config_url = format!(
         "https://{}/v2/{}/blobs/{}",
@@ -577,6 +587,7 @@ async fn pull_and_install(
     ctx.pr.next_operation();
     ctx.pr.set_message("wings install".into());
     install_mocito_artifact(tv, &config, &layers, artifact, Some(ctx.pr.as_ref()))?;
+    record_wings_lock_info(tv, artifact, &policy_decision);
     Ok(())
 }
 
@@ -693,7 +704,7 @@ async fn verify_mocito_referrers(
     reference: &WingsReference,
     subject_digest: &str,
     token: &str,
-) -> Result<()> {
+) -> Result<policy::ArtifactEvidence> {
     let url = format!(
         "https://{}/v2/{}/referrers/{}",
         reference.registry, reference.repository, subject_digest
@@ -706,6 +717,7 @@ async fn verify_mocito_referrers(
     let index: ReferrersIndex =
         serde_json::from_slice(bytes.as_ref()).wrap_err("decoding wings OCI referrers index")?;
     validate_referrers_index(&index, subject_digest)?;
+    let mut evidence = policy::ArtifactEvidence::default();
 
     for descriptor in &index.manifests {
         let url = format!(
@@ -721,12 +733,17 @@ async fn verify_mocito_referrers(
         let manifest: ReferrerManifest = serde_json::from_slice(bytes.as_ref())
             .wrap_err("decoding wings OCI referrer manifest")?;
         validate_referrer_manifest(descriptor, &manifest, subject_digest)?;
+        if let Some(artifact_type) = descriptor.artifact_type.as_deref() {
+            evidence
+                .referrer_artifact_types
+                .insert(artifact_type.to_string());
+        }
     }
 
-    Ok(())
+    Ok(evidence)
 }
 
-fn validate_referrers_index(index: &ReferrersIndex, subject_digest: &str) -> Result<()> {
+fn validate_referrers_index(index: &ReferrersIndex, _subject_digest: &str) -> Result<()> {
     ensure!(
         index.schema_version == 2,
         "wings OCI referrers index schemaVersion {} is not supported",
@@ -737,10 +754,6 @@ fn validate_referrers_index(index: &ReferrersIndex, subject_digest: &str) -> Res
         "wings OCI referrers index mediaType {}; expected {}",
         index.media_type,
         MEDIA_TYPE_OCI_IMAGE_INDEX
-    );
-    ensure!(
-        !index.manifests.is_empty(),
-        "wings artifact {subject_digest} has no OCI evidence referrers"
     );
     for descriptor in &index.manifests {
         ensure!(
@@ -761,6 +774,24 @@ fn validate_referrers_index(index: &ReferrersIndex, subject_digest: &str) -> Res
         );
     }
     Ok(())
+}
+
+fn annotation_bool(annotations: &indexmap::IndexMap<String, String>, key: &str) -> bool {
+    annotations
+        .get(key)
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes"))
+}
+
+fn record_wings_lock_info(
+    tv: &mut ToolVersion,
+    artifact: &Artifact,
+    policy_decision: &policy::PolicyDecision,
+) {
+    let platform_key = PlatformTarget::from_current().to_key();
+    let info = tv.lock_platforms.entry(platform_key).or_default();
+    info.wings_artifact_ref = Some(artifact.ref_.clone());
+    info.wings_artifact_digest = Some(artifact.digest.clone());
+    info.wings_policy_version = Some(policy_decision.policy_version.clone());
 }
 
 fn validate_referrer_manifest(
@@ -1777,7 +1808,7 @@ mod tests {
     }
 
     #[test]
-    fn referrers_index_requires_evidence_descriptors() {
+    fn referrers_index_allows_empty_evidence_descriptors() {
         let subject = digest("a");
         let index = ReferrersIndex {
             schema_version: 2,
@@ -1791,12 +1822,14 @@ mod tests {
 
         validate_referrers_index(&index, &subject).unwrap();
 
-        let empty = ReferrersIndex {
-            manifests: vec![],
-            ..index
-        };
-        let err = validate_referrers_index(&empty, &subject).unwrap_err();
-        assert!(err.to_string().contains("no OCI evidence referrers"));
+        validate_referrers_index(
+            &ReferrersIndex {
+                manifests: vec![],
+                ..index
+            },
+            &subject,
+        )
+        .unwrap();
     }
 
     #[test]

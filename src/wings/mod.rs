@@ -29,6 +29,7 @@ pub mod ci;
 pub mod client;
 pub mod credentials;
 pub mod device;
+pub mod policy;
 
 /// Production wings deployment.
 const PROD_HOST: &str = "mise-wings.en.dev";

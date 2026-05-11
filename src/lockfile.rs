@@ -240,6 +240,15 @@ pub struct PlatformInfo {
     /// GitHub attestation probe status when no provenance was verified.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub github_attestations: Option<GithubAttestationsStatus>,
+    /// Wings artifact reference selected by the server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wings_artifact_ref: Option<String>,
+    /// Wings artifact manifest digest selected by the server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wings_artifact_digest: Option<String>,
+    /// Wings policy version evaluated for this install.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wings_policy_version: Option<String>,
 }
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
@@ -264,6 +273,9 @@ impl PlatformInfo {
             && self.conda_deps.is_none()
             && self.provenance.is_none()
             && self.github_attestations.is_none()
+            && self.wings_artifact_ref.is_none()
+            && self.wings_artifact_digest.is_none()
+            && self.wings_policy_version.is_none()
     }
 
     /// True when the lockfile has checksum-backed, successfully verified provenance.
@@ -332,6 +344,27 @@ impl PlatformInfo {
         } else {
             self.github_attestations.or(other.github_attestations)
         };
+        let wings_artifact_ref = if url_changed {
+            self.wings_artifact_ref.clone()
+        } else {
+            self.wings_artifact_ref
+                .clone()
+                .or_else(|| other.wings_artifact_ref.clone())
+        };
+        let wings_artifact_digest = if url_changed {
+            self.wings_artifact_digest.clone()
+        } else {
+            self.wings_artifact_digest
+                .clone()
+                .or_else(|| other.wings_artifact_digest.clone())
+        };
+        let wings_policy_version = if url_changed {
+            self.wings_policy_version.clone()
+        } else {
+            self.wings_policy_version
+                .clone()
+                .or_else(|| other.wings_policy_version.clone())
+        };
 
         PlatformInfo {
             checksum,
@@ -341,6 +374,9 @@ impl PlatformInfo {
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
             provenance,
             github_attestations,
+            wings_artifact_ref,
+            wings_artifact_digest,
+            wings_policy_version,
         }
     }
 }
@@ -368,6 +404,18 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     _ => None,
                 };
                 let url_api = match t.remove("url_api") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let wings_artifact_ref = match t.remove("wings_artifact_ref") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let wings_artifact_digest = match t.remove("wings_artifact_digest") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let wings_policy_version = match t.remove("wings_policy_version") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
@@ -438,6 +486,9 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     conda_deps,
                     provenance,
                     github_attestations,
+                    wings_artifact_ref,
+                    wings_artifact_digest,
+                    wings_policy_version,
                 })
             }
             _ => bail!("unsupported asset info format"),
@@ -456,6 +507,21 @@ impl From<PlatformInfo> for toml::Value {
         }
         if let Some(url_api) = platform_info.url_api {
             table.insert("url_api".to_string(), url_api.into());
+        }
+        if let Some(wings_artifact_ref) = platform_info.wings_artifact_ref {
+            table.insert("wings_artifact_ref".to_string(), wings_artifact_ref.into());
+        }
+        if let Some(wings_artifact_digest) = platform_info.wings_artifact_digest {
+            table.insert(
+                "wings_artifact_digest".to_string(),
+                wings_artifact_digest.into(),
+            );
+        }
+        if let Some(wings_policy_version) = platform_info.wings_policy_version {
+            table.insert(
+                "wings_policy_version".to_string(),
+                wings_policy_version.into(),
+            );
         }
         if let Some(conda_deps) = platform_info.conda_deps {
             let deps: toml::Value = conda_deps
@@ -840,6 +906,27 @@ impl Lockfile {
                         }
                     })
                 };
+                let wings_artifact_ref = platform_info.wings_artifact_ref.or_else(|| {
+                    if preserve_artifact_fields {
+                        existing.wings_artifact_ref.clone()
+                    } else {
+                        None
+                    }
+                });
+                let wings_artifact_digest = platform_info.wings_artifact_digest.or_else(|| {
+                    if preserve_artifact_fields {
+                        existing.wings_artifact_digest.clone()
+                    } else {
+                        None
+                    }
+                });
+                let wings_policy_version = platform_info.wings_policy_version.or_else(|| {
+                    if preserve_artifact_fields {
+                        existing.wings_policy_version.clone()
+                    } else {
+                        None
+                    }
+                });
                 PlatformInfo {
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
@@ -866,6 +953,9 @@ impl Lockfile {
                     conda_deps: platform_info.conda_deps,
                     provenance,
                     github_attestations,
+                    wings_artifact_ref,
+                    wings_artifact_digest,
+                    wings_policy_version,
                 }
             } else {
                 platform_info

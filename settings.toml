@@ -2606,6 +2606,7 @@ blocked by this setting.
 """
 env = "MISE_WINGS_REQUIRED"
 optional = true
+parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
