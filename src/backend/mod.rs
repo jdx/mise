@@ -2008,7 +2008,17 @@ pub trait Backend: Debug + Send + Sync {
             .await?
             .filter_by_tool(dependencies)
             .into();
-        ts.resolve(config).await?;
+        // Dependency envs only need PATH entries for tools that are already
+        // available. Resolving offline avoids applying global release-age
+        // cutoffs to helper tools like node/npm while querying another backend.
+        ts.resolve_with_opts(
+            config,
+            &ResolveOptions {
+                offline: true,
+                ..Default::default()
+            },
+        )
+        .await?;
         Ok(ts)
     }
 
