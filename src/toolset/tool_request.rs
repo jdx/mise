@@ -91,6 +91,7 @@ impl ToolRequest {
                 }
             }
             Some(("path", p)) => {
+                validate_path_string(p)?;
                 let path = resolve_path(p, &source);
                 Self::Path {
                     path,
@@ -100,9 +101,11 @@ impl ToolRequest {
                 }
             }
             Some((p, v)) if p.starts_with("sub-") => {
+                let sub = p.split_once('-').unwrap().1;
+                validate_version_string(sub)?;
                 validate_version_string(v)?;
                 Self::Sub {
-                    sub: p.split_once('-').unwrap().1.to_string(),
+                    sub: sub.to_string(),
                     options: backend.opts(),
                     orig_version: v.to_string(),
                     backend,
@@ -424,12 +427,43 @@ fn validate_version_string(s: &str) -> Result<()> {
     Ok(())
 }
 
-/// Validate `ref:`/`branch:`/`tag:`/`rev:` values. Branch and tag names
-/// legitimately contain `/` and other "shell-meta-but-quote-safe" characters
-/// (e.g. `release-1.0+rc1`), so the same rules as version strings apply: only
-/// reject characters that break shell quoting or traverse paths.
+/// Validate `ref:`/`branch:`/`tag:`/`rev:` values. Same character rules as
+/// version strings: branch/tag names already use the same broad vocabulary
+/// (`/`, `+`, `-`, etc.), and only the shell-quote-breaking characters need
+/// rejection. Kept as a separate function for distinct error messages.
 fn validate_ref_string(s: &str) -> Result<()> {
-    validate_version_string(s)
+    if s.is_empty() {
+        return Ok(());
+    }
+    if s.contains("..") {
+        bail!("invalid tool ref {s:?}: contains path-traversal sequence");
+    }
+    if let Some(c) = s.chars().find(|c| is_forbidden_version_char(*c)) {
+        bail!("invalid tool ref {s:?}: contains forbidden character {c:?}");
+    }
+    Ok(())
+}
+
+/// Validate `path:` values. Filesystem paths legitimately contain `/`, spaces,
+/// and many other characters, but the resolved path becomes `ctx.rootPath` /
+/// `installPath` for path-mode tools and is interpolated into shell commands
+/// by some plugin hooks. Reject the same shell-quote-breaking characters as
+/// version strings — `$`, backtick, quotes, and `\` — so a hostile `path:`
+/// entry in a project config cannot inject shell syntax. Path traversal is
+/// intentionally not rejected here because `path:../tools/foo` is a normal
+/// relative-path use case.
+fn validate_path_string(s: &str) -> Result<()> {
+    if s.is_empty() {
+        return Ok(());
+    }
+    if let Some(c) = s.chars().find(|c| {
+        // Allow newlines/tabs/etc. in paths is still bad — keep control-char
+        // and quote/expansion rejection, but allow `/` since paths need it.
+        is_forbidden_version_char(*c)
+    }) {
+        bail!("invalid tool path {s:?}: contains forbidden character {c:?}");
+    }
+    Ok(())
 }
 
 fn is_forbidden_version_char(c: char) -> bool {
@@ -607,6 +641,40 @@ mod tests {
             assert!(
                 validate_ref_string(v).is_err(),
                 "expected ref {v:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_path_string() {
+        use super::validate_path_string;
+        // valid paths
+        for p in [
+            "/home/user/tools/foo",
+            "./relative/path",
+            "../parent",
+            "~/tools/bar",
+            "/path with spaces/tool",
+            "C:/Users/foo",
+        ] {
+            assert!(
+                validate_path_string(p).is_ok(),
+                "expected path {p:?} to be accepted"
+            );
+        }
+        // shell-dangerous paths
+        for p in [
+            "/tmp/$HOME",
+            "/tmp/`id`",
+            "/tmp/$(id)",
+            "/tmp/'rm",
+            "/tmp/\"rm",
+            "/tmp/\\rm",
+            "/tmp/\nrm",
+        ] {
+            assert!(
+                validate_path_string(p).is_err(),
+                "expected path {p:?} to be rejected"
             );
         }
     }

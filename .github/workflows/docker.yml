@@ -175,5 +175,13 @@ jobs:
         env:
           META_VERSION: ${{ steps.meta.outputs.version }}
         run: |
+          # docker/metadata-action normally produces well-formed semver tags,
+          # but validate before interpolation for consistency with the manifest
+          # step above so no GitHub-expression-derived value reaches the shell
+          # without a guard.
+          if ! [[ "$META_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::error::Invalid Docker tag from metadata-action: $META_VERSION" >&2
+            exit 1
+          fi
           docker buildx imagetools inspect "jdxcode/mise:${META_VERSION}"
           docker buildx imagetools inspect "ghcr.io/jdx/mise:${META_VERSION}"
