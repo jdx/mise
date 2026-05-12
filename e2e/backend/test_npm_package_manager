@@ -91,12 +91,14 @@ export MISE_NPM_PACKAGE_MANAGER=aube
 
 # Ensure aube is available after the default package manager test, since
 # npm.package_manager=auto uses aube when it is already installed.
-# Bypass MISE_MINIMUM_RELEASE_AGE for aube's install — the global filter is
-# set to test the package-manager flag plumbing below, but applying it to
-# aube itself can pin to a release that lacks platform-specific assets.
+# Pin to a known-good aube version: `latest` has bitten us when a new
+# release goes out hours before CI runs (e.g. v1.11.0 on 2026-05-11 broke
+# `aube add --global` here). Bypass MISE_MINIMUM_RELEASE_AGE because the
+# global filter is set to test the package-manager flag plumbing below.
+AUBE_TEST_VERSION="1.10.4"
 if ! command -v aube >/dev/null 2>&1; then
   echo "aube not available in test environment, installing..."
-  assert_succeed "env -u MISE_MINIMUM_RELEASE_AGE mise use aube@latest"
+  assert_succeed "env -u MISE_MINIMUM_RELEASE_AGE mise use aube@$AUBE_TEST_VERSION"
 fi
 
 cat >.mise.toml <<EOF
@@ -104,7 +106,11 @@ cat >.mise.toml <<EOF
 "npm:tiny" = { version = "latest", aube_args = "--reporter append-only" }
 EOF
 AUBE_DEBUG_LOG="$TMPDIR/aube_debug.log"
-assert_succeed "MISE_DEBUG=1 mise install >'$AUBE_DEBUG_LOG' 2>&1"
+if ! MISE_DEBUG=1 mise install >"$AUBE_DEBUG_LOG" 2>&1; then
+  echo "Command failed. Output:"
+  cat "$AUBE_DEBUG_LOG"
+  exit 1
+fi
 assert_contains "cat '$AUBE_DEBUG_LOG'" "--reporter"
 assert_contains "cat '$AUBE_DEBUG_LOG'" "append-only"
 echo "✓ npm backend successfully installs package using aube (package_manager=aube)"
