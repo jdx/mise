@@ -294,12 +294,6 @@ jobs:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
-      - name: cache zipsign
-        id: cache-zipsign
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.cargo/bin/zipsign
-          key: cargo-zipsign
       - run: ./scripts/setup-zipsign.sh
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
         env:
