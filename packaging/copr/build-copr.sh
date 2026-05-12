@@ -284,17 +284,22 @@ if [ "$DRY_RUN" != "true" ]; then
 	echo "=== Submitting to COPR ==="
 	echo "Submitting $(basename "$SRPM_FILE") to COPR project $COPR_OWNER/$COPR_PROJECT"
 
-	# Submit build to COPR
-	# Build the copr-cli command with multiple --chroot flags
-	copr_cmd="copr-cli build"
-	# Split CHROOTS into an array to ensure proper word splitting
+	# Submit build to COPR. Build a real argv array so chroot values cannot
+	# be interpreted as shell syntax, and validate each value against a
+	# conservative chroot pattern before forwarding to copr-cli.
 	IFS=' ' read -ra chroot_array <<<"$CHROOTS"
+	copr_args=("build")
 	for chroot in "${chroot_array[@]}"; do
-		copr_cmd="$copr_cmd --chroot $chroot"
+		[ -z "$chroot" ] && continue
+		if ! [[ "$chroot" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+			echo "Invalid COPR chroot value: $chroot" >&2
+			exit 1
+		fi
+		copr_args+=("--chroot" "$chroot")
 	done
-	copr_cmd="$copr_cmd $COPR_OWNER/$COPR_PROJECT $SRPM_FILE"
+	copr_args+=("$COPR_OWNER/$COPR_PROJECT" "$SRPM_FILE")
 
-	eval "$copr_cmd"
+	copr-cli "${copr_args[@]}"
 
 	echo "Build submitted successfully!"
 else

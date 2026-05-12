@@ -109,6 +109,15 @@ fn into_headers(table: &Table) -> Result<HeaderMap> {
 }
 
 fn github_token(lua: &Lua) -> Option<String> {
+    if let Ok(resolver) = lua.named_registry_value::<mlua::Function>("github_token_fn")
+        && let Ok(token) = resolver.call::<String>(())
+    {
+        let token = token.trim();
+        if !token.is_empty() {
+            return Some(token.to_string());
+        }
+    }
+
     if let Ok(token) = lua.named_registry_value::<String>("github_token") {
         let token = token.trim();
         if !token.is_empty() {
@@ -416,6 +425,93 @@ mod tests {
         .exec_async()
         .await
         .unwrap();
+    }
+
+    #[test]
+    fn test_add_default_headers_uses_lazy_resolver() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let lua = Lua::new();
+
+        let calls_inner = calls.clone();
+        let resolver = lua
+            .create_function(move |_, ()| {
+                calls_inner.fetch_add(1, Ordering::SeqCst);
+                Ok("ghp_lazy".to_string())
+            })
+            .unwrap();
+        lua.set_named_registry_value("github_token_fn", resolver)
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        let headers = add_default_headers(
+            &lua,
+            "https://api.github.com/repos/neovim/neovim/releases",
+            HeaderMap::default(),
+        );
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer ghp_lazy")
+        );
+
+        // Non-GitHub-API URLs must not invoke the resolver.
+        let _ = add_default_headers(&lua, "https://example.com/some/path", HeaderMap::default());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_add_default_headers_lazy_resolver_takes_precedence_over_string() {
+        let lua = Lua::new();
+        lua.set_named_registry_value("github_token", "ghp_string")
+            .unwrap();
+        let resolver = lua
+            .create_function(|_, ()| Ok("ghp_lazy".to_string()))
+            .unwrap();
+        lua.set_named_registry_value("github_token_fn", resolver)
+            .unwrap();
+
+        let headers = add_default_headers(
+            &lua,
+            "https://api.github.com/repos/owner/repo",
+            HeaderMap::default(),
+        );
+
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer ghp_lazy")
+        );
+    }
+
+    #[test]
+    fn test_add_default_headers_falls_back_to_string_when_resolver_empty() {
+        let lua = Lua::new();
+        lua.set_named_registry_value("github_token", "ghp_string")
+            .unwrap();
+        let resolver = lua.create_function(|_, ()| Ok(String::new())).unwrap();
+        lua.set_named_registry_value("github_token_fn", resolver)
+            .unwrap();
+
+        let headers = add_default_headers(
+            &lua,
+            "https://api.github.com/repos/owner/repo",
+            HeaderMap::default(),
+        );
+
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer ghp_string")
+        );
     }
 
     #[test]

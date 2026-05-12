@@ -4,7 +4,7 @@ use reqwest::Url;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use tempfile::TempDir;
 use xx::file;
 
@@ -37,7 +37,6 @@ pub struct InstallResult {
     pub checksum_verified: bool,
 }
 
-#[derive(Debug)]
 pub struct Vfox {
     pub runtime_version: String,
     pub install_dir: PathBuf,
@@ -56,9 +55,35 @@ pub struct Vfox {
     pub cmd_env: Option<IndexMap<String, String>>,
     /// Optional GitHub token for Lua http requests to GitHub API endpoints.
     pub github_token: Option<String>,
+    /// Optional lazy resolver for the GitHub token. When set, the token is only
+    /// resolved if a Lua plugin actually makes an HTTP request to a GitHub API
+    /// URL — avoiding e.g. spawning `github.credential_command` for innocuous
+    /// commands like `mise hook-env` that never need a token. Takes precedence
+    /// over `github_token` when both are set.
+    pub github_token_resolver: Option<Arc<dyn Fn() -> Option<String> + Send + Sync>>,
     /// Optional runtime env type (`gnu` or `musl`) exposed to plugin hooks.
     pub runtime_env_type: Option<String>,
     log_tx: Option<mpsc::Sender<String>>,
+}
+
+impl std::fmt::Debug for Vfox {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Vfox")
+            .field("runtime_version", &self.runtime_version)
+            .field("install_dir", &self.install_dir)
+            .field("plugin_dir", &self.plugin_dir)
+            .field("cache_dir", &self.cache_dir)
+            .field("download_dir", &self.download_dir)
+            .field("skip_verification", &self.skip_verification)
+            .field("cmd_env", &self.cmd_env)
+            .field("github_token", &self.github_token.as_deref().map(|_| "***"))
+            .field(
+                "github_token_resolver",
+                &self.github_token_resolver.as_ref().map(|_| "<closure>"),
+            )
+            .field("runtime_env_type", &self.runtime_env_type)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Vfox {
@@ -141,8 +166,14 @@ impl Vfox {
     }
 
     fn set_github_token(&self, plugin: &Plugin) -> Result<()> {
+        // Both are registered when both are set; the Lua-side `github_token()`
+        // tries the resolver first and falls back to the string. That matches
+        // the documented precedence on `github_token_resolver`.
         if let Some(token) = &self.github_token {
             plugin.set_github_token(token)?;
+        }
+        if let Some(resolver) = &self.github_token_resolver {
+            plugin.set_github_token_resolver(resolver.clone())?;
         }
         Ok(())
     }
@@ -625,6 +656,7 @@ impl Default for Vfox {
             skip_verification: false,
             cmd_env: None,
             github_token: None,
+            github_token_resolver: None,
             runtime_env_type: None,
             log_tx: None,
         }
@@ -653,6 +685,7 @@ mod tests {
                 skip_verification: false,
                 cmd_env: None,
                 github_token: None,
+                github_token_resolver: None,
                 runtime_env_type: None,
                 log_tx: None,
             }
@@ -699,6 +732,42 @@ mod tests {
         assert!(!vfox.install_dir.join("dummy").join("1.0.0").exists());
         file::remove_dir_all(vfox.install_dir).unwrap();
         file::remove_dir_all(vfox.download_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_github_token_resolver_not_called_for_local_hooks() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // env_keys and pre_uninstall on the dummy plugin do no network I/O,
+        // so a lazy GitHub token resolver registered on Vfox must not be
+        // invoked. This is the regression check for
+        // https://github.com/jdx/mise/discussions/9797 — `mise hook-env` and
+        // friends must not spawn `github.credential_command`.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut vfox = Vfox::test();
+        vfox.install_dir = temp_dir.path().join("installs");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_inner = calls.clone();
+        vfox.github_token_resolver = Some(Arc::new(move || {
+            calls_inner.fetch_add(1, Ordering::SeqCst);
+            None
+        }));
+
+        vfox.env_keys(
+            "dummy",
+            "1.0.0",
+            serde_json::Value::Object(Default::default()),
+        )
+        .await
+        .unwrap();
+
+        let install_dir = vfox.install_dir.join("dummy").join("1.0.0");
+        std::fs::create_dir_all(&install_dir).unwrap();
+        vfox.pre_uninstall("dummy", "1.0.0", &install_dir)
+            .await
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

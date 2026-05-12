@@ -27,7 +27,7 @@ jobs:
   build-tarball-linux:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: namespace-profile-endev-linux-amd64
+    runs-on: namespace-profile-endev-linux-amd64-large
     timeout-minutes: 45
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -294,12 +294,6 @@ jobs:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
-      - name: cache zipsign
-        id: cache-zipsign
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.cargo/bin/zipsign
-          key: cargo-zipsign
       - run: ./scripts/setup-zipsign.sh
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
         env:
