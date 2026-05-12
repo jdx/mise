@@ -211,7 +211,7 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             echo "::error::'mise run render' produced changes. Run it locally and commit."
             git status
-            git diff
+            git diff HEAD
             exit 1
           fi
       - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
