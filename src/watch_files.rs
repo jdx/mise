@@ -47,6 +47,9 @@ pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
                 if wf.task.is_some() && wf.run.is_some() {
                     warn!("watch_file hook has both run and task set, using task");
                 }
+                if wf.task.is_some() && wf.shell.is_some() {
+                    warn!("watch_file hook has both shell and task set, ignoring shell");
+                }
                 let result = if let Some(task_name) = &wf.task {
                     execute_task(config, ts, &root, task_name, files).await
                 } else if let Some(run) = &wf.run {
