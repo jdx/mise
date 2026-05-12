@@ -23,7 +23,7 @@ env:
   FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
 
 permissions:
-  pull-requests: write
+  contents: read
 
 jobs:
   build-ubuntu:
@@ -71,7 +71,7 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -269,7 +269,7 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' }}
