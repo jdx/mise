@@ -2,6 +2,7 @@
 
 use std::{collections::BTreeSet, path::PathBuf};
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use eyre::{Context, Result, bail, ensure};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use reqwest::header::HeaderMap;
@@ -77,13 +78,13 @@ pub(crate) struct PolicyDecision {
 
 pub(crate) async fn fetch_cached_or_remote(token: &str) -> Result<PolicyBundlePayload> {
     let host = crate::wings::host();
-    if let Some(creds) = crate::wings::credentials::cached()
-        && creds.host == host
-        && let Ok(policy) = load_cached(host, &creds.org)
+    let cached_org = crate::wings::credentials::cached()
+        .filter(|creds| creds.host == host)
+        .map(|creds| creds.org)
+        .or_else(|| org_from_wings_jwt(token));
+    if let Some(org) = cached_org
+        && let Ok(policy) = load_cached(host, &org)
     {
-        return Ok(policy);
-    }
-    if let Ok(policy) = load_cached_for_host(host) {
         return Ok(policy);
     }
 
@@ -186,6 +187,18 @@ fn validate_policy_payload(policy: &PolicyBundlePayload, host: &str) -> Result<(
     Ok(())
 }
 
+fn org_from_wings_jwt(jwt: &str) -> Option<String> {
+    let body_b64 = jwt.split('.').nth(1)?;
+    let body = URL_SAFE_NO_PAD.decode(body_b64).ok()?;
+    let v = serde_json::from_slice::<serde_json::Value>(&body).ok()?;
+    let org = v.get("org")?.as_str()?.trim();
+    if org.is_empty() || org == "(unknown)" {
+        None
+    } else {
+        Some(org.to_string())
+    }
+}
+
 fn policy_decoding_key(host: &str, kid: Option<&str>) -> Result<DecodingKey> {
     if let Ok(pem) = std::env::var(POLICY_PUBLIC_KEY_ENV) {
         return DecodingKey::from_ec_pem(pem.as_bytes())
@@ -233,26 +246,6 @@ fn load_cached(host: &str, org: &str) -> Result<PolicyBundlePayload> {
     let bundle: SignedPolicyBundle = serde_json::from_slice(&file::read(&path)?)
         .wrap_err_with(|| format!("decoding wings policy cache {}", path.display()))?;
     verify_policy_jws(&bundle.policy, host)
-}
-
-fn load_cached_for_host(host: &str) -> Result<PolicyBundlePayload> {
-    let prefix = format!("{}-", safe_cache_key(host));
-    for entry in std::fs::read_dir(cache_dir()).wrap_err("reading wings policy cache directory")? {
-        let entry = entry?;
-        let path = entry.path();
-        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if !file_name.starts_with(&prefix) || !file_name.ends_with(".json") {
-            continue;
-        }
-        let bundle: SignedPolicyBundle = serde_json::from_slice(&file::read(&path)?)
-            .wrap_err_with(|| format!("decoding wings policy cache {}", path.display()))?;
-        if let Ok(policy) = verify_policy_jws(&bundle.policy, host) {
-            return Ok(policy);
-        }
-    }
-    bail!("no valid wings policy cache entry found for {host}")
 }
 
 fn store_cached(host: &str, org: &str, bundle: &SignedPolicyBundle) -> Result<()> {
@@ -329,6 +322,19 @@ I/fXcdsz5ffqGl1O3P06xMG20em/JBxhaUlyPLjF/QsVAGm+raOyvdMvzg==
         evaluate(&policy, &ArtifactEvidence::default()).unwrap();
     }
 
+    #[test]
+    fn extracts_policy_cache_org_from_wings_jwt() {
+        let header = base64_url_json(&serde_json::json!({ "alg": "none" }));
+        let payload = base64_url_json(&serde_json::json!({
+            "user_id": "user_123",
+            "org": "acme",
+        }));
+        let jwt = format!("{header}.{payload}.");
+
+        assert_eq!(org_from_wings_jwt(&jwt).as_deref(), Some("acme"));
+        assert_eq!(org_from_wings_jwt("not-a-jwt"), None);
+    }
+
     fn signed_policy(host: &str, mode: PolicyMode, f: impl FnOnce(&mut PolicyRules)) -> String {
         let payload = policy_payload(host, mode, f);
         let mut header = Header::new(Algorithm::ES256);
@@ -369,5 +375,9 @@ I/fXcdsz5ffqGl1O3P06xMG20em/JBxhaUlyPLjF/QsVAGm+raOyvdMvzg==
             mode,
             rules,
         }
+    }
+
+    fn base64_url_json(value: &serde_json::Value) -> String {
+        URL_SAFE_NO_PAD.encode(serde_json::to_vec(value).unwrap())
     }
 }

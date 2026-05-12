@@ -851,10 +851,32 @@ fn validate_referrer_manifest(
     manifest: &ReferrerManifest,
     subject_digest: &str,
 ) -> Result<()> {
+    let descriptor_artifact_type = descriptor
+        .artifact_type
+        .as_deref()
+        .filter(|artifact_type| !artifact_type.trim().is_empty())
+        .ok_or_else(|| {
+            eyre!(
+                "wings OCI referrer {} has no artifactType",
+                descriptor.digest
+            )
+        })?;
+    let manifest_artifact_type = manifest
+        .artifact_type
+        .as_deref()
+        .filter(|artifact_type| !artifact_type.trim().is_empty())
+        .ok_or_else(|| {
+            eyre!(
+                "wings OCI referrer {} manifest has no artifactType",
+                descriptor.digest
+            )
+        })?;
     ensure!(
-        manifest.artifact_type == descriptor.artifact_type,
-        "wings OCI referrer {} artifactType does not match its descriptor",
-        descriptor.digest
+        manifest_artifact_type == descriptor_artifact_type,
+        "wings OCI referrer {} artifactType {}; expected {} from descriptor",
+        descriptor.digest,
+        manifest_artifact_type,
+        descriptor_artifact_type
     );
     ensure!(
         manifest.subject.media_type == MEDIA_TYPE_OCI_MANIFEST,
@@ -1977,6 +1999,41 @@ mod tests {
 
         let err = validate_referrer_manifest(&descriptor, &manifest, &digest("d")).unwrap_err();
         assert!(err.to_string().contains("subject digest"));
+    }
+
+    #[test]
+    fn referrer_manifest_requires_matching_artifact_type() {
+        let descriptor = ReferrerDescriptor {
+            media_type: MEDIA_TYPE_OCI_ARTIFACT_MANIFEST.into(),
+            artifact_type: Some("application/vnd.dsse.envelope.v1+json".into()),
+            digest: digest("b"),
+            size: None,
+        };
+        let mut manifest = ReferrerManifest {
+            artifact_type: None,
+            subject: ReferrerSubject {
+                media_type: MEDIA_TYPE_OCI_MANIFEST.into(),
+                digest: digest("a"),
+            },
+            blobs: vec![ReferrerBlob {
+                media_type: "application/vnd.dsse.envelope.v1+json".into(),
+                digest: digest("c"),
+            }],
+            layers: vec![],
+        };
+
+        let err = validate_referrer_manifest(&descriptor, &manifest, &digest("a")).unwrap_err();
+        assert!(err.to_string().contains("manifest has no artifactType"));
+
+        manifest.artifact_type = Some("application/spdx+json".into());
+        let err = validate_referrer_manifest(&descriptor, &manifest, &digest("a")).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("expected application/vnd.dsse.envelope.v1+json")
+        );
+
+        manifest.artifact_type = descriptor.artifact_type.clone();
+        validate_referrer_manifest(&descriptor, &manifest, &digest("a")).unwrap();
     }
 
     fn manifest_with_annotations(annotations: indexmap::IndexMap<String, String>) -> WingsManifest {
