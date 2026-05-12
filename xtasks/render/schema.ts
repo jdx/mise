@@ -4,6 +4,7 @@
 //MISE depends=["docs:setup"]
 
 import * as fs from "node:fs";
+import { execSync } from "node:child_process";
 import * as toml from "toml";
 
 type EnumValue = string | boolean | number;
@@ -44,6 +45,12 @@ type NestedElement = {
 
 function writeFormattedJson(path: string, value: unknown) {
   fs.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  // `JSON.stringify` always splits arrays across lines, but the repo's
+  // prettier config inlines short arrays — without this, every render would
+  // produce drift that the hk prettier check then flags.
+  execSync(`bun x prettier --write --log-level warn ${path}`, {
+    stdio: "inherit",
+  });
 }
 
 function crawlReferencedDefs(schema: JsonObject, root: unknown) {
