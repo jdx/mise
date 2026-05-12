@@ -1,6 +1,4 @@
 use aqua_registry::{AquaPackage, Result, decode_package_rkyv};
-use std::collections::HashMap;
-use std::sync::LazyLock;
 
 /// Metadata for the baked aqua registry snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,8 +8,8 @@ pub struct AquaRegistryMetadata {
 }
 
 /// Baked canonical registry packages (compiled into the mise binary).
-pub static AQUA_STANDARD_REGISTRY_FILES: LazyLock<HashMap<&'static str, &'static [u8]>> =
-    LazyLock::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry_files.rs")));
+pub static AQUA_STANDARD_REGISTRY_FILES: phf::Map<&'static str, &'static [u8]> =
+    include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry_files.rs"));
 
 /// Baked aqua registry snapshot metadata (compiled into the mise binary).
 pub static AQUA_STANDARD_REGISTRY_METADATA: AquaRegistryMetadata = include!(concat!(
@@ -20,13 +18,10 @@ pub static AQUA_STANDARD_REGISTRY_METADATA: AquaRegistryMetadata = include!(conc
 ));
 
 /// Baked alias-to-canonical package ID map (compiled into the mise binary).
-static AQUA_STANDARD_REGISTRY_ALIASES: LazyLock<HashMap<&'static str, &'static str>> =
-    LazyLock::new(|| {
-        include!(concat!(
-            env!("OUT_DIR"),
-            "/aqua_standard_registry_aliases.rs"
-        ))
-    });
+static AQUA_STANDARD_REGISTRY_ALIASES: phf::Map<&'static str, &'static str> = include!(concat!(
+    env!("OUT_DIR"),
+    "/aqua_standard_registry_aliases.rs"
+));
 
 /// Returns all package IDs from the baked-in aqua registry.
 pub fn package_ids() -> Vec<&'static str> {

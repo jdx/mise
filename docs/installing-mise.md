@@ -169,10 +169,21 @@ cargo install mise --git https://github.com/jdx/mise --branch main
 
 ### dnf
 
-#### Fedora 41+, RHEL 9+, CentOS Stream 9+
+#### Fedora 41+, CentOS Stream 9+, RHEL 10+
 
 ```sh
 dnf copr enable jdxcode/mise
+dnf install mise
+```
+
+#### RHEL 9 / AlmaLinux 9 / Rocky 9
+
+RHEL 9 AppStream is currently frozen at Rust 1.88, which is older than mise's
+minimum supported Rust version. Use the CentOS Stream 9 build instead — the
+resulting binary works on RHEL 9 derivatives:
+
+```sh
+dnf copr enable jdxcode/mise centos-stream+epel-next-9
 dnf install mise
 ```
 
