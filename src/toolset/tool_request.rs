@@ -71,19 +71,25 @@ impl ToolRequest {
             _ => s.to_string(),
         };
         Ok(match s.split_once(':') {
-            Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => Self::Ref {
-                ref_: r.to_string(),
-                ref_type: ref_type.to_string(),
-                options: backend.opts(),
-                backend,
-                source,
-            },
-            Some(("prefix", p)) => Self::Prefix {
-                prefix: p.to_string(),
-                options: backend.opts(),
-                backend,
-                source,
-            },
+            Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
+                validate_ref_string(r)?;
+                Self::Ref {
+                    ref_: r.to_string(),
+                    ref_type: ref_type.to_string(),
+                    options: backend.opts(),
+                    backend,
+                    source,
+                }
+            }
+            Some(("prefix", p)) => {
+                validate_version_string(p)?;
+                Self::Prefix {
+                    prefix: p.to_string(),
+                    options: backend.opts(),
+                    backend,
+                    source,
+                }
+            }
             Some(("path", p)) => {
                 let path = resolve_path(p, &source);
                 Self::Path {
@@ -93,13 +99,16 @@ impl ToolRequest {
                     source,
                 }
             }
-            Some((p, v)) if p.starts_with("sub-") => Self::Sub {
-                sub: p.split_once('-').unwrap().1.to_string(),
-                options: backend.opts(),
-                orig_version: v.to_string(),
-                backend,
-                source,
-            },
+            Some((p, v)) if p.starts_with("sub-") => {
+                validate_version_string(v)?;
+                Self::Sub {
+                    sub: p.split_once('-').unwrap().1.to_string(),
+                    options: backend.opts(),
+                    orig_version: v.to_string(),
+                    backend,
+                    source,
+                }
+            }
             None => {
                 if s == "system" {
                     Self::System {
@@ -108,6 +117,7 @@ impl ToolRequest {
                         source,
                     }
                 } else {
+                    validate_version_string(&s)?;
                     Self::Version {
                         version: s,
                         options: backend.opts(),
@@ -387,6 +397,74 @@ impl ToolRequest {
     }
 }
 
+/// Reject version strings that contain shell metacharacters, URL delimiters,
+/// control characters, or path-traversal sequences. Version strings flow into
+/// install path names, plugin hook arguments, and (for some external plugins)
+/// shell commands. Characters in this set are never present in legitimate tool
+/// versions; rejecting them blocks a class of plugin command-injection and
+/// URL-smuggling bugs at the request boundary instead of relying on every plugin
+/// to escape correctly.
+fn validate_version_string(s: &str) -> Result<()> {
+    if s.is_empty() {
+        return Ok(());
+    }
+    if s.contains("..") {
+        bail!("invalid tool version {s:?}: contains path-traversal sequence");
+    }
+    if let Some(c) = s.chars().find(|c| is_forbidden_version_char(*c)) {
+        bail!("invalid tool version {s:?}: contains forbidden character {c:?}");
+    }
+    Ok(())
+}
+
+/// Like [`validate_version_string`] but used for `ref:`/`branch:`/`tag:`/`rev:`
+/// values. Branch and tag names legitimately contain `/`, so the version-level
+/// check is too strict for these; everything else stays rejected.
+fn validate_ref_string(s: &str) -> Result<()> {
+    if s.is_empty() {
+        return Ok(());
+    }
+    if s.contains("..") {
+        bail!("invalid tool ref {s:?}: contains path-traversal sequence");
+    }
+    if let Some(c) = s
+        .chars()
+        .find(|c| *c != '/' && is_forbidden_version_char(*c))
+    {
+        bail!("invalid tool ref {s:?}: contains forbidden character {c:?}");
+    }
+    Ok(())
+}
+
+fn is_forbidden_version_char(c: char) -> bool {
+    if (c as u32) < 0x20 || c == '\x7f' {
+        return true;
+    }
+    matches!(
+        c,
+        '"' | '\''
+            | '`'
+            | '\\'
+            | '$'
+            | ';'
+            | '&'
+            | '|'
+            | '<'
+            | '>'
+            | '('
+            | ')'
+            | '{'
+            | '}'
+            | '*'
+            | '?'
+            | '['
+            | ']'
+            | '#'
+            | '%'
+            | ' '
+    )
+}
+
 /// Resolve a `path:` tool version request value against the config file's directory.
 ///
 /// - `~/` is expanded to `$HOME`
@@ -472,9 +550,84 @@ impl Display for ToolRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::version_sub;
+    use super::{validate_ref_string, validate_version_string, version_sub};
     use pretty_assertions::assert_str_eq;
     use test_log::test;
+
+    #[test]
+    fn test_validate_version_string_accepts_real_versions() {
+        for v in [
+            "1.2.3",
+            "1.2.3-beta",
+            "1.2.3+build",
+            "20240115",
+            "lts/hydrogen",
+            "lts-iron",
+            "latest",
+            "3.12.0a1",
+            "3.2.0-preview1",
+            "tip",
+            "HEAD",
+            "nightly",
+            "1.2.3~rc1",
+            "v1.2.3",
+        ] {
+            assert!(
+                validate_version_string(v).is_ok(),
+                "expected {v:?} to be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_version_string_rejects_metacharacters() {
+        for v in [
+            "1.0;rm -rf /",
+            "1.0$(id)",
+            "1.0`id`",
+            "1.0|cat",
+            "1.0&&id",
+            "1.0\"x",
+            "1.0'x",
+            "1.0\\x",
+            "1.0<x",
+            "1.0>x",
+            "1.0(x",
+            "1.0)x",
+            "1.0{x",
+            "1.0}x",
+            "1.0*",
+            "1.0?",
+            "1.0[a]",
+            "1.0#frag",
+            "1.0%20",
+            "1.0 2",
+            "1.0\nrm",
+            "../etc/passwd",
+        ] {
+            assert!(
+                validate_version_string(v).is_err(),
+                "expected {v:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_ref_string_allows_slash() {
+        assert!(validate_ref_string("feature/foo").is_ok());
+        assert!(validate_ref_string("release/1.2").is_ok());
+        assert!(validate_ref_string("main").is_ok());
+    }
+
+    #[test]
+    fn test_validate_ref_string_rejects_metacharacters() {
+        for v in ["a;b", "a$(id)", "a b", "a..b", "a`b`"] {
+            assert!(
+                validate_ref_string(v).is_err(),
+                "expected ref {v:?} to be rejected"
+            );
+        }
+    }
 
     #[test]
     fn test_version_sub() {

@@ -1,3 +1,5 @@
+local util = require("util")
+
 --- Extension point, called after PreInstall, compiles bfs from source
 --- @param ctx table
 --- @field ctx.rootPath string SDK installation directory
@@ -8,9 +10,7 @@ function PLUGIN:PostInstall(ctx)
     -- So rootPath IS the source directory
 
     -- Check if configure script exists (to verify we're in the right place)
-    local check_cmd = string.format('test -f "%s/configure"', rootPath)
-    local exists = os.execute(check_cmd)
-    if not exists then
+    if not util.exec_ok(string.format('test -f "%s/configure"', rootPath)) then
         error(
             "Could not find configure script in " .. rootPath .. ". The source may not have been extracted correctly."
         )
@@ -24,15 +24,16 @@ function PLUGIN:PostInstall(ctx)
     )
 
     print("Compiling bfs from source...")
-    local result = os.execute(build_cmd)
-    if not result then
+    if not util.exec_ok(build_cmd) then
         error("Failed to compile bfs. Make sure you have a C compiler (gcc/clang) and make installed.")
     end
 
     -- bfs binary is built in bin/ subdirectory
     -- Make sure it's executable
     local binPath = rootPath .. "/bin"
-    os.execute(string.format('chmod +x "%s/bfs"', binPath))
+    if not util.exec_ok(string.format('chmod +x "%s/bfs"', binPath)) then
+        error("Failed to make bfs executable at " .. binPath .. "/bfs")
+    end
 
     print("bfs compiled successfully!")
 end
