@@ -55,6 +55,9 @@ function formatWithPrettier(paths: string[]) {
   const result = spawnSync("prettier", ["--write", ...paths], {
     stdio: "inherit",
   });
+  if (result.error) {
+    throw new Error(`prettier failed to spawn: ${result.error.message}`);
+  }
   if (result.status !== 0) {
     throw new Error(`prettier exited with status ${result.status}`);
   }
