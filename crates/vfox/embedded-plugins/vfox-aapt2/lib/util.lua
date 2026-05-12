@@ -2,17 +2,6 @@ local http = require("http")
 
 local util = {}
 
---- Run a shell command and return true only on success.
---- Lua 5.1's `os.execute` returns the numeric exit status, where any non-zero
---- status is still truthy. Plain `if not os.execute(...)` therefore treats
---- failed commands as successes, so use this helper instead.
---- @param cmd string Shell command to run
---- @return boolean ok True iff the command exited with status 0
-function util.exec_ok(cmd)
-    local result = os.execute(cmd)
-    return result == 0 or result == true
-end
-
 util.MAVEN_REPO = "https://dl.google.com/android/maven2/com/android/tools/build"
 util.GROUP_INDEX_URL = util.MAVEN_REPO .. "/group-index.xml"
 

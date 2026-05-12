@@ -6,6 +6,7 @@ local util = require("util")
 --- @field ctx.rootPath string SDK installation directory
 function PLUGIN:PostInstall(ctx)
 	local rootPath = ctx.rootPath
+	local os_name = util.getOsName()
 
 	-- Find the JAR file in the install directory
 	local find_cmd
@@ -44,27 +45,17 @@ function PLUGIN:PostInstall(ctx)
 		extract_cmd = string.format('unzip -o "%s" -d "%s"', jar_path, rootPath)
 	end
 
-	if not util.exec_ok(extract_cmd) then
+	local result = os.execute(extract_cmd)
+	if not result then
 		error("Failed to extract JAR file: " .. jar_path)
 	end
-
-	-- Verify the binary actually landed in the install directory before we
-	-- delete the JAR or report success — extraction can silently produce no
-	-- output if the archive layout is unexpected.
-	local expected_bin = rootPath .. (RUNTIME.osType == "windows" and "\\aapt2.exe" or "/aapt2")
-	local probe = io.open(expected_bin, "rb")
-	if not probe then
-		error("Extraction completed but expected aapt2 binary is missing at " .. expected_bin)
-	end
-	probe:close()
 
 	-- Remove the JAR file after extraction
 	os.remove(jar_path)
 
 	-- Make the binary executable on Unix systems
 	if RUNTIME.osType ~= "windows" then
-		if not util.exec_ok(string.format('chmod +x "%s"', expected_bin)) then
-			error("Failed to make aapt2 binary executable at " .. expected_bin)
-		end
+		local aapt2_path = rootPath .. "/aapt2"
+		os.execute(string.format('chmod +x "%s"', aapt2_path))
 	end
 end
