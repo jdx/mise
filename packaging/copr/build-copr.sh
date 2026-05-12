@@ -4,7 +4,9 @@ set -euo pipefail
 
 # Default values
 PACKAGE_NAME="${PACKAGE_NAME:-mise}"
-CHROOTS="${CHROOTS:-fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64}"
+# TODO(epel-9): drop centos-stream+epel-next-9-* and switch back to epel-9-*
+# once RHEL 9 AppStream ships rust >= mise's MSRV (currently EL9 = 1.88).
+CHROOTS="${CHROOTS:-fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64 centos-stream+epel-next-9-aarch64 centos-stream+epel-next-9-x86_64}"
 BUILD_PROFILE="${BUILD_PROFILE:-release}"
 MAINTAINER_NAME="${MAINTAINER_NAME:-mise Release Bot}"
 MAINTAINER_EMAIL="${MAINTAINER_EMAIL:-noreply@mise.jdx.dev}"
@@ -22,7 +24,7 @@ usage() {
 	echo "Options:"
 	echo "  -v, --version VERSION        Package version (required)"
 	echo "  -p, --profile PROFILE        Build profile (default: release)"
-	echo "  -c, --chroots CHROOTS        COPR chroots (default: fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64)"
+	echo "  -c, --chroots CHROOTS        COPR chroots (default: fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64 centos-stream+epel-next-9-aarch64 centos-stream+epel-next-9-x86_64)"
 	echo "  -o, --owner OWNER            COPR owner (default: jdxcode)"
 	echo "  -j, --project PROJECT        COPR project (default: mise)"
 	echo "  -n, --name NAME              Package name (default: mise)"

@@ -109,7 +109,11 @@ You can configure a custom shell command that mise runs to obtain a GitHub token
 credential_command = "op read 'op://Private/GitHub Token/credential'"
 ```
 
-mise executes this command via `sh -c` and reads the token from stdout. The hostname is passed as `$1`, so the command can return different tokens for different hosts (e.g., `github.com` vs a GHE instance). This is checked before `github_tokens.toml` and gh CLI tokens, so it takes priority over file-based sources. Results are cached per host per session.
+mise executes this command with the configured default inline shell ([`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args) or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)) and reads the token from stdout. The hostname is available as `MISE_CREDENTIAL_HOST`, and the provider name (`github`) is available as `MISE_CREDENTIAL_PROVIDER`. For compatibility, recognized sh-compatible shells (`ash`, `bash`, `dash`, `ksh`, `sh`, and `zsh`) also receive the hostname as `$1`/`${1}`. This is checked before `github_tokens.toml` and gh CLI tokens, so it takes priority over file-based sources. Results are cached per host per session.
+
+:::: warning Planned deprecation
+The legacy `$1`/`${1}` hostname argument is deprecated. Use `MISE_CREDENTIAL_HOST` instead. mise will start warning in `2026.11.0`, and `$1` compatibility will be removed in `2027.11.0`.
+::::
 
 ### Using ghtkn
 
