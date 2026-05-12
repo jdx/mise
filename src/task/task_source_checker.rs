@@ -447,6 +447,10 @@ fn save_content_hash_cache(path: &Path, cache: &ContentHashCache) -> Result<()> 
     {
         let mut zlib = ZlibEncoder::new(File::create(&partial)?, Compression::fast());
         zlib.write_all(&rmp_serde::to_vec_named(cache)?)?;
+        // Propagate finalization errors explicitly — ZlibEncoder's Drop impl
+        // would silently discard them, leaving a truncated partial file that
+        // we'd then rename into place as a poisoned cache.
+        zlib.finish()?;
     }
     file::rename(&partial, path)?;
     Ok(())
