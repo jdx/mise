@@ -1825,13 +1825,20 @@ pub trait Backend: Debug + Send + Sync {
         let mut tera = get_tera(dir);
         let rendered_script = tera.render_str(script, tera_ctx)?;
 
-        let mut runner = CmdLineRunner::new(&*env::SHELL)
+        let shell = Settings::get().default_inline_shell()?;
+        let (program, shell_args) = shell.split_first().ok_or_else(|| {
+            eyre!(
+                "default inline shell is empty; check unix_default_inline_shell_args / windows_default_inline_shell_args"
+            )
+        })?;
+
+        let mut runner = CmdLineRunner::new(program)
             .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env("MISE_TOOL_VERSION", tv.version.clone())
             .with_pr(ctx.pr.as_ref())
-            .arg(env::SHELL_COMMAND_FLAG)
+            .args(shell_args)
             .arg(&rendered_script)
             .envs(env_vars);
 
