@@ -2,6 +2,7 @@
 
 assert "mise registry gh" "aqua:cli/cli asdf:bartlomiejdanek/asdf-github-cli"
 assert_contains "mise registry" "gh                            aqua:cli/cli asdf:bartlomiejdanek/asdf-github-cli"
+assert "mise registry jbang" "aqua:jbangdev/jbang asdf:mise-plugins/jbang-asdf"
 
 # --json flag tests
 assert "mise registry gh --json | jq -r '.short'" "gh"
