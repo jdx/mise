@@ -1,5 +1,6 @@
 use crate::config;
 use crate::config::Settings;
+use crate::config::settings::SETTINGS_META;
 use eyre::bail;
 
 /// Show a current setting
@@ -37,6 +38,8 @@ impl SettingsGet {
             if let Some(v) = value.as_table().and_then(|t| t.get(k.0)) {
                 key = k.1;
                 value = v.clone()
+            } else if SETTINGS_META.contains_key(self.setting.as_str()) {
+                bail!("Setting [{}] is not set", self.setting);
             } else {
                 bail!("Unknown setting: {}", self.setting);
             }
