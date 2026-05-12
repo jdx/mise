@@ -333,17 +333,25 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
     Ok(())
 }
 
-/// Get the path to store source hashes for a task
-fn sources_hash_path(task: &Task, root: &Path, content_hash: bool) -> PathBuf {
+/// Identity hash for a task in a given working directory. Used as the
+/// filename stem for any per-task state we write under `STATE/task-sources/`,
+/// so that changes to the task definition (sources, cmd, etc.), the config
+/// file it came from, or the working directory all invalidate state in
+/// lock-step.
+fn task_state_key(task: &Task, root: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     task.hash(&mut hasher);
     task.config_source.hash(&mut hasher);
     root.hash(&mut hasher);
-    let hash = format!("{:x}", hasher.finish());
+    format!("{:x}", hasher.finish())
+}
+
+/// Get the path to store source hashes for a task
+fn sources_hash_path(task: &Task, root: &Path, content_hash: bool) -> PathBuf {
     let suffix = if content_hash { "-content" } else { "" };
     dirs::STATE
         .join("task-sources")
-        .join(format!("{hash}{suffix}"))
+        .join(format!("{}{suffix}", task_state_key(task, root)))
 }
 
 /// Get the existing source hash for a task, if it exists
@@ -415,18 +423,13 @@ struct CachedFileHash {
 
 type ContentHashCache = BTreeMap<PathBuf, CachedFileHash>;
 
-/// Path to the per-task content-hash cache file. Keyed by the same identity
-/// as `sources_hash_path` so changes to the task definition naturally
-/// invalidate the cache.
+/// Path to the per-task content-hash cache file. Shares `task_state_key`
+/// with `sources_hash_path` so changes to the task definition invalidate
+/// both in lock-step.
 fn content_hash_cache_path(task: &Task, root: &Path) -> PathBuf {
-    let mut hasher = DefaultHasher::new();
-    task.hash(&mut hasher);
-    task.config_source.hash(&mut hasher);
-    root.hash(&mut hasher);
-    let hash = format!("{:x}", hasher.finish());
     dirs::STATE
         .join("task-sources")
-        .join(format!("{hash}-content-cache"))
+        .join(format!("{}-content-cache", task_state_key(task, root)))
 }
 
 fn load_content_hash_cache(path: &Path) -> ContentHashCache {
