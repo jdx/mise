@@ -1,10 +1,5 @@
 name: release-plz
 
-permissions:
-  pull-requests: write
-  contents: write
-  id-token: write
-
 on:
   workflow_dispatch:
   push:
@@ -28,6 +23,10 @@ jobs:
     if: github.repository == 'jdx/mise'
     timeout-minutes: 20
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-release-plz-rust-linux
+    permissions:
+      pull-requests: write
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
