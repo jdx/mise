@@ -82,10 +82,10 @@ async fn execute(
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))
         .join(":");
-    let shell = shell
-        .map(shell_words::split)
-        .transpose()?
-        .unwrap_or(Settings::get().default_inline_shell()?);
+    let shell = match shell {
+        Some(shell) => shell_words::split(shell)?,
+        None => Settings::get().default_inline_shell()?,
+    };
     let (program, shell_args) = shell.split_first().ok_or_else(|| {
         eyre::eyre!(
             "inline shell is empty; check watch_files.shell or unix_default_inline_shell_args / windows_default_inline_shell_args"
