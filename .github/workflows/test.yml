@@ -208,10 +208,12 @@ jobs:
       - run: mise run render
       - name: assert render produces no diff
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
+          # Exclude bun.lock: `bun i` above may refresh it when bun versions
+          # drift, and that diff is unrelated to `mise run render` output.
+          if [ -n "$(git status --porcelain -- . ':!bun.lock')" ]; then
             echo "::error::'mise run render' produced changes. Run it locally and commit."
-            git status
-            git diff HEAD
+            git status -- . ':!bun.lock'
+            git diff HEAD -- . ':!bun.lock'
             exit 1
           fi
       - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
