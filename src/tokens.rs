@@ -8,7 +8,11 @@ use std::sync::LazyLock as Lazy;
 use crate::file::path_env_without_shims;
 
 /// Cache for tokens obtained from `credential_command`.
-/// Key format is `{provider}:{host}` to avoid cross-provider collisions.
+/// Key format is `{provider}:{cmd}` — the cmd is part of the key so a setting
+/// change within the same process isn't masked by a stale entry, and the host
+/// is intentionally NOT part of the key so the helper is invoked at most once
+/// per process even when [`crate::github::resolve_token`] walks multiple
+/// candidate hosts (e.g. `github.com` followed by `api.github.com`).
 static CREDENTIAL_COMMAND_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String>>>> =
     Lazy::new(Default::default);
 
@@ -58,7 +62,12 @@ pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, S
 /// Get a token by running a provider-specific `credential_command`.
 ///
 /// The host and provider are passed through `MISE_CREDENTIAL_HOST` and
-/// `MISE_CREDENTIAL_PROVIDER`. Results are cached per provider+host.
+/// `MISE_CREDENTIAL_PROVIDER`. Results are cached per `{provider}:{cmd}`
+/// (host intentionally omitted from the key) so the helper is invoked at
+/// most once per process even when the resolver walks multiple candidate
+/// hosts. The first invocation determines the cached value — a host-aware
+/// `cmd` should produce its answer from `MISE_CREDENTIAL_HOST` on that
+/// first call, since subsequent host queries skip the spawn.
 pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Option<String> {
     if credential_command_uses_legacy_host_arg(cmd) {
         deprecated_at!(
@@ -69,7 +78,7 @@ pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Op
         );
     }
 
-    let cache_key = format!("{provider}:{host}");
+    let cache_key = format!("{provider}:{cmd}");
     let mut cache = CREDENTIAL_COMMAND_CACHE
         .lock()
         .expect("CREDENTIAL_COMMAND_CACHE mutex poisoned");
@@ -380,6 +389,33 @@ logins:
             r"C:\Program Files\Git\bin\BASH.EXE"
         ));
         assert!(!shell_supports_posix_c_arg_passing("cmd.exe"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_credential_command_token_invoked_once_per_process() {
+        // The cred helper must run at most once per process even when
+        // resolve_token() walks multiple lookup hosts. The cache is keyed
+        // by (provider, cmd) — not host — so a second call with a
+        // different host returns the cached token without re-spawning.
+        let dir = tempfile::tempdir().unwrap();
+        let counter = dir.path().join("counter");
+        // A cmd is host-aware via $MISE_CREDENTIAL_HOST but we want to
+        // verify it's only spawned once. The first host's env wins.
+        let cmd = format!(
+            "echo invocation >> {} && echo \"token-for-$MISE_CREDENTIAL_HOST\"",
+            counter.display()
+        );
+
+        let t1 = get_credential_command_token("test-once", &cmd, "github.com").unwrap();
+        let t2 = get_credential_command_token("test-once", &cmd, "api.github.com").unwrap();
+
+        // Same token both times (the first host's value is cached).
+        assert_eq!(t1, "token-for-github.com");
+        assert_eq!(t2, "token-for-github.com");
+
+        let invocations = std::fs::read_to_string(&counter).unwrap().lines().count();
+        assert_eq!(invocations, 1, "helper must spawn at most once per process");
     }
 
     #[test]
