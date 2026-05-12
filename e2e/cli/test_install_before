@@ -100,11 +100,22 @@ EOF
 mise install --minimum-release-age 2019-01-01
 assert_contains "mise ls --installed jq" "1.6"
 
-# Test: legacy --before flag remains supported as a hidden alias
+# Test: legacy --before flag remains supported as a hidden alias on renamed commands
 rm -f mise.toml
 assert_contains "mise install tiny@latest --before 2020-01-01 --dry-run 2>&1" "tiny"
-assert_contains "mise install --help" "--minimum-release-age"
-assert_not_contains "mise install --help" "--before"
+assert_contains "mise latest jq --before 2019-01-01" "1.6"
+assert_contains "mise use tiny@latest --before 2020-01-01 --dry-run 2>&1" "tiny"
+cat <<EOF >mise.toml
+[tools]
+tiny = "1"
+EOF
+mise install tiny@1.0.0
+assert_contains "mise upgrade --before 2025-01-01 --dry-run 2>&1" "tiny"
+
+for cmd in install latest upgrade use; do
+  assert_contains "mise $cmd --help" "--minimum-release-age"
+  assert_not_contains "mise $cmd --help" "--before"
+done
 
 # Test: legacy install_before setting remains supported as a hidden alias
 mise uninstall jq --all 2>/dev/null || true
