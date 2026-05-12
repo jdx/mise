@@ -42,7 +42,10 @@ function PLUGIN:PostInstall(ctx)
     local sourceJar = rootPath .. "/" .. jarName
     local destJar = selfInstallDir .. "/" .. jarName
 
-    -- The JAR might be at rootPath directly or we need to find it
+    -- The JAR might be at rootPath directly or we need to find it.
+    -- Note: `find -exec ... \;` exits 0 even when no files matched, so
+    -- exec_ok alone can't tell us the move succeeded — we verify destJar
+    -- exists below.
     local moveCmd = string.format(
         'mv "%s" "%s" 2>/dev/null || find "%s" -maxdepth 1 -name "*.jar" -exec mv {} "%s" \\;',
         sourceJar,
@@ -53,6 +56,11 @@ function PLUGIN:PostInstall(ctx)
     if not exec_ok(moveCmd) then
         error("Failed to move Leiningen JAR into " .. selfInstallDir)
     end
+    local destProbe = io.open(destJar, "rb")
+    if not destProbe then
+        error("Leiningen JAR missing after move; expected " .. destJar)
+    end
+    destProbe:close()
 
     -- Download the lein script. http.get returns a response table with
     -- status_code; ordinary non-2xx responses do not set err, so we must
