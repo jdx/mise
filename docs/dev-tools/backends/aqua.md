@@ -33,9 +33,20 @@ aqua.registry_url = "https://github.com/my-org/aqua-registry"
 ```
 
 mise downloads `registry.yaml` from the repository root, falling back to `registry.yml` if needed.
-The merged registry YAML is cached, then compiled into a flat per-package rkyv cache so later
-lookups only decode the requested package entry. When `aqua.baked_registry` is enabled, the baked-in
-registry remains a fallback for packages missing from the custom registry.
+Downloaded registry source is cached for one week under `MISE_CACHE_DIR`. To refresh sooner, run
+`mise cache clear` or change `MISE_CACHE_DIR` to use a different cache location.
+
+For a local registry checkout, use a `file://` URL pointing at the directory that contains
+`registry.yaml` or `registry.yml`:
+
+```toml
+[settings]
+aqua.registry_url = "file:///Users/me/src/aqua-registry"
+```
+
+`file://` registries are read directly from disk and are not cached as downloaded source. When
+`aqua.baked_registry` is enabled, the baked-in registry remains a fallback for packages missing from
+the custom registry.
 
 ## Usage
 

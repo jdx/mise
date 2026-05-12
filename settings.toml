@@ -128,11 +128,13 @@ type = "Bool"
 [aqua.registry_url]
 description = "URL of an aqua registry repository to fetch."
 docs = """
-URL of an aqua registry repository to fetch. mise downloads `registry.yaml` from the repository root
-and falls back to `registry.yml` if needed.
+URL of an aqua registry repository to fetch. mise downloads `registry.yaml` from the repository
+root and falls back to `registry.yml` if needed. For a local registry checkout, use a `file://`
+URL pointing at the directory that contains `registry.yaml` or `registry.yml`.
 
-Downloaded registries are cached and compiled into per-package rkyv blobs so package lookup
-doesn't parse the full YAML registry on every command.
+Downloaded registries are cached for one week. To refresh sooner, run `mise cache clear` or change
+`MISE_CACHE_DIR` to use a different cache location. `file://` registries are read directly from disk
+and are not cached as downloaded source.
 
 If this is set, mise checks the configured registry first. The baked-in aqua registry remains a
 fallback when `aqua.baked_registry` is enabled.
