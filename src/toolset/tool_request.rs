@@ -397,13 +397,20 @@ impl ToolRequest {
     }
 }
 
-/// Reject version strings that contain shell metacharacters, URL delimiters,
+/// Reject version strings that contain shell-quote-breaking characters,
 /// control characters, or path-traversal sequences. Version strings flow into
-/// install path names, plugin hook arguments, and (for some external plugins)
-/// shell commands. Characters in this set are never present in legitimate tool
-/// versions; rejecting them blocks a class of plugin command-injection and
-/// URL-smuggling bugs at the request boundary instead of relying on every plugin
-/// to escape correctly.
+/// install path names and (for vfox plugins) into `ctx.version` / `ctx.rootPath`
+/// values that downstream Lua hooks often interpolate into shell commands.
+///
+/// The deny list is the minimum set of characters that can break out of either
+/// a single- or double-quoted shell string, or that trigger expansion *inside*
+/// double quotes: quotes themselves, backslash, backtick, and `$`. Plus control
+/// characters (newlines split shell tokens) and `..` (filesystem traversal).
+/// Everything else is allowed so legitimate version vocabulary (npm-style
+/// semver ranges like `>=20 <21 || >=22` or `^1.0.0`, dates, channel names,
+/// `lts/hydrogen`, etc.) continues to work — those characters are only
+/// dangerous in *unquoted* shell context, which cannot occur without one of
+/// the rejected expansion characters appearing first.
 fn validate_version_string(s: &str) -> Result<()> {
     if s.is_empty() {
         return Ok(());
@@ -417,52 +424,19 @@ fn validate_version_string(s: &str) -> Result<()> {
     Ok(())
 }
 
-/// Like [`validate_version_string`] but used for `ref:`/`branch:`/`tag:`/`rev:`
-/// values. Branch and tag names legitimately contain `/`, so the version-level
-/// check is too strict for these; everything else stays rejected.
+/// Validate `ref:`/`branch:`/`tag:`/`rev:` values. Branch and tag names
+/// legitimately contain `/` and other "shell-meta-but-quote-safe" characters
+/// (e.g. `release-1.0+rc1`), so the same rules as version strings apply: only
+/// reject characters that break shell quoting or traverse paths.
 fn validate_ref_string(s: &str) -> Result<()> {
-    if s.is_empty() {
-        return Ok(());
-    }
-    if s.contains("..") {
-        bail!("invalid tool ref {s:?}: contains path-traversal sequence");
-    }
-    if let Some(c) = s
-        .chars()
-        .find(|c| *c != '/' && is_forbidden_version_char(*c))
-    {
-        bail!("invalid tool ref {s:?}: contains forbidden character {c:?}");
-    }
-    Ok(())
+    validate_version_string(s)
 }
 
 fn is_forbidden_version_char(c: char) -> bool {
     if (c as u32) < 0x20 || c == '\x7f' {
         return true;
     }
-    matches!(
-        c,
-        '"' | '\''
-            | '`'
-            | '\\'
-            | '$'
-            | ';'
-            | '&'
-            | '|'
-            | '<'
-            | '>'
-            | '('
-            | ')'
-            | '{'
-            | '}'
-            | '*'
-            | '?'
-            | '['
-            | ']'
-            | '#'
-            | '%'
-            | ' '
-    )
+    matches!(c, '"' | '\'' | '`' | '\\' | '$')
 }
 
 /// Resolve a `path:` tool version request value against the config file's directory.
@@ -557,6 +531,7 @@ mod tests {
     #[test]
     fn test_validate_version_string_accepts_real_versions() {
         for v in [
+            // concrete versions seen in the wild
             "1.2.3",
             "1.2.3-beta",
             "1.2.3+build",
@@ -571,6 +546,20 @@ mod tests {
             "nightly",
             "1.2.3~rc1",
             "v1.2.3",
+            "1.20.0-rc.4-otp-29",
+            "29.0-rc3",
+            "2.35.0-beta.01",
+            "stable",
+            "3.16-dev",
+            // npm-style semver range queries (from package.json engines)
+            ">=20.0.0",
+            ">= 25.6.1",
+            "^1.0.0",
+            "~1.2.3",
+            "*",
+            "25.x",
+            ">=20 <21 || >=22",
+            ">=18 <20 || >=22",
         ] {
             assert!(
                 validate_version_string(v).is_ok(),
@@ -582,28 +571,21 @@ mod tests {
     #[test]
     fn test_validate_version_string_rejects_metacharacters() {
         for v in [
-            "1.0;rm -rf /",
+            // quote / expansion characters that break shell context
             "1.0$(id)",
             "1.0`id`",
-            "1.0|cat",
-            "1.0&&id",
+            "1.0$HOME",
             "1.0\"x",
             "1.0'x",
             "1.0\\x",
-            "1.0<x",
-            "1.0>x",
-            "1.0(x",
-            "1.0)x",
-            "1.0{x",
-            "1.0}x",
-            "1.0*",
-            "1.0?",
-            "1.0[a]",
-            "1.0#frag",
-            "1.0%20",
-            "1.0 2",
+            // control characters / newline splitting
             "1.0\nrm",
+            "1.0\rrm",
+            "1.0\tx",
+            "1.0\x00x",
+            // path traversal
             "../etc/passwd",
+            "1.0/../etc",
         ] {
             assert!(
                 validate_version_string(v).is_err(),
@@ -621,7 +603,7 @@ mod tests {
 
     #[test]
     fn test_validate_ref_string_rejects_metacharacters() {
-        for v in ["a;b", "a$(id)", "a b", "a..b", "a`b`"] {
+        for v in ["a$(id)", "a..b", "a`b`", "a\"b", "a'b", "a\\b"] {
             assert!(
                 validate_ref_string(v).is_err(),
                 "expected ref {v:?} to be rejected"
