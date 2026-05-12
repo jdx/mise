@@ -38,26 +38,6 @@ jobs:
           git_user_signingkey: true
           git_commit_gpgsign: true
           git_tag_gpgsign: true
-      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/.global-cache
-            ~/.cache/sccache
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
-        with: { tool: sccache }
-      - name: Configure sccache
-        run: |
-          export RUSTC_WRAPPER=sccache
-          export SCCACHE_DIR="$HOME/.cache/sccache"
-          export SCCACHE_CACHE_SIZE=20G
-          {
-            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
-            echo "SCCACHE_DIR=$SCCACHE_DIR"
-            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
-          } >> "$GITHUB_ENV"
-          sccache --zero-stats
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: ./.github/actions/mise-tools
@@ -67,5 +47,3 @@ jobs:
       - run: mise run release-plz
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
-      - run: sccache --show-stats
-        if: always()
