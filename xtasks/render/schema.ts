@@ -3,8 +3,8 @@
 //MISE description="Render JSON schema"
 //MISE depends=["docs:setup"]
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
-import { execSync } from "node:child_process";
 import * as toml from "toml";
 
 type EnumValue = string | boolean | number;
@@ -43,14 +43,24 @@ type NestedElement = {
   properties: Record<string, Element>;
 };
 
+const writtenPaths: string[] = [];
+
 function writeFormattedJson(path: string, value: unknown) {
   fs.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
-  // `JSON.stringify` always splits arrays across lines, but the repo's
-  // prettier config inlines short arrays — without this, every render would
-  // produce drift that the hk prettier check then flags.
-  execSync(`bun x prettier --write --log-level warn ${path}`, {
+  writtenPaths.push(path);
+}
+
+function formatWithPrettier(paths: string[]) {
+  if (paths.length === 0) return;
+  const result = spawnSync("prettier", ["--write", ...paths], {
     stdio: "inherit",
   });
+  if (result.error) {
+    throw new Error(`prettier failed to spawn: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`prettier exited with status ${result.status}`);
+  }
 }
 
 function crawlReferencedDefs(schema: JsonObject, root: unknown) {
@@ -233,3 +243,5 @@ const misercSchema = {
 };
 
 writeFormattedJson("schema/miserc.json", misercSchema);
+
+formatWithPrettier(writtenPaths);

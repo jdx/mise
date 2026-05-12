@@ -134,7 +134,14 @@ impl VfoxPlugin {
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
-        vfox.github_token = crate::github::resolve_token("github.com").map(|(token, _)| token);
+        // Resolve the GitHub token lazily — only when a Lua plugin actually
+        // makes an HTTP request to a GitHub API URL. This avoids spawning
+        // `github.credential_command` (or hitting other token sources) for
+        // operations that never need a token, like `mise hook-env` or shell
+        // completion. `resolve_token` itself caches results per-process.
+        vfox.github_token_resolver = Some(Arc::new(|| {
+            crate::github::resolve_token("github.com").map(|(token, _)| token)
+        }));
         let rx = vfox.log_subscribe();
         (vfox, rx)
     }

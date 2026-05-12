@@ -205,6 +205,15 @@ jobs:
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - uses: ./.github/actions/mise-tools
       - run: mise x -- bun i
+      - run: mise run render
+      - name: assert render produces no diff
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::'mise run render' produced changes. Run it locally and commit."
+            git status
+            git diff HEAD
+            exit 1
+          fi
       - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
