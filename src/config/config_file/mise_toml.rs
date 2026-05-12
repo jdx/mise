@@ -945,6 +945,11 @@ impl ConfigFile for MiseToml {
                         .as_ref()
                         .map(|r| self.parse_template(r))
                         .transpose()?,
+                    shell: wf
+                        .shell
+                        .as_ref()
+                        .map(|s| self.parse_template(s))
+                        .transpose()?,
                     task: wf
                         .task
                         .as_ref()

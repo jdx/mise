@@ -17,6 +17,8 @@ pub struct WatchFile {
     pub patterns: Vec<String>,
     #[serde(default)]
     pub run: Option<String>,
+    #[serde(default)]
+    pub shell: Option<String>,
     pub task: Option<String>,
 }
 
@@ -48,7 +50,7 @@ pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
                 let result = if let Some(task_name) = &wf.task {
                     execute_task(config, ts, &root, task_name, files).await
                 } else if let Some(run) = &wf.run {
-                    execute(config, ts, &root, run, files).await
+                    execute(config, ts, &root, run, wf.shell.as_deref(), files).await
                 } else {
                     warn!("watch_file hook has neither run nor task set, skipping");
                     continue;
@@ -69,6 +71,7 @@ async fn execute(
     ts: &Toolset,
     root: &Path,
     run: &str,
+    shell: Option<&str>,
     files: Vec<&PathBuf>,
 ) -> Result<()> {
     Settings::get().ensure_experimental("watch_file_hooks")?;
@@ -76,11 +79,18 @@ async fn execute(
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))
         .join(":");
-    let shell = Settings::get().default_inline_shell()?;
+    let shell = shell
+        .map(shell_words::split)
+        .transpose()?
+        .unwrap_or(Settings::get().default_inline_shell()?);
+    let (program, shell_args) = shell.split_first().ok_or_else(|| {
+        eyre::eyre!(
+            "inline shell is empty; check watch_files.shell or unix_default_inline_shell_args / windows_default_inline_shell_args"
+        )
+    })?;
 
-    let args = shell
+    let args = shell_args
         .iter()
-        .skip(1)
         .map(|s| s.as_str())
         .chain(once(run))
         .collect_vec();
@@ -98,7 +108,7 @@ async fn execute(
     );
     // TODO: this should be different but I don't have easy access to it
     // env.insert("MISE_CONFIG_ROOT".to_string(), root.to_string_lossy().to_string());
-    cmd(&shell[0], args)
+    cmd(program, args)
         .stdout_to_stderr()
         // .dir(root)
         .full_env(env)
