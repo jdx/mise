@@ -14,7 +14,7 @@ use std::{
 };
 use tera::Context as TeraContext;
 use tera::Value as TeraValue;
-use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
+use toml_edit::{Array, Document, DocumentMut, InlineTable, Item, Key, Table, Value, table, value};
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
@@ -275,6 +275,7 @@ impl MiseToml {
 
     pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
         trust_check(path)?;
+        Self::check_env_dotted_directive_order(body)?;
         trace!("parsing: {}", display_path(path));
         let des = toml::Deserializer::parse(body).map_err(|e| toml_parse_error(&e, body, path))?;
         let de_res = serde_ignored::deserialize(des, |p| {
@@ -301,6 +302,23 @@ impl MiseToml {
         }
         // trace!("{}", rf.dump()?);
         Ok(rf)
+    }
+
+    fn check_env_dotted_directive_order(body: &str) -> eyre::Result<()> {
+        let Ok(doc) = Document::parse(body) else {
+            return Ok(());
+        };
+        let Some(env) = doc.as_table().get("env") else {
+            return Ok(());
+        };
+        if let Some(table) = env.as_table() {
+            check_env_table_dotted_directive_order(table, body)?;
+        } else if let Some(array) = env.as_array_of_tables() {
+            for table in array.iter() {
+                check_env_table_dotted_directive_order(table, body)?;
+            }
+        }
+        Ok(())
     }
 
     fn doc(&self) -> eyre::Result<DocumentMut> {
@@ -1238,6 +1256,190 @@ where
     deserializer.deserialize_option(MinVersionVisitor)
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum MiseTomlEnvDirective {
+    Single {
+        #[serde(alias = "path")]
+        value: String,
+        #[serde(flatten)]
+        options: EnvDirectiveOptions,
+    },
+    Multiple {
+        #[serde(alias = "value", alias = "path", alias = "paths")]
+        values: Vec<String>,
+        #[serde(flatten)]
+        options: EnvDirectiveOptions,
+    },
+}
+
+impl FromStr for MiseTomlEnvDirective {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(MiseTomlEnvDirective::Single {
+            value: s.to_string(),
+            options: Default::default(),
+        })
+    }
+}
+
+#[derive(Clone)]
+struct EnvDirectivePythonVenv {
+    path: String,
+    create: bool,
+    python: Option<String>,
+    uv_create_args: Option<Vec<String>>,
+    python_create_args: Option<Vec<String>>,
+}
+
+impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct EnvDirectivePythonVenvVisitor;
+
+        const FIELDS: &[&str] = &[
+            "path",
+            "create",
+            "python",
+            "uv_create_args",
+            "python_create_args",
+        ];
+
+        impl<'de> Visitor<'de> for EnvDirectivePythonVenvVisitor {
+            type Value = EnvDirectivePythonVenv;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("python venv directive")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(EnvDirectivePythonVenv {
+                    path: v.into(),
+                    create: false,
+                    python: None,
+                    uv_create_args: None,
+                    python_create_args: None,
+                })
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut path = None;
+                let mut create = false;
+                let mut python = None;
+                let mut uv_create_args = None;
+                let mut python_create_args = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "path" => {
+                            path = Some(map.next_value()?);
+                        }
+                        "create" => {
+                            create = map.next_value()?;
+                        }
+                        "python" => {
+                            python = Some(map.next_value()?);
+                        }
+                        "uv_create_args" => {
+                            uv_create_args = Some(map.next_value()?);
+                        }
+                        "python_create_args" => {
+                            python_create_args = Some(map.next_value()?);
+                        }
+                        _ => {
+                            return Err(de::Error::unknown_field(&key, FIELDS));
+                        }
+                    }
+                }
+                let path = path.ok_or_else(|| de::Error::missing_field("path"))?;
+                Ok(EnvDirectivePythonVenv {
+                    path,
+                    create,
+                    python,
+                    uv_create_args,
+                    python_create_args,
+                })
+            }
+        }
+
+        deserializer.deserialize_struct("PythonVenv", FIELDS, EnvDirectivePythonVenvVisitor)
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct EnvDirectivePython {
+    #[serde(default)]
+    venv: Option<EnvDirectivePythonVenv>,
+}
+
+#[derive(Deserialize)]
+struct EnvDirectives {
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    path: Vec<MiseTomlEnvDirective>,
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    file: Vec<MiseTomlEnvDirective>,
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    source: Vec<MiseTomlEnvDirective>,
+    #[serde(default)]
+    python: EnvDirectivePython,
+    #[serde(flatten)]
+    other: BTreeMap<String, toml::Value>,
+}
+
+fn flatten_directives<F>(
+    directives: Vec<MiseTomlEnvDirective>,
+    constructor: F,
+) -> impl Iterator<Item = EnvDirective>
+where
+    F: Fn(String, EnvDirectiveOptions) -> EnvDirective + 'static,
+{
+    directives.into_iter().flat_map(move |d| match d {
+        MiseTomlEnvDirective::Single { value, options } => {
+            vec![constructor(value, options)]
+        }
+        MiseTomlEnvDirective::Multiple { values, options } => values
+            .into_iter()
+            .map(|v| constructor(v, options.clone()))
+            .collect(),
+    })
+}
+
+fn extend_env_with_directives(env: &mut Vec<EnvDirective>, directives: EnvDirectives) {
+    env.extend(flatten_directives(directives.path, EnvDirective::Path));
+    env.extend(flatten_directives(directives.file, EnvDirective::File));
+    env.extend(flatten_directives(directives.source, EnvDirective::Source));
+    for (key, mut value) in directives.other {
+        let mut opts = EnvDirectiveOptions::default();
+        if let Some(table) = value.as_table_mut()
+            && let Some(tools) = table.remove("tools")
+        {
+            opts.tools = tools.as_bool().unwrap_or(false);
+        }
+        env.push(EnvDirective::Module(key, value, opts));
+    }
+    if let Some(venv) = directives.python.venv {
+        env.push(EnvDirective::PythonVenv {
+            path: venv.path,
+            create: venv.create,
+            python: venv.python,
+            uv_create_args: venv.uv_create_args,
+            python_create_args: venv.python_create_args,
+            options: EnvDirectiveOptions {
+                tools: true,
+                redact: Some(false),
+                required: RequiredValue::False,
+            },
+        });
+    }
+}
+
 impl<'de> de::Deserialize<'de> for EnvList {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -1270,197 +1472,8 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "_" | "mise" => {
-                            #[derive(Deserialize)]
-                            #[serde(untagged)]
-                            enum MiseTomlEnvDirective {
-                                Single {
-                                    #[serde(alias = "path")]
-                                    value: String,
-                                    #[serde(flatten)]
-                                    options: EnvDirectiveOptions,
-                                },
-                                Multiple {
-                                    #[serde(alias = "value", alias = "path", alias = "paths")]
-                                    values: Vec<String>,
-                                    #[serde(flatten)]
-                                    options: EnvDirectiveOptions,
-                                },
-                            }
-
-                            impl FromStr for MiseTomlEnvDirective {
-                                type Err = String;
-                                fn from_str(s: &str) -> Result<Self, Self::Err> {
-                                    Ok(MiseTomlEnvDirective::Single {
-                                        value: s.to_string(),
-                                        options: Default::default(),
-                                    })
-                                }
-                            }
-
-                            struct EnvDirectivePythonVenv {
-                                path: String,
-                                create: bool,
-                                python: Option<String>,
-                                uv_create_args: Option<Vec<String>>,
-                                python_create_args: Option<Vec<String>>,
-                            }
-
-                            #[derive(Deserialize, Default)]
-                            #[serde(deny_unknown_fields)]
-                            struct EnvDirectivePython {
-                                #[serde(default)]
-                                venv: Option<EnvDirectivePythonVenv>,
-                            }
-
-                            #[derive(Deserialize)]
-                            struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                path: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                file: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                source: Vec<MiseTomlEnvDirective>,
-                                #[serde(default)]
-                                python: EnvDirectivePython,
-                                #[serde(flatten)]
-                                other: BTreeMap<String, toml::Value>,
-                            }
-
-                            impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
-                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                                where
-                                    D: Deserializer<'de>,
-                                {
-                                    struct EnvDirectivePythonVenvVisitor;
-
-                                    impl<'de> Visitor<'de> for EnvDirectivePythonVenvVisitor {
-                                        type Value = EnvDirectivePythonVenv;
-                                        fn expecting(
-                                            &self,
-                                            formatter: &mut Formatter,
-                                        ) -> std::fmt::Result
-                                        {
-                                            formatter.write_str("python venv directive")
-                                        }
-
-                                        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(EnvDirectivePythonVenv {
-                                                path: v.into(),
-                                                create: false,
-                                                python: None,
-                                                uv_create_args: None,
-                                                python_create_args: None,
-                                            })
-                                        }
-
-                                        fn visit_map<M>(
-                                            self,
-                                            mut map: M,
-                                        ) -> Result<Self::Value, M::Error>
-                                        where
-                                            M: de::MapAccess<'de>,
-                                        {
-                                            let mut path = None;
-                                            let mut create = false;
-                                            let mut python = None;
-                                            let mut uv_create_args = None;
-                                            let mut python_create_args = None;
-                                            while let Some(key) = map.next_key::<String>()? {
-                                                match key.as_str() {
-                                                    "path" => {
-                                                        path = Some(map.next_value()?);
-                                                    }
-                                                    "create" => {
-                                                        create = map.next_value()?;
-                                                    }
-                                                    "python" => {
-                                                        python = Some(map.next_value()?);
-                                                    }
-                                                    "uv_create_args" => {
-                                                        uv_create_args = Some(map.next_value()?);
-                                                    }
-                                                    "python_create_args" => {
-                                                        python_create_args =
-                                                            Some(map.next_value()?);
-                                                    }
-                                                    _ => {
-                                                        return Err(de::Error::unknown_field(
-                                                            &key,
-                                                            &["path", "create"],
-                                                        ));
-                                                    }
-                                                }
-                                            }
-                                            let path = path
-                                                .ok_or_else(|| de::Error::missing_field("path"))?;
-                                            Ok(EnvDirectivePythonVenv {
-                                                path,
-                                                create,
-                                                python,
-                                                uv_create_args,
-                                                python_create_args,
-                                            })
-                                        }
-                                    }
-
-                                    const FIELDS: &[&str] = &["path", "create"];
-                                    deserializer.deserialize_struct(
-                                        "PythonVenv",
-                                        FIELDS,
-                                        EnvDirectivePythonVenvVisitor,
-                                    )
-                                }
-                            }
-
-                            fn flatten_directives<F>(
-                                directives: Vec<MiseTomlEnvDirective>,
-                                constructor: F,
-                            ) -> impl Iterator<Item = EnvDirective>
-                            where
-                                F: Fn(String, EnvDirectiveOptions) -> EnvDirective + 'static,
-                            {
-                                directives.into_iter().flat_map(move |d| match d {
-                                    MiseTomlEnvDirective::Single { value, options } => {
-                                        vec![constructor(value, options)]
-                                    }
-                                    MiseTomlEnvDirective::Multiple { values, options } => values
-                                        .into_iter()
-                                        .map(|v| constructor(v, options.clone()))
-                                        .collect(),
-                                })
-                            }
-
                             let directives = map.next_value::<EnvDirectives>()?;
-                            // TODO: parse these in the order they're defined somehow
-                            env.extend(flatten_directives(directives.path, EnvDirective::Path));
-                            env.extend(flatten_directives(directives.file, EnvDirective::File));
-                            env.extend(flatten_directives(directives.source, EnvDirective::Source));
-                            for (key, mut value) in directives.other {
-                                let mut opts = EnvDirectiveOptions::default();
-                                if let Some(table) = value.as_table_mut()
-                                    && let Some(tools) = table.remove("tools")
-                                {
-                                    opts.tools = tools.as_bool().unwrap_or(false);
-                                }
-                                env.push(EnvDirective::Module(key, value, opts));
-                            }
-                            if let Some(venv) = directives.python.venv {
-                                env.push(EnvDirective::PythonVenv {
-                                    path: venv.path,
-                                    create: venv.create,
-                                    python: venv.python,
-                                    uv_create_args: venv.uv_create_args,
-                                    python_create_args: venv.python_create_args,
-                                    options: EnvDirectiveOptions {
-                                        tools: true,
-                                        redact: Some(false),
-                                        required: RequiredValue::False,
-                                    },
-                                });
-                            }
+                            extend_env_with_directives(&mut env, directives);
                         }
                         _ => {
                             #[derive(Deserialize)]
@@ -1914,6 +1927,83 @@ fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
     true
 }
 
+#[derive(Default)]
+struct EnvDottedDirectiveOrder {
+    first_directive_line: BTreeMap<&'static str, usize>,
+    regular_after_directive: BTreeMap<&'static str, (usize, String)>,
+}
+
+impl EnvDottedDirectiveOrder {
+    fn observe(&mut self, entry: EnvDottedDirectiveEntry) -> eyre::Result<()> {
+        if let Some(root) = entry.root {
+            if let Some((regular_line, regular_key)) = self.regular_after_directive.get(root) {
+                let first_directive_line = self.first_directive_line[root];
+                let line_number = entry.line_number;
+                return Err(eyre!(
+                    "[env] order is significant, but TOML groups dotted `{root}.*` entries before mise can preserve where they were written.\n\
+                     `{root}.*` starts on line {first_directive_line}, `{regular_key}` is on line {regular_line}, and another `{root}.*` entry is on line {line_number}.\n\
+                     Split these entries into ordered `[[env]]` blocks so mise can process them in the intended order."
+                ));
+            }
+            self.first_directive_line
+                .entry(root)
+                .or_insert(entry.line_number);
+        } else {
+            for root in self.first_directive_line.keys() {
+                self.regular_after_directive
+                    .entry(*root)
+                    .or_insert_with(|| (entry.line_number, entry.key.clone()));
+            }
+        }
+        Ok(())
+    }
+}
+
+struct EnvDottedDirectiveEntry {
+    root: Option<&'static str>,
+    key: String,
+    line_number: usize,
+    offset: usize,
+}
+
+impl EnvDottedDirectiveEntry {
+    fn from_keys(keys: Vec<&Key>, body: &str) -> Option<Self> {
+        let offset = keys.last()?.span()?.start;
+        Some(Self {
+            root: dotted_env_directive_root(&keys),
+            key: keys.iter().map(|k| k.get()).join("."),
+            line_number: line_number(body, offset),
+            offset,
+        })
+    }
+}
+
+fn check_env_table_dotted_directive_order(table: &Table, body: &str) -> eyre::Result<()> {
+    let mut entries = table
+        .get_values()
+        .into_iter()
+        .filter_map(|(keys, _)| EnvDottedDirectiveEntry::from_keys(keys, body))
+        .collect_vec();
+    entries.sort_by_key(|entry| entry.offset);
+    let mut order = EnvDottedDirectiveOrder::default();
+    for entry in entries {
+        order.observe(entry)?;
+    }
+    Ok(())
+}
+
+fn dotted_env_directive_root(keys: &[&Key]) -> Option<&'static str> {
+    match keys.first()?.get() {
+        "_" if keys.len() > 1 => Some("_"),
+        "mise" if keys.len() > 1 => Some("mise"),
+        _ => None,
+    }
+}
+
+fn line_number(body: &str, offset: usize) -> usize {
+    body[..offset].bytes().filter(|b| *b == b'\n').count() + 1
+}
+
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
@@ -2341,8 +2431,8 @@ run = 'echo "template"'
         foo1="1"
         rm=false
         _.path="/foo"
-        foo2="2"
         _.file=".env"
+        foo2="2"
         foo3="3"
         "#};
         assert_snapshot!(parse_env(toml), @r#"
@@ -2356,25 +2446,41 @@ run = 'echo "template"'
     }
 
     #[test]
+    fn test_env_dotted_directives_interleaved_with_vars_errors() {
+        let toml = formatdoc! {r#"
+        [env]
+        _.python.venv = {{ path = ".venv", create = true }}
+        KEY_PATH = "~/.config/mise/sops/age/test-key.txt"
+        _.file = ".env.json"
+        "#};
+        let err = parse_result(toml).unwrap_err().to_string();
+        assert_snapshot!(err, @r#"
+        [env] order is significant, but TOML groups dotted `_.*` entries before mise can preserve where they were written.
+        `_.*` starts on line 2, `KEY_PATH` is on line 3, and another `_.*` entry is on line 4.
+        Split these entries into ordered `[[env]]` blocks so mise can process them in the intended order.
+        "#);
+    }
+
+    #[test]
     fn test_env_arr() {
         let toml = formatdoc! {r#"
         [[env]]
         foo1="1"
         rm=false
         _.path="/foo"
-        foo2="2"
         _.file=".env"
-        foo3="3"
         _.source="/baz1"
+        foo2="2"
+        foo3="3"
 
         [[env]]
         foo4="4"
         rm=false
-        _.file=".env2"
-        foo5="5"
         _.path="/bar"
-        foo6="6"
+        _.file=".env2"
         _.source="/baz2"
+        foo5="5"
+        foo6="6"
         "#};
         assert_snapshot!(parse_env(toml), @r#"
         foo1=1
@@ -2394,13 +2500,16 @@ run = 'echo "template"'
         "#);
     }
 
-    fn parse(s: String) -> MiseToml {
+    fn parse_result(s: String) -> eyre::Result<MiseToml> {
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(&p, s).unwrap();
-        let cfg = MiseToml::from_file(&p).unwrap();
+        let cfg = MiseToml::from_file(&p);
         file::remove_file(&p).unwrap();
-
         cfg
+    }
+
+    fn parse(s: String) -> MiseToml {
+        parse_result(s).unwrap()
     }
 
     fn parse_env(toml: String) -> String {
