@@ -615,8 +615,7 @@ replaces the `git credential fill` fallback and does not require
 `forgejo.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host for the duration of the
-session.
+is trimmed.
 
 Example: `op read "op://Private/Forgejo Token/credential"`
 """
@@ -668,8 +667,7 @@ replaces the `git credential fill` fallback and does not require
 `github.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host for the duration of the
-session.
+is trimmed.
 
 Example: `op read "op://Private/GitHub Token/credential"`
 """
@@ -832,8 +830,7 @@ replaces the `git credential fill` fallback and does not require
 `gitlab.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host for the duration of the
-session.
+is trimmed.
 
 Example: `op read "op://Private/GitLab Token/credential"`
 """
