@@ -82,7 +82,7 @@ impl std::fmt::Debug for Vfox {
                 &self.github_token_resolver.as_ref().map(|_| "<closure>"),
             )
             .field("runtime_env_type", &self.runtime_env_type)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -166,10 +166,14 @@ impl Vfox {
     }
 
     fn set_github_token(&self, plugin: &Plugin) -> Result<()> {
+        // Both are registered when both are set; the Lua-side `github_token()`
+        // tries the resolver first and falls back to the string. That matches
+        // the documented precedence on `github_token_resolver`.
+        if let Some(token) = &self.github_token {
+            plugin.set_github_token(token)?;
+        }
         if let Some(resolver) = &self.github_token_resolver {
             plugin.set_github_token_resolver(resolver.clone())?;
-        } else if let Some(token) = &self.github_token {
-            plugin.set_github_token(token)?;
         }
         Ok(())
     }

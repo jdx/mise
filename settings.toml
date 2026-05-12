@@ -609,13 +609,16 @@ default = ""
 description = "Shell command to run to obtain a Forgejo token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for Forgejo Enterprise environments. This replaces the
-`git credential fill` fallback and does not require
-`forgejo.use_git_credentials` to be enabled.
+from stdout. This replaces the `git credential fill` fallback and does
+not require `forgejo.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed. The command is spawned at most once per `mise` process —
+the result is cached for the rest of the session. If multiple Forgejo
+hosts are involved (e.g. `codeberg.org` + a self-hosted instance), use
+`forgejo_tokens.toml` or per-host env vars for per-host tokens; the
+credential command sees `MISE_CREDENTIAL_HOST` for whichever host
+triggered the first lookup.
 
 Example: `op read "op://Private/Forgejo Token/credential"`
 """
@@ -661,13 +664,16 @@ default = ""
 description = "Shell command to run to obtain a GitHub token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for GitHub Enterprise environments. This replaces the
-`git credential fill` fallback and does not require
-`github.use_git_credentials` to be enabled.
+from stdout. This replaces the `git credential fill` fallback and does
+not require `github.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed. The command is spawned at most once per `mise` process —
+the result is cached for the rest of the session. If multiple GitHub
+hosts are involved (e.g. `github.com` + GitHub Enterprise), use
+`github_tokens.toml`, `MISE_GITHUB_ENTERPRISE_TOKEN`, or the gh CLI's
+`hosts.yml` for per-host tokens; the credential command sees
+`MISE_CREDENTIAL_HOST` for whichever host triggered the first lookup.
 
 Example: `op read "op://Private/GitHub Token/credential"`
 """
@@ -824,13 +830,16 @@ default = ""
 description = "Shell command to run to obtain a GitLab token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for GitLab self-managed environments. This replaces the
-`git credential fill` fallback and does not require
-`gitlab.use_git_credentials` to be enabled.
+from stdout. This replaces the `git credential fill` fallback and does
+not require `gitlab.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed. The command is spawned at most once per `mise` process —
+the result is cached for the rest of the session. If multiple GitLab
+hosts are involved (e.g. `gitlab.com` + a self-managed instance), use
+`gitlab_tokens.toml`, per-host env vars, or the glab CLI config for
+per-host tokens; the credential command sees `MISE_CREDENTIAL_HOST`
+for whichever host triggered the first lookup.
 
 Example: `op read "op://Private/GitLab Token/credential"`
 """
