@@ -49,7 +49,7 @@ jobs:
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
       - run: mise --cd crates/vfox install
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5 # zizmor: ignore[cache-poisoning] cache key is scoped by mise.toml hash; tool installs only
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-${{ hashFiles('crates/vfox/mise.toml') }}
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-

@@ -500,16 +500,19 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         }
     }
 
-    // 3. credential_command
+    // 3. credential_command — call once with the canonical host so
+    // `github.com` and `api.github.com` (same instance) share a cache
+    // entry, while `github.com` vs a GHE host stay separate. Walking
+    // `lookup_hosts` here would spawn the helper twice on a single
+    // `resolve_token("api.github.com")` whenever the first call returned
+    // `None`, which manifests as extra password-manager prompts.
     let credential_command = &settings.github.credential_command;
-    if !credential_command.is_empty() {
-        for lookup_host in &lookup_hosts {
-            if let Some(token) =
-                tokens::get_credential_command_token("github", credential_command, lookup_host)
-            {
-                return Some((token, TokenSource::CredentialCommand));
-            }
-        }
+    if !credential_command.is_empty()
+        && let Some(canonical) = lookup_hosts.first()
+        && let Some(token) =
+            tokens::get_credential_command_token("github", credential_command, canonical)
+    {
+        return Some((token, TokenSource::CredentialCommand));
     }
 
     // 4. native GitHub OAuth device-flow token
