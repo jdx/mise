@@ -116,12 +116,12 @@ impl HookDef {
             }],
             HookDef::ScriptTable { script, shell } => vec![Hook {
                 hook: hook_type,
-                action: script_hook_action(hook_type, script.into_script(), shell),
+                action: script_hook_action(hook_type, script.into_script(), shell, true),
                 global: false,
             }],
             HookDef::ScriptsTable { scripts, shell } => vec![Hook {
                 hook: hook_type,
-                action: script_hook_action(hook_type, scripts.join("\n"), shell),
+                action: script_hook_action(hook_type, scripts.join("\n"), shell, false),
                 global: false,
             }],
             HookDef::TaskRef { task } => vec![Hook {
@@ -137,7 +137,12 @@ impl HookDef {
     }
 }
 
-fn script_hook_action(hook_type: Hooks, script: String, shell: Option<String>) -> HookAction {
+fn script_hook_action(
+    hook_type: Hooks,
+    script: String,
+    shell: Option<String>,
+    legacy_script: bool,
+) -> HookAction {
     match (hook_type, shell) {
         (Hooks::Enter | Hooks::Leave | Hooks::Cd, Some(shell)) => {
             HookAction::CurrentShell { script, shell }
@@ -145,7 +150,7 @@ fn script_hook_action(hook_type: Hooks, script: String, shell: Option<String>) -
         (_, shell) => HookAction::Run {
             run: script,
             shell: None,
-            legacy_script: true,
+            legacy_script,
             ignored_shell: shell,
         },
     }
@@ -450,7 +455,7 @@ async fn execute(
     if ignored_shell.is_some() && matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
         let hook_name = hook.hook.to_string().to_lowercase();
         warn!(
-            "`shell` is ignored for {} hooks that use `script`; use `run = ...` with `shell = \"bash -c\"` to choose an inline shell command.",
+            "`shell` is ignored for {} hooks that use `script` or `scripts`; use `run = ...` with `shell = \"bash -c\"` to choose an inline shell command.",
             hook_name
         );
     }

@@ -32,9 +32,12 @@ eval "$(mise hook-env)"
 
 cd ~ || exit 1
 eval "$(mise hook-env)"
+# shellcheck disable=SC2016
 assert 'echo "$MISE_HOOK_SCRIPTS_ARRAY_LEFT"' "yes"
 
 cd ~/workdir || exit 1
 eval "$(mise hook-env)"
+# shellcheck disable=SC2016
 assert 'echo "$MISE_HOOK_SCRIPT_ARRAY_ONE"' "one"
+# shellcheck disable=SC2016
 assert 'echo "$MISE_HOOK_SCRIPT_ARRAY_TWO"' "two"
