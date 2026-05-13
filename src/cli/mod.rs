@@ -804,7 +804,10 @@ fn apply_early_cd(args: &[String]) -> Result<bool> {
     let Some(cd) = early_cd_arg(args) else {
         return Ok(false);
     };
-    validate_cd_path(&Some(cd.clone()))?;
+    if let Err(err) = validate_cd_path(&Some(cd.clone())) {
+        logger::init();
+        return Err(err);
+    }
     Settings::override_with(|s| {
         s.cd = Some(cd);
     });
