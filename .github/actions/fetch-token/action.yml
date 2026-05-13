@@ -16,12 +16,14 @@ runs:
   steps:
     - id: fetch
       shell: bash
+      env:
+        API_SECRET: ${{ inputs.api-secret }}
       run: |
-        if [ -z "${{ inputs.api-secret }}" ]; then
+        if [ -z "$API_SECRET" ]; then
           echo "No API secret provided, skipping token fetch"
           exit 0
         fi
-        response=$(curl -sf -H "Authorization: Bearer ${{ inputs.api-secret }}" \
+        response=$(curl -sf -H "Authorization: Bearer $API_SECRET" \
           "https://mise-versions.jdx.dev/api/token" || true)
         if [ -z "$response" ]; then
           exit 0

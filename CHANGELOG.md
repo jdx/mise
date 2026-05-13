@@ -1,5 +1,92 @@
 # Changelog
 
+## [2026.5.7](https://github.com/jdx/mise/compare/v2026.5.6..v2026.5.7) - 2026-05-13
+
+### 🐛 Bug Fixes
+
+- **(backend)** use runtime paths for backend bin dirs by @risu729 in [#9606](https://github.com/jdx/mise/pull/9606)
+- **(ci)** preserve vendor/aqua-registry/ in PPA publish workflow by @jdx in [#9782](https://github.com/jdx/mise/pull/9782)
+- **(ci)** set UTF-8 locale in e2e Docker image by @jdx in [#9820](https://github.com/jdx/mise/pull/9820)
+- **(ci)** pass UTF-8 locale through to e2e tests by @jdx in [#9823](https://github.com/jdx/mise/pull/9823)
+- **(conda)** dedup repodata by archive identifier instead of URL by @jdx in [#9831](https://github.com/jdx/mise/pull/9831)
+- **(github)** use default shell for credential command by @risu729 in [#9664](https://github.com/jdx/mise/pull/9664)
+- **(settings)** distinguish unset known settings from unknown ones by @jdx in [#9818](https://github.com/jdx/mise/pull/9818)
+- **(upgrade)** remove completed progress jobs to prevent duplicate output by @jdx in [#9779](https://github.com/jdx/mise/pull/9779)
+- **(vfox)** resolve GitHub token lazily inside Lua plugins by @jdx in [#9816](https://github.com/jdx/mise/pull/9816)
+
+### 🚜 Refactor
+
+- **(config)** separate core and backend tool options by @risu729 in [#9753](https://github.com/jdx/mise/pull/9753)
+- **(schema)** reuse env directive property schemas by @risu729 in [#9651](https://github.com/jdx/mise/pull/9651)
+
+### 📚 Documentation
+
+- **(aliases)** fix Aliased Versions example and drop stale asdf callout by @jdx in [#9830](https://github.com/jdx/mise/pull/9830)
+
+### ⚡ Performance
+
+- **(aqua)** use phf for baked registry lookups by @risu729 in [#9763](https://github.com/jdx/mise/pull/9763)
+- **(task)** cache per-file content hashes for source_freshness_hash_contents by @jdx in [#9819](https://github.com/jdx/mise/pull/9819)
+
+### 🧪 Testing
+
+- **(e2e)** pin aube to known-good version in npm package_manager test by @jdx in [#9794](https://github.com/jdx/mise/pull/9794)
+
+### 📦 Registry
+
+- replace unsupported exe options by @risu729 in [#9587](https://github.com/jdx/mise/pull/9587)
+- update pi by @garysassano in [#9792](https://github.com/jdx/mise/pull/9792)
+
+### Chore
+
+- **(ci)** use non-large runners for release builds by @jdx in [#9786](https://github.com/jdx/mise/pull/9786)
+- **(ci)** compare registry PRs from fork point by @risu729 in [#9643](https://github.com/jdx/mise/pull/9643)
+- **(ci)** make build-copr.sh the single source of truth for COPR chroots by @jdx in [#9788](https://github.com/jdx/mise/pull/9788)
+- **(ci)** use crates.io trusted publishing in release-plz by @jdx in [#9793](https://github.com/jdx/mise/pull/9793)
+- **(ci)** remove autofix.ci workflow by @jdx in [#9801](https://github.com/jdx/mise/pull/9801)
+- **(ci)** restore -large runner for Linux release builds by @jdx in [#9815](https://github.com/jdx/mise/pull/9815)
+- **(ci)** add zizmor workflow for github actions security analysis by @jdx in [#9804](https://github.com/jdx/mise/pull/9804)
+- **(ci)** assert mise run render produces no diff by @jdx in [#9803](https://github.com/jdx/mise/pull/9803)
+- **(copr)** publish EL9 builds via centos-stream+epel-next-9 chroot by @jdx in [#9787](https://github.com/jdx/mise/pull/9787)
+
+### Ci
+
+- remove pull_request_target workflow by @jdx in [#9799](https://github.com/jdx/mise/pull/9799)
+- remove caching from publishing workflows by @jdx in [#9800](https://github.com/jdx/mise/pull/9800)
+
+### Security
+
+- reject shell metacharacters in version strings and CI inputs by @jdx in [#9814](https://github.com/jdx/mise/pull/9814)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (11)
+
+- [`Code-Hex/Neo-cowsay`](https://github.com/Code-Hex/Neo-cowsay)
+- [`SonarSource/sonarqube-cli`](https://github.com/SonarSource/sonarqube-cli)
+- [`earendil-works/pi`](https://github.com/earendil-works/pi)
+- [`hylo-lang/hylo-new`](https://github.com/hylo-lang/hylo-new)
+- [`jfernandez/bpftop`](https://github.com/jfernandez/bpftop)
+- [`modem-dev/hunk`](https://github.com/modem-dev/hunk)
+- [`npm/cli`](https://github.com/npm/cli)
+- [`racket/racket/minimal`](https://github.com/racket/racket)
+- [`slackapi/slack-cli`](https://github.com/slackapi/slack-cli)
+- [`vectordotdev/vector`](https://github.com/vectordotdev/vector)
+- [`wasilibs/go-yamllint`](https://github.com/wasilibs/go-yamllint)
+
+#### Updated Packages (10)
+
+- [`DataDog/pup`](https://github.com/DataDog/pup)
+- [`aquasecurity/trivy`](https://github.com/aquasecurity/trivy)
+- [`astral-sh/uv`](https://github.com/astral-sh/uv)
+- [`caarlos0/svu`](https://github.com/caarlos0/svu)
+- [`cargo-bins/cargo-binstall`](https://github.com/cargo-bins/cargo-binstall)
+- [`foundry-rs/foundry`](https://github.com/foundry-rs/foundry)
+- [`gastownhall/beads`](https://github.com/gastownhall/beads)
+- [`gruntwork-io/terragrunt`](https://github.com/gruntwork-io/terragrunt)
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+- [`santosr2/TerraTidy`](https://github.com/santosr2/TerraTidy)
+
 ## [2026.5.6](https://github.com/jdx/mise/compare/v2026.5.5..v2026.5.6) - 2026-05-11
 
 ### 🚀 Features

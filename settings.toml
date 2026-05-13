@@ -609,13 +609,13 @@ default = ""
 description = "Shell command to run to obtain a Forgejo token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for Forgejo Enterprise environments. This replaces the
-`git credential fill` fallback and does not require
+from stdout. The hostname is exposed as `MISE_CREDENTIAL_HOST`, making
+the command host-aware for self-hosted Forgejo environments. This
+replaces the `git credential fill` fallback and does not require
 `forgejo.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed.
 
 Example: `op read "op://Private/Forgejo Token/credential"`
 """
@@ -661,13 +661,13 @@ default = ""
 description = "Shell command to run to obtain a GitHub token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for GitHub Enterprise environments. This replaces the
-`git credential fill` fallback and does not require
+from stdout. The hostname is exposed as `MISE_CREDENTIAL_HOST`, making
+the command host-aware for GitHub Enterprise environments. This
+replaces the `git credential fill` fallback and does not require
 `github.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed.
 
 Example: `op read "op://Private/GitHub Token/credential"`
 """
@@ -824,13 +824,13 @@ default = ""
 description = "Shell command to run to obtain a GitLab token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for GitLab self-managed environments. This replaces the
-`git credential fill` fallback and does not require
+from stdout. The hostname is exposed as `MISE_CREDENTIAL_HOST`, making
+the command host-aware for self-managed GitLab environments. This
+replaces the `git credential fill` fallback and does not require
 `gitlab.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed.
 
 Example: `op read "op://Private/GitLab Token/credential"`
 """
