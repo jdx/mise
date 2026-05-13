@@ -6,33 +6,13 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sigstore_verify::VerificationPolicy;
-use sigstore_verify::trust_root::{DEFAULT_TUF_URL, TrustedRoot, TufConfig};
+use sigstore_verify::trust_root::{SigstoreInstance, TrustedRoot};
 use sigstore_verify::types::{Bundle, DerCertificate, DerPublicKey, SignatureBytes};
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
 
 const GITHUB_API_URL: &str = "https://api.github.com";
 const USER_AGENT_VALUE: &str = "mise-sigstore/0.1.0";
-
-// Embedded Sigstore TUF root used to bootstrap trust. We bundle a recent root
-// instead of relying on `sigstore_verify::trust_root::TrustedRoot::production()`,
-// because the upstream embedded v1 root (still shipped as of
-// sigstore-trust-root 0.6.6) fails signature verification under `tough` — the
-// timezone-offset `expires` field is normalized to UTC `Z` on re-serialization,
-// so the canonical JSON the signature was computed over no longer matches.
-// Refresh by fetching https://tuf-repo-cdn.sigstore.dev/<n>.root.json well
-// before its `expires` date.
-const EMBEDDED_TUF_ROOT: &[u8] = include_bytes!("../data/tuf_root.json");
-
-// Embedded GitHub trusted_root.json. GitHub artifact attestations are signed
-// by GitHub's internal Fulcio (`O=GitHub, Inc.`) and timestamped by GitHub's
-// internal TSA. Neither is in Sigstore's public trust root, so verifying these
-// bundles requires GitHub's separate trust material, published via TUF at
-// https://tuf-repo.github.com/. We embed the trusted_root.json target
-// directly rather than fetching via TUF: GitHub's TUF spec version (1.0.31)
-// uses a keyid scheme that current `tough` doesn't validate. Refresh by
-// fetching the latest target listed in https://tuf-repo.github.com/<n>.targets.json.
-const EMBEDDED_GITHUB_TRUSTED_ROOT: &[u8] = include_bytes!("../data/github_trusted_root.json");
 
 #[derive(Debug, Error)]
 pub enum AttestationError {
@@ -728,25 +708,11 @@ fn verify_bundle(
         policy = policy.skip_tlog();
     }
     // GitHub-internal leaf certs don't carry an SCT extension (GitHub's CA
-    // doesn't log to public CT), and sigstore-verify gates certificate-chain
-    // verification and SCT verification behind the same `verify_certificate`
-    // flag, so we have to skip both there. We compensate by walking the chain
-    // manually with `webpki` against the GitHub trust root's CA certs before
-    // delegating to sigstore-verify. TSA timestamp validation (against the
-    // GitHub TSA cert in the trust root) and signer-workflow identity
-    // matching still gate acceptance further down.
+    // doesn't log to public CT). `skip_sct` keeps full certificate-chain
+    // validation against the GitHub trust root's Fulcio certs but turns off
+    // the SCT check, which is exactly what GitHub artifact attestations need.
     if is_github_internal_certificate(bundle) {
-        let leaf_der = bundle
-            .signing_certificate()
-            .ok_or_else(|| {
-                AttestationError::Verification(
-                    "GitHub bundle is missing a signing certificate".to_string(),
-                )
-            })?
-            .as_bytes()
-            .to_vec();
-        verify_cert_chain(&leaf_der, trusted_root)?;
-        policy = policy.skip_certificate_chain();
+        policy = policy.skip_sct();
     }
     let result = sigstore_verify::verify(artifact, bundle, &policy, trusted_root)?;
     if !result.success {
@@ -769,13 +735,10 @@ fn is_github_internal_certificate(bundle: &Bundle) -> bool {
 
 /// Verify that a leaf certificate chains to one of the trust root's CA certs.
 ///
-/// Used in two places where we can't go through `sigstore_verify::verify`'s
-/// built-in `verify_certificate` step:
-///
-/// - GitHub-internal bundles, whose leaf certs lack the SCT extension that
-///   sigstore-verify always requires under `verify_certificate`.
-/// - Raw DSSE envelopes (`*.intoto.jsonl` from slsa-github-generator), which
-///   don't have the bundle structure sigstore-verify expects.
+/// Used for raw DSSE envelopes (`*.intoto.jsonl` from slsa-github-generator),
+/// which don't have the bundle structure sigstore-verify expects, so we can't
+/// delegate to `sigstore_verify::verify`. GitHub-internal bundles go through
+/// sigstore-verify directly with `skip_sct`.
 ///
 /// webpki performs the same chain-building, ECDSA/RSA signature checks, and
 /// CODE_SIGNING EKU enforcement as sigstore-verify, just without the SCT step.
@@ -907,17 +870,11 @@ fn extract_spki_der(cert_der: &[u8]) -> Result<Vec<u8>> {
 }
 
 async fn production_trusted_root() -> Result<TrustedRoot> {
-    let config = TufConfig::custom(DEFAULT_TUF_URL, EMBEDDED_TUF_ROOT);
-    Ok(TrustedRoot::from_tuf(config).await?)
+    Ok(TrustedRoot::production().await?)
 }
 
 fn github_trusted_root() -> Result<TrustedRoot> {
-    let json = std::str::from_utf8(EMBEDDED_GITHUB_TRUSTED_ROOT).map_err(|e| {
-        AttestationError::Sigstore(format!(
-            "embedded GitHub trusted root is not valid UTF-8: {e}"
-        ))
-    })?;
-    Ok(TrustedRoot::from_json(json)?)
+    Ok(TrustedRoot::from_embedded(SigstoreInstance::GitHub)?)
 }
 
 /// Per-process cache so we only fetch the Sigstore TUF root or parse the
