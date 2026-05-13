@@ -1373,7 +1373,7 @@ fn merge_mocito_entry(src: &Path, dst: &Path) -> Result<()> {
     } else if let Some(parent) = dst.parent() {
         file::create_dir_all(parent)?;
     }
-    std::fs::rename(src, dst).wrap_err_with(|| {
+    file::move_file(src, dst).wrap_err_with(|| {
         format!(
             "failed to move wings MOCITO layer entry {} to {}",
             src.display(),

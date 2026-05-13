@@ -415,6 +415,9 @@ export const commands: { [key: string]: Command } = {
       inspect: {
         hide: false,
       },
+      inventory: {
+        hide: false,
+      },
       login: {
         hide: false,
       },
