@@ -724,7 +724,18 @@ impl TaskExecutor {
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
-        let cmd = format!("$ {script} {args}", args = args.join(" ")).to_string();
+        // For display, skip a leading shebang so the user sees the actual
+        // command instead of e.g. "#!/usr/bin/env bash".
+        let display_script = if script.starts_with("#!") {
+            script
+                .split_once('\n')
+                .map_or("", |(_, body)| body)
+                .trim_start()
+        } else {
+            script
+        };
+        let cmd =
+            format!("$ {display_script} {args}", args = args.join(" ")).to_string();
         if !self.quiet(Some(task)) {
             let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
                 .bright()
