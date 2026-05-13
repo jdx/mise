@@ -813,8 +813,7 @@ mod tests {
     use super::CondaBackend;
     use rattler_conda_types::package::{ArchiveIdentifier, CondaArchiveType, DistArchiveType};
     use rattler_conda_types::{
-        PackageName, PackageRecord, RepoDataRecord, Version,
-        package::DistArchiveIdentifier,
+        PackageName, PackageRecord, RepoDataRecord, Version, package::DistArchiveIdentifier,
     };
     use std::str::FromStr;
     use url::Url;
@@ -878,7 +877,10 @@ mod tests {
 
         let deduped = CondaBackend::dedup_records_by_identifier(records.iter());
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].identifier.to_string(), "adwaita-icon-theme-40.1.1-ha770c72_1.tar.bz2");
+        assert_eq!(
+            deduped[0].identifier.to_string(),
+            "adwaita-icon-theme-40.1.1-ha770c72_1.tar.bz2"
+        );
     }
 
     /// .conda and .tar.bz2 variants of the same name-version-build are distinct
