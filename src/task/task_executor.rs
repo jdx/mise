@@ -724,16 +724,19 @@ impl TaskExecutor {
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
-        // For display, skip a leading shebang so the user sees the actual
-        // command instead of e.g. "#!/usr/bin/env bash".
-        let display_script = if script.starts_with("#!") {
-            script
-                .split_once('\n')
-                .map_or("", |(_, body)| body)
-                .trim_start()
-        } else {
-            script
-        };
+        // For display, skip leading shebang/blank/`set ...` boilerplate so
+        // the user sees the first real command instead of e.g.
+        // "#!/usr/bin/env bash" or "set -Eeuo pipefail".
+        let display_script = script
+            .lines()
+            .find(|line| {
+                let t = line.trim_start();
+                !t.is_empty()
+                    && !t.starts_with("#!")
+                    && t != "set"
+                    && !t.starts_with("set ")
+            })
+            .unwrap_or(script);
         let cmd = format!("$ {display_script} {args}", args = args.join(" "));
         if !self.quiet(Some(task)) {
             let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
