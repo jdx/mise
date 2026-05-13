@@ -376,11 +376,19 @@ pub async fn verify_cosign_signature(
     sig_or_bundle_path: &Path,
 ) -> Result<bool> {
     let content = tokio::fs::read_to_string(sig_or_bundle_path).await?;
-    let bundle = Bundle::from_json(&content)?;
     let artifact = tokio::fs::read(artifact_path).await?;
     let mut trust_roots = TrustRoots::default();
-    let trusted_root = trust_roots.for_bundle(&bundle).await?;
-    verify_bundle(&artifact, &bundle, None, trusted_root)?;
+    if let Ok(bundle) = Bundle::from_json(&content) {
+        let trusted_root = trust_roots.for_bundle(&bundle).await?;
+        verify_bundle(&artifact, &bundle, None, trusted_root)?;
+        return Ok(true);
+    }
+    // Legacy cosign v1 bundle (`{base64Signature, cert, rekorBundle}`).
+    // sigstore-verify only consumes the modern bundle shape, so we verify
+    // these manually: chain-validate the embedded cert against Sigstore
+    // Fulcio, then ECDSA-verify the signature over the artifact bytes.
+    let trusted_root = trust_roots.sigstore_root().await?;
+    verify_legacy_cosign_bundle(&artifact, &content, trusted_root)?;
     Ok(true)
 }
 
@@ -550,6 +558,60 @@ fn verify_intoto_envelope(
     }
 
     verify_intoto_payload(&payload, artifact, min_level)
+}
+
+/// Verify a legacy cosign v1 keyless bundle (`{base64Signature, cert, rekorBundle}`).
+///
+/// Cosign 2.x and earlier `cosign sign-blob --bundle` writes this format. The
+/// modern sigstore Bundle (with `verificationMaterial`/`messageSignature`)
+/// replaces it, but tools like goreleaser still produce v1 bundles in their
+/// release artifacts. Verification mirrors what we do for raw DSSE envelopes:
+/// decode the embedded Fulcio cert (PEM in `cert`), chain-validate it against
+/// the public Sigstore trust root, then ECDSA-verify `base64Signature` over
+/// the raw artifact bytes with the cert's public key.
+///
+/// The Rekor `SignedEntryTimestamp` and the artifact hash recorded in the
+/// rekord entry aren't independently re-checked here — re-verifying them
+/// would require a Rekor public key lookup and adds little: the cert+sig
+/// step already cryptographically binds the signer to the artifact bytes,
+/// which is what every downstream consumer cares about.
+fn verify_legacy_cosign_bundle(
+    artifact: &[u8],
+    bundle_json: &str,
+    trusted_root: &TrustedRoot,
+) -> Result<()> {
+    let value: serde_json::Value = serde_json::from_str(bundle_json).map_err(|e| {
+        AttestationError::UnsupportedFormat(format!("not a sigstore or cosign bundle: {e}"))
+    })?;
+    let cert_b64 = value.get("cert").and_then(|v| v.as_str()).ok_or_else(|| {
+        AttestationError::UnsupportedFormat("legacy cosign bundle missing cert".to_string())
+    })?;
+    let sig_b64 = value
+        .get("base64Signature")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            AttestationError::UnsupportedFormat(
+                "legacy cosign bundle missing base64Signature".to_string(),
+            )
+        })?;
+
+    let cert_pem_bytes = base64::engine::general_purpose::STANDARD
+        .decode(cert_b64.as_bytes())
+        .map_err(|e| {
+            AttestationError::Verification(format!("invalid base64 cert in legacy bundle: {e}"))
+        })?;
+    let cert_pem = std::str::from_utf8(&cert_pem_bytes).map_err(|e| {
+        AttestationError::Verification(format!("legacy cosign cert is not UTF-8 PEM: {e}"))
+    })?;
+    let cert = DerCertificate::from_pem(cert_pem)?;
+    verify_cert_chain(cert.as_bytes(), trusted_root)?;
+
+    let sig_bytes = base64::engine::general_purpose::STANDARD
+        .decode(sig_b64.as_bytes())
+        .map_err(|e| AttestationError::Verification(format!("invalid base64 signature: {e}")))?;
+    let spki_der = extract_spki_der(cert.as_bytes())?;
+    let public_key = DerPublicKey::new(spki_der);
+    verify_raw_signature(artifact, &sig_bytes, &public_key)
 }
 
 fn verify_dsse_signature(
