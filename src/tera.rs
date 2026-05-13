@@ -852,6 +852,17 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_render_str_if_template_renders_template() {
+        let mut tera = Tera::default();
+        let mut ctx = Context::new();
+        ctx.insert("name", "world");
+        assert_eq!(
+            render_str_if_template(&mut tera, "hello {{ name }}", &ctx).unwrap(),
+            "hello world"
+        );
+    }
+
     #[tokio::test]
     #[cfg(unix)]
     async fn test_read_file() {

@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::hash::hash_to_str;
-use crate::tera::{BASE_CONTEXT, get_tera, render_str_if_template};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str_if_template};
 use crate::toolset::{ToolRequest, ToolVersion};
 use dashmap::DashMap;
 use eyre::{WrapErr, eyre};
@@ -107,6 +107,10 @@ fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> 
 }
 
 fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result<String> {
+    if !contains_template_syntax(tmpl) {
+        return Ok(tmpl.to_string());
+    }
+
     let mut ctx = BASE_CONTEXT.clone();
     ctx.insert("project_root", &config.project_root);
     ctx.insert("opts", &tv.request.options().opts_as_strings());

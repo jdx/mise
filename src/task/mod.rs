@@ -1036,10 +1036,14 @@ impl Task {
                 .as_ref()
                 .and_then(|cf| cf.task_config().dir.clone())
         }) {
-            let config_root = self.config_root.clone().unwrap_or_default();
-            let mut tera = get_tera(Some(&config_root));
-            let tera_ctx = self.tera_ctx(config).await?;
-            let dir = render_str_if_template(&mut tera, &dir, &tera_ctx)?;
+            let dir = if contains_template_syntax(&dir) {
+                let config_root = self.config_root.clone().unwrap_or_default();
+                let mut tera = get_tera(Some(&config_root));
+                let tera_ctx = self.tera_ctx(config).await?;
+                render_str_if_template(&mut tera, &dir, &tera_ctx)?
+            } else {
+                dir
+            };
             let dir = file::replace_path(&dir);
             if dir.is_absolute() {
                 Ok(Some(dir.to_path_buf()))
@@ -1056,10 +1060,14 @@ impl Task {
     pub async fn file_path(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(file) = &self.file {
             let file_str = file.to_string_lossy().to_string();
-            let config_root = self.config_root.clone().unwrap_or_default();
-            let mut tera = get_tera(Some(&config_root));
-            let tera_ctx = self.tera_ctx(config).await?;
-            let rendered = render_str_if_template(&mut tera, &file_str, &tera_ctx)?;
+            let rendered = if contains_template_syntax(&file_str) {
+                let config_root = self.config_root.clone().unwrap_or_default();
+                let mut tera = get_tera(Some(&config_root));
+                let tera_ctx = self.tera_ctx(config).await?;
+                render_str_if_template(&mut tera, &file_str, &tera_ctx)?
+            } else {
+                file_str
+            };
             let rendered_path = file::replace_path(&rendered);
             if rendered_path.is_absolute() {
                 Ok(Some(rendered_path))
