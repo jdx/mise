@@ -4694,6 +4694,10 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
+          name: "inventory",
+          description: "Upload current installed-tool inventory to mise-wings",
+        },
+        {
           name: "login",
           description: "Authenticate with mise-wings",
         },
