@@ -277,8 +277,8 @@ impl Backend for AquaBackend {
                 }
             };
 
-            // Validate the package has assets
-            if package_has_asset(&versioned_pkg) {
+            // Validate the package has assets and supports this platform
+            if package_supported_on_target(&versioned_pkg, target_os, target_arch) {
                 let release_url = format!(
                     "https://github.com/{}/{}/releases/tag/{}",
                     pkg.repo_owner, pkg.repo_name, tag
@@ -1437,7 +1437,9 @@ impl AquaBackend {
             target_arch,
             target_libc.as_deref(),
         ) {
-            Ok(Some((version, versioned_pkg))) if package_has_asset(&versioned_pkg) => {
+            Ok(Some((version, versioned_pkg)))
+                if package_supported_on_target(&versioned_pkg, target_os, target_arch) =>
+            {
                 Ok(Some(version))
             }
             Ok(Some(_)) | Ok(None) => Ok(None),
@@ -3058,6 +3060,10 @@ fn package_has_asset(pkg: &AquaPackage) -> bool {
     !pkg.no_asset && pkg.error_message.is_none()
 }
 
+fn package_supported_on_target(pkg: &AquaPackage, os: &str, arch: &str) -> bool {
+    package_has_asset(pkg) && is_platform_supported(&pkg.supported_envs, os, arch)
+}
+
 /// Get tags with optional created_at timestamps and a pre-release flag.
 /// Returns `(tag_name, Option<created_at>, prerelease)` triples.
 ///
@@ -3330,6 +3336,70 @@ mod lock_candidate_tests {
         pkg.no_asset = false;
         pkg.error_message = Some("unsupported version".to_string());
         assert!(!package_has_asset(&pkg));
+    }
+
+    fn pkg_with_supported_envs(supported_envs: &[&str]) -> AquaPackage {
+        let mut pkg = AquaPackage::default();
+        pkg.supported_envs = supported_envs.iter().map(|env| env.to_string()).collect();
+        pkg
+    }
+
+    #[test]
+    fn test_package_supported_on_target_accepts_empty_supported_envs() {
+        let pkg = AquaPackage::default();
+
+        assert!(package_supported_on_target(&pkg, os(), arch()));
+    }
+
+    #[test]
+    fn test_package_supported_on_target_accepts_matching_supported_envs() {
+        let target_os = os();
+        let target_arch = arch();
+        let target_os_arch = format!("{target_os}/{target_arch}");
+
+        for supported_envs in [
+            vec![target_os],
+            vec![target_arch],
+            vec![target_os_arch.as_str()],
+            vec!["all"],
+        ] {
+            let pkg = pkg_with_supported_envs(&supported_envs);
+
+            assert!(package_supported_on_target(&pkg, target_os, target_arch));
+        }
+    }
+
+    #[test]
+    fn test_package_supported_on_target_rejects_non_matching_supported_envs() {
+        let pkg = pkg_with_supported_envs(&["darwin/arm64"]);
+
+        assert!(!package_supported_on_target(&pkg, "linux", "amd64"));
+    }
+
+    #[test]
+    fn test_package_supported_on_target_rejects_no_asset_and_errors() {
+        let mut pkg = AquaPackage::default();
+        pkg.no_asset = true;
+
+        assert!(!package_supported_on_target(&pkg, os(), arch()));
+
+        pkg.no_asset = false;
+        pkg.error_message = Some("unsupported version".to_string());
+
+        assert!(!package_supported_on_target(&pkg, os(), arch()));
+    }
+
+    #[test]
+    fn test_package_supported_on_target_allows_windows_arm64_amd64_compatibility() {
+        let windows_amd64 = pkg_with_supported_envs(&["windows/amd64"]);
+        let amd64 = pkg_with_supported_envs(&["amd64"]);
+
+        assert!(package_supported_on_target(
+            &windows_amd64,
+            "windows",
+            "arm64"
+        ));
+        assert!(package_supported_on_target(&amd64, "windows", "arm64"));
     }
 
     fn asset(name: &str) -> GithubAsset {
