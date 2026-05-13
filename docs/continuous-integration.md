@@ -169,3 +169,50 @@ eval "$(mise activate bash --shims)" # Adds the activated tools to $PATH
 
 swiftlint {args}
 ```
+
+## CircleCI
+
+If you are using CircleCI, you can use a `setup-tools` command to install Mise and the tools.
+
+Here's an example of a `config.yml` file:
+
+
+```yaml
+
+version: 2.1
+
+# ...
+
+jobs:
+  build:
+    docker:
+      - image: cimg/base:jammy
+    steps:
+      - checkout
+      - setup-tools
+      - run:
+          name: Run tests
+          command: npm test
+
+# ...
+
+commands:
+  setup-tools:
+    steps:
+      - restore_cache:
+          name: Restoring tools cache
+          key: tools-cache-{{ checksum "mise.toml" }}
+      - run:
+          name: Install tools
+          command: |
+            curl https://mise.run | sh
+            export PATH="$HOME/.local/bin:$PATH"
+            mise install
+            mise activate bash --shims >> $BASH_ENV
+      - save_cache:
+          name: Saving tools cache
+          key: tools-cache-{{ checksum "mise.toml" }}
+          when: always
+          paths:
+            - ~/.local/share/mise
+```
