@@ -4,6 +4,7 @@
 //MISE depends=["docs:setup"]
 
 import * as fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import * as toml from "toml";
 
 type EnumValue = string | boolean | number;
@@ -43,7 +44,11 @@ type NestedElement = {
 };
 
 function writeFormattedJson(path: string, value: unknown) {
-  fs.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  const formatted = execFileSync("prettier", ["--parser", "json"], {
+    input: `${JSON.stringify(value, null, 2)}\n`,
+    encoding: "utf8",
+  });
+  fs.writeFileSync(path, formatted);
 }
 
 function crawlReferencedDefs(schema: JsonObject, root: unknown) {
