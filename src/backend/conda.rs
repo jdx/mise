@@ -105,14 +105,16 @@ impl CondaBackend {
     }
 
     /// Flatten gateway RepoData into owned records for the solver, deduplicating
-    /// by URL to avoid DuplicateRecords errors when the same package appears in
-    /// multiple subdir queries (e.g. platform + noarch).
+    /// records that share the same archive identifier (name-version-build plus
+    /// archive type) — this is the same key rattler-solve uses to detect
+    /// duplicates, so URL-only dedup isn't sufficient when conda-forge serves
+    /// the same archive under multiple URLs (e.g. distinct CDN paths).
     fn flatten_repodata(repodata: &[RepoData]) -> Vec<RepoDataRecord> {
         let mut seen = HashSet::new();
         repodata
             .iter()
             .flat_map(|rd| rd.iter().cloned())
-            .filter(|r| seen.insert(r.url.clone()))
+            .filter(|r| seen.insert(r.identifier.clone()))
             .collect()
     }
 
