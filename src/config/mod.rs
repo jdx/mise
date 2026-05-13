@@ -1092,28 +1092,38 @@ pub fn reset_config_path_caches() {
 }
 
 pub fn all_config_files() -> IndexSet<PathBuf> {
-    let mut files = ALL_CONFIG_FILES.lock().unwrap();
-    if let Some(files) = &*files {
-        return files.clone();
-    }
-    let loaded = load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
-        .into_iter()
-        .collect();
-    *files = Some(loaded);
-    files.as_ref().unwrap().clone()
+    cached_config_paths(&ALL_CONFIG_FILES, || {
+        load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
+            .into_iter()
+            .collect()
+    })
 }
 
 pub fn ignored_config_files() -> IndexSet<PathBuf> {
-    let mut files = IGNORED_CONFIG_FILES.lock().unwrap();
+    cached_config_paths(&IGNORED_CONFIG_FILES, || {
+        load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
+            .into_iter()
+            .filter(|p| {
+                config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p)
+            })
+            .collect()
+    })
+}
+
+fn cached_config_paths(
+    cache: &Mutex<Option<IndexSet<PathBuf>>>,
+    load: impl FnOnce() -> IndexSet<PathBuf>,
+) -> IndexSet<PathBuf> {
+    if let Some(files) = cache.lock().unwrap().as_ref().cloned() {
+        return files;
+    }
+    let loaded = load();
+    let mut files = cache.lock().unwrap();
     if let Some(files) = &*files {
         return files.clone();
     }
-    let loaded = load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
-        .into_iter()
-        .filter(|p| config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
-        .collect();
-    *files = Some(loaded);
-    files.as_ref().unwrap().clone()
+    *files = Some(loaded.clone());
+    loaded
 }
 
 pub fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
@@ -1385,15 +1395,11 @@ pub fn top_toml_config() -> Option<PathBuf> {
 static ALL_TOML_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
 
 pub fn all_toml_config_files() -> IndexSet<PathBuf> {
-    let mut files = ALL_TOML_CONFIG_FILES.lock().unwrap();
-    if let Some(files) = &*files {
-        return files.clone();
-    }
-    let loaded = load_config_paths(&TOML_CONFIG_FILENAMES, false)
-        .into_iter()
-        .collect();
-    *files = Some(loaded);
-    files.as_ref().unwrap().clone()
+    cached_config_paths(&ALL_TOML_CONFIG_FILES, || {
+        load_config_paths(&TOML_CONFIG_FILENAMES, false)
+            .into_iter()
+            .collect()
+    })
 }
 
 /// list of all non-global mise.tomls
