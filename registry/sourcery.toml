@@ -4,7 +4,20 @@ description = "Meta-programming for Swift, stop writing boilerplate code"
 [[backends]]
 full = "github:krzysztofzablocki/Sourcery"
 
-[backends.options]
+# macOS release asset is a real `.zip`; the Linux release asset is named
+# `.tar.xz` but is actually gzip-compressed (the upstream release workflow
+# uses `tar -zcvf` on a `.tar.xz`-named file:
+# https://github.com/krzysztofzablocki/Sourcery/blob/master/.github/workflows/release_ubuntu.yml#L43-L47).
+# `format` must therefore be set per-platform — applying `tar.gz` globally
+# (as the previous version of this entry did) breaks macOS installs with
+# `invalid gzip header` when extracting the `.zip` as a tar.gz.
+[backends.options.platforms.macos-arm64]
+format = "zip"
+
+[backends.options.platforms.macos-x64]
+format = "zip"
+
+[backends.options.platforms.linux-x64]
 format = "tar.gz"
 
 [[backends]]
