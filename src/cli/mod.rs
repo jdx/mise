@@ -625,11 +625,13 @@ impl Cli {
         if hook_env_module::should_exit_early_fast() {
             return Ok(());
         }
+        let early_cd = apply_early_cd(args)?;
         measure!("logger", { logger::init() });
         check_working_directory();
         measure!("handle_shim", { shims::handle_shim().await })?;
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
+        let _ = measure!("backend::load_tools", { backend::load_tools().await });
 
         // Pre-process args to handle naked runs before clap parsing
         let cmd = Cli::command();
@@ -641,11 +643,12 @@ impl Cli {
             Cli::parse_from(processed_args.iter())
         });
         // Validate --cd path BEFORE Settings processes it and changes the directory
-        validate_cd_path(&cli.cd)?;
+        if !early_cd {
+            validate_cd_path(&cli.cd)?;
+        }
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
-        let _ = measure!("backend::load_tools", { backend::load_tools().await });
         warn_deprecated_backends_alias(&cmd, args);
         measure!("migrate", { migrate::run().await });
         if let Err(err) = crate::cache::auto_prune() {
@@ -794,6 +797,53 @@ fn check_working_directory() {
     }
 }
 
+fn apply_early_cd(args: &[String]) -> Result<bool> {
+    if *crate::env::IS_RUNNING_AS_SHIM {
+        return Ok(false);
+    }
+    let Some(cd) = early_cd_arg(args) else {
+        return Ok(false);
+    };
+    validate_cd_path(&Some(cd.clone()))?;
+    Settings::override_with(|s| {
+        s.cd = Some(cd);
+    });
+    Ok(true)
+}
+
+fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
+    let cmd = Cli::command();
+    let mut subcommand = None;
+    let mut iter = args.iter().skip(1).peekable();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--" => return None,
+            "-C" | "--cd" => return iter.next().map(PathBuf::from),
+            _ => {
+                if let Some(cd) = arg.strip_prefix("--cd=") {
+                    return Some(PathBuf::from(cd));
+                }
+                if let Some(cd) = arg.strip_prefix("-C")
+                    && !cd.is_empty()
+                {
+                    return Some(PathBuf::from(cd));
+                }
+                if subcommand.is_none() && !arg.starts_with('-') {
+                    let Some(sc) = cmd.find_subcommand(arg) else {
+                        return None;
+                    };
+                    subcommand = Some(sc.get_name().to_string());
+                    continue;
+                }
+                if subcommand.as_deref() == Some("run") && !arg.starts_with('-') {
+                    return None;
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Validate the --cd path if provided and return an error if it doesn't exist
 fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
     if let Some(path) = cd {
@@ -930,6 +980,33 @@ mod tests {
         let args = vec!["mise".to_string(), "run".to_string(), "b".to_string()];
 
         assert!(!uses_deprecated_backends_alias(&cmd, &args));
+    }
+
+    #[test]
+    fn test_early_cd_arg_finds_global_cd_before_tool_args() {
+        let args = vec![
+            "mise".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+            "exec".to_string(),
+            "dummy@1.0.0".to_string(),
+            "--".to_string(),
+            "dummy".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+    }
+
+    #[test]
+    fn test_early_cd_arg_ignores_naked_task_args() {
+        let args = vec![
+            "mise".to_string(),
+            "mytask".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), None);
     }
 
     #[test]

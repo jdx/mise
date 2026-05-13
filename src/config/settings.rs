@@ -554,6 +554,8 @@ impl Settings {
         updater(partial);
         drop(lock);
         *BASE_SETTINGS.write().unwrap() = None;
+        crate::config::reset_config_path_caches();
+        crate::config::config_file::config_root::reset();
     }
 
     pub fn lockfile_enabled(&self) -> bool {
