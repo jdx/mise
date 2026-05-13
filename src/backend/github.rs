@@ -1,10 +1,11 @@
 use crate::backend::VersionInfo;
 use crate::backend::asset_matcher::{self, Asset, AssetPicker, ChecksumFetcher};
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::{BackendOptions, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, lookup_platform_key, lookup_platform_key_for_target,
-    template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
+    get_filename_from_url, install_artifact, template_string, try_with_v_prefix,
+    try_with_v_prefix_and_repo, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::cli::args::{BackendArg, ToolVersionType};
@@ -39,6 +40,82 @@ struct ReleaseAsset {
 const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
 const DEFAULT_FORGEJO_API_BASE_URL: &str = "https://codeberg.org/api/v1";
+
+#[derive(Debug, Clone, Copy)]
+struct GitBackendOptions<'a> {
+    values: BackendOptions<'a>,
+    default_api_url: &'static str,
+}
+
+impl<'a> GitBackendOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions, default_api_url: &'static str) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+            default_api_url,
+        }
+    }
+
+    fn raw(&self) -> &'a ToolVersionOptions {
+        self.values.raw()
+    }
+
+    fn api_url(&self) -> String {
+        self.values
+            .str("api_url")
+            .unwrap_or(self.default_api_url)
+            .to_string()
+    }
+
+    fn version_prefix(&self) -> Option<&'a str> {
+        self.values.str("version_prefix")
+    }
+
+    fn checksum(&self) -> Option<String> {
+        self.values.platform_string("checksum")
+    }
+
+    fn bin_path(&self) -> Option<String> {
+        self.values.platform_string("bin_path")
+    }
+
+    fn asset_pattern_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values
+            .platform_string_for_target("asset_pattern", target)
+    }
+
+    fn direct_url_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values
+            .platform_string_for_target_without_base("url", target)
+    }
+
+    fn no_app(&self) -> bool {
+        self.values
+            .string("no_app")
+            .is_some_and(|value| is_truthy(&value))
+    }
+
+    fn filter_bins(&self) -> Option<Vec<String>> {
+        self.values
+            .platform_string("filter_bins")
+            .map(|filter_bins| {
+                filter_bins
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut result = BTreeMap::new();
+        for key in ["asset_pattern", "url", "version_prefix"] {
+            if let Some(value) = self.values.str(key) {
+                result.insert(key.to_string(), value.to_string());
+            }
+        }
+        result
+    }
+}
 
 /// GitHub artifact attestations are only served by https://api.github.com. GHE
 /// Server doesn't implement the attestations endpoint, so any verification
@@ -107,8 +184,9 @@ impl Backend for UnifiedGitBackend {
 
         // Get the latest release to check for security assets
         let repo = self.ba.tool_name();
-        let opts = self.ba.opts();
-        let api_url = self.get_api_url(&opts);
+        let raw_opts = self.ba.opts();
+        let opts = self.options(&raw_opts);
+        let api_url = opts.api_url();
 
         let releases = github::list_releases_from_url(api_url.as_str(), &repo)
             .await
@@ -168,9 +246,10 @@ impl Backend for UnifiedGitBackend {
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let repo = self.ba.tool_name();
         let id = self.ba.to_string();
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let api_url = self.get_api_url(&opts);
-        let version_prefix = opts.get("version_prefix");
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = self.options(&raw_opts);
+        let api_url = opts.api_url();
+        let version_prefix = opts.version_prefix();
 
         // Derive web URL base from API URL for enterprise support
         let web_url_base = if self.is_gitlab() {
@@ -266,16 +345,17 @@ impl Backend for UnifiedGitBackend {
         }
 
         let repo = self.ba.tool_name();
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let api_url = self.get_api_url(&opts);
-        let version_prefix = opts.get("version_prefix");
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = self.options(&raw_opts);
+        let api_url = opts.api_url();
+        let version_prefix = opts.version_prefix();
 
         // When `prerelease = true`, skip the `/releases/latest` shortcut
         // (which returns whichever release the repo owner marked as "Latest",
         // defaulting to the newest non-prerelease). Returning `None` lets the
         // trait's `latest_version` fall through to `latest_version_for_query`,
         // which resolves against the full list — now including pre-releases.
-        if self.include_prereleases(&opts) {
+        if self.include_prereleases(opts.raw()) {
             return Ok(None);
         }
 
@@ -316,8 +396,9 @@ impl Backend for UnifiedGitBackend {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let repo = self.repo();
-        let opts = ctx.config.get_tool_opts_with_overrides(&self.ba).await?;
-        let api_url = self.get_api_url(&opts);
+        let raw_opts = ctx.config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = self.options(&raw_opts);
+        let api_url = opts.api_url();
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
@@ -353,8 +434,10 @@ impl Backend for UnifiedGitBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
+        let raw_opts = tv.request.options();
+        let opts = self.options(&raw_opts);
         let mise_bins_dir = tv.install_path().join(MISE_BINS_DIR);
-        if self.get_filter_bins(tv).is_some() || mise_bins_dir.is_dir() {
+        if opts.filter_bins().is_some() || mise_bins_dir.is_dir() {
             return Ok(vec![tv.runtime_path().join(MISE_BINS_DIR)]);
         }
 
@@ -370,17 +453,8 @@ impl Backend for UnifiedGitBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
-        let opts = request.options();
-        let mut result = BTreeMap::new();
-
-        // These options affect which artifact is downloaded
-        for key in ["asset_pattern", "url", "version_prefix"] {
-            if let Some(value) = opts.get(key) {
-                result.insert(key.to_string(), value.to_string());
-            }
-        }
-
-        result
+        let raw_opts = request.options();
+        self.options(&raw_opts).lockfile_options()
     }
 
     /// Resolve platform-specific lock information for cross-platform lockfile generation.
@@ -391,8 +465,9 @@ impl Backend for UnifiedGitBackend {
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         let repo = self.repo();
-        let opts = tv.request.options();
-        let api_url = self.get_api_url(&opts);
+        let raw_opts = tv.request.options();
+        let opts = self.options(&raw_opts);
+        let api_url = opts.api_url();
 
         // Resolve asset for the target platform
         let asset = self
@@ -471,12 +546,26 @@ impl UnifiedGitBackend {
         Self { ba: Arc::new(ba) }
     }
 
+    fn options<'a>(&self, raw: &'a ToolVersionOptions) -> GitBackendOptions<'a> {
+        GitBackendOptions::new(raw, self.default_api_url())
+    }
+
+    fn default_api_url(&self) -> &'static str {
+        if self.is_gitlab() {
+            DEFAULT_GITLAB_API_BASE_URL
+        } else if self.is_forgejo() {
+            DEFAULT_FORGEJO_API_BASE_URL
+        } else {
+            DEFAULT_GITHUB_API_BASE_URL
+        }
+    }
+
     /// Detect what provenance type is available for a release by checking its assets
     /// and querying the GitHub attestation API.
     async fn detect_provenance_type(
         &self,
         tv: &ToolVersion,
-        opts: &ToolVersionOptions,
+        opts: &GitBackendOptions<'_>,
         repo: &str,
         api_url: &str,
         asset_digest: Option<&str>,
@@ -484,7 +573,7 @@ impl UnifiedGitBackend {
     ) -> (Option<ProvenanceType>, Option<GithubAttestationsStatus>) {
         let settings = Settings::get();
         let version = &tv.version;
-        let version_prefix = opts.get("version_prefix");
+        let version_prefix = opts.version_prefix();
         let mut github_attestations = None;
 
         let release =
@@ -563,7 +652,7 @@ impl UnifiedGitBackend {
     async fn verify_provenance_at_lock_time(
         &self,
         tv: &ToolVersion,
-        opts: &ToolVersionOptions,
+        opts: &GitBackendOptions<'_>,
         repo: &str,
         api_url: &str,
         asset: &ReleaseAsset,
@@ -638,7 +727,7 @@ impl UnifiedGitBackend {
         // Fall back to SLSA provenance
         if settings.slsa && settings.github.slsa {
             let version = &tv.version;
-            let version_prefix = opts.get("version_prefix");
+            let version_prefix = opts.version_prefix();
             let release =
                 try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
                     let api_url = api_url.to_string();
@@ -733,33 +822,19 @@ impl UnifiedGitBackend {
         assets.cloned().collect::<Vec<_>>().join(", ")
     }
 
-    fn get_api_url(&self, opts: &ToolVersionOptions) -> String {
-        opts.get("api_url")
-            .unwrap_or(if self.is_gitlab() {
-                DEFAULT_GITLAB_API_BASE_URL
-            } else if self.is_forgejo() {
-                DEFAULT_FORGEJO_API_BASE_URL
-            } else {
-                DEFAULT_GITHUB_API_BASE_URL
-            })
-            .to_string()
-    }
-
     /// Downloads and installs the asset
     async fn download_and_install(
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         asset: &ReleaseAsset,
-        opts: &ToolVersionOptions,
+        opts: &GitBackendOptions<'_>,
     ) -> Result<()> {
         let filename = asset.name.clone();
         let file_path = tv.download_path().join(&filename);
 
         // Check if we'll verify checksum
-        let has_checksum = lookup_platform_key(opts, "checksum")
-            .or_else(|| opts.get("checksum").map(|s| s.to_string()))
-            .is_some();
+        let has_checksum = opts.checksum().is_some();
 
         // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
@@ -823,7 +898,7 @@ impl UnifiedGitBackend {
         // Verify and install
         ctx.pr.next_operation();
         if has_checksum {
-            verify_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
+            verify_artifact(tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
         }
 
         // Check before verify_checksum, which may generate a new checksum from the
@@ -857,9 +932,9 @@ impl UnifiedGitBackend {
         }
 
         ctx.pr.next_operation();
-        install_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
+        install_artifact(tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
-        if let Some(bins) = self.get_filter_bins(tv) {
+        if let Some(bins) = opts.filter_bins() {
             self.create_symlink_bin_dir(tv, bins)?;
         }
 
@@ -868,10 +943,9 @@ impl UnifiedGitBackend {
 
     /// Discovers bin paths in the installation directory
     fn discover_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<std::path::PathBuf>> {
-        let opts = tv.request.options();
-        if let Some(bin_path_template) = lookup_platform_key(&opts, "bin_path")
-            .or_else(|| opts.get("bin_path").map(|s| s.to_string()))
-        {
+        let raw_opts = tv.request.options();
+        let opts = self.options(&raw_opts);
+        if let Some(bin_path_template) = opts.bin_path() {
             let bin_path = template_string(&bin_path_template, tv);
             return Ok(vec![tv.install_path().join(&bin_path)]);
         }
@@ -946,7 +1020,7 @@ impl UnifiedGitBackend {
     async fn resolve_asset_url(
         &self,
         tv: &ToolVersion,
-        opts: &ToolVersionOptions,
+        opts: &GitBackendOptions<'_>,
         repo: &str,
         api_url: &str,
     ) -> Result<ReleaseAsset> {
@@ -959,13 +1033,13 @@ impl UnifiedGitBackend {
     async fn resolve_asset_url_for_target(
         &self,
         tv: &ToolVersion,
-        opts: &ToolVersionOptions,
+        opts: &GitBackendOptions<'_>,
         repo: &str,
         api_url: &str,
         target: &PlatformTarget,
     ) -> Result<ReleaseAsset> {
         // Check for direct platform-specific URLs first
-        if let Some(direct_url) = lookup_platform_key_for_target(opts, "url", target) {
+        if let Some(direct_url) = opts.direct_url_for_target(target) {
             return Ok(ReleaseAsset {
                 name: get_filename_from_url(&direct_url),
                 url: direct_url.clone(),
@@ -975,7 +1049,7 @@ impl UnifiedGitBackend {
         }
 
         let version = &tv.version;
-        let version_prefix = opts.get("version_prefix");
+        let version_prefix = opts.version_prefix();
         if self.is_gitlab() {
             try_with_v_prefix(version, version_prefix, |candidate| async move {
                 self.resolve_gitlab_asset_url_for_target(
@@ -1013,7 +1087,7 @@ impl UnifiedGitBackend {
     async fn resolve_github_asset_url_for_target(
         &self,
         tv: &ToolVersion,
-        opts: &ToolVersionOptions,
+        opts: &GitBackendOptions<'_>,
         repo: &str,
         api_url: &str,
         version: &str,
@@ -1030,9 +1104,7 @@ impl UnifiedGitBackend {
             .collect();
 
         // Try explicit pattern first
-        if let Some(pattern) = lookup_platform_key_for_target(opts, "asset_pattern", target)
-            .or_else(|| opts.get("asset_pattern").map(|s| s.to_string()))
-        {
+        if let Some(pattern) = opts.asset_pattern_for_target(target) {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
 
@@ -1065,13 +1137,9 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let no_app = opts
-            .get("no_app")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
-            .with_no_app(no_app)
+            .with_no_app(opts.no_app())
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1104,7 +1172,7 @@ impl UnifiedGitBackend {
     async fn resolve_gitlab_asset_url_for_target(
         &self,
         tv: &ToolVersion,
-        opts: &ToolVersionOptions,
+        opts: &GitBackendOptions<'_>,
         repo: &str,
         api_url: &str,
         version: &str,
@@ -1127,9 +1195,7 @@ impl UnifiedGitBackend {
             .collect();
 
         // Try explicit pattern first
-        if let Some(pattern) = lookup_platform_key_for_target(opts, "asset_pattern", target)
-            .or_else(|| opts.get("asset_pattern").map(|s| s.to_string()))
-        {
+        if let Some(pattern) = opts.asset_pattern_for_target(target) {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
 
@@ -1160,13 +1226,9 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let no_app = opts
-            .get("no_app")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
-            .with_no_app(no_app)
+            .with_no_app(opts.no_app())
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1196,7 +1258,7 @@ impl UnifiedGitBackend {
     async fn resolve_forgejo_asset_url_for_target(
         &self,
         tv: &ToolVersion,
-        opts: &ToolVersionOptions,
+        opts: &GitBackendOptions<'_>,
         repo: &str,
         api_url: &str,
         version: &str,
@@ -1222,9 +1284,7 @@ impl UnifiedGitBackend {
         };
 
         // Try explicit pattern first
-        if let Some(pattern) = lookup_platform_key_for_target(opts, "asset_pattern", target)
-            .or_else(|| opts.get("asset_pattern").map(|s| s.to_string()))
-        {
+        if let Some(pattern) = opts.asset_pattern_for_target(target) {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
 
@@ -1254,13 +1314,9 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let no_app = opts
-            .get("no_app")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
-            .with_no_app(no_app)
+            .with_no_app(opts.no_app())
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1319,9 +1375,9 @@ impl UnifiedGitBackend {
         }
     }
 
-    fn strip_version_prefix(&self, tag_name: &str, opts: &ToolVersionOptions) -> String {
+    fn strip_version_prefix(&self, tag_name: &str, opts: &GitBackendOptions<'_>) -> String {
         // If a custom version_prefix is configured, strip it first
-        if let Some(prefix) = opts.get("version_prefix")
+        if let Some(prefix) = opts.version_prefix()
             && let Some(stripped) = tag_name.strip_prefix(prefix)
         {
             return stripped.to_string();
@@ -1378,20 +1434,6 @@ impl UnifiedGitBackend {
                 None
             }
         }
-    }
-
-    fn get_filter_bins(&self, tv: &ToolVersion) -> Option<Vec<String>> {
-        let opts = tv.request.options();
-        let filter_bins = lookup_platform_key(&opts, "filter_bins")
-            .or_else(|| opts.get("filter_bins").map(|s| s.to_string()))?;
-
-        Some(
-            filter_bins
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect(),
-        )
     }
 
     /// Creates a `.mise-bins` directory with symlinks only to the binaries specified in filter_bins.
@@ -1509,7 +1551,9 @@ impl UnifiedGitBackend {
         // doesn't support them (e.g. GHE Server), surface a clear, actionable
         // error rather than falling through to the generic "downgrade attack"
         // path below.
-        let api_url = self.get_api_url(&tv.request.options());
+        let raw_opts = tv.request.options();
+        let opts = self.options(&raw_opts);
+        let api_url = opts.api_url();
         if !attestations_supported(&api_url)
             && let Some(expected) = expected_provenance
             && expected.is_github_attestations()
@@ -1688,11 +1732,12 @@ impl UnifiedGitBackend {
 
         // Get the release to find provenance assets
         let repo = self.repo();
-        let opts = tv.request.options();
+        let raw_opts = tv.request.options();
+        let opts = self.options(&raw_opts);
         let version = &tv.version;
 
         // Try to get the release (with version prefix support)
-        let version_prefix = opts.get("version_prefix");
+        let version_prefix = opts.version_prefix();
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
@@ -1874,7 +1919,7 @@ mod tests {
 
     fn create_test_backend() -> UnifiedGitBackend {
         UnifiedGitBackend::from_arg(BackendArg::new(
-            "github".to_string(),
+            "github:test/repo".to_string(),
             Some("github:test/repo".to_string()),
         ))
     }
@@ -1889,7 +1934,8 @@ mod tests {
     #[test]
     fn test_version_prefix_functionality() {
         let backend = create_test_backend();
-        let default_opts = ToolVersionOptions::default();
+        let default_raw_opts = ToolVersionOptions::default();
+        let default_opts = backend.options(&default_raw_opts);
 
         // Test with no version prefix configured
         assert_eq!(
@@ -1934,6 +1980,7 @@ mod tests {
             "version_prefix".to_string(),
             toml::Value::String("release-".to_string()),
         );
+        let opts = backend.options(&opts);
 
         assert_eq!(
             backend.strip_version_prefix("release-1.0.0", &opts),

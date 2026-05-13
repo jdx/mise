@@ -64,6 +64,7 @@ pub mod go;
 pub mod http;
 pub mod jq;
 pub mod npm;
+pub(crate) mod options;
 pub mod pipx;
 pub mod platform_target;
 pub mod s3;
@@ -356,7 +357,9 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
     match backend_type {
         BackendType::Http => http::install_time_option_keys(),
         BackendType::S3 => s3::install_time_option_keys(),
-        BackendType::Github | BackendType::Gitlab => github::install_time_option_keys(),
+        BackendType::Github | BackendType::Gitlab | BackendType::Forgejo => {
+            github::install_time_option_keys()
+        }
         BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
