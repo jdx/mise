@@ -737,7 +737,13 @@ impl TaskExecutor {
                     && !t.starts_with("set ")
             })
             .unwrap_or(script);
-        let cmd = format!("$ {display_script} {args}", args = args.join(" "));
+        let args_str = args.join(" ");
+        let cmd = match (display_script.is_empty(), args_str.is_empty()) {
+            (true, true) => "$".to_string(),
+            (true, false) => format!("$ {args_str}"),
+            (false, true) => format!("$ {display_script}"),
+            (false, false) => format!("$ {display_script} {args_str}"),
+        };
         if !self.quiet(Some(task)) {
             let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
                 .bright()
