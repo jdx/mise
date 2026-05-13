@@ -136,6 +136,10 @@ Hooks are executed with the following environment variables set:
 Inline `run` hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
 (`enter = "echo hi"`) is equivalent to `{ run = "echo hi" }`.
 
+`run` must be a string. `run = ["echo one", "echo two"]` is not supported. To run multiple
+spawned inline commands, use the multiple hooks syntax such as `enter = [{ run = "echo one" },
+{ run = "echo two" }]`, or use a multiline string.
+
 `run` hooks execute in a subprocess using the default inline shell:
 [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
 or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args).
@@ -151,6 +155,24 @@ such as `bash -c`, `zsh -c`, or `pwsh -Command`.
 [hooks.enter]
 shell = "bash"
 script = "source completions.sh"
+```
+
+For longer current-shell hooks, `script` may be an array and `scripts` may be used as a plural
+array-only spelling. The entries are emitted in order as separate lines:
+
+```toml
+[hooks.enter]
+shell = "bash"
+script = [
+  "source completions.sh",
+  "export PROJECT_READY=1",
+]
+
+[hooks.leave]
+shell = "bash"
+scripts = [
+  "unset PROJECT_READY",
+]
 ```
 
 `script` with `shell` is for current-shell hooks. Here, `shell` is a shell-name selector such as

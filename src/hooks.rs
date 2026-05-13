@@ -53,6 +53,22 @@ pub enum Hooks {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
+pub enum HookScripts {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl HookScripts {
+    fn into_script(self) -> String {
+        match self {
+            Self::One(script) => script,
+            Self::Many(scripts) => scripts.join("\n"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(untagged)]
 pub enum HookDef {
     /// Simple run string: `enter = "echo hello"`
     RunString(String),
@@ -60,7 +76,12 @@ pub enum HookDef {
     Run { run: String, shell: Option<String> },
     /// Table with script and optional shell: `enter = { script = "echo hello", shell = "bash" }`
     ScriptTable {
-        script: String,
+        script: HookScripts,
+        shell: Option<String>,
+    },
+    /// Table with scripts and optional shell: `enter = { scripts = ["echo hello"], shell = "bash" }`
+    ScriptsTable {
+        scripts: Vec<String>,
         shell: Option<String>,
     },
     /// Task reference: `enter = { task = "setup" }`
@@ -95,17 +116,12 @@ impl HookDef {
             }],
             HookDef::ScriptTable { script, shell } => vec![Hook {
                 hook: hook_type,
-                action: match (hook_type, shell) {
-                    (Hooks::Enter | Hooks::Leave | Hooks::Cd, Some(shell)) => {
-                        HookAction::CurrentShell { script, shell }
-                    }
-                    (_, shell) => HookAction::Run {
-                        run: script,
-                        shell: None,
-                        legacy_script: true,
-                        ignored_shell: shell,
-                    },
-                },
+                action: script_hook_action(hook_type, script.into_script(), shell),
+                global: false,
+            }],
+            HookDef::ScriptsTable { scripts, shell } => vec![Hook {
+                hook: hook_type,
+                action: script_hook_action(hook_type, scripts.join("\n"), shell),
                 global: false,
             }],
             HookDef::TaskRef { task } => vec![Hook {
@@ -118,6 +134,20 @@ impl HookDef {
                 .flat_map(|d| d.into_hooks(hook_type))
                 .collect(),
         }
+    }
+}
+
+fn script_hook_action(hook_type: Hooks, script: String, shell: Option<String>) -> HookAction {
+    match (hook_type, shell) {
+        (Hooks::Enter | Hooks::Leave | Hooks::Cd, Some(shell)) => {
+            HookAction::CurrentShell { script, shell }
+        }
+        (_, shell) => HookAction::Run {
+            run: script,
+            shell: None,
+            legacy_script: true,
+            ignored_shell: shell,
+        },
     }
 }
 

@@ -2043,8 +2043,18 @@
             "unevaluatedProperties": false,
             "properties": {
               "script": {
-                "description": "current-shell script for enter/leave/cd hooks",
-                "type": "string"
+                "description": "current-shell script or scripts for enter/leave/cd hooks",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
               },
               "shell": {
                 "description": "current shell name for script hooks, such as \"bash\"",
@@ -2052,6 +2062,24 @@
               }
             },
             "required": ["script"],
+            "type": "object"
+          },
+          {
+            "unevaluatedProperties": false,
+            "properties": {
+              "scripts": {
+                "description": "current-shell scripts for enter/leave/cd hooks",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "shell": {
+                "description": "current shell name for script hooks, such as \"bash\"",
+                "type": "string"
+              }
+            },
+            "required": ["scripts"],
             "type": "object"
           },
           {
@@ -2092,8 +2120,18 @@
                   "unevaluatedProperties": false,
                   "properties": {
                     "script": {
-                      "description": "current-shell script for enter/leave/cd hooks",
-                      "type": "string"
+                      "description": "current-shell script or scripts for enter/leave/cd hooks",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
                     },
                     "shell": {
                       "description": "current shell name for script hooks, such as \"bash\"",
@@ -2101,6 +2139,24 @@
                     }
                   },
                   "required": ["script"],
+                  "type": "object"
+                },
+                {
+                  "unevaluatedProperties": false,
+                  "properties": {
+                    "scripts": {
+                      "description": "current-shell scripts for enter/leave/cd hooks",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "shell": {
+                      "description": "current shell name for script hooks, such as \"bash\"",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["scripts"],
                   "type": "object"
                 },
                 {
