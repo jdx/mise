@@ -181,7 +181,7 @@ impl Install {
             if self.dry_run_code {
                 let has_work = versions.iter().any(|tv| {
                     if let Ok(backend) = tv.backend() {
-                        !backend.is_version_installed(&config, tv, true)
+                        !backend.is_version_installed_for_install(&config, tv)
                     } else {
                         true
                     }
@@ -315,7 +315,7 @@ impl Install {
             ba.backend()?;
         }
         let missing = measure!("fetching missing runtimes", {
-            trs.missing_tools(&config)
+            trs.missing_tools_for_install(&config)
                 .await
                 .into_iter()
                 .cloned()

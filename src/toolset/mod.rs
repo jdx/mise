@@ -170,6 +170,20 @@ impl Toolset {
         })
     }
 
+    pub async fn list_missing_versions_for_install(
+        &self,
+        config: &Arc<Config>,
+    ) -> Vec<ToolVersion> {
+        trace!("list_missing_versions_for_install");
+        measure!("toolset::list_missing_versions_for_install", {
+            self.list_current_versions()
+                .into_iter()
+                .filter(|(p, tv)| !p.is_version_installed_for_install(config, tv))
+                .map(|(_, tv)| tv)
+                .collect()
+        })
+    }
+
     pub async fn list_installed_versions(&self, _config: &Arc<Config>) -> Result<Vec<TVTuple>> {
         let current_versions: HashMap<(String, String), TVTuple> = self
             .list_current_versions()

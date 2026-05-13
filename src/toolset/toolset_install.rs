@@ -32,7 +32,7 @@ impl Toolset {
         config: &mut Arc<Config>,
         opts: &InstallOptions,
     ) -> Result<(Vec<ToolVersion>, Vec<ToolVersion>)> {
-        let missing = self.list_missing_versions(config).await;
+        let missing = self.list_missing_versions_for_install(config).await;
 
         // If auto-install is explicitly disabled, skip installation but return what's missing
         if opts.skip_auto_install {
@@ -61,7 +61,7 @@ impl Toolset {
             let ts = config.get_toolset().await?;
             config::rebuild_shims_and_runtime_symlinks(config, ts, &installed).await?;
             // Re-check what's still missing after installation
-            let still_missing = self.list_missing_versions(config).await;
+            let still_missing = self.list_missing_versions_for_install(config).await;
             return Ok((installed, still_missing));
         }
         // Nothing was installed, the missing list is unchanged
@@ -521,7 +521,7 @@ impl Toolset {
         // Install missing versions for backends that provide this bin
         for plugin in plugins {
             let versions = self
-                .list_missing_versions(config)
+                .list_missing_versions_for_install(config)
                 .await
                 .into_iter()
                 .filter(|tv| tv.ba() == &**plugin.ba())

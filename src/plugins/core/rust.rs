@@ -32,7 +32,9 @@ impl RustPlugin {
 
     async fn setup_rustup(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         let settings = Settings::get();
-        if rustup_home().join("settings.toml").exists() && cargo_bin().exists() {
+        if rustup_home().join("settings.toml").exists()
+            && missing_rust_proxy_bin(&cargo_home()).is_none()
+        {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
@@ -81,6 +83,15 @@ impl Backend for RustPlugin {
     /// Lockfile URLs are not applicable since we don't download artifacts directly.
     fn supports_lockfile_url(&self) -> bool {
         false
+    }
+
+    fn is_version_installed_for_install(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        if !self.is_version_installed(config, tv, true) {
+            return false;
+        }
+        let default_host = Settings::get().rust.default_host.clone();
+        let host = default_host.as_deref().unwrap_or(TARGET);
+        rust_install_state_complete(tv, &cargo_home(), &rustup_home(), host)
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -290,6 +301,142 @@ fn get_args(tv: &ToolVersion) -> (Option<String>, Option<Vec<String>>, Option<Ve
     (profile, components, targets)
 }
 
+fn rust_install_state_complete(
+    tv: &ToolVersion,
+    cargo_home: &Path,
+    rustup_home: &Path,
+    host: &str,
+) -> bool {
+    if !rustup_home.join("settings.toml").exists() {
+        trace!(
+            "rust@{} is incomplete: rustup settings missing in {}",
+            tv.version,
+            rustup_home.display()
+        );
+        return false;
+    }
+
+    if let Some(bin) = missing_rust_proxy_bin(cargo_home) {
+        trace!(
+            "rust@{} is incomplete: {} missing in {}",
+            tv.version,
+            bin,
+            cargo_home.join("bin").display()
+        );
+        return false;
+    }
+
+    let Some(toolchain_dir) = rust_toolchain_dir(rustup_home, &tv.version, host) else {
+        trace!(
+            "rust@{} is incomplete: toolchain directory missing in {}",
+            tv.version,
+            rustup_home.join("toolchains").display()
+        );
+        return false;
+    };
+
+    let (profile, components, targets) = get_args(tv);
+    let mut required_components = vec![];
+    if profile.as_deref() == Some("default") {
+        required_components.extend(["rustfmt".to_string(), "clippy".to_string()]);
+    }
+    if let Some(components) = components {
+        required_components.extend(components);
+    }
+
+    let required_targets = targets.unwrap_or_default();
+    if required_components.is_empty() && required_targets.is_empty() {
+        return true;
+    }
+
+    let rustlib_dir = toolchain_dir.join("lib").join("rustlib");
+    let Some(installed_components) = read_rust_components(&rustlib_dir) else {
+        trace!(
+            "rust@{} is incomplete: rustup components file missing in {}",
+            tv.version,
+            rustlib_dir.display()
+        );
+        return false;
+    };
+
+    for component in required_components
+        .into_iter()
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty())
+    {
+        if !rust_component_installed(&installed_components, &component, host) {
+            trace!(
+                "rust@{} is incomplete: component {} missing",
+                tv.version, component
+            );
+            return false;
+        }
+    }
+
+    for target in required_targets
+        .into_iter()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+    {
+        let component = format!("rust-std-{target}");
+        if !rust_component_installed(&installed_components, &component, host)
+            || !rustlib_dir.join(&target).exists()
+        {
+            trace!(
+                "rust@{} is incomplete: target {} missing",
+                tv.version, target
+            );
+            return false;
+        }
+    }
+
+    true
+}
+
+fn rust_toolchain_dir(rustup_home: &Path, version: &str, host: &str) -> Option<PathBuf> {
+    let toolchains = rustup_home.join("toolchains");
+    [version.to_string(), format!("{version}-{host}")]
+        .into_iter()
+        .map(|name| toolchains.join(name))
+        .find(|path| path.is_dir())
+}
+
+fn missing_rust_proxy_bin(cargo_home: &Path) -> Option<&'static str> {
+    [CARGO_BIN, RUSTC_BIN, RUSTUP_BIN]
+        .into_iter()
+        .find(|bin| !cargo_home.join("bin").join(bin).exists())
+}
+
+fn read_rust_components(rustlib_dir: &Path) -> Option<Vec<String>> {
+    let components = file::read_to_string(rustlib_dir.join("components")).ok()?;
+    Some(
+        components
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+fn rust_component_installed(installed_components: &[String], component: &str, host: &str) -> bool {
+    rust_component_candidates(component, host)
+        .iter()
+        .any(|candidate| installed_components.iter().any(|c| c == candidate))
+}
+
+fn rust_component_candidates(component: &str, host: &str) -> Vec<String> {
+    let mut candidates = vec![component.to_string(), format!("{component}-{host}")];
+    if !component.ends_with("-preview") {
+        let preview = format!("{component}-preview");
+        candidates.push(preview.clone());
+        candidates.push(format!("{preview}-{host}"));
+    }
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
 fn parse_idiomatic_file(path: &Path) -> Result<RustToolchain> {
     let content = file::read_to_string(path)?;
     let toml: toml::Value = toml::de::from_str(&content)?;
@@ -402,9 +549,6 @@ fn cargo_home() -> PathBuf {
     }
 }
 
-fn cargo_bin() -> PathBuf {
-    cargo_bindir().join(CARGO_BIN)
-}
 fn cargo_bindir() -> PathBuf {
     cargo_home().join("bin")
 }

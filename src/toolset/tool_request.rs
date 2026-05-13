@@ -229,6 +229,20 @@ impl ToolRequest {
         }
     }
 
+    pub async fn is_installed_for_install(&self, config: &Arc<Config>) -> bool {
+        if let Some(backend) = backend::get(self.ba()) {
+            match self.resolve(config, &Default::default()).await {
+                Ok(tv) => backend.is_version_installed_for_install(config, &tv),
+                Err(e) => {
+                    debug!("ToolRequest.is_installed_for_install: {e:#}");
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    }
+
     pub fn install_path(&self, config: &Config) -> Option<PathBuf> {
         match self {
             Self::Version {

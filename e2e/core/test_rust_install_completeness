@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+
+export MISE_RUSTUP_HOME="$MISE_DATA_DIR/rustup-custom"
+export MISE_CARGO_HOME="$MISE_DATA_DIR/cargo-custom"
+export MISE_OFFLINE=1
+
+VERSION="1.81.0"
+HOST="$(rustc -vV | sed -n 's/^host: //p' | head -n1)"
+TOOLCHAIN="$VERSION-$HOST"
+CALLS="$MISE_DATA_DIR/fake-rustup-calls"
+
+mkdir -p "$MISE_CARGO_HOME/bin" "$MISE_RUSTUP_HOME/toolchains"
+cat >"$MISE_RUSTUP_HOME/settings.toml" <<EOF
+version = "12"
+default_toolchain = "$TOOLCHAIN"
+profile = "default"
+EOF
+
+cat >"$MISE_CARGO_HOME/bin/rustup" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+emit_component() {
+  case "$1" in
+    clippy) echo "clippy-preview-$MISE_FAKE_RUST_HOST" ;;
+    rustfmt) echo "rustfmt-preview-$MISE_FAKE_RUST_HOST" ;;
+    rust-src) echo "rust-src" ;;
+    llvm-tools) echo "llvm-tools-preview-$MISE_FAKE_RUST_HOST" ;;
+    *-preview) echo "$1-$MISE_FAKE_RUST_HOST" ;;
+    *) echo "$1-$MISE_FAKE_RUST_HOST" ;;
+  esac
+}
+
+echo "$*" >>"$MISE_FAKE_RUSTUP_CALLS"
+
+if [[ ${1:-} == "toolchain" && ${2:-} == "install" ]]; then
+  version="$3"
+  shift 3
+  profile=""
+  components=()
+  targets=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        profile="$2"
+        shift 2
+        ;;
+      --component)
+        components+=("$2")
+        shift 2
+        ;;
+      --target)
+        targets+=("$2")
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  toolchain_dir="$RUSTUP_HOME/toolchains/$version"
+  if [[ $version != *-"$MISE_FAKE_RUST_HOST" ]]; then
+    toolchain_dir="$RUSTUP_HOME/toolchains/$version-$MISE_FAKE_RUST_HOST"
+  fi
+  rustlib_dir="$toolchain_dir/lib/rustlib"
+  mkdir -p "$toolchain_dir/bin" "$rustlib_dir/$MISE_FAKE_RUST_HOST"
+  {
+    echo "cargo-$MISE_FAKE_RUST_HOST"
+    echo "rustc-$MISE_FAKE_RUST_HOST"
+    echo "rust-std-$MISE_FAKE_RUST_HOST"
+    echo "rust-docs-$MISE_FAKE_RUST_HOST"
+    if [[ $profile == "default" ]]; then
+      echo "rustfmt-preview-$MISE_FAKE_RUST_HOST"
+      echo "clippy-preview-$MISE_FAKE_RUST_HOST"
+    fi
+    for component in "${components[@]}"; do
+      emit_component "$component"
+    done
+    for target in "${targets[@]}"; do
+      echo "rust-std-$target"
+      mkdir -p "$rustlib_dir/$target"
+    done
+  } | awk '!seen[$0]++' >"$rustlib_dir/components"
+  touch "$toolchain_dir/bin/rustc"
+elif [[ ${1:-} == "toolchain" && ${2:-} == "uninstall" ]]; then
+  version="$3"
+  rm -rf "$RUSTUP_HOME/toolchains/$version" "$RUSTUP_HOME/toolchains/$version-$MISE_FAKE_RUST_HOST"
+fi
+EOF
+
+cat >"$MISE_CARGO_HOME/bin/rustc" <<'EOF'
+#!/usr/bin/env bash
+echo "rustc ${RUSTUP_TOOLCHAIN:-unknown} (fake)"
+EOF
+
+cat >"$MISE_CARGO_HOME/bin/cargo" <<'EOF'
+#!/usr/bin/env bash
+echo "cargo fake"
+EOF
+
+chmod +x "$MISE_CARGO_HOME/bin/rustup" "$MISE_CARGO_HOME/bin/rustc" "$MISE_CARGO_HOME/bin/cargo"
+export MISE_FAKE_RUST_HOST="$HOST"
+export MISE_FAKE_RUSTUP_CALLS="$CALLS"
+
+mark_mise_installed() {
+  mkdir -p "$MISE_DATA_DIR/installs/rust"
+  rm -rf "$MISE_DATA_DIR/installs/rust/$VERSION"
+  ln -s "$MISE_CARGO_HOME/bin" "$MISE_DATA_DIR/installs/rust/$VERSION"
+}
+
+write_toolchain_components() {
+  rm -rf "$MISE_RUSTUP_HOME/toolchains/$TOOLCHAIN"
+  mkdir -p "$MISE_RUSTUP_HOME/toolchains/$TOOLCHAIN/lib/rustlib/$HOST"
+  printf '%s\n' "$@" >"$MISE_RUSTUP_HOME/toolchains/$TOOLCHAIN/lib/rustlib/components"
+}
+
+reset_calls() {
+  : >"$CALLS"
+}
+
+assert_install_called() {
+  local actual
+  actual="$(grep -c '^toolchain install' "$CALLS" || true)"
+  [[ $actual == "1" ]] || fail "expected rustup toolchain install once, got $actual calls: $(cat "$CALLS")"
+  reset_calls
+}
+
+cat >mise.toml <<EOF
+[tools]
+rust = "$VERSION"
+EOF
+
+mark_mise_installed
+reset_calls
+rm -rf "$MISE_RUSTUP_HOME/toolchains/$TOOLCHAIN"
+hook_output="$(mise hook-env -s bash --force 2>&1)"
+[[ $hook_output == *"RUSTUP_TOOLCHAIN"* ]] || fail "hook-env should still generate Rust env from the cheap installed marker"
+[[ ! -s $CALLS ]] || fail "hook-env should not call rustup: $(cat "$CALLS")"
+
+mise install
+assert_install_called
+
+cat >mise.toml <<EOF
+[tools]
+rust = { version = "$VERSION", profile = "default" }
+EOF
+mark_mise_installed
+write_toolchain_components \
+  "cargo-$HOST" \
+  "rustc-$HOST" \
+  "rust-std-$HOST" \
+  "rust-docs-$HOST"
+mise install
+assert_install_called
+
+cat >mise.toml <<EOF
+[tools]
+rust = { version = "$VERSION", components = "rust-src,llvm-tools" }
+EOF
+mark_mise_installed
+write_toolchain_components \
+  "cargo-$HOST" \
+  "rustc-$HOST" \
+  "rust-std-$HOST"
+mise install
+assert_install_called
+
+cat >mise.toml <<EOF
+[tools]
+rust = { version = "$VERSION", targets = "wasm32-unknown-unknown" }
+EOF
+mark_mise_installed
+write_toolchain_components \
+  "cargo-$HOST" \
+  "rustc-$HOST" \
+  "rust-std-$HOST"
+mise install
+assert_install_called
