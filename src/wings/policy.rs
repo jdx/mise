@@ -83,7 +83,7 @@ pub(crate) async fn fetch_cached_or_remote(token: &str) -> Result<PolicyBundlePa
             "wings policy trust root is not configured for {host}; \
              using observe-mode local policy until {POLICY_PUBLIC_KEY_ENV} or a pinned key is available"
         );
-        return Ok(unverified_observe_policy(&host));
+        return Ok(unverified_observe_policy(host));
     }
 
     let cached_org = crate::wings::credentials::cached()

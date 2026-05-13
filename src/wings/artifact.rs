@@ -65,15 +65,18 @@ pub async fn try_install<B: Backend + ?Sized>(
             );
         };
         ctx.pr.set_message("wings pull locked oci".into());
-        return pull_and_install(ctx, tv, &artifact, &token)
+        let installed = pull_and_install(ctx, tv, &artifact, &token)
             .await
             .wrap_err_with(|| {
                 format!(
                     "mise.lock pins wings artifact {}@{}, refusing to resolve a different artifact",
                     artifact.ref_, artifact.digest
                 )
-            })
-            .map(|_| true);
+            })?;
+        if !installed {
+            return fallback_after_restored_install(tv, fallback_blocked);
+        }
+        return Ok(true);
     }
 
     let Some(source) = (match resolve_source(backend, tv).await {
@@ -104,17 +107,20 @@ pub async fn try_install<B: Backend + ?Sized>(
         );
     };
     ctx.pr.set_message("wings pull oci".into());
-    if let Err(e) = pull_and_install(ctx, tv, &artifact, &token).await {
-        if fallback_blocked {
-            return Err(e.wrap_err(format!(
-                "wings install failed for {}, and wings.required blocks fallback to the normal installer",
-                tv.style()
-            )));
+    match pull_and_install(ctx, tv, &artifact, &token).await {
+        Ok(true) => Ok(true),
+        Ok(false) => fallback_after_restored_install(tv, fallback_blocked),
+        Err(e) => {
+            if fallback_blocked {
+                return Err(e.wrap_err(format!(
+                    "wings install failed for {}, and wings.required blocks fallback to the normal installer",
+                    tv.style()
+                )));
+            }
+            log::warn!("wings install failed; falling back to normal installer: {e:#}");
+            Ok(false)
         }
-        log::warn!("wings install failed; falling back to normal installer: {e:#}");
-        return Ok(false);
     }
-    Ok(true)
 }
 
 pub fn fallback_blocked(tv: &ToolVersion) -> bool {
@@ -157,6 +163,14 @@ fn locked_artifact_auth_unavailable_reason(tv: &ToolVersion) -> String {
     format!(
         "mise.lock pins a wings artifact for {}, but wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
         tv.style()
+    )
+}
+
+fn fallback_after_restored_install(tv: &ToolVersion, fallback_blocked: bool) -> Result<bool> {
+    fallback_or_false(
+        tv,
+        fallback_blocked,
+        "wings install restored the previous install instead of replacing it",
     )
 }
 
@@ -561,7 +575,7 @@ async fn pull_and_install(
     tv: &mut ToolVersion,
     artifact: &Artifact,
     token: &str,
-) -> Result<()> {
+) -> Result<bool> {
     let reference = WingsReference::parse(&artifact.ref_)?;
     let expected_registry = format!("registry.{}", crate::wings::host());
     ensure!(
@@ -646,12 +660,12 @@ async fn pull_and_install(
                 "wings install did not replace {}; keeping restored existing install: {e:#}",
                 tv.style()
             );
-            return Ok(());
+            return Ok(false);
         }
         return Err(e);
     }
     record_wings_lock_info(tv, artifact, &policy_decision);
-    Ok(())
+    Ok(true)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1703,6 +1717,18 @@ mod tests {
         let err = fallback_or_false(&tv, true, &reason).unwrap_err();
         let message = err.to_string();
         assert!(message.contains("mise.lock pins a wings artifact"));
+        assert!(message.contains("wings.required blocks fallback"));
+    }
+
+    #[test]
+    fn restored_install_allows_fallback_unless_required() {
+        let tv = tool_version("node", Some("github:nodejs/node"));
+
+        assert!(!fallback_after_restored_install(&tv, false).unwrap());
+
+        let err = fallback_after_restored_install(&tv, true).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("restored the previous install"));
         assert!(message.contains("wings.required blocks fallback"));
     }
 
