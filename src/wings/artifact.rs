@@ -58,9 +58,10 @@ pub async fn try_install<B: Backend + ?Sized>(
     let locked_artifact = locked_wings_artifact(tv)?;
     if let Some(artifact) = locked_artifact {
         let Some(token) = crate::wings::auth::session_token().await? else {
-            bail!(
-                "mise.lock pins a wings artifact for {}, but wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
-                tv.style()
+            return fallback_or_false(
+                tv,
+                fallback_blocked,
+                &locked_artifact_auth_unavailable_reason(tv),
             );
         };
         ctx.pr.set_message("wings pull locked oci".into());
@@ -150,6 +151,13 @@ fn fallback_or_false(tv: &ToolVersion, fallback_blocked: bool, reason: &str) -> 
     }
     log::warn!("{reason}; falling back to normal installer");
     Ok(false)
+}
+
+fn locked_artifact_auth_unavailable_reason(tv: &ToolVersion) -> String {
+    format!(
+        "mise.lock pins a wings artifact for {}, but wings authentication is not available; run `mise wings login` or configure GitHub Actions OIDC",
+        tv.style()
+    )
 }
 
 fn fallback_or_error(
@@ -1682,6 +1690,19 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("mise wings login"));
         assert!(message.contains("GitHub Actions OIDC"));
+        assert!(message.contains("wings.required blocks fallback"));
+    }
+
+    #[test]
+    fn locked_artifact_auth_error_allows_fallback_unless_required() {
+        let tv = tool_version("node", Some("github:nodejs/node"));
+        let reason = locked_artifact_auth_unavailable_reason(&tv);
+
+        assert!(!fallback_or_false(&tv, false, &reason).unwrap());
+
+        let err = fallback_or_false(&tv, true, &reason).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("mise.lock pins a wings artifact"));
         assert!(message.contains("wings.required blocks fallback"));
     }
 
