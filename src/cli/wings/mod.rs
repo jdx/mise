@@ -5,6 +5,8 @@
 //!
 //!   - [`inspect`] — inspect Wings OCI manifests, referrers,
 //!     and evidence blobs such as SBOMs.
+//!   - [`inventory`] — upload the current installed-tool
+//!     security inventory snapshot.
 //!   - [`login`] — enroll this machine as a device and persist
 //!     the returned wings session JWT (+ refresh token) locally.
 //!   - [`logout`] — revoke every active wings session for the
@@ -29,6 +31,7 @@ use clap::Subcommand;
 use eyre::{Context, Result};
 
 mod inspect;
+mod inventory;
 mod login;
 mod logout;
 mod rebuild;
@@ -75,6 +78,7 @@ pub struct Wings {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Inspect(inspect::Inspect),
+    Inventory(inventory::Inventory),
     Login(login::Login),
     Logout(logout::Logout),
     Rebuild(Box<rebuild::Rebuild>),
@@ -86,6 +90,7 @@ impl Commands {
     pub async fn run(self) -> Result<()> {
         match self {
             Self::Inspect(cmd) => cmd.run().await,
+            Self::Inventory(cmd) => cmd.run().await,
             Self::Login(cmd) => cmd.run().await,
             Self::Logout(cmd) => cmd.run().await,
             Self::Rebuild(cmd) => cmd.run().await,

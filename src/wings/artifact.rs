@@ -294,6 +294,12 @@ struct WingsInstallMarker {
     artifact_digest: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InstalledArtifact {
+    pub(crate) ref_: String,
+    pub(crate) digest: String,
+}
+
 #[derive(Debug)]
 struct ResolveTransientError(String);
 
@@ -1213,6 +1219,18 @@ pub(crate) fn installed_env(tv: &ToolVersion) -> Result<BTreeMap<String, String>
     read_mocito_env_file(&install_path)
 }
 
+pub(crate) fn installed_artifact(tv: &ToolVersion) -> Result<Option<InstalledArtifact>> {
+    let install_path = tv.install_path();
+    if !has_wings_install_marker(&install_path) {
+        return Ok(None);
+    }
+    let marker = read_wings_install_marker(&install_path)?;
+    Ok(Some(InstalledArtifact {
+        ref_: marker.artifact_ref,
+        digest: marker.artifact_digest,
+    }))
+}
+
 fn write_mocito_env_file(install_path: &Path, env: &BTreeMap<String, String>) -> Result<()> {
     if env.is_empty() {
         return Ok(());
@@ -1243,6 +1261,20 @@ fn write_wings_install_marker(install_path: &Path, artifact: &Artifact) -> Resul
     let path = install_path.join(WINGS_INSTALL_MARKER_FILE);
     file::write(&path, serde_json::to_string_pretty(&marker)?)?;
     Ok(())
+}
+
+fn read_wings_install_marker(install_path: &Path) -> Result<WingsInstallMarker> {
+    let path = install_path.join(WINGS_INSTALL_MARKER_FILE);
+    let marker: WingsInstallMarker = serde_json::from_slice(&file::read(&path)?)
+        .wrap_err_with(|| format!("decoding wings install marker {}", path.display()))?;
+    ensure!(
+        marker.schema == 1,
+        "wings install marker schema {} is not supported",
+        marker.schema
+    );
+    ensure_sha256_digest(&marker.artifact_digest)?;
+    WingsReference::parse(&marker.artifact_ref)?;
+    Ok(marker)
 }
 
 fn has_wings_install_marker(install_path: &Path) -> bool {

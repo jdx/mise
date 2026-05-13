@@ -193,6 +193,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise wings inspect manifest [--digest <DIGEST>] <REFERENCE>`](/cli/wings/inspect/manifest.md)
 - [`mise wings inspect referrers [--digest <DIGEST>] <REFERENCE>`](/cli/wings/inspect/referrers.md)
 - [`mise wings inspect sbom [--digest <DIGEST>] <REFERENCE>`](/cli/wings/inspect/sbom.md)
+- [`mise wings inventory`](/cli/wings/inventory.md)
 - [`mise wings login`](/cli/wings/login.md)
 - [`mise wings logout [FLAGS]`](/cli/wings/logout.md)
 - [`mise wings rebuild <TOOL@VERSION>`](/cli/wings/rebuild.md)

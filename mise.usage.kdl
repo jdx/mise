@@ -1655,6 +1655,9 @@ cmd wings help="Manage `mise wings` authentication" {
             arg <REFERENCE> help="Wings OCI reference, including @sha256:<digest> or paired with --digest"
         }
     }
+    cmd inventory help="Upload current installed-tool inventory to mise-wings" {
+        long_help "Upload current installed-tool inventory to mise-wings\n\nReports the current machine's installed tool versions, platform, and\nWings artifact digests when present. The snapshot is scoped to the\nauthenticated Wings org and intentionally excludes local paths, usernames,\nhostnames, environment values, command arguments, and package-manager logs."
+    }
     cmd login help="Authenticate with mise-wings" {
         long_help "Authenticate with mise-wings\n\nBy default, starts device-code auth and stores a device-bound\ncredential.\n\nExamples:\n\n```sh\n$ mise wings login\nTo sign in to mise-wings, open:\n\nhttps://app.mise-wings.en.dev/cli-device?code=AB12CD34\n\nEnter code: AB12-CD34\nWaiting for browser approval...\nSigned in to mise-wings as user_123 (acme).\n```"
     }

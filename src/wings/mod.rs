@@ -29,6 +29,7 @@ pub mod ci;
 pub mod client;
 pub mod credentials;
 pub mod device;
+pub mod inventory;
 pub mod policy;
 
 /// Production wings deployment.
