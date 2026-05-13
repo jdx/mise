@@ -78,6 +78,14 @@ pub(crate) struct PolicyDecision {
 
 pub(crate) async fn fetch_cached_or_remote(token: &str) -> Result<PolicyBundlePayload> {
     let host = crate::wings::host();
+    if !policy_trust_root_configured() {
+        log::warn!(
+            "wings policy trust root is not configured for {host}; \
+             using observe-mode local policy until {POLICY_PUBLIC_KEY_ENV} or a pinned key is available"
+        );
+        return Ok(unverified_observe_policy(&host));
+    }
+
     let cached_org = crate::wings::credentials::cached()
         .filter(|creds| creds.host == host)
         .map(|creds| creds.org)
@@ -212,6 +220,36 @@ fn policy_decoding_key(host: &str, kid: Option<&str>) -> Result<DecodingKey> {
     )
 }
 
+pub(crate) fn policy_trust_root_configured() -> bool {
+    std::env::var(POLICY_PUBLIC_KEY_ENV)
+        .ok()
+        .is_some_and(|pem| !pem.trim().is_empty())
+}
+
+fn unverified_observe_policy(host: &str) -> PolicyBundlePayload {
+    PolicyBundlePayload {
+        iss: policy_issuer(host),
+        schema_version: POLICY_SCHEMA_VERSION,
+        org: "(unknown)".into(),
+        policy_version: format!("unverified:{host}"),
+        iat: 0,
+        exp: i64::MAX,
+        issued_at: "1970-01-01T00:00:00Z".into(),
+        valid_until: "9999-12-31T23:59:59Z".into(),
+        mode: PolicyMode::Observe,
+        rules: PolicyRules {
+            rules_schema_version: POLICY_RULES_SCHEMA_VERSION,
+            minimum_artifact_age_seconds: 0,
+            allowed_source_hosts: vec![],
+            require_checksum: false,
+            require_scan: false,
+            require_approval: false,
+            require_managed: false,
+            overrides: vec![],
+        },
+    }
+}
+
 fn policy_issuer(host: &str) -> String {
     format!("https://api.{host}/v1/wings/policy")
 }
@@ -288,6 +326,19 @@ I/fXcdsz5ffqGl1O3P06xMG20em/JBxhaUlyPLjF/QsVAGm+raOyvdMvzg==
         unsafe {
             std::env::remove_var(POLICY_PUBLIC_KEY_ENV);
         }
+    }
+
+    #[test]
+    fn missing_policy_trust_root_uses_observe_policy() {
+        unsafe {
+            std::env::remove_var(POLICY_PUBLIC_KEY_ENV);
+        }
+
+        let policy = unverified_observe_policy("mise-wings.en.dev");
+
+        assert_eq!(policy.mode, PolicyMode::Observe);
+        assert_eq!(policy.policy_version, "unverified:mise-wings.en.dev");
+        evaluate(&policy, &ArtifactEvidence::default()).unwrap();
     }
 
     #[test]

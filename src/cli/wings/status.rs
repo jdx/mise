@@ -20,7 +20,7 @@
 use eyre::Result;
 
 use crate::config::Settings;
-use crate::wings::{auth, ci, client, credentials};
+use crate::wings::{auth, ci, client, credentials, policy};
 
 /// Show the current mise-wings configuration + auth state.
 ///
@@ -59,6 +59,12 @@ impl Status {
         let env_label = if wings.staging { " (staging)" } else { "" };
         miseprintln!("wings.enabled: {enabled}");
         miseprintln!("host:          {host}{env_label}");
+        let policy_trust = if policy::policy_trust_root_configured() {
+            "configured"
+        } else {
+            "missing (policy verification runs in observe mode until MISE_WINGS_POLICY_PUBLIC_KEY is set)"
+        };
+        miseprintln!("policy trust:  {policy_trust}");
 
         // 2. Credentials
         let dev_creds = credentials::cached();

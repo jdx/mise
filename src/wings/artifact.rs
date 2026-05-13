@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use eyre::{Context, Report, Result, bail, ensure, eyre};
+use eyre::{Context, Result, bail, ensure, eyre};
 use reqwest::StatusCode;
 use reqwest::header::{ACCEPT, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -632,7 +632,16 @@ async fn pull_and_install(
 
     ctx.pr.next_operation();
     ctx.pr.set_message("wings install".into());
-    install_mocito_artifact(tv, &config, &layers, artifact, Some(ctx.pr.as_ref()))?;
+    if let Err(e) = install_mocito_artifact(tv, &config, &layers, artifact, Some(ctx.pr.as_ref())) {
+        if e.downcast_ref::<ExistingInstallRestoredError>().is_some() {
+            log::warn!(
+                "wings install did not replace {}; keeping restored existing install: {e:#}",
+                tv.style()
+            );
+            return Ok(());
+        }
+        return Err(e);
+    }
     record_wings_lock_info(tv, artifact, &policy_decision);
     Ok(())
 }
@@ -1203,13 +1212,24 @@ fn replace_install_dir(staging_path: &Path, install_path: &Path) -> Result<()> {
                     restore_err
                 ));
             }
-            Err(Report::new(rename_err).wrap_err(format!(
-                "failed to move wings MOCITO staging install {} to {}",
-                staging_path.display(),
-                install_path.display()
-            )))
+            Err(ExistingInstallRestoredError {
+                message: format!(
+                    "failed to move wings MOCITO staging install {} to {}; restored existing install from backup",
+                    staging_path.display(),
+                    install_path.display()
+                ),
+                source: rename_err,
+            }
+            .into())
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{message}: {source}")]
+struct ExistingInstallRestoredError {
+    message: String,
+    source: std::io::Error,
 }
 
 pub(crate) fn installed_env(tv: &ToolVersion) -> Result<BTreeMap<String, String>> {
@@ -1918,8 +1938,9 @@ mod tests {
 
         assert!(
             err.to_string()
-                .contains("failed to move wings MOCITO staging install")
+                .contains("restored existing install from backup")
         );
+        assert!(err.downcast_ref::<ExistingInstallRestoredError>().is_some());
         assert_eq!(
             file::read_to_string(install_path.join("existing")).unwrap(),
             "keep"

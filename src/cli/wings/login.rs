@@ -8,7 +8,7 @@
 use eyre::{Context, Result, bail};
 
 use crate::config::Settings;
-use crate::wings::{client, credentials, device::DeviceKey};
+use crate::wings::{client, credentials, device::DeviceKey, policy};
 
 /// Authenticate with mise-wings
 ///
@@ -72,6 +72,12 @@ async fn run_device_login() -> Result<()> {
                         "Signed in to mise-wings as {user_id} ({org}).\n\
                          Set `wings.enabled = true` (or `MISE_WINGS_ENABLED=1`) to start \
                          routing tool installs through the cache."
+                    );
+                }
+                if !policy::policy_trust_root_configured() {
+                    miseprintln!(
+                        "Policy verification trust root is not configured. Set \
+                         `MISE_WINGS_POLICY_PUBLIC_KEY` to enable signed policy verification."
                     );
                 }
                 return Ok(());
