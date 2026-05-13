@@ -813,6 +813,7 @@ fn apply_early_cd(args: &[String]) -> Result<bool> {
 
 fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
     let cmd = Cli::command();
+    let (flags_with_values, _) = get_global_flags(&cmd);
     let mut subcommand = None;
     let mut iter = args.iter().skip(1).peekable();
     while let Some(arg) = iter.next() {
@@ -827,6 +828,21 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
                     && !cd.is_empty()
                 {
                     return Some(PathBuf::from(cd));
+                }
+                if let Some(flag) = arg.split_once('=').map(|(flag, _)| flag)
+                    && flags_with_values.iter().any(|f| f == flag)
+                {
+                    continue;
+                }
+                if flags_with_values.iter().any(|f| f == arg) {
+                    iter.next();
+                    continue;
+                }
+                if arg.len() > 2
+                    && let Some(flag) = arg.get(..2)
+                    && flags_with_values.iter().any(|f| f == flag)
+                {
+                    continue;
                 }
                 if subcommand.is_none() && !arg.starts_with('-') {
                     let sc = cmd.find_subcommand(arg)?;
@@ -990,6 +1006,31 @@ mod tests {
             "dummy@1.0.0".to_string(),
             "--".to_string(),
             "dummy".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+    }
+
+    #[test]
+    fn test_early_cd_arg_skips_global_flag_values_before_cd() {
+        let args = vec![
+            "mise".to_string(),
+            "--env".to_string(),
+            "production".to_string(),
+            "--jobs=4".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+            "settings".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+
+        let args = vec![
+            "mise".to_string(),
+            "-Eproduction".to_string(),
+            "-j4".to_string(),
+            "--cd=project".to_string(),
+            "settings".to_string(),
         ];
 
         assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));

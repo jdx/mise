@@ -9,6 +9,7 @@ experimental = true
 EOF
 
 assert "env -u MISE_EXPERIMENTAL mise -C '$project' settings get experimental" "true"
+assert "env -u MISE_EXPERIMENTAL mise --env production -C '$project' settings get experimental" "true"
 assert "env -u MISE_EXPERIMENTAL MISE_CD='$project' mise settings get experimental" "true"
 assert_succeed "env -u MISE_EXPERIMENTAL mise -C '$project' exec --deny-env -- true"
 
