@@ -2561,6 +2561,10 @@ Once enabled, two ways credentials get acquired:
 Without either, the activation is a no-op. Requires an active wings
 subscription on the Clerk org linked to your GitHub account / repo for
 the proxy to issue a session. Sign up at <https://mise-wings.en.dev>.
+Signed policy bundles require a policy trust root. Until mise ships a
+pinned production key, set `MISE_WINGS_POLICY_PUBLIC_KEY` to the
+ES256 public key PEM that matches the Wings deployment's
+`POLICY_SIGNING_KEY`.
 
 When enabled globally, Wings is attempted for tool installs by default.
 Disable it for a specific tool with `wings = false`, for example:

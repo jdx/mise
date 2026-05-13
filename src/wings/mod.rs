@@ -32,6 +32,9 @@ pub mod device;
 pub mod inventory;
 pub mod policy;
 
+use eyre::{Context, Result};
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+
 /// Production wings deployment.
 const PROD_HOST: &str = "mise-wings.en.dev";
 
@@ -64,4 +67,14 @@ pub(crate) fn now_unix() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+pub(crate) fn bearer_headers(token: &str) -> Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {token}"))
+            .wrap_err("wings token contains invalid header characters")?,
+    );
+    Ok(headers)
 }

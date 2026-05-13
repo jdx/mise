@@ -7,7 +7,8 @@ use std::{
 };
 
 use eyre::{Context, Report, Result, bail, ensure, eyre};
-use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
+use reqwest::StatusCode;
+use reqwest::header::{ACCEPT, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -356,7 +357,7 @@ async fn resolve_until_allowed<B: Backend + ?Sized>(
         let Some(token) = crate::wings::auth::session_token().await? else {
             bail!("wings authentication is not available; run `mise wings login`");
         };
-        let headers = bearer_headers(&token)?;
+        let headers = crate::wings::bearer_headers(&token)?;
         // Re-posting the same resolve request is the poll contract: the
         // server deduplicates pending/running jobs by
         // (org, backend, tool, version, platform) and returns the existing
@@ -430,7 +431,7 @@ pub(crate) async fn rebuild<B: Backend + ?Sized>(
 
     let body = resolve_request(backend, tv, &source);
     let url = format!("https://api.{}/v1/catalog/rebuild", crate::wings::host());
-    let headers = bearer_headers(&token)?;
+    let headers = crate::wings::bearer_headers(&token)?;
     match post_resolve(&url, &body, &headers)
         .await
         .wrap_err("wings rebuild request failed")?
@@ -506,7 +507,7 @@ async fn post_resolve(
     let status = resp.status();
     if !status.is_success() {
         let response_body = resp.text().await.unwrap_or_default();
-        if status.is_server_error() {
+        if is_transient_resolve_status(status) {
             return Err(ResolveTransientError(format!(
                 "wings {url} returned {status}: {response_body}"
             ))
@@ -1497,21 +1498,15 @@ fn safe_relative_path(value: &str, field: &str) -> Result<PathBuf> {
 }
 
 pub(crate) fn registry_headers(token: &str, accept: &[&str]) -> Result<HeaderMap> {
-    let mut headers = bearer_headers(token)?;
+    let mut headers = crate::wings::bearer_headers(token)?;
     if !accept.is_empty() {
         headers.insert(ACCEPT, HeaderValue::from_str(&accept.join(", "))?);
     }
     Ok(headers)
 }
 
-fn bearer_headers(token: &str) -> Result<HeaderMap> {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {token}"))
-            .wrap_err("wings token contains invalid header characters")?,
-    );
-    Ok(headers)
+fn is_transient_resolve_status(status: StatusCode) -> bool {
+    status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS
 }
 
 pub(crate) fn ensure_digest(bytes: &[u8], expected: &str, label: &str) -> Result<()> {
@@ -1678,6 +1673,14 @@ mod tests {
         assert_eq!(transient_retry_delay(4), Duration::from_secs(8));
         assert_eq!(transient_retry_delay(5), Duration::from_secs(16));
         assert_eq!(transient_retry_delay(6), Duration::from_secs(16));
+    }
+
+    #[test]
+    fn resolver_retries_rate_limits_and_server_errors() {
+        assert!(is_transient_resolve_status(StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_transient_resolve_status(StatusCode::BAD_GATEWAY));
+        assert!(!is_transient_resolve_status(StatusCode::BAD_REQUEST));
+        assert!(!is_transient_resolve_status(StatusCode::UNAUTHORIZED));
     }
 
     #[test]

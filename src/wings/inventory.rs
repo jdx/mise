@@ -3,7 +3,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use eyre::{Context, Result, bail};
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Serialize;
 
 use crate::{
@@ -59,7 +58,7 @@ pub(crate) async fn submit_current_snapshot(config: &Arc<Config>) -> Result<Inve
     let url = format!("https://api.{}/v1/wings/inventory", crate::wings::host());
     let response = crate::wings::client::http_client()?
         .post(&url)
-        .headers(bearer_headers(&token)?)
+        .headers(crate::wings::bearer_headers(&token)?)
         .json(&snapshot)
         .send()
         .await
@@ -184,16 +183,6 @@ fn generated_device_id_path() -> std::path::PathBuf {
     crate::env::MISE_STATE_DIR
         .join("wings")
         .join(DEVICE_ID_FILENAME)
-}
-
-fn bearer_headers(token: &str) -> Result<HeaderMap> {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {token}"))
-            .wrap_err("wings token contains invalid header characters")?,
-    );
-    Ok(headers)
 }
 
 #[cfg(test)]

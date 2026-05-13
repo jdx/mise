@@ -205,7 +205,7 @@ fn policy_decoding_key(host: &str, kid: Option<&str>) -> Result<DecodingKey> {
             .wrap_err(format!("decoding {POLICY_PUBLIC_KEY_ENV}"));
     }
     bail!(
-        "wings policy trust root is not configured for host {}{}; set {} to an ES256 public key PEM",
+        "wings policy trust root is not configured for host {}{}; set {} to the host's ES256 public key PEM (required until mise ships a pinned production key)",
         host,
         kid.map(|kid| format!(" kid {kid}")).unwrap_or_default(),
         POLICY_PUBLIC_KEY_ENV
