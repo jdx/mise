@@ -5784,6 +5784,7 @@ dependencies = [
  "sigstore-verification",
  "siphasher",
  "strum 0.28.0",
+ "supports-hyperlinks",
  "sys-info",
  "tabled",
  "taplo",
