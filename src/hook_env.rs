@@ -111,6 +111,17 @@ pub fn should_exit_early_fast() -> bool {
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
     }
+    // --cd changes the effective config/search root for this process, but
+    // the fast path runs before full clap processing. Fall through so Settings
+    // can apply --cd and rebuild path-dependent caches first.
+    if args.iter().take_while(|a| a.as_str() != "--").any(|a| {
+        a == "-C"
+            || a == "--cd"
+            || a.starts_with("--cd=")
+            || a.strip_prefix("-C").is_some_and(|rest| !rest.is_empty())
+    }) {
+        return false;
+    }
     // Can't exit early if no previous session
     // Check for dir being set as a proxy for "has valid session"
     // (loaded_configs can be empty if there are no config files)

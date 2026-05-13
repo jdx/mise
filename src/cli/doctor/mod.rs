@@ -9,7 +9,7 @@ use crate::build_time::built_info;
 use crate::cli::self_update::SelfUpdate;
 use crate::cli::version;
 use crate::cli::version::VERSION;
-use crate::config::{Config, IGNORED_CONFIG_FILES, Settings};
+use crate::config::{self, Config, Settings};
 use crate::env::PATH_KEY;
 use crate::file::display_path;
 use crate::git::Git;
@@ -159,7 +159,7 @@ impl Doctor {
         );
         data.insert(
             "ignored_config_files".into(),
-            IGNORED_CONFIG_FILES
+            config::ignored_config_files()
                 .iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect(),
@@ -308,13 +308,14 @@ impl Doctor {
     async fn analyze_config(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
         info::section("config_files", render_config_files(config))?;
         info::section("env_files", render_env_files(config).await?)?;
-        if IGNORED_CONFIG_FILES.is_empty() {
+        let ignored_config_files = config::ignored_config_files();
+        if ignored_config_files.is_empty() {
             println!();
             info::inline_section("ignored_config_files", "(none)")?;
         } else {
             info::section(
                 "ignored_config_files",
-                IGNORED_CONFIG_FILES.iter().map(display_path).join("\n"),
+                ignored_config_files.iter().map(display_path).join("\n"),
             )?;
         }
         info::section("backends", render_backends())?;

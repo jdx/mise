@@ -110,9 +110,7 @@ impl Config {
         timeout::run_with_timeout_async(
             async || {
                 _CONFIG.write().unwrap().take();
-                *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
-                *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
-                GLOB_RESULTS.lock().unwrap().clear();
+                reset_config_path_caches();
                 crate::task::reset();
                 Ok(())
             },
@@ -1071,17 +1069,8 @@ static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         .map(|s| s.to_string())
         .collect()
 });
-pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
-    load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
-        .into_iter()
-        .collect()
-});
-pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
-    load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
-        .into_iter()
-        .filter(|p| config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
-        .collect()
-});
+static ALL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
+static IGNORED_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
 // pub static LOCAL_CONFIG_FILES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
 //     ALL_CONFIG_FILES
 //         .iter()
@@ -1092,6 +1081,40 @@ pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
 
 type GlobResults = HashMap<(PathBuf, String), Vec<PathBuf>>;
 static GLOB_RESULTS: Lazy<Mutex<GlobResults>> = Lazy::new(Default::default);
+
+pub fn reset_config_path_caches() {
+    *ALL_CONFIG_FILES.lock().unwrap() = None;
+    *IGNORED_CONFIG_FILES.lock().unwrap() = None;
+    *ALL_TOML_CONFIG_FILES.lock().unwrap() = None;
+    *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
+    *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
+    GLOB_RESULTS.lock().unwrap().clear();
+}
+
+pub fn all_config_files() -> IndexSet<PathBuf> {
+    let mut files = ALL_CONFIG_FILES.lock().unwrap();
+    if let Some(files) = &*files {
+        return files.clone();
+    }
+    let loaded = load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
+        .into_iter()
+        .collect();
+    *files = Some(loaded);
+    files.as_ref().unwrap().clone()
+}
+
+pub fn ignored_config_files() -> IndexSet<PathBuf> {
+    let mut files = IGNORED_CONFIG_FILES.lock().unwrap();
+    if let Some(files) = &*files {
+        return files.clone();
+    }
+    let loaded = load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
+        .into_iter()
+        .filter(|p| config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
+        .collect();
+    *files = Some(loaded);
+    files.as_ref().unwrap().clone()
+}
 
 pub fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     let mut results = GLOB_RESULTS.lock().unwrap();
@@ -1359,16 +1382,24 @@ pub fn top_toml_config() -> Option<PathBuf> {
         .map(|p| p.to_path_buf())
 }
 
-pub static ALL_TOML_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
-    load_config_paths(&TOML_CONFIG_FILENAMES, false)
+static ALL_TOML_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
+
+pub fn all_toml_config_files() -> IndexSet<PathBuf> {
+    let mut files = ALL_TOML_CONFIG_FILES.lock().unwrap();
+    if let Some(files) = &*files {
+        return files.clone();
+    }
+    let loaded = load_config_paths(&TOML_CONFIG_FILENAMES, false)
         .into_iter()
-        .collect()
-});
+        .collect();
+    *files = Some(loaded);
+    files.as_ref().unwrap().clone()
+}
 
 /// list of all non-global mise.tomls
-pub fn local_toml_config_paths() -> Vec<&'static PathBuf> {
-    ALL_TOML_CONFIG_FILES
-        .iter()
+pub fn local_toml_config_paths() -> Vec<PathBuf> {
+    all_toml_config_files()
+        .into_iter()
         .filter(|p| !is_global_config(p))
         .collect()
 }
@@ -1382,7 +1413,6 @@ pub fn local_toml_config_path() -> PathBuf {
     local_toml_config_paths()
         .into_iter()
         .last()
-        .cloned()
         .unwrap_or_else(|| {
             dirs::CWD
                 .as_ref()

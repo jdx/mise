@@ -1,5 +1,4 @@
 use crate::cli::Cli;
-use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::duration;
 use crate::file::FindUp;
 use crate::platform::Platform;
@@ -504,9 +503,9 @@ impl Settings {
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
-        ALL_TOML_CONFIG_FILES
-            .iter()
-            .map(|p| Self::parse_settings_file(p))
+        crate::config::all_toml_config_files()
+            .into_iter()
+            .map(|p| Self::parse_settings_file(&p))
             .filter_map(|cfg| match cfg {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
@@ -537,6 +536,7 @@ impl Settings {
         *CLI_SETTINGS.lock().unwrap() = cli_settings;
         *BASE_SETTINGS.write().unwrap() = None;
         // Clear caches that depend on settings and environment
+        crate::config::reset_config_path_caches();
         crate::config::config_file::config_root::reset();
     }
 

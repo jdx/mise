@@ -1,6 +1,6 @@
 use crate::config;
+use crate::config::Settings;
 use crate::config::settings::{SETTINGS_META, SettingsPartial, SettingsType};
-use crate::config::{ALL_TOML_CONFIG_FILES, Settings};
 use crate::file::display_path;
 use crate::ui::table;
 use eyre::Result;
@@ -76,21 +76,24 @@ impl SettingsLs {
                     rows.extend(Row::from_toml(k.to_string(), v, None));
                 }
             }
-            rows.extend(ALL_TOML_CONFIG_FILES.iter().rev().flat_map(|source| {
-                match Settings::parse_settings_file(source) {
-                    Ok(partial) => match Row::from_partial(&partial, source) {
-                        Ok(rows) => rows,
+            rows.extend(
+                config::all_toml_config_files()
+                    .iter()
+                    .rev()
+                    .flat_map(|source| match Settings::parse_settings_file(source) {
+                        Ok(partial) => match Row::from_partial(&partial, source) {
+                            Ok(rows) => rows,
+                            Err(e) => {
+                                warn!("Error parsing {}: {}", display_path(source), e);
+                                vec![]
+                            }
+                        },
                         Err(e) => {
                             warn!("Error parsing {}: {}", display_path(source), e);
                             vec![]
                         }
-                    },
-                    Err(e) => {
-                        warn!("Error parsing {}: {}", display_path(source), e);
-                        vec![]
-                    }
-                }
-            }));
+                    }),
+            );
             rows
         };
         if let Some(key) = &self.setting {

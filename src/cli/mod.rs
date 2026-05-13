@@ -630,7 +630,6 @@ impl Cli {
         measure!("handle_shim", { shims::handle_shim().await })?;
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
-        let _ = measure!("backend::load_tools", { backend::load_tools().await });
 
         // Pre-process args to handle naked runs before clap parsing
         let cmd = Cli::command();
@@ -646,6 +645,7 @@ impl Cli {
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
+        let _ = measure!("backend::load_tools", { backend::load_tools().await });
         warn_deprecated_backends_alias(&cmd, args);
         measure!("migrate", { migrate::run().await });
         if let Err(err) = crate::cache::auto_prune() {

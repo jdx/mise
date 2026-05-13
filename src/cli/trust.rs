@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use crate::config::config_file::config_trust_root;
 use crate::config::{
-    ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES, Settings, config_file, config_files_in_dir,
-    is_global_config,
+    DEFAULT_CONFIG_FILENAMES, Settings, config_file, config_files_in_dir, is_global_config,
 };
 use crate::file::{display_path, remove_file};
 use crate::{config, dirs, env, file};
@@ -86,7 +85,7 @@ impl Trust {
 pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
     let path = match config_file {
         Some(filename) => filename,
-        None => match ALL_CONFIG_FILES.first().cloned() {
+        None => match config::all_config_files().first().cloned() {
             Some(path) => path,
             None => {
                 warn!("No trusted config files found.");
@@ -169,7 +168,7 @@ impl Trust {
     }
 
     fn get_next(&self) -> Option<PathBuf> {
-        ALL_CONFIG_FILES.first().cloned()
+        config::all_config_files().first().cloned()
     }
     fn get_next_untrusted(&self) -> Option<PathBuf> {
         config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)

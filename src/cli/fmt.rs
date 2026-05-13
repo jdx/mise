@@ -1,5 +1,4 @@
 use crate::Result;
-use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::{config, dirs, file};
 use eyre::bail;
 use std::io::{self, Read, Write};
@@ -41,7 +40,7 @@ impl Fmt {
 
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let configs = if self.all {
-            ALL_TOML_CONFIG_FILES.clone()
+            config::all_toml_config_files()
         } else {
             config::config_files_in_dir(&cwd)
         };
