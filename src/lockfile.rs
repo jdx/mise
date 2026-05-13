@@ -344,9 +344,27 @@ impl PlatformInfo {
         } else {
             self.github_attestations.or(other.github_attestations)
         };
-        let wings_artifact_ref = self.wings_artifact_ref.clone();
-        let wings_artifact_digest = self.wings_artifact_digest.clone();
-        let wings_policy_version = self.wings_policy_version.clone();
+        let wings_artifact_ref = if url_changed {
+            self.wings_artifact_ref.clone()
+        } else {
+            self.wings_artifact_ref
+                .clone()
+                .or_else(|| other.wings_artifact_ref.clone())
+        };
+        let wings_artifact_digest = if url_changed {
+            self.wings_artifact_digest.clone()
+        } else {
+            self.wings_artifact_digest
+                .clone()
+                .or_else(|| other.wings_artifact_digest.clone())
+        };
+        let wings_policy_version = if url_changed {
+            self.wings_policy_version.clone()
+        } else {
+            self.wings_policy_version
+                .clone()
+                .or_else(|| other.wings_policy_version.clone())
+        };
 
         PlatformInfo {
             checksum,
@@ -888,9 +906,27 @@ impl Lockfile {
                         }
                     })
                 };
-                let wings_artifact_ref = platform_info.wings_artifact_ref;
-                let wings_artifact_digest = platform_info.wings_artifact_digest;
-                let wings_policy_version = platform_info.wings_policy_version;
+                let wings_artifact_ref = platform_info.wings_artifact_ref.or_else(|| {
+                    if preserve_artifact_fields {
+                        existing.wings_artifact_ref.clone()
+                    } else {
+                        None
+                    }
+                });
+                let wings_artifact_digest = platform_info.wings_artifact_digest.or_else(|| {
+                    if preserve_artifact_fields {
+                        existing.wings_artifact_digest.clone()
+                    } else {
+                        None
+                    }
+                });
+                let wings_policy_version = platform_info.wings_policy_version.or_else(|| {
+                    if preserve_artifact_fields {
+                        existing.wings_policy_version.clone()
+                    } else {
+                        None
+                    }
+                });
                 PlatformInfo {
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
@@ -2814,15 +2850,14 @@ backend = "conda:jq"
     }
 
     #[test]
-    fn test_platform_info_merge_drops_stale_wings_pin() {
-        let source_url = Some("https://example.com/tool.tar.gz".to_string());
-        let normal_install = PlatformInfo {
-            url: source_url.clone(),
+    fn test_platform_info_merge_preserves_wings_pin_for_same_url() {
+        let new_info = PlatformInfo {
+            url: Some("https://example.com/tool.tar.gz".to_string()),
             checksum: Some("sha256:NEW".to_string()),
             ..Default::default()
         };
-        let prior_wings_install = PlatformInfo {
-            url: source_url,
+        let existing_wings_info = PlatformInfo {
+            url: Some("https://example.com/tool.tar.gz".to_string()),
             wings_artifact_ref: Some("registry.mise-wings.en.dev/acme/tool:1.0.0".into()),
             wings_artifact_digest: Some(
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
@@ -2831,9 +2866,43 @@ backend = "conda:jq"
             ..Default::default()
         };
 
-        let merged = normal_install.merge_with(&prior_wings_install);
+        let merged = new_info.merge_with(&existing_wings_info);
 
         assert_eq!(merged.checksum.as_deref(), Some("sha256:NEW"));
+        assert_eq!(
+            merged.wings_artifact_ref.as_deref(),
+            Some("registry.mise-wings.en.dev/acme/tool:1.0.0")
+        );
+        assert_eq!(
+            merged.wings_artifact_digest.as_deref(),
+            Some("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+        assert_eq!(merged.wings_policy_version.as_deref(), Some("policy:v1"));
+    }
+
+    #[test]
+    fn test_platform_info_merge_drops_stale_wings_pin_on_url_change() {
+        let new_info = PlatformInfo {
+            url: Some("https://example.com/tool-v2.tar.gz".to_string()),
+            checksum: Some("sha256:NEW".to_string()),
+            ..Default::default()
+        };
+        let existing_wings_info = PlatformInfo {
+            url: Some("https://example.com/tool-v1.tar.gz".to_string()),
+            wings_artifact_ref: Some("registry.mise-wings.en.dev/acme/tool:1.0.0".into()),
+            wings_artifact_digest: Some(
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            ),
+            wings_policy_version: Some("policy:v1".into()),
+            ..Default::default()
+        };
+
+        let merged = new_info.merge_with(&existing_wings_info);
+
+        assert_eq!(
+            merged.url.as_deref(),
+            Some("https://example.com/tool-v2.tar.gz")
+        );
         assert!(merged.wings_artifact_ref.is_none());
         assert!(merged.wings_artifact_digest.is_none());
         assert!(merged.wings_policy_version.is_none());
@@ -3169,7 +3238,7 @@ backend = "conda:jq"
     }
 
     #[test]
-    fn test_set_platform_info_drops_existing_wings_pin_when_new_info_has_none() {
+    fn test_set_platform_info_preserves_existing_wings_pin_for_same_url() {
         let mut lockfile = Lockfile::default();
         let options = BTreeMap::new();
         lockfile.set_platform_info(
@@ -3211,9 +3280,15 @@ backend = "conda:jq"
             info.checksum.as_deref(),
             Some("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
         );
-        assert!(info.wings_artifact_ref.is_none());
-        assert!(info.wings_artifact_digest.is_none());
-        assert!(info.wings_policy_version.is_none());
+        assert_eq!(
+            info.wings_artifact_ref.as_deref(),
+            Some("registry.mise-wings.en.dev/acme/node:20.0.0")
+        );
+        assert_eq!(
+            info.wings_artifact_digest.as_deref(),
+            Some("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+        assert_eq!(info.wings_policy_version.as_deref(), Some("policy:v1"));
     }
 
     #[test]
