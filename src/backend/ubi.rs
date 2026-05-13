@@ -303,7 +303,6 @@ impl Backend for UbiBackend {
             install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
         } else {
             try_with_v_prefix(&v, None, |candidate| {
-                let opts = opts;
                 let bin_dir = bin_dir.clone();
                 async move {
                     install(
