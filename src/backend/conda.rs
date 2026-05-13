@@ -113,8 +113,9 @@ impl CondaBackend {
         let mut seen = HashSet::new();
         repodata
             .iter()
-            .flat_map(|rd| rd.iter().cloned())
-            .filter(|r| seen.insert(r.identifier.clone()))
+            .flat_map(|rd| rd.iter())
+            .filter(|r| seen.insert(&r.identifier))
+            .cloned()
             .collect()
     }
 
