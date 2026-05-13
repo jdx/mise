@@ -829,9 +829,7 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
                     return Some(PathBuf::from(cd));
                 }
                 if subcommand.is_none() && !arg.starts_with('-') {
-                    let Some(sc) = cmd.find_subcommand(arg) else {
-                        return None;
-                    };
+                    let sc = cmd.find_subcommand(arg)?;
                     subcommand = Some(sc.get_name().to_string());
                     continue;
                 }
