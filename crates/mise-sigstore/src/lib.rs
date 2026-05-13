@@ -24,8 +24,6 @@ pub enum AttestationError {
     UnsupportedFormat(String),
     #[error("No attestations found")]
     NoAttestations,
-    #[error("Invalid digest format: {0}")]
-    InvalidDigest(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("HTTP error: {0}")]
