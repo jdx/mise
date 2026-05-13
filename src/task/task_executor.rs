@@ -734,8 +734,7 @@ impl TaskExecutor {
         } else {
             script
         };
-        let cmd =
-            format!("$ {display_script} {args}", args = args.join(" ")).to_string();
+        let cmd = format!("$ {display_script} {args}", args = args.join(" "));
         if !self.quiet(Some(task)) {
             let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
                 .bright()
