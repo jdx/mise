@@ -654,6 +654,9 @@ fn select_artifactbundle_asset(
 ) -> eyre::Result<Option<ArtifactBundleReleaseAsset>> {
     let artifactbundle_asset = opts.get("artifactbundle_asset");
     if let Some(name) = artifactbundle_asset {
+        if !is_artifactbundle_zip(name) {
+            bail!("artifactbundle_asset must end with .artifactbundle.zip, got {name}");
+        }
         return assets
             .into_iter()
             .find(|a| a.name == name)
@@ -701,12 +704,15 @@ struct SwiftTarget {
 fn parse_swift_target_triples(json: &str) -> eyre::Result<Vec<String>> {
     let info = serde_json::from_str::<SwiftTargetInfo>(json)
         .wrap_err("Failed to parse swift target info")?;
-    let mut triples = vec![
+    let mut seen = std::collections::HashSet::new();
+    let triples = vec![
         info.target.unversioned_triple,
         info.target.triple,
         info.target.module_triple,
-    ];
-    triples.dedup();
+    ]
+    .into_iter()
+    .filter(|triple| seen.insert(triple.clone()))
+    .collect();
     Ok(triples)
 }
 
@@ -746,6 +752,7 @@ fn artifactbundle_binaries(
                         name: name.clone(),
                         path,
                     });
+                    break;
                 }
             }
         }
@@ -1097,6 +1104,16 @@ mod tests {
 
         assert!(
             select_artifactbundle_asset(
+                vec![release_asset("tool.tar.gz")],
+                &opts_with(
+                    "artifactbundle_asset",
+                    toml::Value::String("tool.tar.gz".to_string()),
+                ),
+            )
+            .is_err()
+        );
+        assert!(
+            select_artifactbundle_asset(
                 vec![release_asset("tool.artifactbundle.zip")],
                 &opts_with(
                     "artifactbundle_asset",
@@ -1148,6 +1165,27 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_swift_target_triples_deduplicates_non_consecutive_values() {
+        let triples = parse_swift_target_triples(
+            r#"{
+              "target": {
+                "triple": "arm64-apple-macosx26.0",
+                "unversionedTriple": "arm64-apple-macosx",
+                "moduleTriple": "arm64-apple-macosx"
+              }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            triples,
+            vec![
+                "arm64-apple-macosx".to_string(),
+                "arm64-apple-macosx26.0".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn test_artifactbundle_binaries() {
         let tmp = tempfile::tempdir().unwrap();
         let bundle = tmp.path().join("tool.artifactbundle");
@@ -1193,6 +1231,52 @@ mod tests {
         let binaries =
             artifactbundle_binaries(tmp.path(), &["x86_64-unknown-linux-gnu".to_string()]).unwrap();
         assert!(binaries.is_empty());
+    }
+
+    #[test]
+    fn test_artifactbundle_binaries_uses_first_matching_variant() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("tool.artifactbundle");
+        let first_bin = bundle.join("tool-1.0.0-macosx/bin");
+        let second_bin = bundle.join("tool-1.0.0-macos/bin");
+        file::create_dir_all(&first_bin).unwrap();
+        file::create_dir_all(&second_bin).unwrap();
+        file::write(first_bin.join("tool"), "").unwrap();
+        file::write(second_bin.join("tool"), "").unwrap();
+        file::write(
+            bundle.join("info.json"),
+            r#"{
+              "schemaVersion": "1.0",
+              "artifacts": {
+                "tool": {
+                  "version": "1.0.0",
+                  "type": "executable",
+                  "variants": [
+                    {
+                      "path": "tool-1.0.0-macosx/bin/tool",
+                      "supportedTriples": ["arm64-apple-macosx"]
+                    },
+                    {
+                      "path": "tool-1.0.0-macos/bin/tool",
+                      "supportedTriples": ["arm64-apple-macos"]
+                    }
+                  ]
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+
+        let binaries = artifactbundle_binaries(
+            tmp.path(),
+            &[
+                "arm64-apple-macosx".to_string(),
+                "arm64-apple-macos".to_string(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(binaries.len(), 1);
+        assert_eq!(binaries[0].path, first_bin.join("tool"));
     }
 
     #[test]
