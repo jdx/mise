@@ -46,9 +46,9 @@ versions:
 ```bash
 #!/usr/bin/env bash
 
+echo "lts-krypton 24"
 echo "lts-jod 22"
 echo "lts-iron 20"
-echo "lts-hydrogen 18"
 ```
 
 (mise's built-in node plugin already ships these LTS aliases; the example above shows the format
