@@ -105,9 +105,13 @@ fn render_human(payload: &PatronsPayload) -> Result<()> {
     miseprintln!("mise is supported by these patrons — thank you ❤");
     miseprintln!("");
     for p in &payload.patrons {
+        // Sanitize before either rendering branch — patron-supplied data
+        // must never carry control bytes into the terminal, whether it
+        // gets wrapped in an OSC 8 hyperlink or printed as-is.
+        let name = strip_control(&p.name);
         let label = match &p.url {
-            Some(url) => hyperlink(url, &p.name),
-            None => p.name.clone(),
+            Some(url) => hyperlink(&strip_control(url), &name),
+            None => name,
         };
         miseprintln!("  • {label}");
     }
@@ -120,21 +124,16 @@ fn hyperlink(url: &str, text: &str) -> String {
     // Use `on(Stream::Stdout)` so we also verify stdout is a TTY — bare
     // `supports_hyperlinks()` only inspects env vars and would still emit
     // escapes into pipes like `mise patrons | cat`.
+    //
+    // Callers are responsible for stripping control bytes from `url` /
+    // `text` if they come from untrusted sources; we don't strip here so
+    // the same function works for trusted constants like SPONSOR_URL.
     if supports_hyperlinks::on(supports_hyperlinks::Stream::Stdout) {
         // OSC 8 hyperlink. Many modern terminals (iTerm2, WezTerm, Kitty,
-        // Windows Terminal, recent GNOME Terminal, etc.) render `text` as a
-        // clickable link. Terminals that don't support OSC 8 simply ignore
-        // the escapes and render `text` as-is.
-        //
-        // Both `url` and `text` originate from untrusted patron-supplied
-        // data. Strip ASCII control bytes so a crafted entry can't break
-        // out of the escape sequence and inject other OSC commands (e.g.
-        // a window-title change).
-        format!(
-            "\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\",
-            strip_control(url),
-            strip_control(text),
-        )
+        // Windows Terminal, recent GNOME Terminal, etc.) render `text` as
+        // a clickable link. Terminals that don't support OSC 8 simply
+        // ignore the escapes and render `text` as-is.
+        format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\")
     } else {
         text.to_string()
     }
