@@ -9,7 +9,7 @@ use tokio::task::JoinSet;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
-use crate::tera::{BASE_CONTEXT, get_tera};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str_if_template};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::style;
@@ -791,8 +791,8 @@ impl DepsEngine {
         tera_ctx.insert("env", &env_map);
         let mut tera = get_tera(cmd.cwd.as_deref());
         for (k, v) in &cmd.env {
-            let rendered = if v.contains("{{") || v.contains("{%") || v.contains("{#") {
-                tera.render_str(v, &tera_ctx).unwrap_or_else(|e| {
+            let rendered = if contains_template_syntax(v) {
+                render_str_if_template(&mut tera, v, &tera_ctx).unwrap_or_else(|e| {
                     warn!("failed to render template for deps env {k}: {e}");
                     v.clone()
                 })

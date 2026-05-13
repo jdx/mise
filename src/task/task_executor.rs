@@ -13,6 +13,7 @@ use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::tera::render_str_if_template;
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
@@ -1141,7 +1142,7 @@ impl TaskExecutor {
             }
             tera_ctx.insert("usage", &usage_ctx);
 
-            let message = tera.render_str(confirm.message(), &tera_ctx)?;
+            let message = render_str_if_template(&mut tera, confirm.message(), &tera_ctx)?;
             let default_yes = match confirm.default_value() {
                 Some(default) => Self::parse_confirm_default(default)?,
                 None => true, // keep backwards compatible default of yes if not specified

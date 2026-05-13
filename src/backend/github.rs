@@ -1858,7 +1858,7 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     tera.register_function("os", make_remapping_fn(os.to_string()));
     tera.register_function("arch", make_remapping_fn(arch.to_string()));
 
-    match tera.render_str(template, &ctx) {
+    match crate::tera::render_str_if_template(&mut tera, template, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template '{}': {}", template, e);

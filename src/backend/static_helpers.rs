@@ -362,7 +362,8 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
     let mut ctx = crate::tera::BASE_CONTEXT.clone();
     ctx.insert("version", &tv.version);
 
-    match crate::tera::get_tera(None).render_str(template, &ctx) {
+    let mut tera = crate::tera::get_tera(None);
+    match crate::tera::render_str_if_template(&mut tera, template, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template '{}': {}", template, e);

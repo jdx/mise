@@ -1,5 +1,6 @@
 use crate::dirs;
 use crate::task::Task;
+use crate::tera::render_str_if_template;
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -72,7 +73,7 @@ impl TaskOutputs {
                     .get("env")
                     .and_then(|v| serde_json::from_value(v.clone()).ok());
                 for file in files.iter_mut() {
-                    *file = tera.render_str(file, ctx)?;
+                    *file = render_str_if_template(tera, file, ctx)?;
                 }
                 Ok(RawOutputTemplates {
                     templates: Some(raw),
@@ -105,7 +106,7 @@ impl TaskOutputs {
             ctx.insert("config_root", &config_root.to_string_lossy().to_string());
             *files = raw_templates
                 .iter()
-                .map(|tmpl| tera.render_str(tmpl, &ctx))
+                .map(|tmpl| render_str_if_template(&mut tera, tmpl, &ctx))
                 .collect::<Result<Vec<_>, _>>()?;
         }
         Ok(())

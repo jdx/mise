@@ -6,6 +6,8 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
+use crate::tera::render_str_if_template;
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TaskDep {
     pub task: String,
@@ -19,13 +21,13 @@ impl TaskDep {
         tera: &mut tera::Tera,
         tera_ctx: &tera::Context,
     ) -> crate::Result<&mut Self> {
-        self.task = tera.render_str(&self.task, tera_ctx)?;
+        self.task = render_str_if_template(tera, &self.task, tera_ctx)?;
         for a in &mut self.args {
-            *a = tera.render_str(a, tera_ctx)?;
+            *a = render_str_if_template(tera, a, tera_ctx)?;
         }
         // Render env values through Tera
         for v in self.env.values_mut() {
-            *v = tera.render_str(v, tera_ctx)?;
+            *v = render_str_if_template(tera, v, tera_ctx)?;
         }
         // Parse shell-style "FOO=bar BAZ=qux taskname arg1 arg2" if args/env not already set
         if self.args.is_empty() && self.env.is_empty() {

@@ -4,7 +4,7 @@ use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::path_env::PathEnv;
-use crate::tera::{get_tera, tera_exec};
+use crate::tera::{contains_template_syntax, get_tera, render_str_if_template, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -680,10 +680,9 @@ impl EnvResults {
         let mut output = input.to_string();
 
         // Step 1: Tera template expansion
-        if input.contains("{{") || input.contains("{%") || input.contains("{#") {
+        if contains_template_syntax(input) {
             trust_check(path)?;
-            output = tera
-                .render_str(input, ctx)
+            output = render_str_if_template(tera, input, ctx)
                 .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         }
 

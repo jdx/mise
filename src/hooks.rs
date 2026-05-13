@@ -1,7 +1,7 @@
 use crate::cmd::cmd;
 use crate::config::{Config, Settings, config_file};
 use crate::shell::Shell;
-use crate::tera::get_tera;
+use crate::tera::{get_tera, render_str_if_template};
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, hook_env};
 use eyre::Result;
@@ -443,7 +443,7 @@ async fn execute(
         (ctx, env)
     };
     let mut tera = get_tera(Some(root));
-    let rendered_script = tera.render_str(run, &tera_ctx)?;
+    let rendered_script = render_str_if_template(&mut tera, run, &tera_ctx)?;
 
     let args = shell
         .iter()

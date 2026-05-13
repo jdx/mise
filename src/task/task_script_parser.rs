@@ -3,7 +3,7 @@ use crate::env_diff::EnvMap;
 use crate::exit::exit;
 use crate::shell::ShellType;
 use crate::task::Task;
-use crate::tera::get_tera;
+use crate::tera::{contains_template_syntax, get_tera, render_str_if_template};
 use eyre::{Context, Result};
 use heck::ToSnakeCase;
 use indexmap::IndexMap;
@@ -64,7 +64,7 @@ impl TaskScriptParser {
         script: &str,
         ctx: &tera::Context,
     ) -> Result<String> {
-        tera.render_str(script.trim(), ctx)
+        render_str_if_template(tera, script.trim(), ctx)
             .with_context(|| format!("Failed to render task script: {}", script))
     }
 
@@ -73,7 +73,7 @@ impl TaskScriptParser {
         usage: &str,
         ctx: &tera::Context,
     ) -> Result<String> {
-        tera.render_str(usage.trim(), ctx)
+        render_str_if_template(tera, usage.trim(), ctx)
             .with_context(|| format!("Failed to render task usage: {}", usage))
     }
 
@@ -524,11 +524,7 @@ impl TaskScriptParser {
                 let mut resolved = Vec::with_capacity(glob_patterns.len());
 
                 for pattern in glob_patterns.iter() {
-                    // pattern is considered a tera template string if it contains opening tags:
-                    // - "{#" for comments
-                    // - "{{" for expressions
-                    // - "{%" for statements
-                    if pattern.contains("{#") || pattern.contains("{{") || pattern.contains("{%") {
+                    if contains_template_syntax(pattern) {
                         trace!(
                             "tera::render::resolve_task_sources including tera template string in resolved task sources: {pattern}"
                         );
