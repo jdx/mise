@@ -10,25 +10,34 @@ For shell command aliases (like `alias ll='ls -la'`), see [Shell Aliases](/shell
 ## Aliased Backends
 
 Tools can be aliased so that something like `node` which normally maps to `core:node` can be changed
-to something like `asdf:company/our-custom-node` instead.
+to a different backend instead.
 
 ```toml [~/.config/mise/config.toml]
 [tool_alias]
-node = 'asdf:company/our-custom-node' # shorthand for https://github.com/company/our-custom-node
-erlang = 'asdf:https://github.com/company/our-custom-erlang'
+node = 'github:company/our-custom-node'   # shorthand for https://github.com/company/our-custom-node
+erlang = 'aqua:company/our-custom-erlang' # use an aqua registry entry
 ```
 
 ## Aliased Versions
 
-mise supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
-versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for <node@20.x>
-so you can use set it with `node lts-hydrogen` in `mise.toml`/`.tool-versions`.
+mise supports aliasing the versions of runtimes. One use-case for this is to define a stable name
+that points to a specific version, so you can reference it symbolically in
+`mise.toml`/`.tool-versions`. For example, you may want `lts-iron` to map to Node.js 20 so you can
+set it with `node = "lts-iron"`.
 
-User aliases can be created by adding a `tool_alias.<PLUGIN>` section to `~/.config/mise/config.toml`:
+User aliases can be created by adding a `tool_alias.<PLUGIN>.versions` section to
+`~/.config/mise/config.toml`:
 
 ```toml
 [tool_alias.node.versions]
-my_custom_20 = '20'
+lts-iron = '20'
+```
+
+Then reference the alias when pinning the tool:
+
+```toml
+[tools]
+node = "lts-iron"
 ```
 
 Plugins can also provide aliases via a `bin/list-aliases` script. Here is an example showing node.js
@@ -37,15 +46,13 @@ versions:
 ```bash
 #!/usr/bin/env bash
 
-echo "lts-hydrogen 18"
-echo "lts-gallium 16"
-echo "lts-fermium 14"
+echo "lts-krypton 24"
+echo "lts-jod 22"
+echo "lts-iron 20"
 ```
 
-::: info
-Because this is mise-specific functionality not currently used by asdf it isn't likely to be in any
-plugin currently, but plugin authors can add this script without impacting asdf users.
-:::
+(mise's built-in node plugin already ships these LTS aliases; the example above shows the format
+that other plugins can use.)
 
 ## Templates
 
