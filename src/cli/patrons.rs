@@ -32,6 +32,7 @@ struct PatronsPayload {
     schema: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     generated_at: Option<String>,
+    #[serde(default)]
     patrons: Vec<Patron>,
 }
 
@@ -83,7 +84,7 @@ async fn load_patrons(refresh: bool) -> Result<PatronsPayload> {
             if let Ok(body) = file::read_to_string(&cache_path)
                 && let Ok(payload) = serde_json::from_str::<PatronsPayload>(&body)
             {
-                debug!("failed to refresh patrons.json, using stale cache: {err:#?}");
+                warn!("failed to refresh patrons.json, using stale cache: {err:#}");
                 return Ok(payload);
             }
             Err(err)
@@ -99,7 +100,8 @@ fn render_human(payload: &PatronsPayload) -> Result<()> {
         );
         return Ok(());
     }
-    miseprintln!("mise is supported by these patrons — thank you ❤\n");
+    miseprintln!("mise is supported by these patrons — thank you ❤");
+    miseprintln!("");
     for p in &payload.patrons {
         let label = match &p.url {
             Some(url) => hyperlink(url, &p.name),
@@ -107,23 +109,37 @@ fn render_human(payload: &PatronsPayload) -> Result<()> {
         };
         miseprintln!("  • {label}");
     }
-    miseprintln!(
-        "\nBecome a patron: {}",
-        hyperlink(SPONSOR_URL, SPONSOR_URL),
-    );
+    miseprintln!("");
+    miseprintln!("Become a patron: {}", hyperlink(SPONSOR_URL, SPONSOR_URL));
     Ok(())
 }
 
 fn hyperlink(url: &str, text: &str) -> String {
-    if supports_hyperlinks::supports_hyperlinks() {
+    // Use `on(Stream::Stdout)` so we also verify stdout is a TTY — bare
+    // `supports_hyperlinks()` only inspects env vars and would still emit
+    // escapes into pipes like `mise patrons | cat`.
+    if supports_hyperlinks::on(supports_hyperlinks::Stream::Stdout) {
         // OSC 8 hyperlink. Many modern terminals (iTerm2, WezTerm, Kitty,
         // Windows Terminal, recent GNOME Terminal, etc.) render `text` as a
         // clickable link. Terminals that don't support OSC 8 simply ignore
         // the escapes and render `text` as-is.
-        format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\")
+        //
+        // Both `url` and `text` originate from untrusted patron-supplied
+        // data. Strip ASCII control bytes so a crafted entry can't break
+        // out of the escape sequence and inject other OSC commands (e.g.
+        // a window-title change).
+        format!(
+            "\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\",
+            strip_control(url),
+            strip_control(text),
+        )
     } else {
         text.to_string()
     }
+}
+
+fn strip_control(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
