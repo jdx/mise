@@ -437,10 +437,11 @@ impl Client {
         use_netrc: bool,
         use_url_replacements: bool,
     ) -> Result<Response> {
-        let request_url = url.clone();
+        let original_url = url.clone();
         if use_url_replacements {
             apply_url_replacements(&mut url);
         }
+        let request_url = url.clone();
 
         let netrc = if use_netrc {
             netrc_headers(&url)
@@ -509,11 +510,11 @@ impl Client {
                 headers.remove(AUTHORIZATION);
                 debug!(
                     "{} {} retrying without GitHub auth after {}",
-                    verb_label, &request_url, status
+                    verb_label, &original_url, status
                 );
                 return Box::pin(self.send_once_inner(
                     method,
-                    request_url,
+                    original_url,
                     &headers,
                     verb_label,
                     false,
