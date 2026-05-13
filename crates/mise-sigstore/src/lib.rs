@@ -456,7 +456,7 @@ pub async fn verify_slsa_provenance(
         if let Ok(bundle) = Bundle::from_json(candidate) {
             let result = match trust_roots.for_bundle(&bundle).await {
                 Ok(root) => verify_bundle(&artifact, &bundle, None, root)
-                    .and_then(|_| verify_min_slsa_level(&bundle, min_level)),
+                    .and_then(|_| verify_bundle_slsa(&bundle, &artifact, min_level)),
                 Err(e) => Err(e),
             };
             match result {
@@ -993,7 +993,12 @@ fn verify_signer_workflow_identity(
     Ok(())
 }
 
-fn verify_min_slsa_level(bundle: &Bundle, min_level: u8) -> Result<()> {
+/// SLSA-specific checks once `verify_bundle` has cryptographically verified
+/// the bundle: the DSSE payload is an SLSA provenance statement, the policy
+/// level is supported, and the artifact's SHA-256 appears in the statement's
+/// `subject` array. The subject check is the load-bearing part — without it,
+/// a valid SLSA bundle signed for *some* artifact would accept *any* artifact.
+fn verify_bundle_slsa(bundle: &Bundle, artifact: &[u8], min_level: u8) -> Result<()> {
     let payload = match &bundle.content {
         sigstore_verify::types::SignatureContent::DsseEnvelope(envelope) => {
             envelope.decode_payload()
@@ -1004,24 +1009,7 @@ fn verify_min_slsa_level(bundle: &Bundle, min_level: u8) -> Result<()> {
             ));
         }
     };
-    let statement: serde_json::Value = serde_json::from_slice(&payload).map_err(|e| {
-        AttestationError::Verification(format!("Failed to parse SLSA payload: {e}"))
-    })?;
-    let predicate_type = statement
-        .get("predicateType")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    if !predicate_type.starts_with("https://slsa.dev/provenance/") {
-        return Err(AttestationError::UnsupportedFormat(format!(
-            "Not an SLSA provenance predicate: {predicate_type}"
-        )));
-    }
-    if min_level > 1 {
-        return Err(AttestationError::Verification(format!(
-            "SLSA level {min_level} verification is not supported by the native adapter"
-        )));
-    }
-    Ok(())
+    verify_intoto_payload(&payload, artifact, min_level)
 }
 
 fn decode_cosign_signature(bytes: &[u8]) -> Vec<u8> {
