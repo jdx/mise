@@ -72,24 +72,26 @@ async fn load_patrons(refresh: bool) -> Result<PatronsPayload> {
         return Ok(payload);
     }
 
-    match HTTP.get_text(PATRONS_URL).await {
-        Ok(body) => {
-            let payload: PatronsPayload = serde_json::from_str(&body)?;
-            let _ = file::create_dir_all(*dirs::CACHE);
-            let _ = file::write(&cache_path, &body);
-            Ok(payload)
-        }
-        Err(err) => {
-            // Network failed — fall back to whatever we have cached, however old.
-            if let Ok(body) = file::read_to_string(&cache_path)
-                && let Ok(payload) = serde_json::from_str::<PatronsPayload>(&body)
-            {
-                warn!("failed to refresh patrons.json, using stale cache: {err:#}");
+    let (stage, err) = match HTTP.get_text(PATRONS_URL).await {
+        Ok(body) => match serde_json::from_str::<PatronsPayload>(&body) {
+            Ok(payload) => {
+                let _ = file::create_dir_all(*dirs::CACHE);
+                let _ = file::write(&cache_path, &body);
                 return Ok(payload);
             }
-            Err(err)
-        }
+            Err(err) => ("parse", eyre::Report::from(err)),
+        },
+        Err(err) => ("fetch", err),
+    };
+    // Either the fetch or the parse failed — fall back to whatever we have
+    // cached, however old, so the command stays useful in either case.
+    if let Ok(cached_body) = file::read_to_string(&cache_path)
+        && let Ok(payload) = serde_json::from_str::<PatronsPayload>(&cached_body)
+    {
+        warn!("failed to {stage} patrons.json, using stale cache: {err:#}");
+        return Ok(payload);
     }
+    Err(err)
 }
 
 fn render_human(payload: &PatronsPayload) -> Result<()> {
