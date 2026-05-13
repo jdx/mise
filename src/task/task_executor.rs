@@ -731,10 +731,7 @@ impl TaskExecutor {
             .lines()
             .find(|line| {
                 let t = line.trim_start();
-                !t.is_empty()
-                    && !t.starts_with("#!")
-                    && t != "set"
-                    && !t.starts_with("set ")
+                !t.is_empty() && !t.starts_with("#!") && t != "set" && !t.starts_with("set ")
             })
             .unwrap_or(script);
         let args_str = args.join(" ");
