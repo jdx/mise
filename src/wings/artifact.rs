@@ -498,7 +498,7 @@ async fn post_resolve(
         .send()
         .await
         .map_err(|e| {
-            if e.is_timeout() || e.is_connect() || e.is_request() {
+            if e.is_timeout() || e.is_connect() {
                 ResolveTransientError(format!("POST {url}: {e}")).into()
             } else {
                 eyre!(e).wrap_err(format!("POST {url}"))

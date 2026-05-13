@@ -258,7 +258,7 @@ fn classify_request_error(err: reqwest::Error, label: impl AsRef<str>) -> CiAuth
 }
 
 fn is_transient_request_error(err: &reqwest::Error) -> bool {
-    err.is_timeout() || err.is_connect() || err.is_request()
+    err.is_timeout() || err.is_connect()
 }
 
 fn is_transient_auth_status(status: StatusCode) -> bool {
