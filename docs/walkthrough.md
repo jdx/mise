@@ -116,6 +116,7 @@ Some examples on where this can be used:
 - Setting `RUST_TEST_THREADS=1` to run cargo tests in series
 
 Do not set secrets in a project's mise.toml, as the file is intended to be added to version control.
+[Use `mise.local.toml`](#misetoml-configuration) instead for secrets.
 
 You can also modify `PATH` with `mise.toml`.
 This example makes CLIs installed with `npm` available:
