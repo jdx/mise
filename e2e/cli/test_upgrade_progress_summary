@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 echo 'dummy 1' >.tool-versions
-mise install dummy@1.0.0 >/dev/null 2>&1
+mise install dummy@1.0.0 >/dev/null 2>&1 || fail "pre-install of dummy@1.0.0 failed"
 
 output="$(MISE_FORCE_PROGRESS=1 mise up dummy 2>&1)"
 summary_line="  dummy 1.0.0 → 1.1.0"
