@@ -136,9 +136,29 @@ Hooks are executed with the following environment variables set:
 Inline `run` hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
 (`enter = "echo hi"`) is equivalent to `{ run = "echo hi" }`.
 
-`run` must be a string. `run = ["echo one", "echo two"]` is not supported. To run multiple
-spawned inline commands, use the multiple hooks syntax such as `enter = [{ run = "echo one" },
-{ run = "echo two" }]`, or use a multiline string.
+`run` must be a string. `run = ["echo one", "echo two"]` is not supported.
+
+To run separate spawned inline commands, define multiple hooks. Each hook entry is a separate
+execution, so mise starts one subprocess per `run` entry:
+
+```toml
+[hooks]
+enter = [
+  { run = "echo one" },
+  { run = "echo two" },
+]
+```
+
+To run multiple shell lines in one spawned command, use one multiline `run` string. This is one hook
+execution and one subprocess:
+
+```toml
+[hooks.enter]
+run = """
+echo one
+echo two
+"""
+```
 
 `run` hooks execute in a subprocess using the default inline shell:
 [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
@@ -158,7 +178,8 @@ script = "source completions.sh"
 ```
 
 For longer current-shell hooks, `script` may be an array and `scripts` may be used as a plural
-array-only spelling. The entries are emitted in order as separate lines:
+array-only spelling. These forms do not create multiple hooks. mise joins the entries with newlines
+and treats the result like one `script` string:
 
 ```toml
 [hooks.enter]
