@@ -1,4 +1,5 @@
 use crate::config::{Config, env_directive::EnvResults};
+use crate::env_diff::EnvMap as TeraEnvMap;
 use crate::file::display_path;
 use crate::{Result, file, sops};
 use eyre::{WrapErr, bail, eyre};
@@ -25,18 +26,19 @@ impl EnvResults {
     pub async fn file(
         config: &Arc<Config>,
         ctx: &mut tera::Context,
-        tera: &mut tera::Tera,
+        tera: &mut Option<tera::Tera>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
+        exec_env: &TeraEnvMap,
         config_root: &Path,
         input: String,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
-        let s = r.parse_template(ctx, tera, source, &input)?;
+        let s = r.parse_template(ctx, tera, source, exec_env, &input)?;
         for p in xx::file::glob(normalize_path(config_root, s.into())).unwrap_or_default() {
             let env = out.entry(p.clone()).or_insert_with(IndexMap::new);
-            let parse_template = |s: String| r.parse_template(ctx, tera, source, &s);
+            let parse_template = |s: String| r.parse_template(ctx, tera, source, exec_env, &s);
             let ext = p
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())

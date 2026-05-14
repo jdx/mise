@@ -31,7 +31,7 @@ use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::{Task, TaskTemplate};
-use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str_if_template};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
 use crate::{env, file};
@@ -576,7 +576,7 @@ impl MiseToml {
         }
         let dir = self.path.parent();
         let mut tera = get_tera(dir);
-        let output = render_str_if_template(&mut tera, input, context).wrap_err_with(|| {
+        let output = render_str(&mut tera, input, context).wrap_err_with(|| {
             let p = display_path(&self.path);
             eyre!("failed to parse template {input} in {p}")
         })?;

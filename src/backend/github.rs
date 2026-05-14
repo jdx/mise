@@ -1833,6 +1833,10 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
             .replace("{gnu_arch}", gnu_arch);
     }
 
+    if !crate::tera::contains_template_syntax(template) {
+        return template.to_string();
+    }
+
     // Use Tera rendering for templates
     let mut ctx = crate::tera::BASE_CONTEXT.clone();
     ctx.insert("version", version);
@@ -1858,7 +1862,7 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     tera.register_function("os", make_remapping_fn(os.to_string()));
     tera.register_function("arch", make_remapping_fn(arch.to_string()));
 
-    match crate::tera::render_str_if_template(&mut tera, template, &ctx) {
+    match crate::tera::render_str(&mut tera, template, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template '{}': {}", template, e);

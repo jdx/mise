@@ -14,7 +14,7 @@ use crate::cli::args::BackendArg;
 use crate::config::config_file::{ConfigFile, trust_check};
 use crate::file;
 use crate::file::display_path;
-use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str_if_template};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 use super::ConfigFileType;
@@ -63,7 +63,7 @@ impl ToolVersions {
         let s = if contains_template_syntax(s) {
             trust_check(&path)?;
             let mut tera = get_tera(dir);
-            render_str_if_template(&mut tera, s, &cf.context)?
+            render_str(&mut tera, s, &cf.context)?
         } else {
             s.to_string()
         };

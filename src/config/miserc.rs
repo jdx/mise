@@ -17,7 +17,7 @@ use crate::dirs;
 use crate::env;
 use crate::file;
 use crate::tera::{
-    contains_template_syntax, get_miserc_tera, render_str_if_template, take_tera_accessed_files,
+    contains_template_syntax, get_miserc_tera, render_str, take_tera_accessed_files,
 };
 
 static MISERC: OnceLock<MisercSettings> = OnceLock::new();
@@ -105,7 +105,7 @@ fn render_miserc_template(
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
-    match render_str_if_template(tera, content, &context) {
+    match render_str(tera, content, &context) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template in miserc: {e}");

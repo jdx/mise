@@ -42,6 +42,11 @@ pub fn take_tera_accessed_files() -> Vec<PathBuf> {
     files
 }
 
+/// Fast marker check for Tera 1.x syntax.
+///
+/// Tera 1.20.1's grammar starts every variable, tag, and comment block with
+/// `{{`, `{%`, or `{#` respectively, including whitespace-trimmed forms like
+/// `{{-`, `{%-`, and `{#-`.
 pub fn contains_template_syntax(input: &str) -> bool {
     input.contains("{{") || input.contains("{%") || input.contains("{#")
 }
@@ -841,8 +846,11 @@ mod tests {
     #[test]
     fn test_contains_template_syntax() {
         assert!(contains_template_syntax("{{ foo }}"));
+        assert!(contains_template_syntax("{{- foo -}}"));
         assert!(contains_template_syntax("{% if foo %}bar{% endif %}"));
+        assert!(contains_template_syntax("{%- if foo -%}bar{%- endif -%}"));
         assert!(contains_template_syntax("{# comment #}"));
+        assert!(contains_template_syntax("{#- comment -#}"));
         assert!(!contains_template_syntax("plain text"));
     }
 

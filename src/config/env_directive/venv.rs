@@ -173,11 +173,12 @@ impl EnvResults {
     pub async fn venv(
         config: &Arc<Config>,
         ctx: &mut tera::Context,
-        tera: &mut tera::Tera,
+        tera: &mut Option<tera::Tera>,
         env: &mut IndexMap<String, (String, Option<PathBuf>)>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
+        exec_env: &EnvMap,
         config_root: &Path,
         env_vars: EnvMap,
         path: String,
@@ -188,7 +189,7 @@ impl EnvResults {
     ) -> Result<()> {
         trace!("python venv: {} create={create}", display_path(&path));
         trust_check(source)?;
-        let venv = r.parse_template(ctx, tera, source, &path)?;
+        let venv = r.parse_template(ctx, tera, source, exec_env, &path)?;
         let venv = normalize_path(config_root, venv.into());
         let venv_lock = LockFile::new(&venv).lock()?;
         if !venv.exists() && create {
