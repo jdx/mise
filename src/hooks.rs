@@ -455,7 +455,7 @@ async fn execute(
     if ignored_shell.is_some() && matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
         let hook_name = hook.hook.to_string().to_lowercase();
         warn!(
-            "`shell` is ignored for {} hooks that use `script` or `scripts`; use `run = ...` with `shell = \"bash -c\"` to choose an inline shell command.",
+            "`shell` is ignored for {} hooks that use `script`/`scripts`; use `run = ...` with `shell = \"bash -c\"` to choose an inline shell command.",
             hook_name
         );
     }

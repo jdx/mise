@@ -48,7 +48,7 @@ String hooks are shorthand for `run` hooks. Use a hook table when you need to se
 postinstall = { run = "echo 'installed'", shell = "bash -c" }
 ```
 
-For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script` or `scripts` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` alias for install hooks is deprecated.
+For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script`/`scripts` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` alias for install hooks is deprecated.
 
 The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed:
 
@@ -177,9 +177,7 @@ shell = "bash"
 script = "source completions.sh"
 ```
 
-For longer current-shell hooks, `script` may be an array and `scripts` may be used as a plural
-array-only spelling. These forms do not create multiple hooks. mise joins the entries with newlines
-and treats the result like one `script` string:
+Current-shell hooks may use `script`/`scripts` arrays:
 
 ```toml
 [hooks.enter]
@@ -202,7 +200,7 @@ when the active `mise activate` shell matches.
 
 Use `run` when the hook should execute as an inline command in a subprocess. `preinstall` and
 `postinstall` do not have a current shell, so `script` is only kept there as a legacy alias for `run`;
-if `shell` is set with `script` or `scripts` on those hooks, it is ignored.
+if `shell` is set with `script`/`scripts` on those hooks, it is ignored.
 
 ::: warning
 I feel this should be obvious but in case it's not, this isn't going to do any sort of cleanup

@@ -2057,7 +2057,7 @@
       "unevaluatedProperties": false,
       "properties": {
         "script": {
-          "description": "current-shell script or scripts for enter/leave/cd hooks",
+          "description": "current-shell script/scripts for enter/leave/cd hooks",
           "$ref": "#/$defs/hook_script_value"
         },
         "shell": {
