@@ -81,7 +81,10 @@ impl HookEnv {
             .chain(PREV_SESSION.watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
-        if !self.force && hook_env::should_exit_early(slow_path_watch_files, self.reason) {
+        let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
+        if !self.force
+            && hook_env::should_exit_early(slow_path_watch_files, &loaded_configs, self.reason)
+        {
             trace!("should_exit_early true");
             return Ok(());
         }

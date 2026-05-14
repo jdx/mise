@@ -244,6 +244,7 @@ pub fn should_exit_early_fast() -> bool {
 /// the full config (watch_files, hook scheduling).
 pub fn should_exit_early(
     watch_files: impl IntoIterator<Item = WatchFilePattern>,
+    loaded_configs: &IndexSet<PathBuf>,
     reason: Option<HookReason>,
 ) -> bool {
     // Force hook-env to run at least once from precmd after activation
@@ -257,6 +258,13 @@ pub fn should_exit_early(
         hooks::schedule_hook(hooks::Hooks::Leave);
         hooks::schedule_hook(hooks::Hooks::Cd);
         hooks::schedule_hook(hooks::Hooks::Enter);
+        return false;
+    }
+    // Detect new or removed config files since last hook-env session.
+    // Catches creation of ~/.config/mise/config.toml (or any other config
+    // file) after shell activation when loaded_configs was previously empty.
+    if loaded_configs != &PREV_SESSION.loaded_configs {
+        trace!("loaded configs changed, not exiting early");
         return false;
     }
     // Check full watch_files list from config (may include more than config files)
@@ -377,6 +385,16 @@ pub fn deserialize<T: serde::de::DeserializeOwned>(raw: String) -> Result<T> {
 /// Used by both `should_exit_early_fast` and `build_session` to avoid divergence.
 fn config_search_dir_mtimes() -> Vec<SystemTime> {
     let mut mtimes = Vec::new();
+
+    // Always check global and system config directories regardless of CWD.
+    // This catches new config files (e.g. ~/.config/mise/config.toml) created
+    // after shell activation, even when CWD is outside $HOME.
+    for config_dir in [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG] {
+        if let Ok(Ok(modified)) = config_dir.metadata().map(|m| m.modified()) {
+            mtimes.push(modified);
+        }
+    }
+
     if let Some(cwd) = &*dirs::CWD
         && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
     {
