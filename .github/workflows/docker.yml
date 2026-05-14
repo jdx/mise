@@ -149,20 +149,39 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
+          # Validate the ref name against a strict Docker tag pattern before
+          # placing it into shell expansion. github.ref_name is otherwise
+          # attacker-influenced through the tag/branch trigger.
+          if ! [[ "$REF_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::error::Invalid ref name for Docker manifest: $REF_NAME" >&2
+            exit 1
+          fi
           # shellcheck disable=SC2046
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'jdxcode/mise:${{ github.ref_name }}@sha256:%s ' *)
+            $(printf "jdxcode/mise:${REF_NAME}@sha256:%s " *)
           # shellcheck disable=SC2046
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/jdx/mise:${{ github.ref_name }}@sha256:%s ' *)
+            $(printf "ghcr.io/jdx/mise:${REF_NAME}@sha256:%s " *)
           # shellcheck disable=SC2046
           docker buildx imagetools create -t jdxcode/mise:latest \
-            $(printf 'jdxcode/mise:${{ github.ref_name }}@sha256:%s ' *)
+            $(printf "jdxcode/mise:${REF_NAME}@sha256:%s " *)
           # shellcheck disable=SC2046
           docker buildx imagetools create -t ghcr.io/jdx/mise:latest \
-            $(printf 'ghcr.io/jdx/mise:${{ github.ref_name }}@sha256:%s ' *)
+            $(printf "ghcr.io/jdx/mise:${REF_NAME}@sha256:%s " *)
       - name: Inspect image
+        env:
+          META_VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          docker buildx imagetools inspect jdxcode/mise:${{ steps.meta.outputs.version }}
-          docker buildx imagetools inspect ghcr.io/jdx/mise:${{ steps.meta.outputs.version }}
+          # docker/metadata-action normally produces well-formed semver tags,
+          # but validate before interpolation for consistency with the manifest
+          # step above so no GitHub-expression-derived value reaches the shell
+          # without a guard.
+          if ! [[ "$META_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::error::Invalid Docker tag from metadata-action: $META_VERSION" >&2
+            exit 1
+          fi
+          docker buildx imagetools inspect "jdxcode/mise:${META_VERSION}"
+          docker buildx imagetools inspect "ghcr.io/jdx/mise:${META_VERSION}"

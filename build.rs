@@ -369,7 +369,7 @@ fn codegen_aqua_standard_registry() -> Result<()> {
         files_dest_path,
         aqua_registry_files_code(&registries, &packages_dir)?,
     )?;
-    fs::write(aliases_dest_path, aqua_registry_aliases_code(&registries))?;
+    fs::write(aliases_dest_path, aqua_registry_aliases_code(&registries)?)?;
 
     let metadata = serde_yaml::from_str::<Value>(&fs::read_to_string(metadata_file)?)?;
     let repository = yaml_string_field(&metadata, "repository").ok_or_else(|| {
@@ -395,11 +395,20 @@ fn codegen_aqua_standard_registry() -> Result<()> {
 
 fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackageRegistry>> {
     let mut registries = Vec::new();
-    for row in rows {
+    let mut canonical_ids = HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
         let package = &row.package;
         let Some(id) = aqua_canonical_package_id(package) else {
+            println!(
+                "cargo:warning=skipping aqua registry package row {index}: missing name, repo_owner/repo_name, and path"
+            );
             continue;
         };
+        if let Some(existing) = canonical_ids.insert(id.clone(), index) {
+            return Err(eyre!(
+                "baked aqua registry package id collision for {id:?}: rows {existing} and {index}"
+            ));
+        }
         let content = encode_package_rkyv(package)?;
         registries.push(AquaPackageRegistry {
             id,
@@ -437,15 +446,21 @@ fn aqua_registry_files_code(
 }
 
 fn aqua_registry_bytes_map_code(entries: &[(String, PathBuf)]) -> String {
-    let mut code = String::from("HashMap::from([\n");
+    let mut map = phf_codegen::Map::new();
+    let mut values = Vec::new();
     for (key, path) in entries {
-        code.push_str(&format!(
-            "    ({key:?}, include_bytes!({:?}).as_slice()),\n",
-            path.display().to_string()
+        values.push((
+            key.clone(),
+            format!(
+                "include_bytes!({:?}).as_slice()",
+                path.display().to_string()
+            ),
         ));
     }
-    code.push_str("])");
-    code
+    for (key, value) in &values {
+        map.entry(key, value);
+    }
+    map.build().to_string()
 }
 
 /// Hashes the canonical package ID with FNV-1a 64-bit to generate compact,
@@ -459,34 +474,43 @@ fn aqua_package_file_stem(id: &str) -> String {
     format!("{hash:016x}")
 }
 
-fn aqua_registry_aliases_code(registries: &[AquaPackageRegistry]) -> String {
+fn aqua_registry_aliases_code(registries: &[AquaPackageRegistry]) -> Result<String> {
     let canonical_ids = registries
         .iter()
         .map(|registry| registry.id.as_str())
         .collect::<HashSet<_>>();
-    let mut aliases = HashMap::new();
+    let mut aliases = BTreeMap::new();
 
     for registry in registries {
         for alias in &registry.aliases {
-            if alias != &registry.id && !canonical_ids.contains(alias.as_str()) {
-                aliases.insert(alias.clone(), registry.id.clone());
+            if alias != &registry.id
+                && !canonical_ids.contains(alias.as_str())
+                && let Some(existing) = aliases.insert(alias.clone(), registry.id.clone())
+                && existing != registry.id
+            {
+                return Err(eyre!(
+                    "baked aqua registry alias collision for {alias:?}: {existing:?} and {:?}",
+                    registry.id
+                ));
             }
         }
     }
 
-    let mut entries = aliases.into_iter().collect::<Vec<_>>();
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let entries = aliases.into_iter().collect::<Vec<_>>();
 
-    aqua_registry_string_map_code(&entries)
+    Ok(aqua_registry_string_map_code(&entries))
 }
 
 fn aqua_registry_string_map_code(entries: &[(String, String)]) -> String {
-    let mut code = String::from("HashMap::from([\n");
+    let mut map = phf_codegen::Map::new();
+    let mut values = Vec::new();
     for (key, value) in entries {
-        code.push_str(&format!("    ({key:?}, {value:?}),\n"));
+        values.push((key.clone(), format!("{value:?}")));
     }
-    code.push_str("])");
-    code
+    for (key, value) in &values {
+        map.entry(key, value);
+    }
+    map.build().to_string()
 }
 
 fn aqua_canonical_package_id(package: &AquaPackage) -> Option<String> {

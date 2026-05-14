@@ -8,7 +8,10 @@ use std::sync::LazyLock as Lazy;
 use crate::file::path_env_without_shims;
 
 /// Cache for tokens obtained from `credential_command`.
-/// Key format is `{provider}:{host}` to avoid cross-provider collisions.
+/// Key format is `{provider}:{host}` to avoid cross-provider collisions and
+/// preserve host-aware lookups (so different GitHub Enterprise instances
+/// still spawn their own helper). Callers are responsible for not walking
+/// equivalent hosts (e.g. `github.com` and `api.github.com`) on this path.
 static CREDENTIAL_COMMAND_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String>>>> =
     Lazy::new(Default::default);
 
@@ -58,7 +61,9 @@ pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, S
 /// Get a token by running a provider-specific `credential_command`.
 ///
 /// The host and provider are passed through `MISE_CREDENTIAL_HOST` and
-/// `MISE_CREDENTIAL_PROVIDER`. Results are cached per provider+host.
+/// `MISE_CREDENTIAL_PROVIDER`. Results are cached per `{provider}:{host}`
+/// for the lifetime of the process — repeated calls for the same host
+/// reuse the cached value (positive or negative).
 pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Option<String> {
     if credential_command_uses_legacy_host_arg(cmd) {
         deprecated_at!(
@@ -380,6 +385,35 @@ logins:
             r"C:\Program Files\Git\bin\BASH.EXE"
         ));
         assert!(!shell_supports_posix_c_arg_passing("cmd.exe"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_credential_command_token_caches_per_host() {
+        // Same host on repeat calls must reuse the cached result (1 spawn).
+        // Different hosts get their own cache entries — important for
+        // multi-instance setups (e.g. github.com vs a GHE instance).
+        let dir = tempfile::tempdir().unwrap();
+        let counter = dir.path().join("counter");
+        let cmd = format!(
+            "echo invocation >> {} && echo \"token-for-$MISE_CREDENTIAL_HOST\"",
+            counter.display()
+        );
+        let provider = "test-per-host";
+
+        let a1 = get_credential_command_token(provider, &cmd, "host-a.example.com").unwrap();
+        let a2 = get_credential_command_token(provider, &cmd, "host-a.example.com").unwrap();
+        let b1 = get_credential_command_token(provider, &cmd, "host-b.example.com").unwrap();
+
+        assert_eq!(a1, "token-for-host-a.example.com");
+        assert_eq!(a2, "token-for-host-a.example.com");
+        assert_eq!(b1, "token-for-host-b.example.com");
+
+        let invocations = std::fs::read_to_string(&counter).unwrap().lines().count();
+        assert_eq!(
+            invocations, 2,
+            "1 spawn per host: 1 for host-a, 1 for host-b"
+        );
     }
 
     #[test]
