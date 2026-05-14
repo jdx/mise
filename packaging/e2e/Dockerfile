@@ -7,6 +7,8 @@ LABEL org.opencontainers.image.licenses=MIT
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/node/bin:$PATH"
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 

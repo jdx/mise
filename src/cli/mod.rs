@@ -48,6 +48,7 @@ mod ls_remote;
 mod mcp;
 mod oci;
 mod outdated;
+mod patrons;
 mod plugins;
 mod prune;
 mod registry;
@@ -235,6 +236,7 @@ pub enum Commands {
     Mcp(mcp::Mcp),
     Oci(oci::Oci),
     Outdated(outdated::Outdated),
+    Patrons(patrons::Patrons),
     Plugins(plugins::Plugins),
     Deps(deps::Deps),
     Prune(prune::Prune),
@@ -306,6 +308,7 @@ impl Commands {
             Self::Mcp(cmd) => cmd.run().await,
             Self::Oci(cmd) => cmd.run().await,
             Self::Outdated(cmd) => cmd.run().await,
+            Self::Patrons(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
             Self::Deps(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
