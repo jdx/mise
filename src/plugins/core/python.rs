@@ -307,42 +307,19 @@ impl PythonPlugin {
             .or_default()
             .url = Some(url.to_string());
 
+        // Check before verify_checksum, which may generate a new checksum from the
+        // downloaded file. We only skip provenance when the lockfile already had
+        // integrity data before this install.
+        let has_lockfile_integrity = Self::has_precompiled_lockfile_integrity(tv, &platform_key);
+
         self.verify_checksum(ctx, tv, &tarball_path)?;
 
-        // Check lockfile provenance expectation before verification
-        let locked_provenance = tv
-            .lock_platforms
-            .get_mut(&platform_key)
-            .and_then(|pi| pi.provenance.take());
-
-        // Verify GitHub artifact attestations for precompiled binaries
-        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
-        let verified = self
-            .verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
-            .await?;
-
-        // Record provenance only if verification actually succeeded (not skipped)
-        if verified {
-            let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
-            pi.provenance = Some(ProvenanceType::GithubAttestations);
-        }
-
-        // Enforce lockfile provenance
-        if let Some(ref expected) = locked_provenance {
-            let got = tv
-                .lock_platforms
-                .get(&platform_key)
-                .and_then(|pi| pi.provenance.as_ref());
-            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
-                let got_str = got
-                    .map(|g| g.to_string())
-                    .unwrap_or_else(|| "no verification".to_string());
-                return Err(eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
-                     This may indicate a downgrade attack. Enable the corresponding verification setting \
-                     or update the lockfile."
-                ));
-            }
+        let settings = Settings::get();
+        if has_lockfile_integrity && !settings.force_provenance_verify() {
+            Self::ensure_precompiled_provenance_setting_enabled(tv, &platform_key)?;
+        } else {
+            self.verify_precompiled_provenance(ctx, tv, &platform_key, &tarball_path)
+                .await?;
         }
 
         file::remove_all(&install)?;
@@ -610,6 +587,76 @@ impl PythonPlugin {
             return None;
         }
         Some(ProvenanceType::GithubAttestations)
+    }
+
+    fn has_precompiled_lockfile_integrity(tv: &ToolVersion, platform_key: &str) -> bool {
+        tv.lock_platforms
+            .get(platform_key)
+            .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some())
+    }
+
+    fn ensure_precompiled_provenance_setting_enabled(
+        tv: &ToolVersion,
+        platform_key: &str,
+    ) -> Result<()> {
+        crate::backend::ensure_provenance_setting_enabled(tv, platform_key, |provenance| {
+            match provenance {
+                ProvenanceType::GithubAttestations => Ok(!Self::github_attestations_enabled()),
+                _ => Err(eyre!(
+                    "Lockfile has unexpected provenance type {provenance} for python tool {tv}. \
+                     Update the lockfile to remove the stale provenance entry."
+                )),
+            }
+        })
+    }
+
+    async fn verify_precompiled_provenance(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        platform_key: &str,
+        tarball_path: &std::path::Path,
+    ) -> Result<()> {
+        // Check lockfile provenance expectation before verification
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(platform_key)
+            .and_then(|pi| pi.provenance.take());
+
+        // Verify GitHub artifact attestations for precompiled binaries
+        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
+        let verified = self
+            .verify_github_artifact_attestations(ctx, tarball_path, &tv.version)
+            .await?;
+
+        // Record provenance only if verification actually succeeded (not skipped)
+        if verified {
+            let pi = tv
+                .lock_platforms
+                .entry(platform_key.to_string())
+                .or_default();
+            pi.provenance = Some(ProvenanceType::GithubAttestations);
+        }
+
+        // Enforce lockfile provenance
+        if let Some(ref expected) = locked_provenance {
+            let got = tv
+                .lock_platforms
+                .get(platform_key)
+                .and_then(|pi| pi.provenance.as_ref());
+            if got.is_none_or(|g| g != expected) {
+                let got_str = got
+                    .map(|g| g.to_string())
+                    .unwrap_or_else(|| "no verification".to_string());
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     async fn verify_github_artifact_attestations(

@@ -1,6 +1,9 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{VersionInfo, filter_cached_prereleases, mark_prerelease};
+use crate::backend::{
+    MISE_BINS_DIR, VersionInfo, filter_cached_prereleases, mark_prerelease,
+    runtime_path_for_install_path,
+};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
@@ -101,16 +104,26 @@ impl CondaBackend {
             .unwrap_or_default()
     }
 
-    /// Flatten gateway RepoData into owned records for the solver, deduplicating
-    /// by URL to avoid DuplicateRecords errors when the same package appears in
-    /// multiple subdir queries (e.g. platform + noarch).
-    fn flatten_repodata(repodata: &[RepoData]) -> Vec<RepoDataRecord> {
+    /// Deduplicate records that share the same archive identifier
+    /// (name-version-build plus archive type) — the same key rattler-solve uses
+    /// to detect duplicates, so URL-only dedup isn't sufficient when conda-forge
+    /// serves the same archive under multiple URLs (e.g. distinct CDN paths).
+    fn dedup_records_by_identifier<'a, I>(records: I) -> Vec<RepoDataRecord>
+    where
+        I: IntoIterator<Item = &'a RepoDataRecord>,
+    {
         let mut seen = HashSet::new();
-        repodata
-            .iter()
-            .flat_map(|rd| rd.iter().cloned())
-            .filter(|r| seen.insert(r.url.clone()))
+        records
+            .into_iter()
+            .filter(|r| seen.insert(&r.identifier))
+            .cloned()
             .collect()
+    }
+
+    /// Flatten gateway RepoData into owned records for the solver, deduplicating
+    /// by archive identifier. See [`Self::dedup_records_by_identifier`].
+    fn flatten_repodata(repodata: &[RepoData]) -> Vec<RepoDataRecord> {
+        Self::dedup_records_by_identifier(repodata.iter().flat_map(|rd| rd.iter()))
     }
 
     /// Fetch repodata and solve the conda environment for the given specs and platform.
@@ -541,7 +554,7 @@ impl CondaBackend {
     /// Uses the PathsEntry list returned by rattler's link_package to identify which files
     /// belong to the main package (excluding transitive dependency binaries).
     fn create_symlink_bin_dir(&self, tv: &ToolVersion, main_paths: &[PathsEntry]) -> Result<()> {
-        let symlink_dir = tv.install_path().join(".mise-bins");
+        let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
         file::create_dir_all(&symlink_dir)?;
 
         let install_path = tv.install_path();
@@ -770,29 +783,63 @@ impl Backend for CondaBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        let mise_bins = tv.install_path().join(".mise-bins");
+        let install_path = tv.install_path();
+        let mise_bins = install_path.join(MISE_BINS_DIR);
         if mise_bins.exists() {
-            return Ok(vec![mise_bins]);
+            return Ok(vec![runtime_path_for_install_path(tv, mise_bins)]);
         }
 
         // Fallback for tools installed before this change
-        let install_path = tv.install_path();
-        if cfg!(windows) {
+        let bin_paths = if cfg!(windows) {
             // Conda packages on Windows can put binaries in either location
             // depending on the build variant (MSVC vs MSYS2/MinGW)
-            Ok(vec![
+            vec![
                 install_path.join("Library").join("bin"),
                 install_path.join("bin"),
-            ])
+            ]
         } else {
-            Ok(vec![install_path.join("bin")])
-        }
+            vec![install_path.join("bin")]
+        };
+
+        Ok(bin_paths
+            .into_iter()
+            .map(|path| runtime_path_for_install_path(tv, path))
+            .collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::CondaBackend;
+    use rattler_conda_types::package::{ArchiveIdentifier, CondaArchiveType, DistArchiveType};
+    use rattler_conda_types::{
+        PackageName, PackageRecord, RepoDataRecord, Version, package::DistArchiveIdentifier,
+    };
+    use std::str::FromStr;
+    use url::Url;
+
+    fn make_record(name: &str, version: &str, build: &str, url: &str) -> RepoDataRecord {
+        let archive_id = ArchiveIdentifier {
+            name: name.to_string(),
+            version: version.to_string(),
+            build_string: build.to_string(),
+        };
+        let conda_type = if url.ends_with(".conda") {
+            CondaArchiveType::Conda
+        } else {
+            CondaArchiveType::TarBz2
+        };
+        RepoDataRecord {
+            package_record: PackageRecord::new(
+                PackageName::from_str(name).unwrap(),
+                Version::from_str(version).unwrap(),
+                build.to_string(),
+            ),
+            identifier: DistArchiveIdentifier::new(archive_id, DistArchiveType::Conda(conda_type)),
+            url: Url::parse(url).unwrap(),
+            channel: None,
+        }
+    }
 
     #[test]
     fn temp_download_path_is_unique_per_call() {
@@ -805,5 +852,58 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(first.parent(), dest.parent());
         assert_eq!(second.parent(), dest.parent());
+    }
+
+    /// Regression test for https://github.com/jdx/mise/discussions/9829:
+    /// conda-forge can serve the same archive under multiple URLs, so URL-based
+    /// dedup leaves duplicates that the solver rejects. Dedup must use the
+    /// archive identifier (name-version-build + archive type).
+    #[test]
+    fn dedup_records_collapses_same_identifier_different_urls() {
+        let records = [
+            make_record(
+                "adwaita-icon-theme",
+                "40.1.1",
+                "ha770c72_1",
+                "https://conda.anaconda.org/conda-forge/noarch/adwaita-icon-theme-40.1.1-ha770c72_1.tar.bz2",
+            ),
+            make_record(
+                "adwaita-icon-theme",
+                "40.1.1",
+                "ha770c72_1",
+                "https://mirror.example.com/conda-forge/noarch/adwaita-icon-theme-40.1.1-ha770c72_1.tar.bz2",
+            ),
+        ];
+
+        let deduped = CondaBackend::dedup_records_by_identifier(records.iter());
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(
+            deduped[0].identifier.to_string(),
+            "adwaita-icon-theme-40.1.1-ha770c72_1.tar.bz2"
+        );
+    }
+
+    /// .conda and .tar.bz2 variants of the same name-version-build are distinct
+    /// archives (the solver prefers .conda); dedup must preserve both so the
+    /// solver's archive-type preference logic still applies.
+    #[test]
+    fn dedup_records_preserves_conda_and_tarbz2_variants() {
+        let records = [
+            make_record(
+                "foo",
+                "1.0",
+                "h0_0",
+                "https://example.com/foo-1.0-h0_0.tar.bz2",
+            ),
+            make_record(
+                "foo",
+                "1.0",
+                "h0_0",
+                "https://example.com/foo-1.0-h0_0.conda",
+            ),
+        ];
+
+        let deduped = CondaBackend::dedup_records_by_identifier(records.iter());
+        assert_eq!(deduped.len(), 2);
     }
 }

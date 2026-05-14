@@ -19,6 +19,17 @@ assert "MISE_JOBS=1 mise install"
 assert_contains "mise ls --installed dummy" "2.0.0"
 assert_contains "mise ls --installed needs-dummy" "1.0.0"
 
+# Bracket syntax should populate the same core `depends` option as table syntax.
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+rm -rf "$MISE_DATA_DIR/installs/needs-dummy"
+assert "MISE_JOBS=1 mise install 'needs-dummy[depends=dummy]@1.0.0' dummy@2.0.0"
+assert_contains "mise ls --installed dummy" "2.0.0"
+assert_contains "mise ls --installed needs-dummy" "1.0.0"
+
+# Unsupported core option forms in bracket syntax should fail clearly instead
+# of being silently treated as backend options.
+assert_fail "mise install 'needs-dummy[depends={ name = \"dummy\" }]@1.0.0'" "depends must be a string or array"
+
 # Test that circular dependencies are detected
 cat <<EOF >mise.toml
 [tools]

@@ -31,6 +31,12 @@ Base image for the build (ignored with --image-dir)
 
 Push an already-built OCI image layout (skip the build step)
 
+### `--include-global`
+
+Also include tools from the global / system config (default: project-only)
+
+See `mise oci build --help` for details.
+
 ### `--mount-point <MOUNT_POINT>`
 
 Override in-image mount point (ignored with --image-dir)

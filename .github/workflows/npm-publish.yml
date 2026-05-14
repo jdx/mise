@@ -38,9 +38,19 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Download release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          if [[ -n "${{ inputs.version }}" ]]; then
-            VERSION="${{ inputs.version }}"
+          if [[ -n "$INPUT_VERSION" ]]; then
+            # Validate the dispatch input against a strict release-tag pattern
+            # before using it in shell paths or as a download key.
+            if ! [[ "$INPUT_VERSION" =~ ^v[0-9][0-9A-Za-z._+-]*$ ]]; then
+              echo "::error::Invalid version input: $INPUT_VERSION" >&2
+              exit 1
+            fi
+            VERSION="$INPUT_VERSION"
           else
             VERSION="$(./scripts/get-version.sh)"
           fi
@@ -48,7 +58,7 @@ jobs:
 
           # Download release artifacts from GitHub release
           gh release download "$VERSION" \
-            --repo ${{ github.repository }} \
+            --repo "$REPOSITORY" \
             --dir "releases/$VERSION" \
             --pattern "mise-*.tar.gz" \
             --pattern "mise-*.tar.xz" || {
@@ -59,8 +69,6 @@ jobs:
           # Also download to releases/ directory for compatibility
           cp "releases/$VERSION"/mise-*.tar.gz releases/ || true
           cp "releases/$VERSION"/mise-*.tar.xz releases/ || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         # `actions/setup-node` writes the npm registry URL and `NODE_AUTH_TOKEN`
@@ -87,10 +95,16 @@ jobs:
         run: mise install aube
 
       - name: Publish npm packages
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [[ ${DRY_RUN:-0} != 1 ]]; then
-            if [[ -n "${{ inputs.version }}" ]]; then
-              MISE_VERSION="${{ inputs.version }}"
+            if [[ -n "$INPUT_VERSION" ]]; then
+              if ! [[ "$INPUT_VERSION" =~ ^v[0-9][0-9A-Za-z._+-]*$ ]]; then
+                echo "::error::Invalid version input: $INPUT_VERSION" >&2
+                exit 1
+              fi
+              MISE_VERSION="$INPUT_VERSION"
             else
               MISE_VERSION="$(./scripts/get-version.sh)"
             fi

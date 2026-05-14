@@ -12,6 +12,38 @@ assert "mise ls-remote dummy@2" "2.0.0"
 assert "mise ls-remote dummy@sub-1:2" "1.0.0
 1.1.0"
 
+# Date filtering should happen after reading the cached full remote version list.
+# Running two cutoffs back-to-back catches regressions where the first filtered
+# result is cached and reused for the second query.
+assert_contains "mise ls-remote jq --minimum-release-age 2019-01-01" "1.6"
+assert_not_contains "mise ls-remote jq --minimum-release-age 2019-01-01" "1.7.1"
+assert_contains "mise ls-remote jq --minimum-release-age 2024-01-01" "1.7.1"
+assert_not_empty "mise ls-remote jq --minimum-release-age 1d"
+assert_contains "mise ls-remote jq --before 2019-01-01" "1.6"
+
+# All install_before sources should filter ls-remote output.
+cat <<EOF >mise.toml
+[settings]
+install_before = "2019-01-01"
+EOF
+assert_contains "mise ls-remote jq" "1.6"
+assert_not_contains "mise ls-remote jq" "1.7.1"
+
+cat <<EOF >mise.toml
+[tools]
+jq = { version = "latest", install_before = "2019-01-01" }
+EOF
+assert_contains "mise ls-remote jq" "1.6"
+assert_not_contains "mise ls-remote jq" "1.7.1"
+
+cat <<EOF >mise.toml
+[tools]
+jq = { version = "latest", install_before = "2024-01-01" }
+EOF
+assert_contains "mise ls-remote jq --minimum-release-age 2019-01-01" "1.6"
+assert_not_contains "mise ls-remote jq --minimum-release-age 2019-01-01" "1.7.1"
+rm -f mise.toml
+
 # Test --json flag outputs valid JSON with version field
 json_output=$(mise ls-remote dummy --json)
 assert_contains "echo '$json_output'" '"version"'

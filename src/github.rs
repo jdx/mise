@@ -15,6 +15,7 @@ use tokio::sync::RwLock;
 use tokio::sync::RwLockReadGuard;
 use xx::regex;
 
+pub(crate) mod oauth;
 pub(crate) mod sigstore;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,20 +287,28 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
     let key = format!("{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || get_release_(API_URL, repo, tag).await)
-        .await?
-        .clone())
+    cache
+        .get_or_try_init_async_if(
+            async || get_release_(API_URL, repo, tag).await,
+            should_cache_release,
+        )
+        .await
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
     let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || get_release_(api_url, repo, tag).await)
-        .await?
-        .clone())
+    cache
+        .get_or_try_init_async_if(
+            async || get_release_(api_url, repo, tag).await,
+            should_cache_release,
+        )
+        .await
+}
+
+fn should_cache_release(release: &GithubRelease) -> bool {
+    !release.assets.is_empty()
 }
 
 /// Find the latest build revision for a version in a GitHub repo.
@@ -378,6 +387,7 @@ pub enum TokenSource {
     TokensFile,
     GhCli,
     CredentialCommand,
+    GithubOauth,
     GitCredential,
 }
 
@@ -388,6 +398,7 @@ impl fmt::Display for TokenSource {
             TokenSource::TokensFile => write!(f, "github_tokens.toml"),
             TokenSource::GhCli => write!(f, "gh CLI (hosts.yml)"),
             TokenSource::CredentialCommand => write!(f, "credential_command"),
+            TokenSource::GithubOauth => write!(f, "GitHub OAuth"),
             TokenSource::GitCredential => write!(f, "git credential fill"),
         }
     }
@@ -456,9 +467,10 @@ pub fn is_github_api_url(url: &url::Url) -> bool {
 /// 1. `MISE_GITHUB_ENTERPRISE_TOKEN` env var (non-github.com only)
 /// 2. `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars
 /// 3. `credential_command` (if set)
-/// 4. `github_tokens.toml` (per-host)
-/// 5. gh CLI token (from `hosts.yml`)
-/// 6. `git credential fill` (if enabled)
+/// 4. native GitHub OAuth device-flow token (if configured)
+/// 5. `github_tokens.toml` (per-host)
+/// 6. gh CLI token (from `hosts.yml`)
+/// 7. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
 
@@ -488,19 +500,27 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         }
     }
 
-    // 3. credential_command
+    // 3. credential_command — call once with the canonical host so
+    // `github.com` and `api.github.com` (same instance) share a cache
+    // entry, while `github.com` vs a GHE host stay separate. Walking
+    // `lookup_hosts` here would spawn the helper twice on a single
+    // `resolve_token("api.github.com")` whenever the first call returned
+    // `None`, which manifests as extra password-manager prompts.
     let credential_command = &settings.github.credential_command;
-    if !credential_command.is_empty() {
-        for lookup_host in &lookup_hosts {
-            if let Some(token) =
-                tokens::get_credential_command_token("github", credential_command, lookup_host)
-            {
-                return Some((token, TokenSource::CredentialCommand));
-            }
-        }
+    if !credential_command.is_empty()
+        && let Some(canonical) = lookup_hosts.first()
+        && let Some(token) =
+            tokens::get_credential_command_token("github", credential_command, canonical)
+    {
+        return Some((token, TokenSource::CredentialCommand));
     }
 
-    // 4. github_tokens.toml
+    // 4. native GitHub OAuth device-flow token
+    if let Some(token) = oauth::resolve_token(host) {
+        return Some((token, TokenSource::GithubOauth));
+    }
+
+    // 5. github_tokens.toml
     #[cfg(test)]
     if let Some((token, source)) = test_support::lookup_tokens_file_override(&lookup_hosts)
         .map(|t| (t, TokenSource::TokensFile))
@@ -513,7 +533,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         }
     }
 
-    // 5. gh CLI hosts.yml
+    // 6. gh CLI hosts.yml
     if settings.github.gh_cli_tokens {
         for lookup_host in &lookup_hosts {
             if let Some(token) = GH_HOSTS.get(*lookup_host) {
@@ -522,7 +542,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         }
     }
 
-    // 6. git credential fill
+    // 7. git credential fill
     if settings.github.use_git_credentials {
         for lookup_host in &lookup_hosts {
             if let Some(token) = tokens::get_git_credential_token("github", lookup_host) {
@@ -863,5 +883,66 @@ something_else = "value"
         ];
         let best = pick_best_build_revision(releases, "3.3.11").unwrap();
         assert_eq!(best.tag_name, "3.3.11-1");
+    }
+
+    fn make_asset(name: &str) -> GithubAsset {
+        GithubAsset {
+            name: name.to_string(),
+            browser_download_url: format!("https://github.com/owner/repo/releases/download/{name}"),
+            url: format!("https://api.github.com/repos/owner/repo/releases/assets/{name}"),
+            digest: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_release_assets_are_not_cached() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/empty-assets-cache-test";
+        let tag = "v1.0.0";
+        let path = format!("/repos/{repo}/releases/tags/{tag}");
+        let key = format!("{}-{repo}-{tag}", server.url()).to_kebab_case();
+
+        let cached_empty_release = make_release(tag);
+        {
+            let cache_group = get_release_cache(&key).await;
+            let cache = cache_group.get(&key).unwrap();
+            cache.write(&cached_empty_release).unwrap();
+        }
+
+        let empty_mock = server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&cached_empty_release).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        assert!(release.assets.is_empty());
+        empty_mock.assert_async().await;
+        empty_mock.remove_async().await;
+
+        let populated_release = GithubRelease {
+            assets: vec![make_asset("tool-v1.0.0-linux-x86_64.tar.gz")],
+            ..make_release(tag)
+        };
+        let mock = server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&populated_release).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        assert_eq!(release.assets.len(), 1);
+        assert_eq!(release.assets[0].name, "tool-v1.0.0-linux-x86_64.tar.gz");
+
+        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        assert_eq!(release.assets.len(), 1);
+        mock.assert_async().await;
     }
 }

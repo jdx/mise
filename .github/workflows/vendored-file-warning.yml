@@ -3,7 +3,7 @@ name: vendored-file-warning
 on:
   pull_request:
     paths:
-      - "crates/aqua-registry/aqua-registry/**"
+      - "vendor/aqua-registry/**"
       - "crates/vfox/embedded-plugins/**"
 
 permissions: {}
@@ -16,7 +16,7 @@ jobs:
       - name: Fail on vendored file changes
         run: |
           cat <<'EOF'
-          The aqua registry files under `crates/aqua-registry/aqua-registry/` are vendored
+          The aqua registry files under `vendor/aqua-registry/` are vendored
           from the upstream aqua-registry (https://github.com/aquaproj/aqua-registry) and
           should not be modified directly in this repo. Please submit package definition
           changes to the upstream aqua-registry instead, and they will be picked up here

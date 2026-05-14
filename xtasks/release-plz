@@ -65,6 +65,15 @@ get_latest_crates_version() {
 	cargo info --registry "crates-io" --color never --quiet "$crate" 2>/dev/null | grep "^version:" | cut -d' ' -f2 || echo ""
 }
 
+use_published_aqua_registry() {
+	local version="$1"
+
+	cargo rm aqua-registry
+	cargo rm --build aqua-registry
+	cargo add "aqua-registry@$version"
+	cargo add --build "aqua-registry@$version"
+}
+
 # Check if a directory has uncommitted changes (staged or unstaged)
 has_uncommitted_changes() {
 	local dir="$1"
@@ -183,12 +192,17 @@ if [[ $cur_version != "$latest_version" ]]; then
 	VFOX_VERSION=""
 	AQUA_REGISTRY_VERSION=""
 	INTERACTIVE_CONFIG_VERSION=""
+	MISE_SIGSTORE_VERSION=""
+
+	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
+	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
+	cargo add -p vfox "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
 
 	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
 	cargo add "vfox@$VFOX_VERSION"
 
 	bump_and_publish_subcrate "aqua-registry" "crates/aqua-registry" "AQUA_REGISTRY_VERSION"
-	cargo add "aqua-registry@$AQUA_REGISTRY_VERSION"
+	use_published_aqua_registry "$AQUA_REGISTRY_VERSION"
 
 	# Copy schema into crate directory so cargo publish verification can find it
 	cp schema/mise.json crates/mise-interactive-config/mise.json
@@ -264,8 +278,9 @@ fi
 mise run fetch-gpg-keys
 mise run render ::: lint-fix
 
-AQUA_REGISTRY_DIR="crates/aqua-registry/aqua-registry"
+AQUA_REGISTRY_DIR="vendor/aqua-registry"
 AQUA_REGISTRY_METADATA="$AQUA_REGISTRY_DIR/metadata.json"
+AQUA_REGISTRY_FILE="$AQUA_REGISTRY_DIR/registry.yml"
 AQUA_REGISTRY_REPO="aquaproj/aqua-registry"
 
 # Capture current aqua-registry tag before updating
@@ -278,7 +293,7 @@ NEW_AQUA_REGISTRY_TAG="$(gh release view --repo "$AQUA_REGISTRY_REPO" --json tag
 rm -rf "$AQUA_REGISTRY_DIR"
 mkdir -p "$AQUA_REGISTRY_DIR"
 curl -fsSL "https://raw.githubusercontent.com/$AQUA_REGISTRY_REPO/$NEW_AQUA_REGISTRY_TAG/registry.yaml" \
-	-o "$AQUA_REGISTRY_DIR/registry.yaml"
+	-o "$AQUA_REGISTRY_FILE"
 curl -fsSL "https://raw.githubusercontent.com/$AQUA_REGISTRY_REPO/$NEW_AQUA_REGISTRY_TAG/LICENSE" \
 	-o "$AQUA_REGISTRY_DIR/LICENSE"
 cat >"$AQUA_REGISTRY_METADATA" <<EOF
@@ -359,6 +374,7 @@ done
 bump_subcrate_if_changed "aqua-registry" "crates/aqua-registry"
 bump_subcrate_if_changed "vfox" "crates/vfox"
 bump_subcrate_if_changed "mise-interactive-config" "crates/mise-interactive-config"
+bump_subcrate_if_changed "mise-sigstore" "crates/mise-sigstore"
 
 git status
 # cargo update
@@ -367,11 +383,12 @@ git add \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
-	crates/aqua-registry/aqua-registry \
+	vendor/aqua-registry \
 	crates/aqua-registry/Cargo.toml \
 	crates/vfox/embedded-plugins \
 	crates/vfox/Cargo.toml \
 	crates/mise-interactive-config/Cargo.toml \
+	crates/mise-sigstore/Cargo.toml \
 	default.nix \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \

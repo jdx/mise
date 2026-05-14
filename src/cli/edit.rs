@@ -305,21 +305,19 @@ fn detect_tools() -> Vec<DetectedTool> {
 
         for detect_file in tool.detect.iter() {
             let path = cwd.join(detect_file);
-            if path.exists() && !seen_tools.contains(*name) {
+            if path.exists() && !seen_tools.contains(name) {
                 let version = extract_version(name, &path);
                 detected.push(DetectedTool {
                     name: name.to_string(),
                     version,
                     source: detect_file.to_string(),
                 });
-                seen_tools.insert(*name);
+                seen_tools.insert(name);
                 break; // Only detect once per tool
             }
         }
     }
 
-    // Sort by tool name for consistent output
-    detected.sort_by(|a, b| a.name.cmp(&b.name));
     detected
 }
 

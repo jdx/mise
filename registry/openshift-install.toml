@@ -1,0 +1,23 @@
+description = "OpenShift installer for deploying OpenShift clusters"
+os = ["linux", "macos"]
+test = { cmd = "openshift-install version", expected = "{{version}}" }
+
+[[backends]]
+full = "http:openshift-install"
+
+[backends.options]
+bin = "openshift-install"
+version_list_url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/"
+version_regex = 'href="(\d+\.\d+\.\d+)/"'
+
+[backends.options.platforms.linux-x64]
+url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-install-linux-{{ version }}.tar.gz"
+
+[backends.options.platforms.linux-arm64]
+url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-install-linux-arm64-{{ version }}.tar.gz"
+
+[backends.options.platforms.macos-x64]
+url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-install-mac-{{ version }}.tar.gz"
+
+[backends.options.platforms.macos-arm64]
+url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-install-mac-arm64-{{ version }}.tar.gz"

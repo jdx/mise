@@ -3,14 +3,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::Config;
+use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
-use crate::toolset::Toolset;
+use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
 use eyre::{Result, bail};
+use jiff::Timestamp;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -55,6 +57,20 @@ pub struct Lock {
     /// Use for tools defined in .local.toml configs
     #[clap(long, verbatim_doc_comment)]
     pub local: bool,
+
+    /// Only lock versions released before this age or date
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    /// This only affects fuzzy version matches like "20" or "latest".
+    /// Explicitly pinned versions like "22.5.0" are not filtered.
+    /// Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
+    #[clap(
+        long,
+        alias = "before",
+        value_name = "MINIMUM_RELEASE_AGE",
+        verbatim_doc_comment
+    )]
+    pub minimum_release_age: Option<String>,
 }
 
 impl Lock {
@@ -66,8 +82,22 @@ impl Lock {
             );
         }
         let config = Config::get().await?;
+        let before_date = self.get_before_date()?;
+        let lock_resolve_options = ResolveOptions {
+            before_date,
+            ..Default::default()
+        };
 
-        let ts = config.get_toolset().await?;
+        let ts_owned;
+        let ts = if before_date.is_some() {
+            ts_owned = ToolsetBuilder::new()
+                .with_resolve_options(lock_resolve_options.clone())
+                .build(&config)
+                .await?;
+            &ts_owned
+        } else {
+            config.get_toolset().await?
+        };
 
         let scoped_config_paths = self.config_paths_in_lock_scope(&config);
         let lockfile_targets = self.get_lockfile_targets(&config, &scoped_config_paths);
@@ -75,7 +105,15 @@ impl Lock {
         let mut all_provenance_errors: Vec<String> = Vec::new();
 
         for (lockfile_path, config_paths) in &lockfile_targets {
-            let tools = self.get_tools_to_lock(&config, ts, lockfile_path, config_paths);
+            let tools = self
+                .get_tools_to_lock(
+                    &config,
+                    ts,
+                    lockfile_path,
+                    config_paths,
+                    &lock_resolve_options,
+                )
+                .await;
 
             if tools.is_empty() {
                 // `tools` can be empty either because config has no tools, or because a filter excludes all.
@@ -219,6 +257,15 @@ impl Lock {
         }
 
         Ok(())
+    }
+
+    /// Get the before_date from the CLI --minimum-release-age flag only.
+    /// Per-tool and global setting fallbacks are handled during tool request resolution.
+    fn get_before_date(&self) -> Result<Option<Timestamp>> {
+        if let Some(minimum_release_age) = &self.minimum_release_age {
+            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
+        }
+        Ok(None)
     }
 
     fn is_unfiltered_lock_run(&self) -> bool {
@@ -459,12 +506,13 @@ impl Lock {
 
     /// Collect tools that belong to a given lockfile target.
     /// Only includes tools whose source config maps to the target lockfile path.
-    fn get_tools_to_lock(
+    async fn get_tools_to_lock(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         ts: &Toolset,
         target_lockfile_path: &Path,
         config_paths: &[PathBuf],
+        base_resolve_options: &ResolveOptions,
     ) -> Vec<LockTool> {
         let config_paths_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
@@ -508,12 +556,13 @@ impl Lock {
             if let Ok(trs) = cf.to_tool_request_set() {
                 for (ba, requests, _source) in trs.iter() {
                     for request in requests {
-                        if let Ok(backend) = ba.backend() {
-                            // Check if the resolved toolset has a matching version
+                        if ba.backend().is_ok() {
+                            // Check if the resolved toolset has a matching request.
                             let mut matched_resolved = false;
                             if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
                                 for tv in &resolved_tv.versions {
                                     if tv.request.version() == request.version()
+                                        && tv.request.options() == request.options()
                                         && tv.version != "latest"
                                     {
                                         matched_resolved = true;
@@ -524,23 +573,34 @@ impl Lock {
                                     }
                                 }
                             }
-                            // For "latest" requests where nothing was resolved (e.g., tool was
-                            // overridden by a higher-priority config, or the lockfile holds a
-                            // bogus "latest" literal), ask the backend to resolve `latest`
-                            // against installed versions. Deliberately not sorting version
-                            // strings ourselves — each backend knows its own versioning scheme.
-                            if !matched_resolved
-                                && request.version() == "latest"
-                                && let Ok(Some(latest_version)) =
-                                    backend.latest_installed_version(Some("latest".to_string()))
-                            {
-                                let key = (ba.short.clone(), latest_version.clone());
-                                if seen.insert(key) {
-                                    let tv = crate::toolset::ToolVersion::new(
-                                        request.clone(),
-                                        latest_version,
-                                    );
-                                    all_tools.push((ba.as_ref().clone(), tv));
+                            // Resolve overridden `latest` requests through the same path as
+                            // active tools. When an install-before cutoff is active, bypass
+                            // installed-version selection so the fallback still uses release
+                            // dates from the remote version metadata.
+                            if !matched_resolved && request.version() == "latest" {
+                                let mut resolve_options = match request
+                                    .resolve_options(base_resolve_options)
+                                {
+                                    Ok(opts) => opts,
+                                    Err(err) => {
+                                        debug!("failed to resolve options for {request}: {err}");
+                                        continue;
+                                    }
+                                };
+                                resolve_options.use_locked_version = false;
+                                if resolve_options.before_date.is_some() {
+                                    resolve_options.latest_versions = true;
+                                }
+                                match request.resolve(config, &resolve_options).await {
+                                    Ok(tv) => {
+                                        let key = (ba.short.clone(), tv.version.clone());
+                                        if seen.insert(key) {
+                                            all_tools.push((ba.as_ref().clone(), tv));
+                                        }
+                                    }
+                                    Err(err) => {
+                                        debug!("failed to resolve overridden {request}: {err}");
+                                    }
                                 }
                             }
                         }
@@ -553,39 +613,56 @@ impl Lock {
             all_tools
         } else {
             // Build map of tool args with explicit versions
-            let specified_versions: std::collections::HashMap<String, Option<String>> = self
+            let specified_versions: std::collections::HashMap<String, Option<ToolRequest>> = self
                 .tool
                 .iter()
-                .map(|t| {
-                    let version = t.tvr.as_ref().map(|tvr| tvr.version());
-                    (t.ba.short.clone(), version)
-                })
+                .map(|t| (t.ba.short.clone(), t.tvr.clone()))
                 .collect();
             // For `tool@latest`, we want upgrade semantics: resolve "latest" to an
             // installed concrete version and lock that. Writing the literal "latest"
             // string to the lockfile would be a bug. Use the backend's own resolver so
             // we don't impose a semver ordering on tools that don't follow semver.
-            let mut tools: Vec<LockTool> = all_tools
+            let mut tools: Vec<LockTool> = Vec::new();
+            for (ba, mut tv) in all_tools
                 .into_iter()
                 .filter(|(ba, _)| specified_versions.contains_key(&ba.short))
-                .map(|(ba, mut tv)| {
-                    if let Some(Some(version)) = specified_versions.get(&ba.short) {
-                        if version == "latest" {
-                            if let Some(latest_version) = crate::backend::get(&ba)
-                                .and_then(|b| {
-                                    b.latest_installed_version(Some("latest".to_string())).ok()
-                                })
-                                .flatten()
-                            {
-                                tv.version = latest_version;
-                            }
-                        } else {
-                            tv.version.clone_from(version);
+            {
+                if let Some(Some(request)) = specified_versions.get(&ba.short) {
+                    let version = request.version();
+                    let request = ToolRequest::new_opts(
+                        Arc::new(ba.clone()),
+                        &version,
+                        tv.request.options(),
+                        ToolSource::Argument,
+                    );
+                    let resolve_options = request
+                        .as_ref()
+                        .ok()
+                        .and_then(|request| request.resolve_options(base_resolve_options).ok());
+                    if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
+                        && resolve_options.before_date.is_some()
+                    {
+                        resolve_options.use_locked_version = false;
+                        resolve_options.latest_versions = true;
+                        match request.resolve(config, &resolve_options).await {
+                            Ok(resolved_tv) => tv = resolved_tv,
+                            Err(err) => debug!("failed to resolve specified {request}: {err}"),
                         }
+                    } else if version == "latest" {
+                        if let Some(latest_version) = crate::backend::get(&ba)
+                            .and_then(|b| {
+                                b.latest_installed_version(Some("latest".to_string())).ok()
+                            })
+                            .flatten()
+                        {
+                            tv.version = latest_version;
+                        }
+                    } else {
+                        tv.version = version;
                     }
-                    (ba, tv)
-                })
-                .collect();
+                }
+                tools.push((ba, tv));
+            }
             // Deduplicate after potential "latest" -> concrete-version resolution.
             let mut seen_after: BTreeSet<(String, String)> = BTreeSet::new();
             tools.retain(|(ba, tv)| seen_after.insert((ba.short.clone(), tv.version.clone())));
@@ -712,6 +789,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise lock node python</bold>           # update only node and python
     $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
     $ <bold>mise lock --dry-run</bold>             # show what would be updated
+    $ <bold>mise lock --minimum-release-age 2024-01-01</bold>   # lock latest/fuzzy versions released before 2024-01-01
     $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
     $ <bold>mise lock --global</bold>              # update only global config lockfiles
 "#
@@ -738,6 +816,7 @@ mod tests {
             platform: vec![],
             local: false,
             global: false,
+            minimum_release_age: None,
         }
     }
 

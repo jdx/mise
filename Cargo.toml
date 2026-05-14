@@ -4,11 +4,12 @@ members = [
   "crates/aqua-registry",
   "crates/mise-interactive-config",
   "crates/mise-shim",
+  "crates/mise-sigstore",
 ]
 
 [package]
 name = "mise"
-version = "2026.5.4"
+version = "2026.5.8"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -32,6 +33,9 @@ include = [
   "/src/**/*.rs",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
+  "/vendor/aqua-registry/LICENSE",
+  "/vendor/aqua-registry/metadata.json",
+  "/vendor/aqua-registry/registry.yml",
 ]
 build = "build.rs"
 rust-version = "1.91"
@@ -98,7 +102,7 @@ expr-lang = "1"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
-sigstore-verification = { version = "0.2", default-features = false }
+mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 fslock = "0.2.1"
 fuzzy-matcher = "0.3"
 gix = { version = "<1", features = ["worktree-mutation"] }
@@ -128,6 +132,7 @@ openssl = { version = "0.10", optional = true }
 os-release = "0.1"
 path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
+phf = "0.11"
 rand = "0.10"
 rattler = { version = "0.42", default-features = false }
 rattler_conda_types = { version = "0.46", default-features = false }
@@ -142,6 +147,7 @@ rattler_virtual_packages = { version = "2", default-features = false }
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
+  "form",
   "gzip",
   "zstd",
   "charset",
@@ -172,6 +178,7 @@ shellexpand = "3"
 signal-hook = "0.4"
 siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
+supports-hyperlinks = "3"
 sys-info = "0.9"
 tabled = { version = "0.20", features = ["ansi"] }
 taplo = "0.14"
@@ -226,13 +233,16 @@ sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 
 [build-dependencies]
+aqua-registry = { path = "crates/aqua-registry" }
 built = { version = "0.8", features = ["chrono"] }
 cfg_aliases = "0.2"
+eyre = "0.6"
 heck = "0.5"
-toml = "1.0"
 indexmap = "2"
+phf_codegen = "0.11"
 serde = "1"
 serde_yaml = "0.9"
+toml = "1.0"
 
 [dev-dependencies]
 clap-sort = "1"
@@ -249,7 +259,7 @@ native-tls = [
   "reqwest/native-tls",
   "rattler/native-tls",
   "rattler_repodata_gateway/native-tls",
-  "sigstore-verification/native-tls",
+  "mise-sigstore/native-tls",
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
@@ -259,7 +269,7 @@ rustls = [
   "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
-  "sigstore-verification/rustls",
+  "mise-sigstore/rustls",
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
@@ -269,7 +279,7 @@ rustls-native-roots = [
   "reqwest/rustls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
-  "sigstore-verification/rustls-native-roots",
+  "mise-sigstore/rustls",
   "ubi/rustls-tls-native-roots",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",
@@ -289,7 +299,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl"]
+ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "phf_codegen"]
 
 [package.metadata.release]
 pre-release-replacements = [

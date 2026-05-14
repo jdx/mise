@@ -149,7 +149,6 @@ impl Search {
             .iter()
             .filter(|(short, _)| filter_enabled(short))
             .map(|(short, rt)| (short.to_string(), rt))
-            .sorted_by(|(a, _), (b, _)| a.cmp(b))
             .collect_vec()
     }
 }

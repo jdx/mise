@@ -4,7 +4,9 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
+use crate::backend::{
+    Backend, VersionInfo, normalize_idiomatic_contents, platform_target::PlatformTarget,
+};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
@@ -13,8 +15,9 @@ use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::platform::Platform;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
 use async_trait::async_trait;
@@ -40,6 +43,8 @@ pub struct JavaPlugin {
     ba: Arc<BackendArg>,
     java_metadata_ea_cache: CacheManager<HashMap<String, JavaMetadata>>,
     java_metadata_ga_cache: CacheManager<HashMap<String, JavaMetadata>>,
+    java_metadata_target_cache:
+        tokio::sync::Mutex<HashMap<(String, String), HashMap<String, JavaMetadata>>>,
 }
 
 impl JavaPlugin {
@@ -57,6 +62,7 @@ impl JavaPlugin {
             )
             .with_fresh_duration(settings.fetch_remote_versions_cache())
             .build(),
+            java_metadata_target_cache: tokio::sync::Mutex::new(HashMap::new()),
             ba,
         }
     }
@@ -73,19 +79,68 @@ impl JavaPlugin {
         let release_type = release_type.to_string();
         cache
             .get_or_try_init_async(async || {
+                let platform = current_java_platform();
                 let mut metadata = HashMap::new();
 
-                for m in self.download_java_metadata(&release_type).await? {
-                    // add openjdk short versions like "java@17.0.0" which default to openjdk
-                    if m.vendor == Settings::get().java.shorthand_vendor {
-                        metadata.insert(m.version.to_string(), m.clone());
-                    }
-                    metadata.insert(m.to_string(), m);
+                for m in self
+                    .download_java_metadata(&release_type, &platform)
+                    .await?
+                {
+                    Self::insert_java_metadata(&mut metadata, m, &platform);
                 }
 
                 Ok(metadata)
             })
             .await
+    }
+
+    async fn fetch_java_metadata_for_target(
+        &self,
+        release_type: &str,
+        target: &PlatformTarget,
+    ) -> Result<HashMap<String, JavaMetadata>> {
+        if target.platform == current_java_platform() {
+            return Ok(self.fetch_java_metadata(release_type).await?.clone());
+        }
+
+        let cache_key = (release_type.to_string(), target.to_key());
+        if let Some(metadata) = self
+            .java_metadata_target_cache
+            .lock()
+            .await
+            .get(&cache_key)
+            .cloned()
+        {
+            return Ok(metadata);
+        }
+
+        let mut metadata = HashMap::new();
+
+        for m in self
+            .download_java_metadata(release_type, &target.platform)
+            .await?
+        {
+            Self::insert_java_metadata(&mut metadata, m, &target.platform);
+        }
+
+        self.java_metadata_target_cache
+            .lock()
+            .await
+            .insert(cache_key, metadata.clone());
+
+        Ok(metadata)
+    }
+
+    fn insert_java_metadata(
+        metadata: &mut HashMap<String, JavaMetadata>,
+        m: JavaMetadata,
+        platform: &Platform,
+    ) {
+        // add openjdk short versions like "java@17.0.0" which default to openjdk
+        if m.vendor == Settings::get().java.shorthand_vendor {
+            metadata.insert(m.version.to_string(), m.clone());
+        }
+        metadata.insert(m.to_version_string(platform), m);
     }
 
     fn java_bin(&self, tv: &ToolVersion) -> PathBuf {
@@ -160,7 +215,7 @@ impl JavaPlugin {
             .path();
         let contents_dir = basedir.join("Contents");
         let contents_home_dir = contents_dir.join("Home");
-        let source_dir = if os() == "macosx" && contents_home_dir.is_dir() {
+        let source_dir = if cfg!(target_os = "macos") && contents_home_dir.is_dir() {
             contents_home_dir
         } else {
             basedir
@@ -268,13 +323,16 @@ impl JavaPlugin {
         Ok(m)
     }
 
-    async fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
-        let settings = Settings::get();
+    async fn download_java_metadata(
+        &self,
+        release_type: &str,
+        platform: &Platform,
+    ) -> Result<Vec<JavaMetadata>> {
         let url = format!(
             "https://mise-java.jdx.dev/jvm/{}/{}/{}.json",
             release_type,
-            os(),
-            arch(&settings)
+            java_os(platform),
+            java_arch(platform)
         );
 
         let metadata = HTTP_FETCH
@@ -284,7 +342,7 @@ impl JavaPlugin {
             .filter(|m| {
                 m.file_type
                     .as_ref()
-                    .is_some_and(|file_type| JAVA_FILE_TYPES.contains(file_type))
+                    .is_some_and(|file_type| java_file_type_supported(platform, file_type))
             })
             .collect();
         Ok(metadata)
@@ -392,6 +450,49 @@ impl Backend for JavaPlugin {
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         let aliases = BTreeMap::from([("lts".into(), "25".into())]);
         Ok(aliases)
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        if let Some(release_type) = request.options().get("release_type") {
+            let release_type = release_type.to_string();
+            if release_type != "ga" {
+                opts.insert("release_type".to_string(), release_type);
+            }
+        }
+        opts
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let version = self.tv_to_java_version(tv);
+        let release_type = self.tv_release_type(tv);
+        let metadata = self
+            .fetch_java_metadata_for_target(&release_type, target)
+            .await?;
+        let m = metadata.get(&version).ok_or_else(|| {
+            eyre!(
+                "no metadata found for version {} on {}",
+                tv.version,
+                target.to_key()
+            )
+        })?;
+
+        Ok(PlatformInfo {
+            checksum: m.checksum.clone(),
+            size: None,
+            url: Some(m.url.clone()),
+            url_api: None,
+            conda_deps: None,
+            ..Default::default()
+        })
     }
 
     async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
@@ -546,24 +647,49 @@ impl Backend for JavaPlugin {
     }
 }
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
+fn java_os(platform: &Platform) -> &str {
+    if platform.is_macos() {
         "macosx"
-    } else if OS.as_str() == "freebsd" {
+    } else if platform.os == "freebsd" {
         "linux"
-    } else if OS.as_str() == "linux" && Platform::current().libc() == Some("musl") {
+    } else if platform.is_linux() && platform.libc() == Some("musl") {
         "alpine-linux"
     } else {
-        &OS
+        &platform.os
     }
 }
 
-fn arch(settings: &Settings) -> &str {
-    match settings.arch() {
+fn java_arch(platform: &Platform) -> &str {
+    match platform.arch.as_str() {
         "x64" => "x86_64",
         "arm64" => "aarch64",
         "arm" => "arm32-vfp-hflt",
         other => other,
+    }
+}
+
+fn java_file_type_supported(platform: &Platform, file_type: &str) -> bool {
+    if platform.is_windows() {
+        file_type == "zip"
+    } else {
+        matches!(file_type, "tar.gz" | "tar.xz")
+    }
+}
+
+fn current_java_platform() -> Platform {
+    let settings = Settings::get();
+    // Preserve Java's existing host behavior: downloads are selected from the
+    // actual runtime OS, while settings.arch can override architecture. Explicit
+    // cross-platform lock generation uses PlatformTarget instead.
+    let qualifier = if OS.as_str() == "linux" && Platform::current().libc() == Some("musl") {
+        Some("musl".to_string())
+    } else {
+        None
+    };
+    Platform {
+        os: OS.to_string(),
+        arch: settings.arch().to_string(),
+        qualifier,
     }
 }
 
@@ -590,6 +716,12 @@ struct JavaMetadata {
 
 impl Display for JavaMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_version_string(&current_java_platform()))
+    }
+}
+
+impl JavaMetadata {
+    fn to_version_string(&self, platform: &Platform) -> String {
         let mut v = vec![self.vendor.clone()];
         if self
             .image_type
@@ -602,7 +734,7 @@ impl Display for JavaMetadata {
         }
         if let Some(features) = &self.features {
             for f in features {
-                if Platform::current().libc() == Some("musl") && f == "musl" {
+                if platform.libc() == Some("musl") && f == "musl" {
                     continue;
                 }
                 if JAVA_FEATURES.contains(f) {
@@ -622,7 +754,7 @@ impl Display for JavaMetadata {
             v.push(format!("openjdk{}", major));
         }
         v.push(self.version.clone());
-        write!(f, "{}", v.join("-"))
+        v.join("-")
     }
 }
 
@@ -630,9 +762,3 @@ impl Display for JavaMetadata {
 static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
     HashSet::from(["crac", "javafx", "jcef", "leyden", "lite", "musl"].map(|s| s.to_string()))
 });
-#[cfg(unix)]
-static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
-    Lazy::new(|| HashSet::from(["tar.gz", "tar.xz"].map(|s| s.to_string())));
-#[cfg(windows)]
-static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
-    Lazy::new(|| HashSet::from(["zip"].map(|s| s.to_string())));

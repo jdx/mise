@@ -1,10 +1,8 @@
 description = "A modern, JVM-based, full-stack framework for building modular, easily testable microservice and serverless applications"
+# test = { cmd = "mn --version", expected = "Micronaut Version: {{version}}" }
 
 [[backends]]
 full = "github:micronaut-projects/micronaut-starter"
-
-[backends.options]
-exe = "mn"
 
 [[backends]]
 full = "asdf:mise-plugins/mise-micronaut"

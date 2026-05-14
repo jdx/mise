@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
 use eyre::Result;
+use jiff::Timestamp;
 use serde::Serialize;
 
-use crate::backend::Backend;
+use crate::backend::{Backend, VersionInfo};
 use crate::cli::args::ToolArg;
 use crate::config::Settings;
+use crate::duration::parse_into_timestamp;
+use crate::install_before::resolve_before_date_for_backend;
 use crate::toolset::{ToolRequest, tool_request};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config::Config};
@@ -42,6 +45,17 @@ pub struct LsRemote {
     #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
     pub all: bool,
 
+    /// Only show versions released before this age or date
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(
+        long,
+        alias = "before",
+        value_name = "MINIMUM_RELEASE_AGE",
+        verbatim_doc_comment
+    )]
+    pub minimum_release_age: Option<String>,
+
     /// Output in JSON format (includes version metadata like created_at timestamps when available)
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
@@ -77,14 +91,26 @@ impl LsRemote {
         }
         backend::set_strict_metadata(self.strict_metadata);
         let config = Config::get().await?;
+        let before_date = self
+            .minimum_release_age
+            .as_deref()
+            .map(parse_into_timestamp)
+            .transpose()?;
         if let Some(plugin) = self.get_plugin(&config).await? {
-            self.run_single(&config, plugin).await
+            self.run_single(&config, plugin, before_date).await
         } else {
-            self.run_all(&config).await
+            self.run_all(&config, before_date).await
         }
     }
 
-    async fn run_single(self, config: &Arc<Config>, plugin: Arc<dyn Backend>) -> Result<()> {
+    async fn run_single(
+        self,
+        config: &Arc<Config>,
+        plugin: Arc<dyn Backend>,
+        before_date: Option<Timestamp>,
+    ) -> Result<()> {
+        let before_date =
+            resolve_before_date_for_backend(config, plugin.as_ref(), before_date).await?;
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
@@ -97,12 +123,13 @@ impl LsRemote {
         };
         let matches_prefix = |v: &str| prefix.as_ref().is_none_or(|p| v.starts_with(p));
 
-        let versions: Vec<_> = plugin
-            .list_remote_versions_with_info(config)
-            .await?
-            .into_iter()
-            .filter(|v| matches_prefix(&v.version))
-            .collect();
+        let versions = filter_versions_by_date(
+            plugin.list_remote_versions_with_info(config).await?,
+            before_date,
+        )
+        .into_iter()
+        .filter(|v| matches_prefix(&v.version))
+        .collect::<Vec<_>>();
 
         if self.json {
             miseprintln!("{}", serde_json::to_string(&versions)?);
@@ -114,12 +141,16 @@ impl LsRemote {
         Ok(())
     }
 
-    async fn run_all(self, config: &Arc<Config>) -> Result<()> {
+    async fn run_all(self, config: &Arc<Config>, before_date: Option<Timestamp>) -> Result<()> {
         let mut versions = vec![];
         for b in backend::list() {
             let tool = b.id().to_string();
-            let tool_versions = b.list_remote_versions_with_info(config).await?;
-            for v in tool_versions {
+            let before_date =
+                resolve_before_date_for_backend(config, b.as_ref(), before_date).await?;
+            for v in filter_versions_by_date(
+                b.list_remote_versions_with_info(config).await?,
+                before_date,
+            ) {
                 versions.push(VersionOutputAll {
                     tool: tool.clone(),
                     version: v.version,
@@ -156,6 +187,16 @@ impl LsRemote {
     }
 }
 
+fn filter_versions_by_date(
+    versions: Vec<VersionInfo>,
+    before_date: Option<Timestamp>,
+) -> Vec<VersionInfo> {
+    match before_date {
+        Some(before) => VersionInfo::filter_by_date(versions, before),
+        None => versions,
+    }
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
@@ -170,6 +211,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise ls-remote node 20</bold>
     20.0.0
     20.1.0
+
+    $ <bold>mise ls-remote node --minimum-release-age 2024-01-01</bold>
+    20.0.0
 
     $ <bold>mise ls-remote github:cli/cli --json</bold>
     [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]

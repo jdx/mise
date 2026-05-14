@@ -107,28 +107,34 @@ fn append_single_windows_path_to_unix(out: &mut String, entry: &str) {
     }
 }
 
-/// Returns true if `program` is the path or basename of a POSIX-style shell that
-/// expects a Unix-style PATH. Used on Windows to decide whether to convert the
-/// child's PATH before spawning.
+/// Returns the lowercase stem of `program`'s basename, with any final `.exe`
+/// (case-insensitive) stripped. Splits on both `/` and `\` so the result is the
+/// same regardless of host `Path` separator — important since this is
+/// unit-tested on Linux/macOS too. Does not stat the file — input may be a bare
+/// name like `"bash"` that resolves later via the launcher's PATH search.
 ///
-/// Matches by basename (case-insensitive, `.exe` stripped) against a fixed list.
-/// Splits on both `/` and `\` so the result is the same regardless of the host
-/// `Path` separator — important since this is unit-tested on Linux/macOS too.
-/// Does not stat the file — input may be a bare name like `"bash"` that resolves
-/// later via the launcher's PATH search.
+/// Returns `None` only when `program` is not valid UTF-8.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn is_posix_shell_program(program: &Path) -> bool {
-    const POSIX_SHELLS: &[&str] = &["bash", "sh", "zsh", "fish", "ksh", "dash"];
-    let Some(s) = program.to_str() else {
-        return false;
-    };
+pub fn program_stem(program: &Path) -> Option<String> {
+    let s = program.to_str()?;
     let basename = s.rsplit(['/', '\\']).next().unwrap_or(s);
     let stem = match basename.rsplit_once('.') {
         Some((stem, ext)) if ext.eq_ignore_ascii_case("exe") => stem,
         _ => basename,
     };
-    let stem_lower = stem.to_ascii_lowercase();
-    POSIX_SHELLS.iter().any(|name| *name == stem_lower)
+    Some(stem.to_ascii_lowercase())
+}
+
+/// Returns true if `program` is the path or basename of a POSIX-style shell that
+/// expects a Unix-style PATH. Used on Windows to decide whether to convert the
+/// child's PATH before spawning.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn is_posix_shell_program(program: &Path) -> bool {
+    const POSIX_SHELLS: &[&str] = &["bash", "sh", "zsh", "fish", "ksh", "dash"];
+    let Some(stem) = program_stem(program) else {
+        return false;
+    };
+    POSIX_SHELLS.iter().any(|name| *name == stem)
 }
 
 #[cfg(test)]

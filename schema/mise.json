@@ -60,48 +60,89 @@
         }
       ]
     },
-    "env_directive": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
+    "env_value": {
+      "oneOf": [
+        {
+          "type": "string"
         },
-        "paths": {
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "env_path": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
           "type": "array",
           "items": {
             "type": "string"
           }
+        }
+      ]
+    },
+    "env_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "env_tools": {
+      "type": "boolean",
+      "description": "load tools before resolving"
+    },
+    "env_redact": {
+      "type": "boolean",
+      "description": "redact the value from logs"
+    },
+    "env_required": {
+      "oneOf": [
+        {
+          "type": "boolean",
+          "description": "require this environment variable to be defined before mise runs or in a later config file"
+        },
+        {
+          "type": "string",
+          "description": "require this environment variable with user help text on how to set it"
+        }
+      ],
+      "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+    },
+    "env_age": {
+      "type": "string",
+      "description": "[experimental] age-encrypted value (simplified format)"
+    },
+    "env_age_value": {
+      "type": "string",
+      "description": "[experimental] age-encrypted value"
+    },
+    "env_age_format": {
+      "type": "string",
+      "enum": ["raw", "zstd"],
+      "description": "[experimental] compression format for the encrypted value"
+    },
+    "env_directive": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/env_path"
+        },
+        "paths": {
+          "$ref": "#/$defs/env_paths"
         },
         "tools": {
-          "type": "boolean",
-          "description": "load tools before resolving"
+          "$ref": "#/$defs/env_tools"
         },
         "redact": {
-          "type": "boolean",
-          "description": "redact the value from logs"
+          "$ref": "#/$defs/env_redact"
         },
         "required": {
-          "oneOf": [
-            {
-              "type": "boolean",
-              "description": "require this environment variable to be defined before mise runs or in a later config file"
-            },
-            {
-              "type": "string",
-              "description": "require this environment variable with user help text on how to set it"
-            }
-          ],
-          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+          "$ref": "#/$defs/env_required"
         }
       },
       "oneOf": [
@@ -109,7 +150,7 @@
           "type": "object",
           "properties": {
             "path": {
-              "$ref": "#/$defs/env_directive/properties/path"
+              "$ref": "#/$defs/env_path"
             }
           },
           "required": ["path"]
@@ -118,7 +159,7 @@
           "type": "object",
           "properties": {
             "paths": {
-              "$ref": "#/$defs/env_directive/properties/paths"
+              "$ref": "#/$defs/env_paths"
             }
           },
           "required": ["paths"]
@@ -132,38 +173,16 @@
             "type": "object",
             "properties": {
               "value": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "boolean"
-                  }
-                ]
+                "$ref": "#/$defs/env_value"
               },
               "tools": {
-                "type": "boolean",
-                "description": "load tools before resolving"
+                "$ref": "#/$defs/env_tools"
               },
               "redact": {
-                "type": "boolean",
-                "description": "redact the value from logs"
+                "$ref": "#/$defs/env_redact"
               },
               "required": {
-                "oneOf": [
-                  {
-                    "type": "boolean",
-                    "description": "require this environment variable to be defined before mise runs or in a later config file"
-                  },
-                  {
-                    "type": "string",
-                    "description": "require this environment variable with user help text on how to set it"
-                  }
-                ],
-                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+                "$ref": "#/$defs/env_required"
               }
             },
             "unevaluatedProperties": false
@@ -172,29 +191,16 @@
             "type": "object",
             "properties": {
               "age": {
-                "type": "string",
-                "description": "[experimental] age-encrypted value (simplified format)"
+                "$ref": "#/$defs/env_age"
               },
               "tools": {
-                "type": "boolean",
-                "description": "load tools before resolving"
+                "$ref": "#/$defs/env_tools"
               },
               "redact": {
-                "type": "boolean",
-                "description": "redact the value from logs"
+                "$ref": "#/$defs/env_redact"
               },
               "required": {
-                "oneOf": [
-                  {
-                    "type": "boolean",
-                    "description": "require this environment variable to be defined before mise runs or in a later config file"
-                  },
-                  {
-                    "type": "string",
-                    "description": "require this environment variable with user help text on how to set it"
-                  }
-                ],
-                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+                "$ref": "#/$defs/env_required"
               }
             },
             "required": ["age"],
@@ -208,34 +214,19 @@
                 "type": "object",
                 "properties": {
                   "value": {
-                    "type": "string",
-                    "description": "[experimental] age-encrypted value"
+                    "$ref": "#/$defs/env_age_value"
                   },
                   "format": {
-                    "type": "string",
-                    "enum": ["raw", "zstd"],
-                    "description": "[experimental] compression format for the encrypted value"
+                    "$ref": "#/$defs/env_age_format"
                   },
                   "tools": {
-                    "type": "boolean",
-                    "description": "load tools before resolving"
+                    "$ref": "#/$defs/env_tools"
                   },
                   "redact": {
-                    "type": "boolean",
-                    "description": "redact the value from logs"
+                    "$ref": "#/$defs/env_redact"
                   },
                   "required": {
-                    "oneOf": [
-                      {
-                        "type": "boolean",
-                        "description": "require this environment variable to be defined before mise runs or in a later config file"
-                      },
-                      {
-                        "type": "string",
-                        "description": "require this environment variable with user help text on how to set it"
-                      }
-                    ],
-                    "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+                    "$ref": "#/$defs/env_required"
                   }
                 },
                 "required": ["value"],
@@ -296,27 +287,13 @@
                   "type": "object",
                   "properties": {
                     "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
+                      "$ref": "#/$defs/env_path"
                     },
                     "paths": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
+                      "$ref": "#/$defs/env_paths"
                     },
                     "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
+                      "$ref": "#/$defs/env_tools"
                     }
                   },
                   "oneOf": [
@@ -324,17 +301,7 @@
                       "type": "object",
                       "properties": {
                         "path": {
-                          "oneOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            }
-                          ]
+                          "$ref": "#/$defs/env_path"
                         }
                       },
                       "required": ["path"]
@@ -343,10 +310,7 @@
                       "type": "object",
                       "properties": {
                         "paths": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
+                          "$ref": "#/$defs/env_paths"
                         }
                       },
                       "required": ["paths"]
@@ -370,21 +334,10 @@
                         "type": "object",
                         "properties": {
                           "path": {
-                            "oneOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              }
-                            ]
+                            "$ref": "#/$defs/env_path"
                           },
                           "tools": {
-                            "type": "boolean",
-                            "description": "load tools before resolving"
+                            "$ref": "#/$defs/env_tools"
                           }
                         }
                       }
@@ -825,6 +778,36 @@
               "default": true,
               "description": "Enable GitHub Artifact Attestations verification for github backend tools.",
               "type": "boolean"
+            },
+            "oauth_api_url": {
+              "default": "https://api.github.com",
+              "description": "GitHub API base URL for native OAuth token validation.",
+              "type": "string"
+            },
+            "oauth_auth_url": {
+              "default": "https://github.com/login/oauth",
+              "description": "GitHub OAuth endpoint base URL for native device-flow tokens.",
+              "type": "string"
+            },
+            "oauth_client_id": {
+              "default": "",
+              "description": "[experimental] GitHub App client ID for native OAuth device-flow tokens.",
+              "type": "string"
+            },
+            "oauth_export_env": {
+              "default": "GITHUB_TOKEN",
+              "description": "Environment variable name to export the native GitHub OAuth token under (empty disables).",
+              "type": "string"
+            },
+            "oauth_open_browser": {
+              "default": true,
+              "description": "Open the browser during native GitHub OAuth device flow.",
+              "type": "boolean"
+            },
+            "oauth_scopes": {
+              "default": "",
+              "description": "OAuth scopes requested for native GitHub device-flow tokens.",
+              "type": "string"
             },
             "slsa": {
               "default": true,
@@ -1950,54 +1933,53 @@
           "type": "string"
         },
         {
-          "properties": {
-            "version": {
-              "description": "version of the tool to install",
-              "type": "string"
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool_options"
             },
-            "os": {
-              "$ref": "#/$defs/os_filter"
-            },
-            "install_env": {
-              "type": "object",
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "type": "string"
+            {
+              "properties": {
+                "install_env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
                   },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "description": "environment variables during tool installation"
-            },
-            "depends": {
-              "oneOf": [
-                {
-                  "description": "tools that must be installed before this tool",
-                  "type": "string"
+                  "description": "environment variables during tool installation"
                 },
-                {
-                  "description": "tools that must be installed before this tool",
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
+                "depends": {
+                  "oneOf": [
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "string"
+                    },
+                    {
+                      "description": "tools that must be installed before this tool",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "postinstall": {
+                  "description": "command to run after tool installation",
+                  "type": "string"
                 }
-              ]
-            },
-            "postinstall": {
-              "description": "command to run after tool installation",
-              "type": "string"
+              }
             }
-          },
-          "required": ["version"],
+          ],
           "type": "object",
-          "additionalProperties": {
+          "unevaluatedProperties": {
             "oneOf": [
               {
                 "type": "string"
@@ -2020,27 +2002,56 @@
         }
       ]
     },
+    "tool_options": {
+      "properties": {
+        "version": {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        "os": {
+          "$ref": "#/$defs/os_filter"
+        }
+      },
+      "required": ["version"],
+      "type": "object"
+    },
     "hooks": {
       "description": "hooks to run",
       "type": "object",
       "additionalProperties": {
         "oneOf": [
           {
-            "description": "script to run",
+            "description": "inline hook command to run",
             "type": "string"
           },
           {
             "unevaluatedProperties": false,
             "properties": {
-              "script": {
-                "description": "script to run",
+              "run": {
+                "description": "inline hook command to run",
                 "type": "string"
               },
               "shell": {
-                "description": "specify the shell to run the script inside of",
+                "description": "inline shell command to use for run hooks, such as \"bash -c\"",
                 "type": "string"
               }
             },
+            "required": ["run"],
+            "type": "object"
+          },
+          {
+            "unevaluatedProperties": false,
+            "properties": {
+              "script": {
+                "description": "current-shell script for enter/leave/cd hooks",
+                "type": "string"
+              },
+              "shell": {
+                "description": "current shell name for script hooks, such as \"bash\"",
+                "type": "string"
+              }
+            },
+            "required": ["script"],
             "type": "object"
           },
           {
@@ -2059,21 +2070,37 @@
             "items": {
               "oneOf": [
                 {
-                  "description": "script to run",
+                  "description": "inline hook command to run",
                   "type": "string"
                 },
                 {
                   "unevaluatedProperties": false,
                   "properties": {
-                    "script": {
-                      "description": "script to run",
+                    "run": {
+                      "description": "inline hook command to run",
                       "type": "string"
                     },
                     "shell": {
-                      "description": "specify the shell to run the script inside of",
+                      "description": "inline shell command to use for run hooks, such as \"bash -c\"",
                       "type": "string"
                     }
                   },
+                  "required": ["run"],
+                  "type": "object"
+                },
+                {
+                  "unevaluatedProperties": false,
+                  "properties": {
+                    "script": {
+                      "description": "current-shell script for enter/leave/cd hooks",
+                      "type": "string"
+                    },
+                    "shell": {
+                      "description": "current shell name for script hooks, such as \"bash\"",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["script"],
                   "type": "object"
                 },
                 {
@@ -2311,18 +2338,13 @@
                 "type": "string"
               },
               {
-                "properties": {
-                  "version": {
-                    "description": "version of the tool to install",
-                    "type": "string"
-                  },
-                  "os": {
-                    "$ref": "#/$defs/os_filter"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/tool_options"
                   }
-                },
-                "required": ["version"],
+                ],
                 "type": "object",
-                "additionalProperties": {
+                "unevaluatedProperties": {
                   "oneOf": [
                     {
                       "type": "string"

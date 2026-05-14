@@ -70,7 +70,11 @@ You can provide a shell command that prints a token to stdout:
 credential_command = "op read 'op://Private/GitLab Token/credential'"
 ```
 
-The target hostname is passed as `$1` to the command.
+mise executes this command with the configured default inline shell. The target hostname is available as `MISE_CREDENTIAL_HOST`, and the provider name (`gitlab`) is available as `MISE_CREDENTIAL_PROVIDER`. For compatibility, recognized sh-compatible shells (`ash`, `bash`, `dash`, `ksh`, `sh`, and `zsh`) also receive the hostname as `$1`/`${1}`.
+
+:::: warning Planned deprecation
+The legacy `$1`/`${1}` hostname argument is deprecated. Use `MISE_CREDENTIAL_HOST` instead. mise will start warning in `2026.11.0`, and `$1` compatibility will be removed in `2027.11.0`.
+::::
 
 ### glab CLI integration
 
@@ -275,6 +279,23 @@ rename_exe = "mytool"  # Rename the extracted binary to mytool
 Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
 :::
 
+### `no_app`
+
+Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
+
+```toml
+[tools."gitlab:myorg/mytool"]
+version = "latest"
+no_app = true
+```
+
+When `no_app = true`:
+
+- Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
+- Standalone archives are preferred
+- This is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
+- Only affects autodetection; explicit `asset_pattern` values are used as-is
+
 ### `bin_path`
 
 ::: v-pre
@@ -312,7 +333,7 @@ When enabled:
 
 ### `api_url`
 
-For self-hosted GitLab instances, specify the API URL:
+For self-hosted GitLab instances, specify the API URL. mise uses this URL for release listing and release asset lookup, and may also use it to download assets when browser download URLs are not reachable or when using custom/private instances:
 
 ```toml
 [tools]

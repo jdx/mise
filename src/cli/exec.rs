@@ -14,6 +14,7 @@ use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::deps::{DepsEngine, DepsOptions};
 use crate::env;
+use crate::env_diff::EnvDiff;
 use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
@@ -188,6 +189,17 @@ impl Exec {
         if Settings::get().env_cache && !self.fresh_env {
             let key = CachedEnv::ensure_encryption_key();
             env.insert("__MISE_ENV_CACHE_KEY".to_string(), key);
+        }
+
+        // Embed __MISE_DIFF so a nested mise invocation can recover the pristine
+        // env (and pristine PATH) instead of stacking our tool dirs on top of its
+        // own. Without this, `mise -C <new> exec -- ...` invoked from inside our
+        // child process would inherit our tool dirs as user-pre-PATH and they
+        // would outrank the inner toolset's resolved tool. See discussion #9754.
+        // Computed after all env modifications so the diff fully describes what
+        // mise added (matches task_executor.rs).
+        if let Ok(serialized) = EnvDiff::from_final_env(&env::PRISTINE_ENV, &env).serialize() {
+            env.insert("__MISE_DIFF".to_string(), serialized);
         }
 
         if program.rsplit('/').next() == Some("fish") {

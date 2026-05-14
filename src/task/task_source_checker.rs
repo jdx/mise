@@ -2,14 +2,20 @@ use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::file::{self, display_path};
 use crate::hash;
+use crate::rand::random_string;
 use crate::task::Task;
 use eyre::{Result, eyre};
+use flate2::Compression;
+use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
 use glob::glob;
 use ignore::overrides::{Override, OverrideBuilder};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fs;
+use std::fs::{self, File};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -193,8 +199,6 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
     let use_content_hash = settings.task.source_freshness_hash_contents;
     let equal_mtime_is_fresh = settings.task.source_freshness_equal_mtime_is_fresh;
 
-    // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
-    // perhaps using some manifest in a state directory or something, maybe leveraging atime?
     let run = async || -> Result<bool> {
         let root = task_cwd(task, config).await?;
         let matcher = build_source_matcher(&root, &task.sources);
@@ -238,7 +242,13 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
         }
 
         let source_hash = if use_content_hash {
-            file_contents_to_hash(&source_metadatas)?
+            let cache_path = content_hash_cache_path(task, &root);
+            let mut cache = load_content_hash_cache(&cache_path);
+            let h = file_contents_to_hash(&source_metadatas, &mut cache)?;
+            if let Err(e) = save_content_hash_cache(&cache_path, &cache) {
+                trace!("failed to save content hash cache: {e}");
+            }
+            h
         } else {
             file_metadatas_to_hash(&source_metadatas)
         };
@@ -323,17 +333,25 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
     Ok(())
 }
 
-/// Get the path to store source hashes for a task
-fn sources_hash_path(task: &Task, root: &Path, content_hash: bool) -> PathBuf {
+/// Identity hash for a task in a given working directory. Used as the
+/// filename stem for any per-task state we write under `STATE/task-sources/`,
+/// so that changes to the task definition (sources, cmd, etc.), the config
+/// file it came from, or the working directory all invalidate state in
+/// lock-step.
+fn task_state_key(task: &Task, root: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     task.hash(&mut hasher);
     task.config_source.hash(&mut hasher);
     root.hash(&mut hasher);
-    let hash = format!("{:x}", hasher.finish());
+    format!("{:x}", hasher.finish())
+}
+
+/// Get the path to store source hashes for a task
+fn sources_hash_path(task: &Task, root: &Path, content_hash: bool) -> PathBuf {
     let suffix = if content_hash { "-content" } else { "" };
     dirs::STATE
         .join("task-sources")
-        .join(format!("{hash}{suffix}"))
+        .join(format!("{}{suffix}", task_state_key(task, root)))
 }
 
 /// Get the existing source hash for a task, if it exists
@@ -392,14 +410,103 @@ fn file_metadatas_to_hash(metadatas: &[(PathBuf, fs::Metadata)]) -> String {
     hash::hash_to_str(&path_and_sizes)
 }
 
-/// Convert file contents to a hash string for comparison using blake3
-/// More accurate than metadata hashing but slower since it reads all file contents
-fn file_contents_to_hash(metadatas: &[(PathBuf, fs::Metadata)]) -> Result<String> {
-    let mut content_hashes: Vec<(&PathBuf, String)> = Vec::new();
-    for (path, _) in metadatas {
-        let file_hash = hash::file_hash_blake3(path, None)?;
-        content_hashes.push((path, file_hash));
+/// Per-file content hash cache entry. The `(size, mtime_secs, mtime_nanos)`
+/// tuple is the cache key (in the git-style "stat-info" sense): when those
+/// three match, we reuse `hash` without re-reading the file.
+#[derive(Debug, Serialize, Deserialize)]
+struct CachedFileHash {
+    mtime_secs: i64,
+    mtime_nanos: u32,
+    size: u64,
+    hash: String,
+}
+
+type ContentHashCache = BTreeMap<PathBuf, CachedFileHash>;
+
+/// Path to the per-task content-hash cache file. Shares `task_state_key`
+/// with `sources_hash_path` so changes to the task definition invalidate
+/// both in lock-step.
+fn content_hash_cache_path(task: &Task, root: &Path) -> PathBuf {
+    dirs::STATE
+        .join("task-sources")
+        .join(format!("{}-content-cache", task_state_key(task, root)))
+}
+
+fn load_content_hash_cache(path: &Path) -> ContentHashCache {
+    (|| -> Result<ContentHashCache> {
+        let mut zlib = ZlibDecoder::new(File::open(path)?);
+        let mut bytes = Vec::new();
+        zlib.read_to_end(&mut bytes)?;
+        Ok(rmp_serde::from_slice(&bytes)?)
+    })()
+    .unwrap_or_default()
+}
+
+fn save_content_hash_cache(path: &Path, cache: &ContentHashCache) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        file::create_dir_all(parent)?;
     }
+    let partial = path.with_extension(format!("part-{}", random_string(8)));
+    {
+        let mut zlib = ZlibEncoder::new(File::create(&partial)?, Compression::fast());
+        zlib.write_all(&rmp_serde::to_vec_named(cache)?)?;
+        // Propagate finalization errors explicitly — ZlibEncoder's Drop impl
+        // would silently discard them, leaving a truncated partial file that
+        // we'd then rename into place as a poisoned cache.
+        zlib.finish()?;
+    }
+    file::rename(&partial, path)?;
+    Ok(())
+}
+
+fn cached_entry_matches(entry: &CachedFileHash, metadata: &fs::Metadata) -> bool {
+    let Ok(mtime) = metadata.modified() else {
+        return false;
+    };
+    let Ok(dur) = mtime.duration_since(UNIX_EPOCH) else {
+        return false;
+    };
+    entry.size == metadata.len()
+        && entry.mtime_secs == dur.as_secs() as i64
+        && entry.mtime_nanos == dur.subsec_nanos()
+}
+
+fn make_cache_entry(metadata: &fs::Metadata, hash: String) -> CachedFileHash {
+    let dur = metadata
+        .modified()
+        .ok()
+        .and_then(|m| m.duration_since(UNIX_EPOCH).ok());
+    CachedFileHash {
+        mtime_secs: dur.map(|d| d.as_secs() as i64).unwrap_or(0),
+        mtime_nanos: dur.map(|d| d.subsec_nanos()).unwrap_or(0),
+        size: metadata.len(),
+        hash,
+    }
+}
+
+/// Convert file contents to a hash string for comparison using blake3.
+///
+/// More accurate than metadata hashing but slower since it reads all file
+/// contents. `cache` is consulted first: if a file's `(size, mtime_secs,
+/// mtime_nanos)` match the cached entry, the stored hash is reused and the
+/// file is not re-read. On return, `cache` is rebuilt from scratch with one
+/// entry per current source file — entries for files no longer in `sources`
+/// are pruned so the cache file size stays bounded.
+fn file_contents_to_hash(
+    metadatas: &[(PathBuf, fs::Metadata)],
+    cache: &mut ContentHashCache,
+) -> Result<String> {
+    let mut content_hashes: Vec<(&PathBuf, String)> = Vec::new();
+    let mut next: ContentHashCache = BTreeMap::new();
+    for (path, metadata) in metadatas {
+        let hash = match cache.get(path) {
+            Some(entry) if cached_entry_matches(entry, metadata) => entry.hash.clone(),
+            _ => hash::file_hash_blake3(path, None)?,
+        };
+        next.insert(path.clone(), make_cache_entry(metadata, hash.clone()));
+        content_hashes.push((path, hash));
+    }
+    *cache = next;
     Ok(hash::hash_to_str(&content_hashes))
 }
 
@@ -524,5 +631,84 @@ mod tests {
         let sources = vec!["/elsewhere/Cargo.toml".to_string()];
         let matcher = build_source_matcher(root, &sources);
         assert!(is_source(&matcher, Path::new("/elsewhere/Cargo.toml")));
+    }
+
+    #[test]
+    fn content_hash_cache_reuses_unchanged_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.txt");
+        let b = tmp.path().join("b.txt");
+        std::fs::write(&a, "hello").unwrap();
+        std::fs::write(&b, "world").unwrap();
+        let metadatas = vec![
+            (a.clone(), a.metadata().unwrap()),
+            (b.clone(), b.metadata().unwrap()),
+        ];
+
+        let mut cache = ContentHashCache::new();
+        let first = file_contents_to_hash(&metadatas, &mut cache).unwrap();
+        assert_eq!(cache.len(), 2);
+        let a_hash_v1 = cache.get(&a).unwrap().hash.clone();
+
+        // Re-run with same files: hashes should be reused, aggregate unchanged.
+        let second = file_contents_to_hash(&metadatas, &mut cache).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(cache.get(&a).unwrap().hash, a_hash_v1);
+
+        // Mutate `a` so size differs; aggregate hash must change.
+        std::fs::write(&a, "hello world").unwrap();
+        let metadatas = vec![
+            (a.clone(), a.metadata().unwrap()),
+            (b.clone(), b.metadata().unwrap()),
+        ];
+        let third = file_contents_to_hash(&metadatas, &mut cache).unwrap();
+        assert_ne!(second, third);
+        assert_ne!(cache.get(&a).unwrap().hash, a_hash_v1);
+    }
+
+    #[test]
+    fn content_hash_cache_prunes_dropped_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.txt");
+        let b = tmp.path().join("b.txt");
+        std::fs::write(&a, "hello").unwrap();
+        std::fs::write(&b, "world").unwrap();
+
+        let mut cache = ContentHashCache::new();
+        let metadatas = vec![
+            (a.clone(), a.metadata().unwrap()),
+            (b.clone(), b.metadata().unwrap()),
+        ];
+        file_contents_to_hash(&metadatas, &mut cache).unwrap();
+        assert_eq!(cache.len(), 2);
+
+        // Only `a` is a source this run — `b` should drop out of the cache.
+        let metadatas = vec![(a.clone(), a.metadata().unwrap())];
+        file_contents_to_hash(&metadatas, &mut cache).unwrap();
+        assert_eq!(cache.len(), 1);
+        assert!(cache.contains_key(&a));
+        assert!(!cache.contains_key(&b));
+    }
+
+    #[test]
+    fn content_hash_cache_round_trips_through_disk() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.txt");
+        std::fs::write(&a, "hello").unwrap();
+
+        let mut cache = ContentHashCache::new();
+        let metadatas = vec![(a.clone(), a.metadata().unwrap())];
+        file_contents_to_hash(&metadatas, &mut cache).unwrap();
+
+        let cache_path = tmp.path().join("cache.bin");
+        save_content_hash_cache(&cache_path, &cache).unwrap();
+        let loaded = load_content_hash_cache(&cache_path);
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded.get(&a).unwrap().hash, cache.get(&a).unwrap().hash,);
+
+        // Corrupt the file: loader must silently fall back to empty.
+        std::fs::write(&cache_path, b"not a valid msgpack stream").unwrap();
+        let loaded = load_content_hash_cache(&cache_path);
+        assert!(loaded.is_empty());
     }
 }

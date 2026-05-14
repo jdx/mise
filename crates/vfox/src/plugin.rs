@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use mlua::{AsChunk, FromLuaMulti, IntoLua, Lua, Table, Value};
 use once_cell::sync::OnceCell;
@@ -109,6 +110,21 @@ impl Plugin {
     /// Store a GitHub token for the Lua http module.
     pub fn set_github_token(&self, token: &str) -> Result<()> {
         self.lua.set_named_registry_value("github_token", token)?;
+        Ok(())
+    }
+
+    /// Register a lazy resolver for the GitHub token. The resolver is only
+    /// invoked when a Lua plugin actually makes an HTTP request to a GitHub
+    /// API URL — keeping `mise hook-env`, completion, etc. from running e.g.
+    /// `github.credential_command` when no token is needed.
+    pub fn set_github_token_resolver(
+        &self,
+        resolver: Arc<dyn Fn() -> Option<String> + Send + Sync>,
+    ) -> Result<()> {
+        let func = self
+            .lua
+            .create_function(move |_, ()| Ok(resolver().unwrap_or_default()))?;
+        self.lua.set_named_registry_value("github_token_fn", func)?;
         Ok(())
     }
 

@@ -1,10 +1,8 @@
 description = "tsuru-client is a tsuru command line tool for application developers"
+# test = { cmd = "tsuru version --help", expected = "display the current version" }
 
 [[backends]]
 full = "github:tsuru/tsuru-client"
-
-[backends.options]
-exe = "tsuru"
 
 [[backends]]
 full = "asdf:virtualstaticvoid/asdf-tsuru"

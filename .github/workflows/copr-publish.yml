@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       chroots:
-        description: "COPR chroots to target (space-separated)"
+        description: "COPR chroots to target (space-separated). Leave empty to use the default list from packaging/copr/build-copr.sh."
         required: false
-        default: "fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64"
+        default: ""
         type: string
       use_serious_profile:
         description: 'Use the "serious" profile for optimized builds (LTO enabled)'
@@ -33,27 +33,42 @@ jobs:
           fetch-depth: 0
 
       - name: Set up environment variables
+        env:
+          INPUT_CHROOTS: ${{ inputs.chroots }}
+          INPUT_USE_SERIOUS_PROFILE: ${{ inputs.use_serious_profile }}
+          EVENT_NAME: ${{ github.event_name }}
+          COPR_MAINTAINER_NAME_INPUT: ${{ vars.COPR_MAINTAINER_NAME || 'mise Release Bot' }}
+          COPR_MAINTAINER_EMAIL_INPUT: ${{ vars.COPR_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}
+          COPR_OWNER_INPUT: ${{ vars.COPR_OWNER || 'jdxcode' }}
+          COPR_PROJECT_INPUT: ${{ vars.COPR_PROJECT || 'mise' }}
         run: |
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
 
-          if [ "${{ github.event_name }}" = "release" ]; then
-            CHROOTS="fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64"
-          else
-            CHROOTS="${{ inputs.chroots }}"
-          fi
-
           {
             echo "VERSION=${VERSION}"
-            echo "CHROOTS=${CHROOTS}"
             echo "PACKAGE_NAME=${PACKAGE_NAME}"
-            echo "MAINTAINER_NAME=${{ vars.COPR_MAINTAINER_NAME || 'mise Release Bot' }}"
-            echo "MAINTAINER_EMAIL=${{ vars.COPR_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
-            echo "COPR_OWNER=${{ vars.COPR_OWNER || 'jdxcode' }}"
-            echo "COPR_PROJECT=${{ vars.COPR_PROJECT || 'mise' }}"
+            echo "MAINTAINER_NAME=${COPR_MAINTAINER_NAME_INPUT}"
+            echo "MAINTAINER_EMAIL=${COPR_MAINTAINER_EMAIL_INPUT}"
+            echo "COPR_OWNER=${COPR_OWNER_INPUT}"
+            echo "COPR_PROJECT=${COPR_PROJECT_INPUT}"
           } >> "$GITHUB_ENV"
 
+          # Pass chroots through only when explicitly overridden via workflow_dispatch.
+          # Otherwise let build-copr.sh apply its own default list. Validate the
+          # input against a conservative COPR chroot pattern to prevent shell
+          # injection from a malicious workflow_dispatch invocation.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_CHROOTS" ]; then
+            for chroot in $INPUT_CHROOTS; do
+              if ! [[ "$chroot" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+                echo "::error::Invalid COPR chroot value: $chroot" >&2
+                exit 1
+              fi
+            done
+            echo "CHROOTS=$INPUT_CHROOTS" >> "$GITHUB_ENV"
+          fi
+
           # Set build profile
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.use_serious_profile }}" = "true" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$INPUT_USE_SERIOUS_PROFILE" = "true" ]; then
             echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
           else
             echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"
@@ -61,15 +76,19 @@ jobs:
 
       - name: Build and submit to COPR
         run: |
-          ./packaging/copr/build-copr.sh \
-            --version "${VERSION}" \
-            --profile "${BUILD_PROFILE}" \
-            --chroots "${CHROOTS}" \
-            --owner "${COPR_OWNER}" \
-            --project "${COPR_PROJECT}" \
-            --name "${PACKAGE_NAME}" \
-            --maintainer-name "${MAINTAINER_NAME}" \
+          args=(
+            --version "${VERSION}"
+            --profile "${BUILD_PROFILE}"
+            --owner "${COPR_OWNER}"
+            --project "${COPR_PROJECT}"
+            --name "${PACKAGE_NAME}"
+            --maintainer-name "${MAINTAINER_NAME}"
             --maintainer-email "${MAINTAINER_EMAIL}"
+          )
+          if [ -n "${CHROOTS:-}" ]; then
+            args+=(--chroots "${CHROOTS}")
+          fi
+          ./packaging/copr/build-copr.sh "${args[@]}"
         env:
           COPR_API_LOGIN: ${{ secrets.COPR_API_LOGIN }}
           COPR_API_TOKEN: ${{ secrets.COPR_API_TOKEN }}

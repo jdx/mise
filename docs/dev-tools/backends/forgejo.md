@@ -76,7 +76,11 @@ You can provide a shell command that prints a token to stdout:
 credential_command = "op read 'op://Private/Forgejo Token/credential'"
 ```
 
-The target hostname is passed as `$1` to the command.
+mise executes this command with the configured default inline shell. The target hostname is available as `MISE_CREDENTIAL_HOST`, and the provider name (`forgejo`) is available as `MISE_CREDENTIAL_PROVIDER`. For compatibility, recognized sh-compatible shells (`ash`, `bash`, `dash`, `ksh`, `sh`, and `zsh`) also receive the hostname as `$1`/`${1}`.
+
+:::: warning Planned deprecation
+The legacy `$1`/`${1}` hostname argument is deprecated. Use `MISE_CREDENTIAL_HOST` instead. mise will start warning in `2026.11.0`, and `$1` compatibility will be removed in `2027.11.0`.
+::::
 
 ### `fj` CLI integration
 
@@ -170,6 +174,23 @@ When `version_prefix` is configured, mise will:
 - With `version_prefix = ""` (empty string):
   - User specifies `1.0.0` → mise searches for `1.0.0` tag (no prefix)
   - Useful for repositories that don't use any prefix
+
+### `prerelease`
+
+By default, releases flagged `prerelease: true` on Forgejo are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:
+
+```toml
+[tools]
+"forgejo:user/repo" = { version = "latest", prerelease = true }
+```
+
+When set:
+
+- Pre-release tags (e.g. `v1.0.0-rc1`, `v0.1.2-dev.86`) appear in `mise ls-remote`.
+- `latest` resolves to the newest version across stable and pre-releases, rather than taking the Forgejo `/repos/{owner}/{repo}/releases/latest` shortcut.
+- Fuzzy version queries (e.g. `1.2`) match pre-release tags under that prefix.
+
+Draft releases are always excluded.
 
 ### Platform-specific Asset Patterns
 
@@ -265,6 +286,23 @@ rename_exe = "tool"  # Rename the extracted binary to tool
 Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
 :::
 
+### `no_app`
+
+Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
+
+```toml
+[tools."forgejo:user/repo"]
+version = "latest"
+no_app = true
+```
+
+When `no_app = true`:
+
+- Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
+- Standalone archives are preferred
+- This is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
+- Only affects autodetection; explicit `asset_pattern` values are used as-is
+
 ### `bin_path`
 
 ::: v-pre
@@ -302,7 +340,7 @@ When enabled:
 
 ### `api_url`
 
-For other Forgejo compatible or self-hosted instances, specify the API URL:
+For other Forgejo compatible or self-hosted instances, specify the API URL. mise uses this URL for release listing and release asset lookup, and may also use it to download assets when browser download URLs are not reachable or when using custom/private instances:
 
 ```toml
 [tools]

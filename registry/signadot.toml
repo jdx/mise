@@ -3,6 +3,3 @@ test = { cmd = "signadot --version", expected = "signadot version v{{version}}" 
 
 [[backends]]
 full = "github:signadot/cli"
-
-[backends.options]
-exe = "signadot"

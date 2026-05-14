@@ -4,7 +4,9 @@ set -euo pipefail
 
 # Default values
 PACKAGE_NAME="${PACKAGE_NAME:-mise}"
-CHROOTS="${CHROOTS:-fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64}"
+# TODO(epel-9): drop centos-stream+epel-next-9-* and switch back to epel-9-*
+# once RHEL 9 AppStream ships rust >= mise's MSRV (currently EL9 = 1.88).
+CHROOTS="${CHROOTS:-fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64 centos-stream+epel-next-9-aarch64 centos-stream+epel-next-9-x86_64}"
 BUILD_PROFILE="${BUILD_PROFILE:-release}"
 MAINTAINER_NAME="${MAINTAINER_NAME:-mise Release Bot}"
 MAINTAINER_EMAIL="${MAINTAINER_EMAIL:-noreply@mise.jdx.dev}"
@@ -22,7 +24,7 @@ usage() {
 	echo "Options:"
 	echo "  -v, --version VERSION        Package version (required)"
 	echo "  -p, --profile PROFILE        Build profile (default: release)"
-	echo "  -c, --chroots CHROOTS        COPR chroots (default: fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64)"
+	echo "  -c, --chroots CHROOTS        COPR chroots (default: fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64 centos-stream+epel-next-9-aarch64 centos-stream+epel-next-9-x86_64)"
 	echo "  -o, --owner OWNER            COPR owner (default: jdxcode)"
 	echo "  -j, --project PROJECT        COPR project (default: mise)"
 	echo "  -n, --name NAME              Package name (default: mise)"
@@ -282,17 +284,22 @@ if [ "$DRY_RUN" != "true" ]; then
 	echo "=== Submitting to COPR ==="
 	echo "Submitting $(basename "$SRPM_FILE") to COPR project $COPR_OWNER/$COPR_PROJECT"
 
-	# Submit build to COPR
-	# Build the copr-cli command with multiple --chroot flags
-	copr_cmd="copr-cli build"
-	# Split CHROOTS into an array to ensure proper word splitting
+	# Submit build to COPR. Build a real argv array so chroot values cannot
+	# be interpreted as shell syntax, and validate each value against a
+	# conservative chroot pattern before forwarding to copr-cli.
 	IFS=' ' read -ra chroot_array <<<"$CHROOTS"
+	copr_args=("build")
 	for chroot in "${chroot_array[@]}"; do
-		copr_cmd="$copr_cmd --chroot $chroot"
+		[ -z "$chroot" ] && continue
+		if ! [[ "$chroot" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+			echo "Invalid COPR chroot value: $chroot" >&2
+			exit 1
+		fi
+		copr_args+=("--chroot" "$chroot")
 	done
-	copr_cmd="$copr_cmd $COPR_OWNER/$COPR_PROJECT $SRPM_FILE"
+	copr_args+=("$COPR_OWNER/$COPR_PROJECT" "$SRPM_FILE")
 
-	eval "$copr_cmd"
+	copr-cli "${copr_args[@]}"
 
 	echo "Build submitted successfully!"
 else

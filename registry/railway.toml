@@ -4,8 +4,5 @@ test = { cmd = "railway --version", expected = "railway {{version}}" }
 [[backends]]
 full = "github:railwayapp/cli"
 
-[backends.options]
-exe = "railway"
-
 [[backends]]
 full = "cargo:railwayapp"

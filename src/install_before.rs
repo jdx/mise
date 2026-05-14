@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use eyre::Result;
 use jiff::Timestamp;
 
-use crate::config::Settings;
+use crate::backend::Backend;
+use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
 
 /// Resolve the effective `minimum_release_age` cutoff.
@@ -31,6 +34,19 @@ pub fn resolve_before_date(
         return Ok(Some(parse_into_timestamp(before)?));
     }
     Ok(None)
+}
+
+pub(crate) async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
+    config: &Arc<Config>,
+    backend: &B,
+    before_date: Option<Timestamp>,
+) -> Result<Option<Timestamp>> {
+    if before_date.is_some() {
+        return resolve_before_date(before_date, None);
+    }
+
+    let opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
+    resolve_before_date(None, opts.minimum_release_age())
 }
 
 #[cfg(test)]
