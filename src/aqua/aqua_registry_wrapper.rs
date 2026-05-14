@@ -8,6 +8,7 @@ use aqua_registry::{
 use eyre::Result;
 use reqwest::header::{ACCEPT, HeaderMap, HeaderValue};
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock as Lazy};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -352,10 +353,17 @@ fn write_registry_source(path: &Path, source: &str) -> aqua_registry::Result<()>
         return Ok(());
     }
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, source)?;
+    let Some(parent) = path.parent() else {
+        return Err(AquaRegistryError::RegistryNotAvailable(format!(
+            "cached aqua registry source path has no parent: {}",
+            path.display()
+        )));
+    };
+    std::fs::create_dir_all(parent)?;
+
+    let mut tmp = tempfile::NamedTempFile::with_prefix_in("registry-source.", parent)?;
+    tmp.write_all(source.as_bytes())?;
+    tmp.persist(path).map_err(|err| err.error)?;
     Ok(())
 }
 
