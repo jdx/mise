@@ -6,13 +6,18 @@ mkdir -p "$project"
 cat >"$project/mise.toml" <<EOF
 [settings]
 experimental = true
+
+[tasks.read-marker]
+run = 'printf {{ read_file(path="marker") }}'
 EOF
+printf "from-project" >"$project/marker"
 
 assert "env -u MISE_EXPERIMENTAL mise -C '$project' settings get experimental" "true"
 assert "env -u MISE_EXPERIMENTAL mise --env production -C '$project' settings get experimental" "true"
 assert "env -u MISE_EXPERIMENTAL mise --jobs 1 -C '$project' settings get experimental" "true"
 assert "env -u MISE_EXPERIMENTAL MISE_CD='$project' mise settings get experimental" "true"
 assert_succeed "env -u MISE_EXPERIMENTAL mise -C '$project' exec --deny-env -- true"
+assert_contains "env -u MISE_EXPERIMENTAL mise run -C project read-marker" "from-project"
 
 mise install dummy@1.0.0
 assert_contains "env -u MISE_EXPERIMENTAL mise -C '$project' exec dummy@1.0.0 -- dummy" "This is Dummy 1.0.0"

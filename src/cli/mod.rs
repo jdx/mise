@@ -7,7 +7,7 @@ use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{hook_env as hook_env_module, logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
 use eyre::bail;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod activate;
 pub mod args;
@@ -695,11 +695,14 @@ impl Cli {
         // Escape flags after task names so they go to tasks, not mise
         let processed_args = escape_task_args(&cmd, &processed_args);
 
-        let cli = measure!("get_matches_from", {
+        let mut cli = measure!("get_matches_from", {
             Cli::parse_from(processed_args.iter())
         });
+        if let Some(early_cd) = &early_cd {
+            normalize_cli_cd_paths(&mut cli, &early_cd.original_cwd, &early_cd.cd);
+        }
         // Validate --cd path BEFORE Settings processes it and changes the directory
-        if !early_cd {
+        if early_cd.is_none() {
             validate_cd_path(&cli.cd)?;
         }
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
@@ -853,21 +856,50 @@ fn check_working_directory() {
     }
 }
 
-fn apply_early_cd(args: &[String]) -> Result<bool> {
+struct EarlyCd {
+    original_cwd: PathBuf,
+    cd: PathBuf,
+}
+
+fn apply_early_cd(args: &[String]) -> Result<Option<EarlyCd>> {
     if *crate::env::IS_RUNNING_AS_SHIM {
-        return Ok(false);
+        return Ok(None);
     }
     let Some(cd) = early_cd_arg(args) else {
-        return Ok(false);
+        return Ok(None);
     };
+    let original_cwd = crate::env::current_dir()?;
+    let cd = normalize_cd_path(cd, &original_cwd);
     if let Err(err) = validate_cd_path(&Some(cd.clone())) {
         logger::init();
         return Err(err);
     }
     Settings::override_with(|s| {
-        s.cd = Some(cd);
+        s.cd = Some(cd.clone());
     });
-    Ok(true)
+    Ok(Some(EarlyCd { original_cwd, cd }))
+}
+
+fn normalize_cd_path(cd: PathBuf, original_cwd: &Path) -> PathBuf {
+    if cd.is_relative() {
+        original_cwd.join(cd)
+    } else {
+        cd
+    }
+}
+
+fn normalize_cli_cd_paths(cli: &mut Cli, original_cwd: &Path, early_cd: &Path) {
+    if let Some(cd) = &mut cli.cd {
+        *cd = normalize_cd_path(cd.clone(), original_cwd);
+    }
+    if let Some(Commands::Run(run)) = &mut cli.command
+        && let Some(cd) = &mut run.cd
+    {
+        *cd = normalize_cd_path(cd.clone(), original_cwd);
+    }
+    if cli.cd.is_none() {
+        cli.cd = Some(early_cd.to_path_buf());
+    }
 }
 
 fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
@@ -876,26 +908,34 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
     }
     let cmd = Cli::command();
     let mut current_flags = get_arg_flags(&cmd);
+    let mut cd = None;
     let mut subcommand = None;
     let mut iter = args.iter().skip(1).peekable();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
-            "--" => return None,
-            "-C" | "--cd" => return iter.next().map(PathBuf::from),
+            "--" => return cd,
+            "-C" | "--cd" => {
+                cd = iter.next().map(PathBuf::from);
+                continue;
+            }
             _ => {
-                if let Some(cd) = arg.strip_prefix("--cd=") {
-                    return Some(PathBuf::from(cd));
+                if let Some(path) = arg.strip_prefix("--cd=") {
+                    cd = Some(PathBuf::from(path));
+                    continue;
                 }
-                if let Some(cd) = arg.strip_prefix("-C")
-                    && !cd.is_empty()
+                if let Some(path) = arg.strip_prefix("-C")
+                    && !path.is_empty()
                 {
-                    return Some(PathBuf::from(cd));
+                    cd = Some(PathBuf::from(path));
+                    continue;
                 }
                 if skip_known_flag(arg, &mut iter, &current_flags) {
                     continue;
                 }
                 if subcommand.is_none() && !arg.starts_with('-') {
-                    let sc = find_subcommand_name(&cmd, arg)?;
+                    let Some(sc) = find_subcommand_name(&cmd, arg) else {
+                        return cd;
+                    };
                     current_flags = get_flags_for_subcommand(&cmd, sc);
                     subcommand = Some(sc.to_string());
                     continue;
@@ -904,12 +944,12 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
                     .as_deref()
                     .is_some_and(subcommand_stops_cd_scan_after_positional)
                 {
-                    return None;
+                    return cd;
                 }
             }
         }
     }
-    None
+    cd
 }
 
 fn subcommand_stops_cd_scan_after_positional(subcommand: &str) -> bool {
@@ -1153,6 +1193,31 @@ mod tests {
     }
 
     #[test]
+    fn test_early_cd_arg_uses_last_effective_cd() {
+        let args = vec![
+            "mise".to_string(),
+            "-C".to_string(),
+            "first".to_string(),
+            "--cd=second".to_string(),
+            "settings".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("second")));
+
+        let args = vec![
+            "mise".to_string(),
+            "-C".to_string(),
+            "first".to_string(),
+            "run".to_string(),
+            "-C".to_string(),
+            "taskdir".to_string(),
+            "build".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("taskdir")));
+    }
+
+    #[test]
     fn test_early_cd_arg_ignores_naked_task_args() {
         let args = vec![
             "mise".to_string(),
@@ -1283,6 +1348,36 @@ mod tests {
         ];
 
         assert_eq!(early_cd_arg(&args), None);
+    }
+
+    #[test]
+    fn test_normalize_cli_cd_paths_absolutizes_run_cd() {
+        let original_cwd = PathBuf::from("/tmp/mise-original");
+        let early_cd = original_cwd.join("project");
+        let mut cli = Cli::parse_from(["mise", "run", "-C", "project", "build"]);
+
+        normalize_cli_cd_paths(&mut cli, &original_cwd, &early_cd);
+
+        assert_eq!(cli.cd, Some(early_cd.clone()));
+        match &cli.command {
+            Some(Commands::Run(run)) => assert_eq!(run.cd, Some(early_cd)),
+            _ => panic!("expected run command"),
+        }
+    }
+
+    #[test]
+    fn test_normalize_cli_cd_paths_matches_repeated_cd() {
+        let original_cwd = PathBuf::from("/tmp/mise-original");
+        let early_cd = original_cwd.join("taskdir");
+        let mut cli = Cli::parse_from(["mise", "-C", "project", "run", "-C", "taskdir", "build"]);
+
+        normalize_cli_cd_paths(&mut cli, &original_cwd, &early_cd);
+
+        assert_eq!(cli.cd, Some(early_cd));
+        match &cli.command {
+            Some(Commands::Run(run)) => assert_eq!(run.cd, Some(original_cwd.join("taskdir"))),
+            _ => panic!("expected run command"),
+        }
     }
 
     #[test]
