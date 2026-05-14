@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings.erlang]
+compile = false
+EOF
+
+output="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 ImageOS=nobara-43 mise install erlang@28.5 2>&1)" \
+  && fail "expected erlang install to fail when precompiled binaries are unavailable"
+
+[[ $output == *"precompiled erlang is not available: unsupported OS version: nobara-43"* ]] \
+  || fail "expected unsupported OS error, got: $output"
+
+[[ $output != *"build-install"* ]] \
+  || fail "erlang.compile=false should not fall back to kerl build-install: $output"
