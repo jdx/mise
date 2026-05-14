@@ -20,7 +20,7 @@ pub enum VfoxError {
     #[error(transparent)]
     UrlParseError(#[from] url::ParseError),
     #[error(transparent)]
-    AttestationError(#[from] sigstore_verification::AttestationError),
+    AttestationError(#[from] mise_sigstore::AttestationError),
 }
 
 pub type Result<T> = std::result::Result<T, VfoxError>;

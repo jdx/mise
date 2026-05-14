@@ -192,6 +192,11 @@ if [[ $cur_version != "$latest_version" ]]; then
 	VFOX_VERSION=""
 	AQUA_REGISTRY_VERSION=""
 	INTERACTIVE_CONFIG_VERSION=""
+	MISE_SIGSTORE_VERSION=""
+
+	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
+	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
+	cargo add -p vfox "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
 
 	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
 	cargo add "vfox@$VFOX_VERSION"
@@ -369,6 +374,7 @@ done
 bump_subcrate_if_changed "aqua-registry" "crates/aqua-registry"
 bump_subcrate_if_changed "vfox" "crates/vfox"
 bump_subcrate_if_changed "mise-interactive-config" "crates/mise-interactive-config"
+bump_subcrate_if_changed "mise-sigstore" "crates/mise-sigstore"
 
 git status
 # cargo update
@@ -382,6 +388,7 @@ git add \
 	crates/vfox/embedded-plugins \
 	crates/vfox/Cargo.toml \
 	crates/mise-interactive-config/Cargo.toml \
+	crates/mise-sigstore/Cargo.toml \
 	default.nix \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \

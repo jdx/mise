@@ -203,38 +203,47 @@ backend = "aqua:cargo-bins/cargo-binstall"
 [tools.cargo-binstall."platforms.linux-arm64"]
 checksum = "sha256:57148539e6160789715745e6f50e0aac9193636df42bd9b4554cd9012195866c"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-aarch64-unknown-linux-musl.tgz"
+provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-arm64-musl"]
 checksum = "sha256:57148539e6160789715745e6f50e0aac9193636df42bd9b4554cd9012195866c"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-aarch64-unknown-linux-musl.tgz"
+provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64"]
 checksum = "sha256:a7a4271099ce891368bc544d3f89315f12547df653ba16de2030461e8867edd6"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64-baseline"]
 checksum = "sha256:a7a4271099ce891368bc544d3f89315f12547df653ba16de2030461e8867edd6"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64-musl"]
 checksum = "sha256:a7a4271099ce891368bc544d3f89315f12547df653ba16de2030461e8867edd6"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:a7a4271099ce891368bc544d3f89315f12547df653ba16de2030461e8867edd6"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.macos-arm64"]
 checksum = "sha256:1208282e0719ae33fc1db20fe533a50827673d017fb85ed5dec0cb9b0c7ca569"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-aarch64-apple-darwin.zip"
+provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.windows-x64"]
 checksum = "sha256:1113c92eb53160c4e0c12dc803f582a266d26b26ca529520e104806cce8d0204"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-pc-windows-msvc.zip"
+provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.windows-x64-baseline"]
 checksum = "sha256:1113c92eb53160c4e0c12dc803f582a266d26b26ca529520e104806cce8d0204"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.19.0/cargo-binstall-x86_64-pc-windows-msvc.zip"
+provenance = "github-attestations"
 
 [[tools.cargo-insta]]
 version = "1.47.2"
@@ -284,37 +293,37 @@ backend = "github:jdx/communique"
 checksum = "sha256:7bb0843207fc3d7b5df2a5c0198bb10539cf13a6b247b4adfbf6b302a68f03de"
 url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-aarch64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964161"
-github_attestations = "unavailable"
+provenance = "github-attestations"
 
 [tools.communique."platforms.linux-arm64-musl"]
 checksum = "sha256:b663407be77a370c209df40307b82e436f56a6bc23d4e423510d62ac6e1fedf4"
 url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-aarch64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964743"
-github_attestations = "unavailable"
+provenance = "github-attestations"
 
 [tools.communique."platforms.linux-x64"]
 checksum = "sha256:5e74ead7037f42940c7dba4f6aa4ed968920cbb55a047aa0d291b0c675c65676"
 url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405963914"
-github_attestations = "unavailable"
+provenance = "github-attestations"
 
 [tools.communique."platforms.linux-x64-baseline"]
 checksum = "sha256:5e74ead7037f42940c7dba4f6aa4ed968920cbb55a047aa0d291b0c675c65676"
 url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405963914"
-github_attestations = "unavailable"
+provenance = "github-attestations"
 
 [tools.communique."platforms.linux-x64-musl"]
 checksum = "sha256:01a6a8b49e635a5a209fdaf6c7b2e976374debc2db1c846c033f567fdba0d86c"
 url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964691"
-github_attestations = "unavailable"
+provenance = "github-attestations"
 
 [tools.communique."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:01a6a8b49e635a5a209fdaf6c7b2e976374debc2db1c846c033f567fdba0d86c"
 url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964691"
-github_attestations = "unavailable"
+provenance = "github-attestations"
 
 [tools.communique."platforms.macos-arm64"]
 checksum = "sha256:459993e31a6c4ccbd09882f5679a2bc1ea5d9068701ecefc411a00fb69ce82e6"
@@ -326,13 +335,13 @@ provenance = "github-attestations"
 checksum = "sha256:3cc0e880ac2168aed3163223627bbd1eee62e07a9901cb85cb507c6c8927bc93"
 url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964430"
-github_attestations = "unavailable"
+provenance = "github-attestations"
 
 [tools.communique."platforms.windows-x64-baseline"]
 checksum = "sha256:3cc0e880ac2168aed3163223627bbd1eee62e07a9901cb85cb507c6c8927bc93"
 url = "https://github.com/jdx/communique/releases/download/v1.1.2/communique-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/405964430"
-github_attestations = "unavailable"
+provenance = "github-attestations"
 
 [[tools.fd]]
 version = "10.4.2"
