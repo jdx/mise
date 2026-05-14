@@ -46,14 +46,6 @@ impl Display for BackendType {
 }
 
 impl BackendType {
-    pub fn disable_key(&self) -> Option<&str> {
-        match self {
-            BackendType::Unknown => None,
-            BackendType::VfoxBackend(plugin_name) => Some(plugin_name),
-            _ => Some(self.as_ref()),
-        }
-    }
-
     pub fn guess(s: &str) -> BackendType {
         let prefix = s.split(':').next().unwrap_or(s);
 

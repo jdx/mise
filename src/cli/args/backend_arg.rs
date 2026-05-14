@@ -179,20 +179,6 @@ fn parse_backend_components_fallible(
     Ok((short, tool_name.to_string(), opts))
 }
 
-fn plugin_backend_type(plugin_name: &str, plugin_type: PluginType) -> BackendType {
-    match plugin_type {
-        PluginType::Asdf => BackendType::Asdf,
-        PluginType::Vfox => BackendType::Vfox,
-        PluginType::VfoxBackend => BackendType::VfoxBackend(plugin_name.to_string()),
-    }
-}
-
-fn enabled_installed_plugin_type(plugin_name: &str) -> Option<PluginType> {
-    install_state::get_plugin_type(plugin_name).filter(|plugin_type| {
-        !backend::is_disabled_backend_type(&plugin_backend_type(plugin_name, *plugin_type))
-    })
-}
-
 impl BackendArg {
     #[requires(!short.is_empty())]
     pub fn new(short: String, full: Option<String>) -> Self {
@@ -242,11 +228,8 @@ impl BackendArg {
         //     }
         // })?;
         // Ok(backend.clone())
-        let backend_type = self.backend_type();
         if let Some(backend) = backend::get(self) {
             Ok(backend)
-        } else if backend::is_disabled_backend_type(&backend_type) {
-            bail!("backend {backend_type} is disabled by disable_backends");
         } else if let Some((plugin_name, tool_name)) = self.short.split_once(':') {
             // Check if the plugin exists first
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
@@ -342,7 +325,6 @@ impl BackendArg {
         // Only check install state for non-plugin:tool format entries
         if !self.short.contains(':')
             && let Ok(Some(backend_type)) = install_state::backend_type(&self.short)
-            && !backend::is_disabled_backend_type(&backend_type)
         {
             return backend_type;
         }
@@ -398,7 +380,7 @@ impl BackendArg {
         // backend if available. This allows tools to automatically switch backends when
         // the registry changes (e.g., when a tool moves from one maintainer to another).
         if !self.resolution.explicit
-            && enabled_installed_plugin_type(short).is_none()
+            && install_state::get_plugin_type(short).is_none()
             && let Some(registry_full) = REGISTRY
                 .get(short)
                 .and_then(|rt| rt.backends().first().cloned())
@@ -415,16 +397,14 @@ impl BackendArg {
 
         if let Some(full) = &self.full {
             full.clone()
-        } else if let Some(full) =
-            install_state::get_tool_full(short).filter(|full| !backend::is_disabled_backend(full))
-        {
+        } else if let Some(full) = install_state::get_tool_full(short) {
             full
         } else if let Some((plugin_name, _tool_name)) = short.split_once(':') {
             // Check if this is a plugin:tool format
             if BackendType::guess(short) != BackendType::Unknown {
                 // Handle built-in backends
                 short.to_string()
-            } else if let Some(pt) = enabled_installed_plugin_type(plugin_name) {
+            } else if let Some(pt) = install_state::get_plugin_type(plugin_name) {
                 match pt {
                     PluginType::Asdf => {
                         // For asdf plugins, plugin:tool format is invalid
@@ -442,7 +422,7 @@ impl BackendArg {
             } else {
                 short.to_string()
             }
-        } else if let Some(pt) = enabled_installed_plugin_type(short) {
+        } else if let Some(pt) = install_state::get_plugin_type(short) {
             match pt {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
