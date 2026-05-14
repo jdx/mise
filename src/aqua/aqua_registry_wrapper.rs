@@ -1,23 +1,17 @@
 use crate::config::Settings;
 use crate::http::HTTP;
-use crate::{dirs, duration::WEEKLY, file, hash};
-use aqua_registry::{
-    AquaRegistry, AquaRegistryConfig, AquaRegistryError, CompiledRegistry, NoOpCacheStore,
-    ParsedRegistry, RegistryFetcher,
-};
+use crate::{dirs, duration::WEEKLY};
+use aqua_registry::{AquaRegistryError, CompiledRegistry, ParsedRegistry, RegistryCache};
 use eyre::Result;
 use reqwest::header::{ACCEPT, HeaderMap, HeaderValue};
 use std::collections::HashMap;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, LazyLock as Lazy};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, OnceCell};
 use url::Url;
 
 static AQUA_REGISTRY_PATH: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("aqua-registry"));
 static AQUA_DEFAULT_REGISTRY_URL: &str = "https://github.com/aquaproj/aqua-registry";
-const COMPILED_REGISTRY_CACHE_VERSION: &str = "v1";
 
 pub static AQUA_REGISTRY: Lazy<MiseAquaRegistry> = Lazy::new(|| {
     MiseAquaRegistry::standard().unwrap_or_else(|err| {
@@ -29,19 +23,21 @@ pub static AQUA_REGISTRY: Lazy<MiseAquaRegistry> = Lazy::new(|| {
 /// Wrapper around the aqua-registry crate that provides mise-specific functionality
 #[derive(Debug)]
 pub struct MiseAquaRegistry {
-    inner: AquaRegistry<MiseRegistryFetcher>,
+    fetcher: MiseRegistryFetcher,
     #[allow(dead_code)]
     path: PathBuf,
 }
 
 impl Default for MiseAquaRegistry {
     fn default() -> Self {
-        let config = AquaRegistryConfig::default();
-        let inner = aqua_registry(config.clone());
-        Self {
-            inner,
-            path: config.cache_dir,
-        }
+        let path = std::env::temp_dir().join("aqua-registry");
+        let fetcher = MiseRegistryFetcher::new(
+            path.clone(),
+            Some(AQUA_DEFAULT_REGISTRY_URL.to_string()),
+            true,
+            false,
+        );
+        Self { fetcher, path }
     }
 }
 
@@ -60,16 +56,14 @@ impl MiseAquaRegistry {
                     Some(AQUA_DEFAULT_REGISTRY_URL)
                 });
 
-        let config = AquaRegistryConfig {
-            cache_dir: path.clone(),
-            registry_url: registry_url.map(|s| s.to_string()),
-            use_baked_registry: settings.aqua.baked_registry,
-            prefer_offline: settings.prefer_offline(),
-        };
+        let fetcher = MiseRegistryFetcher::new(
+            path.clone(),
+            registry_url.map(|s| s.to_string()),
+            settings.aqua.baked_registry,
+            settings.prefer_offline(),
+        );
 
-        let inner = aqua_registry(config);
-
-        Ok(Self { inner, path })
+        Ok(Self { fetcher, path })
     }
 
     pub async fn package(&self, id: &str) -> Result<AquaPackage> {
@@ -80,7 +74,8 @@ impl MiseAquaRegistry {
             return Ok(pkg.clone());
         }
 
-        let pkg = self.inner.package(id).await?;
+        let mut pkg = self.fetcher.fetch_package(id).await?;
+        pkg.setup_version_filter()?;
         CACHE.lock().await.insert(id.to_string(), pkg.clone());
         Ok(pkg)
     }
@@ -88,7 +83,10 @@ impl MiseAquaRegistry {
 
 #[derive(Debug, Clone)]
 struct MiseRegistryFetcher {
-    config: AquaRegistryConfig,
+    registry_url: Option<String>,
+    use_baked_registry: bool,
+    prefer_offline: bool,
+    cache: RegistryCache,
     registry: Arc<OnceCell<std::result::Result<Option<Arc<ActiveRegistry>>, String>>>,
 }
 
@@ -107,18 +105,22 @@ impl ActiveRegistry {
     }
 }
 
-fn aqua_registry(config: AquaRegistryConfig) -> AquaRegistry<MiseRegistryFetcher> {
-    AquaRegistry::with_fetcher_and_cache(
-        config.clone(),
-        MiseRegistryFetcher {
-            config,
+impl MiseRegistryFetcher {
+    fn new(
+        cache_dir: PathBuf,
+        registry_url: Option<String>,
+        use_baked_registry: bool,
+        prefer_offline: bool,
+    ) -> Self {
+        Self {
+            registry_url,
+            use_baked_registry,
+            prefer_offline,
+            cache: RegistryCache::new(cache_dir),
             registry: Arc::new(OnceCell::new()),
-        },
-        NoOpCacheStore,
-    )
-}
+        }
+    }
 
-impl RegistryFetcher for MiseRegistryFetcher {
     async fn fetch_package(&self, package_id: &str) -> aqua_registry::Result<AquaPackage> {
         match self.registry().await {
             Ok(Some(registry)) => match registry.package(package_id) {
@@ -130,7 +132,7 @@ impl RegistryFetcher for MiseRegistryFetcher {
                 Err(err) => return Err(err),
             },
             Ok(None) => {}
-            Err(err) if self.config.use_baked_registry => {
+            Err(err) if self.use_baked_registry => {
                 log::trace!(
                     "falling back to baked-in aqua registry after custom registry load failed: {err}"
                 );
@@ -138,7 +140,7 @@ impl RegistryFetcher for MiseRegistryFetcher {
             Err(err) => return Err(err),
         }
 
-        if self.config.use_baked_registry
+        if self.use_baked_registry
             && let Some(package) = super::standard_registry::package(package_id)
         {
             log::trace!("reading baked-in aqua package for {package_id}");
@@ -149,9 +151,7 @@ impl RegistryFetcher for MiseRegistryFetcher {
             "no aqua-registry found for {package_id}"
         )))
     }
-}
 
-impl MiseRegistryFetcher {
     async fn registry(&self) -> aqua_registry::Result<Option<Arc<ActiveRegistry>>> {
         let registry = self
             .registry
@@ -159,12 +159,13 @@ impl MiseRegistryFetcher {
                 self.load_registry()
                     .await
                     .map_err(|err| {
-                        if self.config.use_baked_registry
-                            && let Some(registry_url) = self.config.registry_url.as_deref() {
-                                warn!(
-                                    "failed to load aqua registry from {registry_url}: {err}; falling back to baked-in aqua registry"
-                                );
-                            }
+                        if self.use_baked_registry
+                            && let Some(registry_url) = self.registry_url.as_deref()
+                        {
+                            warn!(
+                                "failed to load aqua registry from {registry_url}: {err}; falling back to baked-in aqua registry"
+                            );
+                        }
                         err.to_string()
                     })
             })
@@ -175,17 +176,15 @@ impl MiseRegistryFetcher {
     }
 
     async fn load_registry(&self) -> aqua_registry::Result<Option<Arc<ActiveRegistry>>> {
-        let Some(registry_url) = self.config.registry_url.as_deref() else {
+        let Some(registry_url) = self.registry_url.as_deref() else {
             return Ok(None);
         };
 
         let source = self.registry_source(registry_url).await?;
-        let source_hash = hash::hash_blake3_to_str(&source);
-        let compiled_dir =
-            compiled_registry_cache_dir(&self.config.cache_dir, registry_url, &source_hash);
+        let source_hash = RegistryCache::source_hash(&source);
 
-        if let Ok(registry) = CompiledRegistry::load(&compiled_dir) {
-            prune_stale_compiled_registries(&compiled_dir);
+        if let Ok(registry) = self.cache.load_compiled(registry_url, &source_hash) {
+            self.cache.prune_stale_compiled(registry_url, &source_hash);
             return Ok(Some(Arc::new(ActiveRegistry::Compiled(registry))));
         }
 
@@ -195,8 +194,9 @@ impl MiseRegistryFetcher {
         })?);
         spawn_compiled_registry_cache_writer(
             registry_url.to_string(),
+            self.cache.clone(),
+            source_hash,
             Arc::clone(&registry),
-            compiled_dir,
         );
         Ok(Some(Arc::new(ActiveRegistry::Parsed(registry))))
     }
@@ -206,165 +206,56 @@ impl MiseRegistryFetcher {
             return download_registry_source(registry_url).await;
         }
 
-        let source_path = registry_source_cache_path(&self.config.cache_dir, registry_url);
-
-        if source_is_fresh(&source_path) {
-            return Ok(std::fs::read_to_string(&source_path)?);
+        if let Some(source) = self.cache.read_fresh_source(registry_url, WEEKLY)? {
+            return Ok(source);
         }
 
-        if self.config.prefer_offline {
+        if self.prefer_offline {
             trace!("using cached aqua registry source due to prefer-offline mode");
-            return std::fs::read_to_string(&source_path).map_err(|err| {
-                AquaRegistryError::RegistryNotAvailable(format!(
-                    "failed to read cached aqua registry source {} while prefer-offline mode is enabled: {err}",
-                    source_path.display()
-                ))
-            });
+            return self
+                .cache
+                .read_source(registry_url)
+                .map_err(|err| {
+                    AquaRegistryError::RegistryNotAvailable(format!(
+                        "failed to read cached aqua registry source {} while prefer-offline mode is enabled: {err}",
+                        self.cache.source_path(registry_url).display()
+                    ))
+                })?
+                .ok_or_else(|| {
+                    AquaRegistryError::RegistryNotAvailable(format!(
+                        "failed to read cached aqua registry source {} while prefer-offline mode is enabled: cache file does not exist",
+                        self.cache.source_path(registry_url).display()
+                    ))
+                });
         }
 
         let source = download_registry_source(registry_url).await?;
-        write_registry_source(&source_path, &source)?;
+        self.cache.write_source(registry_url, &source)?;
         Ok(source)
-    }
-}
-
-fn source_is_fresh(path: &std::path::Path) -> bool {
-    path.exists() && file::modified_duration(path).is_ok_and(|duration| duration < WEEKLY)
-}
-
-fn registry_source_cache_path(cache_dir: &std::path::Path, registry_url: &str) -> PathBuf {
-    cache_dir
-        .join("sources")
-        .join(format!("{}.yaml", hash::hash_to_str(&registry_url)))
-}
-
-fn compiled_registry_cache_dir(cache_dir: &Path, registry_url: &str, source_hash: &str) -> PathBuf {
-    cache_dir
-        .join("compiled")
-        .join(hash::hash_to_str(&registry_url))
-        .join(COMPILED_REGISTRY_CACHE_VERSION)
-        .join(source_hash)
-}
-
-fn prune_stale_compiled_registries(current_dir: &Path) {
-    let Some(parent) = current_dir.parent() else {
-        return;
-    };
-    let Ok(entries) = std::fs::read_dir(parent) else {
-        return;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path == current_dir {
-            continue;
-        }
-        if entry.file_type().is_ok_and(|file_type| file_type.is_dir())
-            && let Err(err) = std::fs::remove_dir_all(&path)
-        {
-            debug!(
-                "failed to prune stale compiled aqua registry cache {}: {err}",
-                path.display()
-            );
-        }
     }
 }
 
 fn spawn_compiled_registry_cache_writer(
     registry_url: String,
+    cache: RegistryCache,
+    source_hash: String,
     registry: Arc<ParsedRegistry>,
-    compiled_dir: PathBuf,
 ) {
-    if CompiledRegistry::load(&compiled_dir).is_ok() {
-        prune_stale_compiled_registries(&compiled_dir);
+    if cache.load_compiled(&registry_url, &source_hash).is_ok() {
+        cache.prune_stale_compiled(&registry_url, &source_hash);
         return;
     }
 
     tokio::task::spawn_blocking(move || {
         info!("writing compiled aqua registry cache for {registry_url}");
         if let Err(err) = measure!("aqua_registry::write_compiled_cache", {
-            write_compiled_registry_cache(registry.as_ref(), &compiled_dir)
+            cache
+                .write_compiled(&registry_url, &source_hash, registry.as_ref())
+                .map(|_| ())
         }) {
             warn!("failed to write compiled aqua registry cache for {registry_url}: {err}");
         }
     });
-}
-
-fn write_compiled_registry_cache(
-    registry: &ParsedRegistry,
-    compiled_dir: &Path,
-) -> aqua_registry::Result<()> {
-    if CompiledRegistry::load(compiled_dir).is_ok() {
-        prune_stale_compiled_registries(compiled_dir);
-        return Ok(());
-    }
-
-    let Some(parent) = compiled_dir.parent() else {
-        return Err(AquaRegistryError::RegistryNotAvailable(format!(
-            "compiled aqua registry cache path has no parent: {}",
-            compiled_dir.display()
-        )));
-    };
-    std::fs::create_dir_all(parent)?;
-
-    let tmp_dir = compiled_registry_tmp_dir(compiled_dir);
-    if tmp_dir.exists() {
-        std::fs::remove_dir_all(&tmp_dir)?;
-    }
-
-    registry.write_compiled_cache(&tmp_dir)?;
-
-    if CompiledRegistry::load(compiled_dir).is_ok() {
-        std::fs::remove_dir_all(&tmp_dir)?;
-        prune_stale_compiled_registries(compiled_dir);
-        return Ok(());
-    }
-
-    if compiled_dir.exists() {
-        std::fs::remove_dir_all(compiled_dir)?;
-    }
-    std::fs::rename(&tmp_dir, compiled_dir)?;
-    prune_stale_compiled_registries(compiled_dir);
-    Ok(())
-}
-
-fn compiled_registry_tmp_dir(compiled_dir: &Path) -> PathBuf {
-    let name = compiled_dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("registry");
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    compiled_dir.with_file_name(format!("{name}.tmp-{}-{nanos}", std::process::id()))
-}
-
-fn write_registry_source(path: &Path, source: &str) -> aqua_registry::Result<()> {
-    if let Ok(existing) = std::fs::read_to_string(path)
-        && existing == source
-    {
-        if let Err(err) = file::touch_file(path) {
-            debug!(
-                "failed to touch cached aqua registry source {}: {err}",
-                path.display()
-            );
-        }
-        return Ok(());
-    }
-
-    let Some(parent) = path.parent() else {
-        return Err(AquaRegistryError::RegistryNotAvailable(format!(
-            "cached aqua registry source path has no parent: {}",
-            path.display()
-        )));
-    };
-    std::fs::create_dir_all(parent)?;
-
-    let mut tmp = tempfile::NamedTempFile::with_prefix_in("registry-source.", parent)?;
-    tmp.write_all(source.as_bytes())?;
-    tmp.persist(path).map_err(|err| err.error)?;
-    Ok(())
 }
 
 async fn download_registry_source(registry_url: &str) -> aqua_registry::Result<String> {
@@ -545,7 +436,7 @@ pub use aqua_registry::{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn github_slug_handles_common_registry_urls() {
@@ -579,9 +470,9 @@ mod tests {
 
     #[test]
     fn compiled_registry_cache_is_scoped_by_registry_url() {
-        let cache_dir = Path::new("/cache");
-        let first = compiled_registry_cache_dir(cache_dir, "https://example.com/one", "source");
-        let second = compiled_registry_cache_dir(cache_dir, "https://example.com/two", "source");
+        let cache = RegistryCache::new("/cache");
+        let first = cache.compiled_dir("https://example.com/one", "source");
+        let second = cache.compiled_dir("https://example.com/two", "source");
 
         assert_ne!(first.parent(), second.parent());
         assert_eq!(
@@ -672,10 +563,12 @@ mod tests {
         let source = "packages:\n  - name: example/custom\n    url: https://example.com/custom\n";
         std::fs::write(registry_dir.join("registry.yml"), source).unwrap();
         let registry_url = file_registry_url(&registry_dir);
-        let source_hash = hash::hash_blake3_to_str(source);
-        let compiled_dir = compiled_registry_cache_dir(temp.path(), &registry_url, &source_hash);
+        let source_hash = RegistryCache::source_hash(source);
+        let cache = RegistryCache::new(temp.path());
         let parsed = ParsedRegistry::parse_yaml(source).unwrap();
-        write_compiled_registry_cache(&parsed, &compiled_dir).unwrap();
+        cache
+            .write_compiled(&registry_url, &source_hash, &parsed)
+            .unwrap();
 
         let registry = test_fetcher(temp.path().to_path_buf(), Some(registry_url), false)
             .load_registry()
@@ -704,7 +597,7 @@ mod tests {
             false,
         );
         let first = fetcher
-            .registry_source(fetcher.config.registry_url.as_deref().unwrap())
+            .registry_source(fetcher.registry_url.as_deref().unwrap())
             .await
             .unwrap();
 
@@ -714,7 +607,7 @@ mod tests {
         )
         .unwrap();
         let second = fetcher
-            .registry_source(fetcher.config.registry_url.as_deref().unwrap())
+            .registry_source(fetcher.registry_url.as_deref().unwrap())
             .await
             .unwrap();
 
@@ -730,10 +623,10 @@ mod tests {
             Some("https://example.com/aqua-registry".to_string()),
             false,
         );
-        fetcher.config.prefer_offline = true;
+        fetcher.prefer_offline = true;
 
         let err = fetcher
-            .registry_source(fetcher.config.registry_url.as_deref().unwrap())
+            .registry_source(fetcher.registry_url.as_deref().unwrap())
             .await
             .unwrap_err();
 
@@ -745,15 +638,7 @@ mod tests {
         registry_url: Option<String>,
         use_baked_registry: bool,
     ) -> MiseRegistryFetcher {
-        MiseRegistryFetcher {
-            config: AquaRegistryConfig {
-                cache_dir,
-                registry_url,
-                use_baked_registry,
-                prefer_offline: false,
-            },
-            registry: Arc::new(OnceCell::new()),
-        }
+        MiseRegistryFetcher::new(cache_dir, registry_url, use_baked_registry, false)
     }
 
     fn file_registry_url(path: &Path) -> String {
