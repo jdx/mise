@@ -720,7 +720,7 @@ cmd outdated help="Shows outdated tool versions" {
     arg "[TOOL@VERSION]…" help="Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown" required=#false var=#true
 }
 cmd patrons help="Show the individuals supporting mise as Patron-tier members" {
-    long_help "Show the individuals supporting mise as Patron-tier members\n\nLists the individuals on the Patron tier from <https://en.dev/patrons.json>.\nThe list refreshes daily; supporting terminals will render each patron's\nname as a clickable link via OSC 8 hyperlinks.\n\nTo appear here, become a patron at <https://en.dev/sponsor>."
+    long_help "Show the individuals supporting mise as Patron-tier members\n\nLists the individuals on the Patron tier from <https://en.dev/patrons.json>.\nThe list refreshes daily; supporting terminals will render each patron's\nname as a clickable link via OSC 8 hyperlinks.\n\nTo appear here, become a patron at <https://en.dev>."
     after_long_help "Examples:\n\n    $ mise patrons\n    $ mise patrons -J\n    $ mise patrons --refresh"
     flag "-J --json" help="Output in JSON format"
     flag --refresh help="Bypass the local cache and re-fetch"

@@ -13,7 +13,7 @@ use crate::{dirs, duration, file};
 /// The list refreshes daily; supporting terminals will render each patron's
 /// name as a clickable link via OSC 8 hyperlinks.
 ///
-/// To appear here, become a patron at <https://en.dev/sponsor>.
+/// To appear here, become a patron at <https://en.dev>.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Patrons {
@@ -44,7 +44,7 @@ struct Patron {
 }
 
 const PATRONS_URL: &str = "https://en.dev/patrons.json";
-const SPONSOR_URL: &str = "https://en.dev/sponsor";
+const SPONSOR_URL: &str = "https://en.dev";
 const CACHE_TTL: Duration = duration::DAILY;
 
 impl Patrons {
