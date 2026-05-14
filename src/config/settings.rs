@@ -449,7 +449,7 @@ impl Settings {
 
         // Don't process mise-specific flags when running as a shim
         if *crate::env::IS_RUNNING_AS_SHIM {
-            Self::reset(Some(s));
+            Self::reset_preserving_config_paths(Some(s));
             return;
         }
 
@@ -492,7 +492,11 @@ impl Settings {
         if cli.verbose > 1 {
             s.log_level = Some("trace".to_string());
         }
-        Self::reset(Some(s));
+        if cli.cd.is_some() {
+            Self::reset(Some(s));
+        } else {
+            Self::reset_preserving_config_paths(Some(s));
+        }
     }
 
     pub fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
@@ -533,11 +537,22 @@ impl Settings {
     }
 
     pub fn reset(cli_settings: Option<SettingsPartial>) {
+        Self::reset_inner(cli_settings, true);
+    }
+
+    // CLI flags like --quiet rebuild Settings but do not change config discovery.
+    // Keep path caches populated from the earlier startup pass unless --cd needs a new root.
+    fn reset_preserving_config_paths(cli_settings: Option<SettingsPartial>) {
+        Self::reset_inner(cli_settings, false);
+    }
+
+    fn reset_inner(cli_settings: Option<SettingsPartial>, reset_config_paths: bool) {
         *CLI_SETTINGS.lock().unwrap() = cli_settings;
         *BASE_SETTINGS.write().unwrap() = None;
-        // Clear caches that depend on settings and environment
-        crate::config::reset_config_path_caches();
-        crate::config::config_file::config_root::reset();
+        if reset_config_paths {
+            crate::config::reset_config_path_caches();
+            crate::config::config_file::config_root::reset();
+        }
     }
 
     /// Merge an override into the CLI-level settings partial.
