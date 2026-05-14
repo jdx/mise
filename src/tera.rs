@@ -52,10 +52,14 @@ pub fn render_str_if_template(
     context: &Context,
 ) -> tera::Result<String> {
     if contains_template_syntax(input) {
-        tera.render_str(input, context)
+        render_str(tera, input, context)
     } else {
         Ok(input.to_string())
     }
+}
+
+pub fn render_str(tera: &mut Tera, input: &str, context: &Context) -> tera::Result<String> {
+    tera.render_str(input, context)
 }
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {

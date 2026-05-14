@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::hash::hash_to_str;
-use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str_if_template};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolVersion};
 use dashmap::DashMap;
 use eyre::{WrapErr, eyre};
@@ -121,6 +121,5 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result
             .or(env::current_dir().as_ref().ok())
             .map(|p| p.as_path()),
     );
-    render_str_if_template(&mut tera, tmpl, &ctx)
-        .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
+    render_str(&mut tera, tmpl, &ctx).wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
 }
