@@ -2929,6 +2929,7 @@ pub(crate) fn fuzzy_match_versions(
 
 pub fn unalias_backend(backend: &str) -> &str {
     match backend {
+        "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
         _ => backend.trim_start_matches("core:"),
@@ -2941,6 +2942,7 @@ fn test_unalias_backend() {
     assert_eq!(unalias_backend("nodejs"), "node");
     assert_eq!(unalias_backend("core:node"), "node");
     assert_eq!(unalias_backend("golang"), "go");
+    assert_eq!(unalias_backend("dotnet-core"), "dotnet");
 }
 
 impl Display for dyn Backend {

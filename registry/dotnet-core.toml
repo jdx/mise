@@ -1,5 +1,0 @@
-backends = [
-  "asdf:mise-plugins/mise-dotnet-core",
-  "vfox:mise-plugins/vfox-dotnet",
-]
-description = ".Net Core"
