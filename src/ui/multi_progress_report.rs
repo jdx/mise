@@ -181,9 +181,13 @@ impl MultiProgressReport {
 
         progress_trace!("footer_finish: completed={}, total={}", completed, total);
 
-        // Stop clx progress
-        progress::stop();
+        self.finish_progress();
+    }
 
+    /// Render the final progress state, then clear clx's registered jobs so
+    /// later regular terminal output cannot be erased by process shutdown.
+    pub fn finish_progress(&self) {
+        progress::stop();
         self.reset_jobs();
     }
 
