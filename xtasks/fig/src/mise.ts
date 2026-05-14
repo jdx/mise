@@ -2095,6 +2095,23 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
+      name: "patrons",
+      description:
+        "Show the individuals supporting mise as Patron-tier members",
+      options: [
+        {
+          name: ["-J", "--json"],
+          description: "Output in JSON format",
+          isRepeatable: false,
+        },
+        {
+          name: "--refresh",
+          description: "Bypass the local cache and re-fetch",
+          isRepeatable: false,
+        },
+      ],
+    },
+    {
       name: ["plugins", "p"],
       description: "Manage plugins",
       subcommands: [

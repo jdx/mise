@@ -206,6 +206,9 @@ export const commands: { [key: string]: Command } = {
   outdated: {
     hide: false,
   },
+  patrons: {
+    hide: false,
+  },
   plugins: {
     hide: false,
     subcommands: {
