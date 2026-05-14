@@ -342,53 +342,105 @@ impl Commands {
     }
 }
 
-fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
-    let mut flags_with_values = Vec::new();
-    let mut boolean_flags = Vec::new();
+#[derive(Clone, Default)]
+struct CliArgFlags {
+    required_value: Vec<String>,
+    optional_value: Vec<String>,
+    boolean: Vec<String>,
+}
+
+impl CliArgFlags {
+    fn extend(&mut self, other: Self) {
+        self.required_value.extend(other.required_value);
+        self.optional_value.extend(other.optional_value);
+        self.boolean.extend(other.boolean);
+    }
+
+    fn flags_with_values(&self) -> Vec<String> {
+        self.required_value
+            .iter()
+            .chain(self.optional_value.iter())
+            .cloned()
+            .collect()
+    }
+
+    fn has_required_value(&self, flag: &str) -> bool {
+        self.required_value.iter().any(|f| f == flag)
+    }
+
+    fn has_optional_value(&self, flag: &str) -> bool {
+        self.optional_value.iter().any(|f| f == flag)
+    }
+
+    fn has_value(&self, flag: &str) -> bool {
+        self.has_required_value(flag) || self.has_optional_value(flag)
+    }
+
+    fn has_boolean(&self, flag: &str) -> bool {
+        self.boolean.iter().any(|f| f == flag)
+    }
+}
+
+fn push_arg_names(arg: &clap::Arg, flags: &mut Vec<String>) {
+    if let Some(long) = arg.get_long() {
+        flags.push(format!("--{}", long));
+    }
+    if let Some(aliases) = arg.get_all_aliases() {
+        flags.extend(aliases.into_iter().map(|alias| format!("--{}", alias)));
+    }
+    if let Some(short) = arg.get_short() {
+        flags.push(format!("-{}", short));
+    }
+}
+
+fn get_arg_flags(cmd: &clap::Command) -> CliArgFlags {
+    let mut flags = CliArgFlags::default();
 
     for arg in cmd.get_arguments() {
         let takes_value = matches!(
             arg.get_action(),
             clap::ArgAction::Set | clap::ArgAction::Append
         );
+        let optional_value = takes_value
+            && arg
+                .get_num_args()
+                .is_some_and(|range| range.min_values() == 0 && range.max_values() > 0);
         let is_bool = matches!(
             arg.get_action(),
-            clap::ArgAction::SetTrue | clap::ArgAction::SetFalse
+            clap::ArgAction::SetTrue | clap::ArgAction::SetFalse | clap::ArgAction::Count
         );
 
         if takes_value {
-            if let Some(long) = arg.get_long() {
-                flags_with_values.push(format!("--{}", long));
-            }
-            if let Some(short) = arg.get_short() {
-                flags_with_values.push(format!("-{}", short));
+            if optional_value {
+                push_arg_names(arg, &mut flags.optional_value);
+            } else {
+                push_arg_names(arg, &mut flags.required_value);
             }
         } else if is_bool {
-            if let Some(long) = arg.get_long() {
-                boolean_flags.push(format!("--{}", long));
-            }
-            if let Some(short) = arg.get_short() {
-                boolean_flags.push(format!("-{}", short));
-            }
+            push_arg_names(arg, &mut flags.boolean);
         }
     }
 
-    (flags_with_values, boolean_flags)
+    flags
+}
+
+fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
+    let flags = get_arg_flags(cmd);
+    (flags.flags_with_values(), flags.boolean)
+}
+
+fn get_flags_for_subcommand(cmd: &clap::Command, subcommand: &str) -> CliArgFlags {
+    let mut flags = get_arg_flags(cmd);
+    if let Some(sc) = cmd.get_subcommands().find(|s| s.get_name() == subcommand) {
+        flags.extend(get_arg_flags(sc));
+    }
+    flags
 }
 
 /// Get all flags (with values and boolean) from both global Cli and Run subcommand
 fn get_all_run_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
-    // Get global flags from Cli
-    let (mut flags_with_values, mut boolean_flags) = get_global_flags(cmd);
-
-    // Get run-specific flags from Run subcommand
-    if let Some(run_cmd) = cmd.get_subcommands().find(|s| s.get_name() == "run") {
-        let (run_vals, run_bools) = get_global_flags(run_cmd);
-        flags_with_values.extend(run_vals);
-        boolean_flags.extend(run_bools);
-    }
-
-    (flags_with_values, boolean_flags)
+    let flags = get_flags_for_subcommand(cmd, "run");
+    (flags.flags_with_values(), flags.boolean)
 }
 
 /// Prefix used to escape flags that should be passed to tasks, not mise
@@ -823,8 +875,7 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
         return None;
     }
     let cmd = Cli::command();
-    let (global_flags_with_values, _) = get_global_flags(&cmd);
-    let (run_flags_with_values, _) = get_all_run_flags(&cmd);
+    let mut current_flags = get_arg_flags(&cmd);
     let mut subcommand = None;
     let mut iter = args.iter().skip(1).peekable();
     while let Some(arg) = iter.next() {
@@ -840,38 +891,73 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
                 {
                     return Some(PathBuf::from(cd));
                 }
-                let flags_with_values = if subcommand.as_deref() == Some("run") {
-                    &run_flags_with_values
-                } else {
-                    &global_flags_with_values
-                };
-                if let Some(flag) = arg.split_once('=').map(|(flag, _)| flag)
-                    && flags_with_values.iter().any(|f| f == flag)
-                {
-                    continue;
-                }
-                if flags_with_values.iter().any(|f| f == arg) {
-                    iter.next();
-                    continue;
-                }
-                if arg.len() > 2
-                    && let Some(flag) = arg.get(..2)
-                    && flags_with_values.iter().any(|f| f == flag)
-                {
+                if skip_known_flag(arg, &mut iter, &current_flags) {
                     continue;
                 }
                 if subcommand.is_none() && !arg.starts_with('-') {
                     let sc = find_subcommand_name(&cmd, arg)?;
+                    current_flags = get_flags_for_subcommand(&cmd, sc);
                     subcommand = Some(sc.to_string());
                     continue;
                 }
-                if subcommand.as_deref() == Some("run") && !arg.starts_with('-') {
+                if subcommand
+                    .as_deref()
+                    .is_some_and(subcommand_stops_cd_scan_after_positional)
+                {
                     return None;
                 }
             }
         }
     }
     None
+}
+
+fn subcommand_stops_cd_scan_after_positional(subcommand: &str) -> bool {
+    matches!(subcommand, "asdf" | "run" | "watch")
+}
+
+fn skip_known_flag<'a, I>(arg: &str, iter: &mut std::iter::Peekable<I>, flags: &CliArgFlags) -> bool
+where
+    I: Iterator<Item = &'a String>,
+{
+    if let Some(flag) = arg.split_once('=').map(|(flag, _)| flag)
+        && (flags.has_value(flag) || flags.has_boolean(flag))
+    {
+        return true;
+    }
+    if flags.has_required_value(arg) {
+        iter.next();
+        return true;
+    }
+    if flags.has_optional_value(arg) {
+        if iter
+            .peek()
+            .is_some_and(|next| !next.starts_with('-') && !is_cd_arg(next))
+        {
+            iter.next();
+        }
+        return true;
+    }
+    if flags.has_boolean(arg) || is_known_short_boolean_cluster(arg, flags) {
+        return true;
+    }
+    if arg.len() > 2
+        && !arg.starts_with("--")
+        && let Some(flag) = arg.get(..2)
+        && flags.has_value(flag)
+    {
+        return true;
+    }
+    false
+}
+
+fn is_known_short_boolean_cluster(arg: &str, flags: &CliArgFlags) -> bool {
+    if arg.len() <= 2 || !arg.starts_with('-') || arg.starts_with("--") {
+        return false;
+    }
+    arg[1..]
+        .chars()
+        .all(|short| flags.has_boolean(&format!("-{short}")))
 }
 
 fn has_cd_arg(args: &[String]) -> bool {
@@ -1093,6 +1179,76 @@ mod tests {
         ];
 
         assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+    }
+
+    #[test]
+    fn test_early_cd_arg_ignores_run_task_args() {
+        let args = vec![
+            "mise".to_string(),
+            "run".to_string(),
+            "mytask".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), None);
+
+        let args = vec![
+            "mise".to_string(),
+            "run".to_string(),
+            "-mytask".to_string(),
+            "--cd=project".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), None);
+    }
+
+    #[test]
+    fn test_early_cd_arg_handles_watch_args() {
+        let args = vec![
+            "mise".to_string(),
+            "watch".to_string(),
+            "--glob".to_string(),
+            "src/**/*.rs".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+            "mytask".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+
+        let args = vec![
+            "mise".to_string(),
+            "watch".to_string(),
+            "-e".to_string(),
+            ".rs".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+            "mytask".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+
+        let args = vec![
+            "mise".to_string(),
+            "w".to_string(),
+            "--clear".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+            "mytask".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+
+        let args = vec![
+            "mise".to_string(),
+            "watch".to_string(),
+            "mytask".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), None);
     }
 
     #[test]
