@@ -380,6 +380,7 @@ impl Upgrade {
             }
         }
 
+        mpr.finish_progress();
         let ts = config.get_toolset().await?;
 
         // Fix up sources and requests for lockfile update - CLI args produce
