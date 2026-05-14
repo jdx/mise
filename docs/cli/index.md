@@ -128,6 +128,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise oci push [FLAGS] <REF>`](/cli/oci/push.md)
 - [`mise oci run [FLAGS] [-- CMD]…`](/cli/oci/run.md)
 - [`mise outdated [FLAGS] [TOOL@VERSION]…`](/cli/outdated.md)
+- [`mise patrons [-J --json] [--refresh]`](/cli/patrons.md)
 - [`mise plugins [FLAGS] <SUBCOMMAND>`](/cli/plugins.md)
 - [`mise plugins install [FLAGS] [NEW_PLUGIN] [GIT_URL]`](/cli/plugins/install.md)
 - [`mise plugins link [-f --force] <NAME> [DIR]`](/cli/plugins/link.md)

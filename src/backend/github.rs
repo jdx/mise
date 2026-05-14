@@ -59,13 +59,24 @@ enum VerificationStatus {
 /// Check if an SLSA verification error indicates a format/parsing issue rather than
 /// an actual verification failure. Some provenance files (e.g., BuildKit raw provenance)
 /// exist but aren't in a sigstore-verifiable format.
+///
+/// `Sigstore(msg)` covers errors that originated in `sigstore-verify` itself
+/// (e.g. `missing field 'verificationMaterial'` when the file is a legacy
+/// cosign v1 bundle that the modern bundle deserializer rejects). Those are
+/// format mismatches, not signature failures, so we let the caller fall
+/// back to alternate verification paths.
 fn is_slsa_format_issue(e: &crate::github::sigstore::AttestationError) -> bool {
     match e {
         crate::github::sigstore::AttestationError::NoAttestations => true,
-        crate::github::sigstore::AttestationError::Verification(msg) => {
+        crate::github::sigstore::AttestationError::UnsupportedFormat(_) => true,
+        crate::github::sigstore::AttestationError::Verification(msg)
+        | crate::github::sigstore::AttestationError::Sigstore(msg) => {
             msg.contains("does not contain valid attestations")
                 || msg.contains("No certificate found")
                 || msg.contains("neither DSSE envelope nor message signature")
+                || msg.contains("missing field")
+                || msg.contains("not a sigstore or cosign bundle")
+                || msg.contains("not a JSON DSSE envelope")
         }
         _ => false,
     }
@@ -2048,6 +2059,24 @@ mod tests {
     fn test_is_slsa_format_issue_api_error() {
         let err = crate::github::sigstore::AttestationError::Api("connection refused".to_string());
         assert!(!is_slsa_format_issue(&err));
+    }
+
+    #[test]
+    fn test_is_slsa_format_issue_sigstore_missing_field() {
+        // mise-sigstore maps sigstore-verify's "missing field …" JSON parse
+        // failures into the Sigstore variant. Treat those as format issues.
+        let err = crate::github::sigstore::AttestationError::Sigstore(
+            "JSON error: missing field `verificationMaterial` at line 1 column 8480".to_string(),
+        );
+        assert!(is_slsa_format_issue(&err));
+    }
+
+    #[test]
+    fn test_is_slsa_format_issue_unsupported_format() {
+        let err = crate::github::sigstore::AttestationError::UnsupportedFormat(
+            "Not an SLSA provenance predicate: https://in-toto.io/Statement/v1".to_string(),
+        );
+        assert!(is_slsa_format_issue(&err));
     }
 
     #[test]

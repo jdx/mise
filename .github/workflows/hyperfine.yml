@@ -69,8 +69,9 @@ jobs:
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
       - uses: ./.github/actions/mise-tools
       - run: |
-          set -x
+          set -exo pipefail
           failed=false
+          outlier_warning="Statistical outliers were detected"
           CMDS=(
             "x -- echo"
             "env"
@@ -79,14 +80,19 @@ jobs:
           )
           echo "## Hyperfine Performance" >> comment.md
           for cmd in "${CMDS[@]}"; do
+            hyperfine_log="$(mktemp)"
             if [ -n "${MISE_ALT:-}" ]; then
-              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "$MISE_ALT $cmd" "mise $cmd"
+              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "$MISE_ALT $cmd" "mise $cmd" 2>&1 | tee "$hyperfine_log"
             else
-              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
+              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd" 2>&1 | tee "$hyperfine_log"
             fi
             echo "### \`mise $cmd\`" >> comment.md
             cat out.md >> comment.md
             cat out.md
+            noisy=false
+            if grep -q "$outlier_warning" "$hyperfine_log"; then
+              noisy=true
+            fi
             
             # Extract relative performance from hyperfine output
             variance=$(grep "±.*±" out.md | awk '{print $(NF-3)}' | sed 's/%//')
@@ -103,11 +109,15 @@ jobs:
             if [ "$variance_scaled" -gt 1100 ]; then
               if grep -q "mise-${{ steps.versions.outputs.release }}.*±.*±" out.md; then
                 echo "✅  Performance improvement for \`$cmd\` is ${variance}%" >> comment.md
+              elif [ "$noisy" = true ]; then
+                echo "::warning title=Noisy hyperfine result::mise $cmd measured ${variance}% slower, but hyperfine reported statistical outliers. Treating this benchmark as inconclusive."
+                echo "⚠️  Inconclusive: \`$cmd\` measured ${variance}% slower, but hyperfine reported statistical outliers." >> comment.md
               else
                 echo "⚠️  Warning: Performance variance for \`$cmd\` is ${variance}%" >> comment.md
                 failed=true
               fi
             fi
+            rm -f "$hyperfine_log"
           done
           if [ "$failed" = true ]; then
             exit 1
