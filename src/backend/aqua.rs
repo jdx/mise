@@ -277,8 +277,8 @@ impl Backend for AquaBackend {
                 }
             };
 
-            // Validate the package has assets and supports this platform
-            if package_supported_on_target(&versioned_pkg, target_os, target_arch) {
+            // Validate the package has assets
+            if package_has_asset(&versioned_pkg) {
                 let release_url = format!(
                     "https://github.com/{}/{}/releases/tag/{}",
                     pkg.repo_owner, pkg.repo_name, tag
@@ -1437,9 +1437,7 @@ impl AquaBackend {
             target_arch,
             target_libc.as_deref(),
         ) {
-            Ok(Some((version, versioned_pkg)))
-                if package_supported_on_target(&versioned_pkg, target_os, target_arch) =>
-            {
+            Ok(Some((version, versioned_pkg))) if package_has_asset(&versioned_pkg) => {
                 Ok(Some(version))
             }
             Ok(Some(_)) | Ok(None) => Ok(None),
@@ -3038,7 +3036,7 @@ fn versioned_package_from_tag(
     target_arch: &str,
     target_libc: Option<&str>,
 ) -> Result<Option<(String, AquaPackage)>> {
-    if !pkg.version_filter_ok(tag)? {
+    if !pkg.version_filter_ok(tag)? || !pkg.version_constraint_ok(&[tag]) {
         return Ok(None);
     }
 
@@ -3058,10 +3056,6 @@ fn versioned_package_from_tag(
 
 fn package_has_asset(pkg: &AquaPackage) -> bool {
     !pkg.no_asset && pkg.error_message.is_none()
-}
-
-fn package_supported_on_target(pkg: &AquaPackage, os: &str, arch: &str) -> bool {
-    package_has_asset(pkg) && is_platform_supported(&pkg.supported_envs, os, arch)
 }
 
 /// Get tags with optional created_at timestamps and a pre-release flag.
@@ -3325,6 +3319,52 @@ mod lock_candidate_tests {
         assert_eq!(version_from_tag(&pkg, "other-1.2.3").unwrap(), None);
     }
 
+    fn pkg_from_yaml(yaml: &str) -> AquaPackage {
+        let mut pkg: AquaPackage = serde_yaml::from_str(yaml).unwrap();
+        pkg.setup_version_filter().unwrap();
+        pkg
+    }
+
+    #[test]
+    fn test_version_from_tag_rejects_version_filter_mismatch() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+version_filter: semver(">= 1.0.0")
+"#,
+        );
+
+        assert_eq!(
+            version_from_tag(&pkg, "v1.0.0").unwrap(),
+            Some("1.0.0".to_string())
+        );
+        assert_eq!(version_from_tag(&pkg, "v0.9.0").unwrap(), None);
+    }
+
+    #[test]
+    fn test_version_from_tag_rejects_version_constraint_mismatch() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+version_constraint: "false"
+version_overrides:
+  - version_constraint: Version == "v1.2.3"
+    asset: tool.tar.gz
+    format: tar.gz
+"#,
+        );
+
+        assert_eq!(
+            version_from_tag(&pkg, "v1.2.3").unwrap(),
+            Some("1.2.3".to_string())
+        );
+        assert_eq!(version_from_tag(&pkg, "v1.2.4").unwrap(), None);
+    }
+
     #[test]
     fn test_package_has_asset_rejects_no_asset_and_errors() {
         let mut pkg = AquaPackage::default();
@@ -3336,70 +3376,6 @@ mod lock_candidate_tests {
         pkg.no_asset = false;
         pkg.error_message = Some("unsupported version".to_string());
         assert!(!package_has_asset(&pkg));
-    }
-
-    fn pkg_with_supported_envs(supported_envs: &[&str]) -> AquaPackage {
-        let mut pkg = AquaPackage::default();
-        pkg.supported_envs = supported_envs.iter().map(|env| env.to_string()).collect();
-        pkg
-    }
-
-    #[test]
-    fn test_package_supported_on_target_accepts_empty_supported_envs() {
-        let pkg = AquaPackage::default();
-
-        assert!(package_supported_on_target(&pkg, os(), arch()));
-    }
-
-    #[test]
-    fn test_package_supported_on_target_accepts_matching_supported_envs() {
-        let target_os = os();
-        let target_arch = arch();
-        let target_os_arch = format!("{target_os}/{target_arch}");
-
-        for supported_envs in [
-            vec![target_os],
-            vec![target_arch],
-            vec![target_os_arch.as_str()],
-            vec!["all"],
-        ] {
-            let pkg = pkg_with_supported_envs(&supported_envs);
-
-            assert!(package_supported_on_target(&pkg, target_os, target_arch));
-        }
-    }
-
-    #[test]
-    fn test_package_supported_on_target_rejects_non_matching_supported_envs() {
-        let pkg = pkg_with_supported_envs(&["darwin/arm64"]);
-
-        assert!(!package_supported_on_target(&pkg, "linux", "amd64"));
-    }
-
-    #[test]
-    fn test_package_supported_on_target_rejects_no_asset_and_errors() {
-        let mut pkg = AquaPackage::default();
-        pkg.no_asset = true;
-
-        assert!(!package_supported_on_target(&pkg, os(), arch()));
-
-        pkg.no_asset = false;
-        pkg.error_message = Some("unsupported version".to_string());
-
-        assert!(!package_supported_on_target(&pkg, os(), arch()));
-    }
-
-    #[test]
-    fn test_package_supported_on_target_allows_windows_arm64_amd64_compatibility() {
-        let windows_amd64 = pkg_with_supported_envs(&["windows/amd64"]);
-        let amd64 = pkg_with_supported_envs(&["amd64"]);
-
-        assert!(package_supported_on_target(
-            &windows_amd64,
-            "windows",
-            "arm64"
-        ));
-        assert!(package_supported_on_target(&amd64, "windows", "arm64"));
     }
 
     fn asset(name: &str) -> GithubAsset {
