@@ -88,8 +88,8 @@ impl<'a> GitBackendOptions<'a> {
             .platform_string_for_target_without_base("url", target)
     }
 
-    fn no_app(&self) -> bool {
-        self.values.platform_bool("no_app")
+    fn no_app_for_target(&self, target: &PlatformTarget) -> bool {
+        self.values.platform_bool_for_target("no_app", target)
     }
 
     fn filter_bins(&self) -> Option<Vec<String>> {
@@ -1137,7 +1137,7 @@ impl UnifiedGitBackend {
         // Fall back to auto-detection for target platform
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
-            .with_no_app(opts.no_app())
+            .with_no_app(opts.no_app_for_target(target))
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1226,7 +1226,7 @@ impl UnifiedGitBackend {
         // Fall back to auto-detection for target platform
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
-            .with_no_app(opts.no_app())
+            .with_no_app(opts.no_app_for_target(target))
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1314,7 +1314,7 @@ impl UnifiedGitBackend {
         // Fall back to auto-detection for target platform
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
-            .with_no_app(opts.no_app())
+            .with_no_app(opts.no_app_for_target(target))
             .pick_from(&available_assets)?
             .name;
         let asset = self

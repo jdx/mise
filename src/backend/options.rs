@@ -54,8 +54,9 @@ impl<'a> BackendOptions<'a> {
         self.string(key).is_some_and(|v| is_truthy(&v))
     }
 
-    pub(crate) fn platform_bool(&self, key: &str) -> bool {
-        self.platform_string(key).is_some_and(|v| is_truthy(&v))
+    pub(crate) fn platform_bool_for_target(&self, key: &str, target: &PlatformTarget) -> bool {
+        self.platform_string_for_target(key, target)
+            .is_some_and(|v| is_truthy(&v))
     }
 
     pub(crate) fn available_platforms_with_key(&self, key: &str) -> Vec<String> {
@@ -65,4 +66,31 @@ impl<'a> BackendOptions<'a> {
 
 pub(crate) fn is_truthy(value: &str) -> bool {
     matches!(value.trim(), "true" | "1")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::Platform;
+
+    #[test]
+    fn test_platform_bool_for_target_uses_requested_target() {
+        let mut opts = ToolVersionOptions::default();
+        let mut platforms = toml::Table::new();
+        let mut linux = toml::Table::new();
+        let mut windows = toml::Table::new();
+        linux.insert("no_app".into(), toml::Value::Boolean(false));
+        windows.insert("no_app".into(), toml::Value::Boolean(true));
+        platforms.insert("linux-x64".into(), toml::Value::Table(linux));
+        platforms.insert("windows-x64".into(), toml::Value::Table(windows));
+        opts.opts
+            .insert("platforms".into(), toml::Value::Table(platforms));
+
+        let values = BackendOptions::new(&opts);
+        let linux = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let windows = PlatformTarget::new(Platform::parse("windows-x64").unwrap());
+
+        assert!(!values.platform_bool_for_target("no_app", &linux));
+        assert!(values.platform_bool_for_target("no_app", &windows));
+    }
 }
