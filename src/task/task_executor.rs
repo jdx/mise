@@ -325,10 +325,12 @@ impl TaskExecutor {
 
         // Embed __MISE_DIFF so a nested `mise` invocation inside this task can
         // recover the pristine env (and pristine PATH) instead of stacking our
-        // tool dirs on top of its own. Without this, nested `mise -C <new> exec`
-        // would inherit our tool dirs as user-pre-PATH and they would outrank
-        // the inner toolset's resolved tool. See discussion #9754.
-        if let Ok(serialized) = EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env).serialize()
+        // tool dirs on top of its own. Keep task-scoped vars out of the diff:
+        // nested `mise hook-env` should not unset variables that belong to the
+        // currently running task.
+        let env_for_diff = self.env_for_nested_mise_diff(&env, &task_env);
+        if let Ok(serialized) =
+            EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
         {
             env.insert("__MISE_DIFF".into(), serialized);
         }
@@ -412,6 +414,31 @@ impl TaskExecutor {
         save_checksum(task, config).await?;
 
         Ok(true)
+    }
+
+    fn env_for_nested_mise_diff(
+        &self,
+        env: &BTreeMap<String, String>,
+        task_env: &[(String, String)],
+    ) -> BTreeMap<String, String> {
+        let mut env = env.clone();
+        for key in [
+            "MISE_CONFIG_ROOT",
+            "MISE_ENV",
+            "MISE_MONOREPO_ROOT",
+            "MISE_ORIGINAL_CWD",
+            "MISE_PROJECT_ROOT",
+            "MISE_TASK_DIR",
+            "MISE_TASK_FILE",
+            "MISE_TASK_NAME",
+            "MISE_TASK_TIMINGS",
+        ] {
+            env.remove(key);
+        }
+        for (key, _) in task_env {
+            env.remove(key);
+        }
+        env
     }
 
     #[allow(clippy::too_many_arguments)]
