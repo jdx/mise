@@ -641,7 +641,7 @@ impl BackendArg {
     }
 
     pub fn uses_plugin(&self) -> bool {
-        enabled_installed_plugin_type(&self.short).is_some()
+        install_state::get_plugin_type(&self.short).is_some()
     }
 }
 

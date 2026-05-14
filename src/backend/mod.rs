@@ -312,19 +312,20 @@ pub fn remove(short: &str) {
 }
 
 pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
-    if matches!(backend_type, BackendType::Unknown) {
-        return false;
-    }
-    Settings::get()
-        .disable_backends
-        .contains(&backend_type.to_string())
+    backend_type.disable_key().is_some_and(|backend| {
+        Settings::get()
+            .disable_backends
+            .iter()
+            .any(|disabled| disabled == backend)
+    })
 }
 
 pub fn is_disabled_backend(full: &str) -> bool {
     full.split_once(':').is_some_and(|(backend, _)| {
         Settings::get()
             .disable_backends
-            .contains(&backend.to_string())
+            .iter()
+            .any(|disabled| disabled == backend)
     })
 }
 
