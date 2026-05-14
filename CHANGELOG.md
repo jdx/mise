@@ -1,5 +1,19 @@
 # Changelog
 
+## [2026.5.8](https://github.com/jdx/mise/compare/v2026.5.7..v2026.5.8) - 2026-05-14
+
+### 🚀 Features
+
+- **(patrons)** add `mise patrons` command by @jdx in [#9841](https://github.com/jdx/mise/pull/9841)
+
+### 🐛 Bug Fixes
+
+- **(task)** skip shebang line in displayed task command by @jdx in [#9844](https://github.com/jdx/mise/pull/9844)
+
+### 🚜 Refactor
+
+- **(security)** switch to sigstore-rust verification by @jdx in [#9260](https://github.com/jdx/mise/pull/9260)
+
 ## [2026.5.7](https://github.com/jdx/mise/compare/v2026.5.6..v2026.5.7) - 2026-05-13
 
 ### 🐛 Bug Fixes
