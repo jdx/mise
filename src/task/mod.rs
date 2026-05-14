@@ -1471,15 +1471,15 @@ impl Task {
                 d.render(&mut tera, &tera_ctx)?;
             }
         }
-        if let Some(dir) = &mut self.dir {
-            if contains_template_syntax(dir) {
-                *dir = render_str(&mut tera, dir, &tera_ctx)?;
-            }
+        if let Some(dir) = &mut self.dir
+            && contains_template_syntax(dir)
+        {
+            *dir = render_str(&mut tera, dir, &tera_ctx)?;
         }
-        if let Some(shell) = &mut self.shell {
-            if contains_template_syntax(shell) {
-                *shell = render_str(&mut tera, shell, &tera_ctx)?;
-            }
+        if let Some(shell) = &mut self.shell
+            && contains_template_syntax(shell)
+        {
+            *shell = render_str(&mut tera, shell, &tera_ctx)?;
         }
         for (_, v) in &mut self.tools {
             match v {
@@ -1493,10 +1493,10 @@ impl Task {
                         map.version = render_str(&mut tera, &map.version, &tera_ctx)?;
                     }
                     for (_ok, ov) in &mut map.opts {
-                        if let toml::Value::String(s) = ov {
-                            if contains_template_syntax(s) {
-                                *ov = toml::Value::String(render_str(&mut tera, s, &tera_ctx)?);
-                            }
+                        if let toml::Value::String(s) = ov
+                            && contains_template_syntax(s)
+                        {
+                            *ov = toml::Value::String(render_str(&mut tera, s, &tera_ctx)?);
                         }
                     }
                 }
