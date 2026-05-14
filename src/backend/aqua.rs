@@ -1,6 +1,5 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::BackendOptions;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
@@ -46,66 +45,6 @@ pub struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct AquaOptions<'a> {
-    values: BackendOptions<'a>,
-}
-
-impl<'a> AquaOptions<'a> {
-    fn new(raw: &'a ToolVersionOptions) -> Self {
-        Self {
-            values: BackendOptions::new(raw),
-        }
-    }
-
-    fn symlink_bins(&self) -> bool {
-        self.values.bool("symlink_bins")
-    }
-
-    fn var(&self, name: &str) -> Result<Option<String>> {
-        let opts = self.values.raw();
-        if let Some(toml::Value::Table(vars)) = opts.opts.get("vars")
-            && let Some(value) = vars.get(name)
-        {
-            return toml_string_var(&format!("vars.{name}"), value).map(Some);
-        }
-        opts.opts
-            .get(name)
-            .map(|value| toml_string_var(name, value).map(Some))
-            .unwrap_or(Ok(None))
-    }
-
-    fn lockfile_options(&self) -> BTreeMap<String, String> {
-        let mut result = BTreeMap::new();
-        for (key, value) in self.values.raw().iter() {
-            if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
-                continue;
-            }
-            if key == "vars" {
-                if let toml::Value::Table(table) = value {
-                    Self::insert_vars_lockfile_options(&mut result, table);
-                }
-            } else if let Some(value) = toml_value_to_string(value) {
-                let key = if key.starts_with("vars.") {
-                    key.clone()
-                } else {
-                    format!("vars.{key}")
-                };
-                result.entry(key).or_insert(value);
-            }
-        }
-        result
-    }
-
-    fn insert_vars_lockfile_options(result: &mut BTreeMap<String, String>, table: &toml::Table) {
-        for (key, value) in table {
-            if let Some(value) = toml_value_to_string(value) {
-                result.insert(format!("vars.{key}"), value);
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -563,9 +502,7 @@ impl Backend for AquaBackend {
     ) -> Result<Vec<PathBuf>> {
         let runtime_path = tv.runtime_path();
         let mise_bins_dir = tv.install_path().join(MISE_BINS_DIR);
-        let request_options = tv.request.options();
-        let opts = AquaOptions::new(&request_options);
-        if opts.symlink_bins() || mise_bins_dir.is_dir() {
+        if self.symlink_bins(tv) || mise_bins_dir.is_dir() {
             return Ok(vec![runtime_path.join(MISE_BINS_DIR)]);
         }
 
@@ -584,7 +521,8 @@ impl Backend for AquaBackend {
             });
         }
 
-        let cache_key = opts.lockfile_options();
+        let request_options = tv.request.options();
+        let cache_key = Self::lockfile_options(&request_options);
         let cache: CacheManager<Vec<PathBuf>> =
             CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
                 .with_fresh_file(install_path.clone())
@@ -623,8 +561,7 @@ impl Backend for AquaBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
-        let request_options = request.options();
-        AquaOptions::new(&request_options).lockfile_options()
+        Self::lockfile_options(&request.options())
     }
 
     fn fuzzy_match_filter(
@@ -695,8 +632,7 @@ impl Backend for AquaBackend {
         // Using package_with_version() here would apply overrides for the current host
         // platform first, which can leak host-specific overrides into cross-platform lock.
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        let raw_opts = tv.request.options();
-        let opts = AquaOptions::new(&raw_opts);
+        let opts = tv.request.options();
         let target_libc = Self::target_variant_libc(target);
         let pkg = pkg.with_version_libc(&versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(target));
@@ -883,9 +819,7 @@ impl AquaBackend {
         let target_libc = Self::target_variant_libc(&target);
         let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(&target));
-        let raw_opts = tv.request.options();
-        let opts = AquaOptions::new(&raw_opts);
-        Self::apply_var_options(pkg, &opts)
+        Self::apply_var_options(pkg, &tv.request.options())
     }
 
     fn to_aqua_platform(target: &PlatformTarget) -> (&str, &str) {
@@ -953,17 +887,47 @@ impl AquaBackend {
         pkg
     }
 
-    fn apply_var_options(pkg: AquaPackage, opts: &AquaOptions<'_>) -> Result<AquaPackage> {
+    fn apply_var_options(pkg: AquaPackage, opts: &ToolVersionOptions) -> Result<AquaPackage> {
         if pkg.vars.is_empty() {
             return Ok(pkg);
         }
         let mut var_values = HashMap::new();
         for var in &pkg.vars {
-            if let Some(value) = opts.var(&var.name)? {
+            if let Some(value) = aqua_var_option(opts, &var.name)? {
                 var_values.insert(var.name.clone(), value);
             }
         }
         pkg.with_var_values(var_values)
+    }
+
+    fn lockfile_options(opts: &ToolVersionOptions) -> BTreeMap<String, String> {
+        let mut result = BTreeMap::new();
+        for (key, value) in opts.iter() {
+            if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
+                continue;
+            }
+            if key == "vars" {
+                if let toml::Value::Table(table) = value {
+                    Self::insert_vars_lockfile_options(&mut result, table);
+                }
+            } else if let Some(value) = toml_value_to_string(value) {
+                let key = if key.starts_with("vars.") {
+                    key.clone()
+                } else {
+                    format!("vars.{key}")
+                };
+                result.entry(key).or_insert(value);
+            }
+        }
+        result
+    }
+
+    fn insert_vars_lockfile_options(result: &mut BTreeMap<String, String>, table: &toml::Table) {
+        for (key, value) in table {
+            if let Some(value) = toml_value_to_string(value) {
+                result.insert(format!("vars.{key}"), value);
+            }
+        }
     }
 
     fn has_native_cosign(cosign: &AquaCosign) -> bool {
@@ -2287,9 +2251,7 @@ impl AquaBackend {
             }
         }
 
-        let raw_opts = tv.request.options();
-        let opts = AquaOptions::new(&raw_opts);
-        if opts.symlink_bins() {
+        if self.symlink_bins(tv) {
             self.create_symlink_bin_dir(tv, &srcs)?;
         }
 
@@ -2311,6 +2273,13 @@ impl AquaBackend {
             }
         }
         Ok(())
+    }
+
+    fn symlink_bins(&self, tv: &ToolVersion) -> bool {
+        tv.request
+            .options()
+            .get_string("symlink_bins")
+            .is_some_and(|v| v == "true" || v == "1")
     }
 
     fn srcs(pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<AquaFileLink>> {
@@ -2509,6 +2478,18 @@ fn toml_value_to_string(value: &toml::Value) -> Option<String> {
     }
 }
 
+fn aqua_var_option(opts: &ToolVersionOptions, name: &str) -> Result<Option<String>> {
+    if let Some(toml::Value::Table(vars)) = opts.opts.get("vars")
+        && let Some(value) = vars.get(name)
+    {
+        return toml_string_var(&format!("vars.{name}"), value).map(Some);
+    }
+    opts.opts
+        .get(name)
+        .map(|value| toml_string_var(name, value).map(Some))
+        .unwrap_or(Ok(None))
+}
+
 fn toml_string_var(key: &str, value: &toml::Value) -> Result<String> {
     match value {
         toml::Value::String(s) => Ok(s.clone()),
@@ -2698,7 +2679,6 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
-        let opts = AquaOptions::new(&opts);
         let pkg = AquaBackend::apply_var_options(pkg, &opts).unwrap();
 
         assert_eq!(
@@ -2720,7 +2700,6 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
-        let opts = AquaOptions::new(&opts);
         let err = AquaBackend::apply_var_options(pkg, &opts).unwrap_err();
 
         assert!(
@@ -2734,9 +2713,7 @@ mod tests {
     fn test_apply_var_options_errors_for_missing_required_var() {
         let mut pkg = AquaPackage::default();
         pkg.vars = vec![aqua_var("go_version", true)];
-        let opts = ToolVersionOptions::default();
-        let opts = AquaOptions::new(&opts);
-        let err = AquaBackend::apply_var_options(pkg, &opts).unwrap_err();
+        let err = AquaBackend::apply_var_options(pkg, &ToolVersionOptions::default()).unwrap_err();
 
         assert!(
             err.to_string()
@@ -2765,7 +2742,7 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
-        let lock_opts = AquaOptions::new(&opts).lockfile_options();
+        let lock_opts = AquaBackend::lockfile_options(&opts);
 
         assert_eq!(lock_opts.get("vars.channel"), Some(&"stable".to_string()));
         assert_eq!(lock_opts.get("vars.go_version"), Some(&"1.24".to_string()));
@@ -2792,8 +2769,8 @@ mod tests {
             .insert("vars".to_string(), toml::Value::Table(vars));
 
         assert_eq!(
-            AquaOptions::new(&top_level).lockfile_options(),
-            AquaOptions::new(&nested).lockfile_options()
+            AquaBackend::lockfile_options(&top_level),
+            AquaBackend::lockfile_options(&nested)
         );
     }
 
@@ -2812,7 +2789,7 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
-        let lock_opts = AquaOptions::new(&opts).lockfile_options();
+        let lock_opts = AquaBackend::lockfile_options(&opts);
 
         assert_eq!(lock_opts.get("vars.channel"), Some(&"beta".to_string()));
     }

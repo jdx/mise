@@ -1,7 +1,5 @@
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::{
-    list_available_platforms_with_key, lookup_platform_key_for_target, lookup_with_fallback,
-};
+use crate::backend::static_helpers::{lookup_platform_key_for_target, lookup_with_fallback};
 use crate::toolset::ToolVersionOptions;
 
 #[derive(Debug, Clone, Copy)]
@@ -18,14 +16,9 @@ impl<'a> BackendOptions<'a> {
         self.raw
     }
 
-    /// Returns the option as an owned `String`, coercing scalar TOML values to
-    /// their string representation.
-    pub(crate) fn string(&self, key: &str) -> Option<String> {
-        self.raw.get_string(key)
-    }
-
     /// Returns the option only when the underlying TOML value is a string.
-    /// Prefer `string()` for options that may be written as native TOML scalars.
+    /// Prefer platform helpers for options that may be written as native TOML
+    /// scalars.
     pub(crate) fn str(&self, key: &str) -> Option<&'a str> {
         self.raw.get(key)
     }
@@ -50,17 +43,9 @@ impl<'a> BackendOptions<'a> {
         lookup_platform_key_for_target(self.raw, key, target)
     }
 
-    pub(crate) fn bool(&self, key: &str) -> bool {
-        self.string(key).is_some_and(|v| is_truthy(&v))
-    }
-
     pub(crate) fn platform_bool_for_target(&self, key: &str, target: &PlatformTarget) -> bool {
         self.platform_string_for_target(key, target)
             .is_some_and(|v| is_truthy(&v))
-    }
-
-    pub(crate) fn available_platforms_with_key(&self, key: &str) -> Vec<String> {
-        list_available_platforms_with_key(self.raw, key)
     }
 }
 

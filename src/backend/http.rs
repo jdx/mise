@@ -1,11 +1,10 @@
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::BackendOptions;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    clean_binary_name, get_filename_from_url, rename_executable_in_dir, template_string,
-    verify_artifact,
+    clean_binary_name, get_filename_from_url, list_available_platforms_with_key,
+    lookup_platform_key, rename_executable_in_dir, template_string, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -28,6 +27,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 // Constants
 const HTTP_TARBALLS_DIR: &str = "http-tarballs";
 const METADATA_FILE: &str = "metadata.json";
+
+/// Helper to get an option value with platform-specific fallback
+fn get_opt(opts: &ToolVersionOptions, key: &str) -> Option<String> {
+    lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
+}
 
 /// Metadata stored alongside cached extractions
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,9 +66,9 @@ struct FileInfo {
 
 impl FileInfo {
     /// Analyze a file path and options to determine format information
-    fn new(file_path: &Path, opts: &HttpOptions<'_>) -> Self {
+    fn new(file_path: &Path, opts: &ToolVersionOptions) -> Self {
         // Apply format config to determine effective extension
-        let effective_path = if let Some(added_ext) = opts.format() {
+        let effective_path = if let Some(added_ext) = get_opt(opts, "format") {
             let mut path = file_path.to_path_buf();
             let current_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             let new_ext = if current_ext.is_empty() {
@@ -124,71 +128,6 @@ pub struct HttpBackend {
     ba: Arc<BackendArg>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct HttpOptions<'a> {
-    values: BackendOptions<'a>,
-}
-
-impl<'a> HttpOptions<'a> {
-    fn new(raw: &'a ToolVersionOptions) -> Self {
-        Self {
-            values: BackendOptions::new(raw),
-        }
-    }
-
-    fn raw(&self) -> &'a ToolVersionOptions {
-        self.values.raw()
-    }
-
-    fn url(&self) -> Option<String> {
-        self.values.platform_string("url")
-    }
-
-    fn checksum(&self) -> Option<String> {
-        self.values.platform_string("checksum")
-    }
-
-    fn format(&self) -> Option<String> {
-        self.values.platform_string("format")
-    }
-
-    fn strip_components(&self) -> Option<String> {
-        self.values.platform_string("strip_components")
-    }
-
-    fn bin(&self) -> Option<String> {
-        self.values.platform_string("bin")
-    }
-
-    fn rename_exe(&self) -> Option<String> {
-        self.values.platform_string("rename_exe")
-    }
-
-    fn bin_path(&self) -> Option<String> {
-        self.values.platform_string("bin_path")
-    }
-
-    fn version_list_url(&self) -> Option<&'a str> {
-        self.values.str("version_list_url")
-    }
-
-    fn version_regex(&self) -> Option<&'a str> {
-        self.values.str("version_regex")
-    }
-
-    fn version_json_path(&self) -> Option<&'a str> {
-        self.values.str("version_json_path")
-    }
-
-    fn version_expr(&self) -> Option<&'a str> {
-        self.values.str("version_expr")
-    }
-
-    fn url_platforms(&self) -> Vec<String> {
-        self.values.available_platforms_with_key("url")
-    }
-}
-
 impl HttpBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
@@ -223,23 +162,23 @@ impl HttpBackend {
     // -------------------------------------------------------------------------
 
     /// Generate a cache key based on file content and extraction options
-    fn cache_key(&self, file_path: &Path, opts: &HttpOptions<'_>) -> Result<String> {
+    fn cache_key(&self, file_path: &Path, opts: &ToolVersionOptions) -> Result<String> {
         let checksum = hash::file_hash_blake3(file_path, None)?;
 
         // Include extraction options that affect output structure
         // Note: bin_path is NOT included - handled at symlink time for deduplication
         let mut parts = vec![checksum];
 
-        if let Some(strip) = opts.strip_components() {
+        if let Some(strip) = get_opt(opts, "strip_components") {
             parts.push(format!("strip_{strip}"));
         }
 
         // Include rename_exe in cache key since it modifies the extracted content
-        if let Some(rename) = opts.rename_exe() {
+        if let Some(rename) = get_opt(opts, "rename_exe") {
             parts.push(format!("rename_{rename}"));
             // When rename_exe is used, bin_path affects where the rename happens,
             // so different bin_path values result in different cached content
-            if let Some(bin_path) = opts.bin_path() {
+            if let Some(bin_path) = get_opt(opts, "bin_path") {
                 parts.push(format!("binpath_{bin_path}"));
             }
         }
@@ -258,10 +197,10 @@ impl HttpBackend {
         &self,
         file_path: &Path,
         file_info: &FileInfo,
-        opts: &HttpOptions<'_>,
+        opts: &ToolVersionOptions,
     ) -> String {
         // Check for explicit bin name first
-        if let Some(bin_name) = opts.bin() {
+        if let Some(bin_name) = get_opt(opts, "bin") {
             return bin_name;
         }
 
@@ -316,7 +255,7 @@ impl HttpBackend {
         file_path: &Path,
         cache_key: &str,
         url: &str,
-        opts: &HttpOptions<'_>,
+        opts: &ToolVersionOptions,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let cache_path = self.cache_path(cache_key);
@@ -358,7 +297,7 @@ impl HttpBackend {
         tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
-        opts: &HttpOptions<'_>,
+        opts: &ToolVersionOptions,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         file::create_dir_all(dest)?;
@@ -380,7 +319,7 @@ impl HttpBackend {
         dest: &Path,
         file_path: &Path,
         file_info: &FileInfo,
-        opts: &HttpOptions<'_>,
+        opts: &ToolVersionOptions,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let filename = self.dest_filename(file_path, file_info, opts);
@@ -410,7 +349,7 @@ impl HttpBackend {
         dest: &Path,
         file_path: &Path,
         file_info: &FileInfo,
-        opts: &HttpOptions<'_>,
+        opts: &ToolVersionOptions,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let filename = self.dest_filename(file_path, file_info, opts);
@@ -434,15 +373,15 @@ impl HttpBackend {
         dest: &Path,
         file_path: &Path,
         file_info: &FileInfo,
-        opts: &HttpOptions<'_>,
+        opts: &ToolVersionOptions,
         pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let mut strip_components: Option<usize> =
-            opts.strip_components().and_then(|s| s.parse().ok());
+            get_opt(opts, "strip_components").and_then(|s| s.parse().ok());
 
         // Auto-detect strip_components=1 for single-directory archives
         if strip_components.is_none()
-            && opts.bin_path().is_none()
+            && get_opt(opts, "bin_path").is_none()
             && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
         {
             debug!("Auto-detected single directory archive, using strip_components=1");
@@ -459,10 +398,10 @@ impl HttpBackend {
         file::untar(file_path, dest, &tar_opts)?;
 
         // Handle rename_exe option for archives
-        if let Some(rename_to) = opts.rename_exe() {
+        if let Some(rename_to) = get_opt(opts, "rename_exe") {
             // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
             // the same logic used by discover_bin_paths() for PATH construction
-            let search_dir = if let Some(bin_path_template) = opts.bin_path() {
+            let search_dir = if let Some(bin_path_template) = get_opt(opts, "bin_path") {
                 let bin_path = template_string(&bin_path_template, tv);
                 dest.join(&bin_path)
             } else {
@@ -487,11 +426,11 @@ impl HttpBackend {
         cache_key: &str,
         url: &str,
         file_path: &Path,
-        opts: &HttpOptions<'_>,
+        opts: &ToolVersionOptions,
     ) -> Result<()> {
         let metadata = CacheMetadata {
             url: url.to_string(),
-            checksum: opts.checksum(),
+            checksum: get_opt(opts, "checksum"),
             size: file_path.metadata()?.len(),
             extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             platform: self.get_platform_key(),
@@ -512,7 +451,7 @@ impl HttpBackend {
         tv: &ToolVersion,
         cache_key: &str,
         extraction_type: &ExtractionType,
-        opts: &HttpOptions<'_>,
+        opts: &ToolVersionOptions,
     ) -> Result<()> {
         let cache_path = self.cache_path(cache_key);
 
@@ -535,7 +474,7 @@ impl HttpBackend {
 
         // Handle raw files with bin_path specially for deduplication
         if let ExtractionType::RawFile { filename } = extraction_type
-            && let Some(bin_path_template) = opts.bin_path()
+            && let Some(bin_path_template) = get_opt(opts, "bin_path")
         {
             let bin_path = template_string(&bin_path_template, tv);
             let dest_dir = install_path.join(&bin_path);
@@ -626,17 +565,16 @@ impl HttpBackend {
 
     /// Fetch versions from version_list_url if configured
     async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let opts = HttpOptions::new(&raw_opts);
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
 
-        let url = match opts.version_list_url() {
+        let url = match opts.get("version_list_url") {
             Some(url) => url.to_string(),
             None => return Ok(vec![]),
         };
 
-        let regex = opts.version_regex();
-        let json_path = opts.version_json_path();
-        let version_expr = opts.version_expr();
+        let regex = opts.get("version_regex");
+        let json_path = opts.get("version_json_path");
+        let version_expr = opts.get("version_expr");
 
         version_list::fetch_versions(&url, regex, json_path, version_expr).await
     }
@@ -680,9 +618,12 @@ impl Backend for HttpBackend {
     }
 
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
-        let raw_opts = tv.request.options();
-        let opts = HttpOptions::new(&raw_opts);
-        super::http_install_operation_count(opts.checksum().is_some(), &self.get_platform_key(), tv)
+        let opts = tv.request.options();
+        super::http_install_operation_count(
+            get_opt(&opts, "checksum").is_some(),
+            &self.get_platform_key(),
+            tv,
+        )
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -701,13 +642,12 @@ impl Backend for HttpBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let raw_opts = tv.request.options();
-        let opts = HttpOptions::new(&raw_opts);
+        let opts = tv.request.options();
 
         // Get URL template
-        let url_template = opts.url().ok_or_else(|| {
+        let url_template = get_opt(&opts, "url").ok_or_else(|| {
             let platform_key = self.get_platform_key();
-            let available = opts.url_platforms();
+            let available = list_available_platforms_with_key(&opts, "url");
             if !available.is_empty() {
                 eyre::eyre!(
                     "No URL for platform {platform_key}. Available: {}. \
@@ -746,10 +686,10 @@ impl Backend for HttpBackend {
             .await?;
 
         // Verify artifact (checksum if provided)
-        if opts.checksum().is_some() {
+        if get_opt(&opts, "checksum").is_some() {
             ctx.pr.next_operation();
         }
-        verify_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
+        verify_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 
         // Generate cache key
         let cache_key = self.cache_key(&file_path, &opts)?;
@@ -799,12 +739,11 @@ impl Backend for HttpBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        let raw_opts = tv.request.options();
-        let opts = HttpOptions::new(&raw_opts);
+        let opts = tv.request.options();
         let install_path = tv.install_path();
 
         // Check for explicit bin_path
-        if let Some(bin_path_template) = opts.bin_path() {
+        if let Some(bin_path_template) = get_opt(&opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
             return Ok(vec![tv.runtime_path().join(bin_path)]);
         }
