@@ -25,16 +25,30 @@ runs:
         BASE_SHA: ${{ inputs.base_sha }}
         HEAD_SHA: ${{ inputs.head_sha }}
       run: |
-        # Get added/copied/modified/renamed registry files and extract tool names
-        # (deleted files are excluded — they can't be tested)
+        # Get added/copied/modified/renamed registry files and extract tool names.
+        # (deleted files are excluded — they can't be tested.) Tool names come
+        # from PR-controlled filenames and are later interpolated into shell
+        # scripts in registry.yml, so we reject any basename that doesn't match
+        # a conservative safe-name pattern before emitting the output.
+        validate_tools() {
+          local list=$1
+          for tool in $list; do
+            if ! [[ "$tool" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+              echo "::error::Invalid registry tool name: $tool" >&2
+              return 1
+            fi
+          done
+        }
+
         modified=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- 'registry/*.toml' \
           | xargs -I{} basename {} .toml \
           | tr '\n' ' ')
+        validate_tools "$modified"
 
-        # Get newly added registry files
         new=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" -- 'registry/*.toml' \
           | xargs -I{} basename {} .toml \
           | tr '\n' ' ')
+        validate_tools "$new"
 
         echo "modified_tools=$modified" >> "$GITHUB_OUTPUT"
         echo "new_tools=$new" >> "$GITHUB_OUTPUT"
