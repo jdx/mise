@@ -171,16 +171,16 @@ impl SPMBackend {
     ) -> eyre::Result<()> {
         let repo_dir = self.clone_package_repo(ctx, tv, repo, revision)?;
 
-        let executables = self.get_executable_names(ctx, &repo_dir, &tv).await?;
+        let executables = self.get_executable_names(ctx, &repo_dir, tv).await?;
         if executables.is_empty() {
             return Err(eyre::eyre!("No executables found in the package"));
         }
-        let executables = self.apply_filter_bins(&tv, executables)?;
+        let executables = self.apply_filter_bins(tv, executables)?;
         let bin_path = tv.install_path().join("bin");
         file::create_dir_all(&bin_path)?;
         for executable in executables {
             let exe_path = self
-                .build_executable(&executable, &repo_dir, ctx, &tv)
+                .build_executable(&executable, &repo_dir, ctx, tv)
                 .await?;
             file::make_symlink(&exe_path, &bin_path.join(executable))?;
         }
