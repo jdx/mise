@@ -519,6 +519,9 @@ env = "MISE_ENV_CACHE_TTL"
 type = "Duration"
 
 [env_file]
+deprecated = "Use env._.file instead."
+deprecated_remove_at = "2027.4.0"
+deprecated_warn_at = "2026.4.17"
 description = "Path to a file containing environment variables to automatically load."
 env = "MISE_ENV_FILE"
 optional = true
