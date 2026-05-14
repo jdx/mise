@@ -69,8 +69,7 @@ jobs:
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
       - uses: ./.github/actions/mise-tools
       - run: |
-          set -x
-          set -o pipefail
+          set -exo pipefail
           failed=false
           outlier_warning="Statistical outliers were detected"
           CMDS=(
@@ -111,7 +110,7 @@ jobs:
               if grep -q "mise-${{ steps.versions.outputs.release }}.*±.*±" out.md; then
                 echo "✅  Performance improvement for \`$cmd\` is ${variance}%" >> comment.md
               elif [ "$noisy" = true ]; then
-                echo "::warning title=Noisy hyperfine result::mise $cmd measured ${variance}% slower, but hyperfine reported statistical outliers. Treating this benchmark as inconclusive." >&2
+                echo "::warning title=Noisy hyperfine result::mise $cmd measured ${variance}% slower, but hyperfine reported statistical outliers. Treating this benchmark as inconclusive."
                 echo "⚠️  Inconclusive: \`$cmd\` measured ${variance}% slower, but hyperfine reported statistical outliers." >> comment.md
               else
                 echo "⚠️  Warning: Performance variance for \`$cmd\` is ${variance}%" >> comment.md
