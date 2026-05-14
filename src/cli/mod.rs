@@ -444,9 +444,13 @@ fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usiz
 }
 
 fn is_known_subcommand(cmd: &clap::Command, arg: &str) -> bool {
+    find_subcommand_name(cmd, arg).is_some()
+}
+
+fn find_subcommand_name<'a>(cmd: &'a clap::Command, arg: &str) -> Option<&'a str> {
     cmd.get_subcommands()
-        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
-        .any(|name| name == arg)
+        .find(|s| s.get_name() == arg || s.get_all_aliases().any(|alias| alias == arg))
+        .map(|s| s.get_name())
 }
 
 fn uses_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) -> bool {
@@ -815,8 +819,12 @@ fn apply_early_cd(args: &[String]) -> Result<bool> {
 }
 
 fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
+    if !has_cd_arg(args) {
+        return None;
+    }
     let cmd = Cli::command();
-    let (flags_with_values, _) = get_global_flags(&cmd);
+    let (global_flags_with_values, _) = get_global_flags(&cmd);
+    let (run_flags_with_values, _) = get_all_run_flags(&cmd);
     let mut subcommand = None;
     let mut iter = args.iter().skip(1).peekable();
     while let Some(arg) = iter.next() {
@@ -832,6 +840,11 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
                 {
                     return Some(PathBuf::from(cd));
                 }
+                let flags_with_values = if subcommand.as_deref() == Some("run") {
+                    &run_flags_with_values
+                } else {
+                    &global_flags_with_values
+                };
                 if let Some(flag) = arg.split_once('=').map(|(flag, _)| flag)
                     && flags_with_values.iter().any(|f| f == flag)
                 {
@@ -848,8 +861,8 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
                     continue;
                 }
                 if subcommand.is_none() && !arg.starts_with('-') {
-                    let sc = cmd.find_subcommand(arg)?;
-                    subcommand = Some(sc.get_name().to_string());
+                    let sc = find_subcommand_name(&cmd, arg)?;
+                    subcommand = Some(sc.to_string());
                     continue;
                 }
                 if subcommand.as_deref() == Some("run") && !arg.starts_with('-') {
@@ -859,6 +872,20 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn has_cd_arg(args: &[String]) -> bool {
+    args.iter()
+        .skip(1)
+        .take_while(|a| a.as_str() != "--")
+        .any(|a| is_cd_arg(a))
+}
+
+fn is_cd_arg(arg: &str) -> bool {
+    arg == "-C"
+        || arg == "--cd"
+        || arg.starts_with("--cd=")
+        || arg.strip_prefix("-C").is_some_and(|rest| !rest.is_empty())
 }
 
 /// Validate the --cd path if provided and return an error if it doesn't exist
@@ -1043,6 +1070,57 @@ mod tests {
     fn test_early_cd_arg_ignores_naked_task_args() {
         let args = vec![
             "mise".to_string(),
+            "mytask".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), None);
+    }
+
+    #[test]
+    fn test_early_cd_arg_skips_run_flag_values_before_cd() {
+        let args = vec![
+            "mise".to_string(),
+            "run".to_string(),
+            "--allow-read".to_string(),
+            "src".to_string(),
+            "--timeout".to_string(),
+            "5s".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+            "mytask".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+    }
+
+    #[test]
+    fn test_early_cd_arg_handles_subcommand_aliases() {
+        let args = vec![
+            "mise".to_string(),
+            "x".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+            "--".to_string(),
+            "true".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+
+        let args = vec![
+            "mise".to_string(),
+            "r".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+            "mytask".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+
+        let args = vec![
+            "mise".to_string(),
+            "r".to_string(),
             "mytask".to_string(),
             "-C".to_string(),
             "project".to_string(),
