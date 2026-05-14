@@ -9,7 +9,7 @@ function PLUGIN:Available(ctx)
         url = util.GROOVY_URL
     })
     if err ~= nil or resp.status_code ~= 200 then
-        error("paring release info failed." .. err)
+        error("parsing release info failed: " .. (err or ("HTTP " .. resp.status_code)))
     end
     local result = {}
     html.parse(resp.body):find("a"):each(function(i, selection)
