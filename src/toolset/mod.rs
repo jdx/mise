@@ -177,8 +177,18 @@ impl Toolset {
             .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
             .collect();
         let current_versions = Arc::new(current_versions);
+        let mut backends = backend::list();
+        for (p, _) in current_versions.values() {
+            if !backends
+                .iter()
+                .any(|b| b.ba().installs_path == p.ba().installs_path)
+            {
+                backends.push(p.clone());
+            }
+        }
+
         let mut versions = vec![];
-        for b in backend::list().into_iter() {
+        for b in backends {
             for v in b.list_installed_versions() {
                 if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
                     versions.push((p.clone(), tv.clone()));
