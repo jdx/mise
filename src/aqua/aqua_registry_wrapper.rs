@@ -88,13 +88,13 @@ impl MiseAquaRegistry {
 #[derive(Debug, Clone)]
 struct MiseRegistryFetcher {
     config: AquaRegistryConfig,
-    registry: Arc<OnceCell<std::result::Result<Option<ActiveRegistry>, String>>>,
+    registry: Arc<OnceCell<std::result::Result<Option<Arc<ActiveRegistry>>, String>>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum ActiveRegistry {
     Compiled(CompiledRegistry),
-    Parsed(ParsedRegistry),
+    Parsed(Arc<ParsedRegistry>),
 }
 
 impl ActiveRegistry {
@@ -151,7 +151,7 @@ impl RegistryFetcher for MiseRegistryFetcher {
 }
 
 impl MiseRegistryFetcher {
-    async fn registry(&self) -> aqua_registry::Result<Option<ActiveRegistry>> {
+    async fn registry(&self) -> aqua_registry::Result<Option<Arc<ActiveRegistry>>> {
         let registry = self
             .registry
             .get_or_init(|| async {
@@ -173,7 +173,7 @@ impl MiseRegistryFetcher {
             .map_err(AquaRegistryError::RegistryNotAvailable)
     }
 
-    async fn load_registry(&self) -> aqua_registry::Result<Option<ActiveRegistry>> {
+    async fn load_registry(&self) -> aqua_registry::Result<Option<Arc<ActiveRegistry>>> {
         let Some(registry_url) = self.config.registry_url.as_deref() else {
             return Ok(None);
         };
@@ -185,19 +185,19 @@ impl MiseRegistryFetcher {
 
         if let Ok(registry) = CompiledRegistry::load(&compiled_dir) {
             prune_stale_compiled_registries(&compiled_dir);
-            return Ok(Some(ActiveRegistry::Compiled(registry)));
+            return Ok(Some(Arc::new(ActiveRegistry::Compiled(registry))));
         }
 
         info!("parsing aqua registry from {registry_url}");
-        let registry = measure!("aqua_registry::parse_yaml", {
+        let registry = Arc::new(measure!("aqua_registry::parse_yaml", {
             ParsedRegistry::parse_yaml(&source)
-        })?;
+        })?);
         spawn_compiled_registry_cache_writer(
             registry_url.to_string(),
-            registry.clone(),
+            Arc::clone(&registry),
             compiled_dir,
         );
-        Ok(Some(ActiveRegistry::Parsed(registry)))
+        Ok(Some(Arc::new(ActiveRegistry::Parsed(registry))))
     }
 
     async fn registry_source(&self, registry_url: &str) -> aqua_registry::Result<String> {
@@ -271,7 +271,7 @@ fn prune_stale_compiled_registries(current_dir: &Path) {
 
 fn spawn_compiled_registry_cache_writer(
     registry_url: String,
-    registry: ParsedRegistry,
+    registry: Arc<ParsedRegistry>,
     compiled_dir: PathBuf,
 ) {
     if CompiledRegistry::load(&compiled_dir).is_ok() {
@@ -282,7 +282,7 @@ fn spawn_compiled_registry_cache_writer(
     tokio::task::spawn_blocking(move || {
         info!("writing compiled aqua registry cache for {registry_url}");
         if let Err(err) = measure!("aqua_registry::write_compiled_cache", {
-            write_compiled_registry_cache(&registry, &compiled_dir)
+            write_compiled_registry_cache(registry.as_ref(), &compiled_dir)
         }) {
             warn!("failed to write compiled aqua registry cache for {registry_url}: {err}");
         }
@@ -675,7 +675,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert!(matches!(registry, ActiveRegistry::Compiled(_)));
+        assert!(matches!(registry.as_ref(), ActiveRegistry::Compiled(_)));
     }
 
     #[tokio::test]
