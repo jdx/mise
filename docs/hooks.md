@@ -122,7 +122,7 @@ run = "eslint --fix ."
 shell = "bash -c"
 ```
 
-You can also reference a mise task instead of an inline script:
+`shell` only applies to `run` hooks. You can also reference a mise task instead of an inline script:
 
 ```toml
 [[watch_files]]

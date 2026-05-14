@@ -2127,33 +2127,43 @@
       "items": {
         "type": "object",
         "description": "file to watch for changes",
-        "unevaluatedProperties": false,
-        "properties": {
-          "run": {
-            "type": "string",
-            "description": "script to run when file changes"
-          },
-          "shell": {
-            "type": "string",
-            "description": "inline shell command used to run script when file changes"
-          },
-          "task": {
-            "type": "string",
-            "description": "mise task to run when file changes"
-          },
-          "patterns": {
-            "type": "array",
-            "description": "patterns to watch for",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
         "oneOf": [
           {
+            "unevaluatedProperties": false,
+            "properties": {
+              "run": {
+                "type": "string",
+                "description": "script to run when file changes"
+              },
+              "shell": {
+                "type": "string",
+                "description": "inline shell command used to run script when file changes"
+              },
+              "patterns": {
+                "type": "array",
+                "description": "patterns to watch for",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
             "required": ["run"]
           },
           {
+            "unevaluatedProperties": false,
+            "properties": {
+              "task": {
+                "type": "string",
+                "description": "mise task to run when file changes"
+              },
+              "patterns": {
+                "type": "array",
+                "description": "patterns to watch for",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
             "required": ["task"]
           }
         ]
