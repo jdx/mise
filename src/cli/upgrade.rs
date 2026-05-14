@@ -411,6 +411,7 @@ impl Upgrade {
                 });
         }
 
+        mpr.finish_progress();
         Self::print_summary(&outdated, &successful_versions)?;
 
         install_error
