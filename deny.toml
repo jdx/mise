@@ -73,6 +73,14 @@ ignore = [
   { id = "RUSTSEC-2024-0370", reason = "proc-macro-error dependency from sigstore crate - no safe upgrade available" },
   { id = "RUSTSEC-2023-0071", reason = "rsa crate Marvin attack vulnerability from sigstore crate - no safe upgrade available" },
   { id = "RUSTSEC-2025-0119", reason = "number_prefix crate is unmaintained - used by indicatif/self_update, no safe upgrade available" },
+  # rustls-webpki 0.102.8 advisories — pulled in transitively by sigstore-tsa
+  # 0.7.0 (pinned to `rustls-webpki = \"0.102\"`); fix requires sigstore-rust
+  # upstream to bump to 0.103.x. Not directly exploitable in mise's verification
+  # paths (we don't pass CRLs or URI-name-constrained certs to webpki).
+  { id = "RUSTSEC-2026-0049", reason = "rustls-webpki 0.102 CRL distribution-point matching - via sigstore-tsa 0.7.0, no safe upgrade available" },
+  { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.102 URI name constraints - via sigstore-tsa 0.7.0, no safe upgrade available" },
+  { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.102 wildcard name constraints - via sigstore-tsa 0.7.0, no safe upgrade available" },
+  { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.102 reachable panic in CRL parsing - via sigstore-tsa 0.7.0, no safe upgrade available" },
   #"RUSTSEC-0000-0000",
   #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
   #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish

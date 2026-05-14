@@ -42,17 +42,44 @@ jobs:
           fetch-depth: 0
 
       - name: Set up environment variables
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DISTRIBUTIONS: ${{ inputs.distributions }}
+          INPUT_BUILD_REVISION: ${{ inputs.build_revision || '1' }}
+          INPUT_VERSION_SUFFIX: ${{ inputs.version_suffix }}
+          INPUT_USE_SERIOUS_PROFILE: ${{ inputs.use_serious_profile }}
+          PPA_MAINTAINER_NAME_INPUT: ${{ vars.PPA_MAINTAINER_NAME || 'mise Release Bot' }}
+          PPA_MAINTAINER_EMAIL_INPUT: ${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}
+          PPA_NAME_INPUT: ${{ vars.PPA_NAME || 'ppa:jdxcode/mise' }}
         run: |
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
 
-          if [ "${{ github.event_name }}" = "release" ]; then
+          if [ "$EVENT_NAME" = "release" ]; then
             DISTRIBUTIONS="resolute"
             BUILD_REVISION="1"
             VERSION_SUFFIX=""
           else
-            DISTRIBUTIONS="${{ inputs.distributions }}"
-            BUILD_REVISION="${{ inputs.build_revision || '1' }}"
-            VERSION_SUFFIX="${{ inputs.version_suffix }}"
+            DISTRIBUTIONS="$INPUT_DISTRIBUTIONS"
+            BUILD_REVISION="$INPUT_BUILD_REVISION"
+            VERSION_SUFFIX="$INPUT_VERSION_SUFFIX"
+          fi
+
+          # Validate inputs before they flow into the source-package build,
+          # signing, and dput steps. dispatch inputs can otherwise inject shell
+          # syntax or break out of the env file.
+          for dist in $DISTRIBUTIONS; do
+            if ! [[ "$dist" =~ ^[a-z][a-z0-9-]*$ ]]; then
+              echo "::error::Invalid Ubuntu distribution: $dist" >&2
+              exit 1
+            fi
+          done
+          if ! [[ "$BUILD_REVISION" =~ ^[0-9]+$ ]]; then
+            echo "::error::Invalid build revision: $BUILD_REVISION" >&2
+            exit 1
+          fi
+          if [ -n "$VERSION_SUFFIX" ] && ! [[ "$VERSION_SUFFIX" =~ ^[+~][A-Za-z0-9.+~-]*$ ]]; then
+            echo "::error::Invalid version suffix: $VERSION_SUFFIX" >&2
+            exit 1
           fi
 
           # Apply version suffix (e.g., 2026.2.0 -> 2026.2.0+ppa1)
@@ -63,13 +90,13 @@ jobs:
             echo "DISTRIBUTIONS=${DISTRIBUTIONS}"
             echo "BUILD_REVISION=${BUILD_REVISION}"
             echo "PACKAGE_NAME=mise"
-            echo "MAINTAINER_NAME=${{ vars.PPA_MAINTAINER_NAME || 'mise Release Bot' }}"
-            echo "MAINTAINER_EMAIL=${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
-            echo "PPA_NAME=${{ vars.PPA_NAME || 'ppa:jdxcode/mise' }}"
+            echo "MAINTAINER_NAME=${PPA_MAINTAINER_NAME_INPUT}"
+            echo "MAINTAINER_EMAIL=${PPA_MAINTAINER_EMAIL_INPUT}"
+            echo "PPA_NAME=${PPA_NAME_INPUT}"
           } >> "$GITHUB_ENV"
 
           # Set build profile
-          if [ "${{ github.event_name }}" = "release" ] || [ "${{ inputs.use_serious_profile }}" = "true" ]; then
+          if [ "$EVENT_NAME" = "release" ] || [ "$INPUT_USE_SERIOUS_PROFILE" = "true" ]; then
             echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
           else
             echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"

@@ -33,26 +33,42 @@ jobs:
           fetch-depth: 0
 
       - name: Set up environment variables
+        env:
+          INPUT_CHROOTS: ${{ inputs.chroots }}
+          INPUT_USE_SERIOUS_PROFILE: ${{ inputs.use_serious_profile }}
+          EVENT_NAME: ${{ github.event_name }}
+          COPR_MAINTAINER_NAME_INPUT: ${{ vars.COPR_MAINTAINER_NAME || 'mise Release Bot' }}
+          COPR_MAINTAINER_EMAIL_INPUT: ${{ vars.COPR_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}
+          COPR_OWNER_INPUT: ${{ vars.COPR_OWNER || 'jdxcode' }}
+          COPR_PROJECT_INPUT: ${{ vars.COPR_PROJECT || 'mise' }}
         run: |
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
 
           {
             echo "VERSION=${VERSION}"
             echo "PACKAGE_NAME=${PACKAGE_NAME}"
-            echo "MAINTAINER_NAME=${{ vars.COPR_MAINTAINER_NAME || 'mise Release Bot' }}"
-            echo "MAINTAINER_EMAIL=${{ vars.COPR_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
-            echo "COPR_OWNER=${{ vars.COPR_OWNER || 'jdxcode' }}"
-            echo "COPR_PROJECT=${{ vars.COPR_PROJECT || 'mise' }}"
+            echo "MAINTAINER_NAME=${COPR_MAINTAINER_NAME_INPUT}"
+            echo "MAINTAINER_EMAIL=${COPR_MAINTAINER_EMAIL_INPUT}"
+            echo "COPR_OWNER=${COPR_OWNER_INPUT}"
+            echo "COPR_PROJECT=${COPR_PROJECT_INPUT}"
           } >> "$GITHUB_ENV"
 
           # Pass chroots through only when explicitly overridden via workflow_dispatch.
-          # Otherwise let build-copr.sh apply its own default list.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.chroots }}" ]; then
-            echo "CHROOTS=${{ inputs.chroots }}" >> "$GITHUB_ENV"
+          # Otherwise let build-copr.sh apply its own default list. Validate the
+          # input against a conservative COPR chroot pattern to prevent shell
+          # injection from a malicious workflow_dispatch invocation.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_CHROOTS" ]; then
+            for chroot in $INPUT_CHROOTS; do
+              if ! [[ "$chroot" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+                echo "::error::Invalid COPR chroot value: $chroot" >&2
+                exit 1
+              fi
+            done
+            echo "CHROOTS=$INPUT_CHROOTS" >> "$GITHUB_ENV"
           fi
 
           # Set build profile
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.use_serious_profile }}" = "true" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$INPUT_USE_SERIOUS_PROFILE" = "true" ]; then
             echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
           else
             echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"
