@@ -301,6 +301,9 @@ List runtime versions available for install.
 \fBoutdated\fR
 Shows outdated tool versions
 .TP
+\fBpatrons\fR
+Show the individuals supporting mise as Patron\-tier members
+.TP
 \fBplugins\fR
 Manage plugins
 .RS
@@ -1746,6 +1749,25 @@ Don't show table header
 Tool(s) to show outdated versions for
 e.g.: node@20 python@3.10
 If not specified, all tools in global and local configs will be shown
+.SH "MISE PATRONS"
+Show the individuals supporting mise as Patron\-tier members
+
+Lists the individuals on the Patron tier from <https://en.dev/patrons.json>.
+The list refreshes daily; supporting terminals will render each patron's
+name as a clickable link via OSC 8 hyperlinks.
+
+To appear here, become a patron at <https://en.dev/sponsor>.
+.PP
+\fBUsage:\fR mise patrons [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-refresh\fR
+Bypass the local cache and re\-fetch
 .SH "MISE PLUGINS"
 Manage plugins
 .PP

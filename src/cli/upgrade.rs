@@ -380,6 +380,7 @@ impl Upgrade {
             }
         }
 
+        mpr.finish_progress();
         let ts = config.get_toolset().await?;
 
         // Fix up sources and requests for lockfile update - CLI args produce
@@ -411,6 +412,7 @@ impl Upgrade {
                 });
         }
 
+        mpr.finish_progress();
         Self::print_summary(&outdated, &successful_versions)?;
 
         install_error
