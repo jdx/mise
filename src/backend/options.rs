@@ -18,10 +18,14 @@ impl<'a> BackendOptions<'a> {
         self.raw
     }
 
+    /// Returns the option as an owned `String`, coercing scalar TOML values to
+    /// their string representation.
     pub(crate) fn string(&self, key: &str) -> Option<String> {
         self.raw.get_string(key)
     }
 
+    /// Returns the option only when the underlying TOML value is a string.
+    /// Prefer `string()` for options that may be written as native TOML scalars.
     pub(crate) fn str(&self, key: &str) -> Option<&'a str> {
         self.raw.get(key)
     }
@@ -48,6 +52,10 @@ impl<'a> BackendOptions<'a> {
 
     pub(crate) fn bool(&self, key: &str) -> bool {
         self.string(key).is_some_and(|v| is_truthy(&v))
+    }
+
+    pub(crate) fn platform_bool(&self, key: &str) -> bool {
+        self.platform_string(key).is_some_and(|v| is_truthy(&v))
     }
 
     pub(crate) fn available_platforms_with_key(&self, key: &str) -> Vec<String> {

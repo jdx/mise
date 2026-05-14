@@ -1,7 +1,7 @@
 use crate::backend::VersionInfo;
 use crate::backend::asset_matcher::{self, Asset, AssetPicker, ChecksumFetcher};
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::{BackendOptions, is_truthy};
+use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, template_string, try_with_v_prefix,
@@ -89,9 +89,7 @@ impl<'a> GitBackendOptions<'a> {
     }
 
     fn no_app(&self) -> bool {
-        self.values
-            .string("no_app")
-            .is_some_and(|value| is_truthy(&value))
+        self.values.platform_bool("no_app")
     }
 
     fn filter_bins(&self) -> Option<Vec<String>> {
