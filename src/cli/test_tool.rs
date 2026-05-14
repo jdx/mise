@@ -3,7 +3,7 @@ use crate::cmd::cmd;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::registry::{REGISTRY, RegistryTool};
-use crate::tera::get_tera;
+use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
@@ -446,10 +446,14 @@ impl TestTool {
             }
             None => return Err(eyre!("command failed: terminated by signal")),
         }
-        let mut ctx = config.tera_ctx.clone();
-        ctx.insert("version", &tv.version);
-        let mut tera = get_tera(dirs::CWD.as_ref().map(|d| d.as_path()));
-        let expected = tera.render_str(expected, &ctx)?;
+        let expected = if contains_template_syntax(expected) {
+            let mut ctx = config.tera_ctx.clone();
+            ctx.insert("version", &tv.version);
+            let mut tera = get_tera(dirs::CWD.as_ref().map(|d| d.as_path()));
+            render_str(&mut tera, expected, &ctx)?
+        } else {
+            expected.to_string()
+        };
         let stdout = String::from_utf8(res.stdout)?;
         let clean_stdout = console::strip_ansi_codes(&stdout);
         if !clean_stdout.contains(&expected) {

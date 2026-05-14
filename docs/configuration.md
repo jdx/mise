@@ -349,8 +349,6 @@ paranoid = false       # see MISE_PARANOID
 disable_default_registry = false   # disable the default registry, see `MISE_DISABLE_DEFAULT_REGISTRY`
 disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
 
-env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
-
 experimental = true # enable experimental features
 
 # configure messages displayed when entering directories with config files
@@ -359,6 +357,9 @@ status = {
   show_env = false,
   show_tools = false,
 }
+
+[env]
+_.file = '.env'
 
 # "_" is a special key for information you'd like to put into mise.toml that mise will never parse
 [_]
@@ -525,6 +526,8 @@ This is the path which is used as `{{config_root}}` for the global config file.
 :::
 
 ### `MISE_ENV_FILE`
+
+Deprecated. Use `env._.file` in `mise.toml` or `~/.config/mise/config.toml` instead.
 
 Set to a filename to read from env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
 Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.

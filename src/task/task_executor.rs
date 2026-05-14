@@ -13,6 +13,7 @@ use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
@@ -1144,20 +1145,23 @@ impl TaskExecutor {
         if let Some(confirm) = &task.confirm
             && !Settings::get().yes
         {
-            let config_root = task.config_root.clone().unwrap_or_default();
-            let mut tera = crate::tera::get_tera(Some(&config_root));
-            let mut tera_ctx = task.tera_ctx(config).await?;
+            let message = if contains_template_syntax(confirm.message()) {
+                let config_root = task.config_root.clone().unwrap_or_default();
+                let mut tera = crate::tera::get_tera(Some(&config_root));
+                let mut tera_ctx = task.tera_ctx(config).await?;
 
-            // Add usage values from parsed environment
-            let mut usage_ctx = std::collections::HashMap::new();
-            for (key, value) in env {
-                if let Some(usage_key) = key.strip_prefix("usage_") {
-                    usage_ctx.insert(usage_key.to_string(), tera::Value::String(value.clone()));
+                // Add usage values from parsed environment
+                let mut usage_ctx = std::collections::HashMap::new();
+                for (key, value) in env {
+                    if let Some(usage_key) = key.strip_prefix("usage_") {
+                        usage_ctx.insert(usage_key.to_string(), tera::Value::String(value.clone()));
+                    }
                 }
-            }
-            tera_ctx.insert("usage", &usage_ctx);
-
-            let message = tera.render_str(confirm.message(), &tera_ctx)?;
+                tera_ctx.insert("usage", &usage_ctx);
+                render_str(&mut tera, confirm.message(), &tera_ctx)?
+            } else {
+                confirm.message().to_string()
+            };
             let default_yes = match confirm.default_value() {
                 Some(default) => Self::parse_confirm_default(default)?,
                 None => true, // keep backwards compatible default of yes if not specified

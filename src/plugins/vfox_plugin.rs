@@ -88,7 +88,7 @@ impl VfoxPlugin {
         env: &IndexMap<String, String>,
         config_root: Option<&Path>,
     ) -> Result<Option<MiseEnvResponse>> {
-        let (vfox, _) = self.vfox();
+        let (vfox, _) = self.vfox()?;
         let result = vfox
             .mise_env(&self.name, opts, env, config_root.and_then(|p| p.to_str()))
             .await?;
@@ -110,7 +110,7 @@ impl VfoxPlugin {
         env: &IndexMap<String, String>,
         config_root: Option<&Path>,
     ) -> Result<Option<Vec<String>>> {
-        let (vfox, _) = self.vfox();
+        let (vfox, _) = self.vfox()?;
         let mut out = vec![];
         let results = vfox
             .mise_path(&self.name, opts, env, config_root.and_then(|p| p.to_str()))
@@ -121,7 +121,7 @@ impl VfoxPlugin {
         Ok(Some(out))
     }
 
-    pub fn vfox(&self) -> (Vfox, mpsc::Receiver<String>) {
+    pub fn vfox(&self) -> Result<(Vfox, mpsc::Receiver<String>)> {
         let settings = Settings::get();
         let env_type = if settings.os() == "linux" {
             settings.libc().map(str::to_string)
@@ -134,6 +134,7 @@ impl VfoxPlugin {
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
+        vfox.default_inline_shell = Some(settings.default_inline_shell()?);
         // Resolve the GitHub token lazily — only when a Lua plugin actually
         // makes an HTTP request to a GitHub API URL. This avoids spawning
         // `github.credential_command` (or hitting other token sources) for
@@ -143,7 +144,7 @@ impl VfoxPlugin {
             crate::github::resolve_token("github.com").map(|(token, _)| token)
         }));
         let rx = vfox.log_subscribe();
-        (vfox, rx)
+        Ok((vfox, rx))
     }
 
     async fn install_from_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<()> {

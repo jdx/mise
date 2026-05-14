@@ -7,6 +7,7 @@ use crate::duration;
 use crate::file;
 use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
+use crate::tera::contains_template_syntax;
 use crate::ui::style;
 use console::style as console_style;
 use eyre::{Result, eyre};
@@ -414,7 +415,7 @@ impl TasksValidate {
 
         if let Some(ref dir) = task.dir {
             // Try to render the directory template
-            if dir.contains("{{") || dir.contains("{%") {
+            if contains_template_syntax(dir) {
                 // Contains template syntax - try to render it
                 match task.dir(config).await {
                     Ok(rendered_dir) => {

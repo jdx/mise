@@ -53,6 +53,8 @@ pub struct Vfox {
     /// instead of inheriting the process environment. This allows dependency tools'
     /// bin paths to be on PATH during version resolution and installation.
     pub cmd_env: Option<IndexMap<String, String>>,
+    /// Shell command used by Lua `cmd.exec()`.
+    pub default_inline_shell: Option<Vec<String>>,
     /// Optional GitHub token for Lua http requests to GitHub API endpoints.
     pub github_token: Option<String>,
     /// Optional lazy resolver for the GitHub token. When set, the token is only
@@ -153,6 +155,7 @@ impl Vfox {
     pub fn get_sdk(&self, name: &str) -> Result<Plugin> {
         let mut plugin = Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))?;
         plugin.runtime_env_type = self.runtime_env_type.clone();
+        self.set_cmd_shell(&plugin)?;
         Ok(plugin)
     }
 
@@ -163,6 +166,13 @@ impl Vfox {
         }
         self.set_github_token(&plugin)?;
         Ok(plugin)
+    }
+
+    fn set_cmd_shell(&self, plugin: &Plugin) -> Result<()> {
+        if let Some(shell) = &self.default_inline_shell {
+            plugin.set_cmd_shell(shell)?;
+        }
+        Ok(())
     }
 
     fn set_github_token(&self, plugin: &Plugin) -> Result<()> {
@@ -653,6 +663,7 @@ impl Default for Vfox {
             install_dir: home().join(".version-fox/installs"),
             skip_verification: false,
             cmd_env: None,
+            default_inline_shell: None,
             github_token: None,
             github_token_resolver: None,
             runtime_env_type: None,
@@ -682,6 +693,7 @@ mod tests {
                 install_dir: PathBuf::from("test/installs"),
                 skip_verification: false,
                 cmd_env: None,
+                default_inline_shell: None,
                 github_token: None,
                 github_token_resolver: None,
                 runtime_env_type: None,

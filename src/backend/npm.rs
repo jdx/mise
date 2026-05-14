@@ -66,8 +66,10 @@ impl Backend for NPMBackend {
         let package_manager = settings.npm.package_manager;
         let tool_name = self.tool_name();
 
-        // Avoid circular dependency when installing npm itself
-        // But we still need the configured package manager for installation
+        // Explicit `npm:npm` still bootstraps through node's bundled npm even
+        // when the registry shorthand prefers aqua. Keep node here so users of
+        // the npm backend, or the registry fallback, wait for that bootstrap
+        // npm before installation starts.
         if tool_name == "npm" {
             return match package_manager {
                 NpmPackageManager::Auto => Ok(vec!["node"]),

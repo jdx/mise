@@ -519,6 +519,9 @@ env = "MISE_ENV_CACHE_TTL"
 type = "Duration"
 
 [env_file]
+deprecated = "Use env._.file instead."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing environment variables to automatically load."
 env = "MISE_ENV_FILE"
 optional = true
@@ -1730,7 +1733,7 @@ env = "MISE_PRERELEASES"
 type = "Bool"
 
 [profile]
-deprecated = "Use MISE_ENV_FILE instead."
+deprecated = "Use env._.file instead."
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 env = "MISE_PROFILE"
 hide = true

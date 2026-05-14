@@ -6,6 +6,8 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
+use crate::tera::{contains_template_syntax, render_str};
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TaskDep {
     pub task: String,
@@ -19,14 +21,25 @@ impl TaskDep {
         tera: &mut tera::Tera,
         tera_ctx: &tera::Context,
     ) -> crate::Result<&mut Self> {
-        self.task = tera.render_str(&self.task, tera_ctx)?;
+        if contains_template_syntax(&self.task) {
+            self.task = render_str(tera, &self.task, tera_ctx)?;
+        }
         for a in &mut self.args {
-            *a = tera.render_str(a, tera_ctx)?;
+            if contains_template_syntax(a) {
+                *a = render_str(tera, a, tera_ctx)?;
+            }
         }
         // Render env values through Tera
         for v in self.env.values_mut() {
-            *v = tera.render_str(v, tera_ctx)?;
+            if contains_template_syntax(v) {
+                *v = render_str(tera, v, tera_ctx)?;
+            }
         }
+        self.parse_shell_style_env()?;
+        Ok(self)
+    }
+
+    pub fn parse_shell_style_env(&mut self) -> crate::Result<&mut Self> {
         // Parse shell-style "FOO=bar BAZ=qux taskname arg1 arg2" if args/env not already set
         if self.args.is_empty() && self.env.is_empty() {
             let s = self.task.clone();

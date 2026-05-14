@@ -3036,7 +3036,7 @@ fn versioned_package_from_tag(
     target_arch: &str,
     target_libc: Option<&str>,
 ) -> Result<Option<(String, AquaPackage)>> {
-    if !pkg.version_filter_ok(tag)? {
+    if !pkg.version_filter_ok(tag)? || !pkg.version_constraint_ok(&[tag]) {
         return Ok(None);
     }
 
@@ -3317,6 +3317,52 @@ mod lock_candidate_tests {
             Some("1.2.3".to_string())
         );
         assert_eq!(version_from_tag(&pkg, "other-1.2.3").unwrap(), None);
+    }
+
+    fn pkg_from_yaml(yaml: &str) -> AquaPackage {
+        let mut pkg: AquaPackage = serde_yaml::from_str(yaml).unwrap();
+        pkg.setup_version_filter().unwrap();
+        pkg
+    }
+
+    #[test]
+    fn test_version_from_tag_rejects_version_filter_mismatch() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+version_filter: semver(">= 1.0.0")
+"#,
+        );
+
+        assert_eq!(
+            version_from_tag(&pkg, "v1.0.0").unwrap(),
+            Some("1.0.0".to_string())
+        );
+        assert_eq!(version_from_tag(&pkg, "v0.9.0").unwrap(), None);
+    }
+
+    #[test]
+    fn test_version_from_tag_rejects_version_constraint_mismatch() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+version_constraint: "false"
+version_overrides:
+  - version_constraint: Version == "v1.2.3"
+    asset: tool.tar.gz
+    format: tar.gz
+"#,
+        );
+
+        assert_eq!(
+            version_from_tag(&pkg, "v1.2.3").unwrap(),
+            Some("1.2.3".to_string())
+        );
+        assert_eq!(version_from_tag(&pkg, "v1.2.4").unwrap(), None);
     }
 
     #[test]

@@ -28,7 +28,7 @@ use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PEP440_PRERELEASE_REGEX, PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::tera::get_tera;
+use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
     ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, Toolset, install_state,
@@ -1820,10 +1820,14 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         // Render tera template variables (e.g. {{tools.ripgrep.path}})
-        let tera_ctx = ctx.ts.tera_ctx(&ctx.config).await?;
-        let dir = tv.request.source().path().and_then(|p| p.parent());
-        let mut tera = get_tera(dir);
-        let rendered_script = tera.render_str(script, tera_ctx)?;
+        let rendered_script = if contains_template_syntax(script) {
+            let tera_ctx = ctx.ts.tera_ctx(&ctx.config).await?;
+            let dir = tv.request.source().path().and_then(|p| p.parent());
+            let mut tera = get_tera(dir);
+            render_str(&mut tera, script, tera_ctx)?
+        } else {
+            script.to_string()
+        };
 
         let mut runner = CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, path_env.join())
