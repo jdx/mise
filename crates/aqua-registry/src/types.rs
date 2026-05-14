@@ -401,8 +401,13 @@ impl AquaPackage {
         arch: &str,
         runtime: AquaRuntime<'_>,
     ) -> AquaPackage {
-        let version_override = self.version_override(versions).unwrap_or(&self).clone();
-        self = apply_override(self.clone(), &version_override);
+        if let Some(version_override) = self
+            .version_override(versions)
+            .filter(|version_override| !std::ptr::eq(*version_override, &self))
+            .cloned()
+        {
+            self = apply_override(self, &version_override);
+        }
         if let Some(pkg) = self
             .overrides
             .iter()
