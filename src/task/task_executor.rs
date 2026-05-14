@@ -272,7 +272,7 @@ impl TaskExecutor {
         let mut nested_mise_diff_exclude_keys: HashSet<String> = task_env
             .iter()
             .map(|(key, _)| key.clone())
-            .filter(|key| key != &*crate::env::PATH_KEY)
+            .filter(|key| key.as_str() != crate::env::PATH_KEY.as_str())
             .chain(once("__MISE_DIFF".to_string()))
             .collect();
         if !self.timings {
@@ -476,7 +476,7 @@ impl TaskExecutor {
         value: String,
     ) {
         env.insert(key.to_string(), value);
-        if key != &*crate::env::PATH_KEY {
+        if key != crate::env::PATH_KEY.as_str() {
             excluded_keys.insert(key.to_string());
         }
     }
