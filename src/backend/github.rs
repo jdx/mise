@@ -4,8 +4,8 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, template_string, try_with_v_prefix,
-    try_with_v_prefix_and_repo, verify_artifact,
+    get_filename_from_url, install_artifact, lookup_platform_key, lookup_with_fallback,
+    template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::cli::args::{BackendArg, ToolVersionType};
@@ -789,7 +789,43 @@ impl UnifiedGitBackend {
                         return Err(eyre::eyre!("SLSA provenance verification failed"));
                     }
                     Err(e) => {
-                        if is_slsa_format_issue(&e) {
+                        if crate::github::sigstore::is_slsa_subject_mismatch(&e) {
+                            debug!(
+                                "lock-time SLSA provenance did not cover downloaded artifact for {}; trying archive content subjects: {e}",
+                                repo
+                            );
+                            match self
+                                .try_verify_slsa_archive_contents(
+                                    tv,
+                                    &artifact_path,
+                                    &provenance_path,
+                                )
+                                .await
+                            {
+                                Ok(true) => {
+                                    debug!(
+                                        "lock-time SLSA provenance verified archive contents for {}",
+                                        repo
+                                    );
+                                    return Ok((
+                                        Some(ProvenanceType::Slsa {
+                                            url: Some(provenance_url),
+                                        }),
+                                        None,
+                                    ));
+                                }
+                                Ok(false) => {
+                                    return Err(eyre::eyre!(
+                                        "SLSA archive content verification failed"
+                                    ));
+                                }
+                                Err(content_err) => {
+                                    return Err(eyre::eyre!(
+                                        "SLSA archive content verification error: {content_err}"
+                                    ));
+                                }
+                            }
+                        } else if is_slsa_format_issue(&e) {
                             debug!("SLSA provenance file not in verifiable format: {e}");
                         } else {
                             return Err(eyre::eyre!("SLSA verification error: {e}"));
@@ -1721,6 +1757,52 @@ impl UnifiedGitBackend {
         }
     }
 
+    async fn try_verify_slsa_archive_contents(
+        &self,
+        tv: &ToolVersion,
+        file_path: &std::path::Path,
+        provenance_path: &std::path::Path,
+    ) -> Result<bool> {
+        let raw_opts = tv.request.options();
+        let format = if let Some(format_opt) = lookup_with_fallback(&raw_opts, "format") {
+            file::TarFormat::from_ext(&format_opt)
+        } else {
+            file::TarFormat::from_file_name(
+                &file_path.file_name().unwrap_or_default().to_string_lossy(),
+            )
+        };
+
+        if !format.is_archive() {
+            return Err(eyre::eyre!(
+                "SLSA provenance subject mismatch and content-level fallback is only supported for archives"
+            ));
+        }
+
+        let mut strip_components = lookup_platform_key(&raw_opts, "strip_components")
+            .or_else(|| raw_opts.get_string("strip_components"))
+            .and_then(|s| s.parse().ok());
+        if strip_components.is_none()
+            && lookup_with_fallback(&raw_opts, "bin_path").is_none()
+            && file::should_strip_components(file_path, format)?
+        {
+            strip_components = Some(1);
+        }
+
+        let contents =
+            file::archive_content_files(file_path, format, strip_components.unwrap_or(0))?;
+        let artifacts = contents
+            .into_iter()
+            .map(|content| crate::github::sigstore::SlsaArtifact {
+                name: content.name,
+                sha256: content.sha256,
+            })
+            .collect::<Vec<_>>();
+
+        crate::github::sigstore::verify_slsa_provenance_artifacts(provenance_path, &artifacts, 1u8)
+            .await
+            .map_err(|e| eyre::eyre!("content-level SLSA verification failed: {e}"))
+    }
+
     /// Try to verify SLSA provenance. Returns:
     /// - Ok((true, Some(url))) if provenance exists and verified successfully
     /// - Ok((false, _)) if provenance exists but verification failed
@@ -1822,7 +1904,24 @@ impl UnifiedGitBackend {
                 }
             }
             Err(e) => {
-                if is_slsa_format_issue(&e) {
+                if crate::github::sigstore::is_slsa_subject_mismatch(&e) {
+                    debug!(
+                        "SLSA provenance did not cover downloaded artifact for {tv}; trying archive content subjects: {e}"
+                    );
+                    match self
+                        .try_verify_slsa_archive_contents(tv, file_path, &provenance_path)
+                        .await
+                    {
+                        Ok(true) => {
+                            debug!(
+                                "SLSA provenance verified archive contents successfully for {tv}"
+                            );
+                            Ok((true, Some(provenance_download_url)))
+                        }
+                        Ok(false) => Ok((false, None)),
+                        Err(content_err) => Err(VerificationStatus::Error(content_err.to_string())),
+                    }
+                } else if is_slsa_format_issue(&e) {
                     debug!("SLSA provenance file not in verifiable format for {tv}: {e}");
                     Err(VerificationStatus::NoAttestations)
                 } else {

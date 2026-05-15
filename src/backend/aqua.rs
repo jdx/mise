@@ -1192,8 +1192,51 @@ impl AquaBackend {
                 Ok(provenance_url)
             }
             Ok(false) => Err(eyre!("SLSA provenance verification failed")),
+            Err(e) if crate::github::sigstore::is_slsa_subject_mismatch(&e) => {
+                debug!(
+                    "SLSA provenance did not cover downloaded artifact; trying archive content subjects: {e}"
+                );
+                match self
+                    .run_slsa_archive_content_check(artifact_path, &provenance_path, pkg, v)
+                    .await?
+                {
+                    true => Ok(provenance_url),
+                    false => Err(eyre!("SLSA archive content verification failed")),
+                }
+            }
             Err(e) => Err(e.into()),
         }
+    }
+
+    async fn run_slsa_archive_content_check(
+        &self,
+        artifact_path: &Path,
+        provenance_path: &Path,
+        pkg: &AquaPackage,
+        v: &str,
+    ) -> Result<bool> {
+        let format = pkg.format(v, os(), arch())?;
+        let format = TarFormat::from_ext(format);
+        if !format.is_archive() {
+            return Err(eyre!(
+                "SLSA provenance subject mismatch and content-level fallback is only supported for archives"
+            ));
+        }
+        // Aqua extraction does not auto-strip archive top-level directories.
+        // Keep strip_components=0 so SLSA subjects are compared against the
+        // same relative paths Aqua installs. The GitHub backend has separate
+        // auto-strip behavior and mirrors it in its own fallback.
+        let contents = file::archive_content_files(artifact_path, format, 0)?;
+        let artifacts = contents
+            .into_iter()
+            .map(|content| crate::github::sigstore::SlsaArtifact {
+                name: content.name,
+                sha256: content.sha256,
+            })
+            .collect::<Vec<_>>();
+        crate::github::sigstore::verify_slsa_provenance_artifacts(provenance_path, &artifacts, 1u8)
+            .await
+            .map_err(|e| eyre!("content-level SLSA verification failed: {e}"))
     }
 
     /// Download minisign signature and verify against an already-downloaded artifact.
