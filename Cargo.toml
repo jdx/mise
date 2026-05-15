@@ -69,6 +69,7 @@ aws-config = { version = "1.5", default-features = false, features = [
   "behavior-version-latest",
   "default-https-client",
   "rt-tokio",
+  "sso",
 ] }
 aws-lc-rs = { version = "1", optional = true, features = [
   "bindgen",
