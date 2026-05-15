@@ -9,6 +9,9 @@ experimental = true
 
 [tasks.read-marker]
 run = 'printf {{ read_file(path="marker") }}'
+
+[tasks.deps-python]
+run = 'printf target-task'
 EOF
 printf "from-project" >"$project/marker"
 
@@ -17,6 +20,11 @@ assert "env -u MISE_EXPERIMENTAL mise --env production -C '$project' settings ge
 assert "env -u MISE_EXPERIMENTAL mise --jobs 1 -C '$project' settings get experimental" "true"
 assert "env -u MISE_EXPERIMENTAL MISE_CD='$project' mise settings get experimental" "true"
 assert_succeed "env -u MISE_EXPERIMENTAL mise -C '$project' exec --deny-env -- true"
+
+# https://github.com/jdx/mise/discussions/5213
+# `mise --cd <dir> run <task>` must discover target-directory tasks even when
+# the caller's cwd has no task config.
+assert_contains "env -u MISE_EXPERIMENTAL mise --cd '$project' run deps-python" "target-task"
 assert_contains "env -u MISE_EXPERIMENTAL mise run -C project read-marker" "from-project"
 
 mise install dummy@1.0.0
