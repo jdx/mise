@@ -376,7 +376,7 @@ impl Config {
         if backend_arg.has_env_backend_override() {
             return None;
         }
-        let short = backend::unalias_backend(&backend_arg.short);
+        let short = registry::canonical_tool_name(&backend_arg.short);
         self.all_aliases
             .get(short)
             .and_then(|alias| alias.backend.as_deref())

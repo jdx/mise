@@ -14,7 +14,7 @@ use crate::plugins::warn_if_env_plugin_shadows_registry;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
-use crate::{backend::unalias_backend, config::Settings};
+use crate::{config::Settings, registry};
 
 /// Install a plugin
 ///
@@ -156,7 +156,7 @@ impl PluginsInstall {
 
 #[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
-    let name = unalias_backend(name);
+    let name = registry::canonical_tool_name(name);
     Ok(match git_url {
         Some(url) => match url.contains(':') {
             true => (name.to_string(), Some(url.clone())),
@@ -187,7 +187,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
     let name = name.strip_prefix("rtx-").unwrap_or(name);
     let name = name.strip_prefix("mise-").unwrap_or(name);
     let name = name.strip_prefix("vfox-").unwrap_or(name);
-    Ok(unalias_backend(name).to_string())
+    Ok(registry::canonical_tool_name(name).to_string())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

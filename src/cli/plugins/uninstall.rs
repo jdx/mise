@@ -1,10 +1,9 @@
 use eyre::Result;
 
-use crate::backend::unalias_backend;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
-use crate::{backend, plugins};
+use crate::{backend, plugins, registry};
 
 /// Removes a plugin
 #[derive(Debug, clap::Args)]
@@ -33,7 +32,7 @@ impl PluginsUninstall {
         };
 
         for plugin_name in plugins {
-            let plugin_name = unalias_backend(&plugin_name);
+            let plugin_name = registry::canonical_tool_name(&plugin_name);
             self.uninstall_one(plugin_name, &mpr).await?;
         }
         Ok(())

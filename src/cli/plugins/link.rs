@@ -5,9 +5,8 @@ use color_eyre::eyre::{Result, eyre};
 use console::style;
 use path_absolutize::Absolutize;
 
-use crate::backend::unalias_backend;
 use crate::file::{make_symlink, remove_all};
-use crate::{dirs, file};
+use crate::{dirs, file, registry};
 
 /// Symlinks a plugin into mise
 ///
@@ -40,7 +39,7 @@ impl PluginsLink {
                 (name, path)
             }
         };
-        let name = unalias_backend(&name);
+        let name = registry::canonical_tool_name(&name);
         let path = path.absolutize()?;
         let symlink = dirs::PLUGINS.join(name);
         if symlink.exists() {
@@ -66,7 +65,7 @@ fn get_name_from_path(path: &Path) -> String {
     let name = name.strip_prefix("rtx-").unwrap_or(name);
     let name = name.strip_prefix("mise-").unwrap_or(name);
     let name = name.strip_prefix("vfox-").unwrap_or(name);
-    unalias_backend(name).to_string()
+    registry::canonical_tool_name(name).to_string()
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

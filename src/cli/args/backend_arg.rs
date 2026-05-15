@@ -1,5 +1,5 @@
+use crate::backend::ABackend;
 use crate::backend::backend_type::BackendType;
-use crate::backend::{ABackend, unalias_backend};
 use crate::config::Config;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
@@ -58,15 +58,16 @@ pub struct BackendArg {
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let short = unalias_backend(s.as_ref()).to_string();
+        let short = s.as_ref();
         // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
         // If so, treat it as explicit since the user specified the backend
-        let explicit = if let Some((prefix, _)) = short.split_once(':') {
+        let (short_without_opts, _) = split_name_opts(short);
+        let explicit = if let Some((prefix, _)) = short_without_opts.split_once(':') {
             BackendType::guess(prefix) != BackendType::Unknown
         } else {
             false
         };
-        let (short_parsed, tool_name, opts) = parse_backend_components(&short, None);
+        let (short_parsed, tool_name, opts) = parse_backend_components(short, None);
         Self::new_raw(
             short_parsed,
             None,
@@ -144,11 +145,26 @@ pub(crate) fn strip_opts(s: &str) -> String {
         .unwrap_or_else(|| s.to_string())
 }
 
+fn split_name_opts(s: &str) -> (&str, Option<&str>) {
+    split_bracketed_opts(s)
+        .map(|(name, opts)| (name, Some(opts)))
+        .unwrap_or((s, None))
+}
+
+fn canonicalize_short_with_opts(s: &str) -> String {
+    let (name, opts) = split_name_opts(s);
+    let name = registry::canonical_tool_name(name);
+    match opts {
+        Some(opts) => format!("{name}[{opts}]"),
+        None => name.to_string(),
+    }
+}
+
 fn parse_backend_components(
     short: &str,
     full: Option<&String>,
 ) -> (String, String, Option<ToolVersionOptions>) {
-    let short = unalias_backend(short).to_string();
+    let short = canonicalize_short_with_opts(short);
     let source = full.unwrap_or(&short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (name, Some(parse_tool_options(opts_str))),
@@ -156,6 +172,11 @@ fn parse_backend_components(
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
+    let tool_name = if full.is_none() && !source.contains(':') {
+        registry::canonical_tool_name(tool_name)
+    } else {
+        tool_name
+    };
 
     (short, tool_name.to_string(), opts)
 }
@@ -164,7 +185,7 @@ fn parse_backend_components_fallible(
     short: &str,
     full: Option<&String>,
 ) -> Result<(String, String, Option<ToolVersionOptions>)> {
-    let short = unalias_backend(short).to_string();
+    let short = canonicalize_short_with_opts(short);
     let source = full.unwrap_or(&short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (
@@ -175,6 +196,11 @@ fn parse_backend_components_fallible(
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
+    let tool_name = if full.is_none() && !source.contains(':') {
+        registry::canonical_tool_name(tool_name)
+    } else {
+        tool_name
+    };
 
     Ok((short, tool_name.to_string(), opts))
 }
@@ -346,7 +372,7 @@ impl BackendArg {
     }
 
     pub fn full(&self) -> String {
-        let short = unalias_backend(&self.short);
+        let short = registry::canonical_tool_name(&self.short);
 
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
@@ -516,7 +542,7 @@ impl BackendArg {
     }
 
     fn env_backend_override(&self) -> Option<String> {
-        let short = unalias_backend(&self.short);
+        let short = registry::canonical_tool_name(&self.short);
         let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
         env::var(&env_key).ok()
     }
@@ -525,7 +551,7 @@ impl BackendArg {
         if !config::is_loaded() || self.has_env_backend_override() {
             return None;
         }
-        let short = unalias_backend(&self.short);
+        let short = registry::canonical_tool_name(&self.short);
         Config::get_()
             .all_aliases
             .get(short)
@@ -567,7 +593,7 @@ impl BackendArg {
         let full = if let Some(full) = &self.full {
             full.clone()
         } else {
-            let short = unalias_backend(&self.short);
+            let short = registry::canonical_tool_name(&self.short);
             if let Some(full) = install_state::get_tool_full(short) {
                 full
             } else if let Some(pt) = install_state::get_plugin_type(short) {
@@ -629,13 +655,13 @@ impl FromStr for BackendArg {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let short = unalias_backend(s).to_string();
-        let explicit = if let Some((prefix, _)) = short.split_once(':') {
+        let (short_without_opts, _) = split_name_opts(s);
+        let explicit = if let Some((prefix, _)) = short_without_opts.split_once(':') {
             BackendType::guess(prefix) != BackendType::Unknown
         } else {
             false
         };
-        let (short_parsed, tool_name, opts) = parse_backend_components_fallible(&short, None)?;
+        let (short_parsed, tool_name, opts) = parse_backend_components_fallible(s, None)?;
         Ok(Self::new_raw(
             short_parsed,
             None,
@@ -716,6 +742,9 @@ mod tests {
             asdf("clojure", "asdf:mise-plugins/mise-clojure", "clojure");
         }
         cargo("cargo:eza", "cargo:eza", "eza");
+        t("nodejs", "core:node", "node", BackendType::Core);
+        t("golang", "core:go", "go", BackendType::Core);
+        t("core:node", "core:node", "node", BackendType::Core);
         t("dotnet-core", "core:dotnet", "dotnet", BackendType::Core);
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
@@ -768,6 +797,9 @@ mod tests {
         };
         t("asdf:node", "asdf-node");
         t("node", "node");
+        t("nodejs", "node");
+        t("golang", "go");
+        t("core:node", "node");
         t("dotnet-core", "dotnet");
         t("cargo:eza", "cargo-eza");
         t("npm:@antfu/ni", "npm-antfu-ni");

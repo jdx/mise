@@ -43,6 +43,11 @@ impl Registry {
     }
 }
 
+pub fn canonical_tool_name(name: &str) -> &str {
+    let name = name.strip_prefix("core:").unwrap_or(name);
+    REGISTRY.get(name).map(|tool| tool.short).unwrap_or(name)
+}
+
 #[derive(Debug, Clone)]
 pub struct RegistryTool {
     pub short: &'static str,

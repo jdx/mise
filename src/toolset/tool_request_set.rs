@@ -291,7 +291,7 @@ pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
         if raw == "install" || raw == "tool" {
             return None;
         }
-        let short = crate::backend::unalias_backend(&raw).to_string();
+        let short = crate::registry::canonical_tool_name(&raw).to_string();
         Some((short, k, v))
     })
 }
@@ -323,8 +323,8 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_env_vars_unaliases_backend() {
-        // MISE_NODEJS_VERSION should yield "node" (the unaliased backend
+    fn test_tool_env_vars_canonicalizes_registry_aliases() {
+        // MISE_NODEJS_VERSION should yield "node" (the canonical registry
         // short name), not "nodejs" — otherwise the install command's
         // configured-tool check fails to match unaliased ToolArg shorts.
         unsafe {

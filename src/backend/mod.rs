@@ -2972,24 +2972,6 @@ pub(crate) fn fuzzy_match_versions(
         .collect()
 }
 
-pub fn unalias_backend(backend: &str) -> &str {
-    match backend {
-        "dotnet-core" => "dotnet",
-        "nodejs" => "node",
-        "golang" => "go",
-        _ => backend.trim_start_matches("core:"),
-    }
-}
-
-#[test]
-fn test_unalias_backend() {
-    assert_eq!(unalias_backend("node"), "node");
-    assert_eq!(unalias_backend("nodejs"), "node");
-    assert_eq!(unalias_backend("core:node"), "node");
-    assert_eq!(unalias_backend("golang"), "go");
-    assert_eq!(unalias_backend("dotnet-core"), "dotnet");
-}
-
 impl Display for dyn Backend {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.id())
