@@ -1,8 +1,10 @@
 use crate::errors::Error::PluginNotInstalled;
-use crate::git::Git;
+use crate::file;
+use crate::git::{CloneOptions, Git};
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::registry::REGISTRY;
+use crate::remote_source::RemoteSource;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -371,6 +373,7 @@ pub enum PluginSource {
     Git {
         url: String,
         git_ref: Option<String>,
+        subdir: Option<String>,
     },
     /// Zip file accessible via HTTPS
     Zip { url: String },
@@ -392,12 +395,65 @@ impl PluginSource {
                 url: repository.to_string(),
             };
         }
+        if let Some(source) = RemoteSource::parse_git(repository) {
+            return PluginSource::Git {
+                url: source.url,
+                git_ref: source.git_ref,
+                subdir: Some(source.path),
+            };
+        }
         // Otherwise treat as git repository
         let (url, git_ref) = Git::split_url_and_ref(repository);
         PluginSource::Git {
             url: url.to_string(),
             git_ref: git_ref.map(|s| s.to_string()),
+            subdir: None,
         }
+    }
+}
+
+pub fn install_git_plugin_source(
+    plugin_name: &str,
+    plugin_path: &Path,
+    repo_url: &str,
+    git_ref: Option<&str>,
+    subdir: Option<&str>,
+    pr: &dyn SingleReport,
+) -> Result<Git> {
+    if let Some(subdir) = subdir {
+        let repo_path = dirs::DATA
+            .join("plugin-repos")
+            .join(plugin_name.to_kebab_case());
+        file::remove_all_with_progress(plugin_path, pr)?;
+        file::remove_all_with_progress(&repo_path, pr)?;
+
+        let git = Git::new(&repo_path);
+        pr.set_message(format!("clone {repo_url}"));
+        git.clone(repo_url, CloneOptions::default().pr(pr))?;
+        if let Some(ref_) = git_ref {
+            pr.set_message(format!("check out {ref_}"));
+            git.update(Some(ref_.to_string()))?;
+        }
+
+        let subdir_path = repo_path.join(subdir);
+        if !subdir_path.is_dir() {
+            return Err(eyre!(
+                "plugin subdirectory does not exist: {}",
+                file::display_path(&subdir_path)
+            ));
+        }
+        pr.set_message(format!("link {}", file::display_path(plugin_path)));
+        file::make_symlink(&subdir_path, plugin_path)?;
+        Ok(Git::new(plugin_path))
+    } else {
+        let git = Git::new(plugin_path);
+        pr.set_message(format!("clone {repo_url}"));
+        git.clone(repo_url, CloneOptions::default().pr(pr))?;
+        if let Some(ref_) = git_ref {
+            pr.set_message(format!("check out {ref_}"));
+            git.update(Some(ref_.to_string()))?;
+        }
+        Ok(git)
     }
 }
 
@@ -410,9 +466,14 @@ mod tests {
         // Test parsing Git URL
         let source = PluginSource::parse("https://github.com/user/plugin.git");
         match source {
-            PluginSource::Git { url, git_ref } => {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
                 assert_eq!(url, "https://github.com/user/plugin.git");
                 assert_eq!(git_ref, None);
+                assert_eq!(subdir, None);
             }
             _ => panic!("Expected a git plugin"),
         }
@@ -423,9 +484,14 @@ mod tests {
         // Test parsing Git URL with refs
         let source = PluginSource::parse("https://github.com/user/plugin.git#v1.0.0");
         match source {
-            PluginSource::Git { url, git_ref } => {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
                 assert_eq!(url, "https://github.com/user/plugin.git");
                 assert_eq!(git_ref, Some("v1.0.0".to_string()));
+                assert_eq!(subdir, None);
             }
             _ => panic!("Expected a git plugin"),
         }
@@ -465,6 +531,44 @@ mod tests {
         let source = PluginSource::parse("https://example.com/.zip/plugin");
         match source {
             PluginSource::Git { .. } => {}
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_remote_git_https() {
+        let source = PluginSource::parse(
+            "git::https://github.com/org/repo.git//dev/plugins/tool?ref=feature/test",
+        );
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "https://github.com/org/repo.git");
+                assert_eq!(git_ref, Some("feature/test".to_string()));
+                assert_eq!(subdir, Some("dev/plugins/tool".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_remote_git_ssh() {
+        let source = PluginSource::parse(
+            "git::ssh://git@git.acme.com:1222/org/repo.git//plugins/tool?ref=main",
+        );
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "ssh://git@git.acme.com:1222/org/repo.git");
+                assert_eq!(git_ref, Some("main".to_string()));
+                assert_eq!(subdir, Some("plugins/tool".to_string()));
+            }
             _ => panic!("Expected a git plugin"),
         }
     }

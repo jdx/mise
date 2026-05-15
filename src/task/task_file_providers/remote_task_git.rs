@@ -1,7 +1,5 @@
 use crate::Result;
-use regex::Regex;
 use std::path::PathBuf;
-use std::sync::LazyLock as Lazy;
 
 use async_trait::async_trait;
 
@@ -11,17 +9,10 @@ use crate::{
     git::{self, CloneOptions},
     hash,
     lock_file::LockFile,
+    remote_source::{RemoteGitSource, RemoteSource},
 };
 
 use super::TaskFileProvider;
-
-static SSH_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^git::(?P<url>ssh://((?P<user>[^@]+)@)(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap()
-});
-
-static HTTPS_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^git::(?P<url>https?://(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap()
-});
 
 #[derive(Debug)]
 pub struct RemoteTaskGitBuilder {
@@ -94,26 +85,27 @@ impl RemoteTaskGit {
     }
 
     fn parse_ssh(file: &str) -> Option<GitRepoStructure> {
-        let captures = SSH_REGEX.captures(file)?;
-        let url_without_path = captures.name("url").unwrap().as_str();
-        let path = captures.name("path").unwrap().as_str();
-        let branch = captures.name("branch").map(|m| m.as_str().to_string());
-        Some(GitRepoStructure::new(url_without_path, path, branch))
+        let source = RemoteSource::parse_git(file)?;
+        source.url.starts_with("ssh://").then(|| source.into())
     }
 
     fn parse_https(file: &str) -> Option<GitRepoStructure> {
-        let captures = HTTPS_REGEX.captures(file)?;
-        let url_without_path = captures.name("url").unwrap().as_str();
-        let path = captures.name("path").unwrap().as_str();
-        let branch = captures.name("branch").map(|m| m.as_str().to_string());
-        Some(GitRepoStructure::new(url_without_path, path, branch))
+        let source = RemoteSource::parse_git(file)?;
+        (source.url.starts_with("http://") || source.url.starts_with("https://"))
+            .then(|| source.into())
+    }
+}
+
+impl From<RemoteGitSource> for GitRepoStructure {
+    fn from(source: RemoteGitSource) -> Self {
+        GitRepoStructure::new(&source.url, &source.path, source.git_ref)
     }
 }
 
 #[async_trait]
 impl TaskFileProvider for RemoteTaskGit {
     fn is_match(&self, file: &str) -> bool {
-        SSH_REGEX.is_match(file) || HTTPS_REGEX.is_match(file)
+        RemoteSource::parse_git(file).is_some()
     }
 
     async fn get_local_path(&self, file: &str) -> Result<PathBuf> {

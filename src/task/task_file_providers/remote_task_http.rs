@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 
-use crate::{Result, dirs, env, file, hash, http::HTTP};
+use crate::{Result, dirs, env, file, hash, http::HTTP, remote_source::RemoteSource};
 
 use super::TaskFileProvider;
 
@@ -58,16 +58,7 @@ impl RemoteTaskHttp {
 #[async_trait]
 impl TaskFileProvider for RemoteTaskHttp {
     fn is_match(&self, file: &str) -> bool {
-        let url = url::Url::parse(file);
-
-        // Check if the URL is valid and the scheme is http or https
-        // and the path is not empty
-        // and the path is not a directory
-        url.is_ok_and(|url| {
-            (url.scheme() == "http" || url.scheme() == "https")
-                && url.path().len() > 1
-                && !url.path().ends_with('/')
-        })
+        RemoteSource::parse_http(file).is_some()
     }
 
     async fn get_local_path(&self, file: &str) -> Result<PathBuf> {
