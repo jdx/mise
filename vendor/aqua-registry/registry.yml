@@ -7668,6 +7668,44 @@ packages:
           - darwin/arm64
           - windows
   - type: github_release
+    repo_owner: SurgeDM
+    repo_name: Surge
+    description: Blazing fast TUI download manager built in Go for power users
+    files:
+      - name: surge
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: surge_{{trimV .Version}}-SNAPSHOT-b332004_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: surge_{{trimV .Version}}-SNAPSHOT-b332004_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.6.7")
+        asset: surge_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: surge_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: Surge_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: Surge_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: TaKO8Ki
     repo_name: frum
     asset: frum-{{.Version}}-{{.Arch}}-{{.OS}}.tar.gz
@@ -11959,9 +11997,22 @@ packages:
               linux: unknown-linux-gnu
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 0.5.6")
+        asset: mise-completions-sync-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: mise-completions-sync-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
+        files:
+          - name: misecompsync
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -76137,6 +76188,22 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: roie
+    repo_name: ovw
+    description: A terminal overview for your local projects
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: ovw_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: rootless-containers
     repo_name: rootlesskit
     description: Linux-native "fake root" for implementing rootless containers
@@ -80240,53 +80307,6 @@ packages:
           asset: sha256sum.txt
           algorithm: sha256
   - type: github_release
-    repo_owner: sigi-cli
-    repo_name: sigi
-    description: Sigi - a tool for organizing
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 3.6.1")
-        no_asset: true
-      - version_constraint: semver("<= 3.6.3")
-        asset: sigi_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        replacements:
-          amd64: x86_64
-          darwin: apple-darwin
-          linux: unknown-linux-musl
-          windows: pc-windows-gnu
-        checksum:
-          type: github_release
-          asset: sigi_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}.sha256sum
-          algorithm: sha256
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: "true"
-        asset: sigi_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        replacements:
-          amd64: x86_64
-          darwin: apple-darwin
-          linux: unknown-linux-musl
-          windows: pc-windows-gnu
-        checksum:
-          type: github_release
-          asset: sigi_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}.sha256sum
-          algorithm: sha256
-        overrides:
-          - goos: darwin
-            replacements:
-              arm64: aarch64
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-  - type: github_release
     repo_owner: sigoden
     repo_name: aichat
     description: Use GPT-4(V), Gemini, LocalAI, Ollama and other LLMs in the terminal
@@ -82042,6 +82062,55 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: github_release
+    repo_owner: so-dang-cool
+    repo_name: sigi
+    aliases:
+      - name: sigi-cli/sigi
+    description: Sigi - a tool for organizing
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 3.6.1")
+        no_asset: true
+      - version_constraint: semver("<= 3.6.3")
+        asset: sigi_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        checksum:
+          type: github_release
+          asset: sigi_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}.sha256sum
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: sigi_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        checksum:
+          type: github_release
+          asset: sigi_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}.sha256sum
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
   - type: github_release
     repo_owner: so-dang-cool
     repo_name: yn
@@ -84158,6 +84227,19 @@ packages:
       - name: age-plugin-yubikey
         src: age-plugin-yubikey/age-plugin-yubikey
     version_overrides:
+      - version_constraint: Version == "v0.5.0"
+        asset: age-plugin-yubikey-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+          - windows/amd64
       - version_constraint: semver("<= 0.3.0")
         asset: age-plugin-yubikey-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -84172,18 +84254,18 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: semver("<= 0.4.0")
+      - version_constraint: Version == "v0.5.1"
         asset: age-plugin-yubikey-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
+        format: zip
         windows_arm_emulation: true
         replacements:
           amd64: x86_64
         overrides:
-          - goos: windows
-            format: zip
+          - goos: darwin
+            format: tar.gz
         supported_envs:
           - darwin
-          - amd64
+          - windows/amd64
       - version_constraint: "true"
         asset: age-plugin-yubikey-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -84194,9 +84276,9 @@ packages:
           - goos: windows
             format: zip
         supported_envs:
-          - darwin/arm64
-          - linux/amd64
+          - darwin
           - windows
+          - amd64
   - type: github_release
     repo_owner: str4d
     repo_name: rage
@@ -94060,6 +94142,23 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: github_release
+    repo_owner: vjeantet
+    repo_name: alerter
+    description: Send User Alert Notification on MacOS from the command-line
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 4.0.0")
+        asset: alerter_v{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: alerter-{{trimV .Version}}.{{.Format}}
+        format: zip
+        supported_envs:
+          - darwin/arm64
   - type: github_release
     repo_owner: vladimirvivien
     repo_name: ktop

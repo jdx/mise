@@ -1,5 +1,63 @@
 # Changelog
 
+## [2026.5.9](https://github.com/jdx/mise/compare/v2026.5.8..v2026.5.9) - 2026-05-15
+
+### 🚀 Features
+
+- **(config)** add shell to watch_files run by @risu729 in [#9810](https://github.com/jdx/mise/pull/9810)
+- **(spm)** add artifact bundle support by @ikesyo in [#9825](https://github.com/jdx/mise/pull/9825)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** reject registry-invalid latest tags by @risu729 in [#9834](https://github.com/jdx/mise/pull/9834)
+- **(patrons)** point sponsor link to https://en.dev by @jdx in [#9868](https://github.com/jdx/mise/pull/9868)
+- **(vfox)** respect default inline shell in cmd.exec by @risu729 in [#9837](https://github.com/jdx/mise/pull/9837)
+- github oauth device flow paths by @jasisk in [#9791](https://github.com/jdx/mise/pull/9791)
+
+### 📚 Documentation
+
+- Update Walkthrough guide by @thernstig in [#9853](https://github.com/jdx/mise/pull/9853)
+
+### ⚡ Performance
+
+- **(config)** skip tera render for plain strings by @risu729 in [#9833](https://github.com/jdx/mise/pull/9833)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:rpm docker digest to d2471f2 by @renovate[bot] in [#9879](https://github.com/jdx/mise/pull/9879)
+- update rust docker digest to 5b1e348 by @renovate[bot] in [#9880](https://github.com/jdx/mise/pull/9880)
+- update ghcr.io/jdx/mise:deb docker digest to 0cde829 by @renovate[bot] in [#9878](https://github.com/jdx/mise/pull/9878)
+- update ubuntu docker tag to resolute-20260421 by @renovate[bot] in [#9881](https://github.com/jdx/mise/pull/9881)
+- update ghcr.io/jdx/mise:alpine docker digest to 2d0ea74 by @renovate[bot] in [#9877](https://github.com/jdx/mise/pull/9877)
+- update rust crate phf to 0.13 by @renovate[bot] in [#9884](https://github.com/jdx/mise/pull/9884)
+- update rust crate phf_codegen to 0.13 by @renovate[bot] in [#9883](https://github.com/jdx/mise/pull/9883)
+
+### 📦 Registry
+
+- use aqua backend for npm by @risu729 in [#9762](https://github.com/jdx/mise/pull/9762)
+- add aqua for buck2 prereleases by @risu729 in [#9805](https://github.com/jdx/mise/pull/9805)
+- add SonarQube CLI ([aqua:SonarSource/sonarqube-cli](https://github.com/SonarSource/sonarqube-cli)) by @3PeatVR in [#9824](https://github.com/jdx/mise/pull/9824)
+
+### New Contributors
+
+- @3PeatVR made their first contribution in [#9824](https://github.com/jdx/mise/pull/9824)
+- @ikesyo made their first contribution in [#9825](https://github.com/jdx/mise/pull/9825)
+- @thernstig made their first contribution in [#9853](https://github.com/jdx/mise/pull/9853)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (4)
+
+- [`SurgeDM/Surge`](https://github.com/SurgeDM/Surge)
+- [`roie/ovw`](https://github.com/roie/ovw)
+- [`so-dang-cool/sigi`](https://github.com/so-dang-cool/sigi)
+- [`vjeantet/alerter`](https://github.com/vjeantet/alerter)
+
+#### Updated Packages (2)
+
+- [`alltuner/mise-completions-sync`](https://github.com/alltuner/mise-completions-sync)
+- [`str4d/age-plugin-yubikey`](https://github.com/str4d/age-plugin-yubikey)
+
 ## [2026.5.8](https://github.com/jdx/mise/compare/v2026.5.7..v2026.5.8) - 2026-05-14
 
 ### 🚀 Features
