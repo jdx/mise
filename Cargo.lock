@@ -5440,7 +5440,7 @@ dependencies = [
  "rustls-webpki 0.103.13",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "sigstore-verify",
  "snap",
  "thiserror 2.0.18",
