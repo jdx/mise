@@ -1,0 +1,7 @@
+backends = [
+  "aqua:suzuki-shunsuke/ghtkn",
+  "github:suzuki-shunsuke/ghtkn",
+  "go:github.com/suzuki-shunsuke/ghtkn/cmd/ghtkn",
+]
+description = "Create short-lived GitHub App User Access Tokens for secure local development"
+test = { cmd = "ghtkn --version", expected = "ghtkn version {{version}}" }
