@@ -11,7 +11,9 @@ use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_script_parser::subcommand_name_from_parse;
-use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
+use crate::task::task_source_checker::{
+    save_checksum_with_cd, sources_are_fresh_with_cd, task_cwd_with_cd,
+};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
@@ -217,7 +219,10 @@ impl TaskExecutor {
         }
         // If any dependency actually ran, skip the source freshness check
         // so that downstream tasks are invalidated by upstream changes
-        if !self.force && !dep_ran && sources_are_fresh(task, config).await? {
+        if !self.force
+            && !dep_ran
+            && sources_are_fresh_with_cd(task, config, self.cd.as_deref()).await?
+        {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
@@ -409,7 +414,7 @@ impl TaskExecutor {
             );
         }
 
-        save_checksum(task, config).await?;
+        save_checksum_with_cd(task, config, self.cd.as_deref()).await?;
 
         Ok(true)
     }
@@ -1052,7 +1057,7 @@ impl TaskExecutor {
                 }
             }
         }
-        let dir = task_cwd(task, &config).await?;
+        let dir = task_cwd_with_cd(task, &config, self.cd.as_deref()).await?;
         if !dir.exists() {
             self.eprint(
                 task,

@@ -179,6 +179,21 @@ pub(crate) fn last_modified_file(
 
 /// Get the working directory for a task
 pub async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
+    task_cwd_with_cd(task, config, None).await
+}
+
+pub async fn task_cwd_with_cd(
+    task: &Task,
+    config: &Arc<Config>,
+    cd: Option<&Path>,
+) -> Result<PathBuf> {
+    // `mise run -C <dir>` changes the command cwd, but explicit task dirs still
+    // define where an individual task should run.
+    if let Some(cd) = cd
+        && !task_has_configured_dir(task, config)
+    {
+        return Ok(cd.to_path_buf());
+    }
     if let Some(d) = task.dir(config).await? {
         Ok(d)
     } else {
@@ -190,8 +205,18 @@ pub async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
     }
 }
 
-/// Check if task sources are up to date (fresher than outputs)
-pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool> {
+fn task_has_configured_dir(task: &Task, config: &Arc<Config>) -> bool {
+    task.dir.is_some()
+        || task
+            .cf(config)
+            .is_some_and(|cf| cf.task_config().dir.is_some())
+}
+
+pub async fn sources_are_fresh_with_cd(
+    task: &Task,
+    config: &Arc<Config>,
+    cd: Option<&Path>,
+) -> Result<bool> {
     if task.sources.is_empty() {
         return Ok(false);
     }
@@ -200,7 +225,7 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
     let equal_mtime_is_fresh = settings.task.source_freshness_equal_mtime_is_fresh;
 
     let run = async || -> Result<bool> {
-        let root = task_cwd(task, config).await?;
+        let root = task_cwd_with_cd(task, config, cd).await?;
         let matcher = build_source_matcher(&root, &task.sources);
         let glob_patterns = source_glob_patterns(&task.sources);
         let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher)?;
@@ -290,13 +315,16 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
     }))
 }
 
-/// Save a checksum file after a task completes successfully
-pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
+pub async fn save_checksum_with_cd(
+    task: &Task,
+    config: &Arc<Config>,
+    cd: Option<&Path>,
+) -> Result<()> {
     if task.sources.is_empty() {
         return Ok(());
     }
     if task.outputs.is_auto() {
-        let root = task_cwd(task, config).await?;
+        let root = task_cwd_with_cd(task, config, cd).await?;
         for p in task.outputs.paths(task, &root) {
             debug!("touching auto output file: {p}");
             file::touch_file(&PathBuf::from(&p))?;
@@ -304,7 +332,7 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
     } else {
         // Check if explicitly defined outputs were generated
         // Use task_cwd to respect the task's dir setting, matching sources_are_fresh behavior
-        let root = task_cwd(task, config).await?;
+        let root = task_cwd_with_cd(task, config, cd).await?;
         for output in task.outputs.paths(task, &root) {
             let output_exists = if is_glob_pattern(&output) {
                 // For glob patterns, check if any files match

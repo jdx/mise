@@ -27,5 +27,20 @@ assert_succeed "env -u MISE_EXPERIMENTAL mise -C '$project' exec --deny-env -- t
 assert_contains "env -u MISE_EXPERIMENTAL mise --cd '$project' run deps-python" "target-task"
 assert_contains "env -u MISE_EXPERIMENTAL mise run -C project read-marker" "from-project"
 
+# https://github.com/jdx/mise/discussions/4044
+# A relative run-level -C should affect task execution cwd exactly once.
+mkdir -p cd-repro/subdir
+cat >cd-repro/mise.toml <<EOF
+[tasks.pwd]
+run = 'pwd'
+EOF
+(
+  cd cd-repro
+  cd_repro="$PWD"
+  assert_contains "mise -C subdir run pwd" "$PWD/subdir"
+  cd subdir
+  assert_contains "mise -C .. run pwd" "$cd_repro"
+)
+
 mise install dummy@1.0.0
 assert_contains "env -u MISE_EXPERIMENTAL mise -C '$project' exec dummy@1.0.0 -- dummy" "This is Dummy 1.0.0"
