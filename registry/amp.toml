@@ -1,3 +1,9 @@
-backends = ["npm:@sourcegraph/amp"]
 description = "An agentic coding tool built by Sourcegraph"
 test = { cmd = "amp --version", expected = "{{version}}" }
+
+[[backends]]
+full = "npm:@sourcegraph/amp"
+
+[backends.options]
+aube_args = "--allow-build=@ampcode/cli"
+pnpm_args = "--allow-build=@ampcode/cli"
