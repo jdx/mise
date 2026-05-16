@@ -12,6 +12,7 @@ use crate::dirs;
 use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::warn_if_env_plugin_shadows_registry;
+use crate::registry::REGISTRY;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -70,8 +71,7 @@ impl PluginsInstall {
         if git_url.is_some() {
             this.install_one(config, name, git_url).await?;
         } else {
-            let is_core = CORE_PLUGINS.contains_key(&name);
-            if is_core {
+            if is_core_registry_tool(&name) {
                 let name = style::eblue(name);
                 bail!("{name} is a core plugin and does not need to be installed");
             }
@@ -154,6 +154,15 @@ impl PluginsInstall {
     }
 }
 
+fn is_core_registry_tool(name: &str) -> bool {
+    CORE_PLUGINS.contains_key(name)
+        || REGISTRY.get(name).is_some_and(|rt| {
+            rt.backends_for(name)
+                .first()
+                .is_some_and(|backend| backend.starts_with("core:"))
+        })
+}
+
 #[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
     Ok(match git_url {
@@ -232,5 +241,16 @@ mod tests {
             get_name("git@github.com:mise-plugins/asdf-nodejs.git"),
             "nodejs"
         );
+    }
+
+    #[test]
+    fn test_is_core_registry_tool() {
+        assert!(is_core_registry_tool("node"));
+        assert!(is_core_registry_tool("nodejs"));
+        assert!(is_core_registry_tool("go"));
+        assert!(is_core_registry_tool("golang"));
+        assert!(is_core_registry_tool("dotnet"));
+        assert!(is_core_registry_tool("dotnet-core"));
+        assert!(!is_core_registry_tool("tiny"));
     }
 }
