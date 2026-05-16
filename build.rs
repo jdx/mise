@@ -129,6 +129,15 @@ fn codegen_registry() {
             .iter()
             .map(|v| v.as_str().unwrap().to_string())
             .collect::<Vec<_>>();
+        let backend_aliases = info
+            .get("backend_aliases")
+            .cloned()
+            .unwrap_or(toml::Value::Array(vec![]))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
         let test = info.get("test").map(|t| {
             let t = t
                 .as_table()
@@ -263,12 +272,17 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], backend_aliases: &[{backend_aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
                 .unwrap_or("None".to_string()),
             backends = backends.into_iter().collect::<Vec<_>>().join(", "),
             aliases = aliases
+                .iter()
+                .map(|a| format!("\"{a}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            backend_aliases = backend_aliases
                 .iter()
                 .map(|a| format!("\"{a}\""))
                 .collect::<Vec<_>>()
@@ -308,6 +322,9 @@ fn codegen_registry() {
         );
         generated_entries.insert(short.clone(), rt.clone());
         for alias in aliases {
+            generated_entries.insert(alias, rt.clone());
+        }
+        for alias in backend_aliases {
             generated_entries.insert(alias, rt.clone());
         }
     }

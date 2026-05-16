@@ -52,6 +52,13 @@
       },
       "description": "Alternative names for the tool"
     },
+    "backend_aliases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/toolId"
+      },
+      "description": "Alternative names that should share this tool's install/cache/lock identity"
+    },
     "backends": {
       "type": "array",
       "items": {

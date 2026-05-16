@@ -733,6 +733,7 @@ mod tests {
             asdf("clojure", "asdf:mise-plugins/mise-clojure", "clojure");
         }
         cargo("cargo:eza", "cargo:eza", "eza");
+        t("gh", "aqua:cli/cli", "gh", BackendType::Aqua);
         t("nodejs", "core:node", "node", BackendType::Core);
         t("golang", "core:go", "go", BackendType::Core);
         t("core:node", "core:node", "node", BackendType::Core);
@@ -787,6 +788,7 @@ mod tests {
             assert_str_eq!(actual, expected.to_string_lossy());
         };
         t("asdf:node", "asdf-node");
+        t("gh", "gh");
         t("node", "node");
         t("nodejs", "node");
         t("golang", "go");

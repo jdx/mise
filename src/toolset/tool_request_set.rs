@@ -276,7 +276,7 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
 }
 
 /// Yields `(short, key, value)` for each `MISE_<TOOL>_VERSION` env var that
-/// maps to a tool. `short` is the unaliased backend short name (so
+/// maps to a tool. `short` is the canonical backend identity name (so
 /// `MISE_NODEJS_VERSION` yields `"node"`). Skips `MISE_VERSION` and the
 /// `MISE_INSTALL_VERSION` / `MISE_TOOL_VERSION` vars set during hooks.
 pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
@@ -323,17 +323,20 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_env_vars_canonicalizes_registry_aliases() {
+    fn test_tool_env_vars_canonicalizes_backend_aliases() {
         // MISE_NODEJS_VERSION should yield "node" (the canonical registry
-        // short name), not "nodejs" — otherwise the install command's
-        // configured-tool check fails to match unaliased ToolArg shorts.
+        // short name), not "nodejs", so the install command's configured-tool
+        // check matches unaliased ToolArg shorts.
         unsafe {
             std::env::set_var("MISE_NODEJS_VERSION", "22.0.0");
             std::env::set_var("MISE_GOLANG_VERSION", "1.22.0");
+            std::env::set_var("MISE_GH_VERSION", "2.92.0");
         }
 
         let entries: Vec<(String, String, String)> = tool_env_vars()
-            .filter(|(_, k, _)| k == "MISE_NODEJS_VERSION" || k == "MISE_GOLANG_VERSION")
+            .filter(|(_, k, _)| {
+                k == "MISE_NODEJS_VERSION" || k == "MISE_GOLANG_VERSION" || k == "MISE_GH_VERSION"
+            })
             .collect();
 
         let nodejs = entries
@@ -348,9 +351,16 @@ mod tests {
             .expect("MISE_GOLANG_VERSION should yield an entry");
         assert_eq!(golang.0, "go");
 
+        let gh = entries
+            .iter()
+            .find(|(_, k, _)| k == "MISE_GH_VERSION")
+            .expect("MISE_GH_VERSION should yield an entry");
+        assert_eq!(gh.0, "gh");
+
         unsafe {
             std::env::remove_var("MISE_NODEJS_VERSION");
             std::env::remove_var("MISE_GOLANG_VERSION");
+            std::env::remove_var("MISE_GH_VERSION");
         }
     }
 
