@@ -35,8 +35,7 @@ aqua.registry_url = "https://github.com/my-org/aqua-registry"
 mise downloads `registry.yaml` from the repository root, falling back to `registry.yml` if needed.
 Downloaded registry source is cached under `MISE_CACHE_DIR` for
 [`aqua.registry_cache_ttl`](/configuration/settings.html#aqua-registry_cache_ttl), which defaults
-to one week. To refresh sooner, run `mise cache clear`, set `aqua.registry_cache_ttl = "0s"`, or
-change `MISE_CACHE_DIR` to use a different cache location.
+to one week.
 
 After a refreshed registry source is downloaded, mise hashes the source and uses that hash in the
 compiled registry cache path. When a new compiled cache is successfully loaded or written, older
