@@ -12,7 +12,7 @@ mod template;
 pub mod types;
 
 // Re-export only what's needed by the main mise crate
-pub use cache::{RegistryCache, registry_url_hash};
+pub use cache::RegistryCache;
 pub use codec::{decode_package_rkyv, encode_package_rkyv};
 pub use compiled::{CompiledRegistry, ParsedRegistry};
 pub use types::{

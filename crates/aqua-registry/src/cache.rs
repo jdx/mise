@@ -19,10 +19,6 @@ impl RegistryCache {
         Self { root: root.into() }
     }
 
-    pub fn root(&self) -> &Path {
-        &self.root
-    }
-
     pub fn source_path(&self, registry_url: &str) -> PathBuf {
         self.root
             .join("sources")
@@ -137,7 +133,7 @@ impl RegistryCache {
     }
 }
 
-pub fn registry_url_hash(registry_url: &str) -> String {
+fn registry_url_hash(registry_url: &str) -> String {
     hash_to_str(&registry_url)
 }
 

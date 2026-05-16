@@ -507,7 +507,6 @@
               "type": "boolean"
             },
             "registry_cache_ttl": {
-              "default": "1w",
               "description": "How long to cache downloaded aqua registry source files.",
               "type": "string"
             },

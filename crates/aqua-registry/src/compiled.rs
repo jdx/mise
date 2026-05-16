@@ -36,10 +36,6 @@ impl CompiledRegistry {
         Ok(Self { root, index })
     }
 
-    pub fn compile_from_yaml(source: &str, root: impl AsRef<Path>) -> Result<Self> {
-        ParsedRegistry::parse_yaml(source)?.write_compiled_cache(root)
-    }
-
     pub fn package(&self, package_id: &str) -> Result<AquaPackage> {
         let resolved_id = self
             .index
@@ -259,7 +255,7 @@ packages:
           - name: example/nested-alias
 "#;
 
-        let registry = CompiledRegistry::compile_from_yaml(source, &root).unwrap();
+        let registry = compile_registry(source, &root);
         let package = registry.package("example/tool-alias").unwrap();
 
         assert_eq!(package.name.as_deref(), Some("example/canonical-tool"));
@@ -318,7 +314,7 @@ packages:
     url: https://example.com/tool
 "#;
 
-        CompiledRegistry::compile_from_yaml(source, &root).unwrap();
+        compile_registry(source, &root);
         let registry = CompiledRegistry::load(&root).unwrap();
         let package = registry.package("example/named-tool").unwrap();
 
@@ -337,7 +333,7 @@ packages:
     url: https://example.com/tool
 "#;
 
-        CompiledRegistry::compile_from_yaml(source, &root).unwrap();
+        compile_registry(source, &root);
         let packages_dir = root.join(PACKAGES_DIR);
         let package_file = fs::read_dir(&packages_dir)
             .unwrap()
@@ -351,6 +347,13 @@ packages:
         assert!(matches!(err, AquaRegistryError::RegistryNotAvailable(_)));
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    fn compile_registry(source: &str, root: &Path) -> CompiledRegistry {
+        ParsedRegistry::parse_yaml(source)
+            .unwrap()
+            .write_compiled_cache(root)
+            .unwrap()
     }
 
     fn temp_cache_dir(name: &str) -> PathBuf {

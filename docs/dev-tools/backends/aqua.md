@@ -41,17 +41,8 @@ After a refreshed registry source is downloaded, mise hashes the source and uses
 compiled registry cache path. When a new compiled cache is successfully loaded or written, older
 compiled caches for the same registry URL are pruned.
 
-For a local registry checkout, use a `file://` URL pointing at the directory that contains
-`registry.yaml` or `registry.yml`:
-
-```toml
-[settings]
-aqua.registry_url = "file:///Users/me/src/aqua-registry"
-```
-
-`file://` registries are read directly from disk and are not cached as downloaded source. When
-`aqua.baked_registry` is enabled, the baked-in registry remains a fallback for packages missing from
-the custom registry.
+When `aqua.baked_registry` is enabled, the baked-in registry remains a fallback for packages missing
+from the custom registry.
 
 ## Usage
 
