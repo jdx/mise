@@ -155,7 +155,7 @@ fn parse_backend_components(
         None => (source, None),
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
-    let short = strip_opts(&short);
+    let short = strip_opts(short);
 
     (short, tool_name.to_string(), opts)
 }
@@ -173,7 +173,7 @@ fn parse_backend_components_fallible(
         None => (source, None),
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
-    let short = strip_opts(&short);
+    let short = strip_opts(short);
 
     Ok((short, tool_name.to_string(), opts))
 }
