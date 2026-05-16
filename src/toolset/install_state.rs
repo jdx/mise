@@ -39,7 +39,7 @@ pub struct InstallStateTool {
 
 /// Entry in the consolidated manifest file (.mise-installs.toml).
 /// Versions are NOT stored here — they come from the filesystem.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct ManifestTool {
     /// Original short name (e.g. "github:jdx/mise-test-fixtures").
     /// May differ from the manifest key (which is the kebab-cased dir name).
@@ -128,6 +128,28 @@ fn write_tool_manifest_to(path: &Path, tool: &ManifestTool) -> Result<()> {
     let body = toml::to_string_pretty(tool)?;
     file::write(path, body.trim())?;
     Ok(())
+}
+
+fn manifest_path_for_install_path(install_path: &Path) -> Option<PathBuf> {
+    if install_path.starts_with(*dirs::INSTALLS) {
+        Some(manifest_path())
+    } else if env::install_path_category(install_path) != env::InstallPathCategory::Local {
+        install_path
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|installs_dir| installs_dir.join(".mise-installs.toml"))
+    } else {
+        None
+    }
+}
+
+fn manifest_tool_for_backend(ba: &BackendArg) -> ManifestTool {
+    ManifestTool {
+        short: ba.short.clone(),
+        full: Some(ba.full_without_opts()),
+        explicit_backend: ba.has_explicit_backend(),
+        opts: persistent_opts(ba),
+    }
 }
 
 /// Read a legacy `.mise.backend` file for migration purposes.
@@ -550,31 +572,27 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
     Ok(())
 }
 
-/// Writes backend metadata to the consolidated manifest file.
-/// Uses the primary installs dir manifest by default.
-pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
-    write_backend_meta_to(ba, &manifest_path())
+pub fn write_backend_meta_for_install_path(ba: &BackendArg, install_path: &Path) -> Result<()> {
+    if let Some(path) = manifest_path_for_install_path(install_path) {
+        write_backend_meta_to_if_missing(ba, &path)?;
+    }
+    Ok(())
 }
 
-/// Writes backend metadata to a manifest at a specific install path.
-pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
-    let full = ba.full_without_opts();
-    let explicit = ba.has_explicit_backend();
-    let opts_map = persistent_opts(ba);
-
+fn write_backend_meta_to_if_missing(ba: &BackendArg, path: &Path) -> Result<()> {
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest_from(path);
-    let manifest_tool = ManifestTool {
-        short: ba.short.clone(),
-        full: Some(full),
-        explicit_backend: explicit,
-        opts: opts_map,
-    };
-    manifest.insert(ba.short.to_kebab_case(), manifest_tool.clone());
-    write_manifest_to(path, &manifest)?;
+    let key = ba.short.to_kebab_case();
+    let manifest_tool = manifest_tool_for_backend(ba);
+    if manifest.get(&key) != Some(&manifest_tool) {
+        manifest.insert(key, manifest_tool.clone());
+        write_manifest_to(path, &manifest)?;
+    }
     if let Some(installs_dir) = path.parent() {
         let tool_manifest = tool_manifest_path(installs_dir, &ba.short);
-        if tool_manifest.parent().is_some_and(|p| p.exists()) {
+        if tool_manifest.parent().is_some_and(|p| p.exists())
+            && read_tool_manifest_from(&tool_manifest) != Some(manifest_tool.clone())
+        {
             write_tool_manifest_to(&tool_manifest, &manifest_tool)?;
         }
     }

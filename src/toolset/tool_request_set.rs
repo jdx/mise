@@ -7,9 +7,10 @@ use std::{
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings};
-use crate::env;
 use crate::registry::{REGISTRY, tool_enabled};
-use crate::toolset::{ToolRequest, ToolSource, Toolset};
+use crate::toolset::tool_version::ResolveOptions;
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion, Toolset};
+use crate::{backend, env};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
@@ -53,6 +54,35 @@ impl ToolRequestSet {
             }
         }
         tools
+    }
+
+    pub async fn partition_installed_tools(
+        &self,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+    ) -> (Vec<ToolVersion>, Vec<ToolRequest>) {
+        let mut installed = vec![];
+        let mut missing = vec![];
+        for tr in self.tools.values().flatten() {
+            if !tr.is_os_supported() {
+                continue;
+            }
+            if let Some(backend) = backend::get(tr.ba()) {
+                match tr.resolve(config, opts).await {
+                    Ok(tv) if backend.is_version_installed(config, &tv, false) => {
+                        installed.push(tv)
+                    }
+                    Ok(_) => missing.push(tr.clone()),
+                    Err(e) => {
+                        debug!("ToolRequestSet.partition_installed_tools: {e:#}");
+                        missing.push(tr.clone());
+                    }
+                }
+            } else {
+                missing.push(tr.clone());
+            }
+        }
+        (installed, missing)
     }
 
     pub fn list_tools(&self) -> Vec<&Arc<BackendArg>> {

@@ -1729,9 +1729,7 @@ pub trait Backend: Debug + Send + Sync {
                 .await?;
             ctx.pr.next_operation();
         } else if self.is_version_installed(&ctx.config, &tv, true) {
-            if tv.install_path().starts_with(*dirs::INSTALLS) {
-                install_state::write_backend_meta(self.ba())?;
-            }
+            install_state::write_backend_meta_for_install_path(self.ba(), &tv.install_path())?;
             return Ok(tv);
         }
 
@@ -1744,9 +1742,7 @@ pub trait Backend: Debug + Send + Sync {
 
         // Double-checked (locking) that it wasn't installed while we were waiting for the lock
         if self.is_version_installed(&ctx.config, &tv, true) && !ctx.force {
-            if tv.install_path().starts_with(*dirs::INSTALLS) {
-                install_state::write_backend_meta(self.ba())?;
-            }
+            install_state::write_backend_meta_for_install_path(self.ba(), &tv.install_path())?;
             return Ok(tv);
         }
 
@@ -1763,19 +1759,10 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         let install_path = tv.install_path();
-        let mut update_install_state = false;
-        if install_path.starts_with(*dirs::INSTALLS) {
-            install_state::write_backend_meta(self.ba())?;
-            update_install_state = true;
-        } else if env::install_path_category(&install_path) != env::InstallPathCategory::Local {
-            // For --system/--shared installs, write manifest to the target installs dir
-            if let Some(installs_dir) = install_path.parent().and_then(|p| p.parent()) {
-                let manifest = installs_dir.join(".mise-installs.toml");
-                install_state::write_backend_meta_to(self.ba(), &manifest)?;
-                update_install_state = true;
-            }
-        }
-        if update_install_state {
+        install_state::write_backend_meta_for_install_path(self.ba(), &install_path)?;
+        if install_path.starts_with(*dirs::INSTALLS)
+            || env::install_path_category(&install_path) != env::InstallPathCategory::Local
+        {
             install_state::add_tool_version(self.ba(), &install_path, &tv.tv_pathname());
         }
 

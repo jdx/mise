@@ -8,13 +8,12 @@ use crate::config::Settings;
 use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
 use crate::toolset::{
-    InstallOptions, ResolveOptions, ToolRequest, ToolRequestSet, ToolSource, Toolset,
-    install_state, tool_env_vars,
+    InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset, install_state,
+    tool_env_vars,
 };
-use crate::{config, dirs, env, exit, hooks};
+use crate::{config, env, exit, hooks};
 use clap::ValueHint;
 use eyre::Result;
-use itertools::Itertools;
 use jiff::Timestamp;
 use std::path::PathBuf;
 
@@ -304,6 +303,7 @@ impl Install {
         let trs = measure!("get_tool_request_set", {
             config.get_tool_request_set().await?
         });
+        let install_opts = self.install_opts()?;
 
         // Install plugins from [plugins] config section first
         // This must happen before checking for missing tools so env-only plugins get installed
@@ -315,17 +315,13 @@ impl Install {
             // This will error with a proper message like "tool not found in mise tool registry"
             ba.backend()?;
         }
-        let missing = measure!("fetching missing runtimes", {
-            trs.missing_tools(&config)
+        let (installed, missing) = measure!("fetching missing runtimes", {
+            trs.partition_installed_tools(&config, &install_opts.resolve_options)
                 .await
-                .into_iter()
-                .cloned()
-                .collect_vec()
         });
         let has_missing = !missing.is_empty();
         if !self.is_dry_run() {
-            self.reconcile_installed_manifest_entries(&config, trs)
-                .await?;
+            self.reconcile_installed_manifest_entries(&installed)?;
         }
         let versions = if missing.is_empty() {
             measure!("run_postinstall_hook", {
@@ -342,7 +338,7 @@ impl Install {
         } else {
             let mut ts = Toolset::from(trs.clone());
             measure!("install_all_versions", {
-                ts.install_all_versions(&mut config, missing, &self.install_opts()?)
+                ts.install_all_versions(&mut config, missing, &install_opts)
                     .await?
             })
         };
@@ -359,22 +355,12 @@ impl Install {
         Ok(())
     }
 
-    async fn reconcile_installed_manifest_entries(
-        &self,
-        config: &Arc<Config>,
-        trs: &ToolRequestSet,
-    ) -> Result<()> {
-        for (_, requests, _) in trs.iter() {
-            for tr in requests {
-                if matches!(tr, ToolRequest::System { .. }) || !tr.is_os_supported() {
-                    continue;
-                }
-                let tv = tr.resolve(config, &ResolveOptions::default()).await?;
-                let install_path = tv.install_path();
-                if install_path.starts_with(*dirs::INSTALLS) && install_path.exists() {
-                    install_state::write_backend_meta(tv.ba())?;
-                }
+    fn reconcile_installed_manifest_entries(&self, versions: &[ToolVersion]) -> Result<()> {
+        for tv in versions {
+            if matches!(tv.request, ToolRequest::System { .. }) {
+                continue;
             }
+            install_state::write_backend_meta_for_install_path(tv.ba(), &tv.install_path())?;
         }
         Ok(())
     }
