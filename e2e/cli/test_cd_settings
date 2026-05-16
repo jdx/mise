@@ -29,6 +29,7 @@ assert_succeed "env -u MISE_EXPERIMENTAL mise -C '$project' exec --deny-env -- t
 (
   eval "$(mise hook-env -s bash)"
   assert_contains "env -u MISE_EXPERIMENTAL MISE_CD='$project' mise hook-env -s bash" "CD_SETTINGS_TARGET=project-env"
+  assert_contains "env -u MISE_EXPERIMENTAL mise hook-env -vC '$project' -s bash" "CD_SETTINGS_TARGET=project-env"
 )
 
 (

@@ -13,7 +13,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
-use crate::cli::HookReason;
+use crate::cli::{HookReason, contains_short_cd_cluster};
 use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
@@ -120,6 +120,7 @@ pub fn should_exit_early_fast() -> bool {
                 || a == "--cd"
                 || a.starts_with("--cd=")
                 || a.strip_prefix("-C").is_some_and(|rest| !rest.is_empty())
+                || contains_short_cd_cluster(a)
         })
     {
         return false;

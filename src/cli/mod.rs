@@ -1059,7 +1059,7 @@ fn is_cd_arg(arg: &str) -> bool {
         || arg.strip_prefix("-C").is_some_and(|rest| !rest.is_empty())
 }
 
-fn contains_short_cd_cluster(arg: &str) -> bool {
+pub(crate) fn contains_short_cd_cluster(arg: &str) -> bool {
     arg.len() > 2 && arg.starts_with('-') && !arg.starts_with("--") && arg[1..].contains('C')
 }
 
