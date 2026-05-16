@@ -89,9 +89,9 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
         flag "--no-header" help="Don't show table header"
         arg "[TOOL]" help="Show aliases for <TOOL>"
     }
-    cmd "set" help="Add/update an alias for a backend/plugin" {
+    cmd "set" help="Add/update an alias for a tool/backend" {
         alias "add" "create"
-        long_help r"Add/update an alias for a backend/plugin
+        long_help r"Add/update an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
@@ -102,9 +102,9 @@ This modifies the contents of ~/.config/mise/config.toml"
         arg "<ALIAS>" help="The alias to set"
         arg "<VALUE>" help="The value to set the alias to"
     }
-    cmd "unset" help="Clears an alias for a backend/plugin" {
+    cmd "unset" help="Clears an alias for a tool/backend" {
         alias "rm" "remove" "delete" "del"
-        long_help r"Clears an alias for a backend/plugin
+        long_help r"Clears an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:

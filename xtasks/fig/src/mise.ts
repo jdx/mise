@@ -596,7 +596,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["set", "add", "create"],
-          description: "Add/update an alias for a backend/plugin",
+          description: "Add/update an alias for a tool/backend",
           args: [
             {
               name: "tool",
@@ -621,7 +621,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["unset", "rm", "remove", "delete", "del"],
-          description: "Clears an alias for a backend/plugin",
+          description: "Clears an alias for a tool/backend",
           args: [
             {
               name: "tool",

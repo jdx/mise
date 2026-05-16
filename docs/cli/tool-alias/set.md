@@ -5,7 +5,7 @@
 - **Aliases**: `add`, `create`
 - **Source code**: [`src/cli/tool_alias/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool_alias/set.rs)
 
-Add/update an alias for a backend/plugin
+Add/update an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml
 

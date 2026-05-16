@@ -5,7 +5,7 @@
 - **Aliases**: `rm`, `remove`, `delete`, `del`
 - **Source code**: [`src/cli/tool_alias/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool_alias/unset.rs)
 
-Clears an alias for a backend/plugin
+Clears an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml
 

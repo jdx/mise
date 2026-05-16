@@ -4,7 +4,7 @@ use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::config_file::ConfigFile;
 
-/// Add/update an alias for a backend/plugin
+/// Add/update an alias for a tool/backend
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
