@@ -326,12 +326,11 @@ trusted_config_paths = [
     '~/work/my-trusted-projects',
 ]
 
+env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
+
 [settings.status]
 show_env = false
 show_tools = false
-
-[env]
-_.file = '.env'
 
 # "_" is a special key for information you'd like to put into mise.toml that mise will never parse
 [_]
@@ -499,9 +498,8 @@ This is the path which is used as `{{config_root}}` for the global config file.
 
 ### `MISE_ENV_FILE`
 
-Deprecated. Use `env._.file` in `mise.toml` or `~/.config/mise/config.toml` instead.
-
-Set to a filename to read from env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
+Set to a filename to read env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
+This searches for the file in the current directory and then parent directories.
 Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
 ### `MISE_${PLUGIN}_VERSION`
