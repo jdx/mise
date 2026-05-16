@@ -71,6 +71,10 @@ impl<'a> AquaOptions<'a> {
         {
             return toml_string_var(&format!("vars.{name}"), value).map(Some);
         }
+        let prefixed = format!("vars.{name}");
+        if let Some(value) = opts.opts.get(&prefixed) {
+            return toml_string_var(&prefixed, value).map(Some);
+        }
         opts.opts
             .get(name)
             .map(|value| toml_string_var(name, value).map(Some))
@@ -2761,6 +2765,26 @@ mod tests {
         assert_eq!(
             pkg.asset("1.0.0", "linux", "amd64").unwrap(),
             "tool-beta-1.0.0.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_apply_var_options_reads_prefixed_vars() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
+        pkg.vars = vec![aqua_var("channel", true)];
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
+        let opts = AquaOptions::new(&opts);
+        let pkg = AquaBackend::apply_var_options(pkg, &opts).unwrap();
+
+        assert_eq!(
+            pkg.asset("1.0.0", "linux", "amd64").unwrap(),
+            "tool-stable-1.0.0.tar.gz"
         );
     }
 
