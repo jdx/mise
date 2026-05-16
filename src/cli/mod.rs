@@ -474,10 +474,8 @@ fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usiz
                 let flag_name = arg.split('=').next().unwrap();
                 flags.has_value(flag_name)
             }
-        } else if let Some(consumes_next) = short_arg_consumes_next_value(arg, &flags) {
-            consumes_next
         } else {
-            false
+            short_arg_consumes_next_value(arg, &flags).unwrap_or_default()
         };
 
         if flag_takes_value && i + 1 < args.len() {
