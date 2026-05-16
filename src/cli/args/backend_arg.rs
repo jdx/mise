@@ -172,11 +172,6 @@ fn parse_backend_components(
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
-    let tool_name = if full.is_none() && !source.contains(':') {
-        registry::canonical_tool_name(tool_name)
-    } else {
-        tool_name
-    };
 
     (short, tool_name.to_string(), opts)
 }
@@ -196,11 +191,6 @@ fn parse_backend_components_fallible(
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
-    let tool_name = if full.is_none() && !source.contains(':') {
-        registry::canonical_tool_name(tool_name)
-    } else {
-        tool_name
-    };
 
     Ok((short, tool_name.to_string(), opts))
 }
@@ -220,6 +210,7 @@ impl BackendArg {
         opts: Option<ToolVersionOptions>,
         resolution: BackendResolution,
     ) -> Self {
+        let short = registry::canonical_tool_name(&short).to_string();
         let pathname = short.to_kebab_case();
         Self {
             tool_name,
@@ -372,7 +363,7 @@ impl BackendArg {
     }
 
     pub fn full(&self) -> String {
-        let short = registry::canonical_tool_name(&self.short);
+        let short = self.short.as_str();
 
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
@@ -542,7 +533,7 @@ impl BackendArg {
     }
 
     fn env_backend_override(&self) -> Option<String> {
-        let short = registry::canonical_tool_name(&self.short);
+        let short = self.short.as_str();
         let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
         env::var(&env_key).ok()
     }
@@ -551,7 +542,7 @@ impl BackendArg {
         if !config::is_loaded() || self.has_env_backend_override() {
             return None;
         }
-        let short = registry::canonical_tool_name(&self.short);
+        let short = self.short.as_str();
         Config::get_()
             .all_aliases
             .get(short)
@@ -593,7 +584,7 @@ impl BackendArg {
         let full = if let Some(full) = &self.full {
             full.clone()
         } else {
-            let short = registry::canonical_tool_name(&self.short);
+            let short = self.short.as_str();
             if let Some(full) = install_state::get_tool_full(short) {
                 full
             } else if let Some(pt) = install_state::get_plugin_type(short) {
