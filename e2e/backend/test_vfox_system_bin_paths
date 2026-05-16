@@ -27,8 +27,12 @@ LUA
 
 cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
 function PLUGIN:EnvKeys(ctx)
+	local bin_path = ctx.path .. "/bin"
+	if RUNTIME.osType == "windows" then
+		bin_path = ctx.path .. "\\bin"
+	end
 	return {
-		{ key = "PATH", value = ctx.path .. "/bin" },
+		{ key = "PATH", value = bin_path },
 	}
 end
 LUA
