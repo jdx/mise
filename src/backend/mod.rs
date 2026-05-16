@@ -312,8 +312,30 @@ pub fn remove(short: &str) {
     }
 }
 
+pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+    backend_type.disable_key().is_some_and(|backend| {
+        Settings::get()
+            .disable_backends
+            .iter()
+            .any(|disabled| disabled == backend)
+    })
+}
+
+pub fn is_disabled_backend(full: &str) -> bool {
+    full.split_once(':').is_some_and(|(backend, _)| {
+        Settings::get()
+            .disable_backends
+            .iter()
+            .any(|disabled| disabled == backend)
+    })
+}
+
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
-    match ba.backend_type() {
+    let backend_type = ba.backend_type();
+    if is_disabled_backend_type(&backend_type) {
+        return None;
+    }
+    match backend_type {
         BackendType::Core => {
             CORE_PLUGINS
                 .get(&ba.short)
