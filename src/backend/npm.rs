@@ -325,12 +325,10 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?;
-                if let Some(args) = options.get("npm_args") {
-                    cmd = cmd.args(shell_words::split(args)?);
-                }
-                if Settings::get().paranoid {
-                    cmd = cmd.arg(NPM_PARANOID_IGNORE_SCRIPTS_ARG);
-                }
+                cmd = cmd.args(Self::npm_install_extra_args(
+                    options.get("npm_args").map(String::as_str),
+                    Settings::get().paranoid,
+                )?);
                 cmd.execute()?;
             }
         }
@@ -412,6 +410,17 @@ impl NPMBackend {
     fn build_pnpm_release_age_args(seconds: u64) -> Vec<OsString> {
         let minutes = seconds.div_ceil(60);
         vec![format!("--config.minimumReleaseAge={minutes}").into()]
+    }
+
+    fn npm_install_extra_args(npm_args: Option<&str>, paranoid: bool) -> Result<Vec<String>> {
+        let mut args = match npm_args {
+            Some(args) => shell_words::split(args)?,
+            None => Vec::new(),
+        };
+        if paranoid {
+            args.push(NPM_PARANOID_IGNORE_SCRIPTS_ARG.to_string());
+        }
+        Ok(args)
     }
 
     async fn warn_if_package_manager_may_not_support_release_age(
@@ -859,8 +868,36 @@ mod tests {
     }
 
     #[test]
-    fn test_paranoid_npm_uses_cli_ignore_scripts() {
-        assert_eq!(NPM_PARANOID_IGNORE_SCRIPTS_ARG, "--ignore-scripts=true");
+    fn test_paranoid_npm_appends_ignore_scripts_after_user_args() {
+        let args = NPMBackend::npm_install_extra_args(
+            Some("--ignore-scripts=false --loglevel=warn"),
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "--ignore-scripts=false".to_string(),
+                "--loglevel=warn".to_string(),
+                "--ignore-scripts=true".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_npm_install_extra_args_without_paranoid_preserves_user_args() {
+        let args = NPMBackend::npm_install_extra_args(
+            Some("--ignore-scripts=false --loglevel=warn"),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "--ignore-scripts=false".to_string(),
+                "--loglevel=warn".to_string()
+            ]
+        );
     }
 
     #[test]
