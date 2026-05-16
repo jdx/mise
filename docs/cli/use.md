@@ -97,11 +97,11 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 
 ### `--raw`
 
-Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`
+Directly pipe stdin/stdout/stderr from the backend to the user Sets `--jobs=1`
 
-### `--remove… <PLUGIN>`
+### `--remove… <TOOL>`
 
-Remove the plugin(s) from config file
+Remove the tool(s) from config file
 
 Examples:
 

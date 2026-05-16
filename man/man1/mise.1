@@ -110,7 +110,7 @@ Initializes mise in the current shell session
 Manage tool version aliases.
 .TP
 \fBtool\-alias get\fR
-Show an alias for a plugin
+Show an alias for a tool
 .TP
 \fBtool\-alias ls\fR
 List tool version aliases
@@ -596,7 +596,7 @@ Effectively the same as:
 See https://mise.en.dev/dev\-tools/shims.html#shims\-vs\-path for more information
 .TP
 \fB\-\-status\fR
-Show "mise: <PLUGIN>@<VERSION>" message when changing directories
+Show "mise: <TOOL>@<VERSION>" message when changing directories
 \fBArguments:\fR
 .PP
 .TP
@@ -610,23 +610,23 @@ Manage tool version aliases.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-p, \-\-plugin\fR \fI<PLUGIN>\fR
-filter aliases by plugin
+\fB\-p, \-\-tool\fR \fI<TOOL>\fR
+Filter aliases by tool
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
 .SH "MISE TOOL-ALIAS GET"
-Show an alias for a plugin
+Show an alias for a tool
 
-This is the contents of a tool_alias.<PLUGIN> entry in ~/.config/mise/config.toml
+This is the contents of a tool_alias.<TOOL> entry in ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise tool\-alias get <PLUGIN> <ALIAS>
+\fBUsage:\fR mise tool\-alias get <TOOL> <ALIAS>
 .PP
 \fBArguments:\fR
 .PP
 .TP
-\fB<PLUGIN>\fR
-The plugin to show the alias for
+\fB<TOOL>\fR
+The tool to show the alias for
 .TP
 \fB<ALIAS>\fR
 The alias to show
@@ -657,13 +657,13 @@ Add/update an alias for a backend/plugin
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise tool\-alias set <PLUGIN> <ALIAS> [<VALUE>]
+\fBUsage:\fR mise tool\-alias set <TOOL> <ALIAS> [<VALUE>]
 .PP
 \fBArguments:\fR
 .PP
 .TP
-\fB<PLUGIN>\fR
-The backend/plugin to set the alias for
+\fB<TOOL>\fR
+The tool/backend to set the alias for
 .TP
 \fB<ALIAS>\fR
 The alias to set
@@ -675,13 +675,13 @@ Clears an alias for a backend/plugin
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise tool\-alias unset <PLUGIN> [<ALIAS>]
+\fBUsage:\fR mise tool\-alias unset <TOOL> [<ALIAS>]
 .PP
 \fBArguments:\fR
 .PP
 .TP
-\fB<PLUGIN>\fR
-The backend/plugin to remove the alias from
+\fB<TOOL>\fR
+The tool/backend to remove the alias from
 .TP
 \fB<ALIAS>\fR
 The alias to remove
@@ -707,7 +707,7 @@ e.g.: ruby@3
 .SH "MISE CACHE CLEAR"
 Deletes all cache files in mise
 .PP
-\fBUsage:\fR mise cache clear [OPTIONS] [<PLUGIN>] ...
+\fBUsage:\fR mise cache clear [OPTIONS] [<TOOL>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -717,15 +717,15 @@ Mark all cache files as old
 \fBArguments:\fR
 .PP
 .TP
-\fB<PLUGIN>\fR
-Plugin(s) to clear cache for e.g.: node, python
+\fB<TOOL>\fR
+Tool(s) to clear cache for e.g.: node, python
 .SH "MISE CACHE PRUNE"
 Removes stale mise cache files
 
 By default, this command will remove files that have not been accessed in 30 days.
 Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 .PP
-\fBUsage:\fR mise cache prune [OPTIONS] [<PLUGIN>] ...
+\fBUsage:\fR mise cache prune [OPTIONS] [<TOOL>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -738,8 +738,8 @@ Just show what would be pruned
 \fBArguments:\fR
 .PP
 .TP
-\fB<PLUGIN>\fR
-Plugin(s) to prune cache for e.g.: node, python
+\fB<TOOL>\fR
+Tool(s) to prune cache for e.g.: node, python
 .SH "MISE COMPLETION"
 Generate shell completions
 .PP
@@ -978,7 +978,7 @@ Bypass the environment cache and recompute the environment
 Skip automatic dependency preparation
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
+Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -1294,7 +1294,7 @@ Path to the config file to create
 .SH "MISE INSTALL"
 Install a tool version
 
-Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
+Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`
 Installing alone will not activate the tools so they won't be in PATH.
 To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
 in the current directory to activate this tool when inside the directory.
@@ -1320,7 +1320,7 @@ Show what would be installed without actually installing
 \fB\-v, \-\-verbose\fR
 Show installation output
 
-This argument will print plugin output such as download, configuration, and compilation output.
+This argument will print backend output such as download, configuration, and compilation output.
 .TP
 \fB\-\-before\fR \fI<BEFORE>\fR
 Only install versions released before this date
@@ -1333,7 +1333,7 @@ Like \-\-dry\-run but exits with code 1 if there are tools to install
 This is useful for scripts to check if tools need to be installed.
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
+Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
 .TP
 \fB\-\-shared\fR \fI<SHARED>\fR
 [experimental] Install tool(s) to a shared directory
@@ -2052,8 +2052,8 @@ Delete unused versions of tools
 
 mise tracks which config files have been used in ~/.local/state/mise/tracked\-configs
 Versions which are no longer the latest specified in any of those configs are deleted.
-Versions installed only with environment variables `MISE_<PLUGIN>_VERSION` will be deleted,
-as will versions only referenced on the command line `mise exec <PLUGIN>@<VERSION>`.
+Versions installed only with environment variables `MISE_<TOOL>_VERSION` will be deleted,
+as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>`.
 
 You can list prunable tools with `mise ls \-\-prunable`
 .PP
@@ -2133,7 +2133,7 @@ automatically (it's really fast so you don't need to worry about overhead):
 Note that this creates shims for _all_ installed tools, not just the ones that are
 currently active in mise.toml.
 .PP
-\fBUsage:\fR mise reshim [OPTIONS] [<PLUGIN>] [<VERSION>]
+\fBUsage:\fR mise reshim [OPTIONS] [<TOOL>] [<VERSION>]
 .PP
 \fBOptions:\fR
 .PP
@@ -2579,7 +2579,7 @@ Number of jobs to run in parallel
 Removes a previously set version
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
+Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -3098,7 +3098,7 @@ Test all tools specified in config files
 Also test tools not defined in registry/, guessing how to test it
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
+Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -3420,7 +3420,7 @@ This will only upgrade tools that are defined in project\-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
+Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -3498,10 +3498,10 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 https://mise.en.dev/configuration/settings.html#lockfile
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin to user Sets `\-\-jobs=1`
+Directly pipe stdin/stdout/stderr from the backend to the user Sets `\-\-jobs=1`
 .TP
-\fB\-\-remove\fR \fI<PLUGIN>\fR
-Remove the plugin(s) from config file
+\fB\-\-remove\fR \fI<TOOL>\fR
+Remove the tool(s) from config file
 \fBArguments:\fR
 .PP
 .TP

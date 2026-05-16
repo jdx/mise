@@ -80,7 +80,7 @@ will skip tools defined in the global config (~/.config/mise/config.toml).
 
 ### `--raw`
 
-Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+Directly pipe stdin/stdout/stderr from the backend to the user Sets --jobs=1
 
 Examples:
 

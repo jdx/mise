@@ -11,9 +11,9 @@ This modifies the contents of ~/.config/mise/config.toml
 
 ## Arguments
 
-### `<PLUGIN>`
+### `<TOOL>`
 
-The backend/plugin to set the alias for
+The tool/backend to set the alias for
 
 ### `<ALIAS>`
 

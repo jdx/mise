@@ -504,9 +504,9 @@ Deprecated. Use `env._.file` in `mise.toml` or `~/.config/mise/config.toml` inst
 Set to a filename to read from env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
 Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
-### `MISE_${PLUGIN}_VERSION`
+### `MISE_${TOOL}_VERSION`
 
-Set the version for a runtime. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
+Set the version for a tool. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
 of what is set in `mise.toml`/`.tool-versions`.
 
 ### `MISE_TRUSTED_CONFIG_PATHS`

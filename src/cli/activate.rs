@@ -60,7 +60,7 @@ pub struct Activate {
     #[clap(long, verbatim_doc_comment)]
     shims: bool,
 
-    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
+    /// Show "mise: <TOOL>@<VERSION>" message when changing directories
     #[clap(long, hide = true)]
     status: bool,
 }

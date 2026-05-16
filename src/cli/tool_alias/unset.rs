@@ -10,8 +10,9 @@ use crate::config::config_file::ConfigFile;
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct ToolAliasUnset {
-    /// The backend/plugin to remove the alias from
-    pub plugin: BackendArg,
+    /// The tool/backend to remove the alias from
+    #[clap(value_name = "TOOL")]
+    pub tool: BackendArg,
     /// The alias to remove
     pub alias: Option<String>,
 }
@@ -21,10 +22,10 @@ impl ToolAliasUnset {
         let mut global_config = Config::get().await?.global_config()?;
         match self.alias {
             None => {
-                global_config.remove_backend_alias(&self.plugin)?;
+                global_config.remove_backend_alias(&self.tool)?;
             }
             Some(ref alias) => {
-                global_config.remove_alias(&self.plugin, alias)?;
+                global_config.remove_alias(&self.tool, alias)?;
             }
         }
         global_config.save()

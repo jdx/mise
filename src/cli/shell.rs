@@ -31,7 +31,7 @@ pub struct Shell {
     #[clap(long, short)]
     unset: bool,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
+    /// Directly pipe stdin/stdout/stderr from the backend to the user
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
