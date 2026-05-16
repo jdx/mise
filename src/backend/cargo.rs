@@ -43,6 +43,10 @@ impl<'a> CargoOptions<'a> {
         self.values.platform_string("bin")
     }
 
+    fn bin_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        self.values.platform_string_for_target("bin", target)
+    }
+
     fn locked(&self) -> bool {
         self.values
             .raw()
@@ -73,12 +77,15 @@ impl<'a> CargoOptions<'a> {
             || self.values.raw().contains_key("default-features")
     }
 
-    fn lockfile_options(&self) -> BTreeMap<String, String> {
+    fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
-        for key in ["features", "default-features", "bin"] {
+        for key in ["features", "default-features"] {
             if let Some(value) = self.values.str(key) {
                 result.insert(key.to_string(), value.to_string());
             }
+        }
+        if let Some(bin) = self.bin_for_target(target) {
+            result.insert("bin".to_string(), bin);
         }
         result
     }
@@ -229,10 +236,10 @@ impl Backend for CargoBackend {
     fn resolve_lockfile_options(
         &self,
         request: &ToolRequest,
-        _target: &PlatformTarget,
+        target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         let opts = request.options();
-        CargoOptions::new(&opts).lockfile_options()
+        CargoOptions::new(&opts).lockfile_options(target)
     }
 }
 
@@ -293,4 +300,28 @@ struct CratesIoVersion {
     num: String,
     yanked: bool,
     created_at: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::Platform;
+
+    #[test]
+    fn test_lockfile_options_uses_target_platform_bin() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("bin".into(), toml::Value::String("base-bin".into()));
+        let mut platforms = toml::Table::new();
+        let mut linux = toml::Table::new();
+        linux.insert("bin".into(), toml::Value::String("linux-bin".into()));
+        platforms.insert("linux-x64".into(), toml::Value::Table(linux));
+        opts.opts
+            .insert("platforms".into(), toml::Value::Table(platforms));
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let lock_opts = CargoOptions::new(&opts).lockfile_options(&target);
+
+        assert_eq!(lock_opts.get("bin").map(String::as_str), Some("linux-bin"));
+    }
 }
