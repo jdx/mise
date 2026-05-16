@@ -361,7 +361,7 @@ _.file = [
 ]
 ```
 
-To automatically load a dotenv file from the current directory or a parent directory, set
+To automatically load dotenv files from the current directory and parent directories, set
 [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) or `env_file = ".env"` under `[settings]`
 in `~/.config/mise/config.toml`. This is different from `env._.file`, which resolves paths
 relative to the config file that declares it.

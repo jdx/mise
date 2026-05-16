@@ -499,7 +499,7 @@ This is the path which is used as `{{config_root}}` for the global config file.
 ### `MISE_ENV_FILE`
 
 Set to a filename to read env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
-This searches for the file in the current directory and then parent directories.
+This searches for and loads all matching files in the current directory and parent directories.
 Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
 ### `MISE_${PLUGIN}_VERSION`
