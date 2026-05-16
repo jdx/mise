@@ -5,7 +5,7 @@ use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{
-    EPHEMERAL_OPT_KEYS, ToolVersionOptions, install_state, parse_tool_options,
+    EPHEMERAL_OPT_KEYS, ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options,
     serialize_tool_options, try_parse_tool_options,
 };
 use crate::{backend, config, dirs, lockfile, registry};
@@ -51,6 +51,7 @@ pub struct BackendArg {
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
+    opts_source: Option<ToolOptionSource>,
     resolution: BackendResolution,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
@@ -96,6 +97,9 @@ impl From<InstallStateTool> for BackendArg {
             opts,
             BackendResolution::new(ist.explicit_backend),
         );
+        if tool.opts.is_some() {
+            tool.opts_source = Some(ToolOptionSource::InstallManifest);
+        }
         if let Some(installs_path) = ist.installs_path {
             tool.installs_path = installs_path;
         }
@@ -203,6 +207,7 @@ impl BackendArg {
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
             opts,
+            opts_source: opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg),
             resolution,
             // backend: Default::default(),
         }
@@ -485,6 +490,9 @@ impl BackendArg {
         config_opts: Option<ToolVersionOptions>,
     ) -> ToolVersionOptions {
         let mut opts = self.registry_opts();
+        if let Some(manifest_opts) = self.install_manifest_opts() {
+            opts.apply_overrides(manifest_opts);
+        }
         if alias_opts.is_none()
             && let Some(full_opts) = self.resolved_full_opts()
         {
@@ -503,7 +511,15 @@ impl BackendArg {
     }
 
     pub fn explicit_opts(&self) -> Option<&ToolVersionOptions> {
-        self.opts.as_ref()
+        self.opts
+            .as_ref()
+            .filter(|_| self.opts_source == Some(ToolOptionSource::InlineBackendArg))
+    }
+
+    pub fn install_manifest_opts(&self) -> Option<&ToolVersionOptions> {
+        self.opts
+            .as_ref()
+            .filter(|_| self.opts_source == Some(ToolOptionSource::InstallManifest))
     }
 
     pub(crate) fn resolved_full_opts(&self) -> Option<ToolVersionOptions> {
@@ -536,6 +552,10 @@ impl BackendArg {
 
     pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
         self.opts = opts;
+        self.opts_source = self
+            .opts
+            .as_ref()
+            .map(|_| ToolOptionSource::InlineBackendArg);
     }
 
     /// Returns true if the user explicitly specified the full backend identifier.
