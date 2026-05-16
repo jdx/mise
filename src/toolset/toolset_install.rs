@@ -21,7 +21,7 @@ use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{config, hooks};
+use crate::{backend, config, hooks};
 
 impl Toolset {
     #[async_backtrace::framed]
@@ -128,14 +128,36 @@ impl Toolset {
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
 
+        let disabled_backend_errors: Vec<_> = versions
+            .iter()
+            .filter_map(|tr| {
+                tr.backend()
+                    .ok()
+                    .and_then(|backend| backend::ensure_backend_enabled(&backend.get_type()).err())
+                    .map(|err| (tr.clone(), err))
+            })
+            .collect();
+        let tools_with_disabled_backend_errors: HashSet<_> = disabled_backend_errors
+            .iter()
+            .map(|(tr, _)| tr.clone())
+            .collect();
+        let versions_with_enabled_backends: Vec<_> = versions
+            .iter()
+            .filter(|tr| !tools_with_disabled_backend_errors.contains(*tr))
+            .cloned()
+            .collect();
+
         // Ensure plugins are installed before building dependency graph
-        let plugin_errors = self.ensure_plugins_installed(config, &versions, opts).await;
+        let plugin_errors = self
+            .ensure_plugins_installed(config, &versions_with_enabled_backends, opts)
+            .await;
 
         // Filter out tools with plugin errors
         let tools_with_plugin_errors: HashSet<_> =
             plugin_errors.iter().map(|(tr, _)| tr.clone()).collect();
         let versions_to_install: Vec<_> = versions
             .into_iter()
+            .filter(|tr| !tools_with_disabled_backend_errors.contains(tr))
             .filter(|tr| !tools_with_plugin_errors.contains(tr))
             .collect();
 
@@ -144,14 +166,15 @@ impl Toolset {
             .install_with_deps(config, versions_to_install, opts)
             .await;
 
-        // Update footer for plugin errors
-        let plugin_error_count = plugin_errors.len();
-        if plugin_error_count > 0 {
-            mpr.footer_inc(plugin_error_count);
+        // Update footer for errors found before install tasks are spawned.
+        let pre_install_error_count = disabled_backend_errors.len() + plugin_errors.len();
+        if pre_install_error_count > 0 {
+            mpr.footer_inc(pre_install_error_count);
         }
 
         // Combine plugin errors with installation failures
-        let mut all_failed = plugin_errors;
+        let mut all_failed = disabled_backend_errors;
+        all_failed.extend(plugin_errors);
         all_failed.extend(failed);
 
         // Skip config reload and resolve in dry-run mode
@@ -453,6 +476,7 @@ impl Toolset {
     ) -> Result<ToolVersion> {
         let mpr = MultiProgressReport::get();
         let backend = tr.backend()?;
+        backend::ensure_backend_enabled(&backend.get_type())?;
         let mut resolve_options = opts.resolve_options.clone();
         if should_refresh_remote_versions(tr, &backend, &resolve_options) {
             resolve_options.refresh_remote_versions = true;

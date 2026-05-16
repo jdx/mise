@@ -318,11 +318,11 @@ pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
         .is_some_and(is_disabled_backend_name)
 }
 
-pub fn is_disabled_backend(full: &str) -> bool {
-    match full.split_once(':') {
-        Some((backend, _)) => is_disabled_backend_name(backend),
-        None => is_disabled_backend_type(&BackendType::guess(full)),
+pub fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
+    if is_disabled_backend_type(backend_type) {
+        bail!("backend {backend_type} is disabled by disable_backends");
     }
+    Ok(())
 }
 
 fn is_disabled_backend_name(backend: &str) -> bool {
@@ -333,11 +333,7 @@ fn is_disabled_backend_name(backend: &str) -> bool {
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
-    let backend_type = ba.backend_type();
-    if is_disabled_backend_type(&backend_type) {
-        return None;
-    }
-    match backend_type {
+    match ba.backend_type() {
         BackendType::Core => {
             CORE_PLUGINS
                 .get(&ba.short)
