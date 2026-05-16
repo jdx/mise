@@ -15,4 +15,4 @@ if [[ ! -e $MISE_CACHE_DIR/python/old ]]; then
   fail "python cache was pruned"
 fi
 
-ok "cache prune only pruned the requested plugin"
+ok "cache prune only pruned the requested tool"

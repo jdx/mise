@@ -303,7 +303,7 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from the backend to the user Sets --jobs=1"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[TOOL@VERSION]..." help="Tool(s) to start e.g.: node@20 python@3.10" var=true
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
@@ -423,7 +423,7 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from the backend to the user Sets --jobs=1"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     flag "-v --verbose" help="Show installation output" var=true count=true {
         long_help "Show installation output\n\nThis argument will print backend output such as download, configuration, and compilation output."
     }
@@ -936,7 +936,7 @@ by `mise activate`."#
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from the backend to the user Sets --jobs=1"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     flag "-u --unset" help="Removes a previously set version"
     arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
 }
@@ -1151,7 +1151,7 @@ cmd "upgrade" help="Upgrades outdated tool versions" {
         arg "<JOBS>"
     }
     flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from the backend to the user Sets --jobs=1"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[TOOL@VERSION]..." help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" var=true
 }
 cmd "usage" help="Generate a usage CLI spec" {
@@ -1192,7 +1192,7 @@ This replaces asdf's `local` and `global` commands, however those are still avai
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from the backend to the user Sets --jobs=1"
+    flag "--raw" help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     flag "--remove" help="Remove the tool(s) from config file" var=true {
         arg "<TOOL>"
     }

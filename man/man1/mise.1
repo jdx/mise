@@ -978,7 +978,7 @@ Bypass the environment cache and recompute the environment
 Skip automatic dependency preparation
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -1333,7 +1333,7 @@ Like \-\-dry\-run but exits with code 1 if there are tools to install
 This is useful for scripts to check if tools need to be installed.
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 .TP
 \fB\-\-shared\fR \fI<SHARED>\fR
 [experimental] Install tool(s) to a shared directory
@@ -2579,7 +2579,7 @@ Number of jobs to run in parallel
 Removes a previously set version
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -3098,7 +3098,7 @@ Test all tools specified in config files
 Also test tools not defined in registry/, guessing how to test it
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -3420,7 +3420,7 @@ This will only upgrade tools that are defined in project\-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from the backend to the user Sets \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -3498,7 +3498,7 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 https://mise.en.dev/configuration/settings.html#lockfile
 .TP
 \fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from the backend to the user Sets `\-\-jobs=1`
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies `\-\-jobs=1`
 .TP
 \fB\-\-remove\fR \fI<TOOL>\fR
 Remove the tool(s) from config file

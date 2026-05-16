@@ -109,8 +109,8 @@ pub struct Use {
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
-    /// Directly pipe stdin/stdout/stderr from the backend to the user
-    /// Sets `--jobs=1`
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies `--jobs=1`
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 
