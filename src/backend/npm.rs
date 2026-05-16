@@ -72,13 +72,10 @@ impl<'a> NpmOptions<'a> {
     }
 
     fn lockfile_options(&self) -> BTreeMap<String, String> {
-        let mut result = BTreeMap::new();
-        for key in install_time_option_keys() {
-            if let Some(value) = self.values.str(&key) {
-                result.insert(key, value.to_string());
-            }
-        }
-        result
+        install_time_option_keys()
+            .into_iter()
+            .filter_map(|key| self.values.str(&key).map(|value| (key, value.to_string())))
+            .collect()
     }
 }
 
