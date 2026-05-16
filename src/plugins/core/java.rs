@@ -151,7 +151,7 @@ impl JavaPlugin {
         CmdLineRunner::new(self.java_bin(tv))
             .with_pr(pr)
             .env("JAVA_HOME", tv.install_path())
-            .envs(tv.request.options().core.install_env)
+            .envs(tv.install_env())
             .arg("-version")
             .execute()
     }

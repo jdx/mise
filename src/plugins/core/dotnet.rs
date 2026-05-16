@@ -44,8 +44,8 @@ impl DotnetPlugin {
         CmdLineRunner::new(DOTNET_BIN)
             .with_pr(ctx.pr.as_ref())
             .arg("--version")
+            .envs(tv.install_env())
             .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
-            .envs(ctx.install_env(tv))
             .prepend_path(self.list_bin_paths(&ctx.config, tv).await?)?
             .execute()
     }
@@ -152,8 +152,8 @@ impl Backend for DotnetPlugin {
             .set_message(format!("Installing .NET {} {}", install_type, tv.version));
         install_cmd(&script_path, &install_dir, &tv.version, runtime.as_deref())
             .with_pr(ctx.pr.as_ref())
+            .envs(tv.install_env())
             .envs(self.exec_env(&ctx.config, &ctx.ts, &tv).await?)
-            .envs(ctx.install_env(&tv))
             .execute()?;
 
         if !isolated {

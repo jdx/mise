@@ -248,11 +248,11 @@ impl NodePlugin {
             .prepend_path(opts.path.clone())?
             .with_pr(ctx.pr.as_ref())
             .current_dir(&opts.build_dir)
-            .arg("-c")
-            .envs(ctx.install_env(tv));
+            .arg("-c");
         if let Some(cflags) = settings.node.cflags() {
             cmd = cmd.env("CFLAGS", cflags);
         }
+        cmd = cmd.envs(tv.install_env());
         Ok(cmd)
     }
 
@@ -336,7 +336,7 @@ impl NodePlugin {
             .arg(sig_file)
             .arg(shasums_file)
             .with_pr(ctx.pr.as_ref())
-            .envs(ctx.install_env(tv))
+            .envs(tv.install_env())
             .execute()?;
         Ok(())
     }
@@ -387,7 +387,7 @@ impl NodePlugin {
                 .arg("--global")
                 .arg(package)
                 .envs(config.env().await?)
-                .envs(tv.request.options().core.install_env)
+                .envs(tv.install_env())
                 .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
@@ -407,7 +407,7 @@ impl NodePlugin {
         CmdLineRunner::new(corepack)
             .with_pr(pr)
             .arg("enable")
-            .envs(tv.request.options().core.install_env)
+            .envs(tv.install_env())
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()?;
         Ok(())
@@ -424,7 +424,7 @@ impl NodePlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env().await?)
-            .envs(tv.request.options().core.install_env)
+            .envs(tv.install_env())
             .execute()
     }
 
@@ -439,7 +439,7 @@ impl NodePlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env().await?)
-            .envs(tv.request.options().core.install_env)
+            .envs(tv.install_env())
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()
     }

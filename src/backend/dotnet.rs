@@ -101,7 +101,7 @@ impl Backend for DotnetBackend {
 
         cli.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
-            .envs(ctx.install_env(&tv))
+            .envs(tv.install_env())
             .execute()?;
 
         Ok(tv)

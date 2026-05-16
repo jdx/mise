@@ -147,7 +147,7 @@ impl Backend for VfoxBackend {
             .unwrap_or_default()
             .into_iter()
             .collect();
-        cmd_env.extend(ctx.install_env(&tv));
+        cmd_env.extend(tv.install_env());
         if !cmd_env.is_empty() {
             vfox.cmd_env = Some(cmd_env);
         }

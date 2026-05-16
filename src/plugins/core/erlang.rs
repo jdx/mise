@@ -159,7 +159,7 @@ impl ErlangPlugin {
             .with_pr(ctx.pr.as_ref())
             .arg("-minimal")
             .arg(tv.install_path())
-            .envs(ctx.install_env(&tv))
+            .envs(tv.install_env())
             .execute()?;
 
         Ok(Some(tv))
@@ -300,7 +300,11 @@ impl ErlangPlugin {
         }
     }
 
-    async fn install_via_kerl(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+    async fn install_via_kerl(
+        &self,
+        _ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> Result<ToolVersion> {
         self.update_kerl().await?;
 
         file::remove_all(tv.install_path())?;
@@ -315,12 +319,12 @@ impl ErlangPlugin {
                     &tv.version,
                     &tv.version,
                     tv.install_path()
-                );
-                for (key, value) in ctx.install_env(&tv) {
+                )
+                .env("MAKEFLAGS", format!("-j{}", num_cpus::get()));
+                for (key, value) in tv.install_env() {
                     cmd = cmd.env(key, value);
                 }
                 cmd.env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
-                    .env("MAKEFLAGS", format!("-j{}", num_cpus::get()))
                     .run()?;
             }
         }

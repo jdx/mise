@@ -40,7 +40,7 @@ impl ElixirPlugin {
         CmdLineRunner::new(self.elixir_bin(tv))
             .with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
-            .envs(ctx.install_env(tv))
+            .envs(tv.install_env())
             .arg("--version")
             .execute()
     }

@@ -495,7 +495,7 @@ impl PIPXBackend {
         }
         cmd.with_pr(pr)
             .envs(ts.env_with_path_without_tools(config).await?)
-            .envs(tv.request.options().core.install_env)
+            .envs(tv.install_env())
             .env("UV_TOOL_DIR", tv.install_path())
             .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
             .env("UV_INDEX", Self::get_index_url()?)
@@ -518,7 +518,7 @@ impl PIPXBackend {
         }
         cmd.with_pr(pr)
             .envs(ts.env_with_path_without_tools(config).await?)
-            .envs(tv.request.options().core.install_env)
+            .envs(tv.install_env())
             .env("PIP_INDEX_URL", Self::get_index_url()?)
             .env_remove("PIPX_SHARED_LIBS")
             .env("PIPX_HOME", tv.install_path())

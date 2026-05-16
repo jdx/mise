@@ -249,7 +249,7 @@ impl RubyPlugin {
                 .with_pr(pr)
                 .arg("install")
                 .envs(config.env().await?)
-                .envs(tv.request.options().core.install_env);
+                .envs(tv.install_env());
             match package.split_once(' ') {
                 Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
@@ -300,7 +300,7 @@ impl RubyPlugin {
         Ok(cmd
             .with_pr(pr)
             .envs(config.env().await?)
-            .envs(tv.request.options().core.install_env))
+            .envs(tv.install_env()))
     }
     fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
         let settings = Settings::get();
