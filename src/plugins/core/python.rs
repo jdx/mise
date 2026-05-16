@@ -92,8 +92,11 @@ fn python_version_sort_key(
 
 impl PythonPlugin {
     pub fn new() -> Self {
-        let ba = Arc::new(plugins::core::new_backend_arg("python"));
-        Self { ba }
+        Self::from_arg(plugins::core::new_backend_arg("python"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
     }
 
     fn python_build_path(&self) -> PathBuf {

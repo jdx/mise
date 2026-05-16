@@ -32,9 +32,11 @@ const KERL_VERSION: &str = "4.4.0";
 
 impl ErlangPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: Arc::new(plugins::core::new_backend_arg("erlang")),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("erlang"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
     }
 
     fn kerl_path(&self) -> PathBuf {

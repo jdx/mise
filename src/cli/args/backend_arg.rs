@@ -61,7 +61,7 @@ impl<A: AsRef<str>> From<A> for BackendArg {
         let short = s.as_ref();
         // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
         // If so, treat it as explicit since the user specified the backend
-        let (short_without_opts, _) = split_name_opts(short);
+        let short_without_opts = split_bracketed_opts(short).map_or(short, |(name, _)| name);
         let explicit = if let Some((prefix, _)) = short_without_opts.split_once(':') {
             BackendType::guess(prefix) != BackendType::Unknown
         } else {
@@ -145,30 +145,14 @@ pub(crate) fn strip_opts(s: &str) -> String {
         .unwrap_or_else(|| s.to_string())
 }
 
-fn split_name_opts(s: &str) -> (&str, Option<&str>) {
-    split_bracketed_opts(s)
-        .map(|(name, opts)| (name, Some(opts)))
-        .unwrap_or((s, None))
-}
-
-fn canonicalize_short_with_opts(s: &str) -> String {
-    let (name, opts) = split_name_opts(s);
-    let name = registry::canonical_tool_name(name);
-    match opts {
-        Some(opts) => format!("{name}[{opts}]"),
-        None => name.to_string(),
-    }
-}
-
 fn parse_backend_components(
     short: &str,
     full: Option<&String>,
 ) -> (String, String, Option<ToolVersionOptions>) {
-    let short = canonicalize_short_with_opts(short);
-    let source = full.unwrap_or(&short);
+    let source = full.map(String::as_str).unwrap_or(short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (name, Some(parse_tool_options(opts_str))),
-        None => (source.as_str(), None),
+        None => (source, None),
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
@@ -180,14 +164,13 @@ fn parse_backend_components_fallible(
     short: &str,
     full: Option<&String>,
 ) -> Result<(String, String, Option<ToolVersionOptions>)> {
-    let short = canonicalize_short_with_opts(short);
-    let source = full.unwrap_or(&short);
+    let source = full.map(String::as_str).unwrap_or(short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (
             name,
             Some(try_parse_tool_options(opts_str).map_err(|err| eyre::eyre!(err))?),
         ),
-        None => (source.as_str(), None),
+        None => (source, None),
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
@@ -210,7 +193,6 @@ impl BackendArg {
         opts: Option<ToolVersionOptions>,
         resolution: BackendResolution,
     ) -> Self {
-        let short = registry::canonical_tool_name(&short).to_string();
         let pathname = short.to_kebab_case();
         Self {
             tool_name,
@@ -400,7 +382,7 @@ impl BackendArg {
             && install_state::get_plugin_type(short).is_none()
             && let Some(registry_full) = REGISTRY
                 .get(short)
-                .and_then(|rt| rt.backends().first().cloned())
+                .and_then(|rt| rt.backends_for(short).first().cloned())
         {
             if let Some(stored_full) = &self.full
                 && stored_full != registry_full
@@ -447,7 +429,7 @@ impl BackendArg {
             }
         } else if let Some(full) = REGISTRY
             .get(short)
-            .and_then(|rt| rt.backends().first().cloned())
+            .and_then(|rt| rt.backends_for(short).first().cloned())
         {
             full.to_string()
         } else {
@@ -646,7 +628,7 @@ impl FromStr for BackendArg {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let (short_without_opts, _) = split_name_opts(s);
+        let short_without_opts = split_bracketed_opts(s).map_or(s, |(name, _)| name);
         let explicit = if let Some((prefix, _)) = short_without_opts.split_once(':') {
             BackendType::guess(prefix) != BackendType::Unknown
         } else {
@@ -734,10 +716,15 @@ mod tests {
         }
         cargo("cargo:eza", "cargo:eza", "eza");
         t("gh", "aqua:cli/cli", "gh", BackendType::Aqua);
-        t("nodejs", "core:node", "node", BackendType::Core);
-        t("golang", "core:go", "go", BackendType::Core);
+        t("nodejs", "core:node", "nodejs", BackendType::Core);
+        t("golang", "core:go", "golang", BackendType::Core);
         t("core:node", "core:node", "node", BackendType::Core);
-        t("dotnet-core", "core:dotnet", "dotnet", BackendType::Core);
+        t(
+            "dotnet-core",
+            "core:dotnet",
+            "dotnet-core",
+            BackendType::Core,
+        );
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
         npm("npm:prettier", "npm:prettier", "prettier");
@@ -790,10 +777,10 @@ mod tests {
         t("asdf:node", "asdf-node");
         t("gh", "gh");
         t("node", "node");
-        t("nodejs", "node");
-        t("golang", "go");
-        t("core:node", "node");
-        t("dotnet-core", "dotnet");
+        t("nodejs", "nodejs");
+        t("golang", "golang");
+        t("core:node", "core-node");
+        t("dotnet-core", "dotnet-core");
         t("cargo:eza", "cargo-eza");
         t("npm:@antfu/ni", "npm-antfu-ni");
         t("npm:prettier", "npm-prettier");

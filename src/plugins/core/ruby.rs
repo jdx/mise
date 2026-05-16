@@ -37,9 +37,11 @@ pub struct RubyPlugin {
 
 impl RubyPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: Arc::new(plugins::core::new_backend_arg("ruby")),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("ruby"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
     }
 
     fn ruby_build_path(&self) -> PathBuf {

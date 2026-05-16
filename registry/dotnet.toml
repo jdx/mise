@@ -1,5 +1,4 @@
 aliases = ["dotnet-core"]
-backend_aliases = ["dotnet-core"]
 backends = [
   "core:dotnet",
   "vfox:mise-plugins/vfox-dotnet",

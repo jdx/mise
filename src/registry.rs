@@ -43,15 +43,6 @@ impl Registry {
     }
 }
 
-pub fn canonical_tool_name(name: &str) -> &str {
-    let name = name.strip_prefix("core:").unwrap_or(name);
-    REGISTRY
-        .get(name)
-        .filter(|tool| tool.short == name || tool.backend_aliases.contains(&name))
-        .map(|tool| tool.short)
-        .unwrap_or(name)
-}
-
 #[derive(Debug, Clone)]
 pub struct RegistryTool {
     pub short: &'static str,
@@ -59,7 +50,6 @@ pub struct RegistryTool {
     pub backends: &'static [RegistryBackend],
     #[allow(unused)]
     pub aliases: &'static [&'static str],
-    pub backend_aliases: &'static [&'static str],
     pub overrides: &'static [&'static str],
     pub test: &'static Option<RegistryToolTest>,
     pub os: &'static [&'static str],
@@ -87,9 +77,13 @@ static ENV_BACKENDS: Lazy<Mutex<HashMap<String, &'static str>>> =
 
 impl RegistryTool {
     pub fn backends(&self) -> Vec<&'static str> {
+        self.backends_for(self.short)
+    }
+
+    pub fn backends_for(&self, short: &str) -> Vec<&'static str> {
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
-        let env_key = format!("MISE_BACKENDS_{}", self.short.to_shouty_snake_case());
+        let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
 
         // Check cache first
         {
@@ -334,7 +328,6 @@ mod tests {
             description: None,
             backends: BACKENDS,
             aliases: &[],
-            backend_aliases: &[],
             overrides: &[],
             test: &None,
             os: &[],

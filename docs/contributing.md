@@ -691,7 +691,6 @@ test = [
     "{{version}}"                # Expected output pattern
 ]
 aliases = ["alt-name"] # Optional alternative names
-backend_aliases = ["old-name"] # Optional names that share install/cache/lock identity
 os = ["linux", "macos"] # Optional OS restrictions
 ```
 

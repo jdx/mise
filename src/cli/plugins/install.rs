@@ -156,7 +156,6 @@ impl PluginsInstall {
 
 #[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
-    let name = registry::canonical_tool_name(name);
     Ok(match git_url {
         Some(url) => match url.contains(':') {
             true => (name.to_string(), Some(url.clone())),
@@ -187,7 +186,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
     let name = name.strip_prefix("rtx-").unwrap_or(name);
     let name = name.strip_prefix("mise-").unwrap_or(name);
     let name = name.strip_prefix("vfox-").unwrap_or(name);
-    Ok(registry::canonical_tool_name(name).to_string())
+    Ok(name.to_string())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

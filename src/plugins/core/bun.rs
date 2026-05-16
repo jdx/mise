@@ -32,9 +32,11 @@ pub struct BunPlugin {
 
 impl BunPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: Arc::new(plugins::core::new_backend_arg("bun")),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("bun"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
     }
 
     fn bun_bin(&self, tv: &ToolVersion) -> PathBuf {

@@ -36,9 +36,11 @@ const MIRRORS_FILENAME: &str = "community-mirrors.txt";
 
 impl ZigPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: Arc::new(plugins::core::new_backend_arg("zig")),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("zig"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
     }
 
     fn zig_bin(&self, tv: &ToolVersion) -> PathBuf {

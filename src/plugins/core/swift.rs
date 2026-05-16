@@ -22,9 +22,11 @@ pub struct SwiftPlugin {
 
 impl SwiftPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: Arc::new(plugins::core::new_backend_arg("swift")),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("swift"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
     }
 
     fn swift_bin(&self, tv: &ToolVersion) -> PathBuf {

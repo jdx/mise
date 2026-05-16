@@ -31,9 +31,11 @@ pub struct DenoPlugin {
 
 impl DenoPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: Arc::new(plugins::core::new_backend_arg("deno")),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("deno"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
     }
 
     fn deno_bin(&self, tv: &ToolVersion) -> PathBuf {

@@ -314,17 +314,7 @@ pub fn remove(short: &str) {
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     match ba.backend_type() {
-        BackendType::Core => {
-            CORE_PLUGINS
-                .get(&ba.short)
-                .or_else(|| {
-                    // this can happen if something like "corenode" is aliased to "core:node"
-                    ba.full()
-                        .strip_prefix("core:")
-                        .and_then(|short| CORE_PLUGINS.get(short))
-                })
-                .cloned()
-        }
+        BackendType::Core => crate::plugins::core::backend_for_arg(ba),
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
         BackendType::Asdf => Some(Arc::new(asdf::AsdfBackend::from_arg(ba))),
         BackendType::Cargo => Some(Arc::new(cargo::CargoBackend::from_arg(ba))),
@@ -1080,7 +1070,11 @@ pub trait Backend: Debug + Send + Sync {
                 normalize_remote(&remote_url).unwrap_or_else(|_| "INVALID_URL".into());
             let shorthand_remote = REGISTRY
                 .get(plugin.name())
-                .and_then(|rt| rt.backends().first().map(|b| full_to_url(b)))
+                .and_then(|rt| {
+                    rt.backends_for(plugin.name())
+                        .first()
+                        .map(|b| full_to_url(b))
+                })
                 .unwrap_or_default();
             let matches =
                 normalized_remote == normalize_remote(&shorthand_remote).unwrap_or_default();
@@ -1098,7 +1092,7 @@ pub trait Backend: Debug + Send + Sync {
             // from the registry's default backend which may not match the aliased backend.
             let full = ba.full();
             if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
-                let is_registry_backend = rt.backends().iter().any(|b| *b == full);
+                let is_registry_backend = rt.backends_for(&ba.short).iter().any(|b| *b == full);
                 if !is_registry_backend {
                     trace!(
                         "Skipping versions host for {} because backend {} is not the registry default",

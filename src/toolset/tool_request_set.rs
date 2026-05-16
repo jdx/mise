@@ -276,8 +276,8 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
 }
 
 /// Yields `(short, key, value)` for each `MISE_<TOOL>_VERSION` env var that
-/// maps to a tool. `short` is the canonical backend identity name (so
-/// `MISE_NODEJS_VERSION` yields `"node"`). Skips `MISE_VERSION` and the
+/// maps to a tool. `short` is the lowercased env fragment, preserving registry
+/// aliases as distinct tool identities. Skips `MISE_VERSION` and the
 /// `MISE_INSTALL_VERSION` / `MISE_TOOL_VERSION` vars set during hooks.
 pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
     env::vars_safe().filter_map(|(k, v)| {
@@ -291,8 +291,7 @@ pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
         if raw == "install" || raw == "tool" {
             return None;
         }
-        let short = crate::registry::canonical_tool_name(&raw).to_string();
-        Some((short, k, v))
+        Some((raw, k, v))
     })
 }
 
@@ -323,10 +322,9 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_env_vars_canonicalizes_backend_aliases() {
-        // MISE_NODEJS_VERSION should yield "node" (the canonical registry
-        // short name), not "nodejs", so the install command's configured-tool
-        // check matches unaliased ToolArg shorts.
+    fn test_tool_env_vars_preserves_tool_names() {
+        // Env-derived tool names are config identities, not backend identities.
+        // Registry aliases like nodejs should remain separate from node.
         unsafe {
             std::env::set_var("MISE_NODEJS_VERSION", "22.0.0");
             std::env::set_var("MISE_GOLANG_VERSION", "1.22.0");
@@ -343,13 +341,13 @@ mod tests {
             .iter()
             .find(|(_, k, _)| k == "MISE_NODEJS_VERSION")
             .expect("MISE_NODEJS_VERSION should yield an entry");
-        assert_eq!(nodejs.0, "node");
+        assert_eq!(nodejs.0, "nodejs");
 
         let golang = entries
             .iter()
             .find(|(_, k, _)| k == "MISE_GOLANG_VERSION")
             .expect("MISE_GOLANG_VERSION should yield an entry");
-        assert_eq!(golang.0, "go");
+        assert_eq!(golang.0, "golang");
 
         let gh = entries
             .iter()
