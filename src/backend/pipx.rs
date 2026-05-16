@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, VersionInfo};
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -35,6 +36,45 @@ use xx::regex;
 pub struct PIPXBackend {
     ba: Arc<BackendArg>,
     latest_version_cache: CacheManager<Option<String>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PipxOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> PipxOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn extras(&self) -> Option<&'a str> {
+        self.values.str("extras")
+    }
+
+    fn pipx_args(&self) -> Option<&'a str> {
+        self.values.str("pipx_args")
+    }
+
+    fn uvx_args(&self) -> Option<&'a str> {
+        self.values.str("uvx_args")
+    }
+
+    fn uvx_disabled(&self) -> bool {
+        self.values.raw().get_string("uvx").as_deref() == Some("false")
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut result = BTreeMap::new();
+        for key in ["extras", "pipx_args", "uvx_args", "uvx"] {
+            if let Some(value) = self.values.raw().get_string(key) {
+                result.insert(key.to_string(), value);
+            }
+        }
+        result
+    }
 }
 
 #[async_trait]
@@ -205,10 +245,13 @@ impl Backend for PIPXBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let request_options = tv.request.options();
+        let options = PipxOptions::new(&request_options);
+
         // Check if pipx is available (unless uvx is being used)
         let use_uvx = self.uv_is_installed(&ctx.config).await
             && Settings::get().pipx.uvx != Some(false)
-            && tv.request.options().get_string("uvx").as_deref() != Some("false");
+            && !options.uvx_disabled();
 
         if !use_uvx {
             self.warn_if_dependency_missing(
@@ -226,7 +269,7 @@ impl Backend for PIPXBackend {
         let pipx_request = self
             .tool_name()
             .parse::<PipxRequest>()?
-            .pipx_request(&tv.version, &tv.request.options());
+            .pipx_request(&tv.version, &options);
 
         if use_uvx {
             ctx.pr
@@ -241,7 +284,7 @@ impl Backend for PIPXBackend {
             )
             .await?;
             cmd = cmd.args(Self::uv_exclude_newer_args(ctx.before_date));
-            if let Some(args) = tv.request.options().get("uvx_args") {
+            if let Some(args) = options.uvx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
             cmd.execute()?;
@@ -257,7 +300,7 @@ impl Backend for PIPXBackend {
             )
             .await?;
             cmd = cmd.args(Self::pip_uploaded_prior_to_args(ctx.before_date));
-            if let Some(args) = tv.request.options().get("pipx_args") {
+            if let Some(args) = options.pipx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
             cmd.execute()?;
@@ -277,16 +320,7 @@ impl Backend for PIPXBackend {
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         let opts = request.options();
-        let mut result = BTreeMap::new();
-
-        // These options affect what gets installed
-        for key in ["extras", "pipx_args", "uvx_args", "uvx"] {
-            if let Some(value) = opts.get_string(key) {
-                result.insert(key.to_string(), value);
-            }
-        }
-
-        result
+        PipxOptions::new(&opts).lockfile_options()
     }
 }
 
@@ -506,14 +540,14 @@ enum PipxRequest {
 }
 
 impl PipxRequest {
-    fn extras_from_opts(&self, opts: &ToolVersionOptions) -> String {
-        match opts.get("extras") {
+    fn extras_from_opts(&self, opts: &PipxOptions<'_>) -> String {
+        match opts.extras() {
             Some(extras) => format!("[{extras}]"),
             None => String::new(),
         }
     }
 
-    fn pipx_request(&self, v: &str, opts: &ToolVersionOptions) -> String {
+    fn pipx_request(&self, v: &str, opts: &PipxOptions<'_>) -> String {
         let extras = self.extras_from_opts(opts);
 
         if v == "latest" {
