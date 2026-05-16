@@ -2780,6 +2780,11 @@ mod tests {
             resolved.source_for_key("manifest_only"),
             Some(crate::toolset::ToolOptionSource::InstallManifest)
         );
+        assert_eq!(opts.get("config_only"), Some("true"));
+        assert_eq!(
+            resolved.source_for_key("config_only"),
+            Some(crate::toolset::ToolOptionSource::Config)
+        );
         Ok(())
     }
 
