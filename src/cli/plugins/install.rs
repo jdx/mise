@@ -215,22 +215,22 @@ mod tests {
     #[test]
     fn test_get_name_from_url() {
         let get_name = |url| get_name_from_url(url).unwrap();
-        assert_str_eq!(get_name("nodejs"), "node");
+        assert_str_eq!(get_name("nodejs"), "nodejs");
         assert_str_eq!(
             get_name("https://github.com/mise-plugins/mise-nodejs.git"),
-            "node"
+            "nodejs"
         );
         assert_str_eq!(
             get_name("https://github.com/mise-plugins/asdf-nodejs.git"),
-            "node"
+            "nodejs"
         );
         assert_str_eq!(
             get_name("https://github.com/mise-plugins/asdf-nodejs/"),
-            "node"
+            "nodejs"
         );
         assert_str_eq!(
             get_name("git@github.com:mise-plugins/asdf-nodejs.git"),
-            "node"
+            "nodejs"
         );
     }
 }

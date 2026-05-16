@@ -244,12 +244,13 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                short: "node".into(),
-                ba: Arc::new("node".into()),
+                short: "nodejs".into(),
+                ba: Arc::new("nodejs".into()),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
                 tvr: Some(
-                    ToolRequest::new(Arc::new("node".into()), "lts", ToolSource::Argument).unwrap()
+                    ToolRequest::new(Arc::new("nodejs".into()), "lts", ToolSource::Argument)
+                        .unwrap()
                 ),
             }
         );
