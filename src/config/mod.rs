@@ -2881,6 +2881,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_resolve_tool_opts_preserves_aqua_symlink_bins_from_install_manifest() -> Result<()>
+    {
+        crate::toolset::install_state::init().await?;
+
+        let source = crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml"));
+        let config_ba = Arc::new(BackendArg::from("aqua:manifest-opts"));
+        let config_opts = crate::toolset::parse_tool_options("channel=stable");
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(
+            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            &source,
+        );
+
+        let mut manifest_opts = BTreeMap::new();
+        manifest_opts.insert(
+            "channel".to_string(),
+            toml::Value::String("manifest".to_string()),
+        );
+        manifest_opts.insert(
+            "symlink_bins".to_string(),
+            toml::Value::String("true".to_string()),
+        );
+        let ba = Arc::new(BackendArg::from(
+            crate::toolset::install_state::InstallStateTool {
+                short: "aqua:manifest-opts".to_string(),
+                full: Some("aqua:manifest-opts".to_string()),
+                versions: vec!["1.0.0".to_string()],
+                explicit_backend: true,
+                opts: manifest_opts,
+                installs_path: None,
+            },
+        ));
+
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
+        };
+        config.tool_request_set.set(trs).ok();
+        let config = Arc::new(config);
+
+        let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
+        let opts = resolved.options();
+
+        assert_eq!(opts.get("channel"), Some("stable"));
+        assert_eq!(
+            resolved.source_for_key("channel"),
+            Some(crate::toolset::ToolOptionSource::Config)
+        );
+        assert_eq!(opts.get("symlink_bins"), Some("true"));
+        assert_eq!(
+            resolved.source_for_key("symlink_bins"),
+            Some(crate::toolset::ToolOptionSource::InstallManifest)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_resolve_tool_opts_prefers_env_backend_override_over_alias_opts() -> Result<()> {
         unsafe {
             std::env::set_var("MISE_BACKENDS_ENV_OPTS_TEST", "github:env/repo[foo=env]");
