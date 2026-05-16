@@ -193,6 +193,14 @@ fn enabled_installed_plugin_type(plugin_name: &str) -> Option<PluginType> {
     })
 }
 
+fn registry_backend(short: &str) -> Option<&'static str> {
+    REGISTRY.get(short).and_then(|rt| {
+        rt.backends()
+            .into_iter()
+            .find(|full| !backend::is_disabled_backend(full))
+    })
+}
+
 impl BackendArg {
     #[requires(!short.is_empty())]
     pub fn new(short: String, full: Option<String>) -> Self {
@@ -399,12 +407,10 @@ impl BackendArg {
         // the registry changes (e.g., when a tool moves from one maintainer to another).
         if !self.resolution.explicit
             && enabled_installed_plugin_type(short).is_none()
-            && let Some(registry_full) = REGISTRY
-                .get(short)
-                .and_then(|rt| rt.backends().first().cloned())
+            && let Some(registry_full) = registry_backend(short)
         {
             if let Some(stored_full) = &self.full
-                && stored_full != registry_full
+                && stored_full.as_str() != registry_full
             {
                 debug!(
                     "backend for '{short}' changed from stored '{stored_full}' to registry '{registry_full}'"
@@ -448,10 +454,7 @@ impl BackendArg {
                 PluginType::Vfox => format!("vfox:{short}"),
                 PluginType::VfoxBackend => short.to_string(),
             }
-        } else if let Some(full) = REGISTRY
-            .get(short)
-            .and_then(|rt| rt.backends().first().cloned())
-        {
+        } else if let Some(full) = registry_backend(short) {
             full.to_string()
         } else {
             short.to_string()

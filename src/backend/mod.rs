@@ -313,21 +313,23 @@ pub fn remove(short: &str) {
 }
 
 pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
-    backend_type.disable_key().is_some_and(|backend| {
-        Settings::get()
-            .disable_backends
-            .iter()
-            .any(|disabled| disabled == backend)
-    })
+    backend_type
+        .disable_key()
+        .is_some_and(is_disabled_backend_name)
 }
 
 pub fn is_disabled_backend(full: &str) -> bool {
-    full.split_once(':').is_some_and(|(backend, _)| {
-        Settings::get()
-            .disable_backends
-            .iter()
-            .any(|disabled| disabled == backend)
-    })
+    match full.split_once(':') {
+        Some((backend, _)) => is_disabled_backend_name(backend),
+        None => is_disabled_backend_type(&BackendType::guess(full)),
+    }
+}
+
+fn is_disabled_backend_name(backend: &str) -> bool {
+    Settings::get()
+        .disable_backends
+        .iter()
+        .any(|disabled| disabled == backend)
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
