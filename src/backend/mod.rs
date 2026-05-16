@@ -1729,6 +1729,9 @@ pub trait Backend: Debug + Send + Sync {
                 .await?;
             ctx.pr.next_operation();
         } else if self.is_version_installed(&ctx.config, &tv, true) {
+            if tv.install_path().starts_with(*dirs::INSTALLS) {
+                install_state::write_backend_meta(self.ba())?;
+            }
             return Ok(tv);
         }
 
@@ -1741,6 +1744,9 @@ pub trait Backend: Debug + Send + Sync {
 
         // Double-checked (locking) that it wasn't installed while we were waiting for the lock
         if self.is_version_installed(&ctx.config, &tv, true) && !ctx.force {
+            if tv.install_path().starts_with(*dirs::INSTALLS) {
+                install_state::write_backend_meta(self.ba())?;
+            }
             return Ok(tv);
         }
 

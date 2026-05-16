@@ -8,9 +8,10 @@ use crate::config::Settings;
 use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
 use crate::toolset::{
-    InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset, tool_env_vars,
+    InstallOptions, ResolveOptions, ToolRequest, ToolRequestSet, ToolSource, Toolset,
+    install_state, tool_env_vars,
 };
-use crate::{config, env, exit, hooks};
+use crate::{config, dirs, env, exit, hooks};
 use clap::ValueHint;
 use eyre::Result;
 use itertools::Itertools;
@@ -322,6 +323,10 @@ impl Install {
                 .collect_vec()
         });
         let has_missing = !missing.is_empty();
+        if !self.is_dry_run() {
+            self.reconcile_installed_manifest_entries(&config, &trs)
+                .await?;
+        }
         let versions = if missing.is_empty() {
             measure!("run_postinstall_hook", {
                 info!("all tools are installed");
@@ -351,6 +356,26 @@ impl Install {
             let ts = config.get_toolset().await?;
             config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
         });
+        Ok(())
+    }
+
+    async fn reconcile_installed_manifest_entries(
+        &self,
+        config: &Arc<Config>,
+        trs: &ToolRequestSet,
+    ) -> Result<()> {
+        for (_, requests, _) in trs.iter() {
+            for tr in requests {
+                if matches!(tr, ToolRequest::System { .. }) || !tr.is_os_supported() {
+                    continue;
+                }
+                let tv = tr.resolve(config, &ResolveOptions::default()).await?;
+                let install_path = tv.install_path();
+                if install_path.starts_with(*dirs::INSTALLS) && install_path.exists() {
+                    install_state::write_backend_meta(tv.ba())?;
+                }
+            }
+        }
         Ok(())
     }
 }

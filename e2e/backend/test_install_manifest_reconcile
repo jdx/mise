@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+MANIFEST="$MISE_DATA_DIR/installs/.mise-installs.toml"
+INSTALL_DIR="$MISE_DATA_DIR/installs/http-manifest-reconcile/1.0.0"
+SHIM="$MISE_DATA_DIR/shims/hello-world"
+
+mkdir -p "$INSTALL_DIR/bin"
+cat <<'EOF' >"$INSTALL_DIR/bin/hello-world"
+#!/usr/bin/env bash
+echo "hello world"
+EOF
+chmod +x "$INSTALL_DIR/bin/hello-world"
+
+cat <<'EOF' >mise.toml
+[tools]
+"http:manifest-reconcile" = { version = "1.0.0", url = "https://example.invalid/tool.tar.gz", bin_path = "bin" }
+EOF
+
+rm -f "$MANIFEST" "$SHIM"
+
+mise install
+assert_contains "cat $MANIFEST" 'short = "http:manifest-reconcile"'
+assert_contains "cat $MANIFEST" 'full = "http:manifest-reconcile"'
+
+mise reshim
+assert_succeed "test -e $SHIM"
