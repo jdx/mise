@@ -324,7 +324,7 @@ impl Install {
         });
         let has_missing = !missing.is_empty();
         if !self.is_dry_run() {
-            self.reconcile_installed_manifest_entries(&config, &trs)
+            self.reconcile_installed_manifest_entries(&config, trs)
                 .await?;
         }
         let versions = if missing.is_empty() {
