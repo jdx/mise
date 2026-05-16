@@ -904,7 +904,7 @@ fn normalize_cli_cd_paths(cli: &mut Cli, original_cwd: &Path, early_cd: &Path) {
 
 fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
     if !has_cd_arg(args) {
-        return None;
+        return std::env::var_os("MISE_CD").map(PathBuf::from);
     }
     let cmd = Cli::command();
     let mut current_flags = get_arg_flags(&cmd);
@@ -949,7 +949,7 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
             }
         }
     }
-    cd
+    cd.or_else(|| std::env::var_os("MISE_CD").map(PathBuf::from))
 }
 
 fn subcommand_stops_cd_scan_after_positional(subcommand: &str) -> bool {
