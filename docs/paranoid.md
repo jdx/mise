@@ -71,6 +71,18 @@ not just when the lockfile is first generated.
 This behavior can also be enabled independently via the
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) setting.
 
+## npm lifecycle scripts
+
+In paranoid mode, the [npm backend](/dev-tools/backends/npm.html) can still
+install through `npm`, but mise forces `--ignore-scripts=true` for that install.
+This also applies when `npm.package_manager = "auto"` falls back to `npm` because
+`aube` is not installed.
+
+This blocks npm lifecycle scripts and may break packages that require
+`preinstall`, `install`, or `postinstall` build hooks. Use a package manager with
+explicit build approvals, such as pnpm or aube, when a tool needs reviewed build
+scripts under paranoid mode.
+
 ## More?
 
 If you have suggestions for more that could be added to paranoid, please let

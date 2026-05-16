@@ -51,7 +51,45 @@ assert_contains "cat '$NPM_DEBUG_LOG'" "--foreground-scripts"
 echo "✓ npm backend successfully installs package using npm"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
-# Test 2: npm.package_manager = "bun"
+# Test 2: paranoid mode with npm disables lifecycle scripts even if npm config says otherwise
+echo "Testing paranoid npm backend script disabling..."
+export MISE_NPM_PACKAGE_MANAGER=npm
+
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", npm_args = "--ignore-scripts=false" }
+EOF
+PARANOID_NPM_DEBUG_LOG="$TMPDIR/paranoid_npm_debug.log"
+assert_succeed "NPM_CONFIG_IGNORE_SCRIPTS=false MISE_PARANOID=1 MISE_DEBUG=1 mise install >'$PARANOID_NPM_DEBUG_LOG' 2>&1"
+assert_matches "tr '\n' ' ' < '$PARANOID_NPM_DEBUG_LOG'" "--ignore-scripts=false.*--ignore-scripts=true"
+echo "✓ paranoid npm backend forces ignore-scripts=true"
+mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
+
+# Test 3: npm.package_manager = "auto" falls back to npm under paranoid when aube is unavailable
+echo "Testing paranoid npm.package_manager=auto fallback..."
+unset MISE_NPM_PACKAGE_MANAGER
+
+cat >.mise.toml <<EOF
+[tools]
+EOF
+PATH_WITHOUT_AUBE=""
+PATH_SEP=""
+IFS=: read -ra PATH_PARTS <<<"$PATH"
+for path_part in "${PATH_PARTS[@]}"; do
+  if [[ -x "$path_part/aube" || -x "$path_part/aube.exe" ]]; then
+    continue
+  fi
+  PATH_WITHOUT_AUBE="${PATH_WITHOUT_AUBE}${PATH_SEP}${path_part}"
+  PATH_SEP=":"
+done
+AUTO_PARANOID_NPM_DEBUG_LOG="$TMPDIR/auto_paranoid_npm_debug.log"
+assert_succeed "PATH='$PATH_WITHOUT_AUBE' MISE_PARANOID=1 MISE_NPM_PACKAGE_MANAGER=auto MISE_DEBUG=1 mise install npm:tiny@latest >'$AUTO_PARANOID_NPM_DEBUG_LOG' 2>&1"
+assert_contains "cat '$AUTO_PARANOID_NPM_DEBUG_LOG'" "--ignore-scripts=true"
+assert_not_contains "cat '$AUTO_PARANOID_NPM_DEBUG_LOG'" "aube add"
+echo "✓ paranoid auto fallback uses npm with scripts disabled"
+mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
+
+# Test 4: npm.package_manager = "bun"
 echo "Testing npm.package_manager=bun..."
 export MISE_NPM_PACKAGE_MANAGER=bun
 
@@ -67,7 +105,7 @@ assert_not_contains "cat '$BUN_DEBUG_LOG'" "--trust"
 echo "✓ npm backend successfully installs package using bun (package_manager=bun)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
-# Test 3: npm.package_manager = "pnpm"
+# Test 5: npm.package_manager = "pnpm"
 echo "Testing npm.package_manager=pnpm..."
 export MISE_NPM_PACKAGE_MANAGER=pnpm
 
@@ -86,7 +124,7 @@ assert_contains "cat '$PNPM_DEBUG_LOG'" "--loglevel=warn"
 echo "✓ npm backend successfully installs package using pnpm (package_manager=pnpm)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
-# Test 4: npm.package_manager = "aube"
+# Test 6: npm.package_manager = "aube"
 echo "Testing npm.package_manager=aube..."
 export MISE_NPM_PACKAGE_MANAGER=aube
 

@@ -85,6 +85,12 @@ Avoid broad registry flags such as `--trust`, `--ignore-scripts=false`, or
 `--dangerously-allow-all-builds`. Registry entries should only approve the exact dependency packages
 whose lifecycle scripts were verified as required.
 
+When [`paranoid`](/paranoid.html) mode is enabled and the npm backend installs through `npm`
+directly, mise appends `--ignore-scripts=true` after `npm_args`. This also applies when
+`npm.package_manager = "auto"` falls back to `npm` because `aube` is not installed. Packages that
+require lifecycle build hooks may fail under that mode unless you use a package manager with
+explicit build approvals.
+
 Related package-manager docs:
 
 - npm [`ignore-scripts`](https://docs.npmjs.com/cli/v8/using-npm/config/#ignore-scripts)

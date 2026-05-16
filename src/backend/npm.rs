@@ -33,6 +33,7 @@ const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
 const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
 const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
+const NPM_PARANOID_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 
 #[derive(Debug)]
@@ -326,6 +327,9 @@ impl Backend for NPMBackend {
                     )?;
                 if let Some(args) = options.get("npm_args") {
                     cmd = cmd.args(shell_words::split(args)?);
+                }
+                if Settings::get().paranoid {
+                    cmd = cmd.arg(NPM_PARANOID_IGNORE_SCRIPTS_ARG);
                 }
                 cmd.execute()?;
             }
@@ -852,6 +856,11 @@ mod tests {
         assert_eq!(NPMBackend::build_aube_minimum_release_age(1), 1);
         assert_eq!(NPMBackend::build_aube_minimum_release_age(60), 1);
         assert_eq!(NPMBackend::build_aube_minimum_release_age(61), 2);
+    }
+
+    #[test]
+    fn test_paranoid_npm_uses_cli_ignore_scripts() {
+        assert_eq!(NPM_PARANOID_IGNORE_SCRIPTS_ARG, "--ignore-scripts=true");
     }
 
     #[test]
