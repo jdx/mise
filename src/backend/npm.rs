@@ -326,7 +326,7 @@ impl Backend for NPMBackend {
                             .await,
                     )?;
                 cmd = cmd.args(Self::npm_install_extra_args(
-                    options.get("npm_args").map(String::as_str),
+                    options.get("npm_args"),
                     Settings::get().paranoid,
                 )?);
                 cmd.execute()?;
