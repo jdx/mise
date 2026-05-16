@@ -239,6 +239,7 @@ impl Run {
         // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);
         self.args_last = unescape_task_args(&self.args_last);
+        self.normalize_cd()?;
 
         // Temporarily unset cache key to force fresh env computation
         if self.fresh_env {
@@ -345,7 +346,8 @@ impl Run {
         // 1. Discover deps providers from monorepo subdirectory configs
         // 2. Include monorepo subdirectory tools in the toolset before installing
         // 3. Reuse the resolved list for execution (avoiding duplicate work)
-        let resolved_tasks = resolve_depends(&config, task_list).await?;
+        let mut resolved_tasks = resolve_depends(&config, task_list).await?;
+        self.apply_cd_to_default_task_dirs(&config, &mut resolved_tasks);
 
         // Collect subdirectory config files from all resolved tasks. In
         // monorepos these come from sub mise.toml files referenced via the
@@ -429,6 +431,36 @@ impl Run {
             .find(|s| s.get_name() == "run")
             .unwrap()
             .clone()
+    }
+
+    fn normalize_cd(&mut self) -> Result<()> {
+        if self.cd.is_some() {
+            // Settings has already applied --cd by this point. Store the
+            // effective absolute cwd so task templating does not apply a
+            // relative --cd path a second time.
+            self.cd = Some(env::current_dir()?);
+        }
+        Ok(())
+    }
+
+    fn apply_cd_to_default_task_dirs(&self, config: &Arc<Config>, tasks: &mut [Task]) {
+        let Some(cd) = &self.cd else {
+            return;
+        };
+        let cd = cd.to_string_lossy().to_string();
+        for task in tasks {
+            if Self::uses_default_task_dir(config, task) {
+                task.dir = Some(cd.clone());
+            }
+        }
+    }
+
+    fn uses_default_task_dir(config: &Arc<Config>, task: &Task) -> bool {
+        let has_task_config_dir = task
+            .cf(config)
+            .and_then(|cf| cf.task_config().dir.as_ref())
+            .is_some();
+        task.dir.is_none() && !has_task_config_dir
     }
 
     async fn parallelize_tasks(mut self, mut config: Arc<Config>, tasks: Vec<Task>) -> Result<()> {

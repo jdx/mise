@@ -11,3 +11,21 @@ assert_contains "mise config --cd $PWD/test ls" "test/mise.toml"
 assert_contains "mise run --cd $PWD/test hello" "Hello, World!"
 assert_contains "mise run --cd ./test hello" "Hello, World!"
 assert_contains "mise run --cd test hello" "Hello, World!"
+
+mkdir -p ./subdir
+cat <<EOF >./mise.toml
+[tasks.pwd]
+run = 'pwd'
+
+[tasks.exec_pwd]
+run = '''echo "{{ exec(command='pwd') | trim }}"'''
+
+[tasks.explicit_dir]
+run = 'pwd'
+dir = "test"
+EOF
+
+assert "mise run --cd subdir pwd" "$PWD/subdir"
+assert "mise -C subdir run pwd" "$PWD/subdir"
+assert "mise run --cd subdir exec_pwd" "$PWD/subdir"
+assert "mise run --cd subdir explicit_dir" "$PWD/test"
