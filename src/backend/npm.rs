@@ -286,7 +286,6 @@ impl Backend for NPMBackend {
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global")
-                    .arg("--trust")
                     // Isolated linker does not symlink binaries into BUN_INSTALL_BIN properly.
                     // https://github.com/jdx/mise/discussions/7541
                     .arg("--linker")

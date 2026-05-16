@@ -63,6 +63,7 @@ BUN_DEBUG_LOG="$TMPDIR/bun_debug.log"
 assert_succeed "MISE_DEBUG=1 mise install >'$BUN_DEBUG_LOG' 2>&1"
 assert_contains "cat '$BUN_DEBUG_LOG'" "--minimum-release-age"
 assert_contains "cat '$BUN_DEBUG_LOG'" "--verbose"
+assert_not_contains "cat '$BUN_DEBUG_LOG'" "--trust"
 echo "✓ npm backend successfully installs package using bun (package_manager=bun)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
