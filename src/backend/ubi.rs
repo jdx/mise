@@ -74,9 +74,7 @@ impl<'a> UbiOptions<'a> {
     }
 
     fn extract_all(&self) -> bool {
-        self.values
-            .string("extract_all")
-            .is_some_and(|v| is_truthy(&v))
+        self.values.str("extract_all").is_some_and(is_truthy)
     }
 
     fn exe(&self) -> Option<&'a str> {
