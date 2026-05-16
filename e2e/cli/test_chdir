@@ -23,9 +23,18 @@ run = '''echo "{{ exec(command='pwd') | trim }}"'''
 [tasks.explicit_dir]
 run = 'pwd'
 dir = "test"
+
+[tasks.dep_pwd]
+run = 'pwd'
+
+[tasks.parent_pwd]
+depends = ["dep_pwd"]
+run = 'pwd'
 EOF
 
 assert "mise run --cd subdir pwd" "$PWD/subdir"
 assert "mise -C subdir run pwd" "$PWD/subdir"
 assert "mise run --cd subdir exec_pwd" "$PWD/subdir"
 assert "mise run --cd subdir explicit_dir" "$PWD/test"
+assert "mise run --cd subdir parent_pwd" "$PWD/subdir
+$PWD/subdir"

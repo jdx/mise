@@ -239,7 +239,6 @@ impl Run {
         // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);
         self.args_last = unescape_task_args(&self.args_last);
-        self.normalize_cd()?;
 
         // Temporarily unset cache key to force fresh env computation
         if self.fresh_env {
@@ -253,6 +252,7 @@ impl Run {
             self.args.contains(&"--help".to_string()) || self.args.contains(&"-h".to_string());
 
         let mut config = Config::get().await?;
+        self.normalize_cd()?;
 
         // Handle task help early to avoid unnecessary toolset/deps work
         if has_help_in_task_args {
