@@ -125,6 +125,22 @@ description = "Use minisign to verify aqua tool signatures."
 env = "MISE_AQUA_MINISIGN"
 type = "Bool"
 
+[aqua.registry_cache_ttl]
+default = "1w"
+description = "How long to cache downloaded aqua registry source files."
+docs = """
+How long downloaded aqua registry source files remain fresh before mise re-downloads them.
+
+When the downloaded source changes, mise writes the new source cache atomically, compiles a new
+source-hash-scoped registry cache, and prunes older compiled caches for that registry URL after
+the new compiled cache is available.
+
+Set to `0s` to re-download remote registries every time. `file://` registries are read directly
+from disk and do not use this source cache.
+"""
+env = "MISE_AQUA_REGISTRY_CACHE_TTL"
+type = "Duration"
+
 [aqua.registry_url]
 description = "URL of an aqua registry repository to fetch."
 docs = """
@@ -132,9 +148,10 @@ URL of an aqua registry repository to fetch. mise downloads `registry.yaml` from
 root and falls back to `registry.yml` if needed. For a local registry checkout, use a `file://`
 URL pointing at the directory that contains `registry.yaml` or `registry.yml`.
 
-Downloaded registries are cached for one week. To refresh sooner, run `mise cache clear` or change
-`MISE_CACHE_DIR` to use a different cache location. `file://` registries are read directly from disk
-and are not cached as downloaded source.
+Downloaded registries are cached according to `aqua.registry_cache_ttl`, which defaults to one
+week. To refresh sooner, run `mise cache clear`, set `aqua.registry_cache_ttl = "0s"`, or change
+`MISE_CACHE_DIR` to use a different cache location. `file://` registries are read directly from
+disk and are not cached as downloaded source.
 
 If this is set, mise checks the configured registry first. The baked-in aqua registry remains a
 fallback when `aqua.baked_registry` is enabled.

@@ -1,6 +1,6 @@
 use crate::config::Settings;
 use crate::http::HTTP;
-use crate::{dirs, duration::WEEKLY};
+use crate::{dirs, duration};
 use aqua_registry::{AquaRegistryError, CompiledRegistry, ParsedRegistry, RegistryCache};
 use eyre::Result;
 use reqwest::header::{ACCEPT, HeaderMap, HeaderValue};
@@ -12,6 +12,7 @@ use url::Url;
 
 static AQUA_REGISTRY_PATH: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("aqua-registry"));
 static AQUA_DEFAULT_REGISTRY_URL: &str = "https://github.com/aquaproj/aqua-registry";
+const DEFAULT_AQUA_REGISTRY_CACHE_TTL: duration::Duration = duration::WEEKLY;
 
 pub static AQUA_REGISTRY: Lazy<MiseAquaRegistry> = Lazy::new(|| {
     MiseAquaRegistry::standard().unwrap_or_else(|err| {
@@ -36,6 +37,7 @@ impl Default for MiseAquaRegistry {
             Some(AQUA_DEFAULT_REGISTRY_URL.to_string()),
             true,
             false,
+            DEFAULT_AQUA_REGISTRY_CACHE_TTL,
         );
         Self { fetcher, path }
     }
@@ -61,6 +63,7 @@ impl MiseAquaRegistry {
             registry_url.map(|s| s.to_string()),
             settings.aqua.baked_registry,
             settings.prefer_offline(),
+            settings.aqua_registry_cache_ttl(),
         );
 
         Ok(Self { fetcher, path })
@@ -86,6 +89,7 @@ struct MiseRegistryFetcher {
     registry_url: Option<String>,
     use_baked_registry: bool,
     prefer_offline: bool,
+    source_cache_ttl: duration::Duration,
     cache: RegistryCache,
     registry: Arc<OnceCell<std::result::Result<Option<Arc<ActiveRegistry>>, String>>>,
 }
@@ -111,11 +115,13 @@ impl MiseRegistryFetcher {
         registry_url: Option<String>,
         use_baked_registry: bool,
         prefer_offline: bool,
+        source_cache_ttl: duration::Duration,
     ) -> Self {
         Self {
             registry_url,
             use_baked_registry,
             prefer_offline,
+            source_cache_ttl,
             cache: RegistryCache::new(cache_dir),
             registry: Arc::new(OnceCell::new()),
         }
@@ -206,7 +212,10 @@ impl MiseRegistryFetcher {
             return download_registry_source(registry_url).await;
         }
 
-        if let Some(source) = self.cache.read_fresh_source(registry_url, WEEKLY)? {
+        if let Some(source) = self
+            .cache
+            .read_fresh_source(registry_url, self.source_cache_ttl)?
+        {
             return Ok(source);
         }
 
@@ -638,7 +647,13 @@ mod tests {
         registry_url: Option<String>,
         use_baked_registry: bool,
     ) -> MiseRegistryFetcher {
-        MiseRegistryFetcher::new(cache_dir, registry_url, use_baked_registry, false)
+        MiseRegistryFetcher::new(
+            cache_dir,
+            registry_url,
+            use_baked_registry,
+            false,
+            DEFAULT_AQUA_REGISTRY_CACHE_TTL,
+        )
     }
 
     fn file_registry_url(path: &Path) -> String {
