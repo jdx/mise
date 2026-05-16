@@ -90,16 +90,16 @@ impl From<InstallStateTool> for BackendArg {
             }
         }
 
+        let opts_source = opts.as_ref().map(|_| ToolOptionSource::InstallManifest);
         let mut tool = Self::new_raw(
             short,
             ist.full,
             tool_name,
-            opts,
+            None,
             BackendResolution::new(ist.explicit_backend),
         );
-        if tool.opts.is_some() {
-            tool.opts_source = Some(ToolOptionSource::InstallManifest);
-        }
+        tool.opts = opts;
+        tool.opts_source = opts_source;
         if let Some(installs_path) = ist.installs_path {
             tool.installs_path = installs_path;
         }
@@ -199,6 +199,7 @@ impl BackendArg {
         resolution: BackendResolution,
     ) -> Self {
         let pathname = short.to_kebab_case();
+        let opts_source = opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg);
         Self {
             tool_name,
             short,
@@ -207,7 +208,7 @@ impl BackendArg {
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
             opts,
-            opts_source: opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg),
+            opts_source,
             resolution,
             // backend: Default::default(),
         }
@@ -448,7 +449,7 @@ impl BackendArg {
         if split_bracketed_opts(&full).is_some() {
             return full;
         }
-        if let Some(opts) = &self.opts
+        if let Some(opts) = self.explicit_opts()
             && let Some(opts_str) = serialize_tool_options(
                 opts.opts
                     .iter()
@@ -959,6 +960,27 @@ mod tests {
             "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
             fa.full_with_opts()
         );
+    }
+
+    #[tokio::test]
+    async fn test_full_with_opts_omits_install_manifest_opts() {
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = std::collections::BTreeMap::new();
+        opts.insert(
+            "version_json_path".to_string(),
+            toml::Value::String(".manifest".to_string()),
+        );
+        let fa = BackendArg::from(crate::toolset::install_state::InstallStateTool {
+            short: "http:hello".to_string(),
+            full: Some("http:hello".to_string()),
+            versions: vec!["1.0.0".to_string()],
+            explicit_backend: true,
+            opts,
+            installs_path: None,
+        });
+
+        assert_str_eq!("http:hello", fa.full_with_opts());
     }
 
     #[tokio::test]
