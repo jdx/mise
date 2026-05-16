@@ -88,8 +88,10 @@ behavior of another.
 
 - Disable lifecycle scripts with `npm_args = "--ignore-scripts=true"` or
   `install_env = { NPM_CONFIG_IGNORE_SCRIPTS = "true" }`.
-- Explicitly setting `npm_args = "--ignore-scripts=false"` keeps npm's default script behavior. This
-  is broad because it allows every package in the install graph to run scripts.
+- Explicitly setting `npm_args = "--ignore-scripts=false"` keeps npm's default script behavior, or
+  forces scripts back on when another npm config source disabled them. In a registry entry, this
+  would override a user's script-disabling config and allow every package in the install graph to run
+  scripts.
 
 `npm` does not provide a native per-dependency build approval allowlist in its current docs.
 
@@ -147,10 +149,11 @@ controls:
 ### Registry Policy
 
 Registry entries should only approve the exact dependency packages whose lifecycle scripts were
-verified as required. Avoid broad registry options such as `--trust`, `--ignore-scripts=false`, or
+verified as required. Avoid broad registry options such as `--trust` or
 `dangerouslyAllowAllBuilds = true`; those settings expand the install-time code execution surface to
-packages that were not individually reviewed. Users may still pass broad raw args in their own tool
-options when they accept that supply chain risk.
+packages that were not individually reviewed. Also avoid `--ignore-scripts=false` in registry entries
+because it can override a user's explicit script-disabling config. Users may still pass broad raw
+args in their own tool options when they accept that supply chain risk.
 
 Related package-manager docs:
 
@@ -188,8 +191,8 @@ For example, to disable lifecycle scripts for one npm-backed tool:
 "npm:prettier" = { version = "latest", npm_args = "--ignore-scripts=true" }
 ```
 
-You can also pass npm's default explicitly, but this broadly allows scripts for the full install
-graph:
+You can also pass npm's default explicitly, or force scripts back on when another npm config source
+disabled them. This broadly allows scripts for the full install graph:
 
 ```toml
 [tools]
