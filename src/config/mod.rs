@@ -1745,15 +1745,15 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     ts: &Toolset,
     new_versions: &[ToolVersion],
 ) -> Result<()> {
-    measure!("rebuilding shims", {
-        shims::reshim(config, ts, false)
-            .await
-            .wrap_err("failed to rebuild shims")?;
-    });
     measure!("rebuilding runtime symlinks", {
         runtime_symlinks::rebuild_for_toolset(config, ts)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
+    });
+    measure!("rebuilding shims", {
+        shims::reshim(config, ts, false)
+            .await
+            .wrap_err("failed to rebuild shims")?;
     });
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
     // current-platform entries — auto-lock uses this to tell a curated lockfile

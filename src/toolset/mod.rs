@@ -171,20 +171,23 @@ impl Toolset {
     }
 
     pub async fn list_installed_versions(&self, _config: &Arc<Config>) -> Result<Vec<TVTuple>> {
-        let current_versions: HashMap<(String, String), TVTuple> = self
+        let current_versions: HashMap<(PathBuf, String), TVTuple> = self
             .list_current_versions()
             .into_iter()
-            .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
+            .map(|(p, tv)| {
+                (
+                    (p.ba().installs_path.clone(), tv.version.clone()),
+                    (p.clone(), tv),
+                )
+            })
             .collect();
         let current_versions = Arc::new(current_versions);
         let mut versions = vec![];
-        for b in backend::list()
-            .into_iter()
-            .chain(current_versions.values().map(|(p, _)| p.clone()))
-            .unique_by(|b| b.ba().installs_path.clone())
-        {
+        for b in self.list_cached_and_current_backends() {
             for v in b.list_installed_versions() {
-                if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
+                if let Some((p, tv)) =
+                    current_versions.get(&(b.ba().installs_path.clone(), v.clone()))
+                {
                     versions.push((p.clone(), tv.clone()));
                 } else {
                     // The version string came from an on-disk install directory,
@@ -209,6 +212,18 @@ impl Toolset {
             }
         }
         Ok(versions)
+    }
+
+    pub(crate) fn list_cached_and_current_backends(&self) -> backend::BackendList {
+        // Backends with explicit tool options intentionally bypass the global
+        // backend cache. Prefer current toolset backends so same-process
+        // rebuilds keep configured options like bin_path and asset_pattern.
+        self.list_current_versions()
+            .into_iter()
+            .map(|(backend, _)| backend)
+            .chain(backend::list())
+            .unique_by(|backend| backend.ba().installs_path.clone())
+            .collect()
     }
 
     pub fn list_current_requests(&self) -> Vec<&ToolRequest> {

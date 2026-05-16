@@ -341,7 +341,8 @@ impl Upgrade {
 
         // Rebuild symlinks BEFORE getting versions needed by tracked configs
         // This ensures "latest" symlinks point to the new versions, not the old ones
-        runtime_symlinks::rebuild(config)
+        let ts = config.get_toolset().await?;
+        runtime_symlinks::rebuild_for_toolset(config, ts)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
 
@@ -381,7 +382,6 @@ impl Upgrade {
         }
 
         mpr.finish_progress();
-        let ts = config.get_toolset().await?;
 
         // Fix up sources and requests for lockfile update - CLI args produce
         // ToolSource::Argument but lockfile update only processes ToolSource::MiseToml.
