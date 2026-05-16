@@ -2,6 +2,7 @@
 
 project="$PWD/project"
 mkdir -p "$project"
+mkdir -p "$project/bin"
 
 cat >"$project/mise.toml" <<EOF
 [settings]
@@ -9,6 +10,7 @@ experimental = true
 
 [env]
 CD_SETTINGS_TARGET = "project-env"
+_.path = "./bin"
 
 [tasks.read-marker]
 run = 'printf {{ read_file(path="marker") }}'
@@ -26,6 +28,19 @@ assert_succeed "env -u MISE_EXPERIMENTAL mise -C '$project' exec --deny-env -- t
 (
   eval "$(mise hook-env -s bash)"
   assert_contains "env -u MISE_EXPERIMENTAL MISE_CD='$project' mise hook-env -s bash" "CD_SETTINGS_TARGET=project-env"
+)
+
+(
+  eval "$(mise hook-env -s bash)"
+  eval "$(mise --cd "$project" hook-env -s bash)"
+  case ":$PATH:" in
+    *":$project/bin:"*) ;;
+    *) fail "expected hook-env --cd to add target env path to PATH" ;;
+  esac
+  eval "$(mise hook-env -s bash)"
+  case ":$PATH:" in
+    *":$project/bin:"*) fail "expected plain hook-env to clear target env path from PATH" ;;
+  esac
 )
 
 # https://github.com/jdx/mise/discussions/5213
