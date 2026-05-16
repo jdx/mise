@@ -204,6 +204,14 @@ If true, mise will use `cargo binstall` instead of `cargo install` if
 [`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.
 This makes installing CLIs with cargo _much_ faster by downloading precompiled binaries.
 
+When `cargo-binstall` installs a prebuilt binary, Cargo build settings and `cargo install`
+behavior do not affect the downloaded artifact. Set `cargo.binstall = false` to force
+`cargo install` when you need Cargo settings to control the install.
+
+When mise invokes `cargo-binstall`, `cargo-binstall` handles its own fallback order, including
+its final fallback to compiling with `cargo install`. mise does not retry with a separate
+`cargo install` command if `cargo-binstall` exits with an error.
+
 You can install it with mise:
 
 ```sh
