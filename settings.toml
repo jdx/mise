@@ -1730,7 +1730,7 @@ env = "MISE_PRERELEASES"
 type = "Bool"
 
 [profile]
-deprecated = "Use MISE_ENV_FILE instead."
+deprecated = "Use MISE_ENV instead."
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 env = "MISE_PROFILE"
 hide = true
