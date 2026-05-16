@@ -140,7 +140,7 @@ cmd cache help="Manage the mise cache" {
         alias c
         alias clean hide=#true
         flag --outdate help="Mark all cache files as old" hide=#true
-        arg "[PLUGIN]…" help="Plugin(s) to prune cache for e.g.: node, python" required=#false var=#true
+        arg "[PLUGIN]…" help="Plugin(s) to clear cache for e.g.: node, python" required=#false var=#true
     }
     cmd path help="Show the cache directory path" {
         alias dir
