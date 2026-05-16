@@ -69,6 +69,29 @@ import Settings from '/components/settings.vue';
 </script>
 <Settings child="npm" :level="3" />
 
+## Lifecycle Scripts
+
+The npm backend installs one global tool package at a time. Package managers differ in whether
+dependency lifecycle scripts run automatically and how narrowly they can be approved:
+
+| Package manager | Default dependency script behavior | Selective approval for mise installs |
+| --- | --- | --- |
+| `npm` | Runs lifecycle scripts by default. | No native per-dependency approval allowlist was found in npm's current docs. Disable scripts with `npm_args = "--ignore-scripts=true"` or `install_env = { NPM_CONFIG_IGNORE_SCRIPTS = "true" }`. |
+| `bun` | Blocks arbitrary dependency lifecycle scripts unless the package is trusted. | Bun uses `trustedDependencies`, `bun add --trust`, and `bun pm trust` for project installs. The npm backend's Bun path is a global install and does not write a per-transitive `trustedDependencies` allowlist, so `bun_args` should not be used in registry entries to approve required dependency builds unless Bun adds a narrow global approval flag. Users may still pass raw `bun_args` manually. |
+| `pnpm` | Blocks unreviewed dependency build scripts under its build-approval settings. | Use `pnpm_args = "--allow-build=<pkg>"` once per dependency that must run `preinstall`, `install`, or `postinstall`. `pnpm approve-builds -g` exists in pnpm 10.x, but pnpm 11 removes that global form and documents `--allow-build` for global installs. pnpm 10 writes approvals to `onlyBuiltDependencies` until newer 10.x/11.x `allowBuilds` support is available. |
+| `aube` | Blocks dependency lifecycle scripts unless approved through `allowBuilds`; `strictDepBuilds` can make unreviewed builds fail the install. | Use `aube_args = "--allow-build=<pkg>"` with aube 1.12.0 or newer. Older aube releases did not forward `--allow-build` into global installs. `aube approve-builds -g` can update existing global installs, but it is a follow-up command, not something mise runs during installation. |
+
+Avoid broad registry flags such as `--trust`, `--ignore-scripts=false`, or
+`--dangerously-allow-all-builds`. Registry entries should only approve the exact dependency packages
+whose lifecycle scripts were verified as required.
+
+Related package-manager docs:
+
+- npm [`ignore-scripts`](https://docs.npmjs.com/cli/v8/using-npm/config/#ignore-scripts)
+- Bun [lifecycle scripts](https://bun.sh/docs/pm/cli/install#lifecycle-scripts) and [`bun pm trust`](https://bun.com/docs/pm/cli/pm#trust)
+- pnpm [`--allow-build`](https://pnpm.io/cli/add#--allow-build), [`approve-builds`](https://pnpm.io/cli/approve-builds), and [build settings](https://pnpm.io/settings#allowbuilds)
+- aube [lifecycle scripts](https://aube.en.dev/package-manager/lifecycle-scripts), [security](https://aube.en.dev/security.html#default-deny-lifecycle-scripts), and [settings](https://aube.en.dev/settings/#allowbuilds)
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `npm` backend—these
@@ -78,13 +101,28 @@ go in `[tools]` in `mise.toml`.
 
 Additional arguments to pass to `npm` installs when `settings.npm.package_manager = "npm"`.
 
+For example, to disable lifecycle scripts for one npm-backed tool:
+
+```toml
+[tools]
+"npm:prettier" = { version = "latest", npm_args = "--ignore-scripts=true" }
+```
+
 ### `pnpm_args`
 
 Additional arguments to pass to `pnpm` installs when `settings.npm.package_manager = "pnpm"`.
 
+For example, to allow one verified dependency build script:
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", pnpm_args = "--allow-build=esbuild" }
+```
+
 ### `bun_args`
 
 Additional arguments to pass to `bun` installs when `settings.npm.package_manager = "bun"`.
+These are raw user-supplied arguments. mise does not add `--trust` automatically.
 
 ### `aube_args`
 
@@ -98,5 +136,16 @@ For example, to install `npm` with aube's append-only reporter mode:
 "npm:npm" = {
   version = "latest",
   aube_args = "--reporter append-only",
+}
+```
+
+For build approvals, use aube 1.12.0 or newer:
+
+```toml
+[tools]
+"npm:some-tool" = {
+  version = "latest",
+  aube_args = "--allow-build=esbuild",
+  install_env = { AUBE_STRICT_DEP_BUILDS = "true", AUBE_JAIL_BUILDS = "true" },
 }
 ```
