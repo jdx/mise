@@ -71,30 +71,98 @@ import Settings from '/components/settings.vue';
 
 ## Lifecycle Scripts
 
-The npm backend installs one global tool package at a time. Package managers differ in whether
-dependency lifecycle scripts run automatically and how narrowly they can be approved:
+The npm backend installs one global tool package at a time. Lifecycle scripts are package-provided
+commands such as `preinstall`, `install`, and `postinstall`; allowing them means allowing code from
+the selected package and its dependencies to run during installation.
 
-| Package manager | Default dependency script behavior                                                                                                        | Selective approval for mise installs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm`           | Runs lifecycle scripts by default.                                                                                                        | No native per-dependency approval allowlist was found in npm's current docs. Disable scripts with `npm_args = "--ignore-scripts=true"` or `install_env = { NPM_CONFIG_IGNORE_SCRIPTS = "true" }`.                                                                                                                                                                                                                                                                                                                                                                                |
-| `bun`           | Blocks arbitrary dependency lifecycle scripts unless the package is trusted.                                                              | Bun uses `trustedDependencies`, `bun add --trust`, and `bun pm trust` for project installs. The npm backend's Bun path is a global install and does not write a per-transitive `trustedDependencies` allowlist, so `bun_args` should not be used in registry entries to approve required dependency builds unless Bun adds a narrow global approval flag. If a Bun-backed install needs blocked dependency builds, use `npm.package_manager = "pnpm"` or `"aube"` with registry approvals when available, or pass raw `bun_args` manually and accept the broader trust behavior. |
-| `pnpm`          | Blocks unreviewed dependency build scripts under its build-approval settings.                                                             | Use `pnpm_args = "--allow-build=<pkg>"` once per dependency that must run `preinstall`, `install`, or `postinstall`. `pnpm approve-builds -g` exists in pnpm 10.x, but pnpm 11 removes that global form and documents `--allow-build` for global installs. pnpm 10 writes approvals to `onlyBuiltDependencies` until newer 10.x/11.x `allowBuilds` support is available.                                                                                                                                                                                                         |
-| `aube`          | Blocks dependency lifecycle scripts unless approved through `allowBuilds`; `strictDepBuilds` can make unreviewed builds fail the install. | Use `aube_args = "--allow-build=<pkg>"` with aube 1.12.0 or newer. Older aube releases did not forward `--allow-build` into global installs. `aube approve-builds -g` can update existing global installs, but it is a follow-up command, not something mise runs during installation.                                                                                                                                                                                                                                                                                           |
+With the default `npm.package_manager = "auto"` setting, mise installs through `aube` when `aube` is
+installed. If `aube` is not installed, mise installs through `npm`. Setting
+`npm.package_manager = "npm"`, `"bun"`, `"pnpm"`, or `"aube"` chooses that package manager
+explicitly. The `npm_args`, `bun_args`, `pnpm_args`, and `aube_args` options only affect the package
+manager that is actually used; an approval option for one package manager does not change the
+behavior of another.
 
-Avoid broad registry flags such as `--trust` or `--dangerously-allow-all-builds`, and do not add
-registry options such as `--ignore-scripts=false` just to force npm scripts on. Registry entries
-should only approve the exact dependency packages whose lifecycle scripts were verified as required.
+### `npm`
+
+`npm` runs lifecycle scripts by default. Available controls:
+
+- Disable lifecycle scripts with `npm_args = "--ignore-scripts=true"` or
+  `install_env = { NPM_CONFIG_IGNORE_SCRIPTS = "true" }`.
+- Explicitly setting `npm_args = "--ignore-scripts=false"` keeps npm's default script behavior. This
+  is broad because it allows every package in the install graph to run scripts.
+
+`npm` does not provide a native per-dependency build approval allowlist in its current docs.
+
+### `bun`
+
+`bun` does not execute arbitrary dependency lifecycle scripts by default. Available controls:
+
+- `trustedDependencies` in `package.json` and `bun pm trust <pkg>` approve specific dependencies for
+  project installs.
+- `bun_args = "--trust"` passes Bun's trust flag. For project installs, Bun documents this as adding
+  the package to `trustedDependencies` and installing it. This is broad for npm-backend global
+  installs and is a user escape hatch, not something registry entries should use.
+- `bun_args = "--ignore-scripts"` disables lifecycle scripts for the install.
+- Bun also reads install script settings from `.npmrc` and `bunfig.toml`, such as `ignore-scripts` /
+  `install.ignoreScripts`.
+
+The npm backend's Bun path is a global install. It does not write a per-transitive
+`trustedDependencies` allowlist, and Bun does not currently document a narrow global CLI flag for
+approving one transitive dependency build in this flow.
+
+### `pnpm`
+
+`pnpm` uses build approval settings for dependency lifecycle scripts. Available controls:
+
+- `pnpm_args = "--allow-build=<pkg>"` pre-approves one dependency package for the global install.
+  Repeat the flag once per package that has a verified required build.
+- `pnpm approve-builds` is the interactive project approval command.
+- `strictDepBuilds` can make unreviewed builds fail instead of warning.
+- `dangerouslyAllowAllBuilds = true` allows all dependency build scripts. This is broad and should
+  not be used in registry entries.
+
+pnpm 10 and 11 differ here:
+
+- pnpm 10 supports `pnpm approve-builds -g` for globally installed packages. Older pnpm 10 approval
+  flows use `onlyBuiltDependencies` and `ignoredBuiltDependencies`; newer pnpm 10 releases also
+  support the `allowBuilds` map, which replaces those fields.
+- pnpm 11 removes `pnpm approve-builds -g`. For global installs, use
+  `pnpm_args = "--allow-build=<pkg>"` during install; pnpm 11 records reviewed project approvals in
+  the `allowBuilds` map.
+
+### `aube`
+
+`aube` follows the pnpm v11 build approval model for dependency lifecycle scripts. Available
+controls:
+
+- `aube_args = "--allow-build=<pkg>"` pre-approves one dependency package for the global install.
+  Repeat the flag once per package that has a verified required build.
+- `aube approve-builds -g` can update approvals for globally installed packages after installation.
+- `allowBuilds` records allowed and denied dependency builds.
+- `strictDepBuilds` / `AUBE_STRICT_DEP_BUILDS` can make unreviewed builds fail.
+- `jailBuilds` / `AUBE_JAIL_BUILDS` can restrict approved dependency builds.
+- `aube_args = "--ignore-scripts"` skips root lifecycle scripts; dependency scripts are already
+  denied by default unless approved.
+
+### Registry Policy
+
+Registry entries should only approve the exact dependency packages whose lifecycle scripts were
+verified as required. Avoid broad registry options such as `--trust`, `--ignore-scripts=false`, or
+`dangerouslyAllowAllBuilds = true`; those settings expand the install-time code execution surface to
+packages that were not individually reviewed. Users may still pass broad raw args in their own tool
+options when they accept that supply chain risk.
 
 Related package-manager docs:
 
 - npm [`ignore-scripts`](https://docs.npmjs.com/cli/v11/using-npm/config/#ignore-scripts)
-- Bun [lifecycle scripts](https://bun.sh/docs/pm/cli/install#lifecycle-scripts) and [`bun pm trust`](https://bun.com/docs/pm/cli/pm#trust)
-- pnpm [`--allow-build`](https://pnpm.io/cli/add#--allow-build), [`approve-builds`](https://pnpm.io/cli/approve-builds), and [build settings](https://pnpm.io/settings#allowbuilds)
+- Bun [lifecycle scripts](https://bun.sh/docs/install/lifecycle), [`bun add`](https://bun.sh/docs/pm/cli/add), and [`bun pm trust`](https://bun.sh/docs/cli/pm#trust)
+- pnpm 11 [`--allow-build`](https://pnpm.io/cli/add#--allow-build), [`approve-builds`](https://pnpm.io/cli/approve-builds), and [build settings](https://pnpm.io/settings#allowbuilds)
+- pnpm 10 [`approve-builds`](https://pnpm.io/10.x/cli/approve-builds) and [build settings](https://pnpm.io/10.x/settings#onlybuiltdependencies)
 - aube [lifecycle scripts](https://aube.en.dev/package-manager/lifecycle-scripts), [security](https://aube.en.dev/security.html#default-deny-lifecycle-scripts), and [settings](https://aube.en.dev/settings/#allowbuilds)
 
 ## Tool Options
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `npm` backend—these
+The following [tool-options](/dev-tools/#tool-options) are available for the `npm` backend. These
 go in `[tools]` in `mise.toml`.
 
 ### `install_env`
@@ -111,6 +179,7 @@ and `BUN_INSTALL_BIN` after applying `install_env`.
 ### `npm_args`
 
 Additional arguments to pass to `npm` installs when `settings.npm.package_manager = "npm"`.
+These are raw user-supplied arguments.
 
 For example, to disable lifecycle scripts for one npm-backed tool:
 
@@ -119,9 +188,18 @@ For example, to disable lifecycle scripts for one npm-backed tool:
 "npm:prettier" = { version = "latest", npm_args = "--ignore-scripts=true" }
 ```
 
+You can also pass npm's default explicitly, but this broadly allows scripts for the full install
+graph:
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", npm_args = "--ignore-scripts=false" }
+```
+
 ### `pnpm_args`
 
 Additional arguments to pass to `pnpm` installs when `settings.npm.package_manager = "pnpm"`.
+These are raw user-supplied arguments.
 
 For example, to allow one verified dependency build script:
 
@@ -135,10 +213,25 @@ For example, to allow one verified dependency build script:
 Additional arguments to pass to `bun` installs when `settings.npm.package_manager = "bun"`.
 These are raw user-supplied arguments. mise does not add `--trust` automatically.
 
+For example, to pass Bun's broad trust flag manually:
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", bun_args = "--trust" }
+```
+
+Or to skip scripts:
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", bun_args = "--ignore-scripts" }
+```
+
 ### `aube_args`
 
 Additional arguments to pass to `aube add --global` when
 `settings.npm.package_manager = "aube"`.
+These are raw user-supplied arguments.
 
 For example, to install `npm` with aube's append-only reporter mode:
 
@@ -150,7 +243,7 @@ For example, to install `npm` with aube's append-only reporter mode:
 }
 ```
 
-For build approvals, use aube 1.12.0 or newer:
+For build approvals:
 
 ```toml
 [tools]
