@@ -7,6 +7,7 @@ use tokio::{sync::Semaphore, task::JoinSet};
 use url::Url;
 
 use crate::config::Config;
+use crate::config::Settings;
 use crate::dirs;
 use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
@@ -14,7 +15,6 @@ use crate::plugins::warn_if_env_plugin_shadows_registry;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
-use crate::{config::Settings, registry};
 
 /// Install a plugin
 ///

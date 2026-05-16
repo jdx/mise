@@ -40,7 +40,7 @@ impl PluginsLink {
             }
         };
         let path = path.absolutize()?;
-        let symlink = dirs::PLUGINS.join(name);
+        let symlink = dirs::PLUGINS.join(&name);
         if symlink.exists() {
             if self.force {
                 remove_all(&symlink)?;
