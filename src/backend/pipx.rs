@@ -68,9 +68,9 @@ impl<'a> PipxOptions<'a> {
 
     fn lockfile_options(&self) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
-        for key in ["extras", "pipx_args", "uvx_args", "uvx"] {
-            if let Some(value) = self.values.raw().get_string(key) {
-                result.insert(key.to_string(), value);
+        for key in install_time_option_keys() {
+            if let Some(value) = self.values.raw().get_string(&key) {
+                result.insert(key, value);
             }
         }
         result
