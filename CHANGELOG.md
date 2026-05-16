@@ -1,5 +1,27 @@
 # Changelog
 
+## [2026.5.10](https://github.com/jdx/mise/compare/v2026.5.9..v2026.5.10) - 2026-05-16
+
+### 🐛 Bug Fixes
+
+- **(s3)** support SSO-based AWS profiles by enabling aws-config sso feature by @Amir-Ahmad in [#9875](https://github.com/jdx/mise/pull/9875)
+
+### 🚜 Refactor
+
+- **(backend)** parse tool options per backend by @risu729 in [#9838](https://github.com/jdx/mise/pull/9838)
+
+### 📦️ Dependency Updates
+
+- update rust crate sha2 to 0.11 by @renovate[bot] in [#9885](https://github.com/jdx/mise/pull/9885)
+- update ghcr.io/jdx/mise:alpine docker digest to 1a653b5 by @renovate[bot] in [#9890](https://github.com/jdx/mise/pull/9890)
+- update ghcr.io/jdx/mise:rpm docker digest to 7880c74 by @renovate[bot] in [#9892](https://github.com/jdx/mise/pull/9892)
+- update ghcr.io/jdx/mise:deb docker digest to a6fe62d by @renovate[bot] in [#9891](https://github.com/jdx/mise/pull/9891)
+- update rust docker digest to 39d8cb3 by @renovate[bot] in [#9899](https://github.com/jdx/mise/pull/9899)
+
+### New Contributors
+
+- @Amir-Ahmad made their first contribution in [#9875](https://github.com/jdx/mise/pull/9875)
+
 ## [2026.5.9](https://github.com/jdx/mise/compare/v2026.5.8..v2026.5.9) - 2026-05-15
 
 ### 🚀 Features
