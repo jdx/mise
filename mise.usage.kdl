@@ -140,7 +140,7 @@ cmd cache help="Manage the mise cache" {
         alias c
         alias clean hide=#true
         flag --outdate help="Mark all cache files as old" hide=#true
-        arg "[PLUGIN]…" help="Plugin(s) to clear cache for e.g.: node, python" required=#false var=#true
+        arg "[PLUGIN]…" help="Plugin(s) to prune cache for e.g.: node, python" required=#false var=#true
     }
     cmd path help="Show the cache directory path" {
         alias dir
@@ -150,7 +150,7 @@ cmd cache help="Manage the mise cache" {
         long_help "Removes stale mise cache files\n\nBy default, this command will remove files that have not been accessed in 30 days.\nChange this with the MISE_CACHE_PRUNE_AGE environment variable."
         flag "-v --verbose" help="Show pruned files" var=#true count=#true
         flag --dry-run help="Just show what would be pruned"
-        arg "[PLUGIN]…" help="Plugin(s) to clear cache for e.g.: node, python" required=#false var=#true
+        arg "[PLUGIN]…" help="Plugin(s) to prune cache for e.g.: node, python" required=#false var=#true
     }
 }
 cmd completion help="Generate shell completions" {

@@ -697,7 +697,7 @@ const completionSpec: Fig.Spec = {
           description: "Deletes all cache files in mise",
           args: {
             name: "plugin",
-            description: "Plugin(s) to clear cache for e.g.: node, python",
+            description: "Plugin(s) to prune cache for e.g.: node, python",
             isOptional: true,
             isVariadic: true,
             generators: pluginGenerator,
@@ -725,7 +725,7 @@ const completionSpec: Fig.Spec = {
           ],
           args: {
             name: "plugin",
-            description: "Plugin(s) to clear cache for e.g.: node, python",
+            description: "Plugin(s) to prune cache for e.g.: node, python",
             isOptional: true,
             isVariadic: true,
             generators: pluginGenerator,
