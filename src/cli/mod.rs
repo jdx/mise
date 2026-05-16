@@ -424,11 +424,6 @@ fn get_arg_flags(cmd: &clap::Command) -> CliArgFlags {
     flags
 }
 
-fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
-    let flags = get_arg_flags(cmd);
-    (flags.flags_with_values(), flags.boolean)
-}
-
 fn get_flags_for_subcommand(cmd: &clap::Command, subcommand: &str) -> CliArgFlags {
     let mut flags = get_arg_flags(cmd);
     if let Some(sc) = cmd.get_subcommands().find(|s| s.get_name() == subcommand) {
@@ -459,7 +454,7 @@ fn escape_args_after_separator(args: &[String], separator_idx: usize) -> Vec<Str
 }
 
 fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usize> {
-    let (flags_with_values, _) = get_global_flags(cmd);
+    let flags = get_arg_flags(cmd);
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
@@ -477,11 +472,10 @@ fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usiz
                 false
             } else {
                 let flag_name = arg.split('=').next().unwrap();
-                flags_with_values.iter().any(|f| f == flag_name)
+                flags.has_value(flag_name)
             }
-        } else if arg.len() >= 2 {
-            let flag_name = &arg[..2];
-            flags_with_values.iter().any(|f| f == flag_name)
+        } else if let Some(consumes_next) = short_arg_consumes_next_value(arg, &flags) {
+            consumes_next
         } else {
             false
         };
@@ -493,6 +487,23 @@ fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usiz
         }
     }
     None
+}
+
+fn short_arg_consumes_next_value(arg: &str, flags: &CliArgFlags) -> Option<bool> {
+    if arg.len() < 2 || !arg.starts_with('-') || arg.starts_with("--") {
+        return None;
+    }
+    for (idx, short) in arg[1..].char_indices() {
+        let flag = format!("-{short}");
+        if flags.has_value(&flag) {
+            let value_start = 1 + idx + short.len_utf8();
+            return Some(value_start == arg.len());
+        }
+        if !flags.has_boolean(&flag) {
+            return None;
+        }
+    }
+    Some(false)
 }
 
 fn is_known_subcommand(cmd: &clap::Command, arg: &str) -> bool {
@@ -913,7 +924,7 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
     let mut iter = args.iter().skip(1).peekable();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
-            "--" => return cd,
+            "--" => return cd.or_else(mise_cd_env),
             "-C" | "--cd" => {
                 cd = iter.next().map(PathBuf::from);
                 continue;
@@ -929,12 +940,16 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
                     cd = Some(PathBuf::from(path));
                     continue;
                 }
+                if let Some(path) = short_boolean_cluster_cd_arg(arg, &mut iter, &current_flags) {
+                    cd = path;
+                    continue;
+                }
                 if skip_known_flag(arg, &mut iter, &current_flags) {
                     continue;
                 }
                 if subcommand.is_none() && !arg.starts_with('-') {
                     let Some(sc) = find_subcommand_name(&cmd, arg) else {
-                        return cd;
+                        return cd.or_else(mise_cd_env);
                     };
                     current_flags = get_flags_for_subcommand(&cmd, sc);
                     subcommand = Some(sc.to_string());
@@ -944,12 +959,16 @@ fn early_cd_arg(args: &[String]) -> Option<PathBuf> {
                     .as_deref()
                     .is_some_and(subcommand_stops_cd_scan_after_positional)
                 {
-                    return cd;
+                    return cd.or_else(mise_cd_env);
                 }
             }
         }
     }
-    cd.or_else(|| std::env::var_os("MISE_CD").map(PathBuf::from))
+    cd.or_else(mise_cd_env)
+}
+
+fn mise_cd_env() -> Option<PathBuf> {
+    std::env::var_os("MISE_CD").map(PathBuf::from)
 }
 
 fn subcommand_stops_cd_scan_after_positional(subcommand: &str) -> bool {
@@ -991,6 +1010,34 @@ where
     false
 }
 
+fn short_boolean_cluster_cd_arg<'a, I>(
+    arg: &str,
+    iter: &mut std::iter::Peekable<I>,
+    flags: &CliArgFlags,
+) -> Option<Option<PathBuf>>
+where
+    I: Iterator<Item = &'a String>,
+{
+    if arg.len() <= 2 || !arg.starts_with('-') || arg.starts_with("--") {
+        return None;
+    }
+    for (idx, short) in arg[1..].char_indices() {
+        let flag = format!("-{short}");
+        if flag == "-C" && flags.has_required_value(&flag) {
+            let value_start = 1 + idx + short.len_utf8();
+            return Some(if value_start < arg.len() {
+                Some(PathBuf::from(&arg[value_start..]))
+            } else {
+                iter.next().map(PathBuf::from)
+            });
+        }
+        if !flags.has_boolean(&flag) {
+            return None;
+        }
+    }
+    None
+}
+
 fn is_known_short_boolean_cluster(arg: &str, flags: &CliArgFlags) -> bool {
     if arg.len() <= 2 || !arg.starts_with('-') || arg.starts_with("--") {
         return false;
@@ -1004,7 +1051,7 @@ fn has_cd_arg(args: &[String]) -> bool {
     args.iter()
         .skip(1)
         .take_while(|a| a.as_str() != "--")
-        .any(|a| is_cd_arg(a))
+        .any(|a| is_cd_arg(a) || contains_short_cd_cluster(a))
 }
 
 fn is_cd_arg(arg: &str) -> bool {
@@ -1012,6 +1059,10 @@ fn is_cd_arg(arg: &str) -> bool {
         || arg == "--cd"
         || arg.starts_with("--cd=")
         || arg.strip_prefix("-C").is_some_and(|rest| !rest.is_empty())
+}
+
+fn contains_short_cd_cluster(arg: &str) -> bool {
+    arg.len() > 2 && arg.starts_with('-') && !arg.starts_with("--") && arg[1..].contains('C')
 }
 
 /// Validate the --cd path if provided and return an error if it doesn't exist
@@ -1094,6 +1145,31 @@ mod tests {
             unescape_task_args(&escaped[separator_idx + 1..]),
             vec!["--help".to_string()]
         );
+    }
+
+    #[test]
+    fn test_preprocess_args_skips_clustered_cd_value() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "-vC".to_string(),
+            "project".to_string(),
+            "settings".to_string(),
+            "get".to_string(),
+            "experimental".to_string(),
+        ];
+
+        assert_eq!(preprocess_args_for_naked_run(&cmd, &args), args);
+
+        let args = vec![
+            "mise".to_string(),
+            "-vCproject".to_string(),
+            "settings".to_string(),
+            "get".to_string(),
+            "experimental".to_string(),
+        ];
+
+        assert_eq!(preprocess_args_for_naked_run(&cmd, &args), args);
     }
 
     #[test]
@@ -1186,6 +1262,35 @@ mod tests {
             "-Eproduction".to_string(),
             "-j4".to_string(),
             "--cd=project".to_string(),
+            "settings".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+    }
+
+    #[test]
+    fn test_early_cd_arg_handles_short_boolean_cluster_before_cd() {
+        let args = vec![
+            "mise".to_string(),
+            "-vC".to_string(),
+            "project".to_string(),
+            "settings".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+
+        let args = vec![
+            "mise".to_string(),
+            "-qCproject".to_string(),
+            "settings".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), Some(PathBuf::from("project")));
+
+        let args = vec![
+            "mise".to_string(),
+            "-vqC".to_string(),
+            "project".to_string(),
             "settings".to_string(),
         ];
 

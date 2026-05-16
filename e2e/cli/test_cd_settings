@@ -21,6 +21,7 @@ EOF
 printf "from-project" >"$project/marker"
 
 assert "env -u MISE_EXPERIMENTAL mise -C '$project' settings get experimental" "true"
+assert "env -u MISE_EXPERIMENTAL mise -qC '$project' settings get experimental" "true"
 assert "env -u MISE_EXPERIMENTAL mise --env production -C '$project' settings get experimental" "true"
 assert "env -u MISE_EXPERIMENTAL mise --jobs 1 -C '$project' settings get experimental" "true"
 assert "env -u MISE_EXPERIMENTAL MISE_CD='$project' mise settings get experimental" "true"
