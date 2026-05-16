@@ -111,15 +111,17 @@ pub fn should_exit_early_fast() -> bool {
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
     }
-    // --cd changes the effective config/search root for this process, but
+    // --cd/MISE_CD changes the effective config/search root for this process, but
     // the fast path runs before full clap processing. Fall through so Settings
-    // can apply --cd and rebuild path-dependent caches first.
-    if args.iter().take_while(|a| a.as_str() != "--").any(|a| {
-        a == "-C"
-            || a == "--cd"
-            || a.starts_with("--cd=")
-            || a.strip_prefix("-C").is_some_and(|rest| !rest.is_empty())
-    }) {
+    // can apply the cd override and rebuild path-dependent caches first.
+    if std::env::var_os("MISE_CD").is_some()
+        || args.iter().take_while(|a| a.as_str() != "--").any(|a| {
+            a == "-C"
+                || a == "--cd"
+                || a.starts_with("--cd=")
+                || a.strip_prefix("-C").is_some_and(|rest| !rest.is_empty())
+        })
+    {
         return false;
     }
     // Can't exit early if no previous session

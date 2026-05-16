@@ -7,6 +7,9 @@ cat >"$project/mise.toml" <<EOF
 [settings]
 experimental = true
 
+[env]
+CD_SETTINGS_TARGET = "project-env"
+
 [tasks.read-marker]
 run = 'printf {{ read_file(path="marker") }}'
 
@@ -20,6 +23,10 @@ assert "env -u MISE_EXPERIMENTAL mise --env production -C '$project' settings ge
 assert "env -u MISE_EXPERIMENTAL mise --jobs 1 -C '$project' settings get experimental" "true"
 assert "env -u MISE_EXPERIMENTAL MISE_CD='$project' mise settings get experimental" "true"
 assert_succeed "env -u MISE_EXPERIMENTAL mise -C '$project' exec --deny-env -- true"
+(
+  eval "$(mise hook-env -s bash)"
+  assert_contains "env -u MISE_EXPERIMENTAL MISE_CD='$project' mise hook-env -s bash" "CD_SETTINGS_TARGET=project-env"
+)
 
 # https://github.com/jdx/mise/discussions/5213
 # `mise --cd <dir> run <task>` must discover target-directory tasks even when
