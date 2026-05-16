@@ -248,7 +248,8 @@ impl RubyPlugin {
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
                 .arg("install")
-                .envs(config.env().await?);
+                .envs(config.env().await?)
+                .envs(tv.request.options().core.install_env);
             match package.split_once(' ') {
                 Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
@@ -296,7 +297,10 @@ impl RubyPlugin {
                 .args(self.install_args_ruby_build(tv)?)
                 .stdin_string(self.fetch_patches().await?)
         };
-        Ok(cmd.with_pr(pr).envs(config.env().await?))
+        Ok(cmd
+            .with_pr(pr)
+            .envs(config.env().await?)
+            .envs(tv.request.options().core.install_env))
     }
     fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
         let settings = Settings::get();

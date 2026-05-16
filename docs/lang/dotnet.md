@@ -115,6 +115,20 @@ dotnet = ["9", { version = "8.0.14", runtime = "dotnet" }]
 Only exact runtime versions are supported (e.g., `dotnet[runtime=dotnet]@8.0.14`). Channel syntax like `@8` is not currently supported for runtime installs, as it resolves against SDK versions rather than runtime versions.
 :::
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `dotnet` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for the .NET install script and install-time verification commands:
+
+```toml
+[tools]
+dotnet = { version = "latest", install_env = { DOTNET_CLI_TELEMETRY_OPTOUT = "1" } }
+```
+
 ## Environment Variables
 
 The plugin sets the following environment variables:

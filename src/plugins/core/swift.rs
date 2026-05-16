@@ -36,6 +36,7 @@ impl SwiftPlugin {
         CmdLineRunner::new(self.swift_bin(tv))
             .with_pr(ctx.pr.as_ref())
             .arg("--version")
+            .envs(ctx.install_env(tv))
             .execute()
     }
 
@@ -78,6 +79,7 @@ impl SwiftPlugin {
                 .arg(tarball_path)
                 .arg(&tmp)
                 .with_pr(ctx.pr.as_ref())
+                .envs(ctx.install_env(tv))
                 .execute()?;
             file::remove_all(tv.install_path())?;
             file::rename(
@@ -139,6 +141,7 @@ impl SwiftPlugin {
             .arg("--verify")
             .arg(&sig_path)
             .arg(tarball_path)
+            .envs(ctx.install_env(tv))
             .execute()?;
         Ok(())
     }

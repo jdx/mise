@@ -159,6 +159,7 @@ impl ErlangPlugin {
             .with_pr(ctx.pr.as_ref())
             .arg("-minimal")
             .arg(tv.install_path())
+            .envs(ctx.install_env(&tv))
             .execute()?;
 
         Ok(Some(tv))
@@ -299,11 +300,7 @@ impl ErlangPlugin {
         }
     }
 
-    async fn install_via_kerl(
-        &self,
-        _ctx: &InstallContext,
-        tv: ToolVersion,
-    ) -> Result<ToolVersion> {
+    async fn install_via_kerl(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         self.update_kerl().await?;
 
         file::remove_all(tv.install_path())?;
@@ -312,16 +309,19 @@ impl ErlangPlugin {
                 unimplemented!("erlang does not yet support refs");
             }
             _ => {
-                cmd!(
+                let mut cmd = cmd!(
                     self.kerl_path(),
                     "build-install",
                     &tv.version,
                     &tv.version,
                     tv.install_path()
-                )
-                .env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
-                .env("MAKEFLAGS", format!("-j{}", num_cpus::get()))
-                .run()?;
+                );
+                for (key, value) in ctx.install_env(&tv) {
+                    cmd = cmd.env(key, value);
+                }
+                cmd.env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
+                    .env("MAKEFLAGS", format!("-j{}", num_cpus::get()))
+                    .run()?;
             }
         }
 

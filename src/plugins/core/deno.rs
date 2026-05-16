@@ -49,6 +49,7 @@ impl DenoPlugin {
         CmdLineRunner::new(self.deno_bin(tv))
             .with_pr(pr)
             .arg("-V")
+            .envs(tv.request.options().core.install_env)
             .execute()
     }
 

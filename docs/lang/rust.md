@@ -38,6 +38,15 @@ cargo build
 The following [tool-options](/dev-tools/#tool-options) are available for the `rust` backend—these
 go in `[tools]` in `mise.toml`.
 
+### `install_env`
+
+Set environment variables for rustup install commands:
+
+```toml
+[tools]
+rust = { version = "latest", install_env = { RUSTUP_DIST_SERVER = "https://static.rust-lang.org" } }
+```
+
 ### `components`
 
 The `components` option allows you to specify which components to install. Multiple components can be

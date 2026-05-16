@@ -64,6 +64,22 @@ Other syntax may work but is unsupported and untested.
 The following [tool-options](/dev-tools/#tool-options) are available for the backend — these
 go in `[tools]` in `mise.toml`.
 
+### `install_env`
+
+Set environment variables for Swift Package Manager commands such as
+`swift package dump-package`, `swift -print-target-info`, and `swift build`.
+This applies when the selected backend is `spm`.
+
+If you use a registry shorthand whose registry entry prefers another backend
+before `spm`, that other backend's behavior applies instead. For example, a
+tool whose registry entry lists `github:` before `spm:` will not run Swift
+Package Manager commands unless you explicitly use `spm:owner/repo`.
+
+```toml
+[tools]
+"spm:tuist/tuist" = { version = "latest", install_env = { SWIFTPM_ENABLE_PLUGINS = "1" } }
+```
+
 ### `provider`
 
 Set the provider type to use for fetching assets and release information. Either `github` or `gitlab` (default is `github`).

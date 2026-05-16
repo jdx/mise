@@ -141,8 +141,15 @@ impl Backend for VfoxBackend {
         self.ensure_plugin_installed(&ctx.config).await?;
         let (mut vfox, log_rx) = self.plugin.vfox()?;
         Self::forward_plugin_logs(log_rx);
-        if let Ok(dep_env) = self.dependency_env(&ctx.config).await {
-            vfox.cmd_env = Some(dep_env.into_iter().collect());
+        let mut cmd_env: indexmap::IndexMap<String, String> = self
+            .dependency_env(&ctx.config)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        cmd_env.extend(ctx.install_env(&tv));
+        if !cmd_env.is_empty() {
+            vfox.cmd_env = Some(cmd_env);
         }
 
         // Use backend methods if the plugin supports them

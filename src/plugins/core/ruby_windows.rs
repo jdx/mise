@@ -62,7 +62,8 @@ impl RubyPlugin {
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
                 .arg("install")
-                .envs(config.env().await?);
+                .envs(config.env().await?)
+                .envs(tv.request.options().core.install_env);
             match package.split_once(' ') {
                 Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
@@ -85,6 +86,7 @@ impl RubyPlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env().await?)
+            .envs(tv.request.options().core.install_env)
             .execute()
     }
 
@@ -99,6 +101,7 @@ impl RubyPlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env().await?)
+            .envs(tv.request.options().core.install_env)
             .env(&*PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()
     }

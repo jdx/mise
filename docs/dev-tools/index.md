@@ -151,6 +151,17 @@ port = 6379
 
 Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
 
+### Install environment
+
+Use `install_env` to set environment variables for the backend commands that run while a tool is installed.
+
+```toml
+[tools]
+"cargo:usage-cli" = { version = "latest", install_env = { RUST_BACKTRACE = "1" } }
+```
+
+`install_env` applies to install/build/package-manager commands such as `cargo install`, `npm install`, `go install`, `gem install`, `dotnet tool install`, Swift Package Manager builds, asdf install scripts, vfox commands started with `cmd.exec`, and install-time commands run by core language backends. It does not affect downloads or API requests that mise performs internally.
+
 ### Tool postinstall commands
 
 Run a command immediately after a tool finishes installing by adding a `postinstall` field to that tool's configuration. This is separate from `[hooks].postinstall` and applies only to when a specific tool is installed.

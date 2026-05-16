@@ -85,6 +85,7 @@ impl Backend for GemBackend {
             .arg(tv.install_path().join("libexec"))
             .with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
+            .envs(ctx.install_env(&tv))
             .execute()?;
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable

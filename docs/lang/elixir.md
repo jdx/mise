@@ -16,3 +16,17 @@ mise use -g erlang elixir
 ```
 
 Note that [`erlang`](/lang/erlang.html) is required to install `elixir`.
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `elixir` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for install-time commands run by the core `elixir` backend:
+
+```toml
+[tools]
+elixir = { version = "latest", install_env = { MIX_HOME = "~/.mix" } }
+```

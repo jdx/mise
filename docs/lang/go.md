@@ -43,6 +43,21 @@ github.com/daixiang0/gci # allows comments
 github.com/jesseduffield/lazygit
 ```
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `go` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for default package installation and install-time verification commands
+run by the core `go` backend:
+
+```toml
+[tools]
+go = { version = "latest", install_env = { GOPRIVATE = "github.com/acme/*" } }
+```
+
 ## Settings
 
 <script setup>
