@@ -32,6 +32,7 @@ if ! curl --retry 5 --retry-connrefused --retry-delay 1 -fsS "http://localhost:$
   fail "HTTP server failed to respond"
 fi
 
+mkdir -p "$MISE_DATA_DIR/installs"
 cat <<EOF >"$MISE_DATA_DIR/installs/.mise-installs.toml"
 [http-tool-opts]
 short = "http:tool-opts"
