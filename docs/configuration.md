@@ -178,7 +178,7 @@ See [Tools](/dev-tools/). In addition to specifying versions, each tool entry ca
 
 - `os`: Restrict installation to certain operating systems
 - `depends`: Install order relative to other tools in this config only; vfox plugin hook dependencies belong in plugin `metadata.lua` (see [Tool Dependencies](/dev-tools/#tool-dependencies))
-- `install_env`: Environment vars used during install
+- `install_env`: Environment vars used during install and tool-level `postinstall`
 - `postinstall`: Command to run after installation completes for that specific tool
 
 Examples:
