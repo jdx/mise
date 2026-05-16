@@ -28,6 +28,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if ! curl --retry 5 --retry-connrefused --retry-delay 1 -fsS "http://localhost:$HTTP_PORT/versions.json" >/dev/null; then
+  fail "HTTP server failed to respond"
+fi
+
 cat <<EOF >"$MISE_DATA_DIR/installs/.mise-installs.toml"
 [http-tool-opts]
 short = "http:tool-opts"
