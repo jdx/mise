@@ -255,11 +255,7 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
             &backend.id().to_string(),
         )
     });
-    tools.retain(|backend| {
-        !settings
-            .disable_backends
-            .contains(&backend.get_type().to_string())
-    });
+    tools.retain(|backend| !is_disabled_backend_type(&backend.get_type()));
 
     let tools: BackendMap = tools
         .into_iter()
