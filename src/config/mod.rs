@@ -1069,8 +1069,12 @@ static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         .map(|s| s.to_string())
         .collect()
 });
-static ALL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
-static IGNORED_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
+// Config discovery walks upward from the process cwd, so cache entries are
+// scoped by cwd. This lets early `--cd` startup use a fresh entry without
+// depending on every caller to invalidate the previous cwd's result first.
+type ConfigPathCache = HashMap<PathBuf, IndexSet<PathBuf>>;
+static ALL_CONFIG_FILES: Lazy<Mutex<ConfigPathCache>> = Lazy::new(Default::default);
+static IGNORED_CONFIG_FILES: Lazy<Mutex<ConfigPathCache>> = Lazy::new(Default::default);
 // pub static LOCAL_CONFIG_FILES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
 //     ALL_CONFIG_FILES
 //         .iter()
@@ -1083,9 +1087,9 @@ type GlobResults = HashMap<(PathBuf, String), Vec<PathBuf>>;
 static GLOB_RESULTS: Lazy<Mutex<GlobResults>> = Lazy::new(Default::default);
 
 pub fn reset_config_path_caches() {
-    *ALL_CONFIG_FILES.lock().unwrap() = None;
-    *IGNORED_CONFIG_FILES.lock().unwrap() = None;
-    *ALL_TOML_CONFIG_FILES.lock().unwrap() = None;
+    ALL_CONFIG_FILES.lock().unwrap().clear();
+    IGNORED_CONFIG_FILES.lock().unwrap().clear();
+    ALL_TOML_CONFIG_FILES.lock().unwrap().clear();
     *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
     *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
     GLOB_RESULTS.lock().unwrap().clear();
@@ -1111,18 +1115,19 @@ pub fn ignored_config_files() -> IndexSet<PathBuf> {
 }
 
 fn cached_config_paths(
-    cache: &Mutex<Option<IndexSet<PathBuf>>>,
+    cache: &Mutex<ConfigPathCache>,
     load: impl FnOnce() -> IndexSet<PathBuf>,
 ) -> IndexSet<PathBuf> {
-    if let Some(files) = cache.lock().unwrap().as_ref().cloned() {
+    let cwd = env::current_dir().unwrap_or_default();
+    if let Some(files) = cache.lock().unwrap().get(&cwd).cloned() {
         return files;
     }
     let loaded = load();
     let mut files = cache.lock().unwrap();
-    if let Some(files) = &*files {
+    if let Some(files) = files.get(&cwd) {
         return files.clone();
     }
-    *files = Some(loaded.clone());
+    files.insert(cwd, loaded.clone());
     loaded
 }
 
@@ -1392,7 +1397,7 @@ pub fn top_toml_config() -> Option<PathBuf> {
         .map(|p| p.to_path_buf())
 }
 
-static ALL_TOML_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
+static ALL_TOML_CONFIG_FILES: Lazy<Mutex<ConfigPathCache>> = Lazy::new(Default::default);
 
 pub fn all_toml_config_files() -> IndexSet<PathBuf> {
     cached_config_paths(&ALL_TOML_CONFIG_FILES, || {

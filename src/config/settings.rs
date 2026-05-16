@@ -492,11 +492,7 @@ impl Settings {
         if cli.verbose > 1 {
             s.log_level = Some("trace".to_string());
         }
-        if cli.cd.is_some() {
-            Self::reset(Some(s));
-        } else {
-            Self::reset_preserving_config_paths(Some(s));
-        }
+        Self::reset_preserving_config_paths(Some(s));
     }
 
     pub fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
@@ -536,12 +532,14 @@ impl Settings {
         &HIDDEN_CONFIGS
     }
 
+    #[cfg(test)]
     pub fn reset(cli_settings: Option<SettingsPartial>) {
         Self::reset_inner(cli_settings, true);
     }
 
-    // CLI flags like --quiet rebuild Settings but do not change config discovery.
-    // Keep path caches populated from the earlier startup pass unless --cd needs a new root.
+    // CLI flags rebuild Settings, but config discovery is keyed by the cwd that
+    // Settings selects. Keep those entries unless an explicit reset asks for a
+    // full settings/environment invalidation.
     fn reset_preserving_config_paths(cli_settings: Option<SettingsPartial>) {
         Self::reset_inner(cli_settings, false);
     }
@@ -569,8 +567,6 @@ impl Settings {
         updater(partial);
         drop(lock);
         *BASE_SETTINGS.write().unwrap() = None;
-        crate::config::reset_config_path_caches();
-        crate::config::config_file::config_root::reset();
     }
 
     pub fn lockfile_enabled(&self) -> bool {
