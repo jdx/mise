@@ -532,13 +532,6 @@ impl ToolVersion {
         {
             return Ok(Self::new(request, v.to_string()));
         }
-        if !opts.latest_versions
-            && !should_filter_installed_versions
-            && let Some(path) = request.install_path(config)
-            && let Some(v) = path.file_name()
-        {
-            return Ok(Self::new(request, v.to_string_lossy().into_owned()));
-        }
         if opts.offline {
             return Ok(Self::new(request, prefix.to_string()));
         }
@@ -792,35 +785,6 @@ mod tests {
         assert_eq!(p1, p2);
         assert!(p2.exists());
         assert!(INSTALL_PATH_CACHE.get(&tv).is_some());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn offline_prefix_resolution_uses_existing_install_path() -> Result<()> {
-        reset_install_path_cache();
-        crate::backend::load_tools().await?;
-
-        let config = Config::get().await?;
-        let temp_dir = tempfile::tempdir()?;
-        let mut backend = BackendArg::from("go:example.com/mise-offline-prefix-test");
-        backend.installs_path = temp_dir.path().join("installs").join("go-example");
-        fs::create_dir_all(backend.installs_path.join("1.24.1").join("bin"))?;
-        fs::create_dir_all(backend.installs_path.join("1.24.13").join("bin"))?;
-
-        let request =
-            ToolRequest::new(Arc::new(backend), "prefix:1.24", ToolSource::Argument).unwrap();
-        let tv = ToolVersion::resolve(
-            &config,
-            request,
-            &ResolveOptions {
-                offline: true,
-                ..Default::default()
-            },
-        )
-        .await?;
-
-        assert_eq!(tv.version, "1.24.13");
 
         Ok(())
     }

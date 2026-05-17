@@ -289,11 +289,10 @@ impl ToolRequest {
                 let found = match file::ls(&backend.installs_path) {
                     Ok(installs) => installs
                         .iter()
-                        .filter(|p| {
+                        .find(|p| {
                             !is_runtime_symlink(p)
                                 && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
                         })
-                        .last()
                         .cloned(),
                     Err(_) => None,
                 };
@@ -303,16 +302,10 @@ impl ToolRequest {
                     for shared_dir in env::shared_install_dirs().iter() {
                         let shared_tool_dir = shared_dir.join(&tool_dir_name);
                         if let Ok(installs) = file::ls(&shared_tool_dir)
-                            && let Some(p) = installs
-                                .iter()
-                                .filter(|p| {
-                                    !is_runtime_symlink(p)
-                                        && p.file_name()
-                                            .unwrap()
-                                            .to_string_lossy()
-                                            .starts_with(prefix)
-                                })
-                                .last()
+                            && let Some(p) = installs.iter().find(|p| {
+                                !is_runtime_symlink(p)
+                                    && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
+                            })
                         {
                             return Some(p.clone());
                         }
