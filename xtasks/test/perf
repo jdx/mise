@@ -5,6 +5,11 @@
 set -euo pipefail
 
 runs="${RUNS:-1}"
+warmups="${PERF_WARMUPS:-2}"
+# Empirical noise floor on the CI runners is roughly ±10% on the small means
+# we measure here, so a 10% threshold flagged near-every PR. Bump to 15% so
+# a "regression" warning corresponds to something larger than baseline drift.
+threshold="${PERF_THRESHOLD:-15}"
 cd perf-workspace
 mkdir -p flamegraphs
 MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
@@ -17,59 +22,51 @@ if [ -v MISE_ALT ]; then
 	which "$MISE_ALT"
 fi
 
-time_command() {
-	local uncached="$1"
-	shift
+# Time a single invocation in milliseconds, suppressing all output.
+time_one() {
 	local cmd="$1"
-	local start_time
-	local end_time
-	local duration
-	local total=0
 	shift
-	echo "running $cmd $* $runs times..." >&2
-	for _ in $(seq 1 $runs); do
-		if [ "$uncached" = "uncached" ]; then
-			"$cmd" cache clear
-		fi
-		start_time=$(date +%s%N)
-		timeout -v 20 "$cmd" "$@" >/dev/null || true
-		end_time=$(date +%s%N)
-		duration=$(((end_time - start_time) / 1000000))
-		total=$((total + duration))
-	done
-	echo $((total / runs))
+	local start_time end_time
+	start_time=$(date +%s%N)
+	timeout -v 20 "$cmd" "$@" >/dev/null 2>&1 || true
+	end_time=$(date +%s%N)
+	echo $(((end_time - start_time) / 1000000))
 }
 
+# Median of stdin lines, integer. Portable: sort numerically, then average
+# the middle one or two values (handles even and odd counts).
+median() {
+	sort -n | awk '{a[NR]=$1} END {
+		if (NR % 2) print a[(NR+1)/2];
+		else print int((a[NR/2] + a[NR/2+1]) / 2);
+	}'
+}
+
+# Run mise and (if set) MISE_ALT $runs times each, interleaved, with $warmups
+# warmup invocations of each first. Interleaving keeps runner-load drift from
+# biasing one binary; medians make a single slow iteration not move the result.
 benchmark() {
 	local name="$1"
-	# local uncached_duration
-	local cached_duration
 	shift
-	# uncached_duration=$(time_command uncached mise "$@")
-	cached_duration=$(time_command cached mise "$@")
-	benchmarks["$name-cached"]=$cached_duration
-
+	local out=() alt_out=()
+	echo "benchmarking $name ($* — $runs runs each, $warmups warmups)" >&2
+	for _ in $(seq 1 "$warmups"); do
+		time_one mise "$@" >/dev/null
+		[ -n "${MISE_ALT:-}" ] && time_one "$MISE_ALT" "$@" >/dev/null
+	done
+	for _ in $(seq 1 "$runs"); do
+		out+=("$(time_one mise "$@")")
+		[ -n "${MISE_ALT:-}" ] && alt_out+=("$(time_one "$MISE_ALT" "$@")")
+	done
+	benchmarks["$name-cached"]=$(printf '%s\n' "${out[@]}" | median)
 	if [ -n "${MISE_ALT:-}" ]; then
-		# alt_uncached_duration=$(time_command uncached "$MISE_ALT" "$@")
-		alt_cached_duration=$(time_command cached "$MISE_ALT" "$@")
-		alt_benchmarks["$name-cached"]=$alt_cached_duration
+		alt_benchmarks["$name-cached"]=$(printf '%s\n' "${alt_out[@]}" | median)
 	fi
-
 	names+=("$name")
 }
 
 mise install
-# Warmup call to prime caches before measuring
-mise install >/dev/null 2>&1 || true
-if [ -n "${MISE_ALT:-}" ]; then
-	"$MISE_ALT" install >/dev/null 2>&1 || true
-fi
 benchmark install install
-# Warmup call to prime caches before measuring
-mise ls >/dev/null 2>&1 || true
-if [ -n "${MISE_ALT:-}" ]; then
-	"$MISE_ALT" ls >/dev/null 2>&1 || true
-fi
 benchmark ls ls
 benchmark bin-paths bin-paths
 benchmark task-ls task ls
@@ -77,7 +74,7 @@ set +x
 
 get_performance_emoji() {
 	local variance="$1"
-	if [ ${variance#-} -gt 10 ]; then
+	if [ ${variance#-} -gt $threshold ]; then
 		if [ $variance -gt 0 ]; then
 			echo "✅ "
 		else
@@ -90,7 +87,7 @@ get_performance_warning() {
 	local name="$1"
 	local variance="$2"
 	local type="$3"
-	if [ ${variance#-} -gt 10 ]; then
+	if [ ${variance#-} -gt $threshold ]; then
 		if [ $variance -gt 0 ]; then
 			echo "✅  Performance improvement: $name $type is ${variance}%"
 		else
@@ -107,18 +104,8 @@ print_performance_table() {
 		echo "| Command    | $MISE_ALT | mise | Variance |" >>"$output_file"
 		echo "|------------|-----------|------|----------|" >>"$output_file"
 		for name in "${names[@]}"; do
-			# uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
 			cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
-
-			# uncached_emoji=$(get_performance_emoji "$uncached_variance")
 			cached_emoji=$(get_performance_emoji "$cached_variance")
-
-			# printf "| %-10s | %6dms | %s%6dms | %+d%% |\n" \
-			#   "$name (uncached)" \
-			#   "${alt_benchmarks[\"$name-uncached\"]}" \
-			#   "$uncached_emoji" \
-			#   "${benchmarks[\"$name-uncached\"]}" \
-			#   "$uncached_variance" >>"$output_file"
 			printf "| %-10s | %6dms | %s%6dms | %+d%% |\n" \
 				"$name (cached)" \
 				"${alt_benchmarks["$name-cached"]}" \
@@ -130,7 +117,6 @@ print_performance_table() {
 		echo "| Command    | Time   |" >>"$output_file"
 		echo "|------------|--------|" >>"$output_file"
 		for name in "${names[@]}"; do
-			# printf "| %-10s | %6dms |\n" "$name (uncached)" "${benchmarks[\"$name-uncached\"]}" >>"$output_file"
 			printf "| %-10s | %6dms |\n" "$name (cached)" "${benchmarks["$name-cached"]}" >>"$output_file"
 		done
 	fi
@@ -140,13 +126,7 @@ print_performance_warnings() {
 	local output_file="$1"
 	if [ -n "${MISE_ALT:-}" ]; then
 		for name in "${names[@]}"; do
-			# uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
 			cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
-
-			# warning=$(get_performance_warning "$name" "$uncached_variance" "uncached")
-			# if [ -n "$warning" ]; then
-			#   echo "$warning" >>"$output_file"
-			# fi
 			warning=$(get_performance_warning "$name" "$cached_variance" "cached")
 			if [ -n "$warning" ]; then
 				echo "$warning" >>"$output_file"
@@ -161,11 +141,6 @@ print_performance_table "/dev/stdout"
 if [ -v GITHUB_STEP_SUMMARY ]; then
 	# shellcheck disable=SC2016
 	echo '## `xtasks/test/perf`' >>../comment.md
-	# echo "" >>../comment.md
-	# echo "- NUM_TASKS: $num_tasks" >>../comment.md
-	# echo "- NUM_TOOLS: $num_tools" >>../comment.md
-	# echo "- RUNS: $runs" >>../comment.md
-	# echo "" >>../comment.md
 
 	print_performance_table "../comment.md"
 	echo "" >>../comment.md

@@ -29,7 +29,7 @@ pub struct Latest {
     /// Only consider versions released before this date
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    /// Overrides per-tool `install_before` options and the global `install_before` setting.
+    /// Overrides per-tool `minimum_release_age` options and the global `minimum_release_age` setting.
     #[clap(long, verbatim_doc_comment, conflicts_with = "installed")]
     before: Option<String>,
 }
@@ -50,10 +50,11 @@ impl Latest {
             _ => bail!("invalid version: {}", tool.style()),
         };
 
-        let backend = tool.ba.backend()?;
+        let mut backend = tool.ba.backend()?;
         let mpr = MultiProgressReport::get();
         if let Some(plugin) = backend.plugin() {
             plugin.ensure_installed(&config, &mpr, false, false).await?;
+            backend = tool.ba.backend()?;
         }
         if let Some(v) = prefix {
             prefix = Some(config.resolve_alias(&backend, &v).await?);

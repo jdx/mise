@@ -2,6 +2,10 @@ use crate::Result;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
+use crate::backend::platform_target::PlatformTarget;
+#[cfg(windows)]
+use crate::backend::runtime_path_for_install_path;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -11,10 +15,11 @@ use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
 use crate::semver::{semver_is_at_least, semver_is_older_than, semver_triplet};
 use crate::timeout;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use async_trait::async_trait;
 use jiff::Timestamp;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
@@ -22,7 +27,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 /// Tolerance applied when converting an absolute `before_date` back to a
 /// relative duration for CLI flags. This ensures that a user-supplied
-/// `install_before = "3d"` never gets rounded up to `4d` due to small amounts
+/// `minimum_release_age = "3d"` never gets rounded up to `4d` due to small amounts
 /// of elapsed time between when mise resolved the cutoff and when it invoked
 /// the package manager.
 const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
@@ -38,6 +43,42 @@ pub struct NPMBackend {
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct NpmOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> NpmOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn npm_args(&self) -> Option<&'a str> {
+        self.values.str("npm_args")
+    }
+
+    fn pnpm_args(&self) -> Option<&'a str> {
+        self.values.str("pnpm_args")
+    }
+
+    fn bun_args(&self) -> Option<&'a str> {
+        self.values.str("bun_args")
+    }
+
+    fn aube_args(&self) -> Option<&'a str> {
+        self.values.str("aube_args")
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        install_time_option_keys()
+            .into_iter()
+            .filter_map(|key| self.values.str(&key).map(|value| (key, value.to_string())))
+            .collect()
+    }
+}
+
 const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
 
 #[async_trait]
@@ -50,6 +91,10 @@ impl Backend for NPMBackend {
         &self.ba
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
         // npm CLI is always needed for version queries (npm view), plus the configured
         // package manager for installation. We avoid listing all package managers to
@@ -58,8 +103,10 @@ impl Backend for NPMBackend {
         let package_manager = settings.npm.package_manager;
         let tool_name = self.tool_name();
 
-        // Avoid circular dependency when installing npm itself
-        // But we still need the configured package manager for installation
+        // Explicit `npm:npm` still bootstraps through node's bundled npm even
+        // when the registry shorthand prefers aqua. Keep node here so users of
+        // the npm backend, or the registry fallback, wait for that bootstrap
+        // npm before installation starts.
         if tool_name == "npm" {
             return match package_manager {
                 NpmPackageManager::Auto => Ok(vec!["node"]),
@@ -99,6 +146,15 @@ impl Backend for NPMBackend {
         Ok(vec!["aube"])
     }
 
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let opts = request.options();
+        NpmOptions::new(&opts).lockfile_options()
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Use npm CLI to respect custom registry configurations
         self.ensure_npm_for_version_check(config).await;
@@ -135,6 +191,7 @@ impl Backend for NPMBackend {
                         VersionInfo {
                             version: version.to_string(),
                             created_at,
+                            prerelease: is_semver_prerelease(version),
                             ..Default::default()
                         }
                     })
@@ -185,6 +242,8 @@ impl Backend for NPMBackend {
             .await;
         self.check_install_deps(&ctx.config, package_manager, Some(&ctx.ts))
             .await;
+        let request_options = tv.request.options();
+        let options = NpmOptions::new(&request_options);
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
                 self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
@@ -202,7 +261,7 @@ impl Backend for NPMBackend {
                     .await
                     .unwrap_or_else(|| AUBE_PROGRAM.into());
                 self.write_aube_npmrc(&tv.install_path(), ctx.before_date)?;
-                CmdLineRunner::new(aube_program)
+                let mut cmd = CmdLineRunner::new(aube_program)
                     .arg("add")
                     .arg("--global")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -215,11 +274,14 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?
-                    .current_dir(tv.install_path())
-                    .execute()?;
+                    .current_dir(tv.install_path());
+                if let Some(args) = options.aube_args() {
+                    cmd = cmd.args(shell_words::split(args)?);
+                }
+                cmd.execute()?;
             }
             NpmPackageManager::Bun => {
-                CmdLineRunner::new("bun")
+                let mut cmd = CmdLineRunner::new("bun")
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global")
@@ -240,13 +302,16 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?
-                    .current_dir(tv.install_path())
-                    .execute()?;
+                    .current_dir(tv.install_path());
+                if let Some(args) = options.bun_args() {
+                    cmd = cmd.args(shell_words::split(args)?);
+                }
+                cmd.execute()?;
             }
             NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
-                CmdLineRunner::new("pnpm")
+                let mut cmd = CmdLineRunner::new("pnpm")
                     .arg("add")
                     .arg("--global")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -266,11 +331,14 @@ impl Backend for NPMBackend {
                     )?
                     // required to avoid pnpm error "global bin dir isn't in PATH"
                     // https://github.com/pnpm/pnpm/issues/9333
-                    .prepend_path(vec![bin_dir])?
-                    .execute()?;
+                    .prepend_path(vec![bin_dir])?;
+                if let Some(args) = options.pnpm_args() {
+                    cmd = cmd.args(shell_words::split(args)?);
+                }
+                cmd.execute()?;
             }
             _ => {
-                CmdLineRunner::new(NPM_PROGRAM)
+                let mut cmd = CmdLineRunner::new(NPM_PROGRAM)
                     .arg("install")
                     .arg("-g")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -286,8 +354,11 @@ impl Backend for NPMBackend {
                             .await?
                             .list_paths(&ctx.config)
                             .await,
-                    )?
-                    .execute()?;
+                    )?;
+                if let Some(args) = options.npm_args() {
+                    cmd = cmd.args(shell_words::split(args)?);
+                }
+                cmd.execute()?;
             }
         }
         Ok(tv)
@@ -299,7 +370,10 @@ impl Backend for NPMBackend {
         _config: &Arc<Config>,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        Ok(Self::windows_bin_paths_for_install_path(&tv.install_path()))
+        Ok(Self::windows_bin_paths_for_install_path(&tv.install_path())
+            .into_iter()
+            .map(|path| runtime_path_for_install_path(tv, path))
+            .collect())
     }
 }
 
@@ -392,7 +466,7 @@ impl NPMBackend {
 
         if semver_is_older_than(&version, required_version).unwrap_or(false) {
             warn!(
-                "install_before is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/npm.html",
+                "minimum_release_age is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.en.dev/dev-tools/backends/npm.html",
                 self.tool_name(),
                 tool,
                 version,
@@ -644,6 +718,31 @@ impl NPMBackend {
             vec![install_path.to_path_buf()]
         }
     }
+}
+
+/// Returns true if `version` is a semver pre-release.
+///
+/// npm enforces strict semver (rule 9): any hyphen-introduced identifier after
+/// the version core is a pre-release (`1.0.0-rc.1`, `0.42.0-nightly...`,
+/// `2.0.0-canary.1`, `3.0.0-foo`). Build metadata (`+...`) is stripped first so
+/// stable builds like `1.0.0+sha.abc` are not misclassified.
+///
+/// Stricter than the generic `VERSION_REGEX` channel-tag list — for npm it
+/// catches any pre-release tag the maintainer chooses, not just the well-known
+/// names mise happens to recognize.
+fn is_semver_prerelease(version: &str) -> bool {
+    let core_and_pre = version.split_once('+').map_or(version, |(v, _)| v);
+    core_and_pre.contains('-')
+}
+
+/// Returns install-time-only option keys for NPM backend.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "npm_args".into(),
+        "pnpm_args".into(),
+        "bun_args".into(),
+        "aube_args".into(),
+    ]
 }
 
 #[cfg(test)]
@@ -906,5 +1005,75 @@ mod tests {
             NPMBackend::toolset_package_manager_version(&ts, "pnpm"),
             None
         );
+    }
+
+    #[test]
+    fn test_resolve_lockfile_options_includes_install_args_only() {
+        let backend = create_npm_backend("react-devtools");
+        let mut options = ToolVersionOptions::default();
+        options.opts.insert(
+            "npm_args".to_string(),
+            toml::Value::String("--ignore-scripts=false".into()),
+        );
+        options.opts.insert(
+            "bun_args".to_string(),
+            toml::Value::String("--allow-same-version".into()),
+        );
+        options.opts.insert(
+            "aube_args".to_string(),
+            toml::Value::String("--loglevel=warn".into()),
+        );
+        options.install_env.insert(
+            "NPM_CONFIG_REGISTRY".to_string(),
+            "https://registry.example.com".to_string(),
+        );
+
+        let request =
+            ToolRequest::new_opts(backend.ba().clone(), "latest", options, ToolSource::Unknown)
+                .unwrap();
+        let resolved = backend.resolve_lockfile_options(&request, &PlatformTarget::from_current());
+        assert_eq!(
+            resolved.get("npm_args"),
+            Some(&"--ignore-scripts=false".to_string())
+        );
+        assert_eq!(
+            resolved.get("bun_args"),
+            Some(&"--allow-same-version".to_string())
+        );
+        assert_eq!(
+            resolved.get("aube_args"),
+            Some(&"--loglevel=warn".to_string())
+        );
+        assert!(!resolved.contains_key("install_env.NPM_CONFIG_REGISTRY"));
+    }
+
+    #[test]
+    fn test_is_semver_prerelease_flags_hyphen_suffix() {
+        // Per semver rule 9, any hyphen-introduced identifier is a pre-release.
+        // Covers GitHub discussion #9503 (-nightly slipping past channel-name regex).
+        assert!(is_semver_prerelease("0.42.0-nightly.20260429.g6d9911393"));
+        assert!(is_semver_prerelease("1.0.0-rc.1"));
+        assert!(is_semver_prerelease("2.0.0-canary"));
+        assert!(is_semver_prerelease("3.0.0-foo"));
+        // Maintainer-invented tag mise's regex doesn't know about — still flagged.
+        assert!(is_semver_prerelease("4.0.0-internal-build-7"));
+    }
+
+    #[test]
+    fn test_is_semver_prerelease_keeps_stable_versions() {
+        assert!(!is_semver_prerelease("1.0.0"));
+        assert!(!is_semver_prerelease("0.40.1"));
+        assert!(!is_semver_prerelease("v22.6.0"));
+        // Build metadata alone is not a pre-release.
+        assert!(!is_semver_prerelease("1.0.0+sha.abc1234"));
+    }
+
+    #[test]
+    fn test_is_semver_prerelease_strips_build_metadata_first() {
+        // `+build` after a `-pre` tag must still flag as pre-release.
+        assert!(is_semver_prerelease("1.0.0-rc.1+build.5"));
+        // Hyphen only inside build metadata (not legal semver, but be defensive)
+        // — we treat it as stable since the version core has no pre-release.
+        assert!(!is_semver_prerelease("1.0.0+build-5"));
     }
 }

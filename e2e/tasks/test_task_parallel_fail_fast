@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/8459
+# When one parallel sibling fails, the other siblings (and their grandchildren,
+# e.g. the `sleep` invoked from inside `sh -c`) must be terminated. Without
+# the per-task process group, sh exits on SIGTERM but `sleep` is reparented
+# to init and runs to completion, holding the inherited stdout/stderr pipes
+# open and stalling mise's pipe-reader threads — total runtime balloons to
+# however long the longest sibling runs naturally.
+
+set -euo pipefail
+
+marker="$(mktemp -t long_finished.XXXXXX)"
+rm -f "$marker"
+# If the script aborts before the explicit cleanup below, a leftover marker
+# would silently fail subsequent runs. The trap guarantees removal even on
+# abnormal exit (set -e, fail, signal).
+trap 'rm -f "$marker"' EXIT
+
+cat <<EOF >mise.toml
+[tasks.fail]
+run = "printf 'FAIL_RAN\\n' && sleep 1 && exit 1"
+
+# A side-effect file is the only reliable signal that the long task actually
+# completed — mise echoes the source command to stdout so substring matches
+# on output false-positive.
+[tasks.long]
+run = "printf 'LONG_RAN\\n' && sleep 30 && touch '$marker'"
+
+[tasks.repro]
+run = "mise run --jobs 2 fail ::: long"
+EOF
+
+start=$(date +%s)
+mise run --jobs 2 fail ::: long || true
+end=$(date +%s)
+elapsed=$((end - start))
+echo "elapsed=${elapsed}s"
+
+# `long` must be terminated when `fail` exits non-zero. If the marker file
+# exists, sleep ran to completion (its grandchild outlived the kill).
+if [ -e "$marker" ]; then
+  fail "long task ran to completion — sibling termination is not working"
+fi
+
+# Without the fix this would block for ~30s. With per-task pgroups,
+# killpg drops the whole tree at the moment fail exits (~1s).
+if [ "$elapsed" -gt 10 ]; then
+  fail "parallel run took ${elapsed}s — sibling termination did not kill the long task tree"
+fi
+
+# Now the wrapped variant (mise run repro → mise run --jobs ...).
+# Inner mise inherits MISE_TASK_PGID_MANAGED so it can't killpg without
+# also killing the outer mise. We rely on the drain timeout to keep this
+# from hanging — it must exit reasonably fast, even if the inner sleep
+# gets reparented and runs out its clock.
+rm -f "$marker"
+start=$(date +%s)
+mise run repro || true
+end=$(date +%s)
+elapsed=$((end - start))
+echo "wrapped elapsed=${elapsed}s"
+
+if [ "$elapsed" -gt 20 ]; then
+  fail "wrapped parallel run took ${elapsed}s — should exit promptly even when nested"
+fi

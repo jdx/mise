@@ -46,13 +46,3 @@ jobs:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-
-      - name: Update Redirect
-        run: |
-          VERSION="$(./scripts/get-version.sh)"
-          mise x -- scripts/update-redirect.sh "$VERSION"
-        continue-on-error: true
-        env:
-          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
-          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}

@@ -12,7 +12,7 @@
 # Step 1: Install with a single url
 cat <<EOF >mise.toml
 [tools]
-"http:hello-plat-switch" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+"http:hello-plat-switch" = { version = "1.0.0", url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
 EOF
 
 mise install
@@ -29,10 +29,10 @@ bin_path = "hello-world-1.0.0/bin"
 postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
 
 [tools."http:hello-plat-switch".platforms]
-linux-x64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
-linux-arm64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
-darwin-arm64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
-darwin-x64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+linux-x64 = { url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+linux-arm64 = { url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+darwin-arm64 = { url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+darwin-x64 = { url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
 EOF
 
 # This should succeed, not fail with "Http backend requires 'url' option"

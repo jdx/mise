@@ -14,7 +14,7 @@ fpm -s dir -t deb \
 	--license MIT \
 	--version "${MISE_VERSION#v*}" \
 	--architecture amd64 \
-	--description "The front-end to your dev env" \
+	--description "Dev tools, env vars, and tasks in one CLI" \
 	--url "https://github.com/jdx/mise" \
 	--maintainer "Jeff Dickey @jdx" \
 	mise/bin/mise=/usr/bin/mise \
@@ -27,7 +27,7 @@ fpm -s dir -t deb \
 	--license MIT \
 	--version "${MISE_VERSION#v*}" \
 	--architecture arm64 \
-	--description "The front-end to your dev env" \
+	--description "Dev tools, env vars, and tasks in one CLI" \
 	--url "https://github.com/jdx/mise" \
 	--maintainer "Jeff Dickey @jdx" \
 	mise/bin/mise=/usr/bin/mise \

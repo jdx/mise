@@ -27,11 +27,11 @@ mise trust
 echo "=== Test 1: Root task must use // prefix ==="
 output=$(mise run '//:build' 2>&1)
 if echo "$output" | grep -q "root build"; then
-	echo "SUCCESS: Root task runs with // prefix"
+  echo "SUCCESS: Root task runs with // prefix"
 else
-	echo "ERROR: Expected 'root build' in output"
-	echo "Output: $output"
-	exit 1
+  echo "ERROR: Expected 'root build' in output"
+  echo "Output: $output"
+  exit 1
 fi
 
 # Test 1b: Bare name at root should work the same as :build
@@ -42,11 +42,11 @@ assert_contains "mise run build" "root build"
 echo "=== Test 2: Prefixed path runs specific task ==="
 output=$(mise run '//projects/frontend:build' 2>&1)
 if echo "$output" | grep -q "frontend build"; then
-	echo "SUCCESS: Monorepo path runs specific task"
+  echo "SUCCESS: Monorepo path runs specific task"
 else
-	echo "ERROR: Expected 'frontend build' in output"
-	echo "Output: $output"
-	exit 1
+  echo "ERROR: Expected 'frontend build' in output"
+  echo "Output: $output"
+  exit 1
 fi
 
 # Test 3: From subdirectory, :task syntax runs local task
@@ -55,11 +55,11 @@ cd projects/frontend
 output=$(mise run ':build' 2>&1)
 # From subdirectory, :task should run local task
 if echo "$output" | grep -q "frontend build"; then
-	echo "SUCCESS: From subdirectory :task runs local task"
+  echo "SUCCESS: From subdirectory :task runs local task"
 else
-	echo "ERROR: Expected 'frontend build' from subdirectory with :task"
-	echo "Output: $output"
-	exit 1
+  echo "ERROR: Expected 'frontend build' from subdirectory with :task"
+  echo "Output: $output"
+  exit 1
 fi
 cd ../..
 
@@ -67,9 +67,9 @@ cd ../..
 echo "=== Test 4: Tasks list shows both ==="
 output=$(mise tasks ls --all 2>&1)
 if echo "$output" | grep -q "//:build" && echo "$output" | grep -q "//projects/frontend:build"; then
-	echo "SUCCESS: Both tasks visible in list"
+  echo "SUCCESS: Both tasks visible in list"
 else
-	echo "ERROR: Expected both tasks in list"
-	echo "Output: $output"
-	exit 1
+  echo "ERROR: Expected both tasks in list"
+  echo "Output: $output"
+  exit 1
 fi

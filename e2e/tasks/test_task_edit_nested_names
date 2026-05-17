@@ -25,8 +25,8 @@ TASK_PATH=$(mise tasks edit foo:bar:baz --path 2>&1)
 
 # Verify the file was created
 if [ ! -f "$TASK_PATH" ]; then
-	echo "ERROR: Task file was not created at $TASK_PATH"
-	exit 1
+  echo "ERROR: Task file was not created at $TASK_PATH"
+  exit 1
 fi
 
 echo "Task file created at: $TASK_PATH"
@@ -51,18 +51,18 @@ assert_contains "mise tasks ls" "foo:bar:baz"
 TASK_PATH2=$(mise tasks edit foo:bar:baz --path 2>&1)
 
 if [ "$TASK_PATH" != "$TASK_PATH2" ]; then
-	echo "ERROR: Editing the same task twice gave different paths"
-	echo "First edit: $TASK_PATH"
-	echo "Second edit: $TASK_PATH2"
-	exit 1
+  echo "ERROR: Editing the same task twice gave different paths"
+  echo "First edit: $TASK_PATH"
+  echo "Second edit: $TASK_PATH2"
+  exit 1
 fi
 
 # Test 4: Create a task with multiple levels of nesting
 TASK_PATH3=$(mise tasks edit deploy:prod:backend:api --path 2>&1)
 
 if [ ! -f "$TASK_PATH3" ]; then
-	echo "ERROR: Deeply nested task file was not created at $TASK_PATH3"
-	exit 1
+  echo "ERROR: Deeply nested task file was not created at $TASK_PATH3"
+  exit 1
 fi
 
 echo "Deeply nested task file created at: $TASK_PATH3"

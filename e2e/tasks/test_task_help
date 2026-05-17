@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-cat <<EOF >mise.toml
+cat <<'EOF' >mise.toml
 [tasks.atask]
-run = 'echo {{arg(name="myarg")}}'
+usage = 'arg "<myarg>"'
+run = 'echo $usage_myarg'
 [tasks.npm]
 run = 'echo npm'
 EOF

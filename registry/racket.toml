@@ -1,0 +1,3 @@
+backends = ["aqua:racket/racket/minimal"]
+description = "Minimal Racket distribution"
+test = { cmd = "racket --version", expected = "Welcome to Racket v{{version}}" }

@@ -20,21 +20,21 @@ EOF
 output=$(mise run --jobs=1 sequence 2>&1) && exit_code=0 || exit_code=$?
 
 if [ "$exit_code" -ne 0 ]; then
-	echo "Expected exit code 0, got $exit_code"
-	echo "$output"
-	exit 1
+  echo "Expected exit code 0, got $exit_code"
+  echo "$output"
+  exit 1
 fi
 
 if ! echo "$output" | grep -q "A"; then
-	echo "Did not find output from task a"
-	echo "$output"
-	exit 1
+  echo "Did not find output from task a"
+  echo "$output"
+  exit 1
 fi
 
 if ! echo "$output" | grep -q "B"; then
-	echo "Did not find output from task b"
-	echo "$output"
-	exit 1
+  echo "Did not find output from task b"
+  echo "$output"
+  exit 1
 fi
 
 echo "jobs=1 sequence ran successfully"

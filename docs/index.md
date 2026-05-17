@@ -4,7 +4,7 @@ title: Home
 
 hero:
   name: mise-en-place
-  tagline: The front-end to your dev env
+  tagline: Dev tools, env vars, and tasks in one CLI
 ---
 
 <section class="landing-page" aria-label="mise overview">
@@ -18,9 +18,9 @@ hero:
         before the work.
       </p>
       <p>
-        mise does the same for your dev env. It activates the right language
-        versions, loads the right env vars, and wires up the right tasks for
-        the commands you run.
+        mise does the same for your dev env. It installs and activates the
+        right tools, loads the right env vars, and wires up the right tasks
+        for the commands you run.
       </p>
     </div>
     <div class="landing-definition">
@@ -33,7 +33,7 @@ hero:
   <div class="landing-section landing-menu">
     <div class="landing-section-heading">
       <p class="landing-kicker">The Menu</p>
-      <h2>Three dishes, one kitchen.</h2>
+      <h2>One CLI for the whole project setup.</h2>
       <a href="/getting-started" class="landing-small-button">All docs</a>
     </div>
     <div class="landing-feature-grid">
@@ -41,21 +41,21 @@ hero:
         <span class="card-number">— 01</span>
         <span class="card-icon">🔪</span>
         <h3>Dev Tools</h3>
-        <p>A polyglot tool version manager. Replaces asdf, nvm, pyenv, rbenv, and more — one tool for every language.</p>
+        <p>Install project tools, pin versions, and switch automatically as you move between directories.</p>
         <span class="card-link">read more →</span>
       </a>
       <a href="/environments/" class="landing-feature-card">
         <span class="card-number">— 02</span>
         <span class="card-icon">🫕</span>
         <h3>Environments</h3>
-        <p>Switch sets of environment variables per project directory. A smarter, simpler replacement for direnv.</p>
+        <p>Load project-specific environment variables from <code>mise.toml</code>, <code>.env</code> files, shell commands, and more.</p>
         <span class="card-link">read more →</span>
       </a>
       <a href="/tasks/" class="landing-feature-card">
         <span class="card-number">— 03</span>
         <span class="card-icon">🍳</span>
         <h3>Tasks</h3>
-        <p>A powerful task runner that replaces make and npm scripts. Define, compose, and run with ease.</p>
+        <p>Define build, test, lint, and deploy commands next to the tools and env vars they need.</p>
         <span class="card-link">read more →</span>
       </a>
     </div>

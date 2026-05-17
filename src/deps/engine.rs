@@ -9,17 +9,20 @@ use tokio::task::JoinSet;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
-use crate::tera::{BASE_CONTEXT, get_tera};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
+use crate::ui::style;
 
 type StepOutput = (DepsStepResult, Vec<PathBuf>);
 type JobOutput = Result<(String, DepsStepResult, Vec<PathBuf>), (String, eyre::Report)>;
 
 use super::deps_ordering::DepsOrdering;
 use super::providers::{
-    BunDepsProvider, BundlerDepsProvider, ComposerDepsProvider, CustomDepsProvider,
-    GitSubmoduleDepsProvider, GoDepsProvider, NpmDepsProvider, PipDepsProvider, PnpmDepsProvider,
-    PoetryDepsProvider, UvDepsProvider, YarnDepsProvider,
+    AubeDepsProvider, BunDepsProvider, BundlerDepsProvider, ComposerDepsProvider,
+    CustomDepsProvider, DartDepsProvider, GitSubmoduleDepsProvider, GoDepsProvider,
+    NpmDepsProvider, PipDepsProvider, PnpmDepsProvider, PoetryDepsProvider, UvDepsProvider,
+    YarnDepsProvider,
 };
 use super::rule::BUILTIN_PROVIDERS;
 use super::state::{self, DepsState};
@@ -174,6 +177,10 @@ impl DepsEngine {
                     provider_config,
                 ))),
                 "bun" => Some(Box::new(BunDepsProvider::new(config_root, provider_config))),
+                "aube" => Some(Box::new(AubeDepsProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
                 "go" => Some(Box::new(GoDepsProvider::new(config_root, provider_config))),
                 "pip" => Some(Box::new(PipDepsProvider::new(config_root, provider_config))),
                 "poetry" => Some(Box::new(PoetryDepsProvider::new(
@@ -186,6 +193,16 @@ impl DepsEngine {
                     provider_config,
                 ))),
                 "composer" => Some(Box::new(ComposerDepsProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "dart" => Some(Box::new(DartDepsProvider::new(
+                    "dart",
+                    config_root,
+                    provider_config,
+                ))),
+                "flutter" => Some(Box::new(DartDepsProvider::new(
+                    "flutter",
                     config_root,
                     provider_config,
                 ))),
@@ -322,7 +339,13 @@ impl DepsEngine {
 
             if !freshness.is_fresh() {
                 let cmd = provider.install_command()?;
-                let outputs = provider.outputs();
+                // Carry both required and optional outputs so session-staleness
+                // can be cleared on whichever paths actually exist after the run.
+                let outputs: Vec<PathBuf> = provider
+                    .outputs()
+                    .into_iter()
+                    .chain(provider.optional_outputs())
+                    .collect();
                 let depends = provider.depends();
                 let timeout = provider.timeout();
                 let reason = freshness.reason().to_string();
@@ -370,7 +393,8 @@ impl DepsEngine {
                 }
             }
 
-            // Save content hashes for all successfully ran providers
+            // Save content hashes and existing optional outputs for each
+            // successfully ran provider.
             for step in &results {
                 if let DepsStepResult::Ran(id) = step
                     && let Some(provider) = self.providers.iter().find(|p| p.id() == id)
@@ -378,8 +402,15 @@ impl DepsEngine {
                     let project_root = &provider.base().project_root;
                     let sources = provider.sources();
                     if let Ok(hashes) = state::hash_sources(&sources, project_root) {
+                        let seen: Vec<String> = provider
+                            .optional_outputs()
+                            .iter()
+                            .filter(|p| p.exists())
+                            .map(|p| state::relative_str(p, project_root))
+                            .collect();
                         let mut st = DepsState::load(project_root);
                         st.set_hashes(id, hashes);
+                        st.set_seen_outputs(id, seen);
                         if let Err(e) = st.save(project_root) {
                             warn!("failed to save deps state: {e}");
                         }
@@ -405,14 +436,21 @@ impl DepsEngine {
             .collect();
 
         crate::parallel::parallel(to_run_with_context, |(job, mpr, toolset_env)| async move {
-            let pr = mpr.add(&job.cmd.description);
-            match Self::execute_command(&job.cmd, &toolset_env, job.timeout) {
+            let (stdout_prefix, stderr_prefix) = Self::deps_prefixes(&job.id);
+            let pr = mpr.add(&stderr_prefix);
+            match Self::execute_command(
+                &job.cmd,
+                &toolset_env,
+                job.timeout,
+                Some((&stdout_prefix, &stderr_prefix)),
+                Some(pr.as_ref()),
+            ) {
                 Ok(()) => {
-                    pr.finish_with_message(format!("{} done", job.cmd.description));
+                    pr.finish_with_message("done".to_string());
                     Ok((DepsStepResult::Ran(job.id), job.outputs))
                 }
                 Err(e) => {
-                    pr.finish_with_message(format!("{} failed: {}", job.cmd.description, e));
+                    pr.finish_with_message(format!("failed: {e}"));
                     Err(e)
                 }
             }
@@ -550,31 +588,32 @@ impl DepsEngine {
                     let toolset_env = toolset_env.clone();
 
                     let handle = join_set.spawn(async move {
-                        let pr = mpr.add(&job.cmd.description);
                         let id = job.id;
+                        let (stdout_prefix, stderr_prefix) = Self::deps_prefixes(&id);
+                        let pr = mpr.add(&stderr_prefix);
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            Self::execute_command(&job.cmd, &toolset_env, job.timeout)
+                            Self::execute_command(
+                                &job.cmd,
+                                &toolset_env,
+                                job.timeout,
+                                Some((&stdout_prefix, &stderr_prefix)),
+                                Some(pr.as_ref()),
+                            )
                         }));
                         drop(permit);
 
                         match result {
                             Ok(Ok(())) => {
-                                pr.finish_with_message(format!("{} done", job.cmd.description));
+                                pr.finish_with_message("done".to_string());
                                 let step = DepsStepResult::Ran(id.clone());
                                 Ok((id, step, job.outputs))
                             }
                             Ok(Err(e)) => {
-                                pr.finish_with_message(format!(
-                                    "{} failed: {}",
-                                    job.cmd.description, e
-                                ));
+                                pr.finish_with_message(format!("failed: {e}"));
                                 Err((id, e))
                             }
                             Err(_) => {
-                                pr.finish_with_message(format!(
-                                    "{} panicked",
-                                    job.cmd.description
-                                ));
+                                pr.finish_with_message("panicked".to_string());
                                 Err((id, eyre::eyre!("task panicked")))
                             }
                         }
@@ -624,19 +663,27 @@ impl DepsEngine {
 
     /// Check if a provider's outputs are fresh relative to its sources.
     ///
-    /// Uses blake3 content hashing with persistent state. On first run (no stored
-    /// hashes), the provider is always considered stale. Session-based stale
-    /// tracking (venv auto-creation) is always checked first.
+    /// Required outputs (`provider.outputs()`) must always exist. Optional
+    /// outputs (`provider.optional_outputs()`) are only enforced once they've
+    /// been observed on a previous successful run — this lets built-in
+    /// providers declare a canonical output (`.venv`, `vendor/bundle`, etc.)
+    /// that detects post-install deletion without forcing a re-run for
+    /// projects that never produce that output.
+    ///
+    /// Uses blake3 content hashing with persistent state. On first run (no
+    /// stored hashes), the provider is always considered stale.
     pub fn check_freshness(&self, provider: &dyn DepsProvider) -> Result<FreshnessResult> {
         let sources = provider.sources();
         let outputs = provider.outputs();
+        let optional_outputs = provider.optional_outputs();
 
-        if outputs.is_empty() {
-            return Ok(FreshnessResult::NoOutputs);
-        }
+        let project_root = &provider.base().project_root;
+        let st = DepsState::load(project_root);
+        let provider_id = provider.id();
 
-        // Check if any output was created this session (before deps ran)
-        for output in &outputs {
+        // Session-stale check applies to any output that currently exists,
+        // regardless of whether it was required or optional.
+        for output in outputs.iter().chain(optional_outputs.iter()) {
             if super::is_output_stale(output) {
                 return Ok(FreshnessResult::Stale(
                     "output created this session".to_string(),
@@ -644,21 +691,37 @@ impl DepsEngine {
             }
         }
 
-        // Check if any output is missing
+        // Required outputs must exist whenever they are declared.
         for output in &outputs {
             if !output.exists() {
                 return Ok(FreshnessResult::OutputsMissing);
             }
         }
 
+        // Optional outputs are enforced only for paths that existed at the
+        // last successful run (recorded in state). This catches deletion
+        // (e.g. `rm -rf .venv` after `uv sync`) without forcing a re-run for
+        // providers whose canonical output is intentionally absent.
+        if let Some(seen) = st.get_seen_outputs(provider_id) {
+            for output in &optional_outputs {
+                let rel = state::relative_str(output, project_root);
+                if seen.iter().any(|p| p == &rel) && !output.exists() {
+                    return Ok(FreshnessResult::OutputsMissing);
+                }
+            }
+        }
+
+        // A provider with neither sources nor outputs has no freshness signal —
+        // always run it (matches pre-PR custom-hook behavior).
+        if sources.is_empty() && outputs.is_empty() && optional_outputs.is_empty() {
+            return Ok(FreshnessResult::Stale(
+                "no sources or outputs defined".to_string(),
+            ));
+        }
+
         if sources.is_empty() {
             return Ok(FreshnessResult::NoSources);
         }
-
-        // Use content-hash comparison via persistent state
-        let project_root = &provider.base().project_root;
-        let st = DepsState::load(project_root);
-        let provider_id = provider.id();
 
         let current_hashes = state::hash_sources(&sources, project_root)?;
 
@@ -696,6 +759,8 @@ impl DepsEngine {
         cmd: &super::DepsCommand,
         toolset_env: &BTreeMap<String, String>,
         timeout: Option<std::time::Duration>,
+        prefixes: Option<(&str, &str)>,
+        progress: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let cwd = match cmd.cwd.clone() {
             Some(dir) => dir,
@@ -718,16 +783,24 @@ impl DepsEngine {
 
         // Apply command-specific environment (can override toolset env)
         // Render tera templates in env values (e.g., "{{env.baz}}")
-        let mut tera_ctx = BASE_CONTEXT.clone();
-        // Merge toolset env (which includes [env] directives) into tera context
-        // so templates like "{{env.MY_VAR}}" can resolve config-defined vars
-        let mut env_map = crate::env::PRISTINE_ENV.clone();
-        env_map.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-        tera_ctx.insert("env", &env_map);
-        let mut tera = get_tera(cmd.cwd.as_deref());
+        let has_template_env = cmd.env.values().any(|v| contains_template_syntax(v));
+        let mut tera_state = if has_template_env {
+            let mut tera_ctx = BASE_CONTEXT.clone();
+            // Merge toolset env (which includes [env] directives) into tera context
+            // so templates like "{{env.MY_VAR}}" can resolve config-defined vars
+            let mut env_map = crate::env::PRISTINE_ENV.clone();
+            env_map.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+            tera_ctx.insert("env", &env_map);
+            Some((get_tera(cmd.cwd.as_deref()), tera_ctx))
+        } else {
+            None
+        };
         for (k, v) in &cmd.env {
-            let rendered = if v.contains("{{") || v.contains("{%") || v.contains("{#") {
-                tera.render_str(v, &tera_ctx).unwrap_or_else(|e| {
+            let rendered = if contains_template_syntax(v) {
+                let (tera, tera_ctx) = tera_state
+                    .as_mut()
+                    .expect("tera state should exist for template env values");
+                render_str(tera, v, tera_ctx).unwrap_or_else(|e| {
                     warn!("failed to render template for deps env {k}: {e}");
                     v.clone()
                 })
@@ -742,7 +815,51 @@ impl DepsEngine {
             runner = runner.raw(true);
         }
 
+        if let Some((stdout_prefix, stderr_prefix)) = prefixes
+            && !Settings::get().raw
+        {
+            let stdout_prefix = stdout_prefix.to_string();
+            let stderr_prefix = stderr_prefix.to_string();
+            // Suppress provider command stream output when -q/--quiet is set,
+            // matching `mise install -q` behavior. The progress indicator and
+            // logger-routed status messages still respect the quiet level.
+            let quiet = Settings::get().quiet;
+            runner = runner
+                .with_on_stdout(move |line| {
+                    if let Some(progress) = progress {
+                        progress.set_message(line.clone());
+                    }
+                    if quiet {
+                        return;
+                    }
+                    if console::colors_enabled() {
+                        prefix_println!(stdout_prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_println!(stdout_prefix, "{line}");
+                    }
+                })
+                .with_on_stderr(move |line| {
+                    if quiet {
+                        return;
+                    }
+                    if console::colors_enabled_stderr() {
+                        prefix_eprintln!(stderr_prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_eprintln!(stderr_prefix, "{line}");
+                    }
+                });
+        }
+
         runner.execute()?;
         Ok(())
+    }
+
+    fn deps_prefixes(id: &str) -> (String, String) {
+        let name = format!("deps.{id}");
+        let prefix = format!("[{name}]");
+        (
+            style::prefix(&prefix, &name, false),
+            style::prefix(prefix, name, true),
+        )
     }
 }

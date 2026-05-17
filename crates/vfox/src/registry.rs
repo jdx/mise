@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock as Lazy;
 use url::Url;
 
 static SDKS: Lazy<BTreeMap<String, Url>> = Lazy::new(|| {

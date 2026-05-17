@@ -31,7 +31,14 @@ impl DepsProvider for PipDepsProvider {
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        // Check for .venv directory as output indicator
+        vec![]
+    }
+
+    fn optional_outputs(&self) -> Vec<PathBuf> {
+        // `pip install` installs into whatever python is on PATH and doesn't
+        // create `.venv` itself. Track it as optional so projects that use a
+        // local venv detect deletion, without forcing a re-run for projects
+        // that don't.
         vec![self.base.config_root().join(".venv")]
     }
 

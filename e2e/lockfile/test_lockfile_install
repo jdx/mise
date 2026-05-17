@@ -25,13 +25,13 @@ assert_contains "cat mise.lock" 'checksum = "sha256:'
 # Test rewriting existing lockfile section with same content
 # Using inline table format
 GH_URL="https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_$(
-	case "$PLATFORM" in
-	linux-x64) echo "linux_amd64" ;;
-	linux-arm64) echo "linux_arm64" ;;
-	macos-x64) echo "macOS_amd64" ;;
-	macos-arm64) echo "macOS_arm64" ;;
-	*) echo "$PLATFORM" ;;
-	esac
+  case "$PLATFORM" in
+    linux-x64) echo "linux_amd64" ;;
+    linux-arm64) echo "linux_arm64" ;;
+    macos-x64) echo "macOS_amd64" ;;
+    macos-arm64) echo "macOS_arm64" ;;
+    *) echo "$PLATFORM" ;;
+  esac
 ).zip"
 cat <<EOF >mise.lock
 [[tools.gh]]

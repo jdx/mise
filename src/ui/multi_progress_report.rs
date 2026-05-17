@@ -181,18 +181,32 @@ impl MultiProgressReport {
 
         progress_trace!("footer_finish: completed={}, total={}", completed, total);
 
-        // Stop clx progress
-        progress::stop();
+        self.finish_progress();
+    }
 
-        // Reset state for subsequent install operations (e.g., in daemon mode)
-        *self.header_job.lock().unwrap() = None;
-        *self.completed_count.lock().unwrap() = 0;
-        *self.total_count.lock().unwrap() = 0;
+    /// Render the final progress state, then clear clx's registered jobs so
+    /// later regular terminal output cannot be erased by process shutdown.
+    pub fn finish_progress(&self) {
+        progress::stop();
+        self.reset_jobs();
     }
 
     pub fn stop(&self) -> eyre::Result<()> {
         progress::stop_clear();
+        self.reset_jobs();
         Ok(())
+    }
+
+    /// Reset clx's global job list and our session counters. Neither
+    /// `progress::stop()` nor `progress::stop_clear()` drops the completed
+    /// jobs on its own, so without this a later `mpr.add(...)` would
+    /// re-render the previously-completed jobs and `init_footer` would
+    /// silently no-op because `header_job` is still `Some`.
+    fn reset_jobs(&self) {
+        *self.header_job.lock().unwrap() = None;
+        progress::clear_jobs();
+        *self.completed_count.lock().unwrap() = 0;
+        *self.total_count.lock().unwrap() = 0;
     }
 }
 

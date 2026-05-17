@@ -19,7 +19,7 @@ use crate::toolset::install_options::InstallOptions;
 use crate::toolset::tool_deps::{ToolDeps, tool_key};
 use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
-use crate::toolset::tool_version::ToolVersion;
+use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, hooks};
 
@@ -81,12 +81,12 @@ impl Toolset {
                 // Use config request options if available, falling back to backend arg opts.
                 // This ensures tool options like postinstall from mise.toml are preserved
                 // when installing with an explicit CLI version (e.g. `mise install tool@latest`).
-                let options = tvl
+                let config_options = tvl
                     .requests
                     .first()
                     .map(|r| r.options())
-                    .filter(|opts| !opts.is_empty())
-                    .unwrap_or_else(|| tvl.backend.opts());
+                    .filter(|opts| !opts.is_empty());
+                let options = tr.ba().opts_with_config(config_options);
                 if tr.options().is_empty() || tr.options() != options {
                     tr.set_options(options);
                 }
@@ -452,12 +452,16 @@ impl Toolset {
         opts: &Arc<InstallOptions>,
     ) -> Result<ToolVersion> {
         let mpr = MultiProgressReport::get();
-        let mut tv = tr.resolve(config, &opts.resolve_options).await?;
+        let backend = tr.backend()?;
+        let mut resolve_options = opts.resolve_options.clone();
+        if should_refresh_remote_versions(tr, &backend, &resolve_options) {
+            resolve_options.refresh_remote_versions = true;
+        }
+        let mut tv = tr.resolve(config, &resolve_options).await?;
         if let Some(dir) = &opts.install_dir {
             let tool_dir_name = tv.ba().tool_dir_name();
             tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));
         }
-        let backend = tr.backend()?;
         let before_date = tv.before_date;
 
         let ctx = InstallContext {
@@ -552,8 +556,8 @@ impl Toolset {
 
         let mpr = MultiProgressReport::get();
 
-        for (plugin_key, url) in &config.repo_urls {
-            let (plugin_type, name) = Self::parse_plugin_key(plugin_key, url);
+        for plugin_key in config.repo_urls.keys() {
+            let (plugin_type, name) = Self::parse_plugin_key(plugin_key);
 
             // Skip empty plugin names (e.g., from malformed keys like "" or "vfox:")
             if name.is_empty() {
@@ -572,18 +576,41 @@ impl Toolset {
         Ok(())
     }
 
-    fn parse_plugin_key<'a>(key: &'a str, url: &str) -> (PluginType, &'a str) {
-        if let Some(name) = key.strip_prefix("vfox:") {
-            (PluginType::Vfox, name)
-        } else if let Some(name) = key.strip_prefix("vfox-backend:") {
-            (PluginType::VfoxBackend, name)
-        } else if let Some(name) = key.strip_prefix("asdf:") {
-            (PluginType::Asdf, name)
-        } else if url.contains("vfox-") {
-            // Match existing behavior from config/mod.rs:226-228
-            (PluginType::Vfox, key)
-        } else {
-            (PluginType::Asdf, key)
+    fn parse_plugin_key(key: &str) -> (PluginType, &str) {
+        PluginType::from_plugin_config(key)
+    }
+}
+
+/// Whether install-time resolution should refresh the remote-versions cache
+/// before picking a version. Only selectors whose meaning depends on the
+/// freshest upstream entry benefit: `latest`, `sub-N:latest`, and prefix
+/// queries that have no matching installed version. Fully-pinned exact
+/// versions, refs, paths, `system`, and prefix queries already satisfied by
+/// an installed version are unaffected by cache staleness — for those the
+/// cached answer is either correct or harmless, and refreshing is wasted
+/// network traffic. Users who want to pull the absolute latest matching a
+/// prefix can run `mise upgrade` or pin to `@latest`.
+///
+/// Skipped in `prefer_offline` mode (shims, hook-env, activate, etc.) because
+/// the versions host is disabled there, so a refresh would bypass the
+/// on-disk cache populated by an earlier non-prefer-offline command and fall
+/// through to a backend listing that often has far fewer versions (e.g. the
+/// GitHub releases listing only returns the most recent ~30), turning a
+/// previously-resolvable prefix query into "no versions found".
+fn should_refresh_remote_versions(
+    tr: &ToolRequest,
+    backend: &crate::backend::ABackend,
+    opts: &ResolveOptions,
+) -> bool {
+    if opts.refresh_remote_versions || opts.offline || Settings::get().prefer_offline() {
+        return false;
+    }
+    match tr {
+        ToolRequest::Version { version, .. } => version == "latest",
+        ToolRequest::Prefix { prefix, .. } => {
+            backend.list_installed_versions_matching(prefix).is_empty()
         }
+        ToolRequest::Sub { orig_version, .. } => orig_version == "latest",
+        ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => false,
     }
 }

@@ -7,8 +7,8 @@
 set -eu
 
 if ! command -v nu >/dev/null 2>&1; then
-	# for now, treat these tests as optional if `nu` is unavailable
-	exit 0
+  # for now, treat these tests as optional if `nu` is unavailable
+  exit 0
 fi
 
 MISE_NUSHELL_INIT=$(mktemp e2e_nushell_init.XXXXXXXXXX)

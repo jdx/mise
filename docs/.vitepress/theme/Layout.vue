@@ -32,7 +32,9 @@
           reproducibly.
         </p>
         <div class="hero-actions">
-          <a class="action-btn action-btn-brand" href="/getting-started">Getting Started</a>
+          <a class="action-btn action-btn-brand" href="/getting-started"
+            >Getting Started</a
+          >
           <a class="action-btn action-btn-alt" href="/demo">Demo</a>
         </div>
       </div>
@@ -50,23 +52,37 @@
           </div>
           <div class="terminal-body">
             <div><span class="prompt">$</span> cd ~/projects/orders</div>
-            <div><span class="dim"># mise picks up mise.toml and updates the shell</span></div>
+            <div>
+              <span class="dim"
+                ># mise picks up mise.toml and updates the shell</span
+              >
+            </div>
             <div><span class="ok">✓</span> node@24 active</div>
             <div><span class="ok">✓</span> python@3.13 active</div>
             <div><span class="ok">✓</span> terraform@1 active</div>
-            <div><span class="ok">✓</span> DATABASE_URL loaded from .env.local</div>
+            <div>
+              <span class="ok">✓</span> DATABASE_URL loaded from .env.local
+            </div>
             <div><span class="prompt">$</span> mise run deploy</div>
-            <div><span class="key">→</span> running task "deploy" (4 steps)</div>
-            <div><span class="dim">  build · test · migrate · ship ...</span></div>
+            <div>
+              <span class="key">→</span> running task "deploy" (4 steps)
+            </div>
+            <div>
+              <span class="dim"> build · test · migrate · ship ...</span>
+            </div>
             <div><span class="ok">✓</span> done in 42.1s</div>
           </div>
         </div>
         <div class="hero-install">
           <button class="install-command" type="button" @click="copyInstall">
             <code>curl https://mise.run | sh</code>
-            <span class="install-copy" :class="{ copied }">{{ copied ? "copied" : "copy" }}</span>
+            <span class="install-copy" :class="{ copied }">{{
+              copied ? "copied" : "copy"
+            }}</span>
           </button>
-          <a class="install-alt" href="/installing-mise">More install methods</a>
+          <a class="install-alt" href="/installing-mise"
+            >More install methods</a
+          >
         </div>
       </div>
     </template>
@@ -143,7 +159,7 @@ async function copyText(text: string) {
   height: 600px;
   top: -200px;
   left: -100px;
-  background: radial-gradient(circle, #8B2252 0%, transparent 70%);
+  background: radial-gradient(circle, #8b2252 0%, transparent 70%);
   animation: glowDrift1 12s ease-in-out infinite;
 }
 
@@ -152,7 +168,7 @@ async function copyText(text: string) {
   height: 500px;
   top: -100px;
   right: -80px;
-  background: radial-gradient(circle, #D4A76A 0%, transparent 70%);
+  background: radial-gradient(circle, #d4a76a 0%, transparent 70%);
   animation: glowDrift2 15s ease-in-out infinite;
 }
 
@@ -161,20 +177,22 @@ async function copyText(text: string) {
   height: 400px;
   bottom: -100px;
   left: 30%;
-  background: radial-gradient(circle, #6B7F4E 0%, transparent 70%);
+  background: radial-gradient(circle, #6b7f4e 0%, transparent 70%);
   animation: glowDrift3 18s ease-in-out infinite;
 }
 
 /* Dark mode: brighter, moodier glows */
-.dark .hero-glow { opacity: 0.12; }
+.dark .hero-glow {
+  opacity: 0.12;
+}
 .dark .hero-glow-1 {
-  background: radial-gradient(circle, #C75B7A 0%, transparent 70%);
+  background: radial-gradient(circle, #c75b7a 0%, transparent 70%);
 }
 .dark .hero-glow-2 {
-  background: radial-gradient(circle, #D4A76A 0%, transparent 70%);
+  background: radial-gradient(circle, #d4a76a 0%, transparent 70%);
 }
 .dark .hero-glow-3 {
-  background: radial-gradient(circle, #8FA86E 0%, transparent 70%);
+  background: radial-gradient(circle, #8fa86e 0%, transparent 70%);
 }
 
 /* Subtle film grain texture */
@@ -192,18 +210,33 @@ async function copyText(text: string) {
 }
 
 @keyframes glowDrift1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(40px, 30px) scale(1.1); }
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(40px, 30px) scale(1.1);
+  }
 }
 
 @keyframes glowDrift2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-30px, 40px) scale(1.15); }
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-30px, 40px) scale(1.15);
+  }
 }
 
 @keyframes glowDrift3 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(20px, -30px) scale(1.05); }
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(20px, -30px) scale(1.05);
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -293,13 +326,21 @@ async function copyText(text: string) {
    RESPONSIVE
    ═══════════════════════════════════════════ */
 @media (max-width: 768px) {
-  .hero-glow-1 { width: 350px; height: 350px; }
-  .hero-glow-2 { width: 300px; height: 300px; }
-  .hero-glow-3 { width: 250px; height: 250px; }
+  .hero-glow-1 {
+    width: 350px;
+    height: 350px;
+  }
+  .hero-glow-2 {
+    width: 300px;
+    height: 300px;
+  }
+  .hero-glow-3 {
+    width: 250px;
+    height: 250px;
+  }
 
   .install-command code {
     font-size: 0.85rem;
   }
 }
-
 </style>

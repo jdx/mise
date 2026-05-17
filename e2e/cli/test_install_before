@@ -21,12 +21,12 @@ output=$(mise use tiny@latest --before 2025-01-01 --dry-run 2>&1)
 assert_contains "echo '$output'" "tiny"
 rm -f mise.toml
 
-# Test: MISE_INSTALL_BEFORE environment variable works
+# Test: MISE_MINIMUM_RELEASE_AGE environment variable works
 mise uninstall tiny --all 2>/dev/null || true
-export MISE_INSTALL_BEFORE="2025-01-01"
+export MISE_MINIMUM_RELEASE_AGE="2025-01-01"
 mise install tiny@latest
 assert_contains "mise ls --installed tiny" "3.1.0"
-unset MISE_INSTALL_BEFORE
+unset MISE_MINIMUM_RELEASE_AGE
 
 # Test: upgrade --before with dry-run
 cat <<EOF >mise.toml
@@ -51,51 +51,64 @@ assert_contains "echo '$output'" "tiny"
 output=$(mise install tiny@latest --before 6m --dry-run 2>&1)
 assert_contains "echo '$output'" "tiny"
 
-# Test: MISE_INSTALL_BEFORE with relative duration
+# Test: MISE_MINIMUM_RELEASE_AGE with relative duration
 mise uninstall tiny --all 2>/dev/null || true
-export MISE_INSTALL_BEFORE="90d"
+export MISE_MINIMUM_RELEASE_AGE="90d"
 mise install tiny@latest
 assert_contains "mise ls --installed tiny" "3.1.0"
-unset MISE_INSTALL_BEFORE
+unset MISE_MINIMUM_RELEASE_AGE
 
-# Test: per-tool install_before is newer than global (per-tool wins)
+# Test: per-tool minimum_release_age is newer than global (per-tool wins)
 # global=2019-01-01 would give jq 1.6, per-tool=2024-01-01 gives jq 1.7.1
 mise uninstall jq --all 2>/dev/null || true
 rm -f mise.toml
 cat <<EOF >mise.toml
 [settings]
-install_before = "2019-01-01"
+minimum_release_age = "2019-01-01"
 
 [tools.jq]
 version = "latest"
-install_before = "2024-01-01"
+minimum_release_age = "2024-01-01"
 EOF
 mise install
 assert_contains "mise ls --installed jq" "1.7.1"
 
-# Test: per-tool install_before is older than global (per-tool wins)
+# Test: per-tool minimum_release_age is older than global (per-tool wins)
 # global=2024-01-01 would give jq 1.7.1, per-tool=2019-01-01 gives jq 1.6
 mise uninstall jq --all 2>/dev/null || true
 rm -f mise.toml
 cat <<EOF >mise.toml
 [settings]
-install_before = "2024-01-01"
+minimum_release_age = "2024-01-01"
 
 [tools.jq]
 version = "latest"
-install_before = "2019-01-01"
+minimum_release_age = "2019-01-01"
 EOF
 mise install
 assert_contains "mise ls --installed jq" "1.6"
 
-# Test: CLI --before flag overrides per-tool install_before
+# Test: CLI --before flag overrides per-tool minimum_release_age
 # per-tool=2024-01-01 would give jq 1.7.1, CLI --before=2019-01-01 gives jq 1.6
 mise uninstall jq --all 2>/dev/null || true
 rm -f mise.toml
 cat <<EOF >mise.toml
 [tools.jq]
 version = "latest"
-install_before = "2024-01-01"
+minimum_release_age = "2024-01-01"
 EOF
 mise install --before 2019-01-01
+assert_contains "mise ls --installed jq" "1.6"
+
+# Test: legacy install_before setting remains supported as a hidden alias
+mise uninstall jq --all 2>/dev/null || true
+rm -f mise.toml
+cat <<EOF >mise.toml
+[settings]
+install_before = "2019-01-01"
+
+[tools.jq]
+version = "latest"
+EOF
+mise install
 assert_contains "mise ls --installed jq" "1.6"

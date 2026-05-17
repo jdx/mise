@@ -78,6 +78,17 @@ Set them via tool options using either top-level keys or a nested `vars` table:
 Vars with defaults are filled automatically. Vars marked as required in the aqua registry must be set
 unless the registry also provides a default.
 
+### `prerelease`
+
+By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:
+
+```toml
+[tools]
+"aqua:owner/tool" = { version = "latest", prerelease = true }
+```
+
+When set, pre-release tags (e.g. `v1.0.0-rc1`, `v0.1.2-dev.86`) appear in `mise ls-remote`, `latest` resolves against the full list including pre-releases, and fuzzy version queries match pre-release tags. Has no effect when a package uses the `github_tag` version source (git tags don't carry a prerelease flag). Draft releases are always excluded. See the [github backend docs](/dev-tools/backends/github.html#prerelease) for more detail.
+
 ## Settings
 
 <script setup>

@@ -28,11 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Install cross
-        uses: taiki-e/install-action@787505cde8a44ea468a00478fe52baf23b15bccd # v2
+        uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with:
           tool: cross
       - name: Rust Cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if: false makes this read-only
         with:
           shared-key: build
           save-if: false

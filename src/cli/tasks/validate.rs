@@ -7,6 +7,7 @@ use crate::duration;
 use crate::file;
 use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
+use crate::tera::contains_template_syntax;
 use crate::ui::style;
 use console::style as console_style;
 use eyre::{Result, eyre};
@@ -414,7 +415,7 @@ impl TasksValidate {
 
         if let Some(ref dir) = task.dir {
             // Try to render the directory template
-            if dir.contains("{{") || dir.contains("{%") {
+            if contains_template_syntax(dir) {
                 // Contains template syntax - try to render it
                 match task.dir(config).await {
                     Ok(rendered_dir) => {
@@ -488,17 +489,25 @@ impl TasksValidate {
     fn validate_source_patterns(&self, task: &Task) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
-        for source in &task.sources {
-            // Try to compile as glob pattern
-            if let Err(e) = globset::GlobBuilder::new(source).build() {
+        let validate = |raw: &str, issues: &mut Vec<ValidationIssue>| {
+            // Strip `!` prefix (negation) or `\!` escape before validating.
+            let pattern = raw
+                .strip_prefix('!')
+                .or_else(|| raw.strip_prefix("\\!"))
+                .unwrap_or(raw);
+            if let Err(e) = globset::GlobBuilder::new(pattern).build() {
                 issues.push(ValidationIssue {
                     task: task.name.clone(),
                     severity: Severity::Error,
                     category: "invalid-glob-pattern".to_string(),
-                    message: format!("Invalid source glob pattern: '{}'", source),
+                    message: format!("Invalid source glob pattern: '{}'", raw),
                     details: Some(format!("{}", e)),
                 });
             }
+        };
+
+        for source in &task.sources {
+            validate(source, &mut issues);
         }
 
         issues

@@ -18,18 +18,18 @@ output=$(mise install dummy 2>&1)
 
 # Check that MISE_INSTALLED_TOOLS is set and contains JSON
 if [[ $output == *'INSTALLED_TOOLS=[{"name":"dummy"'* ]]; then
-	echo "✓ MISE_INSTALLED_TOOLS contains JSON with tool info"
+  echo "✓ MISE_INSTALLED_TOOLS contains JSON with tool info"
 else
-	echo "✗ MISE_INSTALLED_TOOLS is NOT set correctly"
-	echo "Output: $output"
-	exit 1
+  echo "✗ MISE_INSTALLED_TOOLS is NOT set correctly"
+  echo "Output: $output"
+  exit 1
 fi
 
 # Check that it includes the version field
 if [[ $output == *'"version":'* ]]; then
-	echo "✓ MISE_INSTALLED_TOOLS includes version field"
+  echo "✓ MISE_INSTALLED_TOOLS includes version field"
 else
-	echo "✗ MISE_INSTALLED_TOOLS does NOT include version field"
-	echo "Output: $output"
-	exit 1
+  echo "✗ MISE_INSTALLED_TOOLS does NOT include version field"
+  echo "Output: $output"
+  exit 1
 fi

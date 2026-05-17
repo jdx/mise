@@ -75,9 +75,9 @@ impl ToolVersion {
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
-        let install_before = request.options().get("install_before").map(str::to_string);
+        let minimum_release_age = request.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
-        opts.before_date = resolve_before_date(opts.before_date, install_before.as_deref())?;
+        opts.before_date = resolve_before_date(opts.before_date, minimum_release_age.as_deref())?;
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
@@ -172,7 +172,14 @@ impl ToolVersion {
             env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname)
         };
 
-        INSTALL_PATH_CACHE.insert(self.clone(), path.clone());
+        // Only cache the resolved path if it actually exists on disk. Otherwise
+        // the answer may change once the tool installs into a different
+        // location (e.g. a shared install dir created mid-run by `--system` /
+        // `--shared`), and the stale cache entry would be returned to callers
+        // like core go's `exec_env`, sending wrong values for GOROOT/GOPATH.
+        if path.exists() {
+            INSTALL_PATH_CACHE.insert(self.clone(), path.clone());
+        }
         path
     }
     pub fn runtime_path(&self) -> PathBuf {
@@ -227,6 +234,9 @@ impl ToolVersion {
             latest_versions: true,
             use_locked_version: false,
             before_date: base_opts.before_date,
+            offline: base_opts.offline,
+            refresh_remote_versions: base_opts.refresh_remote_versions,
+            inactive: base_opts.inactive,
         };
         let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref
@@ -339,19 +349,45 @@ impl ToolVersion {
         }
 
         let settings = Settings::get();
-        let is_offline = settings.offline();
+        let is_offline = settings.offline() || opts.offline;
+        let prefer_offline = settings.prefer_offline();
+        let should_filter_installed_versions =
+            opts.before_date.is_some() && !is_offline && !prefer_offline;
 
         if v == "latest" {
             if !opts.latest_versions
+                && !should_filter_installed_versions
                 && let Some(v) = backend.latest_installed_version(None)?
             {
                 return build(v);
             }
             if !is_offline
                 && let Some(v) = backend
-                    .latest_version(config, None, opts.before_date)
+                    .latest_version_with_refresh(
+                        config,
+                        None,
+                        opts.before_date,
+                        opts.refresh_remote_versions,
+                    )
                     .await?
             {
+                return build(v);
+            }
+            if !is_offline {
+                let versions = backend
+                    .list_remote_versions_with_refresh(config, opts.refresh_remote_versions)
+                    .await?;
+                if versions.is_empty()
+                    && let Some(v) = backend.unresolved_latest_version()
+                {
+                    return build(v);
+                }
+            }
+            // Prune-style offline (opts.offline) wants a non-erroring no-op
+            // when nothing is installed — the literal "latest" can't match
+            // any installed pathname so it's safe. Global MISE_OFFLINE keeps
+            // the original error to avoid surprising upgrade/outdated callers.
+            if opts.offline {
                 return build(v);
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
@@ -361,7 +397,7 @@ impl ToolVersion {
             if matches.contains(&v) {
                 return build(v);
             }
-            if let Some(v) = matches.last() {
+            if !should_filter_installed_versions && let Some(v) = matches.last() {
                 return build(v.clone());
             }
         }
@@ -371,7 +407,7 @@ impl ToolVersion {
                 if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
         ) && crate::semver::is_npm_semver_range_query(&v)
         {
-            if !opts.latest_versions {
+            if !opts.latest_versions && !should_filter_installed_versions {
                 let installed_versions = backend.list_installed_versions();
                 if let Some(matches) =
                     crate::semver::npm_semver_range_filter(&installed_versions, &v)
@@ -383,14 +419,22 @@ impl ToolVersion {
             if !is_offline {
                 let versions = match opts.before_date {
                     Some(before) => {
-                        let versions_with_info =
-                            backend.list_remote_versions_with_info(config).await?;
+                        let versions_with_info = backend
+                            .list_remote_versions_with_info_with_refresh(
+                                config,
+                                opts.refresh_remote_versions,
+                            )
+                            .await?;
                         VersionInfo::filter_by_date(versions_with_info, before)
                             .into_iter()
                             .map(|v| v.version)
                             .collect()
                     }
-                    None => backend.list_remote_versions(config).await?,
+                    None => {
+                        backend
+                            .list_remote_versions_with_refresh(config, opts.refresh_remote_versions)
+                            .await?
+                    }
                 };
                 if let Some(matches) = crate::semver::npm_semver_range_filter(&versions, &v)
                     && let Some(v) = matches.last()
@@ -412,7 +456,12 @@ impl ToolVersion {
         }
         // First try with date filter (common case)
         let matches = backend
-            .list_versions_matching_with_opts(config, &v, opts.before_date)
+            .list_versions_matching_with_opts(
+                config,
+                &v,
+                opts.before_date,
+                opts.refresh_remote_versions,
+            )
             .await?;
         if matches.contains(&v) {
             return build(v);
@@ -441,9 +490,23 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
+        if v == "latest" && opts.offline {
+            // Can't resolve sub-N:latest offline (no remote latest, and
+            // applying version_sub to latest_installed_version would shift
+            // one step too low). Return the raw spec; callers that care
+            // (`get_versions_needed_by_tracked_configs`) over-protect by
+            // keeping all installed versions of this backend.
+            let version = request.version();
+            return Ok(Self::new(request, version));
+        }
         let v = match v {
             "latest" => backend
-                .latest_version(config, None, opts.before_date)
+                .latest_version_with_refresh(
+                    config,
+                    None,
+                    opts.before_date,
+                    opts.refresh_remote_versions,
+                )
                 .await?
                 .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?,
             _ => config.resolve_alias(&backend, v).await?,
@@ -459,13 +522,26 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
+        let settings = Settings::get();
+        let is_offline = settings.offline() || opts.offline;
+        let should_filter_installed_versions =
+            opts.before_date.is_some() && !is_offline && !settings.prefer_offline();
         if !opts.latest_versions
+            && !should_filter_installed_versions
             && let Some(v) = backend.list_installed_versions_matching(prefix).last()
         {
             return Ok(Self::new(request, v.to_string()));
         }
+        if opts.offline {
+            return Ok(Self::new(request, prefix.to_string()));
+        }
         let matches = backend
-            .list_versions_matching_with_opts(config, prefix, opts.before_date)
+            .list_versions_matching_with_opts(
+                config,
+                prefix,
+                opts.before_date,
+                opts.refresh_remote_versions,
+            )
             .await?;
         let v = matches
             .last()
@@ -545,6 +621,14 @@ pub struct ResolveOptions {
     pub use_locked_version: bool,
     /// Only consider versions released before this timestamp
     pub before_date: Option<Timestamp>,
+    /// Additive to `Settings::offline()` — either being true skips remote version listing.
+    pub offline: bool,
+    /// Ignore cached remote version lists while resolving this request.
+    pub refresh_remote_versions: bool,
+    /// Include installed-but-inactive versions that do not have a known config source
+    /// (for example `ToolSource::Unknown`) when resolving tools for flows like
+    /// outdated/upgrade checks.
+    pub inactive: bool,
 }
 
 impl Default for ResolveOptions {
@@ -553,6 +637,9 @@ impl Default for ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
             before_date: None,
+            offline: false,
+            refresh_remote_versions: false,
+            inactive: false,
         }
     }
 }
@@ -589,6 +676,12 @@ impl Display for ResolveOptions {
         }
         if let Some(ts) = &self.before_date {
             opts.push(format!("before_date={ts}"));
+        }
+        if self.offline {
+            opts.push("offline".to_string());
+        }
+        if self.refresh_remote_versions {
+            opts.push("refresh_remote_versions".to_string());
         }
         write!(f, "({})", opts.join(", "))
     }
@@ -636,6 +729,62 @@ mod tests {
         let runtime_path = tv.runtime_path();
         assert_eq!(runtime_path, install_path);
         assert!(runtime_path.is_dir());
+
+        Ok(())
+    }
+
+    /// Regression test for https://github.com/jdx/mise/discussions/9526
+    ///
+    /// `install_path()` must not cache a path that does not yet exist. If it
+    /// did, a tool that first asked for its install path before the install
+    /// completed would receive that cached path forever — even after the tool
+    /// installed somewhere else (e.g. via `--system` into a shared install
+    /// dir). Subsequent callers like core go's `exec_env` would then export
+    /// the wrong GOROOT/GOPATH, breaking go-backend tools that depend on go.
+    #[test]
+    fn install_path_does_not_cache_nonexistent_paths() -> Result<()> {
+        reset_install_path_cache();
+
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "dummy-cache-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short,
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join("dummy-cache");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "1.0.0".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.0.0".into());
+
+        // First call: nothing exists yet. Should return the primary path but
+        // must NOT populate the cache.
+        let p1 = tv.install_path();
+        assert!(!p1.exists());
+        assert!(INSTALL_PATH_CACHE.get(&tv).is_none());
+
+        // Now "install" the tool by creating the dir.
+        fs::create_dir_all(&p1)?;
+
+        // Second call should still return the same path; this time it exists
+        // so the cache is populated.
+        let p2 = tv.install_path();
+        assert_eq!(p1, p2);
+        assert!(p2.exists());
+        assert!(INSTALL_PATH_CACHE.get(&tv).is_some());
 
         Ok(())
     }

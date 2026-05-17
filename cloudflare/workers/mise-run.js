@@ -22,16 +22,16 @@ async function handleRequest(request) {
   // Route based on path
   switch (path) {
     case "/":
-      targetUrl = "https://mise.jdx.dev/install.sh";
+      targetUrl = "https://mise.en.dev/install.sh";
       break;
     case "/zsh":
-      targetUrl = "https://mise.jdx.dev/mise.run/zsh";
+      targetUrl = "https://mise.en.dev/mise.run/zsh";
       break;
     case "/bash":
-      targetUrl = "https://mise.jdx.dev/mise.run/bash";
+      targetUrl = "https://mise.en.dev/mise.run/bash";
       break;
     case "/fish":
-      targetUrl = "https://mise.jdx.dev/mise.run/fish";
+      targetUrl = "https://mise.en.dev/mise.run/fish";
       break;
     default:
       return new Response("Not found", { status: 404 });

@@ -30,7 +30,7 @@ fn main() {
         Err(e) => {
             eprintln!("mise-shim: failed to execute mise: {e}");
             eprintln!("Ensure `mise` is installed and available on your PATH.");
-            eprintln!("See https://mise.jdx.dev for installation instructions.");
+            eprintln!("See https://mise.en.dev for installation instructions.");
             exit(1);
         }
     }

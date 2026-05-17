@@ -1,3 +1,5 @@
-backends = ["aqua:IBM-Cloud/ibm-cloud-cli-release"]
+backends = [
+  { full = "aqua:IBM-Cloud/ibm-cloud-cli-release", options = { symlink_bins = "true" } },
+]
 description = "ibmcloud cli"
 test = { cmd = "ibmcloud version", expected = "ibmcloud {{version}}" }

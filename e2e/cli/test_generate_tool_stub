@@ -7,18 +7,18 @@ echo "Testing tool-stub generation for git-branchless..."
 
 # Generate a tool stub for git-branchless
 mise generate tool-stub git-branchless \
-	--platform-url 'https://github.com/arxanas/git-branchless/releases/download/v0.10.0/git-branchless-v0.10.0-x86_64-unknown-linux-musl.tar.gz'
+  --platform-url 'https://github.com/arxanas/git-branchless/releases/download/v0.10.0/git-branchless-v0.10.0-x86_64-unknown-linux-musl.tar.gz'
 
 # Check that the file was created
 if [[ ! -f git-branchless ]]; then
-	echo "FAIL: Tool stub file was not created"
-	exit 1
+  echo "FAIL: Tool stub file was not created"
+  exit 1
 fi
 
 # Check that it's executable
 if [[ ! -x git-branchless ]]; then
-	echo "FAIL: Tool stub is not executable"
-	exit 1
+  echo "FAIL: Tool stub is not executable"
+  exit 1
 fi
 
 echo "Tool stub created successfully"
@@ -34,12 +34,12 @@ OUTPUT=$(./git-branchless --version 2>&1 || true)
 echo "Output: $OUTPUT"
 
 if echo "$OUTPUT" | grep -q "git-branchless"; then
-	echo "SUCCESS: git-branchless executed successfully"
+  echo "SUCCESS: git-branchless executed successfully"
 elif echo "$OUTPUT" | grep -q "No URL configured for platform"; then
-	echo "Expected platform error (not on linux-x64), but tool stub works"
+  echo "Expected platform error (not on linux-x64), but tool stub works"
 else
-	echo "FAIL: Unexpected output when executing git-branchless"
-	exit 1
+  echo "FAIL: Unexpected output when executing git-branchless"
+  exit 1
 fi
 
 echo "Test passed!"

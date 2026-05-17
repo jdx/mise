@@ -1,4 +1,5 @@
 backends = ["aqua:pipe-cd/pipecd/pipectl", "asdf:pipe-cd/asdf-pipectl"]
 description = "The One CD for All {applications, platforms, operations}"
 os = ["linux", "macos"]
-test = { cmd = "pipectl version", expected = "Version: v{{version}}" }
+# TODO: re-enable once upstream aquaproj/aqua-registry filters pipecd module tags from pipectl versions.
+# test = { cmd = "pipectl version", expected = "Version: v{{version}}" }

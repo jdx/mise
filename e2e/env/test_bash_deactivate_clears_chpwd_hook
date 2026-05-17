@@ -7,15 +7,15 @@ set -euo pipefail
 eval "$(mise activate bash --status)"
 
 if [[ " ${chpwd_functions[*]-} " != *" _mise_hook_chpwd "* ]]; then
-	echo "expected _mise_hook_chpwd to be registered after activation"
-	printf '%s\n' "${chpwd_functions[@]-}"
-	exit 1
+  echo "expected _mise_hook_chpwd to be registered after activation"
+  printf '%s\n' "${chpwd_functions[@]-}"
+  exit 1
 fi
 
 mise deactivate
 
 if [[ " ${chpwd_functions[*]-} " == *" _mise_hook_chpwd "* ]]; then
-	echo "expected _mise_hook_chpwd to be removed from chpwd_functions after deactivation"
-	printf '%s\n' "${chpwd_functions[@]-}"
-	exit 1
+  echo "expected _mise_hook_chpwd to be removed from chpwd_functions after deactivation"
+  printf '%s\n' "${chpwd_functions[@]-}"
+  exit 1
 fi

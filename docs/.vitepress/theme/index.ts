@@ -25,8 +25,12 @@ export default {
         if (githubLink && !githubLink.querySelector(".star-count")) {
           const starBadge = document.createElement("span");
           starBadge.className = "star-count";
-          starBadge.innerHTML = starsData.stars;
           starBadge.title = "GitHub Stars";
+          const glyph = document.createElement("span");
+          glyph.className = "star-glyph";
+          glyph.textContent = "★";
+          glyph.setAttribute("aria-hidden", "true");
+          starBadge.append(glyph, starsData.stars);
           githubLink.appendChild(starBadge);
         }
       };

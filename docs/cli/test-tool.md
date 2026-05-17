@@ -20,7 +20,7 @@ Test every tool specified in registry/
 
 ### `-j --jobs <JOBS>`
 
-Number of jobs to run in parallel
+Number of tool tests to run in parallel
 [default: 4]
 
 ### `--all-config`

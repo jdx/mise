@@ -14,10 +14,6 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.MISE_GH_TOKEN }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          shared-key: build
-          save-if: false
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: ./.github/actions/mise-tools

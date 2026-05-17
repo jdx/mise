@@ -10,7 +10,7 @@ use crate::platform::Platform;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{Report, Result, bail, eyre};
 use itertools::Itertools;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -62,13 +62,13 @@ pub struct LockfileTool {
     pub platforms: BTreeMap<String, PlatformInfo>,
 }
 
-/// Type of provenance verification, ordered by priority (lowest to highest).
-/// The ordering is significant: during verification, higher-priority mechanisms
-/// are tried first, and the lockfile records whichever succeeds.
+/// Type of provenance, ordered by priority (lowest to highest).
+/// The ordering is significant: during verification, higher-priority verified
+/// mechanisms are tried first, and the lockfile records whichever succeeds.
 /// SLSA carries an optional URL for the provenance file (.intoto.jsonl).
 ///
-/// If adding or reordering variants, also update `VerifiedAttestation` in
-/// `crates/vfox/src/hooks/pre_install.rs`.
+/// If adding or reordering verified attestation variants, also update
+/// `VerifiedAttestation` in `crates/vfox/src/hooks/pre_install.rs`.
 #[derive(Debug, Clone, strum::Display, strum::EnumIs)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ProvenanceType {
@@ -117,10 +117,10 @@ impl ProvenanceType {
     /// Discriminant for ordering (lowest = lowest priority)
     fn ordinal(&self) -> u8 {
         match self {
-            Self::Minisign => 0,
-            Self::Cosign => 1,
-            Self::Slsa { .. } => 2,
-            Self::GithubAttestations => 3,
+            Self::Minisign => 1,
+            Self::Cosign => 2,
+            Self::Slsa { .. } => 3,
+            Self::GithubAttestations => 4,
         }
     }
 
@@ -193,7 +193,7 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
                     .ok_or_else(|| de::Error::custom("empty provenance table"))?;
                 let result = match key.as_str() {
                     "slsa" => {
-                        #[derive(serde_derive::Deserialize)]
+                        #[derive(serde::Deserialize)]
                         struct SlsaInner {
                             url: Option<String>,
                         }
@@ -213,7 +213,14 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, strum::Display)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum GithubAttestationsStatus {
+    Unavailable,
+}
+
+#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
@@ -230,10 +237,23 @@ pub struct PlatformInfo {
     /// Type of provenance verification that succeeded (SLSA carries its URL)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
+    /// GitHub attestation probe status when no provenance was verified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub github_attestations: Option<GithubAttestationsStatus>,
 }
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
 pub use crate::backend::conda::CondaPackageInfo;
+
+impl<'de> Deserialize<'de> for PlatformInfo {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = toml::Value::deserialize(deserializer)?;
+        PlatformInfo::try_from(value).map_err(serde::de::Error::custom)
+    }
+}
 
 impl PlatformInfo {
     /// Returns true if this PlatformInfo has no meaningful data (for serde skip)
@@ -243,39 +263,84 @@ impl PlatformInfo {
             && self.url_api.is_none()
             && self.conda_deps.is_none()
             && self.provenance.is_none()
+            && self.github_attestations.is_none()
+    }
+
+    /// True when the lockfile has checksum-backed, successfully verified provenance.
+    pub fn has_checksum_and_verified_provenance(&self) -> bool {
+        self.checksum.is_some() && self.provenance.is_some()
+    }
+
+    /// True when the lockfile records that GitHub attestations were checked and absent.
+    pub fn has_checksum_and_github_attestations_unavailable(&self) -> bool {
+        self.checksum.is_some()
+            && self.provenance.is_none()
+            && self.github_attestations == Some(GithubAttestationsStatus::Unavailable)
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
     /// - Prefers sha256 checksums over blake3 (more portable/verifiable)
     /// - Preserves URL if missing in self
     /// - Preserves url_api if missing in self
+    /// - Drops the other side's checksum/size/url_api when URLs disagree, since
+    ///   those fields describe a specific artifact and become stale if the URL
+    ///   changes.
     pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
+        let url_changed = self.url.is_some() && other.url.is_some() && self.url != other.url;
+
         // For checksums, prefer sha256 over blake3 since sha256 comes from
-        // official releases and is more portable/verifiable
-        let checksum = match (&self.checksum, &other.checksum) {
-            (Some(self_cs), Some(other_cs)) => {
-                let self_is_sha256 = self_cs.starts_with("sha256:");
-                let other_is_sha256 = other_cs.starts_with("sha256:");
-                match (self_is_sha256, other_is_sha256) {
-                    (true, _) => Some(self_cs.clone()),
-                    (false, true) => Some(other_cs.clone()),
-                    (false, false) => Some(self_cs.clone()), // both blake3, use self
+        // official releases and is more portable/verifiable. If URLs disagree,
+        // ignore the other side's artifact-bound fields entirely.
+        let checksum = if url_changed {
+            self.checksum.clone()
+        } else {
+            match (&self.checksum, &other.checksum) {
+                (Some(self_cs), Some(other_cs)) => {
+                    let self_is_sha256 = self_cs.starts_with("sha256:");
+                    let other_is_sha256 = other_cs.starts_with("sha256:");
+                    match (self_is_sha256, other_is_sha256) {
+                        (true, _) => Some(self_cs.clone()),
+                        (false, true) => Some(other_cs.clone()),
+                        (false, false) => Some(self_cs.clone()), // both blake3, use self
+                    }
                 }
+                (Some(cs), None) | (None, Some(cs)) => Some(cs.clone()),
+                (None, None) => None,
             }
-            (Some(cs), None) | (None, Some(cs)) => Some(cs.clone()),
-            (None, None) => None,
+        };
+
+        let size = if url_changed {
+            self.size
+        } else {
+            self.size.or(other.size)
+        };
+
+        let url_api = if url_changed {
+            self.url_api.clone()
+        } else {
+            self.url_api.clone().or_else(|| other.url_api.clone())
+        };
+
+        let provenance = match (self.provenance.clone(), other.provenance.clone()) {
+            (Some(a), Some(b)) => Some(a.merge(b)),
+            (a, b) => a.or(b),
+        };
+        let github_attestations = if provenance.is_some() {
+            None
+        } else if url_changed {
+            self.github_attestations
+        } else {
+            self.github_attestations.or(other.github_attestations)
         };
 
         PlatformInfo {
             checksum,
-            size: self.size.or(other.size),
+            size,
             url: self.url.clone().or_else(|| other.url.clone()),
-            url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
+            url_api,
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
-            provenance: match (self.provenance.clone(), other.provenance.clone()) {
-                (Some(a), Some(b)) => Some(a.merge(b)),
-                (a, b) => a.or(b),
-            },
+            provenance,
+            github_attestations,
         }
     }
 }
@@ -312,6 +377,15 @@ impl TryFrom<toml::Value> for PlatformInfo {
                             .filter_map(|v| v.as_str().map(String::from))
                             .collect(),
                     ),
+                    _ => None,
+                };
+                let github_attestations = match t.remove("github_attestations") {
+                    Some(toml::Value::String(s)) if s == "unavailable" => {
+                        Some(GithubAttestationsStatus::Unavailable)
+                    }
+                    Some(toml::Value::String(s)) => {
+                        bail!("unrecognized github_attestations status {s:?} in lockfile")
+                    }
                     _ => None,
                 };
                 // Legacy: read provenance_url for backwards compat with old lockfiles
@@ -351,6 +425,11 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     }
                     _ => None,
                 };
+                let github_attestations = if provenance.is_some() {
+                    None
+                } else {
+                    github_attestations
+                };
                 Ok(PlatformInfo {
                     checksum,
                     size,
@@ -358,6 +437,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     url_api,
                     conda_deps,
                     provenance,
+                    github_attestations,
                 })
             }
             _ => bail!("unsupported asset info format"),
@@ -399,6 +479,14 @@ impl From<PlatformInfo> for toml::Value {
                     table.insert("provenance".to_string(), provenance.to_string().into());
                 }
             }
+        }
+        if platform_info.provenance.is_none()
+            && let Some(github_attestations) = platform_info.github_attestations
+        {
+            table.insert(
+                "github_attestations".to_string(),
+                github_attestations.to_string().into(),
+            );
         }
         toml::Value::Table(table)
     }
@@ -514,7 +602,7 @@ impl Lockfile {
         let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
         let content = format(content.parse()?);
         let content = format!(
-            "# @generated - this file is auto-generated by `mise lock` https://mise.jdx.dev/dev-tools/mise-lock.html\n\
+            "# @generated - this file is auto-generated by `mise lock` https://mise.en.dev/dev-tools/mise-lock.html\n\
                  \n\
                  {content}"
         );
@@ -726,20 +814,58 @@ impl Lockfile {
             .iter_mut()
             .find(|t| t.version == version && &t.options == options)
         {
-            // Merge with existing platform info, preferring new values when present
+            // Merge with existing platform info, preferring new values when present.
+            // When the URL changes, drop existing checksum/size/url_api — those fields
+            // describe a specific artifact and are stale once the URL points elsewhere.
             let merged = if let Some(existing) = tool.platforms.get(platform_key) {
+                let url_changed = platform_info.url.is_some()
+                    && existing.url.is_some()
+                    && platform_info.url != existing.url;
+                let preserve_artifact_fields = !url_changed;
+                let provenance = match (
+                    platform_info.provenance.clone(),
+                    existing.provenance.clone(),
+                ) {
+                    (Some(a), Some(b)) => Some(a.merge(b)),
+                    (a, b) => a.or(b),
+                };
+                let github_attestations = if provenance.is_some() {
+                    None
+                } else {
+                    platform_info.github_attestations.or({
+                        if preserve_artifact_fields {
+                            existing.github_attestations
+                        } else {
+                            None
+                        }
+                    })
+                };
                 PlatformInfo {
-                    checksum: platform_info.checksum.or_else(|| existing.checksum.clone()),
-                    size: platform_info.size.or(existing.size),
+                    checksum: platform_info.checksum.or_else(|| {
+                        if preserve_artifact_fields {
+                            existing.checksum.clone()
+                        } else {
+                            None
+                        }
+                    }),
+                    size: platform_info.size.or(if preserve_artifact_fields {
+                        existing.size
+                    } else {
+                        None
+                    }),
                     url: platform_info.url.or_else(|| existing.url.clone()),
-                    url_api: platform_info.url_api.or_else(|| existing.url_api.clone()),
+                    url_api: platform_info.url_api.or_else(|| {
+                        if preserve_artifact_fields {
+                            existing.url_api.clone()
+                        } else {
+                            None
+                        }
+                    }),
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
-                    provenance: match (platform_info.provenance, existing.provenance.clone()) {
-                        (Some(a), Some(b)) => Some(a.merge(b)),
-                        (a, b) => a.or(b),
-                    },
+                    provenance,
+                    github_attestations,
                 }
             } else {
                 platform_info
@@ -877,9 +1003,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         if !cf.source().is_mise_toml() {
             continue;
         }
-        if crate::config::is_global_config(config_path) {
-            continue;
-        }
         let (lockfile_path, _is_local) = lockfile_path_for_config(config_path);
         lockfile_configs
             .entry(lockfile_path)
@@ -907,20 +1030,93 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         let mut existing_lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
-        // Collect all tools from all contributing configs
-        let mut tools_by_short: HashMap<String, Vec<LockfileTool>> = HashMap::new();
+        // Collect all tools from all contributing configs. This starts from the
+        // resolved toolset, then overlays newly installed versions because a
+        // fuzzy request may still resolve through the old lockfile entry until
+        // this update is written.
+        let mut tool_versions_by_short: HashMap<String, Vec<ToolVersion>> = HashMap::new();
 
         for config_path in &configs {
             let tool_source = ToolSource::MiseToml(config_path.clone());
             if let Some(tools) = tools_by_source.get(&tool_source) {
                 for (short, tvl) in tools {
-                    let lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
-                    for tool in lockfile_tools {
-                        tools_by_short.entry(short.clone()).or_default().push(tool);
-                    }
+                    tool_versions_by_short
+                        .entry(short.clone())
+                        .or_default()
+                        .extend(tvl.versions.clone());
                 }
             }
         }
+
+        for new_version in new_versions {
+            if let Some(source_path) = new_version.request.source().path() {
+                if !configs.iter().any(|config| config == source_path) {
+                    continue;
+                }
+
+                let versions = tool_versions_by_short
+                    .entry(new_version.short().to_string())
+                    .or_default();
+                versions.retain(|tv| {
+                    tv.ba() != new_version.ba()
+                        || tv.request.version() != new_version.request.version()
+                        || tv.request.source() != new_version.request.source()
+                });
+                versions.push(new_version.clone());
+            } else if let Some(versions) = tool_versions_by_short.get_mut(new_version.short()) {
+                if let Some((idx, request)) = versions
+                    .iter()
+                    .enumerate()
+                    .exactly_one()
+                    .ok()
+                    .map(|(idx, tv)| (idx, tv.request.clone()))
+                {
+                    // Only propagate when the new install resolves the same
+                    // version specifier as the config. `mise x node` (no
+                    // version) is rewritten by `with_default_to_latest` to
+                    // carry the config's version string, so it matches and
+                    // updates the lockfile as expected. `mise x node@latest`
+                    // with mise.toml `node = "24"` carries a "latest"
+                    // specifier that doesn't match — that's an ad-hoc CLI
+                    // override and pairing the "24" request with a 25.x
+                    // install would produce a nonsensical lockfile entry.
+                    if new_version.request.version() != request.version() {
+                        trace!(
+                            "skipping lockfile update for {}@{} in {}: CLI override does not match config request {}",
+                            new_version.short(),
+                            new_version.version,
+                            display_path(&lockfile_path),
+                            request.version(),
+                        );
+                        continue;
+                    }
+                    let mut new_version = new_version.clone();
+                    new_version.request = request;
+                    versions.remove(idx);
+                    versions.push(new_version);
+                } else {
+                    trace!(
+                        "skipping lockfile update for {}@{} in {}: ambiguous config entries",
+                        new_version.short(),
+                        new_version.version,
+                        display_path(&lockfile_path)
+                    );
+                }
+            }
+        }
+
+        let tools_by_short: HashMap<String, Vec<LockfileTool>> = tool_versions_by_short
+            .into_iter()
+            .map(|(short, versions)| {
+                (
+                    short,
+                    versions
+                        .iter()
+                        .map(lockfile_tool_from_tool_version)
+                        .collect(),
+                )
+            })
+            .collect();
 
         // Check for provenance regression before merging (which drops old version entries).
         // For github backend tools, error if the highest prior version had provenance but
@@ -1048,28 +1244,71 @@ fn check_provenance_regression(
     (regressing, errors)
 }
 
-/// Determine target platforms using an already-loaded lockfile (used by auto-lock).
-/// Returns all common platforms + current platform + any existing platforms in the lockfile.
-fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Result<Vec<Platform>> {
-    // If lockfile_platforms setting is configured, use it as the authoritative set
+/// Snapshot the platform keys present in each lockfile that the upcoming install run
+/// will touch. Must be called BEFORE `update_lockfiles` writes any current-platform
+/// entries — the snapshot is what lets `auto_lock_new_versions` tell a user-curated
+/// lockfile (existing entries are authoritative) apart from a fresh one whose only
+/// current-platform entry was just added by this install.
+pub fn snapshot_pre_install_platforms(
+    new_versions: &[ToolVersion],
+) -> HashMap<PathBuf, BTreeSet<String>> {
+    let mut result: HashMap<PathBuf, BTreeSet<String>> = HashMap::new();
+    for tv in new_versions {
+        if !tv.request.source().is_mise_toml() {
+            continue;
+        }
+        let Some(source_path) = tv.request.source().path() else {
+            continue;
+        };
+        let (lockfile_path, _) = lockfile_path_for_config(source_path);
+        if result.contains_key(&lockfile_path) {
+            continue;
+        }
+        let keys = if lockfile_path.exists() {
+            Lockfile::read(&lockfile_path)
+                .map(|lf| lf.all_platform_keys())
+                .unwrap_or_default()
+        } else {
+            BTreeSet::new()
+        };
+        result.insert(lockfile_path, keys);
+    }
+    result
+}
+
+/// Determine target platforms for auto-lock from the pre-install lockfile snapshot.
+///
+/// If the lockfile had platform entries before this install run, those are authoritative
+/// (plus the current platform). Otherwise — the lockfile was fresh — fall back to the
+/// common platform set so a brand-new lockfile gets cross-platform-populated. The
+/// `lockfile_platforms` setting overrides both paths.
+fn determine_target_platforms_from_lockfile(
+    pre_install_keys: &BTreeSet<String>,
+) -> Result<Vec<Platform>> {
     if let Some(configured) = Settings::get().lockfile_platforms()? {
         let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
         platforms.insert(Platform::current());
         return Ok(platforms.into_iter().collect());
     }
 
-    // Default: all common platforms + current + existing lockfile platforms
-    let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
-    platforms.insert(Platform::current());
-    if let Some(lockfile) = lockfile {
-        for platform_key in lockfile.all_platform_keys() {
-            if let Ok(p) = Platform::parse(&platform_key)
+    if !pre_install_keys.is_empty() {
+        let mut platforms: BTreeSet<Platform> = BTreeSet::new();
+        for platform_key in pre_install_keys {
+            if let Ok(p) = Platform::parse(platform_key)
                 && p.validate().is_ok()
             {
                 platforms.insert(p);
             }
         }
+        if !platforms.is_empty() {
+            platforms.insert(Platform::current());
+            return Ok(platforms.into_iter().collect());
+        }
     }
+
+    // Fresh lockfile (or no parseable keys) — populate common defaults + current.
+    let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
+    platforms.insert(Platform::current());
     Ok(platforms.into_iter().collect())
 }
 
@@ -1109,7 +1348,11 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform
 /// After installing new tool versions, resolve checksums/URLs for all common platforms
 /// so the lockfile is complete and doesn't change when other developers on different
 /// platforms run `mise install`.
-pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersion]) -> Result<()> {
+pub async fn auto_lock_new_versions(
+    _config: &Config,
+    new_versions: &[ToolVersion],
+    pre_install_platforms: &HashMap<PathBuf, BTreeSet<String>>,
+) -> Result<()> {
     if !Settings::get().lockfile_enabled() || Settings::get().locked || new_versions.is_empty() {
         return Ok(());
     }
@@ -1121,9 +1364,6 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
             continue;
         }
         if let Some(source_path) = tv.request.source().path() {
-            if crate::config::is_global_config(source_path) {
-                continue;
-            }
             let (lockfile_path, _) = lockfile_path_for_config(source_path);
             versions_by_lockfile
                 .entry(lockfile_path)
@@ -1136,6 +1376,7 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
     let jobs = settings.jobs;
     let mut all_provenance_errors: Vec<String> = Vec::new();
 
+    let empty_keys: BTreeSet<String> = BTreeSet::new();
     for (lockfile_path, versions) in versions_by_lockfile {
         // Only update existing lockfiles (consistent with update_lockfiles)
         if !lockfile_path.exists() {
@@ -1145,7 +1386,10 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         let mut lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
-        let target_platforms = determine_target_platforms_from_lockfile(Some(&lockfile))?;
+        let pre_install_keys = pre_install_platforms
+            .get(&lockfile_path)
+            .unwrap_or(&empty_keys);
+        let target_platforms = determine_target_platforms_from_lockfile(pre_install_keys)?;
 
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
@@ -1711,34 +1955,34 @@ impl LockfileTool {
 
 impl From<ToolVersionList> for Vec<LockfileTool> {
     fn from(tvl: ToolVersionList) -> Self {
-        use crate::backend::platform_target::PlatformTarget;
-
         tvl.versions
             .iter()
-            .map(|tv| {
-                let mut platforms = BTreeMap::new();
-
-                // Convert tool version lock_platforms to lockfile platforms
-                for (platform, platform_info) in &tv.lock_platforms {
-                    platforms.insert(platform.clone(), platform_info.clone());
-                }
-
-                // Resolve lockfile options from the backend
-                let options = if let Ok(backend) = tv.request.backend() {
-                    let target = PlatformTarget::from_current();
-                    backend.resolve_lockfile_options(&tv.request, &target)
-                } else {
-                    BTreeMap::new()
-                };
-
-                LockfileTool {
-                    version: tv.version.clone(),
-                    backend: Some(tv.ba().stored_full()),
-                    options,
-                    platforms,
-                }
-            })
+            .map(lockfile_tool_from_tool_version)
             .collect()
+    }
+}
+
+fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> LockfileTool {
+    let mut platforms = BTreeMap::new();
+
+    // Convert tool version lock_platforms to lockfile platforms
+    for (platform, platform_info) in &tv.lock_platforms {
+        platforms.insert(platform.clone(), platform_info.clone());
+    }
+
+    // Resolve lockfile options from the backend
+    let options = if let Ok(backend) = tv.request.backend() {
+        let target = PlatformTarget::from_current();
+        backend.resolve_lockfile_options(&tv.request, &target)
+    } else {
+        BTreeMap::new()
+    };
+
+    LockfileTool {
+        version: tv.version.clone(),
+        backend: Some(tv.ba().stored_full()),
+        options,
+        platforms,
     }
 }
 
@@ -2438,15 +2682,17 @@ backend = "conda:jq"
 
     #[test]
     fn test_platform_info_merge_prefers_sha256() {
-        // Test that merge_with prefers sha256 over blake3
+        // The sha256-vs-blake3 preference only matters when both checksums
+        // describe the same artifact, so use a shared URL here.
+        let url = Some("https://example.com/a".to_string());
         let sha256_info = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
-            url: Some("https://example.com/a".to_string()),
+            url: url.clone(),
             ..Default::default()
         };
         let blake3_info = PlatformInfo {
             checksum: Some("blake3:def456".to_string()),
-            url: Some("https://example.com/b".to_string()),
+            url: url.clone(),
             ..Default::default()
         };
 
@@ -2461,6 +2707,7 @@ backend = "conda:jq"
         // blake3 + blake3 -> self (first)
         let another_blake3 = PlatformInfo {
             checksum: Some("blake3:ghi789".to_string()),
+            url: url.clone(),
             ..Default::default()
         };
         let merged = blake3_info.merge_with(&another_blake3);
@@ -2473,7 +2720,43 @@ backend = "conda:jq"
             ..Default::default()
         };
         let merged = no_url.merge_with(&blake3_info);
-        assert_eq!(merged.url, Some("https://example.com/b".to_string()));
+        assert_eq!(merged.url, url);
+    }
+
+    #[test]
+    fn test_platform_info_merge_drops_stale_checksum_on_url_change() {
+        // When URLs disagree, the other side's checksum/size/url_api describe
+        // a different artifact and must not be carried over (e.g. node musl
+        // URL bumped but old glibc checksum still on disk).
+        let new_info = PlatformInfo {
+            checksum: None,
+            size: None,
+            url: Some("https://example.com/v2.tar.gz".to_string()),
+            url_api: None,
+            ..Default::default()
+        };
+        let stale_info = PlatformInfo {
+            checksum: Some("sha256:OLD".to_string()),
+            size: Some(123),
+            url: Some("https://example.com/v1.tar.gz".to_string()),
+            url_api: Some("https://api.example.com/v1".to_string()),
+            ..Default::default()
+        };
+
+        let merged = new_info.merge_with(&stale_info);
+        assert_eq!(merged.url.as_deref(), Some("https://example.com/v2.tar.gz"));
+        assert_eq!(merged.checksum, None);
+        assert_eq!(merged.size, None);
+        assert_eq!(merged.url_api, None);
+
+        // Same artifact (matching URLs) preserves the missing fields.
+        let same_url = PlatformInfo {
+            url: Some("https://example.com/v1.tar.gz".to_string()),
+            ..Default::default()
+        };
+        let merged = same_url.merge_with(&stale_info);
+        assert_eq!(merged.checksum.as_deref(), Some("sha256:OLD"));
+        assert_eq!(merged.size, Some(123));
     }
 
     #[test]
@@ -2533,6 +2816,58 @@ backend = "conda:jq"
     }
 
     #[test]
+    fn test_github_attestations_unavailable_roundtrip() {
+        let info = PlatformInfo {
+            checksum: Some("sha256:abc123".to_string()),
+            url: Some("https://example.com/tool.tar.gz".to_string()),
+            github_attestations: Some(GithubAttestationsStatus::Unavailable),
+            ..Default::default()
+        };
+
+        let toml_val: toml::Value = info.clone().into();
+        let table = toml_val.as_table().unwrap();
+        assert_eq!(
+            table.get("github_attestations").unwrap().as_str().unwrap(),
+            "unavailable"
+        );
+        assert!(table.get("provenance").is_none());
+
+        let parsed: PlatformInfo = toml_val.try_into().unwrap();
+        assert_eq!(
+            parsed.github_attestations,
+            Some(GithubAttestationsStatus::Unavailable)
+        );
+        assert!(parsed.provenance.is_none());
+        assert!(parsed.has_checksum_and_github_attestations_unavailable());
+        assert!(!parsed.has_checksum_and_verified_provenance());
+    }
+
+    #[test]
+    fn test_github_attestations_unavailable_ignored_with_provenance() {
+        let mut table = toml::Table::new();
+        table.insert("checksum".to_string(), "sha256:abc123".into());
+        table.insert("provenance".to_string(), "slsa".into());
+        table.insert("github_attestations".to_string(), "unavailable".into());
+
+        let parsed: PlatformInfo = toml::Value::Table(table).try_into().unwrap();
+        assert!(parsed.provenance.as_ref().unwrap().is_slsa());
+        assert!(parsed.github_attestations.is_none());
+        assert!(!parsed.has_checksum_and_github_attestations_unavailable());
+        assert!(parsed.has_checksum_and_verified_provenance());
+
+        let serialized: toml::Value = PlatformInfo {
+            checksum: Some("sha256:abc123".to_string()),
+            provenance: Some(ProvenanceType::GithubAttestations),
+            github_attestations: Some(GithubAttestationsStatus::Unavailable),
+            ..Default::default()
+        }
+        .into();
+        let table = serialized.as_table().unwrap();
+        assert!(table.get("provenance").is_some());
+        assert!(table.get("github_attestations").is_none());
+    }
+
+    #[test]
     fn test_provenance_merge_preserves_existing() {
         let with_provenance = PlatformInfo {
             provenance: Some(ProvenanceType::GithubAttestations),
@@ -2581,6 +2916,25 @@ backend = "conda:jq"
             }
             _ => panic!("expected Slsa provenance"),
         }
+
+        // A negative GitHub attestation cache entry must not override verified provenance.
+        let github_unavailable = PlatformInfo {
+            github_attestations: Some(GithubAttestationsStatus::Unavailable),
+            ..Default::default()
+        };
+        let merged = github_unavailable.merge_with(&with_url);
+        assert!(merged.provenance.as_ref().unwrap().is_slsa());
+        assert!(merged.github_attestations.is_none());
+        let merged = with_url.merge_with(&github_unavailable);
+        assert!(merged.provenance.as_ref().unwrap().is_slsa());
+        assert!(merged.github_attestations.is_none());
+
+        // Merging with empty preserves the negative GitHub attestation cache.
+        let merged = github_unavailable.merge_with(&PlatformInfo::default());
+        assert_eq!(
+            merged.github_attestations,
+            Some(GithubAttestationsStatus::Unavailable)
+        );
     }
 
     #[test]
@@ -2590,6 +2944,58 @@ backend = "conda:jq"
             ..Default::default()
         };
         assert!(!info.is_empty());
+
+        let info = PlatformInfo {
+            github_attestations: Some(GithubAttestationsStatus::Unavailable),
+            ..Default::default()
+        };
+        assert!(!info.is_empty());
+    }
+
+    #[test]
+    fn test_github_attestations_unavailable_counts_as_missing_for_regression() {
+        let platform = Platform::current().to_key();
+        let mut prior = basic_tool("1.0.0", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        let existing = vec![prior];
+
+        let err = check_single_tool_provenance(
+            Some(&existing),
+            "tool",
+            "1.1.0",
+            "github:owner/repo",
+            &platform,
+            None,
+        )
+        .unwrap();
+        assert!(err.contains("has no provenance verification"));
+
+        let mut prior = basic_tool("1.0.0", "github:owner/repo");
+        prior.platforms.insert(
+            platform.clone(),
+            PlatformInfo {
+                github_attestations: Some(GithubAttestationsStatus::Unavailable),
+                ..Default::default()
+            },
+        );
+        let existing = vec![prior];
+        assert!(
+            check_single_tool_provenance(
+                Some(&existing),
+                "tool",
+                "1.1.0",
+                "github:owner/repo",
+                &platform,
+                None,
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -2679,6 +3085,65 @@ backend = "conda:jq"
                 );
             }
             other => panic!("expected Slsa provenance with URL, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_determine_target_platforms_respects_pre_install_keys() {
+        // Regression: auto-lock must not silently re-add platforms (e.g. macos-x64) that
+        // a user has dropped. The pre-install snapshot is authoritative when non-empty.
+        let pre: BTreeSet<String> = ["linux-arm64", "windows-x64"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let platforms = determine_target_platforms_from_lockfile(&pre).unwrap();
+        let keys: BTreeSet<String> = platforms.iter().map(|p| p.to_key()).collect();
+
+        assert!(keys.contains("linux-arm64"));
+        assert!(keys.contains("windows-x64"));
+        assert!(keys.contains(&Platform::current().to_key()));
+        // macos-x64 / macos-arm64 / linux-x64-musl etc. must not leak in unless current.
+        for extra in ["macos-x64", "macos-arm64"] {
+            if extra != Platform::current().to_key() {
+                assert!(
+                    !keys.contains(extra),
+                    "{extra} leaked into target platforms: {keys:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_determine_target_platforms_one_platform_lockfile_is_authoritative() {
+        // A user can intentionally maintain a single-platform lockfile. As long as the
+        // pre-install snapshot was non-empty, that intent must be respected — even if
+        // the only entry happens to be the current platform.
+        let current = Platform::current().to_key();
+        let pre: BTreeSet<String> = std::iter::once(current.clone()).collect();
+
+        let platforms = determine_target_platforms_from_lockfile(&pre).unwrap();
+        let keys: BTreeSet<String> = platforms.iter().map(|p| p.to_key()).collect();
+
+        assert_eq!(keys.len(), 1, "expected only {current}, got {keys:?}");
+        assert!(keys.contains(&current));
+    }
+
+    #[test]
+    fn test_determine_target_platforms_expands_for_fresh_lockfile() {
+        // A fresh lockfile (no entries before this install) must expand to the common
+        // platform set so first-install gets cross-platform-locked.
+        let pre: BTreeSet<String> = BTreeSet::new();
+
+        let platforms = determine_target_platforms_from_lockfile(&pre).unwrap();
+        let keys: BTreeSet<String> = platforms.iter().map(|p| p.to_key()).collect();
+
+        for common in Platform::common_platforms() {
+            assert!(
+                keys.contains(&common.to_key()),
+                "{} missing from fresh-lockfile target set: {keys:?}",
+                common.to_key()
+            );
         }
     }
 }

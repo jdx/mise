@@ -38,17 +38,30 @@ impl Scheduler {
         self.sched_rx.take()
     }
 
-    /// Wait for all spawned tasks to complete
+    /// Wait for all spawned tasks to complete.
+    ///
+    /// When a task fails (or panics) and `continue_on_error` is false, send
+    /// SIGTERM to every still-running task so siblings don't keep going for
+    /// the duration of their natural runtime. We keep draining the JoinSet
+    /// after sending the signal so the parent can exit cleanly once everyone
+    /// has actually wrapped up.
     pub async fn join_all(&self, continue_on_error: bool) -> Result<()> {
+        let mut killed = false;
         while let Some(result) = self.jset.lock().await.join_next().await {
-            if result.is_ok() || continue_on_error {
-                continue;
+            // result is Result<Result<()>, JoinError>: outer Err means the
+            // task panicked, inner Err means the user's command returned
+            // non-zero. Both should trigger sibling termination.
+            let task_failed = match &result {
+                Ok(Ok(())) => false,
+                Ok(Err(_)) | Err(_) => true,
+            };
+            if task_failed && !continue_on_error && !killed {
+                killed = true;
+                #[cfg(unix)]
+                CmdLineRunner::kill_all(SIGTERM);
+                #[cfg(windows)]
+                CmdLineRunner::kill_all();
             }
-            #[cfg(unix)]
-            CmdLineRunner::kill_all(SIGTERM);
-            #[cfg(windows)]
-            CmdLineRunner::kill_all();
-            break;
         }
         Ok(())
     }

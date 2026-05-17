@@ -13,7 +13,7 @@ use crate::path_env::PathEnv;
 use crate::toolset::Toolset;
 use crate::toolset::env_cache::{CachedEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::tool_request::ToolRequest;
-use crate::{env, parallel, uv};
+use crate::{env, github, parallel, uv};
 
 impl Toolset {
     pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
@@ -56,9 +56,10 @@ impl Toolset {
     pub async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
         // Try to load from cache if enabled
         if CachedEnv::is_enabled()
-            && let Some(cached) = self.try_load_env_cache(config)?
+            && let Some(mut cached) = self.try_load_env_cache(config)?
         {
             trace!("env_cache: using cached environment");
+            github::oauth::inject_token_env(&mut cached);
             return Ok(cached);
         }
 
@@ -83,6 +84,10 @@ impl Toolset {
             debug!("env_cache: failed to save: {}", e);
         }
 
+        // Inject GitHub OAuth token (if configured) after cache save so the
+        // ephemeral token is never persisted to disk.
+        github::oauth::inject_token_env(&mut env);
+
         Ok(env)
     }
 
@@ -105,6 +110,7 @@ impl Toolset {
                 path_env.add(p.clone());
             }
             env.insert(PATH_KEY.to_string(), path_env.to_string());
+            github::oauth::inject_token_env(&mut env);
             return Ok((
                 env,
                 cached.user_paths,
@@ -134,6 +140,10 @@ impl Toolset {
         {
             debug!("env_cache: failed to save: {}", e);
         }
+
+        // Inject GitHub OAuth token (if configured) after cache save so the
+        // ephemeral token is never persisted to disk.
+        github::oauth::inject_token_env(&mut env);
 
         Ok((env, user_paths, tool_paths, env_results.watch_files))
     }

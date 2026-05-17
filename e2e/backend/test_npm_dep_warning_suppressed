@@ -11,8 +11,8 @@ export PATH="$MISE_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # Verify npm is not on PATH — if it is, the restricted PATH isn't working
 if command -v npm >/dev/null 2>&1; then
-	echo "ERROR: npm is found in restricted PATH, test cannot verify behavior"
-	exit 1
+  echo "ERROR: npm is found in restricted PATH, test cannot verify behavior"
+  exit 1
 fi
 
 # Create a mise.toml that has both node and an npm package
@@ -26,9 +26,9 @@ EOF
 output=$(MISE_LOG_LEVEL=warn mise ls-remote npm:prettier 2>&1 || true)
 
 if [[ $output == *"npm may be required but was not found"* ]]; then
-	echo "FAIL: warning was shown even though node is configured in mise.toml"
-	echo "Output: $output"
-	exit 1
+  echo "FAIL: warning was shown even though node is configured in mise.toml"
+  echo "Output: $output"
+  exit 1
 fi
 
 echo "PASS: no spurious npm warning when node is configured"

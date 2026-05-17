@@ -3,7 +3,7 @@
   "title": "mise rc config",
   "description": "Early initialization settings for mise. These settings are loaded before the main config files.",
   "type": "object",
-  "additionalProperties": false,
+  "unevaluatedProperties": false,
   "properties": {
     "ceiling_paths": {
       "default": [],

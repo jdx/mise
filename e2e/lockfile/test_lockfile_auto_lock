@@ -44,3 +44,33 @@ assert_contains "cat mise.lock" "mikefarah/yq"
 assert_contains "cat mise.lock" "platforms.linux-x64"
 
 rm -f mise.toml mise.lock mise.lock.before
+
+# === Test 4: removed platform stays removed across installs ===
+# A user-curated lockfile is authoritative — auto-lock must not silently re-add
+# platforms (e.g. macos-x64) that were deliberately deleted.
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+touch mise.lock
+mise use "aqua:jqlang/jq@1.7.1"
+assert_contains "cat mise.lock" "platforms.macos-x64"
+
+# Simulate a user dropping macos-x64 / macos-x64-baseline from the lockfile.
+sed -i '/\[tools\."aqua:jqlang\/jq"."platforms\.macos-x64"\]/,/^$/d' mise.lock
+sed -i '/\[tools\."aqua:jqlang\/jq"."platforms\.macos-x64-baseline"\]/,/^$/d' mise.lock
+assert_fail "grep -q 'platforms.macos-x64' mise.lock"
+
+# Adding another tool must not bring macos-x64 back.
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+"aqua:mikefarah/yq" = "4.44.6"
+EOF
+mise install
+assert_fail "grep -q 'platforms.macos-x64' mise.lock"
+assert_contains "cat mise.lock" "mikefarah/yq"
+
+rm -f mise.toml mise.lock

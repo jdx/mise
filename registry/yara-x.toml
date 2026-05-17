@@ -1,0 +1,4 @@
+backends = ["github:VirusTotal/yara-x"]
+description = "The pattern matching swiss army knife"
+# TODO: re-enable once the GitHub backend extracts the .gz asset into a runnable yara-x binary.
+# test = { cmd = "yara-x --version", expected = "{{version}}" }

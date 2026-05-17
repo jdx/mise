@@ -2,9 +2,11 @@ use crate::semver::{chunkify_version, split_version_prefix};
 use crate::toolset;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, config::Config};
-use serde_derive::Serialize;
+use serde::Serialize;
 use std::{
+    collections::BTreeSet,
     fmt::{Display, Formatter},
+    path::PathBuf,
     sync::Arc,
 };
 use tabled::Tabled;
@@ -57,16 +59,14 @@ impl OutdatedInfo {
     ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
-        let (prefix, _) = split_version_prefix(&tv.request.version());
-        let latest_result = if bump {
-            // Note: Backend's latest_version takes individual parameters,
-            // not a ResolveOptions struct like ToolVersion's method
-            t.latest_version(
-                config,
-                Some(prefix.clone()).filter(|s| !s.is_empty()),
-                opts.before_date,
-            )
-            .await
+        let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+        let use_backend_latest =
+            bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown);
+
+        let latest_result = if use_backend_latest {
+            let prefix = prefixed_latest_query(&prefix, &prefix_version);
+            // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
+            t.latest_version(config, prefix, opts.before_date).await
         } else {
             tv.latest_version_with_opts(config, opts)
                 .await
@@ -84,6 +84,15 @@ impl OutdatedInfo {
             }
         };
         let mut oi = Self::new(config, tv, latest)?;
+        if opts.inactive && oi.source == ToolSource::Unknown {
+            // Installed-but-inactive tools have no config source, so their request
+            // is usually pinned to the currently installed version. With --no-source we
+            // want to install the discovered latest version instead.
+            let backend = oi.tool_request.ba().clone();
+            let source = oi.tool_request.source().clone();
+            let options = oi.tool_request.options();
+            oi.tool_request = ToolRequest::new_opts(backend, &oi.latest, options, source)?;
+        }
         if oi
             .current
             .as_ref()
@@ -181,6 +190,21 @@ impl Display for OutdatedInfo {
     }
 }
 
+fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
+    let prefix = prefix.trim();
+    if prefix.is_empty() || prefix_version.is_empty() || prefix.contains(':') {
+        return None;
+    }
+
+    let query_version = chunkify_version(prefix_version)
+        .into_iter()
+        .next()
+        .filter(|version| !version.is_empty())
+        .unwrap_or_else(|| prefix_version.to_string());
+
+    Some(format!("{prefix}{query_version}"))
+}
+
 /// check if the new version is a bump from the old version and return the new version
 /// at the same specificity level as the old version
 /// used with `mise outdated --bump` to determine what new semver range to use
@@ -241,10 +265,26 @@ pub fn compute_config_bumps(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
 ) -> Vec<ConfigBump> {
+    let config_paths = config.config_files.keys().cloned().collect();
+    compute_config_bumps_for_paths(config, tool_versions, &config_paths)
+}
+
+/// Compute config bumps against a bounded set of config paths.
+///
+/// This lets callers that intentionally target a subset of the loaded config
+/// hierarchy avoid updating shadowed parent configs.
+pub fn compute_config_bumps_for_paths(
+    config: &Config,
+    tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
+    config_paths: &BTreeSet<PathBuf>,
+) -> Vec<ConfigBump> {
     let mut bumps = Vec::new();
 
     for &(tool_name, cli_version) in tool_versions {
         for (path, cf) in config.config_files.iter() {
+            if !config_paths.contains(path) {
+                continue;
+            }
             if crate::config::is_global_config(path) {
                 continue;
             }
@@ -342,7 +382,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use test_log::test;
 
-    use super::{check_semver_bump, is_outdated_version};
+    use super::{check_semver_bump, is_outdated_version, prefixed_latest_query};
 
     #[test]
     fn test_is_outdated_version() {
@@ -419,5 +459,24 @@ mod tests {
             check_semver_bump("beta", "1.0.0-beta.1"),
             Some("beta".to_string())
         );
+    }
+
+    #[test]
+    fn test_prefixed_latest_query() {
+        assert_eq!(
+            prefixed_latest_query("temurin-", "17.0.7+7"),
+            Some("temurin-17".to_string())
+        );
+        assert_eq!(
+            prefixed_latest_query("temurin-", "17-ea"),
+            Some("temurin-17".to_string())
+        );
+        assert_eq!(
+            prefixed_latest_query("corretto-", "2024-09-16"),
+            Some("corretto-2024".to_string())
+        );
+        assert_eq!(prefixed_latest_query("prefix:1.", "24"), None);
+        assert_eq!(prefixed_latest_query("", "17.0.7"), None);
+        assert_eq!(prefixed_latest_query("temurin-", ""), None);
     }
 }

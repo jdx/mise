@@ -84,8 +84,8 @@ EOF
 # 5. Run mise env and capture stderr — should NOT contain "command not found"
 STDERR_OUTPUT=$(mise env -s bash 2>&1 1>/dev/null || true)
 if echo "$STDERR_OUTPUT" | grep -q "command not found"; then
-	echo "FAIL: Spurious 'command not found' warning in mise env stderr:"
-	echo "$STDERR_OUTPUT"
-	exit 1
+  echo "FAIL: Spurious 'command not found' warning in mise env stderr:"
+  echo "$STDERR_OUTPUT"
+  exit 1
 fi
 echo "PASS: No spurious warning from tools=true module during dependency_env"

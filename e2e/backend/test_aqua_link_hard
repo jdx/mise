@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:pnpm/pnpm" = "10.26.1"
+EOF_MISE
+
+mise install
+assert_contains "mise x -- pnpm --version" "10.26.1"

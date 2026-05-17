@@ -1,8 +1,10 @@
 use crate::errors::Error::PluginNotInstalled;
-use crate::git::Git;
+use crate::file;
+use crate::git::{CloneOptions, Git};
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::registry::REGISTRY;
+use crate::remote_source::RemoteSource;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -13,6 +15,7 @@ use eyre::{Result, eyre};
 use heck::ToKebabCase;
 use regex::Regex;
 pub use script_manager::{Script, ScriptManager};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::vec;
@@ -189,6 +192,33 @@ impl PluginType {
         }
     }
 
+    pub fn from_plugin_config(key: &str) -> (Self, &str) {
+        if let Some(name) = key.strip_prefix("vfox:") {
+            (Self::Vfox, name)
+        } else if let Some(name) = key.strip_prefix("vfox-backend:") {
+            (Self::VfoxBackend, name)
+        } else if let Some(name) = key.strip_prefix("asdf:") {
+            (Self::Asdf, name)
+        } else {
+            let path = dirs::PLUGINS.join(key.to_kebab_case());
+            (Self::from_plugin_path(&path).unwrap_or(Self::Asdf), key)
+        }
+    }
+
+    pub fn from_plugin_path(path: &Path) -> Option<Self> {
+        if path.join("metadata.lua").exists() {
+            if path.join("hooks").join("backend_install.lua").exists() {
+                Some(Self::VfoxBackend)
+            } else {
+                Some(Self::Vfox)
+            }
+        } else if path.join("bin").join("list-all").exists() {
+            Some(Self::Asdf)
+        } else {
+            None
+        }
+    }
+
     pub fn plugin(&self, short: String) -> PluginEnum {
         let path = dirs::PLUGINS.join(short.to_kebab_case());
         match self {
@@ -216,10 +246,25 @@ pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
+        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master)"
     )
         .unwrap()
 });
+
+/// PEP 440 separator-less pre-release segment, grounded in the canonical
+/// public version grammar:
+///
+/// > `[N!]N(.N)*[{a|b|rc}N][.postN][.devN]`
+///
+/// The pre-release segment (`{a|b|rc}N`) must follow the release segment, so
+/// the regex requires a leading digit. `c` is included as PEP 440's recognized
+/// alternate spelling for `rc`. The trailing boundary `(?:$|[^a-z0-9])` keeps
+/// it from matching inside hex hashes or other identifiers.
+///
+/// Only consulted by Python-flavored backends (currently `pipx`); other
+/// backends would false-positive on hex hashes like `f149714c1d54`.
+pub static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> =
+    Lazy::new(|| Regex::new(r"(?i)[0-9](?:a|b|c|rc)[0-9]+(?:$|[^a-z0-9])").unwrap());
 
 pub fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
@@ -329,6 +374,7 @@ pub enum PluginSource {
     Git {
         url: String,
         git_ref: Option<String>,
+        subdir: Option<String>,
     },
     /// Zip file accessible via HTTPS
     Zip { url: String },
@@ -336,6 +382,13 @@ pub enum PluginSource {
 
 impl PluginSource {
     pub fn parse(repository: &str) -> Self {
+        if let Some(source) = RemoteSource::parse_git(repository) {
+            return PluginSource::Git {
+                url: source.url,
+                git_ref: source.git_ref,
+                subdir: Some(source.path),
+            };
+        }
         // Split Parameters
         let url_path = repository
             .split('?')
@@ -355,7 +408,92 @@ impl PluginSource {
         PluginSource::Git {
             url: url.to_string(),
             git_ref: git_ref.map(|s| s.to_string()),
+            subdir: None,
         }
+    }
+}
+
+pub fn git_plugin_repo_path(plugin_name: &str) -> PathBuf {
+    dirs::DATA
+        .join("plugin-repos")
+        .join(plugin_name.to_kebab_case())
+}
+
+pub fn managed_git_plugin_repo_path(
+    plugin_name: &str,
+    plugin_path: &Path,
+) -> Result<Option<PathBuf>> {
+    if !plugin_path.is_symlink() {
+        return Ok(None);
+    }
+
+    let target = fs::read_link(plugin_path)?;
+    let target = if target.is_absolute() {
+        target
+    } else {
+        plugin_path
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .join(target)
+    };
+    let repo_path = git_plugin_repo_path(plugin_name);
+    Ok(target.starts_with(&repo_path).then_some(repo_path))
+}
+
+pub fn remove_git_plugin_source(
+    plugin_name: &str,
+    plugin_path: &Path,
+    pr: &dyn SingleReport,
+) -> Result<()> {
+    let repo_path = managed_git_plugin_repo_path(plugin_name, plugin_path)?;
+    file::remove_all_with_progress(plugin_path, pr)?;
+    if let Some(repo_path) = repo_path {
+        file::remove_all_with_progress(repo_path, pr)?;
+    }
+    Ok(())
+}
+
+pub fn install_git_plugin_source(
+    plugin_name: &str,
+    plugin_path: &Path,
+    repo_url: &str,
+    git_ref: Option<&str>,
+    subdir: Option<&str>,
+    pr: &dyn SingleReport,
+) -> Result<Git> {
+    if let Some(subdir) = subdir {
+        let repo_path = git_plugin_repo_path(plugin_name);
+        file::remove_all_with_progress(plugin_path, pr)?;
+        file::remove_all_with_progress(&repo_path, pr)?;
+
+        let git = Git::new(&repo_path);
+        pr.set_message(format!("clone {repo_url}"));
+        git.clone(repo_url, CloneOptions::default().pr(pr))?;
+        if let Some(ref_) = git_ref {
+            pr.set_message(format!("check out {ref_}"));
+            git.update(Some(ref_.to_string()))?;
+        }
+
+        let subdir_path = repo_path.join(subdir);
+        if !subdir_path.is_dir() {
+            let _ = file::remove_all(&repo_path);
+            return Err(eyre!(
+                "plugin subdirectory does not exist: {}",
+                file::display_path(&subdir_path)
+            ));
+        }
+        pr.set_message(format!("link {}", file::display_path(plugin_path)));
+        file::make_symlink(&subdir_path, plugin_path)?;
+        Ok(Git::new(plugin_path))
+    } else {
+        let git = Git::new(plugin_path);
+        pr.set_message(format!("clone {repo_url}"));
+        git.clone(repo_url, CloneOptions::default().pr(pr))?;
+        if let Some(ref_) = git_ref {
+            pr.set_message(format!("check out {ref_}"));
+            git.update(Some(ref_.to_string()))?;
+        }
+        Ok(git)
     }
 }
 
@@ -368,9 +506,14 @@ mod tests {
         // Test parsing Git URL
         let source = PluginSource::parse("https://github.com/user/plugin.git");
         match source {
-            PluginSource::Git { url, git_ref } => {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
                 assert_eq!(url, "https://github.com/user/plugin.git");
                 assert_eq!(git_ref, None);
+                assert_eq!(subdir, None);
             }
             _ => panic!("Expected a git plugin"),
         }
@@ -381,9 +524,14 @@ mod tests {
         // Test parsing Git URL with refs
         let source = PluginSource::parse("https://github.com/user/plugin.git#v1.0.0");
         match source {
-            PluginSource::Git { url, git_ref } => {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
                 assert_eq!(url, "https://github.com/user/plugin.git");
                 assert_eq!(git_ref, Some("v1.0.0".to_string()));
+                assert_eq!(subdir, None);
             }
             _ => panic!("Expected a git plugin"),
         }
@@ -418,6 +566,25 @@ mod tests {
     }
 
     #[test]
+    fn test_plugin_source_parse_remote_git_zip_subdir() {
+        let source = PluginSource::parse(
+            "git::https://github.com/user/plugin.git//plugins/my-plugin.zip?ref=main",
+        );
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "https://github.com/user/plugin.git");
+                assert_eq!(git_ref, Some("main".to_string()));
+                assert_eq!(subdir, Some("plugins/my-plugin.zip".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
     fn test_plugin_source_parse_edge_cases() {
         // Test parsing git url which contains `.zip`
         let source = PluginSource::parse("https://example.com/.zip/plugin");
@@ -425,6 +592,94 @@ mod tests {
             PluginSource::Git { .. } => {}
             _ => panic!("Expected a git plugin"),
         }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_remote_git_https() {
+        let source = PluginSource::parse(
+            "git::https://github.com/org/repo.git//dev/plugins/tool?ref=feature/test",
+        );
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "https://github.com/org/repo.git");
+                assert_eq!(git_ref, Some("feature/test".to_string()));
+                assert_eq!(subdir, Some("dev/plugins/tool".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_remote_git_ssh() {
+        let source = PluginSource::parse(
+            "git::ssh://git@git.acme.com:1222/org/repo.git//plugins/tool?ref=main",
+        );
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "ssh://git@git.acme.com:1222/org/repo.git");
+                assert_eq!(git_ref, Some("main".to_string()));
+                assert_eq!(subdir, Some("plugins/tool".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_config() {
+        assert_eq!(
+            PluginType::from_plugin_config("vfox:node"),
+            (PluginType::Vfox, "node")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("vfox-backend:npm"),
+            (PluginType::VfoxBackend, "npm")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("asdf:node"),
+            (PluginType::Asdf, "node")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("missing-test-plugin"),
+            (PluginType::Asdf, "missing-test-plugin")
+        );
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_path() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(PluginType::from_plugin_path(dir.path()), None);
+
+        let asdf = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(asdf.path().join("bin")).unwrap();
+        std::fs::write(asdf.path().join("bin").join("list-all"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(asdf.path()),
+            Some(PluginType::Asdf)
+        );
+
+        let vfox = tempfile::tempdir().unwrap();
+        std::fs::write(vfox.path().join("metadata.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(vfox.path()),
+            Some(PluginType::Vfox)
+        );
+
+        let backend = tempfile::tempdir().unwrap();
+        std::fs::write(backend.path().join("metadata.lua"), "").unwrap();
+        std::fs::create_dir_all(backend.path().join("hooks")).unwrap();
+        std::fs::write(backend.path().join("hooks").join("backend_install.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(backend.path()),
+            Some(PluginType::VfoxBackend)
+        );
     }
 
     #[test]
@@ -448,9 +703,79 @@ mod tests {
             "PEP 440 .dev suffix with build number should be filtered"
         );
 
+        // npm prerelease channels (GitHub discussion #9503).
+        // Use suffixes that don't accidentally match `([abc])[0-9]+`, so each
+        // assertion exercises only the channel-tag alternative it names.
+        assert!(
+            VERSION_REGEX.is_match("0.42.0-nightly.20260429.g6d9911393"),
+            "npm -nightly tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("13.0.0-canary"),
+            "npm -canary tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("18.0.0-experimental.1"),
+            "npm -experimental tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("1.99.0-insider"),
+            "npm -insider tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("1.99.0-edge"),
+            "npm -edge tag should be filtered"
+        );
+
         // Stable versions should NOT match
         assert!(!VERSION_REGEX.is_match("1.0.0"));
         assert!(!VERSION_REGEX.is_match("2026.3.3"));
         assert!(!VERSION_REGEX.is_match("22.6.0"));
+
+        // PEP 440 separator-less suffixes (`3.12.0a1`, `1.2.3c1`) live in
+        // PEP440_PRERELEASE_REGEX, not the general regex — see that test below.
+        assert!(!VERSION_REGEX.is_match("3.12.0a1"));
+        assert!(!VERSION_REGEX.is_match("1.2.3c1"));
+
+        // Go pseudo-versions and other identifiers with incidental `[abc]\d`
+        // substrings (commit hashes) must not be flagged.
+        assert!(!VERSION_REGEX.is_match("2.0.0-20260404020628-f149714c1d54"));
+    }
+
+    #[test]
+    fn test_pep440_prerelease_regex() {
+        // Canonical PEP 440 pre-release segments: `aN`, `bN`, `rcN`, plus the
+        // recognized `cN` alias for `rcN`.
+        assert!(PEP440_PRERELEASE_REGEX.is_match("3.12.0a1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("3.12.0b2"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.2.3c1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.2.3rc1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0c1+build"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0a1.dev0"));
+
+        // Stable releases — including `.postN`, which PEP 440 specifies as a
+        // post-release (after a stable), NOT a pre-release.
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("3.12.0"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0.post1"));
+
+        // The `{a|b|rc}N` segment must follow the release segment per the
+        // PEP 440 grammar — the leading-digit anchor enforces that. Identifiers
+        // whose hex hashes happen to contain `c1` / `a1` / `b2` substrings
+        // (e.g. Go pseudo-versions) do not match because the `[abc]` is
+        // preceded by a hex letter, not a digit.
+        assert!(
+            !PEP440_PRERELEASE_REGEX.is_match("2.0.0-20260404020628-f149714c1d54"),
+            "Go pseudo-version with `c1` in hash should not match"
+        );
+        assert!(
+            !PEP440_PRERELEASE_REGEX.is_match("1.0.0-20240101000000-a1b2c3d4e5f6"),
+            "Go pseudo-version with `a1`/`b2`/`c3` in hash should not match"
+        );
+
+        // Bare `aN` / `bN` / `cN` not attached to a release segment (uncommon
+        // but possible identifier shapes) is also rejected.
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("a1"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("b1234567"));
     }
 }

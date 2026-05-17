@@ -104,7 +104,8 @@ impl Doctor {
                 .collect(),
         );
         let mut aqua = serde_json::Map::new();
-        let aqua_registry_metadata = aqua_registry::AQUA_STANDARD_REGISTRY_METADATA;
+        let aqua_registry_metadata =
+            crate::aqua::standard_registry::AQUA_STANDARD_REGISTRY_METADATA;
         aqua.insert(
             "baked_in_registry_repository".into(),
             aqua_registry_metadata.repository.into(),
@@ -163,6 +164,7 @@ impl Doctor {
                 .map(|p| p.to_string_lossy().to_string())
                 .collect(),
         );
+        data.insert("plugins".into(), render_plugins_json());
 
         let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tv)| {
             let versions: serde_json::Value = tv
@@ -338,7 +340,7 @@ impl Doctor {
                 ));
             } else {
                 let cmd = style::nyellow("mise help activate");
-                let url = style::nunderline("https://mise.jdx.dev");
+                let url = style::nunderline("https://mise.en.dev");
                 self.errors.push(formatdoc!(
                     r#"mise is not activated, run {cmd} or
                         read documentation at {url} for activation instructions.
@@ -571,7 +573,10 @@ impl Doctor {
 }
 
 fn shims_on_path() -> bool {
-    env::PATH.contains(&dirs::SHIMS.to_path_buf())
+    let shims = &*dirs::SHIMS;
+    env::PATH
+        .iter()
+        .any(|p| crate::file::paths_eq(&crate::file::replace_path(p), shims))
 }
 
 fn yn(b: bool) -> String {
@@ -641,43 +646,88 @@ fn render_backends() -> String {
 }
 
 fn render_plugins() -> String {
-    let plugins = backend::list()
-        .into_iter()
-        .filter(|b| {
-            b.plugin()
-                .is_some_and(|p| p.is_installed() && b.get_type() == BackendType::Asdf)
-        })
-        .collect::<Vec<_>>();
+    let plugins = installed_plugins();
     let max_plugin_name_len = plugins
         .iter()
-        .map(|p| p.id().len())
+        .map(|p| p.name().len())
         .max()
         .unwrap_or(0)
         .min(40);
     plugins
         .into_iter()
-        .filter(|b| b.plugin().is_some())
         .map(|p| {
-            let p = p.plugin().unwrap();
             let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
-            let extra = match p {
-                PluginEnum::Asdf(_) | PluginEnum::Vfox(_) | PluginEnum::VfoxBackend(_) => {
-                    let git = Git::new(dirs::PLUGINS.join(p.name()));
-                    match git.get_remote_url() {
-                        Some(url) => {
-                            let sha = git
-                                .current_sha_short()
-                                .unwrap_or_else(|_| "(unknown)".to_string());
-                            format!("{url}#{sha}")
-                        }
-                        None => "".to_string(),
-                    }
-                } // TODO: PluginType::Core => "(core)".to_string(),
-            };
+            let extra = plugin_extra(&p);
             format!("{padded_name}  {}", style::ndim(extra))
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn render_plugins_json() -> serde_json::Value {
+    installed_plugins()
+        .into_iter()
+        .map(|plugin| {
+            let mut value = serde_json::Map::new();
+            value.insert(
+                "type".into(),
+                serde_json::Value::String(plugin_type_name(plugin.get_plugin_type()).to_string()),
+            );
+            if let Some(git) = plugin_git(&plugin)
+                && let Some(url) = git.get_remote_url()
+            {
+                value.insert("url".into(), serde_json::Value::String(url));
+                if let Ok(ref_) = git.current_abbrev_ref() {
+                    value.insert("ref".into(), serde_json::Value::String(ref_));
+                }
+                if let Ok(sha) = git.current_sha_short() {
+                    value.insert("sha".into(), serde_json::Value::String(sha));
+                }
+            }
+            (plugin.name().to_string(), serde_json::Value::Object(value))
+        })
+        .collect::<serde_json::Map<_, _>>()
+        .into()
+}
+
+fn installed_plugins() -> Vec<PluginEnum> {
+    install_state::list_plugins()
+        .iter()
+        .map(|(name, plugin_type)| plugin_type.plugin(name.clone()))
+        .filter(|plugin| plugin.is_installed())
+        .collect()
+}
+
+fn plugin_extra(plugin: &PluginEnum) -> String {
+    let Some(git) = plugin_git(plugin) else {
+        return "".to_string();
+    };
+    match git.get_remote_url() {
+        Some(url) => {
+            let sha = git
+                .current_sha_short()
+                .unwrap_or_else(|_| "(unknown)".to_string());
+            format!("{url}#{sha}")
+        }
+        None => "".to_string(),
+    }
+}
+
+fn plugin_git(plugin: &PluginEnum) -> Option<Git> {
+    let path = dirs::PLUGINS.join(plugin.name());
+    if path.join(".git").exists() {
+        Some(Git::new(path))
+    } else {
+        None
+    }
+}
+
+fn plugin_type_name(plugin_type: PluginType) -> &'static str {
+    match plugin_type {
+        PluginType::Asdf => "asdf",
+        PluginType::Vfox => "vfox",
+        PluginType::VfoxBackend => "vfox_backend",
+    }
 }
 
 fn build_info() -> IndexMap<String, &'static str> {
@@ -708,11 +758,11 @@ fn shell() -> String {
 }
 
 fn aqua_registry_count() -> usize {
-    aqua_registry::AQUA_STANDARD_REGISTRY_FILES.len()
+    crate::aqua::standard_registry::AQUA_STANDARD_REGISTRY_FILES.len()
 }
 
 fn aqua_registry_count_str() -> String {
-    let metadata = aqua_registry::AQUA_STANDARD_REGISTRY_METADATA;
+    let metadata = crate::aqua::standard_registry::AQUA_STANDARD_REGISTRY_METADATA;
     format!(
         "baked in registry: {}@{}\nbaked in registry tools: {}",
         metadata.repository,

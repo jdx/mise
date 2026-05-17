@@ -4,14 +4,14 @@
 set -euo pipefail
 
 assert_contains() {
-	local output
-	output="${1}"
-	shift
-	if ! echo "${output}" | grep -q "$@"; then
-		echo "Expected to find '$*' in:"
-		echo "${output}"
-		exit 1
-	fi
+  local output
+  output="${1}"
+  shift
+  if ! echo "${output}" | grep -q "$@"; then
+    echo "Expected to find '$*' in:"
+    echo "${output}"
+    exit 1
+  fi
 }
 
 # Test 1: Required env var with boolean value
@@ -24,8 +24,8 @@ unset REQUIRED_BOOL || true
 
 # This should fail with basic message
 if mise env 2>error.log; then
-	echo "ERROR: Expected mise env to fail but it succeeded"
-	exit 1
+  echo "ERROR: Expected mise env to fail but it succeeded"
+  exit 1
 fi
 
 assert_contains "$(cat error.log)" "Required environment variable 'REQUIRED_BOOL' is not defined"
@@ -41,8 +41,8 @@ unset API_KEY || true
 
 # This should fail with help message
 if mise env 2>error.log; then
-	echo "ERROR: Expected mise env to fail but it succeeded"
-	exit 1
+  echo "ERROR: Expected mise env to fail but it succeeded"
+  exit 1
 fi
 
 assert_contains "$(cat error.log)" "Required environment variable 'API_KEY' is not defined"

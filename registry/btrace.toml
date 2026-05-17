@@ -1,3 +1,0 @@
-backends = ["github:btraceio/btrace", "asdf:mise-plugins/mise-btrace"]
-description = "BTrace - a safe, dynamic tracing tool for the Java platform"
-test = { cmd = "btrace --version", expected = "BTrace v.{{version}}" }

@@ -67,6 +67,12 @@ fn manifest_path() -> PathBuf {
     dirs::INSTALLS.join(".mise-installs.toml")
 }
 
+fn tool_manifest_path(installs_dir: &Path, short: &str) -> PathBuf {
+    installs_dir
+        .join(short.to_kebab_case())
+        .join(".mise.backend.toml")
+}
+
 /// Read the consolidated manifest file. Returns empty map if it doesn't exist.
 fn read_manifest() -> Manifest {
     read_manifest_from(&manifest_path())
@@ -95,6 +101,31 @@ fn write_manifest(manifest: &Manifest) -> Result<()> {
 
 fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
     let body = toml::to_string_pretty(manifest)?;
+    file::write(path, body.trim())?;
+    Ok(())
+}
+
+fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
+    if !path.exists() {
+        return None;
+    }
+    match file::read_to_string(path) {
+        std::result::Result::Ok(body) => match toml::from_str(&body) {
+            std::result::Result::Ok(m) => Some(m),
+            Err(err) => {
+                warn!(
+                    "failed to parse tool manifest at {}: {err:#}",
+                    display_path(path)
+                );
+                None
+            }
+        },
+        Err(_) => None,
+    }
+}
+
+fn write_tool_manifest_to(path: &Path, tool: &ManifestTool) -> Result<()> {
+    let body = toml::to_string_pretty(tool)?;
     file::write(path, body.trim())?;
     Ok(())
 }
@@ -170,16 +201,8 @@ async fn init_plugins() -> MutexResult<InstallStatePlugins> {
                 info!("removing banned plugin {d}");
                 let _ = file::remove_all(&path);
                 None
-            } else if path.join("metadata.lua").exists() {
-                if has_backend_methods(&path) {
-                    Some((d, PluginType::VfoxBackend))
-                } else {
-                    Some((d, PluginType::Vfox))
-                }
-            } else if path.join("bin").join("list-all").exists() {
-                Some((d, PluginType::Asdf))
             } else {
-                None
+                PluginType::from_plugin_path(&path).map(|plugin_type| (d, plugin_type))
             }
         })
         .collect();
@@ -211,7 +234,13 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     let mut tools = BTreeMap::new();
     for dir_name in subdirs {
         let dir = dirs::INSTALLS.join(&dir_name);
-
+        let tool_manifest = read_tool_manifest_from(&dir.join(".mise.backend.toml"));
+        let manifest_tool = tool_manifest.as_ref().or_else(|| manifest.get(&dir_name));
+        let legacy_meta = if manifest_tool.is_none() {
+            read_legacy_backend_meta(&dir_name)
+        } else {
+            None
+        };
         // Read versions from filesystem (1 syscall per tool — unavoidable)
         let versions: Vec<String> = file::dir_subdirs(&dir)
             .unwrap_or_else(|err| {
@@ -233,7 +262,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         }
 
         // Get metadata: prefer manifest, fall back to legacy .mise.backend
-        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest.get(&dir_name) {
+        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
             let mut full = mt.full.clone();
             let mut opts = mt.opts.clone();
             // Backward compat: if opts is empty but full contains [...], extract opts
@@ -263,7 +292,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 );
             }
             (mt.short.clone(), full, mt.explicit_backend, opts)
-        } else if let Some((s, full, explicit)) = read_legacy_backend_meta(&dir_name) {
+        } else if let Some((s, full, explicit)) = legacy_meta {
             // Migration: absorb into manifest (clone on first migration)
             let m = updated_manifest.get_or_insert_with(|| manifest.clone());
             m.insert(
@@ -319,6 +348,10 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         };
         for dir_name in shared_subdirs {
             let dir = shared_dir.join(&dir_name);
+            let tool_manifest = read_tool_manifest_from(&dir.join(".mise.backend.toml"));
+            let manifest_tool = tool_manifest
+                .as_ref()
+                .or_else(|| shared_manifest.get(&dir_name));
             let versions: Vec<String> = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
                     warn!("reading versions in {} failed: {err:?}", display_path(&dir));
@@ -338,17 +371,16 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 continue;
             }
 
-            let (short, full, explicit_backend, opts) =
-                if let Some(mt) = shared_manifest.get(&dir_name) {
-                    (
-                        mt.short.clone(),
-                        mt.full.clone(),
-                        mt.explicit_backend,
-                        mt.opts.clone(),
-                    )
-                } else {
-                    (dir_name.clone(), None, true, BTreeMap::new())
-                };
+            let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
+                (
+                    mt.short.clone(),
+                    mt.full.clone(),
+                    mt.explicit_backend,
+                    mt.opts.clone(),
+                )
+            } else {
+                (dir_name.clone(), None, true, BTreeMap::new())
+            };
 
             // Merge with existing tool entry or create new one
             let tool = tools
@@ -423,14 +455,6 @@ fn is_banned_plugin(path: &Path) -> bool {
     false
 }
 
-fn has_backend_methods(plugin_path: &Path) -> bool {
-    // to be a backend plugin, it must have a backend_install.lua file so we don't need to check for other files
-    plugin_path
-        .join("hooks")
-        .join("backend_install.lua")
-        .exists()
-}
-
 pub fn get_tool_full(short: &str) -> Option<String> {
     list_tools().get(short).and_then(|t| t.full.clone())
 }
@@ -452,7 +476,10 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
     let backend_type = list_tools()
         .get(short)
         .and_then(|ist| ist.full.as_ref())
-        .map(|full| BackendType::guess(full));
+        .and_then(|full| {
+            full.split_once(':')
+                .map(|(backend, _)| BackendType::guess(backend))
+        });
     if let Some(BackendType::Unknown) = backend_type
         && let Some((plugin_name, _)) = short.split_once(':')
         && let Some(PluginType::VfoxBackend) = get_plugin_type(plugin_name)
@@ -467,6 +494,51 @@ pub fn list_versions(short: &str) -> Vec<String> {
         .get(short)
         .map(|tool| tool.versions.clone())
         .unwrap_or_default()
+}
+
+pub fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
+    let tool_dir = install_path.parent().map(Path::to_path_buf);
+    let full = ba.full_without_opts();
+    let explicit_backend = ba.has_explicit_backend();
+    let opts = persistent_opts(ba);
+
+    let mut tools = INSTALL_STATE_TOOLS
+        .lock()
+        .expect("INSTALL_STATE_TOOLS lock failed");
+    let Some(existing_tools) = tools.as_ref() else {
+        return;
+    };
+
+    let mut next_tools = existing_tools.deref().clone();
+    let tool = next_tools
+        .entry(ba.short.clone())
+        .or_insert_with(|| InstallStateTool {
+            short: ba.short.clone(),
+            full: Some(full.clone()),
+            versions: Vec::new(),
+            explicit_backend,
+            opts: opts.clone(),
+            installs_path: tool_dir.clone(),
+        });
+
+    if tool.full.is_none() {
+        tool.full = Some(full);
+    }
+    tool.explicit_backend = explicit_backend;
+    if tool.opts.is_empty() {
+        tool.opts = opts;
+    }
+    if tool.installs_path.is_none() {
+        tool.installs_path = tool_dir;
+    }
+    if !tool.versions.iter().any(|v| v == version) {
+        // Do not sort here: this version has just been resolved by the backend
+        // for this install run, and offline dependency env resolution should
+        // see that concrete result without adding another ordering rule.
+        tool.versions.push(version.to_string());
+    }
+
+    *tools = Some(Arc::new(next_tools));
 }
 
 pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
@@ -488,7 +560,28 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
 pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
     let full = ba.full_without_opts();
     let explicit = ba.has_explicit_backend();
+    let opts_map = persistent_opts(ba);
 
+    let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
+    let mut manifest = read_manifest_from(path);
+    let manifest_tool = ManifestTool {
+        short: ba.short.clone(),
+        full: Some(full),
+        explicit_backend: explicit,
+        opts: opts_map,
+    };
+    manifest.insert(ba.short.to_kebab_case(), manifest_tool.clone());
+    write_manifest_to(path, &manifest)?;
+    if let Some(installs_dir) = path.parent() {
+        let tool_manifest = tool_manifest_path(installs_dir, &ba.short);
+        if tool_manifest.parent().is_some_and(|p| p.exists()) {
+            write_tool_manifest_to(&tool_manifest, &manifest_tool)?;
+        }
+    }
+    Ok(())
+}
+
+fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
     // Store opts as native TOML values, filtering out ephemeral keys.
     let mut opts_map: BTreeMap<String, toml::Value> = BTreeMap::new();
     if let Some(o) = ba.opts.as_ref() {
@@ -498,20 +591,7 @@ pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
             }
         }
     }
-
-    let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
-    let mut manifest = read_manifest_from(path);
-    manifest.insert(
-        ba.short.to_kebab_case(),
-        ManifestTool {
-            short: ba.short.clone(),
-            full: Some(full),
-            explicit_backend: explicit,
-            opts: opts_map,
-        },
-    );
-    write_manifest_to(path, &manifest)?;
-    Ok(())
+    opts_map
 }
 
 pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {

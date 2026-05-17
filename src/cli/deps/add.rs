@@ -65,7 +65,7 @@ impl DepsAdd {
 
             let pkg_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
             let cmd = provider.add_command(&pkg_refs, self.dev)?;
-            DepsEngine::execute_command(&cmd, &env, provider.timeout())?;
+            DepsEngine::execute_command(&cmd, &env, provider.timeout(), None, None)?;
         }
 
         Ok(())

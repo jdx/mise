@@ -17,7 +17,7 @@ The code for this is inside the mise repository at [`./src/backend/vfox.rs`](htt
 
 ## Dependencies
 
-No dependencies are required for vfox. Vfox lua code is read via a lua interpreter built into mise.
+No extra system packages are required to _run_ the vfox backend. Vfox Lua code is executed by the interpreter built into mise.
 
 ## Usage
 

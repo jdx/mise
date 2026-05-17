@@ -92,8 +92,8 @@ assert "echo $PATH_COUNT" "0"
 # 7. Mise shell integration should be removed
 # The mise function should no longer exist
 if type mise 2>/dev/null | grep -q "function"; then
-	echo "ERROR: mise function still exists after deactivate"
-	exit 1
+  echo "ERROR: mise function still exists after deactivate"
+  exit 1
 fi
 
 # 8. Test edge case: deactivating when not activated should be safe

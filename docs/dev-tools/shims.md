@@ -236,7 +236,7 @@ The obvious downside is that anytime one wants to use `mise` they need to prefix
 > work on mise yourself I would recommend working in a similar way and disabling `mise activate` or shims
 > while you are working on it.
 >
-> See [How I use mise](https://mise.jdx.dev/how-i-use-mise.html) for more information.
+> See [How I use mise](https://mise.en.dev/how-i-use-mise.html) for more information.
 
 :::
 

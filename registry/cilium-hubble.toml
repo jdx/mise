@@ -1,3 +1,7 @@
-backends = ["github:cilium/hubble", "asdf:NitriKx/asdf-cilium-hubble"]
+backends = [
+  "aqua:cilium/hubble",
+  "github:cilium/hubble",
+  "asdf:NitriKx/asdf-cilium-hubble",
+]
 description = "Hubble - Network, Service & Security Observability for Kubernetes using eBPF"
 test = { cmd = "hubble --version", expected = "{{version}}" }

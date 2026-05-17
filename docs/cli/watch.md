@@ -11,7 +11,7 @@ This command uses the `watchexec` tool to watch for changes to files and rerun t
 It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
 
 For more advanced process management (daemon management, auto-restart, readiness checks,
-cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
+cron scheduling), see mise's sister project: https://pitchfork.en.dev
 
 ## Arguments
 

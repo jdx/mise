@@ -16,10 +16,10 @@ echo "$output"
 
 # Check if attestation verification was attempted
 if echo "$output" | grep -q "verify GitHub artifact attestations"; then
-	echo "✅ GitHub artifact attestations verification was attempted"
+  echo "✅ GitHub artifact attestations verification was attempted"
 else
-	echo "❌ ERROR: GitHub artifact attestation verification message not found"
-	exit 1
+  echo "❌ ERROR: GitHub artifact attestation verification message not found"
+  exit 1
 fi
 
 # Cleanup

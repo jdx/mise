@@ -1,0 +1,3 @@
+backends = ["pipx:git-filter-repo"]
+description = "Quickly rewrite git repository history (filter-branch replacement)"
+test = { cmd = "which git-filter-repo", expected = "git-filter-repo" }

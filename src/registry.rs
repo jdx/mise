@@ -1,10 +1,10 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
-use crate::toolset::ToolVersionOptions;
+use crate::toolset::{RawBackendOptions, ToolVersionOptions};
 use heck::ToShoutySnakeCase;
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::env;
 use std::env::consts::{ARCH, OS};
 use std::fmt::Display;
@@ -14,8 +14,34 @@ use strum::IntoEnumIterator;
 use url::Url;
 
 // the registry is generated from registry/ in the project root
-pub static REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> =
-    Lazy::new(|| include!(concat!(env!("OUT_DIR"), "/registry.rs")));
+pub static REGISTRY: Registry = include!(concat!(env!("OUT_DIR"), "/registry.rs"));
+
+pub struct Registry {
+    entries: &'static [(&'static str, RegistryTool)],
+    lookup: phf::Map<&'static str, usize>,
+}
+
+impl Registry {
+    pub fn get(&self, name: &str) -> Option<&'static RegistryTool> {
+        self.lookup.get(name).map(|index| &self.entries[*index].1)
+    }
+
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.lookup.contains_key(name)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
+        self.entries.iter().map(|(name, tool)| (*name, tool))
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &'static str> {
+        self.entries.iter().map(|(name, _)| *name)
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &'static RegistryTool> {
+        self.entries.iter().map(|(_, tool)| tool)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RegistryTool {
@@ -25,11 +51,17 @@ pub struct RegistryTool {
     #[allow(unused)]
     pub aliases: &'static [&'static str],
     pub overrides: &'static [&'static str],
-    pub test: &'static Option<(&'static str, &'static str)>,
+    pub test: &'static Option<RegistryToolTest>,
     pub os: &'static [&'static str],
-    pub depends: &'static [&'static str],
     pub idiomatic_files: &'static [&'static str],
     pub detect: &'static [&'static str],
+}
+
+#[derive(Debug, Clone)]
+pub struct RegistryToolTest {
+    pub cmd: &'static str,
+    pub expected: &'static str,
+    pub tools: &'static [&'static str],
 }
 
 #[derive(Debug, Clone)]
@@ -131,18 +163,15 @@ impl RegistryTool {
 
         if let Some(backend) = self.get_backend(full) {
             for (k, v) in backend.options {
-                // Try to parse as TOML to preserve nested table structure
-                // (e.g., platforms with per-platform options like asset_pattern)
-                let value = match toml::from_str::<toml::Value>(v) {
-                    Ok(parsed) if parsed.is_table() => parsed,
-                    _ => toml::Value::String(v.to_string()),
-                };
+                let value = v.parse::<toml::Value>().unwrap_or_else(|e| {
+                    panic!("failed to parse registry option {k} as a TOML value: {e}")
+                });
                 opts.insert(k.to_string(), value);
             }
         }
 
         ToolVersionOptions {
-            opts,
+            opts: RawBackendOptions::from(opts),
             ..Default::default()
         }
     }
@@ -252,6 +281,72 @@ mod tests {
             &BTreeSet::from(["cargo"]),
             &name
         ));
+    }
+
+    #[test]
+    fn test_registry_iteration_is_sorted() {
+        use super::*;
+
+        // The interactive tool selector and --all test-tool path consume registry
+        // iteration order directly, so keep PHF lookup separate from sorted output.
+        let keys = REGISTRY.keys().collect::<Vec<_>>();
+        let mut sorted = keys.clone();
+        sorted.sort_unstable();
+
+        assert!(!keys.is_empty());
+        assert_eq!(keys, sorted);
+    }
+
+    #[test]
+    fn test_backend_options_parse_toml_values() {
+        use super::*;
+
+        static OPTIONS: &[(&str, &str)] = &[
+            ("bin", r#""rg""#),
+            ("prerelease", "true"),
+            ("strip_components", "1"),
+            (
+                "targets",
+                r#"["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"]"#,
+            ),
+            (
+                "platforms",
+                r#"{ linux-x64 = { asset_pattern = "tool-linux.tar.gz" } }"#,
+            ),
+        ];
+        static BACKENDS: &[RegistryBackend] = &[RegistryBackend {
+            full: "github:owner/repo",
+            platforms: &[],
+            options: OPTIONS,
+        }];
+        let tool = RegistryTool {
+            short: "test",
+            description: None,
+            backends: BACKENDS,
+            aliases: &[],
+            overrides: &[],
+            test: &None,
+            os: &[],
+            idiomatic_files: &[],
+            detect: &[],
+        };
+
+        let opts = tool.backend_options("github:owner/repo");
+
+        assert_eq!(opts.get("bin"), Some("rg"));
+        assert_eq!(
+            opts.opts.get("prerelease"),
+            Some(&toml::Value::Boolean(true))
+        );
+        assert_eq!(
+            opts.opts.get("strip_components"),
+            Some(&toml::Value::Integer(1))
+        );
+        assert!(opts.opts.get("targets").is_some_and(toml::Value::is_array));
+        assert_eq!(
+            opts.get_nested_string("platforms.linux-x64.asset_pattern"),
+            Some("tool-linux.tar.gz".to_string())
+        );
     }
 
     #[tokio::test]

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/9445
+#
+# When invoking a monorepo task from the root with `mise //sub:taskname`,
+# tools declared in the subdirectory's mise.toml must be installed BEFORE
+# any auto `[deps]` step runs — otherwise providers like `[deps.bun] auto=true`
+# fail because the tool isn't on PATH yet.
+#
+# Before the fix, the toolset was built only from the root config hierarchy,
+# so subdir tools were never installed and `mise //sub:taskname` failed at
+# the deps stage with "No such file or directory" on a clean checkout.
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+experimental_monorepo_root = true
+
+[settings]
+experimental = true
+
+[monorepo]
+config_roots = ["sub"]
+EOF
+
+mkdir -p sub
+cat <<'EOF' >sub/mise.toml
+[tools]
+tiny = "1"
+
+[deps.needs_tiny]
+auto = true
+sources = ["input.txt"]
+outputs = ["output.txt"]
+run = "rtx-tiny > output.txt"
+
+[tasks.use-tiny]
+run = 'rtx-tiny'
+EOF
+
+touch sub/input.txt
+
+# Make sure tiny isn't already installed so we exercise the install path.
+rm -rf "${MISE_DATA_DIR}/installs/tiny/1"* 2>/dev/null || true
+
+# Running the monorepo task from the root should:
+#   1. install `tiny` (from sub/mise.toml)
+#   2. run [deps.needs_tiny] which uses `rtx-tiny`
+#   3. run the task, which also uses `rtx-tiny`
+assert_contains "mise run //sub:use-tiny" "rtx-tiny"
+assert_contains "cat sub/output.txt" "rtx-tiny"

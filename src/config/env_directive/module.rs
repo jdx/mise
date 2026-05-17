@@ -21,12 +21,13 @@ impl EnvResults {
         redact: Option<bool>,
         env: IndexMap<String, String>,
     ) -> Result<()> {
+        let config_root = crate::config::config_file::config_root::config_root(&source);
         let path = dirs::PLUGINS.join(name.to_kebab_case());
         let plugin = VfoxPlugin::new(name, path.clone());
         plugin
             .ensure_installed(config, &MultiProgressReport::get(), false, false)
             .await?;
-        if let Some(response) = plugin.mise_env(value, &env).await? {
+        if let Some(response) = plugin.mise_env(value, &env, Some(&config_root)).await? {
             // Track cacheability
             if !response.cacheable {
                 r.has_uncacheable = true;
@@ -37,14 +38,12 @@ impl EnvResults {
             r.watch_files.push(path);
 
             // Add watch files for cache invalidation
-            // Absolutize relative paths to ensure consistent cache validation
-            // regardless of which directory mise is run from
-            let cwd = std::env::current_dir().unwrap_or_default();
+            // Absolutize relative paths relative to config_root for consistent cache validation
             for watch_file in response.watch_files {
                 if watch_file.is_absolute() {
                     r.watch_files.push(watch_file);
                 } else {
-                    r.watch_files.push(cwd.join(watch_file));
+                    r.watch_files.push(config_root.join(watch_file));
                 }
             }
 
@@ -58,7 +57,7 @@ impl EnvResults {
                 r.env.insert(k, (v, source.clone()));
             }
         }
-        if let Some(path) = plugin.mise_path(value, &env).await? {
+        if let Some(path) = plugin.mise_path(value, &env, Some(&config_root)).await? {
             for p in path {
                 r.env_paths.push(p.into());
             }

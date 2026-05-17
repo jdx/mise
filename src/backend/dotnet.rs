@@ -6,6 +6,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::HTTP_FETCH;
+use crate::toolset::ToolVersionOptions;
 use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
@@ -32,6 +33,10 @@ impl Backend for DotnetBackend {
         Ok(vec!["dotnet"])
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let feed_url = self.get_search_url().await?;
 
@@ -40,10 +45,7 @@ impl Backend for DotnetBackend {
                 "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
                 feed_url,
                 &self.tool_name(),
-                Settings::get()
-                    .dotnet
-                    .package_flags
-                    .contains(&"prerelease".to_string())
+                true
             ))
             .await?;
 
@@ -103,6 +105,15 @@ impl Backend for DotnetBackend {
 
         Ok(tv)
     }
+
+    fn include_prereleases(&self, opts: &ToolVersionOptions) -> bool {
+        if Settings::get().prereleases {
+            return true;
+        }
+
+        opts.opts.get("prerelease").is_some_and(tool_option_bool)
+            || dotnet_legacy_prerelease_package_flag_enabled()
+    }
 }
 
 impl DotnetBackend {
@@ -129,6 +140,31 @@ impl DotnetBackend {
             .ok_or_else(|| eyre!("No SearchQueryService found"))?;
 
         Ok(feed.id.clone())
+    }
+}
+
+fn dotnet_legacy_prerelease_package_flag_enabled() -> bool {
+    let enabled = Settings::get()
+        .dotnet
+        .package_flags
+        .iter()
+        .any(|flag| flag == "prerelease");
+    if enabled {
+        deprecated_at!(
+            "2026.11.0",
+            "2027.11.0",
+            "setting.dotnet.package_flags.prerelease",
+            "`dotnet.package_flags = [\"prerelease\"]` is deprecated. Use the `prerelease = true` tool option instead."
+        );
+    }
+    enabled
+}
+
+fn tool_option_bool(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::Boolean(b) => *b,
+        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
+        _ => false,
     }
 }
 

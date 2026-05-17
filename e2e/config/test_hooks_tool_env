@@ -15,27 +15,27 @@ output=$(mise install dummy 2>&1)
 
 # Check that MISE_TOOL_NAME is set
 if [[ $output == *"TOOL_NAME=dummy"* ]]; then
-	echo "✓ MISE_TOOL_NAME is set correctly"
+  echo "✓ MISE_TOOL_NAME is set correctly"
 else
-	echo "✗ MISE_TOOL_NAME is NOT set correctly"
-	echo "Output: $output"
-	exit 1
+  echo "✗ MISE_TOOL_NAME is NOT set correctly"
+  echo "Output: $output"
+  exit 1
 fi
 
 # Check that MISE_TOOL_VERSION is set (should be a version string)
 if [[ $output == *"TOOL_VERSION="* ]] && [[ $output != *"TOOL_VERSION= "* ]]; then
-	echo "✓ MISE_TOOL_VERSION is set"
+  echo "✓ MISE_TOOL_VERSION is set"
 else
-	echo "✗ MISE_TOOL_VERSION is NOT set"
-	echo "Output: $output"
-	exit 1
+  echo "✗ MISE_TOOL_VERSION is NOT set"
+  echo "Output: $output"
+  exit 1
 fi
 
 # Check that MISE_TOOL_INSTALL_PATH is set (contains mise/installs/dummy)
 if [[ $output == *"INSTALL_PATH="* ]] && [[ $output == *"/mise/installs/dummy"* ]]; then
-	echo "✓ MISE_TOOL_INSTALL_PATH is set"
+  echo "✓ MISE_TOOL_INSTALL_PATH is set"
 else
-	echo "✗ MISE_TOOL_INSTALL_PATH is NOT set correctly"
-	echo "Output: $output"
-	exit 1
+  echo "✗ MISE_TOOL_INSTALL_PATH is NOT set correctly"
+  echo "Output: $output"
+  exit 1
 fi

@@ -657,20 +657,31 @@ fn environment(args: &[String]) -> Vec<String> {
         // first positional would be a task arg, not a global flag.
         let run_subcommands: HashSet<&str> = HashSet::from(["run", "r"]);
         // Try to get from command line args first
-        // Handles both `--env production` (separate args) and `--env=production` (joined with =)
+        // Handles `--env production`, `--env=production`, `-E production`, `-E=production`,
+        // and `-Eproduction`.
         let mut values = Vec::new();
         let mut it = args.iter().take_while(|a| a.as_str() != "--");
         let mut in_run_subcommand = false;
         while let Some(arg) = it.next() {
-            if let Some((flag, value)) = arg.split_once('=') {
-                if arg_defs.contains(flag) {
-                    values.push(value.to_string());
+            if arg.starts_with('-') {
+                if arg_defs.contains(arg.as_str()) {
+                    // Case: `-E production` or `--env production`
+                    if let Some(next) = it.next() {
+                        values.push(next.to_string());
+                    }
+                } else if let Some((prefix, rest)) = arg.split_at_checked(2)
+                    && !rest.starts_with('=')
+                    && arg_defs.contains(prefix)
+                {
+                    // Case: `-Eproduction`
+                    values.push(rest.to_string());
+                } else if let Some((flag, value)) = arg.split_once('=') {
+                    // Case: `-E=production` or `--env=production`
+                    if arg_defs.contains(flag) {
+                        values.push(value.to_string());
+                    }
                 }
-            } else if arg_defs.contains(arg.as_str()) {
-                if let Some(next) = it.next() {
-                    values.push(next.to_string());
-                }
-            } else if !arg.starts_with('-') {
+            } else {
                 // After `run`/`r`, the first positional is the task name — everything
                 // after that belongs to the task, so stop scanning for env flags.
                 if in_run_subcommand {

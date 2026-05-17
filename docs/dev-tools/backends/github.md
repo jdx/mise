@@ -210,7 +210,8 @@ When `no_app = true`:
 
 - Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
 - Standalone archives (e.g., `tool.zip`, `tool-macos.tar.gz`) are preferred
-- Only affects macOS; has no effect on Linux/Windows
+- This is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
+- Only affects autodetection; explicit `asset_pattern` values are used as-is
 
 ::: info
 Without this option, mise's autodetection might select .app bundles on macOS, which can be problematic if the bundle contains a GUI application or Xcode extension rather than a standalone CLI tool.
@@ -253,12 +254,29 @@ When enabled:
 
 ### `api_url`
 
-For GitHub Enterprise or self-hosted GitHub instances, specify the API URL:
+For GitHub Enterprise or self-hosted GitHub instances, specify the API URL. mise uses this URL for release listing and release asset lookup, and may also use it to download assets when browser download URLs are not reachable or when using custom/private instances:
 
 ```toml
 [tools]
 "github:myorg/mytool" = { version = "latest", api_url = "https://github.mycompany.com/api/v3" }
 ```
+
+### `prerelease`
+
+By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:
+
+```toml
+[tools]
+"github:myorg/mytool" = { version = "latest", prerelease = true }
+```
+
+When set:
+
+- Pre-release tags (e.g. `v1.0.0-rc1`, `v0.1.2-dev.86`) appear in `mise ls-remote`.
+- `latest` resolves to the newest version across stable **and** pre-releases, rather than taking the GitHub `/releases/latest` shortcut (which returns whichever release the repo owner has marked as "Latest" — usually the newest non-prerelease, but it can be any release they've pinned via the API).
+- Fuzzy version queries (e.g. `1.2`) match pre-release tags under that prefix.
+
+Useful for repositories whose active releases are all pre-releases (e.g. internal tools shipping continuous dev builds), or when you need to track a project's release candidates. Draft releases are always excluded. Has no effect on GitLab.
 
 ## Self-hosted GitHub
 

@@ -90,21 +90,21 @@ When the container starts with `~` mounted, users still see the system tools aut
 Any tools they install normally go to `~/.local/share/mise/installs` (on the mount) and
 take priority over system versions.
 
-## Overriding libc detection with MISE_LIBC
+## Overriding libc detection
 
 In minimal Docker images (scratch, busybox, distroless) where no dynamic linker
-files exist, mise may not detect whether the system uses musl or glibc. Set `MISE_LIBC`
-to force the detection:
+files exist, mise may not detect whether the system uses musl or glibc. Set `libc`
+or `MISE_LIBC` to force the detection:
 
 ```Dockerfile
 ENV MISE_LIBC=musl
 RUN mise install
 ```
 
-Valid values are `musl` and `gnu` (case-insensitive). Invalid values are silently
-ignored and mise falls back to runtime detection. When the mise binary is compiled
-for musl (the default for Linux releases), it will also fall back to musl
-automatically when no linker is detected.
+Valid values are `musl`, `glibc`, and `gnu` (case-insensitive, with `gnu` treated
+as glibc). Invalid values are silently ignored and mise falls back to runtime
+detection. When the mise binary is compiled for musl (the default for Linux
+releases), it will also fall back to musl automatically when no linker is detected.
 
 ## Task to run mise in a Docker container
 

@@ -14,17 +14,17 @@ eval "$(mise activate bash)"
 
 # Verify session was established by activate
 if [[ -n $__MISE_SESSION ]]; then
-	ok "activate established __MISE_SESSION"
+  ok "activate established __MISE_SESSION"
 else
-	fail "activate should establish __MISE_SESSION"
+  fail "activate should establish __MISE_SESSION"
 fi
 
 # Fast-path should work - nothing has changed since activate
 output=$(mise hook-env -s bash)
 if [[ -z $output ]]; then
-	ok "fast-path works when nothing changed (no output)"
+  ok "fast-path works when nothing changed (no output)"
 else
-	fail "fast-path should produce no output but got: '$output'"
+  fail "fast-path should produce no output but got: '$output'"
 fi
 
 # Test 1: Creating a new config file should bypass fast-path
@@ -32,9 +32,9 @@ sleep 0.1 # ensure mtime difference
 echo '[tools]' >mise.toml
 output=$(mise hook-env -s bash)
 if [[ $output == *"__MISE_SESSION"* ]]; then
-	ok "new config file bypasses fast-path"
+  ok "new config file bypasses fast-path"
 else
-	fail "new config file should bypass fast-path but got: '$output'"
+  fail "new config file should bypass fast-path but got: '$output'"
 fi
 rm mise.toml
 eval "$output"
@@ -47,9 +47,9 @@ eval "$output"
 # Now fast-path should work
 output=$(mise hook-env -s bash)
 if [[ -z $output ]]; then
-	ok "fast-path works after session re-established"
+  ok "fast-path works after session re-established"
 else
-	fail "fast-path should work after session re-established but got: '$output'"
+  fail "fast-path should work after session re-established but got: '$output'"
 fi
 
 # Test 2: Changing directories should bypass fast-path
@@ -58,7 +58,7 @@ eval "$(mise activate bash)"
 # Verify fast-path works here
 output=$(mise hook-env -s bash)
 if [[ -n $output ]]; then
-	fail "expected fast-path before dir change but got output"
+  fail "expected fast-path before dir change but got output"
 fi
 
 # Now change directory and verify fast-path is bypassed
@@ -67,9 +67,9 @@ mkdir -p subdir
 builtin cd subdir
 output=$(mise hook-env -s bash)
 if [[ $output == *"__MISE_SESSION"* ]]; then
-	ok "directory change bypasses fast-path"
+  ok "directory change bypasses fast-path"
 else
-	fail "directory change should bypass fast-path but got: '$output'"
+  fail "directory change should bypass fast-path but got: '$output'"
 fi
 builtin cd ..
 rmdir subdir
@@ -83,7 +83,7 @@ sleep 0.1 # ensure mtime difference
 echo '[tools]' >../.config/mise/config.toml
 output=$(mise hook-env -s bash)
 if [[ $output == *"__MISE_SESSION"* ]]; then
-	ok "parent .config/mise config file bypasses fast-path"
+  ok "parent .config/mise config file bypasses fast-path"
 else
-	fail "parent .config/mise should bypass fast-path but got: '$output'"
+  fail "parent .config/mise should bypass fast-path but got: '$output'"
 fi

@@ -40,7 +40,7 @@ mise cache clear
 # Without the fix: fork bomb (OOM / timeout).
 # With the fix: go list fails cleanly (go not in dependency PATH), command completes.
 output="$(run_with_timeout 15 mise ls --json -c)" || {
-	echo "ERROR: mise ls timed out or failed (likely infinite recursion fork bomb)"
-	exit 1
+  echo "ERROR: mise ls timed out or failed (likely infinite recursion fork bomb)"
+  exit 1
 }
 assert_contains "echo '$output'" '"go"'

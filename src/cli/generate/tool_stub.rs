@@ -348,9 +348,9 @@ impl ToolStub {
         // Fetch and verify install.sh (same approach as bootstrap.rs)
         // Use versioned URL if a specific version is requested
         let url = if let Some(v) = &self.bootstrap_version {
-            format!("https://mise.jdx.dev/v{v}/install.sh")
+            format!("https://mise.en.dev/v{v}/install.sh")
         } else {
-            "https://mise.jdx.dev/install.sh".to_string()
+            "https://mise.en.dev/install.sh".to_string()
         };
         let install = HTTP.get_text(&url).await?;
         let install_sig = HTTP.get_text(format!("{url}.minisig")).await?;

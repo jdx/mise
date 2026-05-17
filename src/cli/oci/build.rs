@@ -28,6 +28,17 @@ pub struct Build {
     #[clap(long)]
     from: Option<String>,
 
+    /// Also include tools from the global / system config (default: project-only)
+    ///
+    /// By default `mise oci build` only packages tools declared in the
+    /// project's mise config (and any parent configs at-or-below the
+    /// project root, e.g. a monorepo root config). Personal dev tools in
+    /// `~/.config/mise/config.toml` are excluded so they don't bake into a
+    /// project image. Pass `--include-global` to revert to the old
+    /// "merge all loaded configs" behavior.
+    #[clap(long)]
+    include_global: bool,
+
     /// Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
     #[clap(long, short)]
     tag: Option<String>,
@@ -52,7 +63,7 @@ impl Build {
             mount_point: self.mount_point.clone(),
             include_mise: !self.no_mise,
         };
-        let out = perform_build(opts).await?;
+        let out = perform_build(opts, self.include_global).await?;
 
         miseprintln!("wrote OCI image layout to {}", display_path(&out.out_dir));
         miseprintln!("manifest: {}", out.manifest_digest);
@@ -87,6 +98,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 <bold><underline>Notes:</underline></bold>
 
+    - The image only contains tools from the project's mise config (and
+      any configs at-or-below the project root). Tools from
+      `~/.config/mise/config.toml` are not included; pass --include-global
+      to package them too.
     - asdf and vfox plugins are not supported in v1; use a different backend
       (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.
     - The host mise binary is embedded at /usr/local/bin/mise by default;

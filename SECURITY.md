@@ -20,9 +20,9 @@ the project. I only select dependencies with broad usage across the Rust communi
 I'm open to PRs or suggestions on reducing dependency count even at the cost of functionality because it will make
 mise more secure.
 
-## mise.jdx.dev
+## mise.en.dev
 
-mise.jdx.dev is the asset host for mise. It's used to host precompiled mise CLI binaries, and hosts a "[VERSION](https://mise.jdx.dev/VERSION)"
+mise.en.dev is the asset host for mise. It's used to host precompiled mise CLI binaries, and hosts a "[VERSION](https://mise.en.dev/VERSION)"
 which mise uses to occasionally check for a new version being released. Everything hosted there uses a single
 vendor to reduce surface area.
 
@@ -60,7 +60,7 @@ If you notice a tool offers security verification methods (gpg/slsa/cosign/minis
 
 ## `mise.lock`
 
-mise has support for [lockfiles](https://mise.jdx.dev/configuration/settings.html#lockfile) which will
+mise has support for [lockfiles](https://mise.en.dev/configuration/settings.html#lockfile) which will
 store/verify the checksum of tool tarballs. Committing this into your repository is a good way to ensure
 that the exact same version of a tool is installed across all developers and CI/CD systems.
 

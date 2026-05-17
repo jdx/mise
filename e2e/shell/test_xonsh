@@ -1,2 +1,4 @@
 #!/usr/bin/env bash
-exec mise x uv -- uv tool run --with 'xonsh[full]' xonsh --no-rc "$TEST_DIR/xonsh_script"
+# Pinned: uv 0.11.9 was manually published and lacks SLSA attestations
+# (astral-sh/uv#19278). Bump once 0.11.10 ships with attestations restored.
+exec mise x uv@0.11.8 -- uv tool run --with 'xonsh[full]' xonsh --no-rc "$TEST_DIR/xonsh_script"

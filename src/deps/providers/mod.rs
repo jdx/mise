@@ -1,7 +1,9 @@
+mod aube;
 mod bun;
 mod bundler;
 mod composer;
 mod custom;
+mod dart;
 mod git_submodule;
 mod go;
 mod npm;
@@ -11,10 +13,12 @@ mod poetry;
 mod uv;
 mod yarn;
 
+pub use aube::AubeDepsProvider;
 pub use bun::BunDepsProvider;
 pub use bundler::BundlerDepsProvider;
 pub use composer::ComposerDepsProvider;
 pub use custom::CustomDepsProvider;
+pub use dart::DartDepsProvider;
 pub use git_submodule::GitSubmoduleDepsProvider;
 pub use go::GoDepsProvider;
 pub use npm::NpmDepsProvider;

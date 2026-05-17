@@ -1,0 +1,4 @@
+backends = ["aqua:opencontainers/umoci"]
+description = "umoci modifies Open Container images"
+os = ["linux"]
+test = { cmd = "umoci --version", expected = "umoci version {{version}}" }

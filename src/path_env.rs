@@ -63,7 +63,9 @@ impl FromIterator<PathBuf> for PathEnv {
         for path in paths {
             if path_env.seen_shims {
                 path_env.post.push(path);
-            } else if path == *dirs::SHIMS && !settings.activate_aggressive {
+            } else if crate::file::paths_eq(&crate::file::replace_path(&path), &dirs::SHIMS)
+                && !settings.activate_aggressive
+            {
                 path_env.seen_shims = true;
                 if preserve_shims {
                     path_env.post.push(path);

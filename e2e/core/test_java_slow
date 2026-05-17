@@ -20,7 +20,7 @@ rm .java-version
 # Extract EA major version from: Early access: <a href="/27/">JDK 27</a>
 EA_MAJOR=$(curl -sSL "https://jdk.java.net" | grep -o 'Early access:.*href="/[0-9]\+/"' | grep -oE '[0-9]+' | head -1)
 if [[ -z $EA_MAJOR ]]; then
-	EA_MAJOR=27
+  EA_MAJOR=27
 fi
 mise i "java[release_type=ea]@openjdk-${EA_MAJOR}.0.0-ea"
 assert_contains "mise x java@openjdk-${EA_MAJOR}.0.0-ea -- java -version 2>&1" "openjdk version \"${EA_MAJOR}-ea\""

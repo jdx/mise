@@ -1,0 +1,4 @@
+backends = ["aqua:rgwood/systemctl-tui"]
+description = "A fast, simple TUI for interacting with systemd services and their logs"
+os = ["linux"]
+test = { cmd = "systemctl-tui --version", expected = "{{version}}" }

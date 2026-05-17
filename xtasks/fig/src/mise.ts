@@ -666,6 +666,19 @@ const completionSpec: Fig.Spec = {
     {
       name: "bin-paths",
       description: "List all the active runtime bin paths",
+      options: [
+        {
+          name: "--bin-names",
+          description: "Output executable names instead of bin directories",
+          isRepeatable: false,
+        },
+        {
+          name: ["-J", "--json"],
+          description:
+            "Output executable entries in JSON format (implies --bin-names)",
+          isRepeatable: false,
+        },
+      ],
       args: {
         name: "tool@version",
         description: "Tool(s) to look up\ne.g.: ruby@3",
@@ -712,7 +725,7 @@ const completionSpec: Fig.Spec = {
           ],
           args: {
             name: "plugin",
-            description: "Plugin(s) to clear cache for e.g.: node, python",
+            description: "Plugin(s) to prune cache for e.g.: node, python",
             isOptional: true,
             isVariadic: true,
             generators: pluginGenerator,
@@ -1610,7 +1623,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-g", "--global"],
           description:
-            "Include global config lockfile (~/.config/mise/mise.lock)\nBy default, only project-level configs are locked",
+            "Target only global config lockfiles (~/.config/mise/mise.lock and system config)\nBy default, only the active project config root is locked",
           isRepeatable: false,
         },
         {
@@ -1640,6 +1653,14 @@ const completionSpec: Fig.Spec = {
           description:
             "Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs",
           isRepeatable: false,
+        },
+        {
+          name: "--minimum-release-age",
+          description: "Only lock versions released before this age or date",
+          isRepeatable: false,
+          args: {
+            name: "minimum_release_age",
+          },
         },
       ],
       args: {
@@ -1744,9 +1765,33 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--minimum-release-age",
+          description: "Only show versions released before this age or date",
+          isRepeatable: false,
+          args: {
+            name: "minimum_release_age",
+          },
+        },
+        {
           name: ["-J", "--json"],
           description:
             "Output in JSON format (includes version metadata like created_at timestamps when available)",
+          isRepeatable: false,
+        },
+        {
+          name: "--no-versions-host",
+          description: "Disable checking the mise-versions host",
+          isRepeatable: false,
+        },
+        {
+          name: "--prerelease",
+          description:
+            "Include pre-release versions in the output for backends that report\nupstream prerelease metadata or opt in to regex-based prerelease\ndetection. Equivalent to setting `MISE_PRERELEASES=1` or the\n`prereleases` setting for the duration of this command.",
+          isRepeatable: false,
+        },
+        {
+          name: "--strict-metadata",
+          description: "Fail if release metadata fetches fail",
           isRepeatable: false,
         },
       ],
@@ -1801,6 +1846,12 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
+              name: "--include-global",
+              description:
+                "Also include tools from the global / system config (default: project-only)",
+              isRepeatable: false,
+            },
+            {
               name: ["-t", "--tag"],
               description:
                 "Tag to record in the image index (the org.opencontainers.image.ref.name annotation)",
@@ -1849,6 +1900,12 @@ const completionSpec: Fig.Spec = {
                 name: "image_dir",
                 template: "folders",
               },
+            },
+            {
+              name: "--include-global",
+              description:
+                "Also include tools from the global / system config (default: project-only)",
+              isRepeatable: false,
             },
             {
               name: "--mount-point",
@@ -1919,6 +1976,12 @@ const completionSpec: Fig.Spec = {
                 name: "image_dir",
                 template: "folders",
               },
+            },
+            {
+              name: "--include-global",
+              description:
+                "Also include tools from the global / system config (default: project-only)",
+              isRepeatable: false,
             },
             {
               name: "--keep",
@@ -2005,6 +2068,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--inactive",
+          description:
+            "Show outdated tools including installed-but-inactive tools not present in the current config",
+          isRepeatable: false,
+        },
+        {
           name: "--local",
           description: "Only show outdated tools defined in local config files",
           isRepeatable: false,
@@ -2024,6 +2093,23 @@ const completionSpec: Fig.Spec = {
         generators: toolVersionGenerator,
         debounce: true,
       },
+    },
+    {
+      name: "patrons",
+      description:
+        "Show the individuals supporting mise as Patron-tier members",
+      options: [
+        {
+          name: ["-J", "--json"],
+          description: "Output in JSON format",
+          isRepeatable: false,
+        },
+        {
+          name: "--refresh",
+          description: "Bypass the local cache and re-fetch",
+          isRepeatable: false,
+        },
+      ],
     },
     {
       name: ["plugins", "p"],
@@ -3301,6 +3387,12 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--name-only",
+              description:
+                "Only show task names, one per line. Useful for piping to fzf and similar tools.",
+              isRepeatable: false,
+            },
+            {
               name: "--no-header",
               description: "Do not print table header",
               isRepeatable: false,
@@ -3594,6 +3686,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--name-only",
+          description:
+            "Only show task names, one per line. Useful for piping to fzf and similar tools.",
+          isRepeatable: false,
+        },
+        {
           name: "--no-header",
           description: "Do not print table header",
           isRepeatable: false,
@@ -3636,7 +3734,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["-j", "--jobs"],
-          description: "Number of jobs to run in parallel\n[default: 4]",
+          description: "Number of tool tests to run in parallel\n[default: 4]",
           isRepeatable: false,
           args: {
             name: "jobs",
@@ -3691,6 +3789,17 @@ const completionSpec: Fig.Spec = {
           name: "github",
           description: "GitHub token",
           options: [
+            {
+              name: "--oauth",
+              description:
+                "[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources",
+              isRepeatable: false,
+            },
+            {
+              name: "--raw",
+              description: "Print only the token value",
+              isRepeatable: false,
+            },
             {
               name: "--unmask",
               description: "Show the full unmasked token",
@@ -3991,6 +4100,12 @@ const completionSpec: Fig.Spec = {
           name: "--dry-run-code",
           description:
             "Like --dry-run but exits with code 1 if there are outdated tools",
+          isRepeatable: false,
+        },
+        {
+          name: "--inactive",
+          description:
+            "Upgrade all tools, including installed-but-inactive tools not present in the current config",
           isRepeatable: false,
         },
         {

@@ -58,7 +58,7 @@ For tools or settings you want to keep private, use [`mise.local.toml`](/configu
 Use [`mise config ls`](/cli/config/ls) to see the configuration files currently used by `mise`.
 :::
 
-In general, it's preferred to use loose versions like this in `mise` so that other people working
+In general, it's preferred to use loose versions like `node@26` in `mise` so that other people working
 on a project don't have to worry about the exact version of a tool you're using. If you'd like to
 pin the version to enforce a specific version, use `mise use --pin` or the [`lockfile`](/configuration/settings#lockfile) setting.
 
@@ -66,7 +66,7 @@ If you leave out the version, then mise will default to `node@latest`.
 
 ## Dev Tool Backends
 
-Tools are installed with a variety of backends like `asdf`, `github`, or `vfox`. See [registry](/registry.html) for
+Tools are installed with a variety of backends like `aqua`, `github`, or `gitlab`. See [registry](/registry.html) for
 the full list of shorthands like `node` you can use.
 
 You can also use other backends like `npm` or `cargo`
@@ -85,9 +85,9 @@ mise will update `mise.lock` to the latest version of the tool with the prefix f
 
 So if you have `node = "26"` in `mise.toml`, then `mise upgrade node` will upgrade to the latest version of `node 26`.
 
-If you'd like to upgrade to the latest version of node, you can use `mise upgrade --bump node`. It will set the version
-at the same specificity as the current version, so if you have `node = "24"`, but use `mise upgrade --bump node` to update to
-`node@26`, then it will set `node = "26"` in `mise.toml`.
+If you'd like to update the version in `mise.toml` to something newer, you can use `mise upgrade --bump node`.
+It will set the version at the same specificity as the current version, so if you have `node = "24"`,
+but use `mise upgrade --bump node` to update to `node@26`, then it will set `node = "26"` in `mise.toml`.
 
 _See [Dev Tools](/dev-tools/) for more information on working with tools._
 
@@ -113,8 +113,10 @@ Some examples on where this can be used:
 
 - Setting `NODE_ENV` for a Node.js project
 - Setting `DATABASE_URL` for a database connection
-- Setting `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for AWS
 - Setting `RUST_TEST_THREADS=1` to run cargo tests in series
+
+Do not set secrets in a project's mise.toml, as the file is intended to be added to version control.
+[Use `mise.local.toml`](#misetoml-configuration) instead for secrets.
 
 You can also modify `PATH` with `mise.toml`.
 This example makes CLIs installed with `npm` available:
@@ -124,7 +126,7 @@ This example makes CLIs installed with `npm` available:
 _.path = "./node_modules/.bin"
 ```
 
-This will add `./node_modules/.bin` to the PATH for the project—with "." here referring to the directory
+This will add `./node_modules/.bin` to the PATH for the project — with "." here referring to the directory
 the `mise.toml` file is in so if you enter a subdirectory, it will still work.
 
 _See [Environments](/environments/) for more information on working with environment variables._

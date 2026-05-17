@@ -32,6 +32,14 @@ impl DepsProvider for UvDepsProvider {
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn optional_outputs(&self) -> Vec<PathBuf> {
+        // `uv sync` creates `.venv` in the project root by default, but
+        // `UV_PROJECT_ENVIRONMENT` can redirect it elsewhere. Track as optional
+        // so the default case detects deletion while custom-env-path setups
+        // still rely on source hashes.
         vec![self.base.config_root().join(".venv")]
     }
 

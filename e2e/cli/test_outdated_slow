@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+# Test: if we have a prefix, we likely want the latest major version for that prefix, e.g. temurin-17
+mise uninstall java --all
+mise install java@temurin-21.0.0
+assert_contains "mise outdated java --inactive --json | jq -r '.java.latest'" "temurin-21.0"

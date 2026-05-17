@@ -2,51 +2,67 @@
 
 # Test that npm backend properly uses npm.package_manager settings
 
-export MISE_INSTALL_BEFORE=1d
+export MISE_MINIMUM_RELEASE_AGE=1d
 
 # Ensure npm is available by installing node if needed
 if ! command -v npm >/dev/null 2>&1; then
-	echo "npm not available in test environment, installing node..."
-	# Disable GPG verification for faster test
-	export MISE_GPG_VERIFY=false
-	assert_succeed "mise use node@20"
+  echo "npm not available in test environment, installing node..."
+  # Disable GPG verification for faster test
+  export MISE_GPG_VERIFY=false
+  assert_succeed "mise use node@20"
 fi
 
 # Ensure bun is available
 if ! command -v bun >/dev/null 2>&1; then
-	echo "bun not available in test environment, installing..."
-	assert_succeed "mise use bun@latest"
+  echo "bun not available in test environment, installing..."
+  assert_succeed "mise use bun@latest"
 fi
 
 # Ensure pnpm is available
 if ! command -v pnpm >/dev/null 2>&1; then
-	echo "pnpm not available in test environment, installing..."
-	# Install pnpm using corepack or npm if needed, or just use mise
-	assert_succeed "mise use pnpm@latest"
+  echo "pnpm not available in test environment, installing..."
+  assert_succeed "mise use pnpm@10.16.0"
 fi
 
-# Test 1: Default behavior (npm) - checks npm.package_manager="npm" implicitly
-echo "Testing npm backend with default settings (npm)..."
+# Test 1: npm.package_manager = "npm". Pin explicitly rather than relying
+# on the `auto` default — `auto` picks aube when aube is on PATH (including
+# system installs like Homebrew), which would emit `--minimum-release-age`
+# instead of npm's `--before` and break the assertion below on dev machines.
+echo "Testing npm backend with npm package manager..."
 unset MISE_NPM_BUN
-unset MISE_NPM_PACKAGE_MANAGER
+export MISE_NPM_PACKAGE_MANAGER=npm
 
 # Test listing versions - should succeed
 assert_succeed "mise ls-remote npm:tiny >/dev/null"
 echo "✓ npm backend lists versions using npm"
 
-# Test installation using npm (default)
+# Test installation using npm
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", npm_args = "--foreground-scripts" }
+EOF
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
-assert_succeed "MISE_DEBUG=1 mise install npm:tiny@latest >/tmp/npm_debug.log 2>&1"
-assert_contains "cat /tmp/npm_debug.log" "--before"
-echo "✓ npm backend successfully installs package using npm (default)"
+NPM_DEBUG_LOG="$TMPDIR/npm_debug.log"
+assert_succeed "MISE_DEBUG=1 mise install >'$NPM_DEBUG_LOG' 2>&1"
+# npm 11.10.0+ uses `--min-release-age={days}`; older npm uses `--before {ts}`.
+# Accept either since the underlying npm version varies between environments.
+assert_matches "cat '$NPM_DEBUG_LOG'" "--(before|min-release-age)"
+assert_contains "cat '$NPM_DEBUG_LOG'" "--foreground-scripts"
+echo "✓ npm backend successfully installs package using npm"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
 # Test 2: npm.package_manager = "bun"
 echo "Testing npm.package_manager=bun..."
 export MISE_NPM_PACKAGE_MANAGER=bun
 
-assert_succeed "MISE_DEBUG=1 mise install npm:tiny@latest >/tmp/bun_debug.log 2>&1"
-assert_contains "cat /tmp/bun_debug.log" "--minimum-release-age"
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", bun_args = "--verbose" }
+EOF
+BUN_DEBUG_LOG="$TMPDIR/bun_debug.log"
+assert_succeed "MISE_DEBUG=1 mise install >'$BUN_DEBUG_LOG' 2>&1"
+assert_contains "cat '$BUN_DEBUG_LOG'" "--minimum-release-age"
+assert_contains "cat '$BUN_DEBUG_LOG'" "--verbose"
 echo "✓ npm backend successfully installs package using bun (package_manager=bun)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -54,13 +70,50 @@ mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 echo "Testing npm.package_manager=pnpm..."
 export MISE_NPM_PACKAGE_MANAGER=pnpm
 
-if ! MISE_DEBUG=1 mise install npm:tiny@latest >/tmp/pnpm_debug.log 2>&1; then
-	echo "Command failed. Output:"
-	cat /tmp/pnpm_debug.log
-	exit 1
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", pnpm_args = "--loglevel=warn" }
+EOF
+PNPM_DEBUG_LOG="$TMPDIR/pnpm_debug.log"
+if ! MISE_DEBUG=1 mise install >"$PNPM_DEBUG_LOG" 2>&1; then
+  echo "Command failed. Output:"
+  cat "$PNPM_DEBUG_LOG"
+  exit 1
 fi
-assert_contains "cat /tmp/pnpm_debug.log" "--config.minimumReleaseAge="
+assert_contains "cat '$PNPM_DEBUG_LOG'" "--config.minimumReleaseAge="
+assert_contains "cat '$PNPM_DEBUG_LOG'" "--loglevel=warn"
 echo "✓ npm backend successfully installs package using pnpm (package_manager=pnpm)"
+mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
+
+# Test 4: npm.package_manager = "aube"
+echo "Testing npm.package_manager=aube..."
+export MISE_NPM_PACKAGE_MANAGER=aube
+
+# Ensure aube is available after the default package manager test, since
+# npm.package_manager=auto uses aube when it is already installed.
+# Pin to a known-good aube version: `latest` has bitten us when a new
+# release goes out hours before CI runs (e.g. v1.11.0 on 2026-05-11 broke
+# `aube add --global` here). Bypass MISE_MINIMUM_RELEASE_AGE because the
+# global filter is set to test the package-manager flag plumbing below.
+AUBE_TEST_VERSION="1.10.4"
+if ! command -v aube >/dev/null 2>&1; then
+  echo "aube not available in test environment, installing..."
+  assert_succeed "env -u MISE_MINIMUM_RELEASE_AGE mise use aube@$AUBE_TEST_VERSION"
+fi
+
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", aube_args = "--reporter append-only" }
+EOF
+AUBE_DEBUG_LOG="$TMPDIR/aube_debug.log"
+if ! MISE_DEBUG=1 mise install >"$AUBE_DEBUG_LOG" 2>&1; then
+  echo "Command failed. Output:"
+  cat "$AUBE_DEBUG_LOG"
+  exit 1
+fi
+assert_contains "cat '$AUBE_DEBUG_LOG'" "--reporter"
+assert_contains "cat '$AUBE_DEBUG_LOG'" "append-only"
+echo "✓ npm backend successfully installs package using aube (package_manager=aube)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
 unset MISE_NPM_PACKAGE_MANAGER

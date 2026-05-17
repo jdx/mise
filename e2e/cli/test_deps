@@ -53,6 +53,13 @@ assert_contains "mise deps --list" "schema.graphql"
 # Test --only flag
 assert_contains "mise deps --dry-run --only codegen 2>&1" "codegen"
 assert_not_contains "mise deps --dry-run --only codegen 2>&1" "npm"
+assert_contains "mise deps --force --only codegen 2>&1" "[deps.codegen] codegen"
+
+# Test -q/--quiet suppresses provider stream output and status messages.
+# Without -q the previous assertion proved "[deps.codegen] codegen" appears;
+# with -q neither the prefix-tagged echo nor the "Installed:" status should leak.
+assert_not_contains "mise deps --force --only codegen -q 2>&1" "[deps.codegen]"
+assert_not_contains "mise deps --force --only codegen -q 2>&1" "Installed:"
 
 # Test --skip flag
 assert_not_contains "mise deps --dry-run --skip npm 2>&1" "npm install"
@@ -138,24 +145,33 @@ EOF
 assert_contains "mise deps --list" "bun"
 assert_contains "mise deps --list" "bun.lock"
 
-# Test go provider
+# Test aube provider
 rm -f bun.lock
-cat >go.sum <<'EOF'
-github.com/foo/bar v1.0.0 h1:abc
+cat >aube-lock.yaml <<'EOF'
+lockfileVersion: 1
 EOF
+
+cat >mise.toml <<'EOF'
+[deps.aube]
+EOF
+
+assert_contains "mise deps --list" "aube"
+assert_contains "mise deps --list" "aube-lock.yaml"
+assert_contains "mise deps --dry-run 2>&1" "aube"
+
+# Test go provider
+rm -f aube-lock.yaml
 cat >go.mod <<'EOF'
 module test
 go 1.21
 EOF
-# Ensure go.sum (output) is older than go.mod (source) to trigger staleness
-touch -t 202301010000 go.sum
 
 cat >mise.toml <<'EOF'
 [deps.go]
 EOF
 
 assert_contains "mise deps --list" "go"
-assert_contains "mise deps --list" "go.sum"
+assert_contains "mise deps --list" "go.mod"
 assert_contains "mise deps --dry-run 2>&1" "go"
 
 # Test pip provider
@@ -246,6 +262,35 @@ assert_contains "mise deps --dry-run 2>&1" "composer"
 # Test freshness detection with content hashing
 rm -f composer.lock composer.json
 
+# Test dart provider
+cat >pubspec.yaml <<'EOF'
+name: demo
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  path: ^1.9.0
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.dart]
+EOF
+
+assert_contains "mise deps --list" "dart"
+assert_contains "mise deps --list" "pubspec.yaml"
+assert_contains "mise deps --dry-run 2>&1" "dart"
+
+# Test flutter provider - same pubspec as dart
+cat >mise.toml <<'EOF'
+[deps.flutter]
+EOF
+
+assert_contains "mise deps --list" "flutter"
+assert_contains "mise deps --list" "pubspec.yaml"
+assert_contains "mise deps --dry-run 2>&1" "flutter"
+
+# Clean up
+rm -f pubspec.yaml
+
 cat >mise.toml <<'EOF'
 [deps.custom_venv]
 sources = ["requirements.txt"]
@@ -277,6 +322,81 @@ assert_contains "mise deps --dry-run 2>&1" "requirements.txt changed"
 # Clean up
 rm -rf .venv requirements.txt .mise
 rm -f composer.lock composer.json package.json mise.toml schema.graphql
+
+# Test that providers with no declared outputs fall through to hash-based
+# freshness instead of being perpetually stale (regression for #9585: bundler,
+# pip, go, poetry, uv all return empty outputs() when their install command
+# writes outside the project tree).
+cat >mise.toml <<'EOF'
+[deps.no_outputs]
+sources = ["sentinel.txt"]
+run = "echo NO_OUTPUTS_RAN"
+EOF
+
+echo "first" >sentinel.txt
+
+# First run: no stored state → stale, runs.
+assert_contains "mise deps --only no_outputs 2>&1" "Installed: no_outputs"
+
+# Second run: state stored, source unchanged → fresh (no perpetual re-run).
+assert_contains "mise deps --only no_outputs 2>&1" "up to date"
+assert_not_contains "mise deps --dry-run 2>&1" "no_outputs"
+
+# Source changes → stale again.
+echo "second" >sentinel.txt
+assert_contains "mise deps --dry-run 2>&1" "sentinel.txt changed"
+assert_contains "mise deps --only no_outputs 2>&1" "Installed: no_outputs"
+
+rm -rf sentinel.txt mise.toml .mise
+
+# A provider with neither sources nor outputs declared (a custom hook) should
+# always run — there's no freshness signal to skip on.
+cat >mise.toml <<'EOF'
+[deps.always_run]
+run = "echo ALWAYS_RAN"
+EOF
+
+assert_contains "mise deps --only always_run 2>&1" "Installed: always_run"
+assert_contains "mise deps --only always_run 2>&1" "Installed: always_run"
+assert_contains "mise deps --dry-run 2>&1" "no sources or outputs defined"
+
+rm -rf mise.toml .mise
+
+# Built-in providers track their canonical optional output (e.g. .venv for
+# pip/uv/poetry, vendor/bundle for bundler, vendor/ for go) once it has been
+# observed on a successful run. Deleting the directory afterwards triggers a
+# re-run — but a project that never produces that output is not perpetually
+# stale.
+cat >requirements.txt <<'EOF'
+requests==2.31.0
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.pip]
+run = "echo PIP_RAN"
+EOF
+
+# First run: no state → runs. .venv doesn't exist, so seen_outputs stays empty.
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+
+# Second run: state stored, .venv was never observed, source unchanged → fresh.
+# This is the regression fix for #9585: previously perpetually stale.
+assert_contains "mise deps --only pip 2>&1" "up to date"
+
+# Now simulate the project gaining a local virtualenv. After the next
+# successful run, .venv is recorded in seen_outputs.
+echo "flask==3.0.0" >>requirements.txt
+mkdir -p .venv
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+assert_contains "mise deps --only pip 2>&1" "up to date"
+
+# Deleting .venv after it has been observed should mark the provider stale,
+# even though the source hashes still match.
+rm -rf .venv
+assert_contains "mise deps --dry-run 2>&1" "outputs missing"
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+
+rm -rf .venv requirements.txt mise.toml .mise
 
 # Test --explain flag
 cat >mise.toml <<'EOF'
@@ -384,9 +504,9 @@ assert_not_contains "mise deps --list" "custom_sub"
 
 # From subdirectory: only subdirectory provider should be visible, not inherited root
 (
-	cd subproject
-	assert_contains "mise deps --list" "custom_sub"
-	assert_not_contains "mise deps --list" "custom_root"
+  cd subproject
+  assert_contains "mise deps --list" "custom_sub"
+  assert_not_contains "mise deps --list" "custom_root"
 )
 
 # Clean up previous test

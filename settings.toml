@@ -400,13 +400,19 @@ type = "Bool"
 
 [dotnet.package_flags]
 default = []
-description = "Extends dotnet search and install abilities."
+deprecated = "Use the `prerelease = true` tool option or the global `prereleases` setting instead."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
+description = "[deprecated] Extends dotnet search and install abilities."
 docs = """
-This is a list of flags to extend the search and install abilities of dotnet tools.
+Deprecated. Use the `prerelease = true` tool option on a `dotnet:` tool, or the global
+`prereleases` setting, to include pre-release versions.
 
-Here are the available flags:
+This legacy setting is a list of flags to extend the search and install abilities of dotnet tools.
+Because it is global, remove it before relying on `prerelease = false` per-tool opt-outs.
+The only supported flag is:
 
-- 'prerelease' : include prerelease versions in search and install
+- 'prerelease' : include pre-release versions in search and install
 """
 env = "MISE_DOTNET_PACKAGE_FLAGS"
 parse_env = "list_by_comma"
@@ -513,6 +519,9 @@ env = "MISE_ENV_CACHE_TTL"
 type = "Duration"
 
 [env_file]
+deprecated = "Use env._.file instead."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing environment variables to automatically load."
 env = "MISE_ENV_FILE"
 optional = true
@@ -603,13 +612,13 @@ default = ""
 description = "Shell command to run to obtain a Forgejo token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for Forgejo Enterprise environments. This replaces the
-`git credential fill` fallback and does not require
+from stdout. The hostname is exposed as `MISE_CREDENTIAL_HOST`, making
+the command host-aware for self-hosted Forgejo environments. This
+replaces the `git credential fill` fallback and does not require
 `forgejo.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed.
 
 Example: `op read "op://Private/Forgejo Token/credential"`
 """
@@ -655,13 +664,13 @@ default = ""
 description = "Shell command to run to obtain a GitHub token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for GitHub Enterprise environments. This replaces the
-`git credential fill` fallback and does not require
+from stdout. The hostname is exposed as `MISE_CREDENTIAL_HOST`, making
+the command host-aware for GitHub Enterprise environments. This
+replaces the `git credential fill` fallback and does not require
 `github.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed.
 
 Example: `op read "op://Private/GitHub Token/credential"`
 """
@@ -691,9 +700,86 @@ docs = """
 Enable/disable GitHub Artifact Attestations verification for github backend tools.
 When enabled, mise will verify the authenticity and integrity of downloaded tools
 using GitHub's artifact attestation system.
+
+Attestations are only verified when the tool resolves to the public GitHub API
+(`https://api.github.com`). Tools that set a custom `api_url` (e.g. GitHub
+Enterprise Server) skip attestation verification automatically since GHE Server
+does not implement the attestations endpoint.
 """
 env = "MISE_GITHUB_GITHUB_ATTESTATIONS"
 type = "Bool"
+
+[github.oauth_api_url]
+default = "https://api.github.com"
+description = "GitHub API base URL for native OAuth token validation."
+docs = """
+GitHub API base URL used to validate native OAuth tokens and associate them
+with the configured host.
+"""
+env = "MISE_GITHUB_OAUTH_API_URL"
+type = "String"
+
+[github.oauth_auth_url]
+default = "https://github.com/login"
+description = "GitHub OAuth endpoint base URL for native device-flow tokens."
+docs = """
+OAuth endpoint base URL used by native GitHub device flow. The default is for
+github.com. Set this for GitHub Enterprise instances that support device flow.
+"""
+env = "MISE_GITHUB_OAUTH_AUTH_URL"
+type = "String"
+
+[github.oauth_client_id]
+default = ""
+description = "[experimental] GitHub App client ID for native OAuth device-flow tokens."
+docs = """
+[experimental] Requires `experimental = true`.
+
+When set, mise can create short-lived GitHub App user access tokens using
+GitHub's OAuth device flow. This does not require a GitHub App private key,
+client secret, personal access token, or external credential helper.
+
+Run `mise token github --oauth` once to authorize and cache a token. mise will reuse
+the cached token for GitHub API calls and refresh it when possible.
+
+Inspired by [ghtkn](https://github.com/suzuki-shunsuke/ghtkn).
+"""
+env = "MISE_GITHUB_OAUTH_CLIENT_ID"
+type = "String"
+
+[github.oauth_export_env]
+default = "GITHUB_TOKEN"
+description = "Environment variable name to export the native GitHub OAuth token under (empty disables)."
+docs = """
+When `github.oauth_client_id` is configured and a cached or refreshable token
+is available, mise exports the token under this environment variable so other
+tools (`gh`, `git`, `cargo`, etc.) can pick it up without an explicit
+`$(mise token github --oauth --raw)` call. Set to `GH_TOKEN` to use the gh
+CLI's preferred name, or to an empty string to disable the auto-export.
+"""
+env = "MISE_GITHUB_OAUTH_EXPORT_ENV"
+type = "String"
+
+[github.oauth_open_browser]
+default = true
+description = "Open the browser during native GitHub OAuth device flow."
+docs = """
+When enabled, `mise token github --oauth` will attempt to open GitHub's
+verification URL in the default browser when the device-code flow is triggered.
+"""
+env = "MISE_GITHUB_OAUTH_OPEN_BROWSER"
+type = "Bool"
+
+[github.oauth_scopes]
+default = ""
+description = "OAuth scopes requested for native GitHub device-flow tokens."
+docs = """
+Optional OAuth scope string passed to GitHub's device-code endpoint. GitHub App
+user access tokens are primarily governed by the app's permissions and
+installation access, so this usually remains empty.
+"""
+env = "MISE_GITHUB_OAUTH_SCOPES"
+type = "String"
 
 [github.slsa]
 default = true
@@ -741,13 +827,13 @@ default = ""
 description = "Shell command to run to obtain a GitLab token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for GitLab self-managed environments. This replaces the
-`git credential fill` fallback and does not require
+from stdout. The hostname is exposed as `MISE_CREDENTIAL_HOST`, making
+the command host-aware for self-managed GitLab environments. This
+replaces the `git credential fill` fallback and does not require
 `gitlab.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed.
 
 Example: `op read "op://Private/GitLab Token/credential"`
 """
@@ -947,10 +1033,19 @@ env = "MISE_HOOK_ENV_CHPWD_ONLY"
 type = "Bool"
 
 [http_retries]
-default = 0
-description = "Number of retries for HTTP requests in mise."
+default = 3
+description = "Number of retries for transient HTTP failures in mise."
 docs = """
-Uses an exponential backoff strategy. The duration is calculated by taking the base (10ms) to the n-th power.
+Retries are attempted only on transient errors: HTTP 5xx (server errors), 408
+(Request Timeout), 429 (Too Many Requests), and network-layer failures (connect
+refused, timeout, mid-stream body drops). Other 4xx responses (e.g. 404) are
+treated as permanent and not retried.
+
+Backoff schedule with jitter: ~200ms / ~1s / ~4s / ~15s. Set to 0 to disable
+retries entirely.
+
+When a retry rescues a request, a warning is logged with the original error so
+flaky infrastructure doesn't silently mask itself.
 """
 env = "MISE_HTTP_RETRIES"
 type = "Integer"
@@ -1025,45 +1120,12 @@ rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
 [install_before]
+deprecated = "Use minimum_release_age instead."
+deprecated_remove_at = "2027.10.0"
+deprecated_warn_at = "2026.10.0"
 description = "Minimum release age / supply chain protection — only install versions released before this date"
-docs = """
-Filter tool versions by release date to limit supply chain risk. Similar to Renovate's
-[minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/),
-this ensures newly published versions are ignored until they've been available for a
-configurable amount of time — giving the community time to discover compromised releases.
-
-Supports:
-
-- Relative durations: `7d` (7 days ago), `90d` (90 days ago), `6m` (6 months ago), `1y` (1 year ago)
-- Absolute dates: `2024-06-01`, `2024-06-01T12:00:00Z`
-
-Example:
-
-```toml
-[settings]
-install_before = "7d"  # only install versions released more than 7 days ago
-```
-
-Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
-Versions without timestamps are included by default.
-
-**Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
-like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
-allowing you to selectively use newer versions for specific tools while keeping others behind the
-cutoff date.
-
-Some package-manager backends also forward the cutoff to transitive dependency resolution during
-install. This includes `npm:` and `pipx:` tools.
-
-Can be overridden with the `--before` CLI flag or per-tool with the `install_before` tool option.
-
-```toml
-[tools.trivy]
-version = "latest"
-install_before = "7d"  # override for this tool only
-```
-"""
 env = "MISE_INSTALL_BEFORE"
+hide = true
 optional = true
 type = "String"
 
@@ -1097,6 +1159,20 @@ hide = true
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
+
+[libc]
+default_docs = '"glibc" | "musl"'
+description = "Libc implementation to use for precompiled Linux binaries."
+docs = """
+Libc implementation to use for precompiled Linux binaries. This is used by backends that publish
+separate glibc and musl builds. If unset, mise will detect the current system's libc.
+
+`gnu` is accepted as an alias for `glibc`.
+"""
+enum = ["glibc", "gnu", "musl"]
+env = "MISE_LIBC"
+optional = true
+type = "String"
 
 [libgit2]
 default = true
@@ -1224,6 +1300,51 @@ description = "Show more/less output."
 enum = ["trace", "debug", "info", "warn", "error"]
 env = "MISE_LOG_LEVEL"
 hide = true
+type = "String"
+
+[minimum_release_age]
+description = "Minimum release age / supply chain protection — only install versions older than this threshold"
+docs = """
+Filter tool versions by release date to limit supply chain risk. Similar to Renovate's
+[minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/),
+this ensures newly published versions are ignored until they've been available for a
+configurable amount of time — giving the community time to discover compromised releases.
+This name matches pnpm's `minimumReleaseAge` setting, though mise accepts both relative
+durations and absolute cutoff dates.
+
+Supports:
+
+- Relative durations: `7d` (7 days ago), `90d` (90 days ago), `6m` (6 months ago), `1y` (1 year ago)
+- Absolute dates: `2024-06-01`, `2024-06-01T12:00:00Z`
+
+Example:
+
+```toml
+[settings]
+minimum_release_age = "7d"  # only install versions released more than 7 days ago
+```
+
+Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
+Versions without timestamps are included by default.
+
+**Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
+like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
+allowing you to selectively use newer versions for specific tools while keeping others behind the
+cutoff date.
+
+Some package-manager backends also forward the cutoff to transitive dependency resolution during
+install. This includes `npm:` and `pipx:` tools.
+
+Can be overridden with the `--before` CLI flag or per-tool with the `minimum_release_age` tool option.
+
+```toml
+[tools.trivy]
+version = "latest"
+minimum_release_age = "7d"  # override for this tool only
+```
+"""
+env = "MISE_MINIMUM_RELEASE_AGE"
+optional = true
 type = "String"
 
 [netrc]
@@ -1591,8 +1712,28 @@ This is automatically enabled for fast commands like `hook-env`, `activate`, `ex
 env = "MISE_PREFER_OFFLINE"
 type = "Bool"
 
+[prereleases]
+description = "Include pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching for all tools."
+docs = """
+By default, releases flagged `prerelease: true` on GitHub/Forgejo are excluded from `mise ls-remote`,
+`latest` resolution, and fuzzy version matching. Per-tool opt-in is available via the
+`prerelease = true` tool option (currently honored by the `github:`, `forgejo:`, `aqua:`, and `dotnet:` backends).
+
+Set `prereleases = true` (or `MISE_PRERELEASES=1`) to opt in globally for every tool —
+equivalent to setting `prerelease = true` on each one. Useful for build pipelines that
+mirror the full release catalog (e.g. https://github.com/jdx/mise-versions) and for users
+who want pre-release tags to surface in `mise ls-remote` without per-tool config.
+
+Can also be set with the `--prerelease` flag on `mise ls-remote`.
+
+Has no effect on backends that don't carry an upstream pre-release flag (e.g. `github_tag`
+version source). Draft releases are always excluded.
+"""
+env = "MISE_PRERELEASES"
+type = "Bool"
+
 [profile]
-deprecated = "Use MISE_ENV_FILE instead."
+deprecated = "Use env._.file instead."
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 env = "MISE_PROFILE"
 hide = true
@@ -1875,8 +2016,14 @@ rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
 [shorthands_file]
-description = "Path to a file containing custom tool shorthands."
+deprecated = "Use [plugins] in mise.toml or ~/.config/mise/config.toml instead (same shortname = \"backend-or-url\" rows; see https://mise.en.dev/configuration.html#plugins)."
+deprecated_remove_at = "2026.12.0"
+deprecated_warn_at = "2026.6.0"
+description = "[deprecated] Path to a file containing custom tool shorthands."
 docs = """
+Deprecated: use `[plugins]` in mise.toml or ~/.config/mise/config.toml with the same `name = "url"`
+rows instead of a separate file.
+
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
 an organization.
 
@@ -1894,6 +2041,7 @@ node = "https://github.com/my-org/mise-node.git"
 
 """
 env = "MISE_SHORTHANDS_FILE"
+hide = true
 optional = true
 type = "Path"
 
@@ -1942,6 +2090,12 @@ type = "Bool"
 default = true
 description = "If true, fail when sops decryption fails (including when sops is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases."
 env = "MISE_SOPS_STRICT"
+type = "Bool"
+
+[spm.artifactbundle_only]
+default = false
+description = "Only use SwiftPM artifact bundles for installation, fail if no matching bundle is available."
+env = "MISE_SPM_ARTIFACTBUNDLE_ONLY"
 type = "Bool"
 
 [status.missing_tools]

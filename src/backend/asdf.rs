@@ -176,7 +176,7 @@ impl AsdfBackend {
             let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value);
         }
-        for (key, value) in tv.request.options().install_env {
+        for (key, value) in tv.request.options().core.install_env {
             sm = sm.with_env(key, value.clone());
         }
         if let Some(project_root) = &config.project_root {
@@ -246,6 +246,10 @@ impl Backend for AsdfBackend {
 
     fn get_plugin_type(&self) -> Option<PluginType> {
         Some(PluginType::Asdf)
+    }
+
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
     }
 
     /// ASDF plugins handle their own downloads through plugin scripts.

@@ -50,14 +50,21 @@ aws s3 cp artifacts/deb/dists/ "s3://$AWS_S3_BUCKET/deb/dists/" --cache-control 
 
 export CLOUDFLARE_ACCOUNT_ID=6e243906ff257b965bcae8025c2fc344
 
-# jdx.dev
-curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/90dfd7997bdcfa8579c52d8ee8dd4cd1/purge_cache" \
-	-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-	-H "Content-Type: application/json" \
-	--data '{ "purge_everything": true }'
-
-# mise.run
-curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/782fc08181b7bbd26c529a00df52a277/purge_cache" \
-	-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-	-H "Content-Type: application/json" \
-	--data '{ "purge_everything": true }'
+# Purge every CDN zone that fronts the release artifacts. install.sh and
+# install.sh.minisig are uploaded with `immutable` cache-control, so without
+# an explicit purge per zone the CDN keeps serving the previous release's
+# bytes while a sibling zone serves the new ones — which is how mise.en.dev
+# ended up serving v(N-1)/install.sh next to a v(N) install.sh.minisig.
+ZONES=(
+	"jdx.dev:90dfd7997bdcfa8579c52d8ee8dd4cd1"
+	"en.dev:531d003297f1f4ae2415b41f7f5da8fa"
+	"mise.run:782fc08181b7bbd26c529a00df52a277"
+)
+for entry in "${ZONES[@]}"; do
+	IFS=":" read -r HOST ZONE_ID <<<"$entry"
+	echo "Purging CDN cache for $HOST (zone=$ZONE_ID)"
+	curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/purge_cache" \
+		-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+		-H "Content-Type: application/json" \
+		--data '{ "purge_everything": true }'
+done

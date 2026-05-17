@@ -11,6 +11,7 @@ If headers_log_dir is provided, request headers will be logged to files in that 
 
 import http.server
 import json
+import os
 import socketserver
 import sys
 from pathlib import Path
@@ -65,33 +66,24 @@ class TestFileHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def find_available_port():
-    """Find an available port starting from 8080"""
-    import socket
-    for port in range(8080, 8200):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('', port))
-                return port
-        except OSError:
-            continue
-    raise RuntimeError("No available ports found")
-
-
 def start_server(port=None, headers_log_dir=None):
     """Start the HTTP test server"""
     global HEADERS_LOG_DIR
     HEADERS_LOG_DIR = headers_log_dir
 
     if port is None:
-        port = find_available_port()
+        port = 0
 
     with socketserver.TCPServer(("", port), TestFileHandler) as httpd:
-        print(f"HTTP test server running on port {port}")
+        actual_port = httpd.server_address[1]
+        print(f"HTTP test server running on port {actual_port}")
 
-        # Save port info for tests
-        with open('/tmp/mise_http_test_port', 'w') as f:
-            f.write(str(port))
+        # Save port info for tests. The e2e harness can place this under the
+        # per-test TMPDIR so parallel runs do not share state.
+        port_file = Path(os.environ.get('MISE_HTTP_TEST_PORT_FILE', '/tmp/mise_http_test_port'))
+        port_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(port_file, 'w') as f:
+            f.write(str(actual_port))
 
         try:
             httpd.serve_forever()
@@ -99,7 +91,7 @@ def start_server(port=None, headers_log_dir=None):
             print("\nShutting down...")
         finally:
             # Clean up port file
-            Path('/tmp/mise_http_test_port').unlink(missing_ok=True)
+            port_file.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

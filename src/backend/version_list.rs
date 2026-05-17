@@ -27,9 +27,16 @@ pub async fn fetch_versions(
 ) -> Result<Vec<String>> {
     use crate::http::HTTP;
 
-    // Fetch the content
-    let response = HTTP.get_text(version_list_url).await?;
-    let content = response.trim();
+    let content = if version_regex.is_some() {
+        // When a regex is provided, the caller expects to parse arbitrary
+        // content (including HTML directory listings), so bypass the HTML rejection
+        // in get_text.
+        let resp = HTTP.get_async(version_list_url).await?;
+        resp.text().await?
+    } else {
+        HTTP.get_text(version_list_url).await?
+    };
+    let content = content.trim();
 
     // Parse versions based on format
     parse_version_list(content, version_regex, version_json_path, version_expr)
@@ -88,9 +95,13 @@ pub fn parse_version_list(
         }
     }
 
-    // If no versions extracted yet, treat as line-separated or single version
-    // This provides fallback for all cases including failed JSON parsing
-    if versions.is_empty() {
+    // If no versions extracted yet and no explicit extraction method was provided,
+    // treat as line-separated or single version.
+    // When version_regex or version_expr is set, zero matches means the content
+    // didn't contain the expected data — don't fall through to line-splitting
+    // which would emit garbage (e.g. raw HTML lines as "versions").
+    let explicit_method = version_regex.is_some() || version_expr.is_some();
+    if versions.is_empty() && !explicit_method {
         for line in trimmed.lines() {
             let line = line.trim();
             // Skip empty lines and comments

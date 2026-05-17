@@ -25,40 +25,40 @@ EOF
 output=$(mise run --jobs 1 a_fail ::: b_ok ::: c_ok ::: d_ok ::: e_ok 2>&1) && exit_code=0 || exit_code=$?
 
 if [ "$exit_code" -eq 0 ]; then
-	echo "Expected non-zero exit code without --continue-on-error"
-	echo "$output"
-	exit 1
+  echo "Expected non-zero exit code without --continue-on-error"
+  echo "$output"
+  exit 1
 fi
 
 if ! echo "$output" | grep -q "^a_fail$"; then
-	echo "Expected to see output from failing task a_fail"
-	echo "$output"
-	exit 1
+  echo "Expected to see output from failing task a_fail"
+  echo "$output"
+  exit 1
 fi
 
 for t in b_ok c_ok d_ok e_ok; do
-	if echo "$output" | grep -q "^$t$"; then
-		echo "Did not expect task $t to run without --continue-on-error"
-		echo "$output"
-		exit 1
-	fi
+  if echo "$output" | grep -q "^$t$"; then
+    echo "Did not expect task $t to run without --continue-on-error"
+    echo "$output"
+    exit 1
+  fi
 done
 
 # With --continue-on-error, all tasks should run, but exit non-zero
 output=$(mise run --continue-on-error --jobs 1 a_fail ::: b_ok ::: c_ok ::: d_ok ::: e_ok 2>&1) && exit_code=0 || exit_code=$?
 
 if [ "$exit_code" -eq 0 ]; then
-	echo "Expected non-zero exit code with --continue-on-error if a task fails"
-	echo "$output"
-	exit 1
+  echo "Expected non-zero exit code with --continue-on-error if a task fails"
+  echo "$output"
+  exit 1
 fi
 
 for t in a_fail b_ok c_ok d_ok e_ok; do
-	if ! echo "$output" | grep -q "^$t$"; then
-		echo "Expected to see output from task $t with --continue-on-error"
-		echo "$output"
-		exit 1
-	fi
+  if ! echo "$output" | grep -q "^$t$"; then
+    echo "Expected to see output from task $t with --continue-on-error"
+    echo "$output"
+    exit 1
+  fi
 done
 
 echo "cli groups with jobs=1 behave as expected"

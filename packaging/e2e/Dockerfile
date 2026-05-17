@@ -1,4 +1,4 @@
-FROM ubuntu:resolute-20260413@sha256:5e275723f82c67e387ba9e3c24baa0abdcb268917f276a0561c97bef9450d0b4
+FROM ubuntu:resolute-20260421@sha256:f3d28607ddd78734bb7f71f117f3c6706c666b8b76cbff7c9ff6e5718d46ff64
 
 LABEL maintainer="jdx"
 LABEL org.opencontainers.image.source=https://github.com/jdx/mise
@@ -7,6 +7,8 @@ LABEL org.opencontainers.image.licenses=MIT
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/node/bin:$PATH"
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -21,20 +23,31 @@ apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cargo \
     curl \
+    default-jdk-headless \
     direnv \
     fd-find \
     fish \
     git \
     jq \
+    libasound2t64 \
     libffi-dev \
+    libgl1 \
+    libglib2.0-0 \
     libicu-dev \
     libncurses-dev \
     libreadline-dev \
     libssl-dev \
+    libsm6 \
+    libwayland-client0 \
+    libxi6 \
+    libxfixes3 \
+    libxkbcommon0 \
     libxml2-dev \
     libyaml-dev \
     pipx \
     pkg-config \
+    openssh-client \
+    python-is-python3 \
     python3-full \
     python3-venv \
     unzip \

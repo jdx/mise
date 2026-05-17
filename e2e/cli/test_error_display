@@ -10,25 +10,25 @@ export NO_COLOR=1
 
 # Local assert_fail function that doesn't force MISE_FRIENDLY_ERROR
 local_assert_fail() {
-	local cmd="$1"
-	local expected="${2:-}"
-	local status=0
-	local actual
+  local cmd="$1"
+  local expected="${2:-}"
+  local status=0
+  local actual
 
-	debug "$ $cmd"
-	actual=$(RUST_BACKTRACE=0 bash -c "$cmd 2>&1") || status=$?
+  debug "$ $cmd"
+  actual=$(RUST_BACKTRACE=0 bash -c "$cmd 2>&1") || status=$?
 
-	if [[ $status -eq 0 ]]; then
-		fail "[$cmd] command succeeded but was expected to fail"
-	fi
+  if [[ $status -eq 0 ]]; then
+    fail "[$cmd] command succeeded but was expected to fail"
+  fi
 
-	if [[ -z $expected ]]; then
-		ok "[$cmd] expected failure"
-	elif [[ $actual == *"$expected"* ]]; then
-		ok "[$cmd] output contains expected text"
-	else
-		fail "[$cmd] expected '$expected' but got '$actual'"
-	fi
+  if [[ -z $expected ]]; then
+    ok "[$cmd] expected failure"
+  elif [[ $actual == *"$expected"* ]]; then
+    ok "[$cmd] output contains expected text"
+  else
+    fail "[$cmd] expected '$expected' but got '$actual'"
+  fi
 }
 
 echo "Testing error message formatting..."
@@ -44,27 +44,27 @@ export MISE_FRIENDLY_ERROR=1
 # Test 1: Invalid tool version error
 echo "Test 1: Invalid tool version"
 local_assert_fail "mise install core:node@invalid-version" \
-	"mise ERROR Failed to install core:node@invalid-version: HTTP status client error (404 Not Found) for url (https://nodejs.org/dist/vinvalid-version/node-vinvalid-version.tar.gz)"
+  "mise ERROR Failed to install core:node@invalid-version: HTTP status client error (404 Not Found) for url (https://nodejs.org/dist/vinvalid-version/node-vinvalid-version.tar.gz)"
 
 # Test 2: Backend error (cargo)
 echo "Test 2: Cargo backend error"
 local_assert_fail "mise install cargo:nonexistent-crate-12345@1.0.0" \
-	"mise ERROR Failed to install cargo:nonexistent-crate-12345@1.0.0: HTTP status client error (404 Not Found) for url (https://crates.io/api/v1/crates/nonexistent-crate-12345/versions)"
+  "mise ERROR Failed to install cargo:nonexistent-crate-12345@1.0.0: HTTP status client error (404 Not Found) for url (https://crates.io/api/v1/crates/nonexistent-crate-12345/versions)"
 
 # Test 3: GitHub repository not found
 echo "Test 3: GitHub repository not found"
 local_assert_fail "mise install github:nonexistent-org/nonexistent-repo@latest" \
-	"mise ERROR Failed to install github:nonexistent-org/nonexistent-repo@latest: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/nonexistent-org/nonexistent-repo/releases)"
+  "mise ERROR Failed to install github:nonexistent-org/nonexistent-repo@latest: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/nonexistent-org/nonexistent-repo/releases)"
 
 # Test 4: Plugin not found
 echo "Test 4: Plugin not found"
 local_assert_fail "mise install nonexistent-tool@1.0.0" \
-	"mise ERROR Failed to install nonexistent-tool@1.0.0: nonexistent-tool not found in mise tool registry"
+  "mise ERROR Failed to install nonexistent-tool@1.0.0: nonexistent-tool not found in mise tool registry"
 
 # Test 5: Multiple tool failures (could be single or multiple depending on timing)
 echo "Test 5: Multiple tool failures"
 local_assert_fail "mise install tiny@999.999.999 jq@999.999.999" \
-	"mise ERROR Failed to install aqua:jqlang/jq@999.999.999: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/jqlang/jq/releases/tags/jq-999.999.999)"
+  "mise ERROR Failed to install aqua:jqlang/jq@999.999.999: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/jqlang/jq/releases/tags/jq-999.999.999)"
 
 # =============================================================================
 # PART 2: Testing with DETAILED errors (full error chains)
@@ -77,27 +77,27 @@ export MISE_FRIENDLY_ERROR=0
 # Test 1: Invalid tool version error - check for the error format with full chain
 echo "Test 1: Invalid tool version"
 local_assert_fail "mise install core:node@invalid-version" \
-	"0: Failed to install core:node@invalid-version: HTTP status client error (404 Not Found) for url (https://nodejs.org/dist/vinvalid-version/node-vinvalid-version.tar.gz)"
+  "0: Failed to install core:node@invalid-version: HTTP status client error (404 Not Found) for url (https://nodejs.org/dist/vinvalid-version/node-vinvalid-version.tar.gz)"
 
 # Test 2: Backend error (cargo) - check for error format with full chain
 echo "Test 2: Cargo backend error"
 local_assert_fail "mise install cargo:nonexistent-crate-12345@1.0.0" \
-	"0: Failed to install cargo:nonexistent-crate-12345@1.0.0: HTTP status client error (404 Not Found) for url (https://crates.io/api/v1/crates/nonexistent-crate-12345/versions)"
+  "0: Failed to install cargo:nonexistent-crate-12345@1.0.0: HTTP status client error (404 Not Found) for url (https://crates.io/api/v1/crates/nonexistent-crate-12345/versions)"
 
 # Test 3: GitHub repository not found - check for error format with full chain
 echo "Test 3: GitHub repository not found"
 local_assert_fail "mise install github:nonexistent-org/nonexistent-repo@latest" \
-	"0: Failed to install github:nonexistent-org/nonexistent-repo@latest: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/nonexistent-org/nonexistent-repo/releases)"
+  "0: Failed to install github:nonexistent-org/nonexistent-repo@latest: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/nonexistent-org/nonexistent-repo/releases)"
 
 # Test 4: Multiple tool failures - check for error format
 echo "Test 4: Multiple tool failures"
 local_assert_fail "mise install tiny@999.999.999 jq@999.999.999" \
-	"0: Failed to install aqua:jqlang/jq@999.999.999: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/jqlang/jq/releases/tags/jq-999.999.999)"
+  "0: Failed to install aqua:jqlang/jq@999.999.999: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/jqlang/jq/releases/tags/jq-999.999.999)"
 
 # Test 5: Error with backtrace enabled - check for proper backtrace format
 echo "Test 5: Error with backtrace"
 local_assert_fail "RUST_BACKTRACE=1 mise install core:node@invalid-version" \
-	"0: Failed to install core:node@invalid-version: HTTP status client error (404 Not Found) for url (https://nodejs.org/dist/vinvalid-version/node-vinvalid-version.tar.gz)"
+  "0: Failed to install core:node@invalid-version: HTTP status client error (404 Not Found) for url (https://nodejs.org/dist/vinvalid-version/node-vinvalid-version.tar.gz)"
 
 # Test 6: Invalid configuration (treated as version strings)
 echo "Test 6: Invalid configuration"
@@ -108,7 +108,7 @@ python = ["also", "not", "valid"]
 EOF
 
 local_assert_fail "MISE_CONFIG_FILE=test_invalid_config.toml mise install" \
-	"0: Failed to install tools: core:node@this is not valid, core:python@also, core:python@not, core:python@valid"
+  "0: Failed to install tools: core:node@this is not valid, core:python@also, core:python@not, core:python@valid"
 rm -f test_invalid_config.toml
 
 echo ""

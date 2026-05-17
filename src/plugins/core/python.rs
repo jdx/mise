@@ -11,6 +11,7 @@ use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
@@ -306,42 +307,19 @@ impl PythonPlugin {
             .or_default()
             .url = Some(url.to_string());
 
+        // Check before verify_checksum, which may generate a new checksum from the
+        // downloaded file. We only skip provenance when the lockfile already had
+        // integrity data before this install.
+        let has_lockfile_integrity = Self::has_precompiled_lockfile_integrity(tv, &platform_key);
+
         self.verify_checksum(ctx, tv, &tarball_path)?;
 
-        // Check lockfile provenance expectation before verification
-        let locked_provenance = tv
-            .lock_platforms
-            .get_mut(&platform_key)
-            .and_then(|pi| pi.provenance.take());
-
-        // Verify GitHub artifact attestations for precompiled binaries
-        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
-        let verified = self
-            .verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
-            .await?;
-
-        // Record provenance only if verification actually succeeded (not skipped)
-        if verified {
-            let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
-            pi.provenance = Some(ProvenanceType::GithubAttestations);
-        }
-
-        // Enforce lockfile provenance
-        if let Some(ref expected) = locked_provenance {
-            let got = tv
-                .lock_platforms
-                .get(&platform_key)
-                .and_then(|pi| pi.provenance.as_ref());
-            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
-                let got_str = got
-                    .map(|g| g.to_string())
-                    .unwrap_or_else(|| "no verification".to_string());
-                return Err(eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
-                     This may indicate a downgrade attack. Enable the corresponding verification setting \
-                     or update the lockfile."
-                ));
-            }
+        let settings = Settings::get();
+        if has_lockfile_integrity && !settings.force_provenance_verify() {
+            Self::ensure_precompiled_provenance_setting_enabled(tv, &platform_key)?;
+        } else {
+            self.verify_precompiled_provenance(ctx, tv, &platform_key, &tarball_path)
+                .await?;
         }
 
         file::remove_all(&install)?;
@@ -611,6 +589,76 @@ impl PythonPlugin {
         Some(ProvenanceType::GithubAttestations)
     }
 
+    fn has_precompiled_lockfile_integrity(tv: &ToolVersion, platform_key: &str) -> bool {
+        tv.lock_platforms
+            .get(platform_key)
+            .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some())
+    }
+
+    fn ensure_precompiled_provenance_setting_enabled(
+        tv: &ToolVersion,
+        platform_key: &str,
+    ) -> Result<()> {
+        crate::backend::ensure_provenance_setting_enabled(tv, platform_key, |provenance| {
+            match provenance {
+                ProvenanceType::GithubAttestations => Ok(!Self::github_attestations_enabled()),
+                _ => Err(eyre!(
+                    "Lockfile has unexpected provenance type {provenance} for python tool {tv}. \
+                     Update the lockfile to remove the stale provenance entry."
+                )),
+            }
+        })
+    }
+
+    async fn verify_precompiled_provenance(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        platform_key: &str,
+        tarball_path: &std::path::Path,
+    ) -> Result<()> {
+        // Check lockfile provenance expectation before verification
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(platform_key)
+            .and_then(|pi| pi.provenance.take());
+
+        // Verify GitHub artifact attestations for precompiled binaries
+        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
+        let verified = self
+            .verify_github_artifact_attestations(ctx, tarball_path, &tv.version)
+            .await?;
+
+        // Record provenance only if verification actually succeeded (not skipped)
+        if verified {
+            let pi = tv
+                .lock_platforms
+                .entry(platform_key.to_string())
+                .or_default();
+            pi.provenance = Some(ProvenanceType::GithubAttestations);
+        }
+
+        // Enforce lockfile provenance
+        if let Some(ref expected) = locked_provenance {
+            let got = tv
+                .lock_platforms
+                .get(platform_key)
+                .and_then(|pi| pi.provenance.as_ref());
+            if got.is_none_or(|g| g != expected) {
+                let got_str = got
+                    .map(|g| g.to_string())
+                    .unwrap_or_else(|| "no verification".to_string());
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     async fn verify_github_artifact_attestations(
         &self,
         ctx: &InstallContext,
@@ -705,6 +753,18 @@ impl Backend for PythonPlugin {
             ".python-version".to_string(),
             ".python-versions".to_string(),
         ])
+    }
+
+    /// Python versions follow PEP 440, so `3.15.0a8`-style separator-less
+    /// alpha suffixes are pre-releases that the shared filter wouldn't catch
+    /// on its own. See `fuzzy_match_versions_pep440`.
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
+        crate::backend::fuzzy_match_versions_pep440(versions, query, filter_prereleases)
     }
 
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
@@ -885,7 +945,9 @@ fn python_os(settings: &Settings) -> String {
     } else if cfg!(target_os = "macos") {
         "apple-darwin".into()
     } else {
-        ["unknown", built_info::CFG_OS, built_info::CFG_ENV]
+        let current = Platform::current();
+        let libc = current.libc().unwrap_or("gnu");
+        ["unknown", built_info::CFG_OS, libc]
             .iter()
             .filter(|s| !s.is_empty())
             .join("-")
@@ -935,11 +997,11 @@ fn python_precompiled_platform() -> String {
 }
 
 /// Map a PlatformTarget OS to the python-build-standalone OS string.
-fn python_os_for_target(target: &PlatformTarget) -> &'static str {
+fn python_os_for_target(target: &PlatformTarget) -> String {
     match target.os_name() {
-        "macos" => "apple-darwin",
-        "windows" => "pc-windows-msvc",
-        _ => "unknown-linux-gnu",
+        "macos" => "apple-darwin".to_string(),
+        "windows" => "pc-windows-msvc".to_string(),
+        _ => format!("unknown-linux-{}", target.libc().unwrap_or("gnu")),
     }
 }
 
@@ -996,5 +1058,17 @@ mod tests {
     fn test_resolve_python_arch_macos() {
         assert_eq!(resolve_python_arch("macos", "arm64"), "aarch64");
         assert_eq!(resolve_python_arch("macos", "x64"), "x86_64");
+    }
+
+    #[test]
+    fn test_python_os_for_target_linux_libc() {
+        use crate::backend::platform_target::PlatformTarget;
+        use crate::platform::Platform;
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        assert_eq!(python_os_for_target(&target), "unknown-linux-gnu");
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64-musl").unwrap());
+        assert_eq!(python_os_for_target(&target), "unknown-linux-musl");
     }
 }

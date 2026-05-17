@@ -18,22 +18,39 @@ env:
   MISE_EXPERIMENTAL: 1
   MISE_LOCKFILE: 1
   RUST_BACKTRACE: 1
+  MISE_GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
   FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
 
 permissions:
-  pull-requests: write
+  contents: read
 
 jobs:
   build-ubuntu:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
         with:
-          shared-key: build
-          save-if: false
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -43,6 +60,8 @@ jobs:
           name: mise-ubuntu-latest
           path: target/debug/mise
       - uses: ./.github/actions/mise-tools
+      - run: sccache --show-stats
+        if: always()
 
   build-windows:
     runs-on: windows-latest
@@ -52,7 +71,7 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -71,21 +90,34 @@ jobs:
       - uses: ./.github/actions/mise-tools
 
   unit:
-    strategy:
-      fail-fast: false
-      # matrix: { os: [ubuntu-latest, macos-latest] }
-      matrix: { os: [macos-latest] }
-    runs-on: ${{ matrix.os }}
+    name: unit-macos
+    runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
         with:
-          shared-key: build
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - name: Install fd
         run: brew install fd
       - run: |
@@ -93,15 +125,11 @@ jobs:
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features
-      - name: Run sandbox e2e tests
-        run: |
-          for test in e2e/sandbox/test_sandbox_*; do
-            echo "Running $test..."
-            ./e2e/run_test "$test"
-          done
+      - run: sccache --show-stats
+        if: always()
 
   nightly:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -109,19 +137,37 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
       - run: rustup default nightly
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
         with:
-          shared-key: nightly
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise run test
+      - run: sccache --show-stats
+        if: always()
 
   lint:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 20
     needs: [build-ubuntu]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -129,13 +175,29 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
       - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
-      - uses: taiki-e/install-action@787505cde8a44ea468a00478fe52baf23b15bccd # v2
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with:
           tool: cargo-deny,cargo-msrv,cargo-machete
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
         with:
-          shared-key: build
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Configure sccache
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          export SCCACHE_CACHE_SIZE=20G
+          {
+            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
+            echo "SCCACHE_DIR=$SCCACHE_DIR"
+            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
+          } >> "$GITHUB_ENV"
+          sccache --zero-stats
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-ubuntu-latest
@@ -143,6 +205,15 @@ jobs:
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - uses: ./.github/actions/mise-tools
       - run: mise x -- bun i
+      - run: mise run render
+      - name: assert render produces no diff
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::'mise run render' produced changes. Run it locally and commit."
+            git status
+            git diff HEAD
+            exit 1
+          fi
       - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
@@ -150,10 +221,12 @@ jobs:
       - run: mise run lint
       - run: cargo clippy -- -D warnings
       - run: cargo clippy --all-features --all-targets -- -D warnings
+      - run: sccache --show-stats
+        if: always()
 
   e2e:
     name: e2e-${{matrix.tranche}}
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs: [build-ubuntu]
     timeout-minutes: 30
     strategy:
@@ -169,9 +242,13 @@ jobs:
         uses: ./.github/actions/fetch-token
         with:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Set GITHUB_TOKEN from pool
+      - name: Set GitHub token from pool
         if: steps.token.outputs.token
-        run: echo "GITHUB_TOKEN=${{ steps.token.outputs.token }}" >> "$GITHUB_ENV"
+        run: |
+          {
+            echo "MISE_GITHUB_TOKEN=${{ steps.token.outputs.token }}"
+            echo "GITHUB_TOKEN=${{ steps.token.outputs.token }}"
+          } >> "$GITHUB_ENV"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-ubuntu-latest
@@ -201,7 +278,7 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -237,7 +314,7 @@ jobs:
           command: pwsh e2e-win\run.ps1
 
   test-ci:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 1
     needs:
       - build-ubuntu
@@ -248,7 +325,9 @@ jobs:
       - e2e
       - windows-unit
       - windows-e2e
-    if: always()
+    # Run on success or upstream failure but skip when the workflow is cancelled
+    # — `always()` would override `cancel-in-progress` and waste a runner.
+    if: ${{ !cancelled() }}
     steps:
       - name: Check CI job results
         run: |

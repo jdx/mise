@@ -15,9 +15,9 @@ assert_contains "mise x -- hello-world" "hello world"
 # Test GitHub backend with platform-specific URLs
 cat <<EOF >mise.toml
 [tools."github:jdx/mise-test-fixtures"]
-platform_darwin_arm64_url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
-platform_darwin_amd64_url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
-platform_linux_amd64_url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+platform_darwin_arm64_url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+platform_darwin_amd64_url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+platform_linux_amd64_url = "https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 version = "1.0.0"
 bin_path = "hello-world-1.0.0/bin"
 postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"

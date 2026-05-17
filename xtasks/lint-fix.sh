@@ -4,4 +4,4 @@
 #MISE description="Automatically fix lint issues"
 set -euxo pipefail
 
-hk fix --all --exclude crates/aqua-registry/aqua-registry
+hk fix --all --exclude vendor/aqua-registry

@@ -8,49 +8,49 @@ set -euo pipefail
 
 # Test helper function to run commands from a non-existent directory
 run_from_nonexistent() {
-	local cmd="$1"
-	local should_succeed="${2:-true}" # Whether the command should succeed despite the warning
+  local cmd="$1"
+  local should_succeed="${2:-true}" # Whether the command should succeed despite the warning
 
-	# Create a temporary directory
-	local temp_dir
-	temp_dir=$(mktemp -d)
+  # Create a temporary directory
+  local temp_dir
+  temp_dir=$(mktemp -d)
 
-	# Change to the temporary directory
-	cd "$temp_dir"
+  # Change to the temporary directory
+  cd "$temp_dir"
 
-	# Remove the directory while we're still in it
-	rmdir "$temp_dir"
+  # Remove the directory while we're still in it
+  rmdir "$temp_dir"
 
-	# Now we're in a non-existent directory - run the mise command
-	local status=0
-	local output
-	output=$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 bash -c "$cmd 2>&1") || status=$?
+  # Now we're in a non-existent directory - run the mise command
+  local status=0
+  local output
+  output=$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 bash -c "$cmd 2>&1") || status=$?
 
-	# Check for the warning about non-existent directory
-	if [[ $output == *"Current directory does not exist"* ]] || [[ $output == *"WARNING"* ]]; then
-		ok "[$cmd] showed warning about non-existent directory"
-	else
-		# Some commands might not trigger the warning if they exit early
-		debug "[$cmd] may not have shown warning, output: ${output:0:100}..."
-	fi
+  # Check for the warning about non-existent directory
+  if [[ $output == *"Current directory does not exist"* ]] || [[ $output == *"WARNING"* ]]; then
+    ok "[$cmd] showed warning about non-existent directory"
+  else
+    # Some commands might not trigger the warning if they exit early
+    debug "[$cmd] may not have shown warning, output: ${output:0:100}..."
+  fi
 
-	if [[ $should_succeed == "true" ]]; then
-		if [[ $status -eq 0 ]]; then
-			ok "[$cmd] succeeded despite non-existent directory"
-		else
-			# Command might fail for other reasons (e.g., missing tools)
-			debug "[$cmd] failed (status $status), which might be expected"
-		fi
-	else
-		if [[ $status -ne 0 ]]; then
-			ok "[$cmd] failed as expected"
-		else
-			fail "[$cmd] succeeded but was expected to fail"
-		fi
-	fi
+  if [[ $should_succeed == "true" ]]; then
+    if [[ $status -eq 0 ]]; then
+      ok "[$cmd] succeeded despite non-existent directory"
+    else
+      # Command might fail for other reasons (e.g., missing tools)
+      debug "[$cmd] failed (status $status), which might be expected"
+    fi
+  else
+    if [[ $status -ne 0 ]]; then
+      ok "[$cmd] failed as expected"
+    else
+      fail "[$cmd] succeeded but was expected to fail"
+    fi
+  fi
 
-	# Return to a valid directory
-	cd "$HOME" || cd / || true
+  # Return to a valid directory
+  cd "$HOME" || cd / || true
 }
 
 echo "Testing mise commands from non-existent directories..."
@@ -89,11 +89,11 @@ rmdir "$temp_dir"
 
 output=$(mise --version 2>&1) || true
 if [[ $output == *"WARNING"* ]] && [[ $output == *"Current directory does not exist"* ]]; then
-	ok "Warning message has proper format"
+  ok "Warning message has proper format"
 elif [[ $output == *"current directory"* ]]; then
-	ok "Warning message mentions directory issue"
+  ok "Warning message mentions directory issue"
 else
-	debug "Warning might not be shown for --version: ${output:0:100}..."
+  debug "Warning might not be shown for --version: ${output:0:100}..."
 fi
 
 cd "$HOME" || cd / || true

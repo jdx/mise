@@ -42,9 +42,9 @@ assert_contains "mise run //app:test" "test task executed"
 
 # Test 2: Running tasks from subdirectory without leading colon
 (
-	cd app
-	assert_contains "mise run build" "setup task executed"
-	assert_contains "mise run build" "build task executed"
+  cd app
+  assert_contains "mise run build" "setup task executed"
+  assert_contains "mise run build" "build task executed"
 )
 
 # Test 3: Mixed colon and non-colon syntax
@@ -121,15 +121,15 @@ assert_contains "mise run //other:main" "other main task executed"
 
 # Verify it's NOT running the backend's "before" task
 if echo "$OUTPUT" | grep -q "^before task executed$"; then
-	echo "ERROR: Task dependency incorrectly resolved to different module's task"
-	exit 1
+  echo "ERROR: Task dependency incorrectly resolved to different module's task"
+  exit 1
 fi
 
 # Test 7: Running task from subdirectory
 (
-	cd frontend
-	assert_contains "mise run compile" "lint task executed"
-	assert_contains "mise run compile" "compile task executed"
+  cd frontend
+  assert_contains "mise run compile" "lint task executed"
+  assert_contains "mise run compile" "compile task executed"
 )
 
 # Test 8: Root level tasks - bare names work at root too

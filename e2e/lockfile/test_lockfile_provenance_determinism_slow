@@ -15,9 +15,9 @@ EOF
 # Lock for current platform + a cross-platform target
 # The cross-platform entry should also get the expanded provenance.slsa form with URL
 if [[ $PLATFORM == "macos-arm64" ]]; then
-	CROSS_PLATFORM="linux-x64"
+  CROSS_PLATFORM="linux-x64"
 else
-	CROSS_PLATFORM="macos-arm64"
+  CROSS_PLATFORM="macos-arm64"
 fi
 
 mise lock --platform "$PLATFORM,$CROSS_PLATFORM"

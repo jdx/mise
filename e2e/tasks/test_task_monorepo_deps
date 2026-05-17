@@ -75,6 +75,6 @@ assert_contains "mise run //other:main:task" "other main task executed"
 
 # Verify it's NOT running the submodule's "before" task
 if echo "$OUTPUT" | grep -q "before task executed" && ! echo "$OUTPUT" | grep -q "other before"; then
-	echo "ERROR: Task dependency incorrectly resolved to different module's task"
-	exit 1
+  echo "ERROR: Task dependency incorrectly resolved to different module's task"
+  exit 1
 fi

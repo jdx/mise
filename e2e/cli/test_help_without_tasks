@@ -26,19 +26,19 @@ assert_contains "mise -h" "Usage: mise"
 # Test 4: All three should produce similar output
 echo "Test 4: Verify all help variants work consistently"
 if mise help >/dev/null 2>&1; then
-	ok "mise help succeeded"
+  ok "mise help succeeded"
 else
-	fail "mise help failed"
+  fail "mise help failed"
 fi
 if mise --help >/dev/null 2>&1; then
-	ok "mise --help succeeded"
+  ok "mise --help succeeded"
 else
-	fail "mise --help failed"
+  fail "mise --help failed"
 fi
 if mise -h >/dev/null 2>&1; then
-	ok "mise -h succeeded"
+  ok "mise -h succeeded"
 else
-	fail "mise -h failed"
+  fail "mise -h failed"
 fi
 
 # Cleanup

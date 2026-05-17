@@ -10,9 +10,9 @@ use confique::{Config, Layer};
 use eyre::{Result, bail};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
+use serde::Serialize;
 use serde::ser::Error;
 use serde::{Deserialize, Deserializer, Serializer};
-use serde_derive::Serialize;
 use std::env::consts::{ARCH, OS};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -364,6 +364,12 @@ impl Settings {
 
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
+        if let Some(v) = self.install_before.take() {
+            warn_deprecated("install_before");
+            if self.minimum_release_age.is_none() {
+                self.minimum_release_age = Some(v);
+            }
+        }
         // Migrate task_* settings to task.* (must run before auto_install override below)
         if let Some(v) = self.task_disable_paths.take()
             && !v.is_empty()
@@ -433,6 +439,9 @@ impl Settings {
         }
         if self.npm.bun {
             self.npm.package_manager = NpmPackageManager::Bun;
+        }
+        if self.shorthands_file.is_some() {
+            warn_deprecated("shorthands_file");
         }
     }
 
@@ -509,8 +518,18 @@ impl Settings {
     }
 
     pub fn hidden_configs() -> &'static HashSet<&'static str> {
-        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
-            Lazy::new(|| ["ci", "cd", "debug", "env_file", "trace", "log_level"].into());
+        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+            [
+                "ci",
+                "cd",
+                "debug",
+                "env_file",
+                "install_before",
+                "trace",
+                "log_level",
+            ]
+            .into()
+        });
         &HIDDEN_CONFIGS
     }
 
@@ -519,6 +538,22 @@ impl Settings {
         *BASE_SETTINGS.write().unwrap() = None;
         // Clear caches that depend on settings and environment
         crate::config::config_file::config_root::reset();
+    }
+
+    /// Merge an override into the CLI-level settings partial.
+    ///
+    /// `reset` replaces CLI_SETTINGS wholesale, which would clobber overrides
+    /// installed earlier in startup (`--offline`, `--quiet`, etc.). This
+    /// helper merges in-place so a subcommand flag (e.g. `mise ls-remote
+    /// --prerelease`) can layer on top of those without losing them. Clears
+    /// BASE_SETTINGS so the next `Settings::get()` rebuilds with the override
+    /// applied.
+    pub fn override_with(updater: impl FnOnce(&mut SettingsPartial)) {
+        let mut lock = CLI_SETTINGS.lock().unwrap();
+        let partial = lock.get_or_insert_with(SettingsPartial::empty);
+        updater(partial);
+        drop(lock);
+        *BASE_SETTINGS.write().unwrap() = None;
     }
 
     pub fn lockfile_enabled(&self) -> bool {
@@ -685,6 +720,14 @@ impl Settings {
             "x86_64" | "amd64" => "x64",
             "aarch64" | "arm64" => "arm64",
             other => other,
+        }
+    }
+
+    pub fn libc(&self) -> Option<&str> {
+        match self.libc.as_deref()?.to_ascii_lowercase().as_str() {
+            "glibc" | "gnu" => Some("gnu"),
+            "musl" => Some("musl"),
+            _ => None,
         }
     }
 
@@ -1026,6 +1069,16 @@ mod tests {
         assert!(settings.prefer_offline());
         // prefer_offline does NOT imply offline
         assert!(!settings.offline);
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_install_before_hidden_alias_sets_minimum_release_age() {
+        let mut partial = SettingsPartial::empty();
+        partial.install_before = Some("7d".to_string());
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert_eq!(settings.minimum_release_age.as_deref(), Some("7d"));
         Settings::reset(None);
     }
 

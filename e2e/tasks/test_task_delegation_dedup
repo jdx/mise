@@ -30,10 +30,10 @@ EOF
 output="$(mise run -f all 2>&1)"
 count="$(echo "$output" | grep -v '^\[setup\] \$' | grep -c '>>> SETUP RUNNING <<<')"
 if [[ $count -ne 1 ]]; then
-	echo "Expected setup to run exactly once, but it ran $count times"
-	echo "Full output:"
-	echo "$output"
-	exit 1
+  echo "Expected setup to run exactly once, but it ran $count times"
+  echo "Full output:"
+  echo "$output"
+  exit 1
 fi
 
 # Verify all tasks actually ran

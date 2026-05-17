@@ -71,11 +71,11 @@ impl AssetArch {
 
 impl AssetLibc {
     pub fn matches_target(&self, target: &str) -> bool {
-        match self {
-            AssetLibc::Gnu => target == "gnu",
-            AssetLibc::Musl => target == "musl",
-            AssetLibc::Msvc => target == "msvc",
-        }
+        target.split('-').any(|part| match self {
+            AssetLibc::Gnu => part == "gnu" || part == "glibc",
+            AssetLibc::Musl => part == "musl",
+            AssetLibc::Msvc => part == "msvc",
+        })
     }
 }
 
@@ -1164,6 +1164,15 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             .pick_from(&assets)
             .unwrap();
         assert_eq!(result.name, "tool-1.0.0-linux-x86_64-gnu.tar.gz");
+
+        // Compound qualifier still carries the libc preference.
+        let platform = Platform::parse("linux-x64-musl-baseline").unwrap();
+        let target = PlatformTarget::new(platform);
+        let result = AssetMatcher::new()
+            .for_target(&target)
+            .pick_from(&assets)
+            .unwrap();
+        assert_eq!(result.name, "tool-1.0.0-linux-x86_64-musl.tar.gz");
     }
 
     #[test]

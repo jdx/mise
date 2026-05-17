@@ -7,7 +7,7 @@ An assortment of helpful tips for using `mise`.
 If you have a need to run tools as x86_64 on Apple Silicon, this can be done with mise however you'll currently
 need to use the x86_64 version of mise itself. A common reason for doing this is to support compiling node <=14.
 
-You can do this either with the [`MISE_ARCH`](https://mise.jdx.dev/configuration/settings.html#arch)
+You can do this either with the [`MISE_ARCH`](https://mise.en.dev/configuration/settings.html#arch)
 setting or by using a dedicated rosetta mise bin as described below:
 
 First, you'll need a copy of mise that's built for x86_64:
@@ -116,7 +116,7 @@ mise set NODE_ENV=production
 
 ## Using Tera to read unsupported version files
 
-Some project-local version files are already supported as [idiomatic version files](https://mise.jdx.dev/configuration.html#idiomatic-version-files). For other version files, you can use Tera templates in `mise.toml` to read the file and assign the version to the appropriate tool.
+Some project-local version files are already supported as [idiomatic version files](https://mise.en.dev/configuration.html#idiomatic-version-files). For other version files, you can use Tera templates in `mise.toml` to read the file and assign the version to the appropriate tool.
 
 For example, to use a `.hvm` file with a plain Hugo version:
 
@@ -175,7 +175,7 @@ To limit supply chain risk, you can restrict mise to only install versions relea
 ```toml
 # mise.toml
 [settings]
-install_before = "7d"  # only install versions released more than 7 days ago
+minimum_release_age = "7d"  # only install versions released more than 7 days ago
 ```
 
 Supports relative durations (`7d`, `6m`, `1y`) and absolute dates (`2024-06-01`). For most backends, this only affects fuzzy version resolution (e.g., `node@20` or `latest`) — explicitly pinned versions like `node@22.5.0` bypass the filter.
@@ -185,21 +185,21 @@ during install. Refer to the
 [npm backend docs](/dev-tools/backends/npm.html) and [pipx backend docs](/dev-tools/backends/pipx.html)
 for package-manager support details.
 
-You can also set `install_before` per-tool to override the global setting:
+You can also set `minimum_release_age` per-tool to override the global setting:
 
 ```toml
 # mise.toml
 [settings]
-install_before = "7d"  # default for all tools
+minimum_release_age = "7d"  # default for all tools
 
 [tools.trivy]
 version = "latest"
-install_before = "1d"  # trivy updates are time-sensitive, use a shorter window
+minimum_release_age = "1d"  # trivy updates are time-sensitive, use a shorter window
 ```
 
-Precedence: `--before` CLI flag > per-tool `install_before` > global `install_before` setting.
+Precedence: `--before` CLI flag > per-tool `minimum_release_age` > global `minimum_release_age` setting.
 
-See [`install_before`](/configuration/settings.html#install_before) for more details.
+See [`minimum_release_age`](/configuration/settings.html#minimum_release_age) for more details.
 
 ## [`mise up --bump`](/cli/upgrade.html)
 

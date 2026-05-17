@@ -1,3 +1,3 @@
 backends = ["github:endevco/aube"]
 description = "A fast Node.js package manager"
-test = { cmd = "aube --version", expected = "aube {{version}}" }
+test = { cmd = "aube --version", expected = "{{version}}" }

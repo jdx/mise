@@ -4,10 +4,10 @@ use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, 
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::TaskScriptParser;
-use crate::tera::get_tera;
+use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
-use console::{Color, measure_text_width, truncate_str};
+use console::{measure_text_width, truncate_str};
 use eyre::{Result, bail, eyre};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -159,21 +159,46 @@ impl RunEntry {
         match self {
             RunEntry::Script(s) => Ok(RunEntry::Script(s.clone())),
             RunEntry::SingleTask { task, args, env } => {
-                let task = tera.render_str(task, tera_ctx)?;
+                let task = if contains_template_syntax(task) {
+                    render_str(tera, task, tera_ctx)?
+                } else {
+                    task.clone()
+                };
                 let args = args
                     .iter()
-                    .map(|a| tera.render_str(a, tera_ctx))
+                    .map(|a| {
+                        if contains_template_syntax(a) {
+                            render_str(tera, a, tera_ctx)
+                        } else {
+                            Ok(a.clone())
+                        }
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 let env = env
                     .iter()
-                    .map(|(k, v)| Ok((k.clone(), tera.render_str(v, tera_ctx)?)))
+                    .map(|(k, v)| {
+                        Ok((
+                            k.clone(),
+                            if contains_template_syntax(v) {
+                                render_str(tera, v, tera_ctx)?
+                            } else {
+                                v.clone()
+                            },
+                        ))
+                    })
                     .collect::<Result<IndexMap<_, _>, tera::Error>>()?;
                 Ok(RunEntry::SingleTask { task, args, env })
             }
             RunEntry::TaskGroup { tasks } => {
                 let tasks = tasks
                     .iter()
-                    .map(|t| tera.render_str(t, tera_ctx))
+                    .map(|t| {
+                        if contains_template_syntax(t) {
+                            render_str(tera, t, tera_ctx)
+                        } else {
+                            Ok(t.clone())
+                        }
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(RunEntry::TaskGroup { tasks })
             }
@@ -181,13 +206,14 @@ impl RunEntry {
     }
 
     pub fn has_tera_template(&self) -> bool {
-        let has_ref = |s: &str| s.contains("{{") || s.contains("{%") || s.contains("{#");
         match self {
             RunEntry::Script(_) => false,
             RunEntry::SingleTask { task, args, env } => {
-                has_ref(task) || args.iter().any(|a| has_ref(a)) || env.values().any(|v| has_ref(v))
+                contains_template_syntax(task)
+                    || args.iter().any(|a| contains_template_syntax(a))
+                    || env.values().any(|v| contains_template_syntax(v))
             }
-            RunEntry::TaskGroup { tasks } => tasks.iter().any(|t| has_ref(t)),
+            RunEntry::TaskGroup { tasks } => tasks.iter().any(|t| contains_template_syntax(t)),
         }
     }
 }
@@ -1026,18 +1052,7 @@ impl Task {
     }
 
     pub fn estyled_prefix(&self) -> String {
-        static COLORS: Lazy<Vec<Color>> =
-            Lazy::new(|| vec![Color::Blue, Color::Magenta, Color::Cyan, Color::Green]);
-        let hash = self.display_name.chars().map(|c| c as usize).sum::<usize>();
-        let mut styled = style::estyle(self.prefix()).fg(COLORS[hash % COLORS.len()]);
-        match (hash / COLORS.len()) % 4 {
-            1 => styled = styled.bold(),
-            2 => styled = styled.dim(),
-            3 => styled = styled.bright(),
-            _ => {}
-        }
-
-        style::ereset() + &styled.to_string()
+        style::prefix(self.prefix(), &self.display_name, true)
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
@@ -1046,10 +1061,14 @@ impl Task {
                 .as_ref()
                 .and_then(|cf| cf.task_config().dir.clone())
         }) {
-            let config_root = self.config_root.clone().unwrap_or_default();
-            let mut tera = get_tera(Some(&config_root));
-            let tera_ctx = self.tera_ctx(config).await?;
-            let dir = tera.render_str(&dir, &tera_ctx)?;
+            let dir = if contains_template_syntax(&dir) {
+                let config_root = self.config_root.clone().unwrap_or_default();
+                let mut tera = get_tera(Some(&config_root));
+                let tera_ctx = self.tera_ctx(config).await?;
+                render_str(&mut tera, &dir, &tera_ctx)?
+            } else {
+                dir
+            };
             let dir = file::replace_path(&dir);
             if dir.is_absolute() {
                 Ok(Some(dir.to_path_buf()))
@@ -1066,10 +1085,14 @@ impl Task {
     pub async fn file_path(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(file) = &self.file {
             let file_str = file.to_string_lossy().to_string();
-            let config_root = self.config_root.clone().unwrap_or_default();
-            let mut tera = get_tera(Some(&config_root));
-            let tera_ctx = self.tera_ctx(config).await?;
-            let rendered = tera.render_str(&file_str, &tera_ctx)?;
+            let rendered = if contains_template_syntax(&file_str) {
+                let config_root = self.config_root.clone().unwrap_or_default();
+                let mut tera = get_tera(Some(&config_root));
+                let tera_ctx = self.tera_ctx(config).await?;
+                render_str(&mut tera, &file_str, &tera_ctx)?
+            } else {
+                file_str
+            };
             let rendered_path = file::replace_path(&rendered);
             if rendered_path.is_absolute() {
                 Ok(Some(rendered_path))
@@ -1340,26 +1363,96 @@ impl Task {
         self.allow_env.extend(other.allow_env);
     }
 
-    pub async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
-        let mut tera = get_tera(Some(config_root));
-        let tera_ctx = self.tera_ctx(config).await?;
-        for a in &mut self.aliases {
-            *a = tera.render_str(a, &tera_ctx)?;
-        }
+    fn has_render_templates(&self) -> bool {
+        let deps_have_template = |deps: &[TaskDep]| {
+            deps.iter().any(|dep| {
+                contains_template_syntax(&dep.task)
+                    || dep.args.iter().any(|arg| contains_template_syntax(arg))
+                    || dep
+                        .env
+                        .values()
+                        .any(|value| contains_template_syntax(value))
+            })
+        };
+        let tools_have_template = self.tools.values().any(|tool| match tool {
+            TaskToolValue::String(s) => contains_template_syntax(s),
+            TaskToolValue::Map(map) => {
+                contains_template_syntax(&map.version)
+                    || map
+                        .opts
+                        .values()
+                        .any(|value| value.as_str().is_some_and(contains_template_syntax))
+            }
+        });
 
-        self.description = tera.render_str(&self.description, &tera_ctx)?;
-        for s in &mut self.sources {
-            *s = tera.render_str(s, &tera_ctx)?;
-        }
+        self.aliases.iter().any(|s| contains_template_syntax(s))
+            || contains_template_syntax(&self.description)
+            || self.sources.iter().any(|s| contains_template_syntax(s))
+            || self.outputs.has_tera_template()
+            || deps_have_template(&self.depends)
+            || deps_have_template(&self.depends_post)
+            || deps_have_template(&self.wait_for)
+            || self
+                .dir
+                .as_ref()
+                .is_some_and(|s| contains_template_syntax(s))
+            || self
+                .shell
+                .as_ref()
+                .is_some_and(|s| contains_template_syntax(s))
+            || tools_have_template
+    }
+
+    fn store_raw_render_inputs(&mut self) {
         if !self.sources.is_empty() && self.outputs.is_empty() {
             self.outputs = TaskOutputs::Auto;
         }
-        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
+        self.raw_outputs = self.outputs.raw_templates_without_env();
         // Save unrendered dependency templates so they can be re-rendered later
         // with parent task args available (for passing args to dependencies).
         self.depends_raw = Some(self.depends.clone());
         self.depends_post_raw = Some(self.depends_post.clone());
         self.wait_for_raw = Some(self.wait_for.clone());
+    }
+
+    fn parse_plain_depends(&mut self) -> Result<()> {
+        for d in &mut self.depends {
+            d.parse_shell_style_env()?;
+        }
+        for d in &mut self.depends_post {
+            d.parse_shell_style_env()?;
+        }
+        for d in &mut self.wait_for {
+            d.parse_shell_style_env()?;
+        }
+        Ok(())
+    }
+
+    pub async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
+        if !self.has_render_templates() {
+            self.store_raw_render_inputs();
+            self.parse_plain_depends()?;
+            return Ok(());
+        }
+
+        let mut tera = get_tera(Some(config_root));
+        let tera_ctx = self.tera_ctx(config).await?;
+        for a in &mut self.aliases {
+            if contains_template_syntax(a) {
+                *a = render_str(&mut tera, a, &tera_ctx)?;
+            }
+        }
+
+        if contains_template_syntax(&self.description) {
+            self.description = render_str(&mut tera, &self.description, &tera_ctx)?;
+        }
+        for s in &mut self.sources {
+            if contains_template_syntax(s) {
+                *s = render_str(&mut tera, s, &tera_ctx)?;
+            }
+        }
+        self.store_raw_render_inputs();
+        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
         // Render deps that don't contain {{usage.*}} references. Deps with usage
         // references are deferred until render_depends_with_usage() is called with
         // the actual arg values from CLI or parent dependency.
@@ -1378,22 +1471,32 @@ impl Task {
                 d.render(&mut tera, &tera_ctx)?;
             }
         }
-        if let Some(dir) = &mut self.dir {
-            *dir = tera.render_str(dir, &tera_ctx)?;
+        if let Some(dir) = &mut self.dir
+            && contains_template_syntax(dir)
+        {
+            *dir = render_str(&mut tera, dir, &tera_ctx)?;
         }
-        if let Some(shell) = &mut self.shell {
-            *shell = tera.render_str(shell, &tera_ctx)?;
+        if let Some(shell) = &mut self.shell
+            && contains_template_syntax(shell)
+        {
+            *shell = render_str(&mut tera, shell, &tera_ctx)?;
         }
         for (_, v) in &mut self.tools {
             match v {
                 TaskToolValue::String(s) => {
-                    *v = TaskToolValue::String(tera.render_str(s, &tera_ctx)?);
+                    if contains_template_syntax(s) {
+                        *v = TaskToolValue::String(render_str(&mut tera, s, &tera_ctx)?);
+                    }
                 }
                 TaskToolValue::Map(map) => {
-                    map.version = tera.render_str(&map.version, &tera_ctx)?;
+                    if contains_template_syntax(&map.version) {
+                        map.version = render_str(&mut tera, &map.version, &tera_ctx)?;
+                    }
                     for (_ok, ov) in &mut map.opts {
-                        if let toml::Value::String(s) = ov {
-                            *ov = toml::Value::String(tera.render_str(s, &tera_ctx)?);
+                        if let toml::Value::String(s) = ov
+                            && contains_template_syntax(s)
+                        {
+                            *ov = toml::Value::String(render_str(&mut tera, s, &tera_ctx)?);
                         }
                     }
                 }
@@ -1408,9 +1511,19 @@ impl Task {
     pub async fn render_depends_with_usage(
         &mut self,
         config: &Arc<Config>,
-        usage_values: &IndexMap<String, String>,
+        usage_values: &IndexMap<String, tera::Value>,
     ) -> Result<()> {
         if usage_values.is_empty() {
+            return Ok(());
+        }
+        let has_usage_deps = |raw: &Option<Vec<_>>| {
+            raw.as_ref()
+                .is_some_and(|deps| deps.iter().any(dep_has_usage_ref))
+        };
+        if !has_usage_deps(&self.depends_raw)
+            && !has_usage_deps(&self.depends_post_raw)
+            && !has_usage_deps(&self.wait_for_raw)
+        {
             return Ok(());
         }
         let config_root = self.config_root.clone().unwrap_or_default();
@@ -2031,31 +2144,55 @@ where
     }
 }
 
-/// Check if a TaskDep contains {{usage.*}} references that need deferred rendering.
-/// Strips whitespace before matching to handle Tera's `{{ usage.foo }}` syntax.
+/// Check if a TaskDep contains Tera `usage` references that need deferred rendering.
 pub(crate) fn dep_has_usage_ref(dep: &TaskDep) -> bool {
-    let has_ref = |s: &str| {
-        let s = s.replace(' ', "");
-        s.contains("{{usage.")
-    };
-    has_ref(&dep.task)
-        || dep.args.iter().any(|a| has_ref(a))
-        || dep.env.values().any(|v| has_ref(v))
+    tera_template_has_usage_ref(&dep.task)
+        || dep.args.iter().any(|a| tera_template_has_usage_ref(a))
+        || dep.env.values().any(|v| tera_template_has_usage_ref(v))
 }
 
-/// Parse a task's usage spec against its current args and return a map
-/// of named arg/flag values (e.g., {"app": "myapp", "verbose": "true"}).
+fn tera_template_has_usage_ref(s: &str) -> bool {
+    const TAGS: [(&str, &str); 2] = [("{{", "}}"), ("{%", "%}")];
+    for (open, close) in TAGS {
+        let mut rest = s;
+        while let Some(start) = rest.find(open) {
+            rest = &rest[start + open.len()..];
+            let Some(end) = rest.find(close) else {
+                break;
+            };
+            if tera_tag_has_usage_ref(&rest[..end]) {
+                return true;
+            }
+            rest = &rest[end + close.len()..];
+        }
+    }
+    false
+}
+
+fn tera_tag_has_usage_ref(tag: &str) -> bool {
+    ["usage.", "usage["].iter().any(|needle| {
+        tag.match_indices(needle).any(|(idx, _)| {
+            tag[..idx]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
+        })
+    })
+}
+
+/// Parse a task's usage spec against its current args and return a map of named
+/// arg/flag values preserving their Tera types (e.g., strings and booleans).
 /// Used to provide `{{usage.*}}` context when rendering dependency templates.
 pub async fn parse_usage_values_from_task(
     config: &Arc<Config>,
     task: &Task,
-) -> Result<IndexMap<String, String>> {
+) -> Result<IndexMap<String, tera::Value>> {
     let ts = config.get_toolset().await?;
     let env = ts.full_env(config).await?;
     let (spec, _) = task
         .parse_usage_spec_with_vars(config, None, &env, None)
         .await?;
-    if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() {
+    if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() && spec.cmd.subcommands.is_empty() {
         return Ok(IndexMap::new());
     }
     // Build args list with empty first element (usage parser expects argv[0] to be the command)
@@ -2069,12 +2206,13 @@ pub async fn parse_usage_values_from_task(
             return Ok(IndexMap::new());
         }
     };
-    let mut values = IndexMap::new();
-    for (k, v) in po.as_env() {
-        // Strip "usage_" prefix to get the bare arg/flag name
-        if let Some(name) = k.strip_prefix("usage_") {
-            values.insert(name.to_string(), v);
-        }
+    let mut values: IndexMap<String, tera::Value> =
+        TaskScriptParser::make_usage_ctx(&po).into_iter().collect();
+    // `make_usage_ctx` only inserts `cmd` when a subcommand was actually selected.
+    // Templates referencing `{{ usage.cmd }}` should still resolve (to "") when
+    // subcommands are defined in the spec but none was selected.
+    if !spec.cmd.subcommands.is_empty() && !values.contains_key("cmd") {
+        values.insert("cmd".to_string(), tera::Value::String(String::new()));
     }
     Ok(values)
 }
@@ -2090,7 +2228,7 @@ mod tests {
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
-    use super::{TaskConfirm, name_from_path};
+    use super::{TaskConfirm, name_from_path, tera_tag_has_usage_ref, tera_template_has_usage_ref};
 
     // Thread-local storage to capture parser state during tests
     thread_local! {
@@ -2105,6 +2243,22 @@ mod tests {
 
     fn take_captured_fields() -> Option<Vec<String>> {
         CAPTURED_PARSER_FIELDS.with(|captured| captured.lock().unwrap().take())
+    }
+
+    #[test]
+    fn test_tera_template_has_usage_ref() {
+        assert!(tera_template_has_usage_ref("{{ usage.app }}"));
+        assert!(tera_template_has_usage_ref(
+            "{%- if usage.run_post -%}post{%- endif -%}"
+        ));
+        assert!(tera_template_has_usage_ref("{{ usage['app'] }}"));
+        assert!(!tera_template_has_usage_ref(
+            "{{ env.DEPLOY_ENV }} usage.docs"
+        ));
+        assert!(!tera_template_has_usage_ref("{{ config.usage.something }}"));
+        assert!(!tera_template_has_usage_ref("{# usage.app #}"));
+        assert!(tera_tag_has_usage_ref("if(usage.run_post)"));
+        assert!(!tera_tag_has_usage_ref("ifusage.run_post"));
     }
 
     #[tokio::test]

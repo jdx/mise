@@ -1,7 +1,9 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::{BackendOptions, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::{lookup_platform_key, try_with_v_prefix};
+use crate::backend::runtime_path_for_install_path;
+use crate::backend::static_helpers::try_with_v_prefix;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::env::{
@@ -29,6 +31,79 @@ pub struct UbiBackend {
     ba: Arc<BackendArg>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct UbiOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> UbiOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn provider(&self) -> eyre::Result<ForgeType> {
+        match self.values.str("provider") {
+            Some(forge) => Ok(ForgeType::from_str(forge)?),
+            None => Ok(ForgeType::default()),
+        }
+    }
+
+    fn api_url_override(&self) -> Option<&'a str> {
+        self.values.str("api_url")
+    }
+
+    fn api_url(&self, forge: &ForgeType) -> eyre::Result<String> {
+        match self.api_url_override() {
+            Some(api_url) => Ok(api_url.strip_suffix('/').unwrap_or(api_url).to_string()),
+            None => match forge {
+                ForgeType::GitHub => Ok(github::API_URL.to_string()),
+                ForgeType::GitLab => Ok(gitlab::API_URL.to_string()),
+                _ => bail!("Unsupported forge type {:?}", forge),
+            },
+        }
+    }
+
+    fn tag_regex(&self) -> Option<&'a str> {
+        self.values.str("tag_regex")
+    }
+
+    fn bin_path(&self) -> Option<String> {
+        self.values.platform_string("bin_path")
+    }
+
+    fn extract_all(&self) -> bool {
+        self.values.str("extract_all").is_some_and(is_truthy)
+    }
+
+    fn exe(&self) -> Option<&'a str> {
+        self.values.str("exe")
+    }
+
+    fn rename_exe(&self) -> Option<&'a str> {
+        self.values.str("rename_exe")
+    }
+
+    fn matching(&self) -> Option<&'a str> {
+        self.values.str("matching")
+    }
+
+    fn matching_regex(&self) -> Option<&'a str> {
+        self.values.str("matching_regex")
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut result = BTreeMap::new();
+        for key in ["exe", "matching", "matching_regex", "provider"] {
+            if let Some(value) = self.values.str(key) {
+                result.insert(key.to_string(), value.to_string());
+            }
+        }
+        result
+    }
+}
+
 #[async_trait]
 impl Backend for UbiBackend {
     fn get_type(&self) -> BackendType {
@@ -39,7 +114,15 @@ impl Backend for UbiBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["provider", "api_url", "tag_regex"]
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         deprecated_at!(
             "2026.4.0",
             "2027.1.0",
@@ -52,19 +135,11 @@ impl Backend for UbiBackend {
                 ..Default::default()
             }])
         } else {
-            let opts = self.ba.opts();
-            let forge = match opts.get("provider") {
-                Some(forge) => ForgeType::from_str(forge)?,
-                None => ForgeType::default(),
-            };
-            let api_url = match opts.get("api_url") {
-                Some(api_url) => api_url.strip_suffix("/").unwrap_or(api_url),
-                None => match forge {
-                    ForgeType::GitHub => github::API_URL,
-                    ForgeType::GitLab => gitlab::API_URL,
-                    _ => bail!("Unsupported forge type {:?}", forge),
-                },
-            };
+            let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+            let opts = UbiOptions::new(&raw_opts);
+            let forge = opts.provider()?;
+            let api_url = opts.api_url(&forge)?;
+            let tag_regex = opts.tag_regex();
 
             let tag_regex_cell = OnceLock::new();
 
@@ -93,7 +168,7 @@ impl Backend for UbiBackend {
 
             // Helper to check if tag matches tag_regex (if provided)
             let matches_tag_regex = |tag: &str| -> bool {
-                if let Some(re_str) = opts.get("tag_regex") {
+                if let Some(re_str) = tag_regex {
                     let re = tag_regex_cell.get_or_init(|| Regex::new(re_str).unwrap());
                     re.is_match(tag)
                 } else {
@@ -113,10 +188,10 @@ impl Backend for UbiBackend {
             let mut version_infos: Vec<VersionInfo> = match forge {
                 ForgeType::GitHub => {
                     let releases =
-                        github::list_releases_from_url(api_url, &self.tool_name()).await?;
+                        github::list_releases_from_url(&api_url, &self.tool_name()).await?;
                     if releases.is_empty() {
                         // Fall back to tags (no created_at available)
-                        github::list_tags_from_url(api_url, &self.tool_name())
+                        github::list_tags_from_url(&api_url, &self.tool_name())
                             .await?
                             .into_iter()
                             .filter(|tag| matches_tag_regex(tag))
@@ -149,10 +224,10 @@ impl Backend for UbiBackend {
                 }
                 ForgeType::GitLab => {
                     let releases =
-                        gitlab::list_releases_from_url(api_url, &self.tool_name()).await?;
+                        gitlab::list_releases_from_url(&api_url, &self.tool_name()).await?;
                     if releases.is_empty() {
                         // Fall back to tags (no created_at available)
-                        gitlab::list_tags_from_url(api_url, &self.tool_name())
+                        gitlab::list_tags_from_url(&api_url, &self.tool_name())
                             .await?
                             .into_iter()
                             .filter(|tag| matches_tag_regex(tag))
@@ -213,25 +288,19 @@ impl Backend for UbiBackend {
             .and_then(|p| p.url.clone());
 
         let v = tv.version.to_string();
-        let opts = tv.request.options();
-        let bin_path = lookup_platform_key(&opts, "bin_path")
-            .or_else(|| opts.get("bin_path").map(|s| s.to_string()))
-            .unwrap_or_else(|| "bin".to_string());
-        let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
+        let raw_opts = tv.request.options();
+        let opts = UbiOptions::new(&raw_opts);
+        let bin_path = opts.bin_path().unwrap_or_else(|| "bin".to_string());
+        let extract_all = opts.extract_all();
         let bin_dir = tv.install_path();
 
         // Use lockfile URL if available, otherwise fall back to standard resolution
         if let Some(url) = &lockfile_url {
-            install(url, &v, &bin_dir, extract_all, &opts)
-                .await
-                .map_err(|e| eyre::eyre!(e))?;
+            install(url, &v, &bin_dir, extract_all, &opts).await?;
         } else if name_is_url(&self.tool_name()) {
-            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts)
-                .await
-                .map_err(|e| eyre::eyre!(e))?;
+            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
         } else {
             try_with_v_prefix(&v, None, |candidate| {
-                let opts = opts.clone();
                 let bin_dir = bin_dir.clone();
                 async move {
                     install(
@@ -248,10 +317,8 @@ impl Backend for UbiBackend {
         }
 
         let mut possible_exes = vec![
-            tv.request
-                .options()
-                .get("exe")
-                .map(|s| s.to_string())
+            opts.exe()
+                .map(str::to_string)
                 .unwrap_or(tv.ba().short.to_string()),
         ];
         if cfg!(windows) {
@@ -281,7 +348,12 @@ impl Backend for UbiBackend {
         Ok(tv)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+    fn fuzzy_match_filter(
+        &self,
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
             "\\D*[0-9].*"
@@ -296,7 +368,7 @@ impl Backend for UbiBackend {
                 if query == v {
                     return true;
                 }
-                if VERSION_REGEX.is_match(v) {
+                if filter_prereleases && VERSION_REGEX.is_match(v) {
                     return false;
                 }
                 query_regex.is_match(v)
@@ -313,11 +385,13 @@ impl Backend for UbiBackend {
         // For ubi backend, generate a more specific platform key that includes tool-specific options
         let mut platform_key = self.get_platform_key();
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
+        let raw_opts = tv.request.options();
+        let opts = UbiOptions::new(&raw_opts);
 
-        if let Some(exe) = tv.request.options().get("exe") {
+        if let Some(exe) = opts.exe() {
             platform_key = format!("{platform_key}-{exe}");
         }
-        if let Some(matching) = tv.request.options().get("matching") {
+        if let Some(matching) = opts.matching() {
             platform_key = format!("{platform_key}-{matching}");
         }
         // Include filename to distinguish different downloads for the same platform
@@ -348,20 +422,22 @@ impl Backend for UbiBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        let opts = tv.request.options();
-        if let Some(bin_path) = lookup_platform_key(&opts, "bin_path")
-            .or_else(|| opts.get("bin_path").map(|s| s.to_string()))
-        {
+        let raw_opts = tv.request.options();
+        let opts = UbiOptions::new(&raw_opts);
+        if let Some(bin_path) = opts.bin_path() {
             // bin_path should always point to a directory containing binaries
-            Ok(vec![tv.install_path().join(&bin_path)])
-        } else if opts.get("extract_all").is_some_and(|v| v == "true") {
-            Ok(vec![tv.install_path()])
+            Ok(vec![runtime_path_for_install_path(
+                tv,
+                tv.install_path().join(&bin_path),
+            )])
+        } else if opts.extract_all() {
+            Ok(vec![tv.runtime_path()])
         } else {
             let bin_path = tv.install_path().join("bin");
             if bin_path.exists() {
-                Ok(vec![bin_path])
+                Ok(vec![runtime_path_for_install_path(tv, bin_path)])
             } else {
-                Ok(vec![tv.install_path()])
+                Ok(vec![tv.runtime_path()])
             }
         }
     }
@@ -377,17 +453,8 @@ impl Backend for UbiBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
-        let opts = request.options();
-        let mut result = BTreeMap::new();
-
-        // These options affect which artifact is downloaded
-        for key in ["exe", "matching", "matching_regex", "provider"] {
-            if let Some(value) = opts.get(key) {
-                result.insert(key.to_string(), value.to_string());
-            }
-        }
-
-        result
+        let raw_opts = request.options();
+        UbiOptions::new(&raw_opts).lockfile_options()
     }
 }
 
@@ -452,8 +519,8 @@ async fn install(
     v: &str,
     bin_dir: &Path,
     extract_all: bool,
-    opts: &ToolVersionOptions,
-) -> anyhow::Result<()> {
+    opts: &UbiOptions<'_>,
+) -> eyre::Result<()> {
     let mut builder = UbiBuilder::new().install_dir(bin_dir);
 
     if name_is_url(name) {
@@ -466,28 +533,25 @@ async fn install(
     if extract_all {
         builder = builder.extract_all();
     } else {
-        if let Some(exe) = opts.get("exe") {
+        if let Some(exe) = opts.exe() {
             builder = builder.exe(exe);
         }
-        if let Some(rename_exe) = opts.get("rename_exe") {
+        if let Some(rename_exe) = opts.rename_exe() {
             builder = builder.rename_exe_to(rename_exe)
         }
     }
-    if let Some(matching) = opts.get("matching") {
+    if let Some(matching) = opts.matching() {
         builder = builder.matching(matching);
     }
-    if let Some(matching_regex) = opts.get("matching_regex") {
+    if let Some(matching_regex) = opts.matching_regex() {
         builder = builder.matching_regex(matching_regex);
     }
 
-    let forge = match opts.get("provider") {
-        Some(forge) => ForgeType::from_str(forge)?,
-        None => ForgeType::default(),
-    };
+    let forge = opts.provider()?;
     builder = builder.forge(forge.clone());
     builder = set_token(builder, &forge);
 
-    if let Some(api_url) = opts.get("api_url")
+    if let Some(api_url) = opts.api_url_override()
         && !api_url.contains("github.com")
         && !api_url.contains("gitlab.com")
     {
@@ -495,7 +559,7 @@ async fn install(
         builder = set_enterprise_token(builder, &forge);
     }
 
-    let mut ubi = builder.build()?;
+    let mut ubi = builder.build().map_err(|e| eyre::eyre!("{e:#}"))?;
 
     // TODO: hacky but does not compile without it
     tokio::task::block_in_place(|| {
@@ -506,5 +570,6 @@ async fn install(
                 .unwrap()
         });
         RT.block_on(async { ubi.install_binary().await })
+            .map_err(|e| eyre::eyre!("{e:#}"))
     })
 }

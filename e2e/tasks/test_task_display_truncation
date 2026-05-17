@@ -35,17 +35,17 @@ assert_succeed "mise run medium-length-task-name"
 # Verify the task runs successfully (main functionality not affected)
 output=$(mise run short 2>&1)
 if [[ $output == *"short task"* ]]; then
-	ok "[task execution] short task runs correctly"
+  ok "[task execution] short task runs correctly"
 else
-	fail "[task execution] expected 'short task' in output, got: $output"
+  fail "[task execution] expected 'short task' in output, got: $output"
 fi
 
 # Verify the task output is not truncated with ellipsis when CI is set
 output=$(env CI=1 mise run insanely-long-task-output 2>&1)
 if [[ $output != *"…"* ]]; then
-	ok "[task execution] insanely-long-task-output task runs correctly"
+  ok "[task execution] insanely-long-task-output task runs correctly"
 else
-	fail "[task execution] no '…' expected in output, got: $output"
+  fail "[task execution] no '…' expected in output, got: $output"
 fi
 
 echo "Task display truncation test completed successfully"

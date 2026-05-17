@@ -1,21 +1,24 @@
 use crate::config::{Config, Settings};
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::remove_all_with_progress;
-use crate::git::{CloneOptions, Git};
+use crate::git::Git;
 use crate::http::HTTP;
 use crate::plugins::warn_if_env_plugin_shadows_registry;
-use crate::plugins::{Plugin, PluginSource};
+use crate::plugins::{
+    Plugin, PluginSource, PluginType, install_git_plugin_source, managed_git_plugin_repo_path,
+    remove_git_plugin_source,
+};
 use crate::result::Result;
+use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, file, lock_file, registry};
+use crate::{backend, dirs, file, lock_file, registry};
 use async_trait::async_trait;
 use console::style;
 use contracts::requires;
 use eyre::{Context, bail, eyre};
 use indexmap::{IndexMap, indexmap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use url::Url;
 use vfox::Vfox;
@@ -61,12 +64,15 @@ impl VfoxPlugin {
         self.repo.lock().unwrap()
     }
 
-    fn get_repo_url(&self, config: &Config) -> eyre::Result<Url> {
+    fn get_repo_url(&self, config: &Config) -> eyre::Result<String> {
+        if let Some(url) = self.repo_url.lock().unwrap().clone() {
+            return Ok(url);
+        }
         if let Some(url) = self.repo().get_remote_url() {
-            return Ok(Url::parse(&url)?);
+            return Ok(url);
         }
         if let Some(url) = config.get_repo_url(&self.name) {
-            return Ok(Url::parse(&url)?);
+            return Ok(url);
         }
         let url = self
             .full
@@ -75,16 +81,19 @@ impl VfoxPlugin {
             .split_once(':')
             .map(|f| f.1)
             .unwrap_or(&self.name);
-        vfox_to_url(url)
+        Ok(vfox_to_url(url)?.to_string())
     }
 
     pub async fn mise_env(
         &self,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
+        config_root: Option<&Path>,
     ) -> Result<Option<MiseEnvResponse>> {
-        let (vfox, _) = self.vfox();
-        let result = vfox.mise_env(&self.name, opts, env).await?;
+        let (vfox, _) = self.vfox()?;
+        let result = vfox
+            .mise_env(&self.name, opts, env, config_root.and_then(|p| p.to_str()))
+            .await?;
         let mut result_env = indexmap!();
         for ek in result.env {
             result_env.insert(ek.key, ek.value);
@@ -101,25 +110,43 @@ impl VfoxPlugin {
         &self,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
+        config_root: Option<&Path>,
     ) -> Result<Option<Vec<String>>> {
-        let (vfox, _) = self.vfox();
+        let (vfox, _) = self.vfox()?;
         let mut out = vec![];
-        let results = vfox.mise_path(&self.name, opts, env).await?;
+        let results = vfox
+            .mise_path(&self.name, opts, env, config_root.and_then(|p| p.to_str()))
+            .await?;
         for entry in results {
             out.push(entry);
         }
         Ok(Some(out))
     }
 
-    pub fn vfox(&self) -> (Vfox, mpsc::Receiver<String>) {
+    pub fn vfox(&self) -> Result<(Vfox, mpsc::Receiver<String>)> {
+        let settings = Settings::get();
+        let env_type = if settings.os() == "linux" {
+            settings.libc().map(str::to_string)
+        } else {
+            None
+        };
         let mut vfox = Vfox::new();
+        vfox.runtime_env_type = env_type;
         vfox.plugin_dir = dirs::PLUGINS.to_path_buf();
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
-        vfox.github_token = crate::github::resolve_token("github.com").map(|(token, _)| token);
+        vfox.default_inline_shell = Some(settings.default_inline_shell()?);
+        // Resolve the GitHub token lazily — only when a Lua plugin actually
+        // makes an HTTP request to a GitHub API URL. This avoids spawning
+        // `github.credential_command` (or hitting other token sources) for
+        // operations that never need a token, like `mise hook-env` or shell
+        // completion. `resolve_token` itself caches results per-process.
+        vfox.github_token_resolver = Some(Arc::new(|| {
+            crate::github::resolve_token("github.com").map(|(token, _)| token)
+        }));
         let rx = vfox.log_subscribe();
-        (vfox, rx)
+        Ok((vfox, rx))
     }
 
     async fn install_from_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<()> {
@@ -143,6 +170,10 @@ impl VfoxPlugin {
 
     pub fn is_embedded(&self) -> bool {
         embedded_plugins::get_embedded_plugin(&self.name).is_some()
+    }
+
+    fn has_repo_url_override(&self) -> bool {
+        self.repo_url.lock().unwrap().is_some()
     }
 }
 
@@ -190,8 +221,9 @@ impl Plugin for VfoxPlugin {
     }
 
     fn is_installed(&self) -> bool {
-        // Embedded plugins are always "installed"
-        self.is_embedded() || self.plugin_path.exists()
+        // Embedded plugins are installed unless an explicit URL is being installed
+        // as a filesystem override.
+        (self.is_embedded() && !self.has_repo_url_override()) || self.plugin_path.exists()
     }
 
     fn is_installed_err(&self) -> eyre::Result<()> {
@@ -209,8 +241,9 @@ impl Plugin for VfoxPlugin {
         force: bool,
         dry_run: bool,
     ) -> Result<()> {
-        // Skip installation for embedded plugins
-        if self.is_embedded() {
+        // Skip installation for embedded plugins unless an explicit URL is being
+        // installed as a filesystem override.
+        if self.is_embedded() && !self.has_repo_url_override() {
             return Ok(());
         }
 
@@ -248,6 +281,10 @@ impl Plugin for VfoxPlugin {
         if !dry_run {
             let _lock = lock_file::get(&self.plugin_path, force)?;
             self.install(config, pr.as_ref()).await?;
+            let plugin_type =
+                PluginType::from_plugin_path(&self.plugin_path).unwrap_or(PluginType::Vfox);
+            install_state::add_plugin(&self.name, plugin_type).await?;
+            backend::remove(&self.name);
             warn_if_env_plugin_shadows_registry(&self.name, &self.plugin_path);
         }
         Ok(())
@@ -265,14 +302,19 @@ impl Plugin for VfoxPlugin {
         }
 
         let plugin_path = self.plugin_path.to_path_buf();
-        if plugin_path.is_symlink() {
-            warn!(
-                "plugin:{} is a symlink, not updating",
-                style(&self.name).blue().for_stderr()
-            );
-            return Ok(());
-        }
-        let git = Git::new(plugin_path);
+        let git_path =
+            if let Some(repo_path) = managed_git_plugin_repo_path(&self.name, &plugin_path)? {
+                repo_path
+            } else if plugin_path.is_symlink() {
+                warn!(
+                    "plugin:{} is a symlink, not updating",
+                    style(&self.name).blue().for_stderr()
+                );
+                return Ok(());
+            } else {
+                plugin_path
+            };
+        let git = Git::new(git_path);
         if !git.is_repo() {
             warn!(
                 "plugin:{} is not a git repository, not updating",
@@ -306,7 +348,7 @@ impl Plugin for VfoxPlugin {
         }
         pr.set_message("uninstall".into());
 
-        remove_all_with_progress(&self.plugin_path, pr)?;
+        remove_git_plugin_source(&self.name, &self.plugin_path, pr)?;
 
         Ok(())
     }
@@ -329,6 +371,7 @@ impl Plugin for VfoxPlugin {
             PluginSource::Git {
                 url: repo_url,
                 git_ref,
+                subdir,
             } => {
                 if regex!(r"^[/~]").is_match(&repo_url) {
                     Err(eyre!(
@@ -337,13 +380,14 @@ If you are trying to link to a local directory, use `mise plugins link` instead.
 Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#
                     ))?;
                 }
-                let git = Git::new(&self.plugin_path);
-                pr.set_message(format!("clone {repo_url}"));
-                git.clone(&repo_url, CloneOptions::default().pr(pr))?;
-                if let Some(ref_) = &git_ref {
-                    pr.set_message(format!("git update {ref_}"));
-                    git.update(Some(ref_.to_string()))?;
-                }
+                let git = install_git_plugin_source(
+                    &self.name,
+                    &self.plugin_path,
+                    &repo_url,
+                    git_ref.as_deref(),
+                    subdir.as_deref(),
+                    pr,
+                )?;
 
                 let sha = git.current_sha_short()?;
                 pr.finish_with_message(format!(

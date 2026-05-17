@@ -149,7 +149,6 @@ impl Search {
             .iter()
             .filter(|(short, _)| filter_enabled(short))
             .map(|(short, rt)| (short.to_string(), rt))
-            .sorted_by(|(a, _), (b, _)| a.cmp(b))
             .collect_vec()
     }
 }
@@ -209,7 +208,7 @@ fn get_backends(backends: Vec<&'static str>) -> Vec<String> {
             let slug = backend.split(':').next_back().unwrap_or("");
             let slug = regex!(r"^(.*?)\[.*\]$").replace_all(slug, "$1");
             match prefix {
-                "core" => format!("https://mise.jdx.dev/lang/{slug}.html"),
+                "core" => format!("https://mise.en.dev/lang/{slug}.html"),
                 "cargo" => format!("https://crates.io/crates/{slug}"),
                 "go" => format!("https://pkg.go.dev/{slug}"),
                 "pipx" => format!("https://pypi.org/project/{slug}"),

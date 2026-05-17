@@ -39,6 +39,10 @@ impl Backend for GemBackend {
         Ok(vec!["ruby"])
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Get the gem source URL using the mise-managed Ruby environment
         let source_url = self.get_gem_source(config).await;

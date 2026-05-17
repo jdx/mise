@@ -1,7 +1,9 @@
 # asdf (Legacy) Plugins
 
 ::: warning
-asdf plugins are considered legacy. For new tools, prefer [vfox plugins](/dev-tools/backends/vfox.html) which are written in Lua, work cross-platform (including Windows), and have access to built-in modules. See the [feature comparison](/dev-tools/backends/asdf.html#feature-comparison-asdf-vs-vfox) and [hook migration table](/dev-tools/backends/asdf.html#hook-migration-asdf-to-vfox) for details.
+asdf plugins are considered legacy. **New asdf and vfox plugins are not accepted into the [mise registry](https://github.com/jdx/mise/blob/main/registry/) for supply-chain security reasons** — for registry submissions use the [aqua](/dev-tools/backends/aqua.html) (preferred) or [github](/dev-tools/backends/github.html) backend instead.
+
+If you are writing a private/custom plugin (not for registry submission), prefer [vfox plugins](/dev-tools/backends/vfox.html) over asdf — they're written in Lua, work cross-platform (including Windows), and have access to built-in modules. See the [feature comparison](/dev-tools/backends/asdf.html#feature-comparison-asdf-vs-vfox) and [hook migration table](/dev-tools/backends/asdf.html#hook-migration-asdf-to-vfox) for details.
 :::
 
 mise maintains compatibility with the asdf plugin ecosystem through its asdf backend. These plugins are considered legacy because they have limitations compared to mise's modern plugin system.

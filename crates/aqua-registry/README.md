@@ -1,6 +1,6 @@
 # aqua-registry
 
-Aqua registry backend for [mise](https://mise.jdx.dev).
+Aqua registry backend for [mise](https://mise.en.dev).
 
 This crate provides support for the [Aqua](https://aquaproj.github.io/) registry format, allowing mise to install tools from the Aqua ecosystem.
 
@@ -14,7 +14,7 @@ This crate provides support for the [Aqua](https://aquaproj.github.io/) registry
 
 ## Usage
 
-This crate is primarily used internally by mise. For more information about mise, visit [mise.jdx.dev](https://mise.jdx.dev).
+This crate is primarily used internally by mise. For more information about mise, visit [mise.en.dev](https://mise.en.dev).
 
 ## License
 

@@ -18,6 +18,7 @@ use crate::build_time::built_info;
 use crate::config::Settings;
 use crate::file::{display_path, modified_duration};
 use crate::hash::hash_to_str;
+use crate::platform::Platform;
 use crate::rand::random_string;
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, file};
@@ -46,7 +47,11 @@ impl CacheManagerBuilder {
     pub fn new(cache_file_path: impl AsRef<Path>) -> Self {
         let settings = Settings::get();
         let mut cache_keys = BASE_CACHE_KEYS.clone();
-        cache_keys.extend([settings.os().to_string(), settings.arch().to_string()]);
+        cache_keys.extend([
+            settings.os().to_string(),
+            settings.arch().to_string(),
+            Platform::current().libc().unwrap_or_default().to_string(),
+        ]);
         Self {
             cache_file_path: cache_file_path.as_ref().to_path_buf(),
             cache_keys,
@@ -158,6 +163,71 @@ where
         Ok(val)
     }
 
+    /// Like [`Self::get_or_try_init_async`], but values rejected by `should_cache`
+    /// are returned without populating the in-memory or on-disk cache.
+    pub async fn get_or_try_init_async_if<F, Fut, P>(&self, fetch: F, should_cache: P) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
+        P: Fn(&T) -> bool,
+        T: Clone,
+    {
+        if let Some(val) = self.cache_async.get().or_else(|| self.cache.get())
+            && should_cache(val)
+        {
+            return Ok(val.clone());
+        }
+
+        let path = &self.cache_file_path;
+        if self.is_fresh() {
+            match self.parse() {
+                Ok(val) => {
+                    if should_cache(&val) {
+                        let _ = self.cache.set(val.clone());
+                        let _ = self.cache_async.set(val.clone());
+                        return Ok(val);
+                    }
+                }
+                Err(err) => {
+                    warn!("failed to parse cache file: {} {:#}", path.display(), err);
+                }
+            }
+        }
+
+        let val = fetch().await?;
+        if should_cache(&val) {
+            if let Err(err) = self.write(&val) {
+                warn!("failed to write cache file: {} {:#}", path.display(), err);
+            }
+            let _ = self.cache.set(val.clone());
+            let _ = self.cache_async.set(val.clone());
+        }
+        Ok(val)
+    }
+
+    /// Fetch fresh data, write it to disk, and return it without consulting
+    /// any cache. The in-memory cache cells are replaced with the fresh value
+    /// so future non-refresh reads observe it instead of a stale previously-
+    /// initialized one.
+    pub async fn refresh_async<F, Fut>(&mut self, fetch: F) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
+        T: Clone,
+    {
+        let val = fetch().await?;
+        if let Err(err) = self.write(&val) {
+            warn!(
+                "failed to write cache file: {} {:#}",
+                self.cache_file_path.display(),
+                err
+            );
+        }
+        *self.cache = OnceCell::with_value(val.clone());
+        *self.cache_async = tokio::sync::OnceCell::new_with(Some(val.clone()));
+        Ok(val)
+    }
+
     /// Read the cache file without checking freshness and without fetching or writing.
     pub fn get_cached(&self) -> Result<T>
     where
@@ -196,13 +266,14 @@ where
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn clear(&self) -> Result<()> {
+    pub fn clear(&mut self) -> Result<()> {
         let path = &self.cache_file_path;
         trace!("clearing cache {}", path.display());
         if path.exists() {
             file::remove_file(path)?;
         }
+        *self.cache = Default::default();
+        *self.cache_async = Default::default();
         Ok(())
     }
 
@@ -337,11 +408,63 @@ mod tests {
     #[tokio::test]
     async fn test_cache() {
         let _config = Config::get().await.unwrap();
-        let cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
+        let mut cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
         cache.clear().unwrap();
         let val = cache.get_or_try_init(|| Ok(1)).unwrap();
         assert_eq!(val, &1);
         let val = cache.get_or_try_init(|| Ok(2)).unwrap();
         assert_eq!(val, &1);
+    }
+
+    #[tokio::test]
+    async fn test_refresh_ignores_memory_and_file_cache() {
+        let _config = Config::get().await.unwrap();
+        let mut cache: CacheManager<i32> =
+            CacheManagerBuilder::new(dirs::CACHE.join("test-cache-refresh")).build();
+        cache.clear().unwrap();
+        let val = cache
+            .get_or_try_init_async(|| async { Ok(1) })
+            .await
+            .unwrap();
+        assert_eq!(val, &1);
+
+        let val = cache.refresh_async(|| async { Ok(2) }).await.unwrap();
+
+        assert_eq!(val, 2);
+
+        // After refresh, the in-memory cells must observe the fresh value too.
+        let val = cache
+            .get_or_try_init_async(|| async { Ok(3) })
+            .await
+            .unwrap();
+        assert_eq!(val, &2);
+        let val = cache.get_or_try_init(|| Ok(4)).unwrap();
+        assert_eq!(val, &2);
+    }
+
+    #[tokio::test]
+    async fn test_get_or_try_init_async_if_does_not_cache_rejected_values() {
+        let _config = Config::get().await.unwrap();
+        let mut cache: CacheManager<i32> =
+            CacheManagerBuilder::new(dirs::CACHE.join("test-cache-if")).build();
+        cache.clear().unwrap();
+
+        let val = cache
+            .get_or_try_init_async_if(|| async { Ok(1) }, |v| *v > 1)
+            .await
+            .unwrap();
+        assert_eq!(val, 1);
+
+        let val = cache
+            .get_or_try_init_async_if(|| async { Ok(2) }, |v| *v > 1)
+            .await
+            .unwrap();
+        assert_eq!(val, 2);
+
+        let val = cache
+            .get_or_try_init_async_if(|| async { Ok(3) }, |v| *v > 1)
+            .await
+            .unwrap();
+        assert_eq!(val, 2);
     }
 }

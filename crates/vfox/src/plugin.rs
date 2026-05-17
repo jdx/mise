@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use mlua::{AsChunk, FromLuaMulti, IntoLua, Lua, Table, Value};
 use once_cell::sync::OnceCell;
@@ -24,6 +25,7 @@ pub enum PluginSource {
 pub struct Plugin {
     pub name: String,
     pub dir: PathBuf,
+    pub runtime_env_type: Option<String>,
     source: PluginSource,
     lua: Lua,
     metadata: OnceCell<Metadata>,
@@ -41,6 +43,7 @@ impl Plugin {
         Ok(Self {
             name,
             dir: dir.to_path_buf(),
+            runtime_env_type: None,
             source: PluginSource::Filesystem(dir.to_path_buf()),
             lua,
             metadata: OnceCell::new(),
@@ -57,6 +60,7 @@ impl Plugin {
         Ok(Self {
             name: name.to_string(),
             dir: dummy_dir,
+            runtime_env_type: None,
             source: PluginSource::Embedded(embedded),
             lua,
             metadata: OnceCell::new(),
@@ -103,9 +107,34 @@ impl Plugin {
         Ok(())
     }
 
+    /// Store the shell command used by cmd.exec().
+    pub fn set_cmd_shell(&self, shell: &[String]) -> Result<()> {
+        let table = self.lua.create_table()?;
+        for (idx, arg) in shell.iter().enumerate() {
+            table.set(idx + 1, arg.as_str())?;
+        }
+        self.lua.set_named_registry_value("mise_cmd_shell", table)?;
+        Ok(())
+    }
+
     /// Store a GitHub token for the Lua http module.
     pub fn set_github_token(&self, token: &str) -> Result<()> {
         self.lua.set_named_registry_value("github_token", token)?;
+        Ok(())
+    }
+
+    /// Register a lazy resolver for the GitHub token. The resolver is only
+    /// invoked when a Lua plugin actually makes an HTTP request to a GitHub
+    /// API URL — keeping `mise hook-env`, completion, etc. from running e.g.
+    /// `github.credential_command` when no token is needed.
+    pub fn set_github_token_resolver(
+        &self,
+        resolver: Arc<dyn Fn() -> Option<String> + Send + Sync>,
+    ) -> Result<()> {
+        let func = self
+            .lua
+            .create_function(move |_, ()| Ok(resolver().unwrap_or_default()))?;
+        self.lua.set_named_registry_value("github_token_fn", func)?;
         Ok(())
     }
 
@@ -209,7 +238,10 @@ impl Plugin {
 
             let metadata = self.load_metadata()?;
             self.set_global("PLUGIN", metadata.clone())?;
-            self.set_global("RUNTIME", Runtime::get(self.dir.clone()))?;
+            self.set_global(
+                "RUNTIME",
+                Runtime::get(self.dir.clone(), self.runtime_env_type.as_deref()),
+            )?;
             self.set_global("OS_TYPE", config::os())?;
             self.set_global("ARCH_TYPE", config::arch())?;
 

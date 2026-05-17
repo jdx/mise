@@ -102,6 +102,26 @@ EOF
 assert_contains "mise tasks validate 2>&1 || true" "Invalid source glob pattern"
 assert_contains "mise tasks validate 2>&1 || true" "invalid-glob-pattern"
 
+# Negation (`!`-prefixed) and escaped (`\!`-prefixed) source patterns are valid
+# once the prefix is stripped, and must not be reported as invalid.
+cat <<'EOF' >mise.toml
+[tasks.good-exclusions]
+run = "echo test"
+sources = ["src/**/*.ts", "!src/**/*.test.ts", "!src/**/*.spec.ts", "\\!literal.txt"]
+EOF
+
+assert_contains "mise tasks validate" "✓ All 1 task(s) validated successfully"
+
+# A `!`-prefixed pattern that is otherwise invalid should still be reported.
+cat <<EOF >mise.toml
+[tasks.bad-exclusion]
+run = "echo test"
+sources = ["!{[bad"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Invalid source glob pattern"
+assert_contains "mise tasks validate 2>&1 || true" "invalid-glob-pattern"
+
 # Test JSON output
 cat <<EOF >mise.toml
 [tasks.valid]

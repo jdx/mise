@@ -8,12 +8,15 @@ pub const BUILTIN_PROVIDERS: &[&str] = &[
     "yarn",
     "pnpm",
     "bun",           // Node.js
+    "aube",          // Node.js
     "go",            // Go
     "pip",           // Python (requirements.txt)
     "poetry",        // Python (poetry)
     "uv",            // Python (uv)
     "bundler",       // Ruby
     "composer",      // PHP
+    "dart",          // Dart
+    "flutter",       // Flutter
     "git-submodule", // Git
 ];
 

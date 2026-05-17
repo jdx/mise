@@ -1,15 +1,19 @@
 use crate::config::{Config, Settings};
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::{display_path, remove_all_with_progress};
-use crate::git::{CloneOptions, Git};
+use crate::file::display_path;
+use crate::git::Git;
 use crate::http::HTTP;
-use crate::plugins::{Plugin, PluginSource, Script, ScriptManager};
+use crate::plugins::{
+    Plugin, PluginSource, PluginType, Script, ScriptManager, install_git_plugin_source,
+    managed_git_plugin_repo_path, remove_git_plugin_source,
+};
 use crate::result::Result;
 use crate::timeout::run_with_timeout;
+use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, env, exit, file, lock_file, registry};
+use crate::{backend, dirs, env, exit, file, lock_file, registry};
 use async_trait::async_trait;
 use clap::Command;
 use console::style;
@@ -293,7 +297,12 @@ impl Plugin for AsdfPlugin {
         let pr = mpr.add_with_options(&prefix, dry_run);
         if !dry_run {
             let _lock = lock_file::get(&self.plugin_path, force)?;
-            self.install(config, pr.as_ref()).await
+            self.install(config, pr.as_ref()).await?;
+            let plugin_type =
+                PluginType::from_plugin_path(&self.plugin_path).unwrap_or(PluginType::Asdf);
+            install_state::add_plugin(&self.name, plugin_type).await?;
+            backend::remove(&self.name);
+            Ok(())
         } else {
             Ok(())
         }
@@ -301,14 +310,19 @@ impl Plugin for AsdfPlugin {
 
     async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
         let plugin_path = self.plugin_path.to_path_buf();
-        if plugin_path.is_symlink() {
-            warn!(
-                "plugin:{} is a symlink, not updating",
-                style(&self.name).blue().for_stderr()
-            );
-            return Ok(());
-        }
-        let git = Git::new(plugin_path);
+        let git_path =
+            if let Some(repo_path) = managed_git_plugin_repo_path(&self.name, &plugin_path)? {
+                repo_path
+            } else if plugin_path.is_symlink() {
+                warn!(
+                    "plugin:{} is a symlink, not updating",
+                    style(&self.name).blue().for_stderr()
+                );
+                return Ok(());
+            } else {
+                plugin_path
+            };
+        let git = Git::new(git_path);
         if !git.is_repo() {
             warn!(
                 "plugin:{} is not a git repository, not updating",
@@ -335,7 +349,7 @@ impl Plugin for AsdfPlugin {
         self.exec_hook(pr, "pre-plugin-remove")?;
         pr.set_message("uninstall".into());
 
-        remove_all_with_progress(&self.plugin_path, pr)?;
+        remove_git_plugin_source(&self.name, &self.plugin_path, pr)?;
 
         Ok(())
     }
@@ -359,6 +373,7 @@ impl Plugin for AsdfPlugin {
             PluginSource::Git {
                 url: repo_url,
                 git_ref,
+                subdir,
             } => {
                 if regex!(r"^[/~]").is_match(&repo_url) {
                     Err(eyre!(
@@ -367,13 +382,14 @@ If you are trying to link to a local directory, use `mise plugins link` instead.
 Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#
                     ))?;
                 }
-                let git = Git::new(&self.plugin_path);
-                pr.set_message(format!("clone {repo_url}"));
-                git.clone(&repo_url, CloneOptions::default().pr(pr))?;
-                if let Some(ref_) = &git_ref {
-                    pr.set_message(format!("check out {ref_}"));
-                    git.update(Some(ref_.to_string()))?;
-                }
+                let git = install_git_plugin_source(
+                    &self.name,
+                    &self.plugin_path,
+                    &repo_url,
+                    git_ref.as_deref(),
+                    subdir.as_deref(),
+                    pr,
+                )?;
                 self.exec_hook(pr, "post-plugin-add")?;
 
                 let sha = git.current_sha_short()?;

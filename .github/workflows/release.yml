@@ -27,7 +27,7 @@ jobs:
   build-tarball-linux:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64-large
     timeout-minutes: 45
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -51,16 +51,9 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Install cross
-        uses: taiki-e/install-action@787505cde8a44ea468a00478fe52baf23b15bccd # v2
+        uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with:
           tool: cross
-      - name: cache crates
-        id: cache-crates
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.cargo/registry/cache
-          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-registry
       - name: build-tarball ${{matrix.target}}
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
@@ -75,14 +68,10 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@787505cde8a44ea468a00478fe52baf23b15bccd # v2
-        with: { tool: cargo-cache }
-      - if: steps.cache-crates.outputs.cache-hit != 'true'
-        run: cargo cache --autoclean
   build-tarball-macos:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: macos-latest
+    runs-on: namespace-profile-endev-macos-arm64
     timeout-minutes: 90
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -96,18 +85,11 @@ jobs:
           - name: macos-arm64
             target: aarch64-apple-darwin
     steps:
-      - uses: apple-actions/import-codesign-certs@fe74d46e82474f87e1ba79832ad28a4013d0e33a # v6
+      - uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - name: cache crates
-        id: cache-crates
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.cargo/registry/cache
-          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-registry
       - name: Setup Rust target
         run: rustup target add ${{matrix.target}}
       - name: build-tarball ${{matrix.target}}
@@ -124,10 +106,6 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@787505cde8a44ea468a00478fe52baf23b15bccd # v2
-        with: { tool: cargo-cache }
-      - if: steps.cache-crates.outputs.cache-hit != 'true'
-        run: cargo cache --autoclean
   build-tarball-windows:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-windows-${{matrix.arch}}
@@ -144,9 +122,6 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - run: rustup target add ${{matrix.target}}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          key: ${{matrix.arch}}
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
           OS: windows
@@ -180,7 +155,7 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: taiki-e/install-action@787505cde8a44ea468a00478fe52baf23b15bccd # v2
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with:
           tool: usage-cli
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
@@ -203,7 +178,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:7015ff34e45376dd8038e2d5074c88ff53ab84b1867d79d98e0278df55fa0be2
+    container: ghcr.io/jdx/mise:rpm@sha256:7880c748d583aeaaf1280f9fa6fb8eaae58af19c6b0dc14fb737027e3b4a5d98
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
@@ -227,7 +202,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
-    container: ghcr.io/jdx/mise:deb@sha256:1af5a6925fa8e4b404b018208b0e9edbb064787477699a0ee429cbb7c86118f6
+    container: ghcr.io/jdx/mise:deb@sha256:a6fe62d7ce9a7df1a68592898078bed17291a816beeb4e867ddf47e0c5baf0f4
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -319,12 +294,6 @@ jobs:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
-      - name: cache zipsign
-        id: cache-zipsign
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.cargo/bin/zipsign
-          key: cargo-zipsign
       - run: ./scripts/setup-zipsign.sh
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
         env:
@@ -384,6 +353,15 @@ jobs:
             mise x -- git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
             echo "RELEASE_TITLE=$VERSION" >> "$GITHUB_ENV"
           fi
+          # Strip any pre-existing sponsor section from the generated notes
+          # (communique has at times included its own) and trim trailing blanks,
+          # so the heredoc below always produces exactly one canonical block.
+          awk '
+            /^## (💚 )?Sponsor mise[[:space:]]*$/ { exit }
+            /^[[:space:]]*$/ { blanks++; next }
+            { while (blanks-- > 0) print ""; blanks = 0; print }
+          ' /tmp/release-notes.txt > /tmp/release-notes-trimmed.txt
+          mv /tmp/release-notes-trimmed.txt /tmp/release-notes.txt
           cat >> /tmp/release-notes.txt <<'EOF'
 
           ## 💚 Sponsor mise

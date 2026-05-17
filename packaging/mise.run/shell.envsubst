@@ -33,9 +33,9 @@ install_mise() {
   info "mise: downloading and installing mise..."
   
   if [ -x "$(command -v curl)" ]; then
-    curl -fsSL https://mise.jdx.dev/install.sh | sh
+    curl -fsSL https://mise.en.dev/install.sh | sh
   elif [ -x "$(command -v wget)" ]; then
-    wget -qO- https://mise.jdx.dev/install.sh | sh
+    wget -qO- https://mise.en.dev/install.sh | sh
   else
     error "mise install requires curl or wget but neither is installed. Aborting."
   fi

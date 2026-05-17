@@ -9,10 +9,10 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use tokio::sync::RwLock;
 
-use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::{Backend, runtime_path_for_install_path};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
@@ -63,17 +63,29 @@ impl Backend for VfoxBackend {
         Ok(deps.iter().map(|s| s.as_str()).collect())
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
     fn supports_lockfile_url(&self) -> bool {
         // TODO: expose a plugin hook (e.g. BackendLockInfo) so custom Lua backends
         // can surface a download URL + checksum, and flip this back on for them.
         !self.is_backend_plugin()
     }
 
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        // TODO: support a vfox backend plugin capability/metadata field for
+        // declaring which tool options affect BackendListVersions. The
+        // vendored plugins do not currently expose version-listing options, so
+        // keep versions-host behavior unchanged until there is a real contract.
+        &[]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
-                let (mut vfox, _log_rx) = this.plugin.vfox();
+                let (mut vfox, _log_rx) = this.plugin.vfox()?;
                 this.ensure_plugin_installed(config).await?;
                 if let Ok(dep_env) = this.dependency_env(config).await {
                     vfox.cmd_env = Some(dep_env.into_iter().collect());
@@ -85,10 +97,10 @@ impl Backend for VfoxBackend {
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
                     let opts = config
-                        .get_tool_opts(&this.ba)
+                        .get_tool_opts_with_overrides(&this.ba)
                         .await?
-                        .map(|o| o.opts)
-                        .unwrap_or_default();
+                        .into_backend_options()
+                        .into_map();
                     let versions = vfox
                         .backend_list_versions(&this.pathname, tool_name, opts)
                         .await
@@ -127,7 +139,7 @@ impl Backend for VfoxBackend {
     ) -> eyre::Result<ToolVersion> {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
-        let (mut vfox, log_rx) = self.plugin.vfox();
+        let (mut vfox, log_rx) = self.plugin.vfox()?;
         thread::spawn(|| {
             for line in log_rx {
                 // TODO: put this in ctx.pr.set_message()
@@ -149,7 +161,7 @@ impl Backend for VfoxBackend {
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
-                tool_opts.opts,
+                tool_opts.into_backend_options().into_map(),
             )
             .await
             .wrap_err("Backend install method failed")?;
@@ -239,9 +251,11 @@ impl Backend for VfoxBackend {
             .find(|(k, _)| k.to_uppercase() == "PATH")
             .map(|(_, v)| v.to_string());
         if let Some(path) = path {
-            Ok(env::split_paths(&path).collect())
+            Ok(env::split_paths(&path)
+                .map(|path| runtime_path_for_install_path(tv, path))
+                .collect())
         } else {
-            Ok(vec![tv.install_path().join("bin")])
+            Ok(vec![tv.runtime_path().join("bin")])
         }
     }
 
@@ -263,15 +277,39 @@ impl Backend for VfoxBackend {
         Some(&self.plugin_enum)
     }
 
+    async fn uninstall_version_impl(
+        &self,
+        config: &Arc<Config>,
+        _pr: &dyn crate::ui::progress_report::SingleReport,
+        tv: &ToolVersion,
+    ) -> eyre::Result<()> {
+        if self.is_backend_plugin() || !self.plugin.is_installed() {
+            return Ok(());
+        }
+
+        let (mut vfox, log_rx) = self.plugin.vfox()?;
+        thread::spawn(|| {
+            for line in log_rx {
+                info!("{}", line);
+            }
+        });
+        if let Ok(dep_env) = self.dependency_env(config).await {
+            vfox.cmd_env = Some(dep_env.into_iter().collect());
+        }
+        vfox.pre_uninstall(&self.pathname, &tv.version, tv.install_path())
+            .await?;
+        Ok(())
+    }
+
     async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
-        let (vfox, _log_rx) = self.plugin.vfox();
+        let (vfox, _log_rx) = self.plugin.vfox()?;
 
         let metadata = vfox.metadata(&self.pathname).await?;
         Ok(metadata.legacy_filenames)
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
-        let (vfox, _log_rx) = self.plugin.vfox();
+        let (vfox, _log_rx) = self.plugin.vfox()?;
         let response = vfox.parse_legacy_file(&self.pathname, path).await?;
         if let Some(version) = response.version {
             return Ok(version.split_whitespace().map(|s| s.to_string()).collect());
@@ -289,7 +327,7 @@ impl Backend for VfoxBackend {
 
         let (os, arch) = Self::to_vfox_platform(target);
 
-        let (vfox, _log_rx) = self.plugin.vfox();
+        let (vfox, _log_rx) = self.plugin.vfox()?;
         let pre_install = vfox
             .pre_install_for_platform(&self.pathname, &tv.version, os, arch)
             .await?;
@@ -313,7 +351,7 @@ impl Backend for VfoxBackend {
 
         let (os, arch) = Self::to_vfox_platform(target);
 
-        let (vfox, _log_rx) = self.plugin.vfox();
+        let (vfox, _log_rx) = self.plugin.vfox()?;
         let (url, att) = vfox
             .pre_install_provenance_for_platform(&self.pathname, &tv.version, os, arch)
             .await?;
@@ -400,10 +438,12 @@ impl VfoxBackend {
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
         let opts = tv.request.options();
+        let install_path = tv.install_path();
         let opts_hash = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             opts.hash(&mut hasher);
+            install_path.hash(&mut hasher);
             hasher.finish()
         };
         let key = format!("{}:{:x}", tv, opts_hash);
@@ -415,7 +455,7 @@ impl VfoxBackend {
                 CacheManagerBuilder::new(tv.cache_path().join(&cache_file))
                     .with_fresh_file(dirs::DATA.to_path_buf())
                     .with_fresh_file(self.plugin.plugin_path.to_path_buf())
-                    .with_fresh_file(self.ba().installs_path.to_path_buf())
+                    .with_fresh_file(install_path.clone())
                     .build(),
             );
         }
@@ -424,7 +464,7 @@ impl VfoxBackend {
         cache
             .get_or_try_init_async(async || {
                 self.ensure_plugin_installed(config).await?;
-                let (mut vfox, _log_rx) = self.plugin.vfox();
+                let (mut vfox, _log_rx) = self.plugin.vfox()?;
                 if let Ok(dep_env) = self.dependency_env(config).await {
                     vfox.cmd_env = Some(dep_env.into_iter().collect());
                 }
@@ -437,13 +477,18 @@ impl VfoxBackend {
                         tool_name,
                         &tv.version,
                         tv.install_path(),
-                        opts.opts.clone(),
+                        opts.backend_options().clone().into_map(),
                     )
                     .await
                     .wrap_err("Backend exec env method failed")?
                 } else {
-                    vfox.env_keys(&self.pathname, &tv.version, &opts.opts)
-                        .await?
+                    vfox.env_keys_for_install_dir(
+                        &self.pathname,
+                        &tv.version,
+                        &install_path,
+                        opts.backend_options().as_map(),
+                    )
+                    .await?
                 };
 
                 Ok(env_keys

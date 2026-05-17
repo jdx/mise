@@ -24,7 +24,6 @@ pub fn confirm_with_default<S: Into<String>>(message: S, default_yes: bool) -> e
     let theme = get_theme();
     let result = Confirm::new(message)
         .selected(default_yes)
-        .clear_screen(true)
         .theme(&theme)
         .run()?;
     Ok(result)
@@ -51,7 +50,6 @@ pub fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<bool> {
             DialogButton::new("All"),
         ])
         .selected_button(1)
-        .clear_screen(true)
         .theme(&theme)
         .run()?;
 

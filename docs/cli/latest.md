@@ -25,7 +25,7 @@ Show latest installed instead of available version
 Only consider versions released before this date
 
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-Overrides per-tool `install_before` options and the global `install_before` setting.
+Overrides per-tool `minimum_release_age` options and the global `minimum_release_age` setting.
 
 Examples:
 

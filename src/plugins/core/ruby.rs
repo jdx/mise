@@ -9,7 +9,7 @@ use itertools::Itertools;
 use xx::regex;
 
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
+use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -198,7 +198,8 @@ impl RubyPlugin {
             }
             PluginSource::Git {
                 url: repo_url,
-                git_ref: _,
+                git_ref,
+                subdir,
             } => {
                 let git = Git::new(tmp.clone());
                 let mut clone_options = CloneOptions::default();
@@ -206,6 +207,19 @@ impl RubyPlugin {
                     clone_options = clone_options.pr(pr);
                 }
                 git.clone(&repo_url, clone_options)?;
+                if let Some(ref_) = &git_ref {
+                    git.update(Some(ref_.to_string()))?;
+                }
+                if let Some(subdir) = subdir {
+                    let subdir_path = tmp.join(subdir);
+                    if !subdir_path.is_dir() {
+                        return Err(eyre!(
+                            "plugin subdirectory does not exist: {}",
+                            file::display_path(&subdir_path)
+                        ));
+                    }
+                    return Ok(subdir_path);
+                }
             }
         }
         Ok(tmp)
@@ -651,7 +665,7 @@ impl RubyPlugin {
     }
 
     /// Fetch created_at timestamps for Ruby versions from GitHub releases
-    async fn fetch_ruby_release_dates(&self) -> HashMap<String, String> {
+    async fn fetch_ruby_release_dates(&self) -> Result<HashMap<String, String>> {
         let mut dates = HashMap::new();
         match github::list_releases("ruby/ruby").await {
             Ok(releases) => {
@@ -662,10 +676,13 @@ impl RubyPlugin {
                 }
             }
             Err(err) => {
+                if strict_metadata() {
+                    return Err(err).wrap_err("failed to fetch Ruby release metadata");
+                }
                 debug!("Failed to fetch Ruby release dates: {err}");
             }
         }
-        dates
+        Ok(dates)
     }
 
     /// Try to install from precompiled binary
@@ -869,7 +886,7 @@ impl Backend for RubyPlugin {
                 }
 
                 // Fetch Ruby release dates from GitHub in parallel with version list
-                let release_dates = self.fetch_ruby_release_dates().await;
+                let release_dates = self.fetch_ruby_release_dates().await?;
 
                 let ruby_build_bin = self.ruby_build_bin();
                 let ruby_build_str = ruby_build_bin.to_string_lossy().to_string();

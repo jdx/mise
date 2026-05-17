@@ -24,7 +24,7 @@ Describe '7z-strip-components' {
         $cfg = ".\mise.local.toml"
         $content = @"
 [tools]
-"http:ip7z/7zip" = { version = "25.00", url = "https://mise.jdx.dev/test-fixtures/7z2500-extra.7z" }
+"http:ip7z/7zip" = { version = "25.00", url = "https://mise.en.dev/test-fixtures/7z2500-extra.7z" }
 "@
         $content | Out-File $cfg
         Get-Content $cfg

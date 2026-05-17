@@ -6,7 +6,12 @@ const { child, prefix } = defineProps(["child", "level", "prefix"]);
 const settings = child
   ? (data.find((f) => f.key === child)?.settings ?? [])
   : prefix
-    ? data.filter((f) => f.key === prefix || f.key.startsWith(`${prefix}_`) || f.key.startsWith(`${prefix}.`))
+    ? data.filter(
+        (f) =>
+          f.key === prefix ||
+          f.key.startsWith(`${prefix}_`) ||
+          f.key.startsWith(`${prefix}.`),
+      )
     : data;
 
 // Check if there are any settings to display

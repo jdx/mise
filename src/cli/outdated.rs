@@ -35,6 +35,12 @@ pub struct Outdated {
     #[clap(long, short = 'l', verbatim_doc_comment)]
     pub bump: bool,
 
+    /// Show outdated tools including installed-but-inactive tools not present in the current config
+    ///
+    /// By default, `mise outdated` only shows tools that come from the current config.
+    #[clap(long, verbatim_doc_comment, conflicts_with = "local")]
+    pub inactive: bool,
+
     /// Only show outdated tools defined in local config files
     ///
     /// This will only show tools that are defined in project-local mise.toml and
@@ -68,7 +74,14 @@ impl Outdated {
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
         let outdated = ts
-            .list_outdated_versions(&config, self.bump, &ResolveOptions::default())
+            .list_outdated_versions(
+                &config,
+                self.bump,
+                &ResolveOptions {
+                    inactive: self.inactive,
+                    ..Default::default()
+                },
+            )
             .await;
         self.display(outdated).await?;
         Ok(())

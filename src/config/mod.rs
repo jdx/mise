@@ -15,7 +15,7 @@ use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
@@ -28,10 +28,11 @@ use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Task, TaskTemplate};
-use crate::tera::take_tera_accessed_files;
+use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
+    ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -226,25 +227,8 @@ impl Config {
         time!("load done");
 
         measure!("config::load install_state", {
-            for (plugin, url) in &config.repo_urls {
-                // check plugin type, fallback to asdf
-                let (mut plugin_type, has_explicit_prefix) = match plugin {
-                    p if p.starts_with("vfox:") => (PluginType::Vfox, true),
-                    p if p.starts_with("vfox-backend:") => (PluginType::VfoxBackend, true),
-                    p if p.starts_with("asdf:") => (PluginType::Asdf, true),
-                    _ => (PluginType::Asdf, false),
-                };
-                // keep backward compatibility for vfox plugins, but only if no explicit prefix
-                if !has_explicit_prefix && url.contains("vfox-") {
-                    plugin_type = PluginType::Vfox;
-                }
-
-                let plugin = plugin
-                    .strip_prefix("vfox:")
-                    .or_else(|| plugin.strip_prefix("vfox-backend:"))
-                    .or_else(|| plugin.strip_prefix("asdf:"))
-                    .unwrap_or(plugin);
-
+            for plugin in config.repo_urls.keys() {
+                let (plugin_type, plugin) = PluginType::from_plugin_config(plugin);
                 install_state::add_plugin(plugin, plugin_type).await?;
             }
         });
@@ -332,7 +316,7 @@ impl Config {
     pub async fn get_tool_opts(
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
-    ) -> Result<Option<ToolVersionOptions>> {
+    ) -> Result<Option<ToolOptions>> {
         let trs = self.get_tool_request_set().await?;
         let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
         let tool_request = short_match.or_else(|| {
@@ -351,6 +335,53 @@ impl Config {
             .get(short)
             .is_some_and(|alias| alias.backend.is_some())
             || self.repo_urls.contains_key(short)
+    }
+
+    pub async fn get_tool_opts_with_overrides(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+    ) -> Result<ToolOptions> {
+        Ok(self
+            .resolve_tool_opts_with_overrides(backend_arg)
+            .await?
+            .into_options())
+    }
+
+    pub async fn resolve_tool_opts_with_overrides(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+    ) -> Result<ResolvedToolOptions> {
+        let config_opts = self.get_tool_opts(backend_arg).await?;
+        let alias_opts = self.get_backend_alias_opts(backend_arg);
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
+        if alias_opts.is_none()
+            && let Some(full_opts) = backend_arg.resolved_full_opts()
+        {
+            resolved.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
+        }
+        if let Some(alias_opts) = alias_opts {
+            resolved.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
+        }
+        if let Some(config_opts) = config_opts {
+            resolved.apply_overrides(&config_opts, ToolOptionSource::Config);
+        }
+        if let Some(inline_opts) = backend_arg.explicit_opts() {
+            resolved.apply_overrides(inline_opts, ToolOptionSource::InlineBackendArg);
+        }
+        Ok(resolved)
+    }
+
+    fn get_backend_alias_opts(&self, backend_arg: &BackendArg) -> Option<ToolVersionOptions> {
+        if backend_arg.has_env_backend_override() {
+            return None;
+        }
+        let short = backend::unalias_backend(&backend_arg.short);
+        self.all_aliases
+            .get(short)
+            .and_then(|alias| alias.backend.as_deref())
+            .and_then(|backend| split_bracketed_opts(backend).map(|(_, opts)| opts))
+            .map(crate::toolset::parse_tool_options)
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
@@ -386,6 +417,10 @@ impl Config {
 
     pub fn is_monorepo(&self) -> bool {
         find_monorepo_root(&self.config_files).is_some()
+    }
+
+    pub fn monorepo_root(&self) -> Option<PathBuf> {
+        find_monorepo_root(&self.config_files)
     }
 
     pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
@@ -1227,7 +1262,11 @@ pub async fn load_config_hierarchy_from_dir(
 }
 
 pub fn is_global_config(path: &Path) -> bool {
-    global_config_files().contains(path) || system_config_files().contains(path)
+    global_config_files().contains(path) || is_system_config(path)
+}
+
+pub fn is_system_config(path: &Path) -> bool {
+    system_config_files().contains(path)
 }
 
 /// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
@@ -1712,17 +1751,25 @@ pub async fn rebuild_shims_and_runtime_symlinks(
             .wrap_err("failed to rebuild shims")?;
     });
     measure!("rebuilding runtime symlinks", {
-        runtime_symlinks::rebuild(config)
+        runtime_symlinks::rebuild_for_toolset(config, ts)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
     });
+    // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
+    // current-platform entries — auto-lock uses this to tell a curated lockfile
+    // (existing entries are authoritative) from a fresh one (expand to common).
+    let pre_install_platforms = if new_versions.is_empty() {
+        Default::default()
+    } else {
+        lockfile::snapshot_pre_install_platforms(new_versions)
+    };
     measure!("updating lockfiles", {
         lockfile::update_lockfiles(config, ts, new_versions)
             .wrap_err("failed to update lockfiles")?;
     });
     if !new_versions.is_empty() {
         measure!("auto-locking platforms", {
-            lockfile::auto_lock_new_versions(config, new_versions)
+            lockfile::auto_lock_new_versions(config, new_versions, &pre_install_platforms)
                 .await
                 .wrap_err("failed to auto-lock platforms for new versions")?;
         });
@@ -2036,7 +2083,7 @@ fn discover_monorepo_subdirs(
         "monorepo_auto_discovery",
         "Automatic monorepo discovery is deprecated. \
          Please define [monorepo].config_roots in your root mise.toml. \
-         See https://mise.jdx.dev/tasks/monorepo.html#explicit-config-roots"
+         See https://mise.en.dev/tasks/monorepo.html#explicit-config-roots"
     );
     const DEFAULT_IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
     let has_task_includes = |dir: &Path| {
@@ -2269,9 +2316,13 @@ async fn load_tasks_includes(
             if task.dir.is_none()
                 && let Some(ref dir) = *task_config_dir
             {
-                let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
-                let tera_ctx = task.tera_ctx(&config).await?;
-                task.dir = Some(tera.render_str(dir, &tera_ctx)?);
+                task.dir = Some(if contains_template_syntax(dir) {
+                    let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
+                    let tera_ctx = task.tera_ctx(&config).await?;
+                    render_str(&mut tera, dir, &tera_ctx)?
+                } else {
+                    dir.clone()
+                });
             }
             tasks.push(task);
         }
@@ -2504,6 +2555,216 @@ mod tests {
     async fn test_load() {
         let config = Config::reset().await.unwrap();
         assert_debug_snapshot!(config);
+    }
+
+    #[tokio::test]
+    async fn test_get_tool_opts_with_overrides_keeps_inline_opts_with_config_entry() -> Result<()> {
+        crate::toolset::install_state::init().await?;
+
+        let source = crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml"));
+        let resolved_ba = Arc::new(BackendArg::from("github:jdx/mise-test-fixtures"));
+        let config_opts =
+            crate::toolset::parse_tool_options("api_url=https://config.example/api/v3,foo=config");
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(
+            crate::toolset::ToolRequest::new_opts(
+                resolved_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
+            &source,
+        );
+
+        let mut repo_urls = HashMap::new();
+        repo_urls.insert(
+            "tiny".to_string(),
+            "github:jdx/mise-test-fixtures".to_string(),
+        );
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls,
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
+        };
+        config.tool_request_set.set(trs).ok();
+        let config = Arc::new(config);
+        let ba = Arc::new(BackendArg::new_raw(
+            "tiny".to_string(),
+            Some("github:jdx/mise-test-fixtures".to_string()),
+            "jdx/mise-test-fixtures".to_string(),
+            Some(crate::toolset::parse_tool_options(
+                "api_url=https://inline.example/api/v3",
+            )),
+            crate::cli::args::BackendResolution::new(true),
+        ));
+
+        let opts = config.get_tool_opts_with_overrides(&ba).await?;
+
+        assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
+        assert_eq!(opts.get("foo"), Some("config"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_tool_opts_with_overrides_keeps_inline_opts_without_config_entry() -> Result<()>
+    {
+        let config = Config::reset().await?;
+        let ba = Arc::new(BackendArg::from(
+            "tiny[api_url=https://inline.example/api/v3]",
+        ));
+
+        let opts = config.get_tool_opts_with_overrides(&ba).await?;
+
+        assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_tool_opts_tracks_alias_config_and_inline_sources() -> Result<()> {
+        crate::toolset::install_state::init().await?;
+
+        let source = crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml"));
+        let config_ba = Arc::new(BackendArg::from("tiny"));
+        let config_opts =
+            crate::toolset::parse_tool_options("asset_pattern=config-pattern,bar=config");
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(
+            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            &source,
+        );
+
+        let mut all_aliases = AliasMap::default();
+        all_aliases.insert(
+            "tiny".to_string(),
+            Alias {
+                backend: Some(
+                    "github:jdx/mise-test-fixtures[api_url=https://alias.example/api/v3,asset_pattern=alias-pattern,foo=alias]"
+                        .to_string(),
+                ),
+                versions: Default::default(),
+            },
+        );
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases,
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
+        };
+        config.tool_request_set.set(trs).ok();
+        let config = Arc::new(config);
+        let ba = Arc::new(BackendArg::from(
+            "tiny[api_url=https://inline.example/api/v3]",
+        ));
+
+        let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
+        let opts = resolved.options();
+
+        assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
+        assert_eq!(opts.get("asset_pattern"), Some("config-pattern"));
+        assert_eq!(opts.get("foo"), Some("alias"));
+        assert_eq!(opts.get("bar"), Some("config"));
+        assert_eq!(
+            resolved.source_for_key("api_url"),
+            Some(crate::toolset::ToolOptionSource::InlineBackendArg)
+        );
+        assert_eq!(
+            resolved.source_for_key("asset_pattern"),
+            Some(crate::toolset::ToolOptionSource::Config)
+        );
+        assert_eq!(
+            resolved.source_for_key("foo"),
+            Some(crate::toolset::ToolOptionSource::BackendAlias)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_tool_opts_prefers_env_backend_override_over_alias_opts() -> Result<()> {
+        unsafe {
+            std::env::set_var("MISE_BACKENDS_ENV_OPTS_TEST", "github:env/repo[foo=env]");
+        }
+
+        let result = async {
+            let mut all_aliases = AliasMap::default();
+            all_aliases.insert(
+                "env-opts-test".to_string(),
+                Alias {
+                    backend: Some("github:alias/repo[foo=alias,bar=alias]".to_string()),
+                    versions: Default::default(),
+                },
+            );
+            let config = Config {
+                tera_ctx: BASE_CONTEXT.clone(),
+                config_files: Default::default(),
+                env: OnceCell::new(),
+                env_with_sources: OnceCell::new(),
+                shorthands: get_shorthands(&Settings::get()),
+                hooks: OnceCell::new(),
+                tasks_cache: Arc::new(DashMap::new()),
+                tool_request_set: OnceCell::new(),
+                toolset: OnceCell::new(),
+                all_aliases,
+                aliases: Default::default(),
+                project_root: Default::default(),
+                repo_urls: Default::default(),
+                shell_aliases: Default::default(),
+                tera_files: Default::default(),
+                vars: Default::default(),
+                vars_loader: None,
+                vars_results: OnceCell::new(),
+            };
+            config.tool_request_set.set(ToolRequestSet::new()).ok();
+            let config = Arc::new(config);
+            let ba = Arc::new(BackendArg::from("env-opts-test"));
+
+            let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
+            let opts = resolved.options();
+
+            assert_eq!(ba.full(), "github:env/repo[foo=env]");
+            assert_eq!(opts.get("foo"), Some("env"));
+            assert_eq!(opts.get("bar"), None);
+            assert_eq!(
+                resolved.source_for_key("foo"),
+                Some(crate::toolset::ToolOptionSource::BackendAlias)
+            );
+            Ok(())
+        }
+        .await;
+
+        unsafe {
+            std::env::remove_var("MISE_BACKENDS_ENV_OPTS_TEST");
+        }
+
+        result
     }
 
     #[tokio::test]

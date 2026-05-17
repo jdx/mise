@@ -46,10 +46,10 @@ assert_contains "mise ':build'" "root build task"
 OUTPUT_SHORTHAND=$(mise '//project:build')
 OUTPUT_RUN=$(mise run '//project:build')
 if [ "$OUTPUT_SHORTHAND" != "$OUTPUT_RUN" ]; then
-	echo "ERROR: Shorthand 'mise //project:build' output differs from 'mise run //project:build'"
-	echo "Shorthand output: $OUTPUT_SHORTHAND"
-	echo "Run output: $OUTPUT_RUN"
-	exit 1
+  echo "ERROR: Shorthand 'mise //project:build' output differs from 'mise run //project:build'"
+  echo "Shorthand output: $OUTPUT_SHORTHAND"
+  echo "Run output: $OUTPUT_RUN"
+  exit 1
 fi
 
 # Test 7: Test with nested subdirectories

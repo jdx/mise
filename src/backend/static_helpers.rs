@@ -87,22 +87,6 @@ pub trait VerifiableError: Sized + Send + Sync + 'static {
 
 impl VerifiableError for eyre::Report {
     fn is_not_found(&self) -> bool {
-        self.chain().any(|cause| {
-            if let Some(err) = cause.downcast_ref::<reqwest::Error>() {
-                err.status() == Some(reqwest::StatusCode::NOT_FOUND)
-            } else {
-                false
-            }
-        })
-    }
-
-    fn into_eyre(self) -> eyre::Report {
-        self
-    }
-}
-
-impl VerifiableError for anyhow::Error {
-    fn is_not_found(&self) -> bool {
         if self.to_string().contains("404") {
             return true;
         }
@@ -116,7 +100,7 @@ impl VerifiableError for anyhow::Error {
     }
 
     fn into_eyre(self) -> eyre::Report {
-        eyre::eyre!(self)
+        self
     }
 }
 
@@ -247,8 +231,8 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
             }
             // Try flat format: platforms_macos_arm64_url
             let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
-            if let Some(val) = opts.get(&flat_key) {
-                return Some(val.to_string());
+            if let Some(val) = opts.get_string(&flat_key) {
+                return Some(val);
             }
         }
     }
@@ -266,7 +250,7 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
 /// * `Some(value)` if found in platform-specific or base options
 /// * `None` if not found
 pub fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Option<String> {
-    lookup_platform_key(opts, key).or_else(|| opts.get(key).map(|s| s.to_string()))
+    lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
 }
 
 /// Returns all possible aliases for a given platform target (os, arch).
@@ -315,8 +299,8 @@ pub fn lookup_platform_key_for_target(
             }
             // Try flat format: platforms_macos_arm64_url
             let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
-            if let Some(val) = opts.get(&flat_key) {
-                return Some(val.to_string());
+            if let Some(val) = opts.get_string(&flat_key) {
+                return Some(val);
             }
         }
     }
@@ -373,12 +357,17 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
         return template.replace("{version}", &tv.version);
     }
 
+    if !crate::tera::contains_template_syntax(template) {
+        return template.to_string();
+    }
+
     // Use Tera rendering for templates
     // Supports {{ version }}, {{ os() }}, {{ arch() }}, etc.
     let mut ctx = crate::tera::BASE_CONTEXT.clone();
     ctx.insert("version", &tv.version);
 
-    match crate::tera::get_tera(None).render_str(template, &ctx) {
+    let mut tera = crate::tera::get_tera(None);
+    match crate::tera::render_str(&mut tera, template, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template '{}': {}", template, e);
@@ -415,7 +404,7 @@ pub fn install_artifact(
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
     let mut strip_components = lookup_platform_key(opts, "strip_components")
-        .or_else(|| opts.get("strip_components").map(|s| s.to_string()))
+        .or_else(|| opts.get_string("strip_components"))
         .and_then(|s| s.parse().ok());
 
     file::remove_all(&install_path)?;
@@ -494,9 +483,7 @@ pub fn install_artifact(
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
         if strip_components.is_none()
-            && lookup_platform_key(opts, "bin_path")
-                .or_else(|| opts.get("bin_path").map(|s| s.to_string()))
-                .is_none()
+            && lookup_with_fallback(opts, "bin_path").is_none()
             && let Ok(should_strip) = file::should_strip_components(file_path, format)
             && should_strip
         {
@@ -513,7 +500,6 @@ pub fn install_artifact(
         file::untar(file_path, &install_path, &tar_opts)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
-        // This is needed for matching binary names in ZIP archives where exec bits are lost
         let full_tool_name = tv.ba().tool_name.as_str();
         let tool_name = full_tool_name.rsplit('/').next().unwrap_or(full_tool_name);
 
@@ -525,6 +511,7 @@ pub fn install_artifact(
         // bin= values are relative to install_path, so always use install_path or explicit bin_path
         if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
             let search_dir = explicit_bin_path.as_deref().unwrap_or(&install_path);
+            make_configured_bin_executable(search_dir, &bin_name)?;
             rename_executable_in_dir(search_dir, &bin_name, Some(tool_name))?;
         }
 
@@ -544,6 +531,14 @@ pub fn install_artifact(
             };
             rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
         }
+    }
+    Ok(())
+}
+
+fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<()> {
+    let bin_path = search_dir.join(bin_name);
+    if bin_path.is_file() {
+        file::make_executable(bin_path)?;
     }
     Ok(())
 }
@@ -1193,7 +1188,7 @@ mod tests {
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1243,7 +1238,7 @@ size = "5120"
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1278,13 +1273,12 @@ size = "5120"
         opts.insert("size".to_string(), toml::Value::String("512".to_string()));
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
         // Test that generic fallback works when no platform-specific values exist
-        let checksum = lookup_platform_key(&tool_opts, "checksum")
-            .or_else(|| tool_opts.get("checksum").map(|s| s.to_string()));
+        let checksum = lookup_with_fallback(&tool_opts, "checksum");
         let size = lookup_with_fallback(&tool_opts, "size");
 
         assert_eq!(checksum, Some("blake3:generic123".to_string()));
@@ -1312,7 +1306,7 @@ bin_path = "."
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1351,7 +1345,7 @@ bin = "xmake.exe"
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1388,7 +1382,7 @@ bin = "tool.exe"
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1402,6 +1396,27 @@ bin = "tool.exe"
             bin_value == "tool.exe" || bin_value == "generic-tool",
             "Expected platform-specific or generic bin, got: {}",
             bin_value
+        );
+    }
+
+    #[test]
+    fn test_lookup_with_fallback_coerces_scalar_values() {
+        let mut opts = IndexMap::new();
+        opts.insert("strip_components".to_string(), toml::Value::Integer(1));
+        opts.insert("symlink_bins".to_string(), toml::Value::Boolean(true));
+
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            lookup_with_fallback(&tool_opts, "strip_components"),
+            Some("1".to_string())
+        );
+        assert_eq!(
+            lookup_with_fallback(&tool_opts, "symlink_bins"),
+            Some("true".to_string())
         );
     }
 
@@ -1422,7 +1437,7 @@ bin = "tool.exe"
         );
 
         let tool_opts = ToolVersionOptions {
-            opts,
+            opts: opts.into(),
             ..Default::default()
         };
 
@@ -1436,5 +1451,34 @@ bin = "tool.exe"
                 b
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_make_configured_bin_executable_marks_only_exact_bin() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let binary = tmp.path().join("selene");
+        let readme = tmp.path().join("README.md");
+        let config = tmp.path().join("selene.toml");
+        let unrelated = tmp.path().join("counselene");
+        std::fs::write(&binary, b"not-a-binary").unwrap();
+        std::fs::write(&readme, b"not-a-binary").unwrap();
+        std::fs::write(&config, b"not-a-binary").unwrap();
+        std::fs::write(&unrelated, b"not-a-binary").unwrap();
+
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&readme, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&unrelated, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        make_configured_bin_executable(tmp.path(), "selene").unwrap();
+        make_configured_bin_executable(tmp.path(), "missing").unwrap();
+
+        assert!(file::is_executable(&binary));
+        assert!(!file::is_executable(&readme));
+        assert!(!file::is_executable(&config));
+        assert!(!file::is_executable(&unrelated));
     }
 }

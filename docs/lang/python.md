@@ -85,7 +85,7 @@ _.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
 ```
 
 The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
-See [env-directives](https://mise.jdx.dev/environments/#env-directives) for `_.python.venv`.
+See [env-directives](https://mise.en.dev/environments/#env-directives) for `_.python.venv`.
 
 ::: tip
 Virtualenv activation requires `mise activate` or `mise exec`. When using [shims](/dev-tools/shims) alone, the venv's `bin/` directory is not added to PATH, so `which python` will point to the shim rather than the venv's interpreter.

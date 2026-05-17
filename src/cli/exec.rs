@@ -14,6 +14,7 @@ use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::deps::{DepsEngine, DepsOptions};
 use crate::env;
+use crate::env_diff::EnvDiff;
 use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
@@ -190,6 +191,17 @@ impl Exec {
             env.insert("__MISE_ENV_CACHE_KEY".to_string(), key);
         }
 
+        // Embed __MISE_DIFF so a nested mise invocation can recover the pristine
+        // env (and pristine PATH) instead of stacking our tool dirs on top of its
+        // own. Without this, `mise -C <new> exec -- ...` invoked from inside our
+        // child process would inherit our tool dirs as user-pre-PATH and they
+        // would outrank the inner toolset's resolved tool. See discussion #9754.
+        // Computed after all env modifications so the diff fully describes what
+        // mise added (matches task_executor.rs).
+        if let Ok(serialized) = EnvDiff::from_final_env(&env::PRISTINE_ENV, &env).serialize() {
+            env.insert("__MISE_DIFF".to_string(), serialized);
+        }
+
         if program.rsplit('/').next() == Some("fish") {
             let mut cmd = vec![];
             for (k, v) in env.iter().filter(|(k, _)| *k != "PATH") {
@@ -277,7 +289,11 @@ where
             // The child process still inherits the full unmodified PATH.
             let user_shims = &*crate::dirs::SHIMS;
             let sys_shims = crate::env::MISE_SYSTEM_DATA_DIR.join("shims");
-            let is_shims_dir = |p: &std::path::PathBuf| p == user_shims || p == &sys_shims;
+            let is_shims_dir = |p: &std::path::PathBuf| {
+                let expanded = crate::file::replace_path(p);
+                crate::file::paths_eq(&expanded, user_shims)
+                    || crate::file::paths_eq(&expanded, &sys_shims)
+            };
             let pristine: std::collections::HashSet<_> = crate::env::PATH.iter().collect();
             let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
             // Mise-added paths first (preserving relative order)
@@ -339,19 +355,12 @@ where
     // Reorder PATH for program resolution: mise-added paths first, then
     // original system paths (minus shims). See Unix version for full rationale.
     let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
-        let shims_normalized = crate::dirs::SHIMS
-            .to_string_lossy()
-            .to_lowercase()
-            .replace('/', "\\");
-        let sys_shims_normalized = crate::env::MISE_SYSTEM_DATA_DIR
-            .join("shims")
-            .to_string_lossy()
-            .to_lowercase()
-            .replace('/', "\\");
+        let user_shims = &*crate::dirs::SHIMS;
+        let sys_shims = crate::env::MISE_SYSTEM_DATA_DIR.join("shims");
         let is_shims = |p: &std::path::PathBuf| {
             let expanded = crate::file::replace_path(p);
-            let normalized = expanded.to_string_lossy().to_lowercase().replace('/', "\\");
-            normalized == shims_normalized || normalized == sys_shims_normalized
+            crate::file::paths_eq(&expanded, user_shims)
+                || crate::file::paths_eq(&expanded, &sys_shims)
         };
         let pristine: std::collections::HashSet<_> = crate::env::PATH
             .iter()

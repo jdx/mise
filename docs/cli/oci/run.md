@@ -42,6 +42,12 @@ Base image reference for the build (ignored with --image-dir)
 
 Use an already-built OCI image layout instead of building fresh
 
+### `--include-global`
+
+Also include tools from the global / system config (default: project-only)
+
+See `mise oci build --help` for details.
+
 ### `--keep`
 
 Keep the loaded image in the engine's storage after the run

@@ -4,8 +4,5 @@ test = { cmd = "bb --version", expected = "babashka v{{version}}" }
 [[backends]]
 full = "github:babashka/babashka"
 
-[backends.options]
-exe = "bb"
-
 [[backends]]
 full = "asdf:pitch-io/asdf-babashka"

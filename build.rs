@@ -1,19 +1,35 @@
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
-use std::path::Path;
+use serde::Serialize as _;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
-fn main() {
+use aqua_registry::encode_package_rkyv;
+use aqua_registry::types::{AquaPackage, RegistryPackageRow, RegistryYaml};
+use eyre::{Result, eyre};
+use serde_yaml::Value;
+
+fn main() -> Result<()> {
     cfg_aliases::cfg_aliases! {
         asdf: { any(feature = "asdf", not(target_os = "windows")) },
         macos: { target_os = "macos" },
         linux: { target_os = "linux" },
         vfox: { any(feature = "vfox", target_os = "windows") },
     }
-    built::write_built_file().expect("Failed to acquire build-time information");
+    built::write_built_file()?;
 
     codegen_settings();
     codegen_registry();
+    codegen_aqua_standard_registry()?;
+    Ok(())
+}
+
+#[derive(Debug)]
+struct AquaPackageRegistry {
+    id: String,
+    content: Vec<u8>,
+    aliases: Vec<String>,
 }
 
 /// Generate a raw string literal that safely contains the given content.
@@ -52,14 +68,9 @@ fn parse_options(opts: Option<&toml::Value>) -> Vec<(String, String)> {
             table
                 .iter()
                 .map(|(k, v)| {
-                    let value = match v {
-                        toml::Value::String(s) => s.clone(),
-                        toml::Value::Table(t) => {
-                            // Serialize nested tables back to TOML string
-                            toml::to_string(t).unwrap_or_default()
-                        }
-                        _ => v.to_string(),
-                    };
+                    let mut value = String::new();
+                    v.serialize(toml::ser::ValueSerializer::new(&mut value))
+                        .unwrap_or_else(|e| panic!("failed to serialize registry option {k}: {e}"));
                     (k.clone(), value)
                 })
                 .collect::<Vec<_>>()
@@ -104,10 +115,7 @@ fn load_registry_tools() -> toml::map::Map<String, toml::Value> {
 fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
-    let mut lines = vec![
-        "{".to_string(),
-        "    let mut m = std::collections::BTreeMap::new();".to_string(),
-    ];
+    let mut generated_entries = BTreeMap::new();
 
     let tools = load_registry_tools();
     for (short, info) in &tools {
@@ -135,7 +143,26 @@ fn codegen_registry() {
                 .and_then(|v| v.as_str())
                 .unwrap_or_else(|| panic!("[{short}] 'test.expected' must be a string"))
                 .to_string();
-            (cmd, expected)
+            let tools = t
+                .get("tools")
+                .map(|tools| {
+                    let mut tools = tools
+                        .as_array()
+                        .unwrap_or_else(|| panic!("[{short}] 'test.tools' must be an array"))
+                        .iter()
+                        .map(|v| {
+                            v.as_str()
+                                .unwrap_or_else(|| {
+                                    panic!("[{short}] 'test.tools' must contain only strings")
+                                })
+                                .to_string()
+                        })
+                        .collect::<Vec<_>>();
+                    tools.sort();
+                    tools
+                })
+                .unwrap_or_default();
+            (cmd, expected, tools)
         });
         let mut backends = vec![];
         for backend in info.get("backends").unwrap().as_array().unwrap() {
@@ -202,18 +229,6 @@ fn codegen_registry() {
         let description = info
             .get("description")
             .map(|d| d.as_str().unwrap().to_string());
-        let depends = info
-            .get("depends")
-            .map(|depends| {
-                let depends = depends.as_array().unwrap();
-                let mut depends = depends
-                    .iter()
-                    .map(|d| d.as_str().unwrap().to_string())
-                    .collect::<Vec<_>>();
-                depends.sort();
-                depends
-            })
-            .unwrap_or_default();
         let idiomatic_files = info
             .get("idiomatic_files")
             .map(|idiomatic_files| {
@@ -248,7 +263,7 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
                 .unwrap_or("None".to_string()),
@@ -259,20 +274,20 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
             test = test
-                .map(|(t, v)| format!(
-                    "Some(({}, {}))",
-                    raw_string_literal(&t),
-                    raw_string_literal(&v)
+                .map(|(cmd, expected, tools)| format!(
+                    "Some(RegistryToolTest{{ cmd: {}, expected: {}, tools: &[{}] }})",
+                    raw_string_literal(&cmd),
+                    raw_string_literal(&expected),
+                    tools
+                        .iter()
+                        .map(|tool| format!("\"{tool}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ))
                 .unwrap_or("None".to_string()),
             os = os
                 .iter()
                 .map(|o| format!("\"{o}\""))
-                .collect::<Vec<_>>()
-                .join(", "),
-            depends = depends
-                .iter()
-                .map(|d| format!("\"{d}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
             idiomatic_files = idiomatic_files
@@ -291,15 +306,229 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
         );
-        lines.push(format!(r#"    m.insert("{short}", {rt});"#));
+        generated_entries.insert(short.clone(), rt.clone());
         for alias in aliases {
-            lines.push(format!(r#"    m.insert("{alias}", {rt});"#));
+            generated_entries.insert(alias, rt.clone());
         }
     }
-    lines.push("    m".to_string());
-    lines.push("}".to_string());
 
-    fs::write(&dest_path, lines.join("\n")).unwrap();
+    let entries = generated_entries.into_iter().collect::<Vec<_>>();
+    fs::write(&dest_path, registry_code(&entries)).unwrap();
+}
+
+fn registry_code(entries: &[(String, String)]) -> String {
+    let mut code = String::from("Registry {\n    entries: &[\n");
+    for (key, tool) in entries {
+        code.push_str(&format!("        ({key:?}, {tool}),\n"));
+    }
+    code.push_str("    ],\n    lookup: ");
+    code.push_str(&phf_usize_map_code(
+        entries
+            .iter()
+            .enumerate()
+            .map(|(index, (key, _))| (key.clone(), index.to_string()))
+            .collect::<Vec<_>>(),
+    ));
+    code.push_str(",\n}");
+    code
+}
+
+fn phf_usize_map_code(entries: Vec<(String, String)>) -> String {
+    let mut map = phf_codegen::Map::new();
+    for (key, value) in &entries {
+        map.entry(key, value);
+    }
+    map.build().to_string()
+}
+
+fn codegen_aqua_standard_registry() -> Result<()> {
+    let out_dir = env::var("OUT_DIR")?;
+    let files_dest_path = Path::new(&out_dir).join("aqua_standard_registry_files.rs");
+    let aliases_dest_path = Path::new(&out_dir).join("aqua_standard_registry_aliases.rs");
+    let metadata_dest_path = Path::new(&out_dir).join("aqua_standard_registry_metadata.rs");
+    let packages_dir = Path::new(&out_dir).join("aqua_standard_registry_packages");
+
+    let registry_file = Path::new("vendor/aqua-registry/registry.yml");
+    let metadata_file = Path::new("vendor/aqua-registry/metadata.json");
+
+    println!("cargo:rerun-if-changed={}", registry_file.display());
+    println!("cargo:rerun-if-changed={}", metadata_file.display());
+
+    let registry_yaml = serde_yaml::from_str::<RegistryYaml>(&fs::read_to_string(registry_file)?)?;
+
+    let registries = aqua_package_registries(&registry_yaml.packages)?;
+    if registries.is_empty() {
+        return Err(eyre!(
+            "Aqua registry file {} contains no packages",
+            registry_file.display()
+        ));
+    }
+
+    fs::create_dir_all(&packages_dir)?;
+    fs::write(
+        files_dest_path,
+        aqua_registry_files_code(&registries, &packages_dir)?,
+    )?;
+    fs::write(aliases_dest_path, aqua_registry_aliases_code(&registries)?)?;
+
+    let metadata = serde_yaml::from_str::<Value>(&fs::read_to_string(metadata_file)?)?;
+    let repository = yaml_string_field(&metadata, "repository").ok_or_else(|| {
+        eyre!(
+            "Aqua registry metadata file {} does not contain a repository",
+            metadata_file.display()
+        )
+    })?;
+    let tag = yaml_string_field(&metadata, "tag").ok_or_else(|| {
+        eyre!(
+            "Aqua registry metadata file {} does not contain a tag",
+            metadata_file.display()
+        )
+    })?;
+
+    fs::write(
+        metadata_dest_path,
+        format!("AquaRegistryMetadata {{ repository: {repository:?}, tag: {tag:?} }}"),
+    )?;
+
+    Ok(())
+}
+
+fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackageRegistry>> {
+    let mut registries = Vec::new();
+    let mut canonical_ids = HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
+        let package = &row.package;
+        let Some(id) = aqua_canonical_package_id(package) else {
+            println!(
+                "cargo:warning=skipping aqua registry package row {index}: missing name, repo_owner/repo_name, and path"
+            );
+            continue;
+        };
+        if let Some(existing) = canonical_ids.insert(id.clone(), index) {
+            return Err(eyre!(
+                "baked aqua registry package id collision for {id:?}: rows {existing} and {index}"
+            ));
+        }
+        let content = encode_package_rkyv(package)?;
+        registries.push(AquaPackageRegistry {
+            id,
+            content,
+            aliases: row.aliases.clone(),
+        });
+    }
+    Ok(registries)
+}
+
+fn aqua_registry_files_code(
+    registries: &[AquaPackageRegistry],
+    packages_dir: &Path,
+) -> Result<String> {
+    let mut used_stems = HashMap::new();
+    let mut entries = registries
+        .iter()
+        .map(|registry| {
+            let stem = aqua_package_file_stem(&registry.id);
+            if let Some(other_id) = used_stems.insert(stem.clone(), registry.id.as_str()) {
+                return Err(eyre!(
+                    "baked aqua registry package filename collision for {other_id:?} and {:?}: {stem}",
+                    registry.id
+                ));
+            }
+            let filename = format!("{stem}.rkyv");
+            let path = packages_dir.join(filename);
+            fs::write(&path, &registry.content)?;
+            Ok((registry.id.clone(), path))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    Ok(aqua_registry_bytes_map_code(&entries))
+}
+
+fn aqua_registry_bytes_map_code(entries: &[(String, PathBuf)]) -> String {
+    let mut map = phf_codegen::Map::new();
+    let mut values = Vec::new();
+    for (key, path) in entries {
+        values.push((
+            key.clone(),
+            format!(
+                "include_bytes!({:?}).as_slice()",
+                path.display().to_string()
+            ),
+        ));
+    }
+    for (key, value) in &values {
+        map.entry(key, value);
+    }
+    map.build().to_string()
+}
+
+/// Hashes the canonical package ID with FNV-1a 64-bit to generate compact,
+/// deterministic baked package filenames without leaking path separators.
+fn aqua_package_file_stem(id: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in id.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn aqua_registry_aliases_code(registries: &[AquaPackageRegistry]) -> Result<String> {
+    let canonical_ids = registries
+        .iter()
+        .map(|registry| registry.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut aliases = BTreeMap::new();
+
+    for registry in registries {
+        for alias in &registry.aliases {
+            if alias != &registry.id
+                && !canonical_ids.contains(alias.as_str())
+                && let Some(existing) = aliases.insert(alias.clone(), registry.id.clone())
+                && existing != registry.id
+            {
+                return Err(eyre!(
+                    "baked aqua registry alias collision for {alias:?}: {existing:?} and {:?}",
+                    registry.id
+                ));
+            }
+        }
+    }
+
+    let entries = aliases.into_iter().collect::<Vec<_>>();
+
+    Ok(aqua_registry_string_map_code(&entries))
+}
+
+fn aqua_registry_string_map_code(entries: &[(String, String)]) -> String {
+    let mut map = phf_codegen::Map::new();
+    let mut values = Vec::new();
+    for (key, value) in entries {
+        values.push((key.clone(), format!("{value:?}")));
+    }
+    for (key, value) in &values {
+        map.entry(key, value);
+    }
+    map.build().to_string()
+}
+
+fn aqua_canonical_package_id(package: &AquaPackage) -> Option<String> {
+    package
+        .name
+        .clone()
+        .or_else(|| {
+            if package.repo_owner.is_empty() || package.repo_name.is_empty() {
+                None
+            } else {
+                Some(format!("{}/{}", package.repo_owner, package.repo_name))
+            }
+        })
+        .or_else(|| package.path.clone())
+}
+
+fn yaml_string_field(value: &Value, key: &str) -> Option<String> {
+    value.get(key)?.as_str().map(str::to_string)
 }
 
 fn codegen_settings() {

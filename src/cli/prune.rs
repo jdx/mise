@@ -109,7 +109,7 @@ pub async fn prunable_tools(
     }
 
     // Remove versions that are still needed by tracked configs
-    let needed_versions = get_versions_needed_by_tracked_configs(config, true).await?;
+    let needed_versions = get_versions_needed_by_tracked_configs(config, true, true).await?;
     for key in needed_versions {
         to_delete.remove(&key);
     }

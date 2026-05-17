@@ -75,12 +75,8 @@ impl Shell for Pwsh {
                             _mise_hook
                         }}
                         _reset_output_encoding
-                        # Pass down exit code from mise after _mise_hook
-                        if ($PSVersionTable.PSVersion.Major -ge 7) {{
-                            pwsh -NoProfile -Command exit $status
-                        }} else {{
-                            powershell -NoProfile -Command exit $status
-                        }}
+                        # restore exit code from mise after _mise_hook
+                        $global:LASTEXITCODE = $status
                     }}
                 }}
             }}

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+unix_default_inline_shell_args = "bash -c"
+
+[tools]
+dummy = 'latest'
+
+[hooks]
+preinstall = [
+  { run = 'test -n "$BASH_VERSION" && echo PRE_RUN_DEFAULT_BASH' },
+  { run = 'test -n "$BASH_VERSION" && echo PRE_RUN_BASH', shell = 'bash -c' },
+  { script = 'echo PRE_SCRIPT' },
+]
+postinstall = { script = 'echo POST_SCRIPT_SHELL', shell = 'bash' }
+EOF
+
+output=$(mise install 2>&1)
+assert_contains "echo '$output'" "PRE_RUN_DEFAULT_BASH"
+assert_contains "echo '$output'" "PRE_RUN_BASH"
+assert_contains "echo '$output'" "PRE_SCRIPT"
+assert_contains "echo '$output'" "POST_SCRIPT_SHELL"
+assert_contains "echo '$output'" "is ignored for postinstall hooks that use"
+assert_not_contains "echo '$output'" "deprecated [hooks.script_without_shell]"
+assert_not_contains "echo '$output'" "deprecated [hooks.pre_postinstall_shell]"

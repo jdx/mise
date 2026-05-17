@@ -38,11 +38,12 @@
 pub const EXPERIMENTAL: bool = true;
 
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, lookup_with_fallback, template_string, verify_artifact,
+    get_filename_from_url, install_artifact, template_string, verify_artifact,
 };
 use crate::backend::version_list;
-use crate::backend::{Backend, VersionInfo};
+use crate::backend::{Backend, VersionInfo, runtime_path_for_install_path};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file;
@@ -99,6 +100,63 @@ pub struct S3Backend {
     client: OnceCell<S3Client>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct S3Options<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> S3Options<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn raw(&self) -> &'a ToolVersionOptions {
+        self.values.raw()
+    }
+
+    fn url(&self) -> Option<String> {
+        self.values.platform_string("url")
+    }
+
+    fn checksum(&self) -> Option<String> {
+        self.values.platform_string("checksum")
+    }
+
+    fn bin_path(&self) -> Option<String> {
+        self.values.platform_string("bin_path")
+    }
+
+    fn region(&self) -> Option<String> {
+        self.values.platform_string("region")
+    }
+
+    fn endpoint(&self) -> Option<String> {
+        self.values.platform_string("endpoint")
+    }
+
+    fn version_list_url(&self) -> Option<String> {
+        self.values.platform_string("version_list_url")
+    }
+
+    fn version_prefix(&self) -> Option<String> {
+        self.values.platform_string("version_prefix")
+    }
+
+    fn version_regex(&self) -> Option<String> {
+        self.values.platform_string("version_regex")
+    }
+
+    fn version_json_path(&self) -> Option<String> {
+        self.values.platform_string("version_json_path")
+    }
+
+    fn version_expr(&self) -> Option<String> {
+        self.values.platform_string("version_expr")
+    }
+}
+
 impl S3Backend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
@@ -108,24 +166,19 @@ impl S3Backend {
     }
 
     /// Get or create the S3 client
-    async fn get_client(&self, opts: &ToolVersionOptions) -> Result<&S3Client> {
+    async fn get_client(&self, opts: &S3Options<'_>) -> Result<&S3Client> {
         self.client
             .get_or_try_init(|| async {
-                let region = lookup_with_fallback(opts, "region");
-                let endpoint = lookup_with_fallback(opts, "endpoint");
+                let region = opts.region();
+                let endpoint = opts.endpoint();
                 create_s3_client(region.as_deref(), endpoint.as_deref()).await
             })
             .await
     }
 
-    /// Get option value with platform-specific fallback
-    fn get_opt(opts: &ToolVersionOptions, key: &str) -> Option<String> {
-        lookup_with_fallback(opts, key)
-    }
-
     /// Resolve the download URL from options and version
-    fn resolve_url(&self, tv: &ToolVersion, opts: &ToolVersionOptions) -> Result<String> {
-        let url_template = Self::get_opt(opts, "url").ok_or_else(|| {
+    fn resolve_url(&self, tv: &ToolVersion, opts: &S3Options<'_>) -> Result<String> {
+        let url_template = opts.url().ok_or_else(|| {
             eyre!(
                 "S3 backend requires 'url' option. Example: url = \"s3://bucket/tool-{{version}}.tar.gz\""
             )
@@ -188,7 +241,7 @@ impl S3Backend {
         &self,
         client: &S3Client,
         manifest_url: &str,
-        opts: &ToolVersionOptions,
+        opts: &S3Options<'_>,
     ) -> Result<Vec<String>> {
         let s3_url = S3Url::parse(manifest_url)?;
 
@@ -200,9 +253,9 @@ impl S3Backend {
 
         // Read and parse the manifest
         let content = file::read_to_string(&tmp_path)?;
-        let regex = Self::get_opt(opts, "version_regex");
-        let json_path = Self::get_opt(opts, "version_json_path");
-        let version_expr = Self::get_opt(opts, "version_expr");
+        let regex = opts.version_regex();
+        let json_path = opts.version_json_path();
+        let version_expr = opts.version_expr();
 
         version_list::parse_version_list(
             &content,
@@ -269,10 +322,11 @@ impl S3Backend {
 
     /// Fetch versions using the configured method (manifest or listing)
     async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        let opts = config.get_tool_opts(&self.ba).await?.unwrap_or_default();
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = S3Options::new(&raw_opts);
 
         // Try manifest-based version discovery first
-        if let Some(manifest_url) = Self::get_opt(&opts, "version_list_url") {
+        if let Some(manifest_url) = opts.version_list_url() {
             let client = self.get_client(&opts).await?;
             return self
                 .fetch_versions_from_manifest(client, &manifest_url, &opts)
@@ -280,12 +334,14 @@ impl S3Backend {
         }
 
         // Try S3 listing-based version discovery
-        if let Some(version_prefix) = Self::get_opt(&opts, "version_prefix") {
-            let version_regex = Self::get_opt(&opts, "version_regex")
+        if let Some(version_prefix) = opts.version_prefix() {
+            let version_regex = opts
+                .version_regex()
                 .unwrap_or_else(|| r"([0-9]+\.[0-9]+\.[0-9]+)".to_string());
 
             // Extract bucket from url option
-            let url_template = Self::get_opt(&opts, "url")
+            let url_template = opts
+                .url()
                 .ok_or_else(|| eyre!("S3 backend requires 'url' option for version listing"))?;
             let s3_url = S3Url::parse(&url_template)?;
 
@@ -418,13 +474,27 @@ impl Backend for S3Backend {
         &self.ba
     }
 
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &[
+            "version_list_url",
+            "version_regex",
+            "version_json_path",
+            "version_expr",
+            "version_prefix",
+            "url",
+            "region",
+            "endpoint",
+        ]
+    }
+
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
-        let opts = tv.request.options();
-        super::http_install_operation_count(
-            Self::get_opt(&opts, "checksum").is_some(),
-            &self.get_platform_key(),
-            tv,
-        )
+        let raw_opts = tv.request.options();
+        let opts = S3Options::new(&raw_opts);
+        super::http_install_operation_count(opts.checksum().is_some(), &self.get_platform_key(), tv)
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -444,7 +514,8 @@ impl Backend for S3Backend {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         Settings::get().ensure_experimental("s3 backend")?;
-        let opts = tv.request.options();
+        let raw_opts = tv.request.options();
+        let opts = S3Options::new(&raw_opts);
 
         // Resolve URL template
         let url = self.resolve_url(&tv, &opts)?;
@@ -480,10 +551,10 @@ impl Backend for S3Backend {
             .await?;
 
         // Verify artifact (checksum/size from options)
-        if Self::get_opt(&opts, "checksum").is_some() {
+        if opts.checksum().is_some() {
             ctx.pr.next_operation();
         }
-        verify_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
+        verify_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
         // Verify/generate lockfile checksum (before extraction for security)
         if lockfile_enabled || has_lockfile_checksum {
@@ -494,7 +565,7 @@ impl Backend for S3Backend {
         // Extract and install
         ctx.pr.next_operation();
         ctx.pr.set_message("extract".into());
-        install_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
+        install_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
         Ok(tv)
     }
@@ -504,18 +575,22 @@ impl Backend for S3Backend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        let opts = tv.request.options();
+        let raw_opts = tv.request.options();
+        let opts = S3Options::new(&raw_opts);
 
         // Check for explicit bin_path
-        if let Some(bin_path_template) = lookup_with_fallback(&opts, "bin_path") {
+        if let Some(bin_path_template) = opts.bin_path() {
             let bin_path = template_string(&bin_path_template, tv);
-            return Ok(vec![tv.install_path().join(bin_path)]);
+            return Ok(vec![runtime_path_for_install_path(
+                tv,
+                tv.install_path().join(bin_path),
+            )]);
         }
 
         // Check for bin directory
         let bin_dir = tv.install_path().join("bin");
         if bin_dir.exists() {
-            return Ok(vec![bin_dir]);
+            return Ok(vec![runtime_path_for_install_path(tv, bin_dir)]);
         }
 
         // Search subdirectories for bin directories
@@ -533,9 +608,12 @@ impl Backend for S3Backend {
         }
 
         if paths.is_empty() {
-            Ok(vec![tv.install_path()])
+            Ok(vec![tv.runtime_path()])
         } else {
-            Ok(paths)
+            Ok(paths
+                .into_iter()
+                .map(|path| runtime_path_for_install_path(tv, path))
+                .collect())
         }
     }
 }

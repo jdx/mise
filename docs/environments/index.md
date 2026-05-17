@@ -1,8 +1,7 @@
 # Environments
 
-> Like [direnv](https://github.com/direnv/direnv) it
-> manages _environment variables_ for
-> different project directories.
+> Load the right _environment variables_ automatically for each project
+> directory.
 
 Use mise to specify environment variables used for different projects.
 
@@ -46,7 +45,7 @@ Environment variables are available when using [`mise x|exec`](/cli/exec.html), 
 
 ```shell
 mise set MY_VAR=123
-mise exec -- echo $MY_VAR
+mise exec -- bash -c 'echo $MY_VAR'
 # 123
 ```
 
@@ -362,8 +361,8 @@ _.file = [
 ]
 ```
 
-You can set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any
-directory.
+The legacy [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) setting can also load dotenv
+files automatically, but it is deprecated. Use `env._.file` in a config file instead.
 
 See [secrets](/environments/secrets/) for ways to read encrypted files with `env._.file`.
 

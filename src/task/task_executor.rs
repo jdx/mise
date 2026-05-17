@@ -2,6 +2,7 @@ use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
+use crate::env_diff::EnvDiff;
 use crate::file::{display_path, is_executable};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskKey;
@@ -12,6 +13,7 @@ use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
@@ -130,8 +132,27 @@ impl TaskExecutor {
     }
 
     /// Build a SandboxConfig for a task by merging task-level config with CLI overrides.
-    fn build_sandbox_for_task(&self, task: &Task) -> SandboxConfig {
-        let mut config = SandboxConfig {
+    ///
+    /// Task-level relative `allow_read`/`allow_write` paths are resolved against the task's
+    /// effective working directory (`task.dir(config)`, which itself falls back to `config_root`)
+    /// so that `allow_read = ["."]` means "the directory the task runs in", matching how `dir`
+    /// resolves. CLI-supplied paths are left as-is and resolved against cwd by `resolve_paths()`.
+    async fn build_sandbox_for_task(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+    ) -> Result<SandboxConfig> {
+        let task_base = task.dir(config).await?;
+        let resolve_task_path = |p: &PathBuf| -> PathBuf {
+            if p.is_absolute() {
+                p.clone()
+            } else if let Some(base) = &task_base {
+                base.join(p)
+            } else {
+                p.clone()
+            }
+        };
+        let mut sandbox = SandboxConfig {
             deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
             deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
@@ -139,14 +160,14 @@ impl TaskExecutor {
             allow_read: task
                 .allow_read
                 .iter()
-                .chain(self.sandbox.allow_read.iter())
-                .cloned()
+                .map(&resolve_task_path)
+                .chain(self.sandbox.allow_read.iter().cloned())
                 .collect(),
             allow_write: task
                 .allow_write
                 .iter()
-                .chain(self.sandbox.allow_write.iter())
-                .cloned()
+                .map(&resolve_task_path)
+                .chain(self.sandbox.allow_write.iter().cloned())
                 .collect(),
             allow_net: task
                 .allow_net
@@ -161,8 +182,8 @@ impl TaskExecutor {
                 .cloned()
                 .collect(),
         };
-        config.resolve_paths();
-        config
+        sandbox.resolve_paths();
+        Ok(sandbox)
     }
 
     pub fn task_timings(&self) -> bool {
@@ -249,37 +270,123 @@ impl TaskExecutor {
             task.name,
             env_render_start.elapsed().as_millis()
         );
+        let mut nested_mise_diff_exclude_keys: HashSet<String> = task_env
+            .iter()
+            .map(|(key, _)| key.clone())
+            .filter(|key| key.as_str() != crate::env::PATH_KEY.as_str())
+            .chain(once("__MISE_DIFF".to_string()))
+            .collect();
         if !self.timings {
-            env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_TASK_TIMINGS",
+                "0".to_string(),
+            );
         }
         // Propagate MISE_ENV to child tasks so -E flag works for nested mise invocations
         if !crate::env::MISE_ENV.is_empty() {
-            env.insert("MISE_ENV".to_string(), crate::env::MISE_ENV.join(","));
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_ENV",
+                crate::env::MISE_ENV.join(","),
+            );
         }
         if let Some(cwd) = &*crate::dirs::CWD {
-            env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_ORIGINAL_CWD",
+                cwd.display().to_string(),
+            );
         }
-        if let Some(root) = config.project_root.clone().or(task.config_root.clone()) {
-            env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
+        // Prefer the task's own config_root so MISE_PROJECT_ROOT is the directory of the
+        // mise.toml that defined the task. This keeps the value stable regardless of the
+        // cwd from which the task was invoked (important for monorepo subprojects, where
+        // config.project_root depends on cwd).
+        //
+        // Exception: for global tasks (inline in ~/.config/mise/config.toml or scripts in
+        // ~/.config/mise/tasks/) and remote tasks (loaded from git/http), task.config_root
+        // points at the global/remote location rather than the user's project. Fall back
+        // to config.project_root (the local project the user is in) for those, matching
+        // the pre-existing behavior.
+        let project_root = if task.global || task.is_remote() {
+            config.project_root.clone().or(task.config_root.clone())
+        } else {
+            task.config_root.clone().or(config.project_root.clone())
+        };
+        if let Some(root) = project_root {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_PROJECT_ROOT",
+                root.display().to_string(),
+            );
         }
-        env.insert("MISE_TASK_NAME".into(), task.name.clone());
+        if let Some(monorepo_root) = config.monorepo_root() {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_MONOREPO_ROOT",
+                monorepo_root.display().to_string(),
+            );
+        }
+        Self::insert_env_excluded_from_nested_mise_diff(
+            &mut env,
+            &mut nested_mise_diff_exclude_keys,
+            "MISE_TASK_NAME",
+            task.name.clone(),
+        );
         let task_file = task
             .file_path(config)
             .await?
             .unwrap_or(task.config_source.clone());
-        env.insert("MISE_TASK_FILE".into(), task_file.display().to_string());
+        Self::insert_env_excluded_from_nested_mise_diff(
+            &mut env,
+            &mut nested_mise_diff_exclude_keys,
+            "MISE_TASK_FILE",
+            task_file.display().to_string(),
+        );
         if let Some(dir) = task_file.parent() {
-            env.insert("MISE_TASK_DIR".into(), dir.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_TASK_DIR",
+                dir.display().to_string(),
+            );
         }
         if let Some(config_root) = &task.config_root {
-            env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_CONFIG_ROOT",
+                config_root.display().to_string(),
+            );
         }
 
         // Ensure cache key exists for task subprocesses for nested mise invocations
         // This matches exec.rs behavior - enables caching for subprocesses
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();
-            env.insert("__MISE_ENV_CACHE_KEY".into(), key);
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "__MISE_ENV_CACHE_KEY",
+                key,
+            );
+        }
+
+        // Embed __MISE_DIFF so a nested `mise` invocation inside this task can
+        // recover the pristine env (and pristine PATH) instead of stacking our
+        // tool dirs on top of its own. Keep task-scoped vars out of the diff:
+        // nested `mise hook-env` should not unset variables that belong to the
+        // currently running task.
+        let env_for_diff = self.env_for_nested_mise_diff(&env, &nested_mise_diff_exclude_keys);
+        if let Ok(serialized) =
+            EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
+        {
+            env.insert("__MISE_DIFF".into(), serialized);
         }
 
         let timer = std::time::Instant::now();
@@ -361,6 +468,30 @@ impl TaskExecutor {
         save_checksum(task, config).await?;
 
         Ok(true)
+    }
+
+    fn insert_env_excluded_from_nested_mise_diff(
+        env: &mut BTreeMap<String, String>,
+        excluded_keys: &mut HashSet<String>,
+        key: &str,
+        value: String,
+    ) {
+        env.insert(key.to_string(), value);
+        if key != crate::env::PATH_KEY.as_str() {
+            excluded_keys.insert(key.to_string());
+        }
+    }
+
+    fn env_for_nested_mise_diff(
+        &self,
+        env: &BTreeMap<String, String>,
+        excluded_keys: &HashSet<String>,
+    ) -> BTreeMap<String, String> {
+        let mut env = env.clone();
+        for key in excluded_keys {
+            env.remove(key);
+        }
+        env
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -673,7 +804,23 @@ impl TaskExecutor {
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
-        let cmd = format!("$ {script} {args}", args = args.join(" ")).to_string();
+        // For display, skip leading shebang/blank/`set ...` boilerplate so
+        // the user sees the first real command instead of e.g.
+        // "#!/usr/bin/env bash" or "set -Eeuo pipefail".
+        let display_script = script
+            .lines()
+            .find(|line| {
+                let t = line.trim_start();
+                !t.is_empty() && !t.starts_with("#!") && t != "set" && !t.starts_with("set ")
+            })
+            .unwrap_or(script);
+        let args_str = args.join(" ");
+        let cmd = match (display_script.is_empty(), args_str.is_empty()) {
+            (true, true) => "$".to_string(),
+            (true, false) => format!("$ {args_str}"),
+            (false, true) => format!("$ {display_script}"),
+            (false, false) => format!("$ {display_script} {args_str}"),
+        };
         if !self.quiet(Some(task)) {
             let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
                 .bright()
@@ -854,16 +1001,23 @@ impl TaskExecutor {
         let program = program.to_executable();
         let redactions = config.redactions();
         let raw = self.raw(Some(task));
-        let sandbox = self.build_sandbox_for_task(task);
+        let sandbox = self.build_sandbox_for_task(task, &config).await?;
         let env = if sandbox.is_active() {
             Settings::get().ensure_experimental("sandbox")?;
             &sandbox.filter_env(env)
         } else {
             env
         };
+        // On Windows, when about to spawn a POSIX shell, resolve the program to
+        // an absolute path *before* converting PATH for the child. Otherwise the
+        // converted Unix-form PATH is also what Win32 CreateProcess uses to find
+        // the program, and `bash` cannot be located in `/c/...:/c/...` entries.
+        #[cfg(windows)]
+        let program = resolve_posix_shell_program_path(&program, env).unwrap_or(program);
+        let env = maybe_convert_env_for_msys_shell(Path::new(&program), env);
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
-            .envs(env)
+            .envs(env.as_ref())
             .redact(redactions.deref().clone())
             .raw(raw)
             .with_sandbox(sandbox);
@@ -1070,20 +1224,23 @@ impl TaskExecutor {
         if let Some(confirm) = &task.confirm
             && !Settings::get().yes
         {
-            let config_root = task.config_root.clone().unwrap_or_default();
-            let mut tera = crate::tera::get_tera(Some(&config_root));
-            let mut tera_ctx = task.tera_ctx(config).await?;
+            let message = if contains_template_syntax(confirm.message()) {
+                let config_root = task.config_root.clone().unwrap_or_default();
+                let mut tera = crate::tera::get_tera(Some(&config_root));
+                let mut tera_ctx = task.tera_ctx(config).await?;
 
-            // Add usage values from parsed environment
-            let mut usage_ctx = std::collections::HashMap::new();
-            for (key, value) in env {
-                if let Some(usage_key) = key.strip_prefix("usage_") {
-                    usage_ctx.insert(usage_key.to_string(), tera::Value::String(value.clone()));
+                // Add usage values from parsed environment
+                let mut usage_ctx = std::collections::HashMap::new();
+                for (key, value) in env {
+                    if let Some(usage_key) = key.strip_prefix("usage_") {
+                        usage_ctx.insert(usage_key.to_string(), tera::Value::String(value.clone()));
+                    }
                 }
-            }
-            tera_ctx.insert("usage", &usage_ctx);
-
-            let message = tera.render_str(confirm.message(), &tera_ctx)?;
+                tera_ctx.insert("usage", &usage_ctx);
+                render_str(&mut tera, confirm.message(), &tera_ctx)?
+            } else {
+                confirm.message().to_string()
+            };
             let default_yes = match confirm.default_value() {
                 Some(default) => Self::parse_confirm_default(default)?,
                 None => true, // keep backwards compatible default of yes if not specified
@@ -1171,6 +1328,175 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
     }
 }
 
+/// On Windows, when about to spawn a POSIX shell whose PATH we are about to
+/// convert to Unix form, resolve the program to its absolute path using the
+/// pre-conversion (Windows-form) PATH from the task env.
+///
+/// Why: `Command::spawn` on Windows uses the *child* env's PATH (when set via
+/// `.envs(...)`) to locate the program. If we hand it the converted
+/// `/c/foo:/d/bar` PATH, Win32 cannot find `bash.exe`. Resolving here means
+/// the child process gets an absolute path argument and does not need PATH
+/// search at the OS level.
+///
+/// For `bash` specifically, prefer a real POSIX bash (Git Bash / MSYS2) over
+/// the WSL launcher at `C:\Windows\System32\bash.exe`. The WSL launcher is on
+/// PATH first when mise is invoked from PowerShell, and routing into WSL means
+/// the spawned task body runs inside a separate Linux filesystem where
+/// mise-managed Windows tools aren't visible. Resolution order:
+///   1. `MISE_BASH_PATH` env var (explicit override).
+///   2. Common Git Bash and MSYS2 install locations
+///      (`C:\Program Files\Git\bin\bash.exe`,
+///      `C:\Program Files (x86)\Git\bin\bash.exe`,
+///      `%LOCALAPPDATA%\Programs\Git\bin\bash.exe`,
+///      `C:\msys64\usr\bin\bash.exe`, `C:\msys32\usr\bin\bash.exe`).
+///   3. `which::which_in_all` over the task env's PATH, picking the first
+///      entry that isn't the WSL launcher. This rescues setups where a real
+///      POSIX bash is on PATH but appears after `C:\Windows\System32`.
+///
+/// Returns `None` when the program is not a POSIX shell, the env has no PATH,
+/// the PATH is already in Unix form (no `;` and no `\`, so no conversion will
+/// fire), `which` finds nothing, or every PATH match for `bash` is the WSL
+/// launcher — in those cases the caller keeps the original program string and
+/// lets the stdlib spawn it (which will then fail loudly rather than silently
+/// routing into WSL).
+#[cfg(windows)]
+fn resolve_posix_shell_program_path(
+    program: &std::ffi::OsStr,
+    env: &BTreeMap<String, String>,
+) -> Option<std::ffi::OsString> {
+    if !crate::path::is_posix_shell_program(Path::new(program)) {
+        return None;
+    }
+    let path_val = env.get(&*crate::env::PATH_KEY)?;
+    if !path_val.contains(';') && !path_val.contains('\\') {
+        return None;
+    }
+
+    let is_bash = is_bash_basename(program);
+
+    if is_bash {
+        let override_path = env
+            .get("MISE_BASH_PATH")
+            .cloned()
+            .or_else(|| std::env::var("MISE_BASH_PATH").ok())
+            .filter(|s| !s.is_empty());
+        if let Some(p) = override_path {
+            let path = PathBuf::from(&p);
+            if path.is_file() {
+                return Some(path.into_os_string());
+            }
+            warn!("MISE_BASH_PATH={p} does not exist; falling back to other candidates");
+        }
+        for candidate in bash_candidates(env) {
+            if candidate.is_file() {
+                return Some(candidate.into_os_string());
+            }
+        }
+    }
+
+    let cwd = std::env::current_dir().ok()?;
+
+    if is_bash {
+        // For bash, walk every PATH match and pick the first that isn't the
+        // WSL launcher. This rescues setups where a real POSIX bash sits later
+        // on PATH than `C:\Windows\System32\bash.exe` — common under PowerShell
+        // when Git Bash is installed somewhere `bash_candidates` doesn't probe.
+        let mut all = which::which_in_all(program, Some(path_val.as_str()), cwd).ok()?;
+        if let Some(p) = all.find(|p| !is_wsl_launcher_bash(p)) {
+            return Some(p.into_os_string());
+        }
+        warn!(
+            "no real POSIX bash found on PATH (only the WSL launcher) when resolving bash for a task; \
+             install Git Bash or MSYS2, or set MISE_BASH_PATH to a real POSIX bash to silence this"
+        );
+        return None;
+    }
+
+    which::which_in(program, Some(path_val.as_str()), cwd)
+        .ok()
+        .map(|p| p.into_os_string())
+}
+
+/// Returns true if `program`'s basename (case-insensitive, `.exe` stripped) is `bash`.
+/// More specific than [`crate::path::is_posix_shell_program`], which also accepts
+/// sh/zsh/fish/ksh/dash. Used to scope the Windows bash-resolution heuristics so
+/// they don't fire for other POSIX shells we might gain support for later.
+#[cfg(windows)]
+fn is_bash_basename(program: &std::ffi::OsStr) -> bool {
+    crate::path::program_stem(Path::new(program)).as_deref() == Some("bash")
+}
+
+/// Common real-POSIX-bash install locations on Windows (Git Bash + MSYS2), in
+/// preference order. Pure given `env` (no filesystem access), so the caller
+/// stats each candidate. `MISE_BASH_PATH` covers anything outside this list,
+/// including non-`C:` drive installs.
+#[cfg(windows)]
+fn bash_candidates(env: &BTreeMap<String, String>) -> Vec<PathBuf> {
+    let mut candidates = vec![
+        PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
+        PathBuf::from(r"C:\Program Files (x86)\Git\bin\bash.exe"),
+    ];
+    let local_appdata = env
+        .get("LOCALAPPDATA")
+        .cloned()
+        .or_else(|| std::env::var("LOCALAPPDATA").ok());
+    if let Some(local) = local_appdata.filter(|s| !s.is_empty()) {
+        candidates.push(PathBuf::from(local).join(r"Programs\Git\bin\bash.exe"));
+    }
+    // MSYS2 standalone installs (default `C:\msys64`, 32-bit fallback `C:\msys32`).
+    candidates.push(PathBuf::from(r"C:\msys64\usr\bin\bash.exe"));
+    candidates.push(PathBuf::from(r"C:\msys32\usr\bin\bash.exe"));
+    candidates
+}
+
+/// Returns true if `path` looks like the Windows-shipped WSL launcher rather
+/// than a real POSIX bash. Matches `C:\Windows\System32\bash.exe` and the
+/// `WindowsApps\bash.exe` shim that App Execution Aliases install. Both
+/// dispatch into a WSL distribution's Linux userspace, which is the wrong
+/// place to run a task that uses mise-managed Windows tools.
+#[cfg(windows)]
+fn is_wsl_launcher_bash(path: &Path) -> bool {
+    let Some(s) = path.to_str() else {
+        return false;
+    };
+    let lower = s.to_ascii_lowercase().replace('/', "\\");
+    lower.ends_with(r"\windows\system32\bash.exe")
+        || lower.contains(r"\microsoft\windowsapps\bash.exe")
+}
+
+/// On Windows, when spawning a POSIX-style shell (bash/sh/zsh/...) for a task, the
+/// child needs PATH in MSYS Unix format — `/c/foo:/d/bar` rather than `C:\foo;D:\bar`.
+/// PowerShell-launched mise inherits no `MSYSTEM`, so the conversion has to happen
+/// here at the spawn boundary (driven by the target program), not in mise's own env.
+///
+/// The cfg-attribute pattern keeps the call site OS-agnostic and avoids cloning the
+/// env on the common path (Windows + non-POSIX-shell, or any non-Windows host).
+fn maybe_convert_env_for_msys_shell<'a>(
+    program: &Path,
+    env: &'a BTreeMap<String, String>,
+) -> std::borrow::Cow<'a, BTreeMap<String, String>> {
+    #[cfg(windows)]
+    {
+        if crate::path::is_posix_shell_program(program)
+            && let Some(path_val) = env.get(&*crate::env::PATH_KEY)
+            // Skip the clone+convert cycle when PATH is already in Unix form (no
+            // `;` separator, no `\` to translate). This is the common case when
+            // mise itself runs inside Git Bash and spawns another bash subshell.
+            && (path_val.contains(';') || path_val.contains('\\'))
+        {
+            let converted = crate::path::windows_path_list_to_unix(path_val);
+            let mut new_env = env.clone();
+            new_env.insert((*crate::env::PATH_KEY).to_string(), converted);
+            return std::borrow::Cow::Owned(new_env);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = program;
+    }
+    std::borrow::Cow::Borrowed(env)
+}
+
 /// Read the shebang from a file and parse it into a shell command.
 /// e.g. `#!/usr/bin/env bash` → `["bash"]`
 /// e.g. `#!/bin/bash` → `["/bin/bash"]`
@@ -1193,4 +1519,217 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
     };
     let args: Vec<String> = parts.map(|s| s.to_string()).collect();
     Some(once(shell.to_string()).chain(args).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_with_path(path: &str) -> BTreeMap<String, String> {
+        let mut env = BTreeMap::new();
+        env.insert((*crate::env::PATH_KEY).to_string(), path.to_string());
+        env.insert("OTHER".to_string(), "unchanged".to_string());
+        env
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_converts_for_bash() {
+        let env = env_with_path(r"C:\Users\me\.rustup\bin;D:\tools\bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/c/Users/me/.rustup/bin:/d/tools/bin"
+        );
+        assert_eq!(out.get("OTHER").unwrap(), "unchanged");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_skips_for_cmd() {
+        let env = env_with_path(r"C:\Users\me\.rustup\bin;D:\tools\bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("cmd.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            r"C:\Users\me\.rustup\bin;D:\tools\bin"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_full_path_to_bash() {
+        let env = env_with_path(r"C:\foo;D:\bar");
+        let out =
+            maybe_convert_env_for_msys_shell(Path::new(r"C:\Program Files\Git\bin\bash.exe"), &env);
+        assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/c/foo:/d/bar");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_borrows_when_path_already_unix() {
+        // PATH already in Unix form (no `;` and no `\`) — Cow stays Borrowed,
+        // env is not cloned. Common when mise runs from Git Bash itself.
+        let env = env_with_path("/c/foo:/d/bar:/usr/bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash.exe"), &env);
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/c/foo:/d/bar:/usr/bin"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_borrows_when_path_missing() {
+        // No PATH at all — also no clone.
+        let mut env = BTreeMap::new();
+        env.insert("OTHER".to_string(), "unchanged".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash.exe"), &env);
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_maybe_convert_env_for_msys_shell_noop_on_unix() {
+        let env = env_with_path("/usr/bin:/bin");
+        let out = maybe_convert_env_for_msys_shell(Path::new("bash"), &env);
+        assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/usr/bin:/bin");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_bash_basename_accepts_bash_variants() {
+        use std::ffi::OsStr;
+        assert!(is_bash_basename(OsStr::new("bash")));
+        assert!(is_bash_basename(OsStr::new("bash.exe")));
+        assert!(is_bash_basename(OsStr::new("BASH.EXE")));
+        assert!(is_bash_basename(OsStr::new(
+            r"C:\Program Files\Git\bin\bash.exe"
+        )));
+        assert!(is_bash_basename(OsStr::new("/usr/bin/bash")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_bash_basename_rejects_other_shells() {
+        use std::ffi::OsStr;
+        assert!(!is_bash_basename(OsStr::new("sh")));
+        assert!(!is_bash_basename(OsStr::new("zsh.exe")));
+        assert!(!is_bash_basename(OsStr::new("fish")));
+        assert!(!is_bash_basename(OsStr::new("dash")));
+        assert!(!is_bash_basename(OsStr::new("cmd.exe")));
+        assert!(!is_bash_basename(OsStr::new("bashfoo")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_wsl_launcher_bash_detects_system32() {
+        assert!(is_wsl_launcher_bash(Path::new(
+            r"C:\Windows\System32\bash.exe"
+        )));
+        assert!(is_wsl_launcher_bash(Path::new(
+            r"C:\WINDOWS\system32\bash.exe"
+        )));
+        assert!(is_wsl_launcher_bash(Path::new(
+            r"D:\Windows\System32\bash.exe"
+        )));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_wsl_launcher_bash_detects_windows_apps() {
+        assert!(is_wsl_launcher_bash(Path::new(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps\bash.exe"
+        )));
+        // Forward slashes still match — `which::which_in` may produce them.
+        assert!(is_wsl_launcher_bash(Path::new(
+            "C:/Users/me/AppData/Local/Microsoft/WindowsApps/bash.exe"
+        )));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_wsl_launcher_bash_accepts_real_bash() {
+        assert!(!is_wsl_launcher_bash(Path::new(
+            r"C:\Program Files\Git\bin\bash.exe"
+        )));
+        assert!(!is_wsl_launcher_bash(Path::new(
+            r"C:\Program Files\Git\usr\bin\bash.exe"
+        )));
+        assert!(!is_wsl_launcher_bash(Path::new(
+            r"C:\msys64\usr\bin\bash.exe"
+        )));
+        assert!(!is_wsl_launcher_bash(Path::new(
+            r"C:\Users\me\scoop\apps\git\current\bin\bash.exe"
+        )));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_bash_candidates_includes_program_files() {
+        let env = BTreeMap::new();
+        let candidates = bash_candidates(&env);
+        assert!(candidates.contains(&PathBuf::from(r"C:\Program Files\Git\bin\bash.exe")));
+        assert!(candidates.contains(&PathBuf::from(r"C:\Program Files (x86)\Git\bin\bash.exe")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_bash_candidates_includes_msys2() {
+        let env = BTreeMap::new();
+        let candidates = bash_candidates(&env);
+        assert!(candidates.contains(&PathBuf::from(r"C:\msys64\usr\bin\bash.exe")));
+        assert!(candidates.contains(&PathBuf::from(r"C:\msys32\usr\bin\bash.exe")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_bash_candidates_uses_localappdata_from_env() {
+        let mut env = BTreeMap::new();
+        env.insert(
+            "LOCALAPPDATA".to_string(),
+            r"C:\Users\me\AppData\Local".to_string(),
+        );
+        let candidates = bash_candidates(&env);
+        assert!(candidates.contains(&PathBuf::from(
+            r"C:\Users\me\AppData\Local\Programs\Git\bin\bash.exe"
+        )));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_uses_mise_bash_path_override() {
+        // SAFETY: tests in this module run sequentially within the cargo test runner;
+        // env mutation is scoped via a guard.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bash_path = tmp.path().join("custom-bash.exe");
+        std::fs::write(&bash_path, b"").expect("write fake bash");
+
+        let mut env = env_with_path(r"C:\Windows\System32;C:\Program Files\Git\bin");
+        env.insert(
+            "MISE_BASH_PATH".to_string(),
+            bash_path.to_string_lossy().into_owned(),
+        );
+
+        let resolved = resolve_posix_shell_program_path(std::ffi::OsStr::new("bash"), &env)
+            .expect("override should resolve");
+        assert_eq!(PathBuf::from(&resolved), bash_path);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_skips_when_not_posix_shell() {
+        let env = env_with_path(r"C:\Windows\System32");
+        assert!(resolve_posix_shell_program_path(std::ffi::OsStr::new("cmd.exe"), &env).is_none());
+        assert!(
+            resolve_posix_shell_program_path(std::ffi::OsStr::new("notepad.exe"), &env).is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_skips_when_path_already_unix() {
+        let env = env_with_path("/c/foo:/d/bar");
+        assert!(resolve_posix_shell_program_path(std::ffi::OsStr::new("bash"), &env).is_none());
+    }
 }

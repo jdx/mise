@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Verify that MISE_PROJECT_ROOT for a monorepo task is the directory of the
+# mise.toml that defined the task (the subproject root) regardless of the
+# working directory the task is invoked from, and that MISE_MONOREPO_ROOT is
+# set to the monorepo root.
+export MISE_EXPERIMENTAL=1
+
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
+
+[tasks.root-task]
+run = 'echo "PROJECT_ROOT=\$MISE_PROJECT_ROOT MONOREPO_ROOT=\$MISE_MONOREPO_ROOT"'
+EOF
+
+mkdir -p projects/frontend
+cat <<EOF >projects/frontend/mise.toml
+[tasks.show-roots]
+run = 'echo "PROJECT_ROOT=\$MISE_PROJECT_ROOT MONOREPO_ROOT=\$MISE_MONOREPO_ROOT"'
+EOF
+
+monorepo_root="$PWD"
+frontend_root="$PWD/projects/frontend"
+
+# Invoked from the monorepo root: PROJECT_ROOT must be the subproject's dir.
+output_from_root=$(mise run '//projects/frontend:show-roots')
+echo "from monorepo root: $output_from_root"
+assert_contains "echo $output_from_root" "PROJECT_ROOT=$frontend_root"
+assert_contains "echo $output_from_root" "MONOREPO_ROOT=$monorepo_root"
+
+# Invoked from an intermediate dir: same result.
+output_from_intermediate=$(cd projects && mise run '//projects/frontend:show-roots')
+echo "from projects/: $output_from_intermediate"
+assert_contains "echo $output_from_intermediate" "PROJECT_ROOT=$frontend_root"
+assert_contains "echo $output_from_intermediate" "MONOREPO_ROOT=$monorepo_root"
+
+# Invoked from inside the subproject: same result.
+output_from_inside=$(cd projects/frontend && mise run '//projects/frontend:show-roots')
+echo "from projects/frontend/: $output_from_inside"
+assert_contains "echo $output_from_inside" "PROJECT_ROOT=$frontend_root"
+assert_contains "echo $output_from_inside" "MONOREPO_ROOT=$monorepo_root"
+
+# Root-defined task: PROJECT_ROOT and MONOREPO_ROOT both point at the monorepo root.
+output_root_task=$(mise run //:root-task)
+echo "root task: $output_root_task"
+assert_contains "echo $output_root_task" "PROJECT_ROOT=$monorepo_root"
+assert_contains "echo $output_root_task" "MONOREPO_ROOT=$monorepo_root"
+
+# Global task invoked from a local project: MISE_PROJECT_ROOT must remain the
+# local project root, not the global config dir. Regression coverage for the
+# task-config-root fallback.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tasks.global-show-root]
+run = 'echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"'
+TOML
+
+output_global_task=$(mise run global-show-root)
+echo "global task from monorepo root: $output_global_task"
+assert_contains "echo $output_global_task" "PROJECT_ROOT=$monorepo_root"
+
+output_global_task_from_sub=$(cd projects/frontend && mise run global-show-root)
+echo "global task from subproject: $output_global_task_from_sub"
+# From inside the subproject the local project root is the subproject's mise.toml dir.
+assert_contains "echo $output_global_task_from_sub" "PROJECT_ROOT=$frontend_root"
+
+# Global *file* task (script under ~/.config/mise/tasks/) must also use the
+# local project root, not the global config dir. task.config_source for these
+# is the script path itself, which is why this case needs task.global rather
+# than is_global_config(&task.config_source).
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+cat >"$MISE_CONFIG_DIR/tasks/global-file-show-root" <<'SH'
+#!/usr/bin/env bash
+echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"
+SH
+chmod +x "$MISE_CONFIG_DIR/tasks/global-file-show-root"
+
+output_global_file_from_root=$(mise run global-file-show-root)
+echo "global file task from monorepo root: $output_global_file_from_root"
+assert_contains "echo $output_global_file_from_root" "PROJECT_ROOT=$monorepo_root"
+
+output_global_file_from_sub=$(cd projects/frontend && mise run global-file-show-root)
+echo "global file task from subproject: $output_global_file_from_sub"
+assert_contains "echo $output_global_file_from_sub" "PROJECT_ROOT=$frontend_root"

@@ -1,5 +1,6 @@
 use crate::github;
 use crate::tokens;
+use eyre::bail;
 
 /// Display the GitHub token mise will use for a given host
 ///
@@ -10,17 +11,41 @@ use crate::tokens;
 pub struct Github {
     /// GitHub hostname
     #[clap(default_value = "github.com")]
-    host: String,
+    pub(crate) host: String,
+
+    /// [experimental] Resolve only via the native GitHub OAuth source (cache,
+    /// refresh, or device-code flow), bypassing other token sources
+    #[clap(long)]
+    pub(crate) oauth: bool,
+
+    /// Print only the token value
+    #[clap(long)]
+    pub(crate) raw: bool,
 
     /// Show the full unmasked token
     #[clap(long)]
-    unmask: bool,
+    pub(crate) unmask: bool,
 }
 
 impl Github {
     pub fn run(self) -> eyre::Result<()> {
-        match github::resolve_token(&self.host) {
+        let resolved = if self.oauth {
+            Some((
+                github::oauth::token(github::oauth::TokenRequest {
+                    host: self.host.clone(),
+                    allow_device_flow: true,
+                })?,
+                github::TokenSource::GithubOauth,
+            ))
+        } else {
+            github::resolve_token(&self.host)
+        };
+        match resolved {
             Some((token, source)) => {
+                if self.raw {
+                    miseprintln!("{token}");
+                    return Ok(());
+                }
                 let display_token = if self.unmask {
                     token
                 } else {
@@ -29,6 +54,9 @@ impl Github {
                 miseprintln!("{}: {} (source: {})", self.host, display_token, source);
             }
             None => {
+                if self.raw {
+                    bail!("no GitHub token found for {}", self.host);
+                }
                 miseprintln!("{}: (none)", self.host);
             }
         }

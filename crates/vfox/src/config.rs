@@ -49,13 +49,13 @@ pub fn arch() -> String {
 // NOTE: This logic mirrors is_musl_system() in src/platform.rs. Keep in sync.
 #[cfg(target_os = "linux")]
 pub(crate) fn env_type() -> Option<String> {
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock as Lazy;
     static ENV_TYPE: Lazy<Option<String>> = Lazy::new(|| {
         // Allow explicit override via environment variable (only gnu/musl accepted)
         if let Ok(val) = std::env::var("MISE_LIBC") {
             match val.to_lowercase().as_str() {
                 "musl" => return Some("musl".to_string()),
-                "gnu" => return Some("gnu".to_string()),
+                "glibc" | "gnu" => return Some("gnu".to_string()),
                 _ => {} // invalid value ignored, fall through to runtime detection
             }
         }

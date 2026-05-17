@@ -19,10 +19,10 @@ EOF
 # "check" fails -> "deploy" never runs -> "cleanup" (depends_post) should NOT run
 output="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 mise run deploy 2>&1)" || true
 if [[ $output == *"cleanup-should-not-run"* ]]; then
-	fail "depends_post ran even though pre-dependency failed and main task never executed"
+  fail "depends_post ran even though pre-dependency failed and main task never executed"
 fi
 if [[ $output == *"deploying"* ]]; then
-	fail "main task ran even though pre-dependency failed"
+  fail "main task ran even though pre-dependency failed"
 fi
 assert_contains "echo '$output'" "check-failed"
 ok "depends_post correctly skipped when pre-dependency fails"
