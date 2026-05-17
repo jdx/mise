@@ -71,12 +71,16 @@ impl TaskOutputForwarder {
             let mut record = logger.create_log_record();
             record.set_timestamp(now);
             record.set_observed_timestamp(now);
+            // stderr is mapped to WARN rather than ERROR: many tools write
+            // diagnostics, progress, and compiler warnings to stderr that
+            // are not actual errors. Real failure is conveyed by the task
+            // span status / `process.exit.code` attribute.
             record.set_severity_number(if is_stderr {
-                Severity::Error
+                Severity::Warn
             } else {
                 Severity::Info
             });
-            record.set_severity_text(if is_stderr { "ERROR" } else { "INFO" });
+            record.set_severity_text(if is_stderr { "WARN" } else { "INFO" });
             record.set_body(opentelemetry::logs::AnyValue::String(
                 line.to_string().into(),
             ));
@@ -244,7 +248,7 @@ mod tests {
             .expect("missing stderr log");
 
         assert_eq!(stdout.0.severity_text(), Some("INFO"));
-        assert_eq!(stderr.0.severity_text(), Some("ERROR"));
+        assert_eq!(stderr.0.severity_text(), Some("WARN"));
         assert_eq!(
             stdout.0.trace_context().map(|cx| cx.trace_id),
             Some(trace_id)

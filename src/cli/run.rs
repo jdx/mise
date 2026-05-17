@@ -486,7 +486,7 @@ impl Run {
         if let Some(ref t) = telemetry {
             self.span_tracker = Some(t.span_tracker.clone());
             if let Some(ref mut executor) = self.executor {
-                executor.output_forwarder = Some(t.output_forwarder.clone());
+                executor.output_forwarder = t.output_forwarder.clone();
             }
         }
 

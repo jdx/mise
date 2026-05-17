@@ -12,18 +12,33 @@ use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::runtime;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
-/// Check if OpenTelemetry export is enabled.
+/// Check if OpenTelemetry trace export is enabled.
 ///
-/// Requires `otel.enabled = true` (or `MISE_OTEL_ENABLED=1`) AND at least
-/// one OTLP endpoint configured via the standard `OTEL_EXPORTER_OTLP_*`
-/// env vars. This prevents mise from unexpectedly emitting spans in
-/// environments that set those vars for other tools.
-pub fn is_enabled() -> bool {
+/// Requires `otel.enabled = true` (or `MISE_OTEL_ENABLED=1`) AND a traces
+/// endpoint configured via `OTEL_EXPORTER_OTLP_ENDPOINT` or the
+/// signal-specific `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`. This prevents
+/// mise from emitting spans in environments that set those vars for
+/// other tools.
+pub fn traces_enabled() -> bool {
     if !Settings::get().otel.enabled {
         return false;
     }
     std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok()
         || std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").is_ok()
+}
+
+/// Check if OpenTelemetry log export is enabled.
+///
+/// Log export is a separate opt-in from trace export because task
+/// stdout/stderr is shipped to the collector — a different trust boundary
+/// than spans. Requires `otel.logs = true` (or `MISE_OTEL_LOGS=1`) AND a
+/// logs endpoint configured via `OTEL_EXPORTER_OTLP_ENDPOINT` or the
+/// signal-specific `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`.
+pub fn logs_enabled() -> bool {
+    if !Settings::get().otel.logs {
+        return false;
+    }
+    std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok()
         || std::env::var("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").is_ok()
 }
 

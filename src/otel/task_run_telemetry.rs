@@ -6,7 +6,7 @@
 //! `task_executor` don't have to reach into OTEL internals.
 
 use crate::otel::task_span_tracker::StartedSpan;
-use crate::otel::{TaskOutputForwarder, TaskSpanTracker, is_enabled};
+use crate::otel::{TaskOutputForwarder, TaskSpanTracker, logs_enabled, traces_enabled};
 use crate::task::Task;
 use eyre::Result;
 use opentelemetry::propagation::TextMapPropagator;
@@ -22,8 +22,12 @@ use std::time::SystemTime;
 /// All OpenTelemetry state attached to a single `mise run` invocation.
 ///
 /// - `span_tracker` is cheaply clonable and can be passed to per-task code.
-/// - `output_forwarder` is cheaply clonable and is installed on the
-///   task executor so it can forward stdout/stderr lines.
+///   When trace export is disabled, the underlying tracer provider has no
+///   exporter — IDs are still generated so log records can carry trace
+///   context, but no spans leave the process.
+/// - `output_forwarder` is `Some` only when log export is explicitly
+///   opted in via `otel.logs`. When present, it is installed on the task
+///   executor so it can forward stdout/stderr lines.
 ///
 /// Implements `Drop` to flush logs and emit spans, so traces are
 /// captured even when the future is cancelled (e.g. by `--timeout`).
@@ -31,18 +35,26 @@ use std::time::SystemTime;
 /// the happy path to mark the root span as OK.
 pub struct TaskRunTelemetry {
     pub span_tracker: TaskSpanTracker,
-    pub output_forwarder: TaskOutputForwarder,
+    pub output_forwarder: Option<TaskOutputForwarder>,
     has_failures: std::sync::atomic::AtomicBool,
 }
 
 impl TaskRunTelemetry {
     /// Initialize a `TaskRunTelemetry` if otel is configured.
     ///
+    /// Traces and logs are gated independently:
+    /// - traces require `otel.enabled = true` and a traces endpoint
+    /// - logs require `otel.logs = true` and a logs endpoint
+    ///
+    /// Returns `None` when neither signal is enabled.
+    ///
     /// When mise is invoked from another mise run (or any OTEL-aware
     /// parent), the `TRACEPARENT` env var carries W3C Traceparent so
     /// the nested run joins the same distributed trace.
     pub fn init_if_enabled(requested_task_names: &[String]) -> Option<Self> {
-        if !is_enabled() {
+        let traces = traces_enabled();
+        let logs = logs_enabled();
+        if !traces && !logs {
             return None;
         }
         let suffix = if requested_task_names.is_empty() {
@@ -53,8 +65,21 @@ impl TaskRunTelemetry {
         let root_span_name = format!("mise run{suffix}");
 
         let resource = crate::otel::build_resource();
-        let tracer_provider = crate::otel::build_tracer_provider(resource.clone())?;
-        let logger_provider = crate::otel::build_logger_provider(resource);
+        let tracer_provider = if traces {
+            crate::otel::build_tracer_provider(resource.clone())?
+        } else {
+            // Logs-only mode: span tracker still needs a provider for ID
+            // generation so log records can carry trace context. Build a
+            // no-export provider — spans never leave the process.
+            opentelemetry_sdk::trace::SdkTracerProvider::builder()
+                .with_resource(resource.clone())
+                .build()
+        };
+        let output_forwarder = if logs {
+            crate::otel::build_logger_provider(resource).map(TaskOutputForwarder::new)
+        } else {
+            None
+        };
 
         let span_tracker = match parse_otel_context() {
             Some(parent_span_context) => TaskSpanTracker::from_parent_context(
@@ -63,15 +88,6 @@ impl TaskRunTelemetry {
                 tracer_provider,
             ),
             _ => TaskSpanTracker::new(&root_span_name, tracer_provider),
-        };
-        let output_forwarder = match logger_provider {
-            Some(lp) => TaskOutputForwarder::new(lp),
-            None => {
-                // If no logs URL is configured, create a no-op provider
-                TaskOutputForwarder::new(
-                    opentelemetry_sdk::logs::SdkLoggerProvider::builder().build(),
-                )
-            }
         };
         Some(Self {
             span_tracker,
@@ -92,8 +108,11 @@ impl TaskRunTelemetry {
 impl Drop for TaskRunTelemetry {
     fn drop(&mut self) {
         let has_failures = *self.has_failures.get_mut();
-        // Shutdown the output forwarder first to flush all pending log batches.
-        self.output_forwarder.shutdown();
+        // Shutdown the output forwarder first (if present) to flush all
+        // pending log batches.
+        if let Some(forwarder) = self.output_forwarder.as_ref() {
+            forwarder.shutdown();
+        }
         // Then finish the trace which emits root/group spans and shuts down
         // the tracer provider.
         self.span_tracker.finish(has_failures);
@@ -285,8 +304,9 @@ mod tests {
             .with_span_processor(SimpleSpanProcessor::new(exporter.clone()))
             .build();
         let span_tracker = TaskSpanTracker::new("mise run //ci", provider);
-        let output_forwarder =
-            TaskOutputForwarder::new(opentelemetry_sdk::logs::SdkLoggerProvider::builder().build());
+        let output_forwarder = Some(TaskOutputForwarder::new(
+            opentelemetry_sdk::logs::SdkLoggerProvider::builder().build(),
+        ));
         let t = TaskRunTelemetry {
             span_tracker,
             output_forwarder,

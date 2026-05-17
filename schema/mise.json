@@ -1361,7 +1361,12 @@
           "properties": {
             "enabled": {
               "default": false,
-              "description": "[experimental] Enable OpenTelemetry export for task traces.",
+              "description": "[experimental] Enable OpenTelemetry trace export for task executions.",
+              "type": "boolean"
+            },
+            "logs": {
+              "default": false,
+              "description": "[experimental] Enable OpenTelemetry log export for task stdout/stderr.",
               "type": "boolean"
             }
           }
