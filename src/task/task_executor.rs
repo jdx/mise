@@ -270,15 +270,36 @@ impl TaskExecutor {
             task.name,
             env_render_start.elapsed().as_millis()
         );
+        let mut nested_mise_diff_exclude_keys: HashSet<String> = task_env
+            .iter()
+            .map(|(key, _)| key.clone())
+            .filter(|key| key.as_str() != crate::env::PATH_KEY.as_str())
+            .chain(once("__MISE_DIFF".to_string()))
+            .collect();
         if !self.timings {
-            env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_TASK_TIMINGS",
+                "0".to_string(),
+            );
         }
         // Propagate MISE_ENV to child tasks so -E flag works for nested mise invocations
         if !crate::env::MISE_ENV.is_empty() {
-            env.insert("MISE_ENV".to_string(), crate::env::MISE_ENV.join(","));
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_ENV",
+                crate::env::MISE_ENV.join(","),
+            );
         }
         if let Some(cwd) = &*crate::dirs::CWD {
-            env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_ORIGINAL_CWD",
+                cwd.display().to_string(),
+            );
         }
         // Prefer the task's own config_root so MISE_PROJECT_ROOT is the directory of the
         // mise.toml that defined the task. This keeps the value stable regardless of the
@@ -296,40 +317,74 @@ impl TaskExecutor {
             task.config_root.clone().or(config.project_root.clone())
         };
         if let Some(root) = project_root {
-            env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_PROJECT_ROOT",
+                root.display().to_string(),
+            );
         }
         if let Some(monorepo_root) = config.monorepo_root() {
-            env.insert(
-                "MISE_MONOREPO_ROOT".into(),
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_MONOREPO_ROOT",
                 monorepo_root.display().to_string(),
             );
         }
-        env.insert("MISE_TASK_NAME".into(), task.name.clone());
+        Self::insert_env_excluded_from_nested_mise_diff(
+            &mut env,
+            &mut nested_mise_diff_exclude_keys,
+            "MISE_TASK_NAME",
+            task.name.clone(),
+        );
         let task_file = task
             .file_path(config)
             .await?
             .unwrap_or(task.config_source.clone());
-        env.insert("MISE_TASK_FILE".into(), task_file.display().to_string());
+        Self::insert_env_excluded_from_nested_mise_diff(
+            &mut env,
+            &mut nested_mise_diff_exclude_keys,
+            "MISE_TASK_FILE",
+            task_file.display().to_string(),
+        );
         if let Some(dir) = task_file.parent() {
-            env.insert("MISE_TASK_DIR".into(), dir.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_TASK_DIR",
+                dir.display().to_string(),
+            );
         }
         if let Some(config_root) = &task.config_root {
-            env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_CONFIG_ROOT",
+                config_root.display().to_string(),
+            );
         }
 
         // Ensure cache key exists for task subprocesses for nested mise invocations
         // This matches exec.rs behavior - enables caching for subprocesses
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();
-            env.insert("__MISE_ENV_CACHE_KEY".into(), key);
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "__MISE_ENV_CACHE_KEY",
+                key,
+            );
         }
 
         // Embed __MISE_DIFF so a nested `mise` invocation inside this task can
         // recover the pristine env (and pristine PATH) instead of stacking our
-        // tool dirs on top of its own. Without this, nested `mise -C <new> exec`
-        // would inherit our tool dirs as user-pre-PATH and they would outrank
-        // the inner toolset's resolved tool. See discussion #9754.
-        if let Ok(serialized) = EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env).serialize()
+        // tool dirs on top of its own. Keep task-scoped vars out of the diff:
+        // nested `mise hook-env` should not unset variables that belong to the
+        // currently running task.
+        let env_for_diff = self.env_for_nested_mise_diff(&env, &nested_mise_diff_exclude_keys);
+        if let Ok(serialized) =
+            EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
         {
             env.insert("__MISE_DIFF".into(), serialized);
         }
@@ -413,6 +468,30 @@ impl TaskExecutor {
         save_checksum(task, config).await?;
 
         Ok(true)
+    }
+
+    fn insert_env_excluded_from_nested_mise_diff(
+        env: &mut BTreeMap<String, String>,
+        excluded_keys: &mut HashSet<String>,
+        key: &str,
+        value: String,
+    ) {
+        env.insert(key.to_string(), value);
+        if key != crate::env::PATH_KEY.as_str() {
+            excluded_keys.insert(key.to_string());
+        }
+    }
+
+    fn env_for_nested_mise_diff(
+        &self,
+        env: &BTreeMap<String, String>,
+        excluded_keys: &HashSet<String>,
+    ) -> BTreeMap<String, String> {
+        let mut env = env.clone();
+        for key in excluded_keys {
+            env.remove(key);
+        }
+        env
     }
 
     #[allow(clippy::too_many_arguments)]
