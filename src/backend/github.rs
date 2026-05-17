@@ -1148,10 +1148,8 @@ impl UnifiedGitBackend {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
 
-            let asset = release
-                .assets
-                .into_iter()
-                .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+            let asset = self
+                .pick_by_pattern(release.assets, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
                         "No matching asset found for pattern: {}\nAvailable assets: {}",
@@ -1239,11 +1237,8 @@ impl UnifiedGitBackend {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
 
-            let asset = release
-                .assets
-                .links
-                .into_iter()
-                .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+            let asset = self
+                .pick_by_pattern(release.assets.links, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
                         "No matching asset found for pattern: {}\nAvailable assets: {}",
@@ -1328,10 +1323,8 @@ impl UnifiedGitBackend {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
 
-            let asset = release
-                .assets
-                .into_iter()
-                .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+            let asset = self
+                .pick_by_pattern(release.assets, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
                         "No matching asset found for pattern: {}\nAvailable assets: {}",
@@ -1400,19 +1393,39 @@ impl UnifiedGitBackend {
             })
     }
 
-    fn matches_pattern(&self, asset_name: &str, pattern: &str) -> bool {
-        // Simple pattern matching - convert glob-like pattern to regex
+    /// Picks the best asset from `assets` whose name matches `pattern`.
+    ///
+    /// When a pattern matches more than one asset (e.g. `*linux*64` matching both
+    /// `cloudflared-linux-amd64` and `cloudflared-fips-linux-amd64`), prefer the
+    /// shortest name, then lexicographic order for determinism. Mirrors the
+    /// tiebreaker used by auto-detection.
+    /// See: https://github.com/jdx/mise/discussions/9358
+    fn pick_by_pattern<T, I, F>(&self, assets: I, pattern: &str, name_of: F) -> Option<T>
+    where
+        I: IntoIterator<Item = T>,
+        F: Fn(&T) -> &str,
+    {
+        // Compile the regex once instead of recompiling per asset.
         let regex_pattern = pattern
             .replace(".", "\\.")
             .replace("*", ".*")
             .replace("?", ".");
+        let re = Regex::new(&format!("^{regex_pattern}$")).ok();
 
-        if let Ok(re) = Regex::new(&format!("^{regex_pattern}$")) {
-            re.is_match(asset_name)
-        } else {
-            // Fallback to simple contains check
-            asset_name.contains(pattern)
-        }
+        assets
+            .into_iter()
+            .filter(|a| {
+                let name = name_of(a);
+                match &re {
+                    Some(re) => re.is_match(name),
+                    None => name.contains(pattern),
+                }
+            })
+            .min_by(|a, b| {
+                let na = name_of(a);
+                let nb = name_of(b);
+                na.len().cmp(&nb.len()).then_with(|| na.cmp(nb))
+            })
     }
 
     fn strip_version_prefix(&self, tag_name: &str, opts: &GitBackendOptions<'_>) -> String {
@@ -2028,10 +2041,60 @@ mod tests {
     }
 
     #[test]
-    fn test_pattern_matching() {
+    fn test_pick_by_pattern_basic() {
+        // Single-match cases that the old `matches_pattern` test covered.
         let backend = create_test_backend();
-        assert!(backend.matches_pattern("test-v1.0.0.zip", "test-*"));
-        assert!(!backend.matches_pattern("other-v1.0.0.zip", "test-*"));
+        let matches = |asset: &str, pat: &str| {
+            backend
+                .pick_by_pattern(vec![asset.to_string()], pat, |s| s.as_str())
+                .is_some()
+        };
+        assert!(matches("test-v1.0.0.zip", "test-*"));
+        assert!(!matches("other-v1.0.0.zip", "test-*"));
+    }
+
+    #[test]
+    fn test_pick_by_pattern_shortest_match_wins() {
+        // When asset_pattern matches more than one asset, prefer the shortest
+        // (then lexicographic for determinism). Mirrors the auto-detection
+        // tiebreaker so users don't get the GitHub-API-order asset on a
+        // broad pattern like `*linux*64`.
+        // See: https://github.com/jdx/mise/discussions/9358
+        let backend = create_test_backend();
+        let assets = vec![
+            "cloudflared-fips-linux-amd64".to_string(),
+            "cloudflared-linux-amd64".to_string(),
+        ];
+        let picked = backend.pick_by_pattern(assets.clone(), "*linux*64", |s| s.as_str());
+        assert_eq!(picked.as_deref(), Some("cloudflared-linux-amd64"));
+
+        // Order-independent.
+        let assets_reordered = vec![
+            "cloudflared-linux-amd64".to_string(),
+            "cloudflared-fips-linux-amd64".to_string(),
+        ];
+        let picked = backend.pick_by_pattern(assets_reordered, "*linux*64", |s| s.as_str());
+        assert_eq!(picked.as_deref(), Some("cloudflared-linux-amd64"));
+    }
+
+    #[test]
+    fn test_pick_by_pattern_no_match() {
+        let backend = create_test_backend();
+        let assets = vec!["a.zip".to_string(), "b.zip".to_string()];
+        let picked = backend.pick_by_pattern(assets, "c.zip", |s| s.as_str());
+        assert!(picked.is_none());
+    }
+
+    #[test]
+    fn test_pick_by_pattern_exact_match() {
+        // Anchored pattern with no wildcards only matches one asset.
+        let backend = create_test_backend();
+        let assets = vec![
+            "cloudflared-fips-linux-amd64".to_string(),
+            "cloudflared-linux-amd64".to_string(),
+        ];
+        let picked = backend.pick_by_pattern(assets, "cloudflared-linux-amd64", |s| s.as_str());
+        assert_eq!(picked.as_deref(), Some("cloudflared-linux-amd64"));
     }
 
     #[test]
