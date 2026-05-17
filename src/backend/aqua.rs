@@ -10,7 +10,7 @@ use crate::config::Settings;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{GithubAttestationsStatus, PlatformInfo, ProvenanceType};
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -781,23 +781,33 @@ impl Backend for AquaBackend {
 
         // Detect provenance from aqua registry config
         let mut provenance = self.detect_provenance_type(&pkg);
-        let mut github_attestations = None;
-
         if matches!(provenance, Some(ProvenanceType::GithubAttestations))
             && let Some(digest) = checksum.as_deref().filter(|d| d.starts_with("sha256:"))
         {
             match self.detect_github_attestations(&pkg, digest).await {
                 Ok(true) => {}
                 Ok(false) => {
-                    github_attestations = Some(GithubAttestationsStatus::Unavailable);
                     provenance = self.detect_non_github_provenance_type(&pkg);
                 }
                 Err(e) => {
+                    if Settings::get().provenance_api_failures_fatal
+                        || !crate::github::sigstore::is_api_failure(match &e {
+                            crate::github::sigstore::DetectError::SourceCreation(e)
+                            | crate::github::sigstore::DetectError::Fetch(e) => e,
+                        })
+                    {
+                        return Err(eyre!("{e}")).wrap_err_with(|| {
+                            format!(
+                                "GitHub attestation API query failed for {}/{}",
+                                pkg.repo_owner, pkg.repo_name
+                            )
+                        });
+                    }
                     warn!(
-                        "GitHub attestation API query failed for {}/{}: {e}. \
-                         Lockfile may not record github-attestations provenance.",
+                        "GitHub attestation API query failed for {}/{}, skipping attestation provenance: {e}",
                         pkg.repo_owner, pkg.repo_name
                     );
+                    provenance = self.detect_non_github_provenance_type(&pkg);
                 }
             }
         }
@@ -840,9 +850,8 @@ impl Backend for AquaBackend {
                 )
                 .await
             {
-                Ok((verified, gh_status)) => {
+                Ok(verified) => {
                     provenance = verified;
-                    github_attestations = gh_status;
                 }
                 Err(e) => {
                     // Clear provenance so install-time verification will run.
@@ -857,15 +866,11 @@ impl Backend for AquaBackend {
                 }
             }
         }
-        if provenance.is_some() {
-            github_attestations = None;
-        }
-
         Ok(PlatformInfo {
             url,
             checksum,
             provenance,
-            github_attestations,
+            github_attestations: None,
             ..Default::default()
         })
     }
@@ -1051,7 +1056,11 @@ impl AquaBackend {
         None
     }
 
-    async fn detect_github_attestations(&self, pkg: &AquaPackage, digest: &str) -> Result<bool> {
+    async fn detect_github_attestations(
+        &self,
+        pkg: &AquaPackage,
+        digest: &str,
+    ) -> std::result::Result<bool, crate::github::sigstore::DetectError> {
         crate::github::sigstore::detect_attestations(
             &pkg.repo_owner,
             &pkg.repo_name,
@@ -1059,7 +1068,6 @@ impl AquaBackend {
             digest,
         )
         .await
-        .map_err(|e| eyre!("{e}"))
     }
 
     /// Verify provenance at lock time by downloading the artifact to a temp directory
@@ -1071,7 +1079,7 @@ impl AquaBackend {
         v: &str,
         artifact_url: &str,
         detected: &ProvenanceType,
-    ) -> Result<(Option<ProvenanceType>, Option<GithubAttestationsStatus>)> {
+    ) -> Result<Option<ProvenanceType>> {
         let tmp_dir = tempfile::tempdir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
@@ -1090,28 +1098,23 @@ impl AquaBackend {
                     .await?
                 {
                     GithubAttestationStatus::Verified => {
-                        Ok((Some(ProvenanceType::GithubAttestations), None))
+                        Ok(Some(ProvenanceType::GithubAttestations))
                     }
-                    GithubAttestationStatus::Unavailable => {
-                        Ok((None, Some(GithubAttestationsStatus::Unavailable)))
-                    }
+                    GithubAttestationStatus::Unavailable => Ok(None),
                 }
             }
             ProvenanceType::Slsa { .. } => {
                 let provenance_url = self
                     .run_slsa_check(&artifact_path, pkg, v, tmp_dir.path(), None)
                     .await?;
-                Ok((
-                    Some(ProvenanceType::Slsa {
-                        url: Some(provenance_url),
-                    }),
-                    None,
-                ))
+                Ok(Some(ProvenanceType::Slsa {
+                    url: Some(provenance_url),
+                }))
             }
             ProvenanceType::Minisign => {
                 self.run_minisign_check(&artifact_path, &filename, pkg, v, tmp_dir.path(), None)
                     .await?;
-                Ok((Some(ProvenanceType::Minisign), None))
+                Ok(Some(ProvenanceType::Minisign))
             }
             ProvenanceType::Cosign => {
                 if let Some(cosign) = Self::binary_cosign_config(pkg) {
@@ -1127,7 +1130,7 @@ impl AquaBackend {
                     self.run_cosign_check(&checksum_path, cosign, pkg, v, tmp_dir.path(), None)
                         .await?;
                 }
-                Ok((Some(ProvenanceType::Cosign), None))
+                Ok(Some(ProvenanceType::Cosign))
             }
         }
     }
@@ -1168,6 +1171,16 @@ impl AquaBackend {
                 "GitHub artifact attestations verification returned false"
             )),
             Err(crate::github::sigstore::AttestationError::NoAttestations) => {
+                Ok(GithubAttestationStatus::Unavailable)
+            }
+            Err(e)
+                if !Settings::get().provenance_api_failures_fatal
+                    && crate::github::sigstore::is_api_failure(&e) =>
+            {
+                warn!(
+                    "GitHub artifact attestations API failed for {}/{}; skipping attestation provenance: {e}",
+                    pkg.repo_owner, pkg.repo_name
+                );
                 Ok(GithubAttestationStatus::Unavailable)
             }
             Err(e) => Err(eyre!(
@@ -1847,23 +1860,16 @@ impl AquaBackend {
         // Check if the lockfile expects provenance for this platform, then clear it
         // so we can detect whether verification actually re-set it
         let platform_key = self.get_platform_key();
-        let skip_cached_absent_attestations = !Settings::get().force_provenance_verify()
-            && tv
-                .lock_platforms
-                .get(&platform_key)
-                .is_some_and(PlatformInfo::has_checksum_and_github_attestations_unavailable);
         let locked_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
         let expected_provenance = locked_provenance.as_ref();
-        let mut github_attestations_unavailable = skip_cached_absent_attestations;
 
         // When the lockfile specifies a provenance type, only run that specific mechanism.
         // This prevents false-positive downgrade errors when a tool supports multiple mechanisms
         // (e.g., both minisign and cosign) that would otherwise compete for the provenance slot.
-        let skip_attestations = skip_cached_absent_attestations
-            || expected_provenance.is_some_and(|l| !l.is_github_attestations());
+        let skip_attestations = expected_provenance.is_some_and(|l| !l.is_github_attestations());
         let skip_slsa = expected_provenance.is_some_and(|l| !l.is_slsa());
         let skip_minisign = expected_provenance.is_some_and(|l| !l.is_minisign());
         let skip_cosign = expected_provenance.is_some_and(|l| !l.is_cosign());
@@ -1880,9 +1886,7 @@ impl AquaBackend {
                         pi.provenance = Some(ProvenanceType::GithubAttestations);
                     }
                 }
-                GithubAttestationStatus::Unavailable => {
-                    github_attestations_unavailable = true;
-                }
+                GithubAttestationStatus::Unavailable => {}
             }
         }
         if !skip_slsa {
@@ -1974,15 +1978,6 @@ impl AquaBackend {
                 let platform_key = self.get_platform_key();
                 let platform_info = tv.lock_platforms.entry(platform_key).or_default();
                 platform_info.checksum = Some(checksum_val);
-            }
-        }
-        if github_attestations_unavailable {
-            let platform_key = self.get_platform_key();
-            if let Some(pi) = tv.lock_platforms.get_mut(&platform_key)
-                && pi.checksum.is_some()
-                && pi.provenance.is_none()
-            {
-                pi.github_attestations = Some(GithubAttestationsStatus::Unavailable);
             }
         }
         if let Some(pi) = tv.lock_platforms.get_mut(&platform_key)

@@ -5,7 +5,7 @@ use heck::ToKebabCase;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
 use tokio::sync::RwLock;
 
@@ -140,12 +140,7 @@ impl Backend for VfoxBackend {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
         let (mut vfox, log_rx) = self.plugin.vfox()?;
-        thread::spawn(|| {
-            for line in log_rx {
-                // TODO: put this in ctx.pr.set_message()
-                info!("{}", line);
-            }
-        });
+        Self::forward_plugin_logs(log_rx);
         if let Ok(dep_env) = self.dependency_env(&ctx.config).await {
             vfox.cmd_env = Some(dep_env.into_iter().collect());
         }
@@ -288,11 +283,7 @@ impl Backend for VfoxBackend {
         }
 
         let (mut vfox, log_rx) = self.plugin.vfox()?;
-        thread::spawn(|| {
-            for line in log_rx {
-                info!("{}", line);
-            }
-        });
+        Self::forward_plugin_logs(log_rx);
         if let Ok(dep_env) = self.dependency_env(config).await {
             vfox.cmd_env = Some(dep_env.into_iter().collect());
         }
@@ -367,6 +358,15 @@ impl Backend for VfoxBackend {
 }
 
 impl VfoxBackend {
+    fn forward_plugin_logs(log_rx: mpsc::Receiver<String>) {
+        thread::spawn(move || {
+            for line in log_rx {
+                // TODO: put this in ctx.pr.set_message()
+                info!("{}", line);
+            }
+        });
+    }
+
     fn is_backend_plugin(&self) -> bool {
         matches!(&self.plugin_enum, PluginEnum::VfoxBackend(_))
     }

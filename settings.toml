@@ -1740,6 +1740,22 @@ hide = true
 optional = true
 type = "String"
 
+[provenance_api_failures_fatal]
+default = true
+description = "Fail when provenance API checks cannot be completed."
+docs = """
+When enabled, mise treats provenance API failures as install errors. This keeps
+provenance strict by default: if a remote attestation or release-provenance API
+cannot be reached or queried, mise will fail instead of silently installing
+without provenance.
+
+Set this to `false` to warn and continue when provenance API checks fail. This
+does not ignore checksum failures, provenance verification mismatches, or
+lockfiles that already require provenance for the tool being installed.
+"""
+env = "MISE_PROVENANCE_API_FAILURES_FATAL"
+type = "Bool"
+
 [python.compile]
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
 docs = """

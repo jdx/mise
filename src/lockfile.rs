@@ -263,19 +263,11 @@ impl PlatformInfo {
             && self.url_api.is_none()
             && self.conda_deps.is_none()
             && self.provenance.is_none()
-            && self.github_attestations.is_none()
     }
 
     /// True when the lockfile has checksum-backed, successfully verified provenance.
     pub fn has_checksum_and_verified_provenance(&self) -> bool {
         self.checksum.is_some() && self.provenance.is_some()
-    }
-
-    /// True when the lockfile records that GitHub attestations were checked and absent.
-    pub fn has_checksum_and_github_attestations_unavailable(&self) -> bool {
-        self.checksum.is_some()
-            && self.provenance.is_none()
-            && self.github_attestations == Some(GithubAttestationsStatus::Unavailable)
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
@@ -325,14 +317,6 @@ impl PlatformInfo {
             (Some(a), Some(b)) => Some(a.merge(b)),
             (a, b) => a.or(b),
         };
-        let github_attestations = if provenance.is_some() {
-            None
-        } else if url_changed {
-            self.github_attestations
-        } else {
-            self.github_attestations.or(other.github_attestations)
-        };
-
         PlatformInfo {
             checksum,
             size,
@@ -340,7 +324,7 @@ impl PlatformInfo {
             url_api,
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
             provenance,
-            github_attestations,
+            github_attestations: None,
         }
     }
 }
@@ -479,14 +463,6 @@ impl From<PlatformInfo> for toml::Value {
                     table.insert("provenance".to_string(), provenance.to_string().into());
                 }
             }
-        }
-        if platform_info.provenance.is_none()
-            && let Some(github_attestations) = platform_info.github_attestations
-        {
-            table.insert(
-                "github_attestations".to_string(),
-                github_attestations.to_string().into(),
-            );
         }
         toml::Value::Table(table)
     }
@@ -829,17 +805,6 @@ impl Lockfile {
                     (Some(a), Some(b)) => Some(a.merge(b)),
                     (a, b) => a.or(b),
                 };
-                let github_attestations = if provenance.is_some() {
-                    None
-                } else {
-                    platform_info.github_attestations.or({
-                        if preserve_artifact_fields {
-                            existing.github_attestations
-                        } else {
-                            None
-                        }
-                    })
-                };
                 PlatformInfo {
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
@@ -865,7 +830,7 @@ impl Lockfile {
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
                     provenance,
-                    github_attestations,
+                    github_attestations: None,
                 }
             } else {
                 platform_info
@@ -2816,7 +2781,7 @@ backend = "conda:jq"
     }
 
     #[test]
-    fn test_github_attestations_unavailable_roundtrip() {
+    fn test_github_attestations_unavailable_legacy_parse_only() {
         let info = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
             url: Some("https://example.com/tool.tar.gz".to_string()),
@@ -2826,19 +2791,17 @@ backend = "conda:jq"
 
         let toml_val: toml::Value = info.clone().into();
         let table = toml_val.as_table().unwrap();
-        assert_eq!(
-            table.get("github_attestations").unwrap().as_str().unwrap(),
-            "unavailable"
-        );
+        assert!(table.get("github_attestations").is_none());
         assert!(table.get("provenance").is_none());
 
-        let parsed: PlatformInfo = toml_val.try_into().unwrap();
+        let mut legacy = table.clone();
+        legacy.insert("github_attestations".to_string(), "unavailable".into());
+        let parsed: PlatformInfo = toml::Value::Table(legacy).try_into().unwrap();
         assert_eq!(
             parsed.github_attestations,
             Some(GithubAttestationsStatus::Unavailable)
         );
         assert!(parsed.provenance.is_none());
-        assert!(parsed.has_checksum_and_github_attestations_unavailable());
         assert!(!parsed.has_checksum_and_verified_provenance());
     }
 
@@ -2852,7 +2815,6 @@ backend = "conda:jq"
         let parsed: PlatformInfo = toml::Value::Table(table).try_into().unwrap();
         assert!(parsed.provenance.as_ref().unwrap().is_slsa());
         assert!(parsed.github_attestations.is_none());
-        assert!(!parsed.has_checksum_and_github_attestations_unavailable());
         assert!(parsed.has_checksum_and_verified_provenance());
 
         let serialized: toml::Value = PlatformInfo {
@@ -2929,12 +2891,9 @@ backend = "conda:jq"
         assert!(merged.provenance.as_ref().unwrap().is_slsa());
         assert!(merged.github_attestations.is_none());
 
-        // Merging with empty preserves the negative GitHub attestation cache.
+        // Merging with empty drops the legacy negative GitHub attestation cache.
         let merged = github_unavailable.merge_with(&PlatformInfo::default());
-        assert_eq!(
-            merged.github_attestations,
-            Some(GithubAttestationsStatus::Unavailable)
-        );
+        assert!(merged.github_attestations.is_none());
     }
 
     #[test]
@@ -2949,7 +2908,7 @@ backend = "conda:jq"
             github_attestations: Some(GithubAttestationsStatus::Unavailable),
             ..Default::default()
         };
-        assert!(!info.is_empty());
+        assert!(info.is_empty());
     }
 
     #[test]
