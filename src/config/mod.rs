@@ -1262,7 +1262,11 @@ pub async fn load_config_hierarchy_from_dir(
 }
 
 pub fn is_global_config(path: &Path) -> bool {
-    global_config_files().contains(path) || system_config_files().contains(path)
+    global_config_files().contains(path) || is_system_config(path)
+}
+
+pub fn is_system_config(path: &Path) -> bool {
+    system_config_files().contains(path)
 }
 
 /// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
