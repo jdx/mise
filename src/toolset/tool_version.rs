@@ -805,6 +805,7 @@ mod tests {
         let temp_dir = tempfile::tempdir()?;
         let mut backend = BackendArg::from("go:example.com/mise-offline-prefix-test");
         backend.installs_path = temp_dir.path().join("installs").join("go-example");
+        fs::create_dir_all(backend.installs_path.join("1.24.1").join("bin"))?;
         fs::create_dir_all(backend.installs_path.join("1.24.13").join("bin"))?;
 
         let request =
