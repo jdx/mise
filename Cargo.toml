@@ -247,7 +247,7 @@ toml = "1.0"
 
 [dev-dependencies]
 clap-sort = "1"
-ctor = "0.12"
+ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 pretty_assertions = "1"
