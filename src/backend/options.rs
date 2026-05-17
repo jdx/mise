@@ -47,6 +47,10 @@ impl<'a> BackendOptions<'a> {
         self.platform_string_for_target(key, target)
             .is_some_and(|v| is_truthy(&v))
     }
+
+    pub(crate) fn bool(&self, key: &str) -> bool {
+        self.raw.get_string(key).is_some_and(|v| is_truthy(&v))
+    }
 }
 
 pub(crate) fn is_truthy(value: &str) -> bool {
