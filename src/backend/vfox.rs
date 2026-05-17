@@ -438,10 +438,12 @@ impl VfoxBackend {
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
         let opts = tv.request.options();
+        let install_path = tv.install_path();
         let opts_hash = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             opts.hash(&mut hasher);
+            install_path.hash(&mut hasher);
             hasher.finish()
         };
         let key = format!("{}:{:x}", tv, opts_hash);
@@ -453,7 +455,7 @@ impl VfoxBackend {
                 CacheManagerBuilder::new(tv.cache_path().join(&cache_file))
                     .with_fresh_file(dirs::DATA.to_path_buf())
                     .with_fresh_file(self.plugin.plugin_path.to_path_buf())
-                    .with_fresh_file(self.ba().installs_path.to_path_buf())
+                    .with_fresh_file(install_path.clone())
                     .build(),
             );
         }
@@ -480,8 +482,13 @@ impl VfoxBackend {
                     .await
                     .wrap_err("Backend exec env method failed")?
                 } else {
-                    vfox.env_keys(&self.pathname, &tv.version, opts.backend_options().as_map())
-                        .await?
+                    vfox.env_keys_for_install_dir(
+                        &self.pathname,
+                        &tv.version,
+                        &install_path,
+                        opts.backend_options().as_map(),
+                    )
+                    .await?
                 };
 
                 Ok(env_keys
