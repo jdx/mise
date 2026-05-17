@@ -476,6 +476,7 @@ pub fn install_git_plugin_source(
 
         let subdir_path = repo_path.join(subdir);
         if !subdir_path.is_dir() {
+            let _ = file::remove_all(&repo_path);
             return Err(eyre!(
                 "plugin subdirectory does not exist: {}",
                 file::display_path(&subdir_path)

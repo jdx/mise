@@ -189,6 +189,7 @@ mod tests {
             "git::ssh://git@git.acme.com:1222/myorg/example.git//terraform/myfile?ref=master",
             "git::ssh://git@myserver.com/example.git//terraform/myfile",
             "git::ssh://user@myserver.com/example.git//myfile?ref=master",
+            "git::ssh://myserver.com/example.git//myfile?ref=master",
         ];
 
         for url in test_cases {
@@ -203,7 +204,6 @@ mod tests {
     #[test]
     fn test_invalid_parse_ssh() {
         let test_cases = vec![
-            "git::ssh://myserver.com/example.git//myfile?ref=master",
             "git::ssh://user@myserver.com/example.git?ref=master",
             "git::ssh://user@myserver.com/example.git",
             "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
