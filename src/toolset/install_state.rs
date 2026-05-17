@@ -496,6 +496,51 @@ pub fn list_versions(short: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+pub fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
+    let tool_dir = install_path.parent().map(Path::to_path_buf);
+    let full = ba.full_without_opts();
+    let explicit_backend = ba.has_explicit_backend();
+    let opts = persistent_opts(ba);
+
+    let mut tools = INSTALL_STATE_TOOLS
+        .lock()
+        .expect("INSTALL_STATE_TOOLS lock failed");
+    let Some(existing_tools) = tools.as_ref() else {
+        return;
+    };
+
+    let mut next_tools = existing_tools.deref().clone();
+    let tool = next_tools
+        .entry(ba.short.clone())
+        .or_insert_with(|| InstallStateTool {
+            short: ba.short.clone(),
+            full: Some(full.clone()),
+            versions: Vec::new(),
+            explicit_backend,
+            opts: opts.clone(),
+            installs_path: tool_dir.clone(),
+        });
+
+    if tool.full.is_none() {
+        tool.full = Some(full);
+    }
+    tool.explicit_backend = explicit_backend;
+    if tool.opts.is_empty() {
+        tool.opts = opts;
+    }
+    if tool.installs_path.is_none() {
+        tool.installs_path = tool_dir;
+    }
+    if !tool.versions.iter().any(|v| v == version) {
+        // Do not sort here: this version has just been resolved by the backend
+        // for this install run, and offline dependency env resolution should
+        // see that concrete result without adding another ordering rule.
+        tool.versions.push(version.to_string());
+    }
+
+    *tools = Some(Arc::new(next_tools));
+}
+
 pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
     let mut plugins = init_plugins().await?.deref().clone();
     plugins.insert(short.to_string(), plugin_type);
@@ -515,16 +560,7 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
 pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
     let full = ba.full_without_opts();
     let explicit = ba.has_explicit_backend();
-
-    // Store opts as native TOML values, filtering out ephemeral keys.
-    let mut opts_map: BTreeMap<String, toml::Value> = BTreeMap::new();
-    if let Some(o) = ba.opts.as_ref() {
-        for (k, v) in &o.opts {
-            if !EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
-                opts_map.insert(k.clone(), v.clone());
-            }
-        }
-    }
+    let opts_map = persistent_opts(ba);
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest_from(path);
@@ -543,6 +579,19 @@ pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
+    // Store opts as native TOML values, filtering out ephemeral keys.
+    let mut opts_map: BTreeMap<String, toml::Value> = BTreeMap::new();
+    if let Some(o) = ba.opts.as_ref() {
+        for (k, v) in &o.opts {
+            if !EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
+                opts_map.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    opts_map
 }
 
 pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
