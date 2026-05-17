@@ -75,6 +75,7 @@ mod plugins;
 mod rand;
 mod redactions;
 mod registry;
+mod remote_source;
 pub(crate) mod result;
 mod runtime_symlinks;
 mod sandbox;
