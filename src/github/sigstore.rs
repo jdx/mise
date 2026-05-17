@@ -29,7 +29,7 @@ use std::path::Path;
 use mise_sigstore::sources::github::GitHubSource;
 use mise_sigstore::{ArtifactRef, AttestationSource};
 
-pub use mise_sigstore::AttestationError;
+pub use mise_sigstore::{AttestationError, SlsaArtifact};
 
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
@@ -140,6 +140,18 @@ pub async fn verify_slsa_provenance(
     min_level: u8,
 ) -> AttestationResult<bool> {
     mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level).await
+}
+
+pub async fn verify_slsa_provenance_artifacts(
+    provenance_path: &Path,
+    artifacts: &[SlsaArtifact],
+    min_level: u8,
+) -> AttestationResult<bool> {
+    mise_sigstore::verify_slsa_provenance_artifacts(provenance_path, artifacts, min_level).await
+}
+
+pub fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
+    mise_sigstore::is_slsa_subject_mismatch(error)
 }
 
 /// Verify a keyless Cosign signature or bundle. Passthrough — no token needed.
