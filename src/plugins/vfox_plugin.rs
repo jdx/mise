@@ -1,10 +1,12 @@
 use crate::config::{Config, Settings};
 use crate::errors::Error::PluginNotInstalled;
-use crate::file::remove_all_with_progress;
 use crate::git::Git;
 use crate::http::HTTP;
 use crate::plugins::warn_if_env_plugin_shadows_registry;
-use crate::plugins::{Plugin, PluginSource, PluginType, install_git_plugin_source};
+use crate::plugins::{
+    Plugin, PluginSource, PluginType, install_git_plugin_source, managed_git_plugin_repo_path,
+    remove_git_plugin_source,
+};
 use crate::result::Result;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -300,14 +302,19 @@ impl Plugin for VfoxPlugin {
         }
 
         let plugin_path = self.plugin_path.to_path_buf();
-        if plugin_path.is_symlink() {
-            warn!(
-                "plugin:{} is a symlink, not updating",
-                style(&self.name).blue().for_stderr()
-            );
-            return Ok(());
-        }
-        let git = Git::new(plugin_path);
+        let git_path =
+            if let Some(repo_path) = managed_git_plugin_repo_path(&self.name, &plugin_path)? {
+                repo_path
+            } else if plugin_path.is_symlink() {
+                warn!(
+                    "plugin:{} is a symlink, not updating",
+                    style(&self.name).blue().for_stderr()
+                );
+                return Ok(());
+            } else {
+                plugin_path
+            };
+        let git = Git::new(git_path);
         if !git.is_repo() {
             warn!(
                 "plugin:{} is not a git repository, not updating",
@@ -341,7 +348,7 @@ impl Plugin for VfoxPlugin {
         }
         pr.set_message("uninstall".into());
 
-        remove_all_with_progress(&self.plugin_path, pr)?;
+        remove_git_plugin_source(&self.name, &self.plugin_path, pr)?;
 
         Ok(())
     }

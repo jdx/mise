@@ -15,6 +15,7 @@ use eyre::{Result, eyre};
 use heck::ToKebabCase;
 use regex::Regex;
 pub use script_manager::{Script, ScriptManager};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::vec;
@@ -381,6 +382,13 @@ pub enum PluginSource {
 
 impl PluginSource {
     pub fn parse(repository: &str) -> Self {
+        if let Some(source) = RemoteSource::parse_git(repository) {
+            return PluginSource::Git {
+                url: source.url,
+                git_ref: source.git_ref,
+                subdir: Some(source.path),
+            };
+        }
         // Split Parameters
         let url_path = repository
             .split('?')
@@ -395,13 +403,6 @@ impl PluginSource {
                 url: repository.to_string(),
             };
         }
-        if let Some(source) = RemoteSource::parse_git(repository) {
-            return PluginSource::Git {
-                url: source.url,
-                git_ref: source.git_ref,
-                subdir: Some(source.path),
-            };
-        }
         // Otherwise treat as git repository
         let (url, git_ref) = Git::split_url_and_ref(repository);
         PluginSource::Git {
@@ -410,6 +411,46 @@ impl PluginSource {
             subdir: None,
         }
     }
+}
+
+pub fn git_plugin_repo_path(plugin_name: &str) -> PathBuf {
+    dirs::DATA
+        .join("plugin-repos")
+        .join(plugin_name.to_kebab_case())
+}
+
+pub fn managed_git_plugin_repo_path(
+    plugin_name: &str,
+    plugin_path: &Path,
+) -> Result<Option<PathBuf>> {
+    if !plugin_path.is_symlink() {
+        return Ok(None);
+    }
+
+    let target = fs::read_link(plugin_path)?;
+    let target = if target.is_absolute() {
+        target
+    } else {
+        plugin_path
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .join(target)
+    };
+    let repo_path = git_plugin_repo_path(plugin_name);
+    Ok(target.starts_with(&repo_path).then_some(repo_path))
+}
+
+pub fn remove_git_plugin_source(
+    plugin_name: &str,
+    plugin_path: &Path,
+    pr: &dyn SingleReport,
+) -> Result<()> {
+    let repo_path = managed_git_plugin_repo_path(plugin_name, plugin_path)?;
+    file::remove_all_with_progress(plugin_path, pr)?;
+    if let Some(repo_path) = repo_path {
+        file::remove_all_with_progress(repo_path, pr)?;
+    }
+    Ok(())
 }
 
 pub fn install_git_plugin_source(
@@ -421,9 +462,7 @@ pub fn install_git_plugin_source(
     pr: &dyn SingleReport,
 ) -> Result<Git> {
     if let Some(subdir) = subdir {
-        let repo_path = dirs::DATA
-            .join("plugin-repos")
-            .join(plugin_name.to_kebab_case());
+        let repo_path = git_plugin_repo_path(plugin_name);
         file::remove_all_with_progress(plugin_path, pr)?;
         file::remove_all_with_progress(&repo_path, pr)?;
 
@@ -522,6 +561,25 @@ mod tests {
                 );
             }
             _ => panic!("Expected a Zip source"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_remote_git_zip_subdir() {
+        let source = PluginSource::parse(
+            "git::https://github.com/user/plugin.git//plugins/my-plugin.zip?ref=main",
+        );
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "https://github.com/user/plugin.git");
+                assert_eq!(git_ref, Some("main".to_string()));
+                assert_eq!(subdir, Some("plugins/my-plugin.zip".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
         }
     }
 

@@ -211,7 +211,14 @@ impl RubyPlugin {
                     git.update(Some(ref_.to_string()))?;
                 }
                 if let Some(subdir) = subdir {
-                    return Ok(tmp.join(subdir));
+                    let subdir_path = tmp.join(subdir);
+                    if !subdir_path.is_dir() {
+                        return Err(eyre!(
+                            "plugin subdirectory does not exist: {}",
+                            file::display_path(&subdir_path)
+                        ));
+                    }
+                    return Ok(subdir_path);
                 }
             }
         }
