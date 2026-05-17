@@ -154,6 +154,10 @@ pub fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
     mise_sigstore::is_slsa_subject_mismatch(error)
 }
 
+pub fn is_api_failure(error: &AttestationError) -> bool {
+    matches!(error, AttestationError::Api(_) | AttestationError::Http(_))
+}
+
 /// Verify a keyless Cosign signature or bundle. Passthrough — no token needed.
 pub async fn verify_cosign_signature(
     artifact_path: &Path,
@@ -310,5 +314,15 @@ mod tests {
             Some("ghp_from_tokens_file"),
             "wrapper should resolve tokens from github_tokens.toml when env vars are empty"
         );
+    }
+
+    #[test]
+    fn test_is_api_failure_excludes_malformed_payloads() {
+        assert!(is_api_failure(&AttestationError::Api(
+            "rate limited".into()
+        )));
+        assert!(!is_api_failure(&AttestationError::Json(
+            serde_json::from_str::<serde_json::Value>("{").unwrap_err()
+        )));
     }
 }
