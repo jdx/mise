@@ -1759,14 +1759,14 @@ impl UnifiedGitBackend {
     }
 
     fn github_attestation_api_error_hint(err: &str) -> &'static str {
-        if err.contains("GitHub API returned")
-            || err.contains("HTTP error")
-            || err.contains("error sending request")
-        {
+        if err.contains("GitHub API returned") {
             " Check that the GitHub token can read artifact attestations \
              (for GitHub Actions, set `permissions: attestations: read`) \
              and retry; transient GitHub API failures should not be treated \
              as missing release provenance."
+        } else if err.contains("HTTP error") || err.contains("error sending request") {
+            " This may be a transient network or TLS error; retry before \
+             treating this as missing release provenance."
         } else {
             ""
         }
@@ -2064,6 +2064,12 @@ mod tests {
             "API error: GitHub API returned 403: Resource not accessible by integration",
         );
         assert!(hint.contains("attestations: read"));
+
+        let hint = UnifiedGitBackend::github_attestation_api_error_hint(
+            "HTTP error: error sending request for url (https://api.github.com/...)",
+        );
+        assert!(hint.contains("transient network or TLS error"));
+        assert!(!hint.contains("attestations: read"));
 
         let hint = UnifiedGitBackend::github_attestation_api_error_hint("No attestations found");
         assert!(hint.is_empty());
