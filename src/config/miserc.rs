@@ -12,6 +12,7 @@ use std::sync::OnceLock;
 use eyre::Result;
 use tera::Context;
 
+use crate::config::config_file::diagnostic::toml_parse_error;
 use crate::config::settings::MisercSettings;
 use crate::dirs;
 use crate::env;
@@ -133,14 +134,9 @@ fn load_miserc_settings() -> Result<MisercSettings> {
         if let Ok(content) = file::read_to_string(&path) {
             let config_root = path.parent().unwrap_or(Path::new("."));
             let content = render_miserc_template(&mut tera, &content, config_root);
-            match toml::from_str::<MisercSettings>(&content) {
-                Ok(settings) => {
-                    merge_settings(&mut merged, settings);
-                }
-                Err(e) => {
-                    warn!("Failed to parse {}: {}", path.display(), e);
-                }
-            }
+            let settings = toml::from_str::<MisercSettings>(&content)
+                .map_err(|e| toml_parse_error(&e, &content, &path))?;
+            merge_settings(&mut merged, settings);
         }
     }
 
