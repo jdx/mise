@@ -1757,14 +1757,20 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         let install_path = tv.install_path();
+        let mut update_install_state = false;
         if install_path.starts_with(*dirs::INSTALLS) {
             install_state::write_backend_meta(self.ba())?;
+            update_install_state = true;
         } else if env::install_path_category(&install_path) != env::InstallPathCategory::Local {
             // For --system/--shared installs, write manifest to the target installs dir
             if let Some(installs_dir) = install_path.parent().and_then(|p| p.parent()) {
                 let manifest = installs_dir.join(".mise-installs.toml");
                 install_state::write_backend_meta_to(self.ba(), &manifest)?;
+                update_install_state = true;
             }
+        }
+        if update_install_state {
+            install_state::add_tool_version(self.ba(), &install_path, &tv.tv_pathname());
         }
 
         self.cleanup_install_dirs(&tv);
@@ -1896,6 +1902,9 @@ pub trait Backend: Debug + Send + Sync {
             rmdir(&tv.download_path())?;
         }
         rmdir(&tv.cache_path())?;
+        if !dryrun {
+            self.cleanup_empty_installs_dir();
+        }
         Ok(())
     }
     async fn uninstall_version_impl(
@@ -1990,6 +1999,18 @@ pub trait Backend: Debug + Send + Sync {
     fn cleanup_install_dirs(&self, tv: &ToolVersion) {
         if !Settings::get().always_keep_download {
             let _ = remove_all_with_warning(tv.download_path());
+        }
+    }
+    fn cleanup_empty_installs_dir(&self) {
+        let installs_path = &self.ba().installs_path;
+        if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
+            let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
+            if installs_path
+                .read_dir()
+                .is_ok_and(|mut entries| entries.next().is_none())
+            {
+                let _ = remove_all_with_warning(installs_path);
+            }
         }
     }
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
