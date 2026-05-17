@@ -78,21 +78,19 @@ impl RemoteTaskGit {
     }
 
     fn get_repo_structure(&self, file: &str) -> GitRepoStructure {
-        if let Some(repo) = Self::parse_ssh(file) {
-            return repo;
-        }
-        Self::parse_https(file).unwrap()
+        RemoteSource::parse_git(file)
+            .map(|source| source.into())
+            .unwrap()
     }
 
+    #[cfg(test)]
     fn parse_ssh(file: &str) -> Option<GitRepoStructure> {
-        let source = RemoteSource::parse_git(file)?;
-        source.url.starts_with("ssh://").then(|| source.into())
+        RemoteSource::parse_git_ssh(file).map(|source| source.into())
     }
 
+    #[cfg(test)]
     fn parse_https(file: &str) -> Option<GitRepoStructure> {
-        let source = RemoteSource::parse_git(file)?;
-        (source.url.starts_with("http://") || source.url.starts_with("https://"))
-            .then(|| source.into())
+        RemoteSource::parse_git_https(file).map(|source| source.into())
     }
 }
 

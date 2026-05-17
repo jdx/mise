@@ -2,11 +2,11 @@ use regex::Regex;
 use std::sync::LazyLock as Lazy;
 
 static SSH_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^git::(?P<url>ssh://((?P<user>[^@]+)@)?(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<ref>[^?]+))?$").unwrap()
+    Regex::new(r"^git::(?P<url>ssh://((?P<user>[^@]+)@)?(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<ref>[^?&]+)(&.*)?)?$").unwrap()
 });
 
 static HTTPS_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^git::(?P<url>https?://(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<ref>[^?]+))?$").unwrap()
+    Regex::new(r"^git::(?P<url>https?://(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<ref>[^?&]+)(&.*)?)?$").unwrap()
 });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +25,15 @@ pub struct RemoteSource;
 
 impl RemoteSource {
     pub fn parse_git(file: &str) -> Option<RemoteGitSource> {
-        parse_git_with(&SSH_GIT_REGEX, file).or_else(|| parse_git_with(&HTTPS_GIT_REGEX, file))
+        Self::parse_git_ssh(file).or_else(|| Self::parse_git_https(file))
+    }
+
+    pub(crate) fn parse_git_ssh(file: &str) -> Option<RemoteGitSource> {
+        parse_git_with(&SSH_GIT_REGEX, file)
+    }
+
+    pub(crate) fn parse_git_https(file: &str) -> Option<RemoteGitSource> {
+        parse_git_with(&HTTPS_GIT_REGEX, file)
     }
 
     pub fn parse_http(file: &str) -> Option<RemoteHttpSource> {
@@ -88,6 +96,15 @@ mod tests {
         .unwrap();
         assert_eq!(source.url, "https://git.acme.com:8080/myorg/example.git");
         assert_eq!(source.path, "terraform/myfile");
+        assert_eq!(source.git_ref, Some("master".to_string()));
+    }
+
+    #[test]
+    fn parses_git_ref_before_additional_query_params() {
+        let source = RemoteSource::parse_git(
+            "git::https://git.acme.com/myorg/example.git//terraform/myfile?ref=master&depth=1",
+        )
+        .unwrap();
         assert_eq!(source.git_ref, Some("master".to_string()));
     }
 
