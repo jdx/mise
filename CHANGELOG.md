@@ -1,5 +1,71 @@
 # Changelog
 
+## [2026.5.11](https://github.com/jdx/mise/compare/v2026.5.10..v2026.5.11) - 2026-05-17
+
+### 🐛 Bug Fixes
+
+- **(backend)** avoid release age cutoff for dependency envs by @risu729 in [#9808](https://github.com/jdx/mise/pull/9808)
+- **(cache)** honor plugin filter when pruning cache by @risu729 in [#9914](https://github.com/jdx/mise/pull/9914)
+- **(config)** report invalid miserc files by @jdx in [#9937](https://github.com/jdx/mise/pull/9937)
+- **(doctor)** list installed plugins from install state by @risu729 in [#9863](https://github.com/jdx/mise/pull/9863)
+- **(erlang)** respect compile false for precompiled installs by @risu729 in [#9866](https://github.com/jdx/mise/pull/9866)
+- **(github)** asset picker handles ambiguous patterns and runtime archives by @jdx in [#9946](https://github.com/jdx/mise/pull/9946)
+- **(install)** respect default inline shell in postinstall by @risu729 in [#9812](https://github.com/jdx/mise/pull/9812)
+- **(install)** store metadata alongside install dirs by @jdx in [#9941](https://github.com/jdx/mise/pull/9941)
+- **(plugins)** support remote git subdirectory sources by @jdx in [#9893](https://github.com/jdx/mise/pull/9893)
+- **(task)** preserve task env across nested hook-env by @risu729 in [#9850](https://github.com/jdx/mise/pull/9850)
+- **(use)** ignore system config for global shadow warning by @risu729 in [#9900](https://github.com/jdx/mise/pull/9900)
+- **(vfox)** use selected install path for env keys by @risu729 in [#9907](https://github.com/jdx/mise/pull/9907)
+- verify provenance during lock by @jdx in [#9945](https://github.com/jdx/mise/pull/9945)
+
+### 🚜 Refactor
+
+- **(aqua)** parse tool options locally by @risu729 in [#9872](https://github.com/jdx/mise/pull/9872)
+- **(cargo)** parse tool options locally by @risu729 in [#9922](https://github.com/jdx/mise/pull/9922)
+- **(npm)** parse tool options locally by @risu729 in [#9920](https://github.com/jdx/mise/pull/9920)
+- **(pipx)** parse tool options locally by @risu729 in [#9921](https://github.com/jdx/mise/pull/9921)
+- **(s3)** parse tool options locally by @risu729 in [#9871](https://github.com/jdx/mise/pull/9871)
+- **(ubi)** parse tool options locally by @risu729 in [#9873](https://github.com/jdx/mise/pull/9873)
+
+### 📚 Documentation
+
+- **(configuration)** trim global settings example by @risu729 in [#9912](https://github.com/jdx/mise/pull/9912)
+
+### 🛡️ Security
+
+- **(security)** verify SLSA archive contents by @sargunv in [#9898](https://github.com/jdx/mise/pull/9898)
+
+### 📦️ Dependency Updates
+
+- bump ctor to 1 by @jdx in [#9938](https://github.com/jdx/mise/pull/9938)
+
+### 📦 Registry
+
+- fix sourcery platform archive format by @risu729 in [#9902](https://github.com/jdx/mise/pull/9902)
+- prefer aqua for tools also in aqua-registry by @risu729 in [#9789](https://github.com/jdx/mise/pull/9789)
+- add aqua backend for jbang by @risu729 in [#9811](https://github.com/jdx/mise/pull/9811)
+- alias dotnet-core to dotnet by @risu729 in [#9807](https://github.com/jdx/mise/pull/9807)
+- add lisette by @ivov in [#9944](https://github.com/jdx/mise/pull/9944)
+
+### Chore
+
+- **(ci)** require clear hyperfine regressions by @risu729 in [#9874](https://github.com/jdx/mise/pull/9874)
+- **(ci)** close failing or conflicted PRs sooner by @jdx in [#9939](https://github.com/jdx/mise/pull/9939)
+
+### New Contributors
+
+- @ivov made their first contribution in [#9944](https://github.com/jdx/mise/pull/9944)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`glossia/cli`](https://github.com/glossia/cli)
+
+#### Updated Packages (1)
+
+- [`dathere/qsv`](https://github.com/dathere/qsv)
+
 ## [2026.5.10](https://github.com/jdx/mise/compare/v2026.5.9..v2026.5.10) - 2026-05-16
 
 ### 🐛 Bug Fixes
