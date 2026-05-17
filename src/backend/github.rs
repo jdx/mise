@@ -1646,7 +1646,8 @@ impl UnifiedGitBackend {
                 Err(VerificationStatus::Error(e)) => {
                     // Error during verification - hard error
                     return Err(eyre::eyre!(
-                        "GitHub artifact attestations verification error for {tv}: {e}"
+                        "GitHub artifact attestations verification error for {tv}: {e}{}",
+                        Self::github_attestation_api_error_hint(&e)
                     ));
                 }
             }
@@ -1754,6 +1755,20 @@ impl UnifiedGitBackend {
                 Err(VerificationStatus::NoAttestations)
             }
             Err(e) => Err(VerificationStatus::Error(e.to_string())),
+        }
+    }
+
+    fn github_attestation_api_error_hint(err: &str) -> &'static str {
+        if err.contains("GitHub API returned")
+            || err.contains("HTTP error")
+            || err.contains("error sending request")
+        {
+            " Check that the GitHub token can read artifact attestations \
+             (for GitHub Actions, set `permissions: attestations: read`) \
+             and retry; transient GitHub API failures should not be treated \
+             as missing release provenance."
+        } else {
+            ""
         }
     }
 
@@ -2041,6 +2056,17 @@ mod tests {
         let backend = create_test_backend();
         assert!(backend.matches_pattern("test-v1.0.0.zip", "test-*"));
         assert!(!backend.matches_pattern("other-v1.0.0.zip", "test-*"));
+    }
+
+    #[test]
+    fn test_github_attestation_api_error_hint() {
+        let hint = UnifiedGitBackend::github_attestation_api_error_hint(
+            "API error: GitHub API returned 403: Resource not accessible by integration",
+        );
+        assert!(hint.contains("attestations: read"));
+
+        let hint = UnifiedGitBackend::github_attestation_api_error_hint("No attestations found");
+        assert!(hint.is_empty());
     }
 
     #[test]

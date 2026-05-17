@@ -1167,8 +1167,9 @@ fn check_single_tool_provenance(
     version: &str,
     backend: &str,
     platform_key: &str,
-    new_provenance: Option<&ProvenanceType>,
+    new_platform_info: Option<&PlatformInfo>,
 ) -> Option<String> {
+    let new_provenance = new_platform_info.and_then(|pi| pi.provenance.as_ref());
     if new_provenance.is_some() || !backend.starts_with("github:") {
         return None;
     }
@@ -1195,10 +1196,23 @@ fn check_single_tool_provenance(
     }
 
     let prov = prior.platforms[platform_key].provenance.as_ref().unwrap();
+    let github_attestations_hint = new_platform_info
+        .and_then(|pi| pi.github_attestations.as_ref())
+        .and_then(|status| match status {
+            GithubAttestationsStatus::Unavailable => Some(
+                " The new lockfile entry recorded GitHub attestations as unavailable; \
+                 this can happen when the GitHub attestation API returns no attestations \
+                 for the artifact digest, or when a stale cached lock entry was reused. \
+                 Re-run with MISE_LOCKED_VERIFY_PROVENANCE=1 or clear the mise cache \
+                 before treating this as a release provenance regression."
+                    .to_string(),
+            ),
+        })
+        .unwrap_or_default();
     Some(format!(
         "{short}@{version} has no provenance verification on {platform_key}, \
          but {short}@{} had {prov}. This could indicate a supply chain \
-         attack. Verify the release is authentic before proceeding.",
+         attack. Verify the release is authentic before proceeding.{github_attestations_hint}",
         prior.version,
     ))
 }
@@ -1223,10 +1237,7 @@ fn check_provenance_regression(
     for (short, new_entries) in new_tools {
         for new_entry in new_entries {
             let backend = new_entry.backend.as_deref().unwrap_or("");
-            let new_provenance = new_entry
-                .platforms
-                .get(&current_platform)
-                .and_then(|pi| pi.provenance.as_ref());
+            let new_platform_info = new_entry.platforms.get(&current_platform);
 
             if let Some(err) = check_single_tool_provenance(
                 existing_lockfile.tools.get(short),
@@ -1234,7 +1245,7 @@ fn check_provenance_regression(
                 &new_entry.version,
                 backend,
                 &current_platform,
-                new_provenance,
+                new_platform_info,
             ) {
                 regressing.insert(short.clone());
                 errors.push(err);
@@ -1558,7 +1569,7 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
             &version,
             &backend,
             &platform_key,
-            info.provenance.as_ref(),
+            Some(info),
         ) {
             return Err(eyre!("{err}"));
         }
@@ -2975,6 +2986,22 @@ backend = "conda:jq"
         )
         .unwrap();
         assert!(err.contains("has no provenance verification"));
+
+        let unavailable_info = PlatformInfo {
+            github_attestations: Some(GithubAttestationsStatus::Unavailable),
+            ..Default::default()
+        };
+        let err = check_single_tool_provenance(
+            Some(&existing),
+            "tool",
+            "1.1.0",
+            "github:owner/repo",
+            &platform,
+            Some(&unavailable_info),
+        )
+        .unwrap();
+        assert!(err.contains("recorded GitHub attestations as unavailable"));
+        assert!(err.contains("MISE_LOCKED_VERIFY_PROVENANCE=1"));
 
         let mut prior = basic_tool("1.0.0", "github:owner/repo");
         prior.platforms.insert(
