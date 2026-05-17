@@ -41,3 +41,26 @@ rm -f "$MANIFEST"
 assert_succeed "mise ls"
 assert_contains "cat $MANIFEST" "legacy-test"
 assert_contains "cat $MANIFEST" "asdf:legacy-test"
+
+# Per-tool manifests should allow install dirs copied from different roots to merge
+rm -f "$MANIFEST"
+mkdir -p "$MISE_DATA_DIR/installs/source-a/1.0.0"
+mkdir -p "$MISE_DATA_DIR/installs/source-b/2.0.0"
+cat >"$MISE_DATA_DIR/installs/source-a/.mise.backend.toml" <<'TOML'
+short = "source-a"
+full = "asdf:source-a"
+explicit_backend = false
+TOML
+cat >"$MISE_DATA_DIR/installs/source-b/.mise.backend.toml" <<'TOML'
+short = "source-b"
+full = "asdf:source-b"
+explicit_backend = false
+TOML
+
+assert_contains "mise ls --installed" "source-a"
+assert_contains "mise ls --installed" "source-b"
+
+# New installs should write sidecar metadata so the directory is self-describing
+rm -f "$MISE_DATA_DIR/installs/tiny/.mise.backend.toml"
+mise install --force tiny@3.1.0
+assert_contains "cat $MISE_DATA_DIR/installs/tiny/.mise.backend.toml" 'short = "tiny"'
