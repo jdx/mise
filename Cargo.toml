@@ -9,7 +9,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.5.9"
+version = "2026.5.11"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -247,7 +247,7 @@ toml = "1.0"
 
 [dev-dependencies]
 clap-sort = "1"
-ctor = "0.12"
+ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 pretty_assertions = "1"

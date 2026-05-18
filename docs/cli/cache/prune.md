@@ -14,7 +14,7 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 
 ### `[PLUGIN]…`
 
-Plugin(s) to clear cache for e.g.: node, python
+Plugin(s) to prune cache for e.g.: node, python
 
 ## Flags
 

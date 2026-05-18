@@ -277,6 +277,7 @@ impl Use {
             if let Some(tv) = ts.versions.get(targ.ba.as_ref())
                 && let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source
                 && !file::same_file(p, global)
+                && !config::is_system_config(p)
             {
                 warn(targ, p);
             }

@@ -716,6 +716,7 @@ mod tests {
             asdf("clojure", "asdf:mise-plugins/mise-clojure", "clojure");
         }
         cargo("cargo:eza", "cargo:eza", "eza");
+        t("dotnet-core", "core:dotnet", "dotnet", BackendType::Core);
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
         npm("npm:prettier", "npm:prettier", "prettier");
@@ -767,6 +768,7 @@ mod tests {
         };
         t("asdf:node", "asdf-node");
         t("node", "node");
+        t("dotnet-core", "dotnet");
         t("cargo:eza", "cargo-eza");
         t("npm:@antfu/ni", "npm-antfu-ni");
         t("npm:prettier", "npm-prettier");

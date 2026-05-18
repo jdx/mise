@@ -1265,6 +1265,11 @@
           "type": "string",
           "deprecated": true
         },
+        "provenance_api_failures_fatal": {
+          "default": true,
+          "description": "Fail when provenance API checks cannot be completed.",
+          "type": "boolean"
+        },
         "python": {
           "type": "object",
           "unevaluatedProperties": false,

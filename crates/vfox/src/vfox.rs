@@ -342,10 +342,32 @@ impl Vfox {
     ) -> Result<Vec<EnvKey>> {
         debug!("Getting env keys for {sdk} version {version}");
         let sdk = self.get_sdk_with_env(sdk)?;
-        let sdk_info = sdk.sdk_info(
-            version.to_string(),
-            self.install_dir.join(&sdk.name).join(version),
-        )?;
+        let install_dir = self.install_dir.join(&sdk.name).join(version);
+        self.env_keys_for_sdk_install_dir(sdk, version, install_dir, options)
+            .await
+    }
+
+    pub async fn env_keys_for_install_dir<T: serde::Serialize>(
+        &self,
+        sdk: &str,
+        version: &str,
+        install_dir: impl AsRef<Path>,
+        options: T,
+    ) -> Result<Vec<EnvKey>> {
+        debug!("Getting env keys for {sdk} version {version}");
+        let sdk = self.get_sdk_with_env(sdk)?;
+        self.env_keys_for_sdk_install_dir(sdk, version, install_dir, options)
+            .await
+    }
+
+    async fn env_keys_for_sdk_install_dir<T: serde::Serialize>(
+        &self,
+        sdk: Plugin,
+        version: &str,
+        install_dir: impl AsRef<Path>,
+        options: T,
+    ) -> Result<Vec<EnvKey>> {
+        let sdk_info = sdk.sdk_info(version.to_string(), install_dir.as_ref().to_path_buf())?;
         let ctx = EnvKeysContext {
             args: vec![],
             version: version.to_string(),
@@ -719,6 +741,27 @@ mod tests {
             "<INSTALL_DIR>",
         );
         assert_snapshot!(output);
+    }
+
+    #[tokio::test]
+    async fn test_env_keys_for_install_dir() {
+        let vfox = Vfox::test();
+        let install_dir = PathBuf::from("custom/installs/dummy/1.0.0");
+        let keys = vfox
+            .env_keys_for_install_dir(
+                "dummy",
+                "1.0.0",
+                &install_dir,
+                serde_json::Value::Object(Default::default()),
+            )
+            .await
+            .unwrap();
+        let expected = if cfg!(windows) {
+            install_dir
+        } else {
+            install_dir.join("bin")
+        };
+        assert_eq!(keys[0].value, expected.to_string_lossy().into_owned());
     }
 
     #[tokio::test]
