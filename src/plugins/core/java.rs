@@ -774,6 +774,11 @@ impl JavaMetadata {
     }
 }
 
+// only care about these features
+static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
+    HashSet::from(["crac", "javafx", "jcef", "leyden", "lite", "musl"].map(|s| s.to_string()))
+});
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,8 +810,3 @@ mod tests {
         );
     }
 }
-
-// only care about these features
-static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
-    HashSet::from(["crac", "javafx", "jcef", "leyden", "lite", "musl"].map(|s| s.to_string()))
-});
