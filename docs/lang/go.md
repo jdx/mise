@@ -34,8 +34,29 @@ See [idiomatic version files](/configuration.html#idiomatic-version-files)
 
 ## Default packages
 
+::: warning Planned deprecation
+Default package files are deprecated. They are still supported for now, but mise will start warning
+in `2026.11.0` and support will be removed in `2027.11.0`.
+
+For Go CLIs, install the tool directly with the `go:` backend:
+
+```toml
+[tools]
+"go:github.com/jesseduffield/lazygit" = "latest"
+```
+
+For packages that really should be installed into every Go version, use a tool-level `postinstall`
+hook:
+
+```toml
+[tools]
+go = { version = "1.25", postinstall = "go install github.com/daixiang0/gci@latest" }
+```
+
+:::
+
 mise can automatically install a default set of packages right after installing a new go version.
-To enable this feature, provide a `$HOME/.default-go-packages` file that lists one packages per
+To use this legacy feature, provide a `$HOME/.default-go-packages` file that lists one package per
 line, for example:
 
 ```text

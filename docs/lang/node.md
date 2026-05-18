@@ -75,7 +75,30 @@ idiomatic_version_file_enable_tools = ["node"]
 
 ## Default node packages
 
-mise-node can automatically install a default set of npm packages right after installing a node version. To enable this feature, provide a `$HOME/.default-npm-packages` file that lists one package per line, for example:
+::: warning Planned deprecation
+Default package files are deprecated. They are still supported for now, but mise will start warning
+in `2026.11.0` and support will be removed in `2027.11.0`.
+
+For npm CLIs, install the tool directly with the [npm backend](/dev-tools/backends/npm.html):
+
+```toml
+[tools]
+"npm:typescript" = "latest"
+```
+
+For packages that really should be installed into every Node.js version, use a tool-level
+`postinstall` hook:
+
+```toml
+[tools]
+node = { version = "22", postinstall = "npm install -g typescript" }
+```
+
+:::
+
+mise-node can automatically install a default set of npm packages right after installing a node
+version. To use this legacy feature, provide a `$HOME/.default-npm-packages` file that lists one
+package per line, for example:
 
 ```text
 lodash

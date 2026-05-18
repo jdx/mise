@@ -238,11 +238,17 @@ impl RubyPlugin {
         let settings = Settings::get();
         let default_gems_file = file::replace_path(&settings.ruby.default_packages_file);
         let body = file::read_to_string(&default_gems_file).unwrap_or_default();
-        for package in body.lines() {
-            let package = package.split('#').next().unwrap_or_default().trim();
-            if package.is_empty() {
-                continue;
-            }
+        let mut packages = body
+            .lines()
+            .filter_map(Settings::parse_default_package_line)
+            .peekable();
+        if packages.peek().is_some() {
+            Settings::warn_default_package_file_deprecated(
+                "ruby.default_packages_file",
+                "ruby gem",
+            );
+        }
+        for package in packages {
             pr.set_message(format!("install default gem: {package}"));
             let gem = self.gem_path(tv);
             let mut cmd = CmdLineRunner::new(gem)
