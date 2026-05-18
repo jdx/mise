@@ -380,8 +380,9 @@ impl PythonPlugin {
             .with_pr(ctx.pr.as_ref())
             .arg(tv.version.as_str())
             .arg(tv.install_path())
-            .env("PIP_REQUIRE_VIRTUALENV", "false")
-            .envs(ctx.config.env().await?);
+            .envs(ctx.config.env().await?)
+            .envs(tv.install_env())
+            .env("PIP_REQUIRE_VIRTUALENV", "false");
         if Settings::get().verbose {
             cmd = cmd.arg("--verbose");
         }
@@ -435,8 +436,9 @@ impl PythonPlugin {
             .arg("--upgrade")
             .arg("-r")
             .arg(packages_file)
-            .env("PIP_REQUIRE_VIRTUALENV", "false")
             .envs(config.env().await?)
+            .envs(tv.install_env())
+            .env("PIP_REQUIRE_VIRTUALENV", "false")
             .execute()
     }
 
@@ -501,6 +503,7 @@ impl PythonPlugin {
             .with_pr(pr)
             .arg("--version")
             .envs(config.env().await?)
+            .envs(tv.install_env())
             .execute()
     }
 

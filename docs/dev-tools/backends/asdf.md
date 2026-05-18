@@ -52,3 +52,17 @@ need to set env vars other than `PATH`.
 ## Writing asdf (legacy) plugins for mise
 
 See the asdf documentation for more information on [writing plugins](https://asdf-vm.com/plugins/create.html).
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `asdf` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for asdf plugin install scripts:
+
+```toml
+[tools]
+"asdf:owner/plugin" = { version = "latest", install_env = { MAKEFLAGS = "-j8" } }
+```

@@ -37,6 +37,21 @@ mise use -g python@anaconda         # latest version of anaconda
 
 See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examples.
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `python` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for python-build, default package installation, and install-time
+verification commands run by the core `python` backend:
+
+```toml
+[tools]
+python = { version = "latest", install_env = { CONFIGURE_OPTS = "--enable-optimizations" } }
+```
+
 ## `.python-version` support
 
 `.python-version`/`.python-versions` files are supported by mise. See [idiomatic version files](/configuration.html#idiomatic-version-files).

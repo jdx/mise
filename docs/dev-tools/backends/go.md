@@ -34,6 +34,16 @@ Hivemind version 1.1.0
 The following [tool-options](/dev-tools/#tool-options) are available for the `go` backend—these
 go in `[tools]` in `mise.toml`.
 
+### `install_env`
+
+Set environment variables for the `go install` command. mise still sets `GOBIN`
+to the tool install directory after applying `install_env`.
+
+```toml
+[tools]
+"go:github.com/DarthSim/hivemind" = { version = "latest", install_env = { GOPRIVATE = "github.com/acme/*" } }
+```
+
 ### `tags`
 
 Specify go build tags (passed as `go install -tags`):

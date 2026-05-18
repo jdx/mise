@@ -20,6 +20,21 @@ mise use -g node@26
 
 See the [Node.JS Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `node` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for source builds, default package installation, Corepack setup, and
+install-time verification commands run by the core `node` backend:
+
+```toml
+[tools]
+node = { version = "latest", install_env = { CFLAGS = "-O2" } }
+```
+
 ## Pinning npm version
 
 By default, Node.js ships with a bundled version of npm. If you need a specific npm version

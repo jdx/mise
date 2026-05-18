@@ -96,6 +96,20 @@ bcat ~> 0.6.0 # supports version constraints
 rubocop --pre # install prerelease version
 ```
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `ruby` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for ruby-build or ruby-install and default gem installation:
+
+```toml
+[tools]
+ruby = { version = "latest", install_env = { RUBY_CONFIGURE_OPTS = "--disable-install-doc" } }
+```
+
 ## `.ruby-version` and `Gemfile` support
 
 mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
