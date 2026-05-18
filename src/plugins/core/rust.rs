@@ -25,9 +25,11 @@ pub struct RustPlugin {
 
 impl RustPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: plugins::core::new_backend_arg("rust").into(),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("rust"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: ba.into() }
     }
 
     async fn setup_rustup(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {

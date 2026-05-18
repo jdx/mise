@@ -9,7 +9,7 @@ use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{Mutex, MutexGuard},
 };
 use tera::Context as TeraContext;
@@ -295,8 +295,28 @@ impl MiseToml {
             task.config_source.clone_from(&rf.path);
             task.config_root = project_root.clone();
         }
+        rf.normalize_tool_registry_aliases();
         // trace!("{}", rf.dump()?);
         Ok(rf)
+    }
+
+    fn normalize_tool_registry_aliases(&mut self) {
+        let user_aliases = self
+            .alias
+            .keys()
+            .chain(self.tool_alias.keys())
+            .cloned()
+            .collect::<HashSet<_>>();
+        let mut tools = self.tools.lock().unwrap();
+        let mut normalized = IndexMap::with_capacity(tools.len());
+        for (ba, tvp) in std::mem::take(&mut *tools) {
+            if user_aliases.contains(&ba.short) || ba.has_explicit_backend() {
+                normalized.insert(ba, tvp);
+            } else {
+                normalized.insert(ba.registry_alias_canonicalized(), tvp);
+            }
+        }
+        *tools = normalized;
     }
 
     fn doc(&self) -> eyre::Result<DocumentMut> {
@@ -1841,7 +1861,7 @@ impl<'de> de::Deserialize<'de> for BackendArg {
             where
                 E: de::Error,
             {
-                Ok(v.into())
+                Ok(BackendArg::new_preserve_short(v.to_string(), None))
             }
         }
 
@@ -2211,6 +2231,47 @@ mod tests {
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_snapshot!(cf);
         file::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn test_tool_alias_preserves_registry_alias_identity() {
+        let cf = parse(formatdoc! {r#"
+            tools.node = "1.0.0-node"
+            tools.nodejs = "1.0.0-nodejs"
+
+            [tool_alias]
+            node = "asdf:tiny"
+            nodejs = "asdf:tiny"
+        "#});
+
+        let tools = cf.tools.lock().unwrap();
+        let keys = tools.keys().map(|ba| ba.short.as_str()).collect::<Vec<_>>();
+
+        assert_eq!(keys, vec!["node", "nodejs"]);
+        assert_eq!(
+            tools
+                .keys()
+                .find(|ba| ba.short == "nodejs")
+                .unwrap()
+                .installs_path,
+            dirs::INSTALLS.join("nodejs")
+        );
+    }
+
+    #[test]
+    fn test_bare_registry_alias_tool_key_canonicalizes() {
+        let cf = parse(formatdoc! {r#"
+            tools.nodejs = "22.0.0"
+        "#});
+
+        let tools = cf.tools.lock().unwrap();
+        let keys = tools.keys().map(|ba| ba.short.as_str()).collect::<Vec<_>>();
+
+        assert_eq!(keys, vec!["node"]);
+        assert_eq!(
+            tools.keys().next().unwrap().installs_path,
+            dirs::INSTALLS.join("node")
+        );
     }
 
     #[test]

@@ -134,7 +134,12 @@ impl ToolsetBuilder {
     }
 
     fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
-        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
+        let args = self
+            .args
+            .iter()
+            .map(ToolArg::resolve_user_alias)
+            .collect::<eyre::Result<Vec<_>>>()?;
+        for (_, args) in args.into_iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
             // carry over options (e.g. filter_bins) from config for this tool
             let config_options = ts

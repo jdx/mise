@@ -376,9 +376,8 @@ impl Config {
         if backend_arg.has_env_backend_override() {
             return None;
         }
-        let short = backend::unalias_backend(&backend_arg.short);
         self.all_aliases
-            .get(short)
+            .get(&backend_arg.short)
             .and_then(|alias| alias.backend.as_deref())
             .and_then(|backend| split_bracketed_opts(backend).map(|(_, opts)| opts))
             .map(crate::toolset::parse_tool_options)

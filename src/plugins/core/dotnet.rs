@@ -26,9 +26,11 @@ pub struct DotnetPlugin {
 
 impl DotnetPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: plugins::core::new_backend_arg("dotnet").into(),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("dotnet"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: ba.into() }
     }
 
     fn is_isolated() -> bool {

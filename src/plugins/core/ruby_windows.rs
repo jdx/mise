@@ -30,9 +30,11 @@ pub struct RubyPlugin {
 
 impl RubyPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: plugins::core::new_backend_arg("ruby").into(),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("ruby"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: ba.into() }
     }
 
     fn ruby_path(&self, tv: &ToolVersion) -> PathBuf {

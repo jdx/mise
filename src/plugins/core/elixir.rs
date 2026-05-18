@@ -26,9 +26,11 @@ pub struct ElixirPlugin {
 
 impl ElixirPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: Arc::new(plugins::core::new_backend_arg("elixir")),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("elixir"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
     }
 
     fn elixir_bin(&self, tv: &ToolVersion) -> PathBuf {

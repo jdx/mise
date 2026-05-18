@@ -28,9 +28,11 @@ pub struct GoPlugin {
 
 impl GoPlugin {
     pub fn new() -> Self {
-        Self {
-            ba: Arc::new(plugins::core::new_backend_arg("go")),
-        }
+        Self::from_arg(plugins::core::new_backend_arg("go"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
     }
 
     /// Check if a Go version string is valid (not "1" and not beta/rc)

@@ -49,8 +49,12 @@ pub struct JavaPlugin {
 
 impl JavaPlugin {
     pub fn new() -> Self {
+        Self::from_arg(plugins::core::new_backend_arg("java"))
+    }
+
+    pub fn from_arg(ba: BackendArg) -> Self {
         let settings = Settings::get();
-        let ba = Arc::new(plugins::core::new_backend_arg("java"));
+        let ba = Arc::new(ba);
         Self {
             java_metadata_ea_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("java_metadata_ea.msgpack.z"),

@@ -218,7 +218,12 @@ impl ToolRequestSetBuilder {
     }
 
     fn load_runtime_args(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
-        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
+        let args = self
+            .args
+            .iter()
+            .map(ToolArg::resolve_user_alias)
+            .collect::<eyre::Result<Vec<_>>>()?;
+        for (_, args) in args.into_iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = ToolRequestSet::new();
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
@@ -241,6 +246,7 @@ impl ToolRequestSetBuilder {
         let tool_args = env::TOOL_ARGS.read().unwrap();
         let mut arg_trs = ToolRequestSet::new();
         for arg in tool_args.iter() {
+            let arg = arg.resolve_user_alias()?;
             if let Some(tvr) = &arg.tvr {
                 let mut tvr = tvr.clone();
                 // When CLI specifies a version for a tool that's in config,

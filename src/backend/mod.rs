@@ -315,15 +315,15 @@ pub fn remove(short: &str) {
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     match ba.backend_type() {
         BackendType::Core => {
-            CORE_PLUGINS
-                .get(&ba.short)
-                .or_else(|| {
-                    // this can happen if something like "corenode" is aliased to "core:node"
-                    ba.full()
-                        .strip_prefix("core:")
-                        .and_then(|short| CORE_PLUGINS.get(short))
-                })
-                .cloned()
+            let canonical = if CORE_PLUGINS.contains_key(&ba.short) {
+                ba.short.clone()
+            } else {
+                // this can happen for explicit core syntax like "core:node" or
+                // if something like "corenode" is aliased to "core:node"
+                let full = ba.full_without_opts();
+                full.strip_prefix("core:")?.to_string()
+            };
+            crate::plugins::core::backend_from_arg(&canonical, ba)
         }
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
         BackendType::Asdf => Some(Arc::new(asdf::AsdfBackend::from_arg(ba))),
@@ -2973,11 +2973,12 @@ pub(crate) fn fuzzy_match_versions(
 }
 
 pub fn unalias_backend(backend: &str) -> &str {
+    let backend = backend.trim_start_matches("core:");
     match backend {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
-        _ => backend.trim_start_matches("core:"),
+        _ => REGISTRY.get(backend).map(|rt| rt.short).unwrap_or(backend),
     }
 }
 

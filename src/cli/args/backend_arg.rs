@@ -1,5 +1,5 @@
+use crate::backend::ABackend;
 use crate::backend::backend_type::BackendType;
-use crate::backend::{ABackend, unalias_backend};
 use crate::config::Config;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
@@ -58,14 +58,8 @@ pub struct BackendArg {
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let short = unalias_backend(s.as_ref()).to_string();
-        // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
-        // If so, treat it as explicit since the user specified the backend
-        let explicit = if let Some((prefix, _)) = short.split_once(':') {
-            BackendType::guess(prefix) != BackendType::Unknown
-        } else {
-            false
-        };
+        let short = resolve_constructor_short(s.as_ref(), None, false);
+        let explicit = is_explicit_backend_syntax(s.as_ref());
         let (short_parsed, tool_name, opts) = parse_backend_components(&short, None);
         Self::new_raw(
             short_parsed,
@@ -148,11 +142,10 @@ fn parse_backend_components(
     short: &str,
     full: Option<&String>,
 ) -> (String, String, Option<ToolVersionOptions>) {
-    let short = unalias_backend(short).to_string();
-    let source = full.unwrap_or(&short);
+    let source = full.map(String::as_str).unwrap_or(short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (name, Some(parse_tool_options(opts_str))),
-        None => (source.as_str(), None),
+        None => (source, None),
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
@@ -164,14 +157,13 @@ fn parse_backend_components_fallible(
     short: &str,
     full: Option<&String>,
 ) -> Result<(String, String, Option<ToolVersionOptions>)> {
-    let short = unalias_backend(short).to_string();
-    let source = full.unwrap_or(&short);
+    let source = full.map(String::as_str).unwrap_or(short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (
             name,
             Some(try_parse_tool_options(opts_str).map_err(|err| eyre::eyre!(err))?),
         ),
-        None => (source.as_str(), None),
+        None => (source, None),
     };
     let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
     let short = strip_opts(&short);
@@ -179,10 +171,77 @@ fn parse_backend_components_fallible(
     Ok((short, tool_name.to_string(), opts))
 }
 
+fn is_explicit_backend_syntax(short: &str) -> bool {
+    let short = strip_opts(short);
+    short
+        .split_once(':')
+        .is_some_and(|(prefix, _)| BackendType::guess(prefix) != BackendType::Unknown)
+}
+
+fn user_alias_exists(short: &str) -> bool {
+    if !config::is_loaded() {
+        return false;
+    }
+
+    let short = strip_opts(short);
+    let config = Config::get_();
+    config.all_aliases.contains_key(&short) || config.repo_urls.contains_key(&short)
+}
+
+fn registry_canonical_short(short: &str) -> Option<&'static str> {
+    let short = strip_opts(short);
+    if short.contains(':') {
+        return None;
+    }
+
+    match short.as_str() {
+        "dotnet-core" => Some("dotnet"),
+        "nodejs" => Some("node"),
+        "golang" => Some("go"),
+        _ => REGISTRY
+            .get(&short)
+            .map(|rt| rt.short)
+            .filter(|canonical| *canonical != short),
+    }
+}
+
+fn canonicalize_registry_alias(short: &str) -> String {
+    let (name, opts) = split_bracketed_opts(short)
+        .map(|(name, opts)| (name, Some(opts)))
+        .unwrap_or((short, None));
+    let canonical = registry_canonical_short(name).unwrap_or(name);
+    match opts {
+        Some(opts) => format!("{canonical}[{opts}]"),
+        None => canonical.to_string(),
+    }
+}
+
+fn resolve_constructor_short(short: &str, full: Option<&String>, preserve_short: bool) -> String {
+    if preserve_short
+        || full.is_some()
+        || is_explicit_backend_syntax(short)
+        || user_alias_exists(short)
+    {
+        short.to_string()
+    } else {
+        canonicalize_registry_alias(short)
+    }
+}
+
 impl BackendArg {
     #[requires(!short.is_empty())]
     pub fn new(short: String, full: Option<String>) -> Self {
-        let resolution = BackendResolution::new(full.is_some());
+        let explicit = full.is_some() || is_explicit_backend_syntax(&short);
+        let short = resolve_constructor_short(&short, full.as_ref(), false);
+        let resolution = BackendResolution::new(explicit);
+        let (short, tool_name, opts) = parse_backend_components(&short, full.as_ref());
+        Self::new_raw(short, full, tool_name, opts, resolution)
+    }
+
+    pub(crate) fn new_preserve_short(short: String, full: Option<String>) -> Self {
+        let explicit = full.is_some() || is_explicit_backend_syntax(&short);
+        let short = resolve_constructor_short(&short, full.as_ref(), true);
+        let resolution = BackendResolution::new(explicit);
         let (short, tool_name, opts) = parse_backend_components(&short, full.as_ref());
         Self::new_raw(short, full, tool_name, opts, resolution)
     }
@@ -346,7 +405,7 @@ impl BackendArg {
     }
 
     pub fn full(&self) -> String {
-        let short = unalias_backend(&self.short);
+        let short = self.short.as_str();
 
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
@@ -516,8 +575,7 @@ impl BackendArg {
     }
 
     fn env_backend_override(&self) -> Option<String> {
-        let short = unalias_backend(&self.short);
-        let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
+        let env_key = format!("MISE_BACKENDS_{}", self.short.to_shouty_snake_case());
         env::var(&env_key).ok()
     }
 
@@ -525,10 +583,9 @@ impl BackendArg {
         if !config::is_loaded() || self.has_env_backend_override() {
             return None;
         }
-        let short = unalias_backend(&self.short);
         Config::get_()
             .all_aliases
-            .get(short)
+            .get(&self.short)
             .and_then(|alias| alias.backend.as_deref())
             .and_then(|backend| split_bracketed_opts(backend).map(|(_, opts)| opts))
             .map(parse_tool_options)
@@ -567,7 +624,7 @@ impl BackendArg {
         let full = if let Some(full) = &self.full {
             full.clone()
         } else {
-            let short = unalias_backend(&self.short);
+            let short = self.short.as_str();
             if let Some(full) = install_state::get_tool_full(short) {
                 full
             } else if let Some(pt) = install_state::get_plugin_type(short) {
@@ -623,18 +680,41 @@ impl BackendArg {
     pub fn uses_plugin(&self) -> bool {
         install_state::get_plugin_type(&self.short).is_some()
     }
+
+    pub(crate) fn registry_alias_canonicalized(&self) -> Self {
+        if is_explicit_backend_syntax(&self.short) {
+            return self.clone();
+        }
+
+        let canonical = canonicalize_registry_alias(&self.short);
+        if canonical == self.short {
+            return self.clone();
+        }
+
+        let mut ba = self.clone();
+        ba.short = canonical;
+        if ba.full.is_none() {
+            ba.tool_name = ba
+                .short
+                .split_once(':')
+                .map(|(_, tool_name)| tool_name)
+                .unwrap_or(&ba.short)
+                .to_string();
+        }
+        let pathname = ba.short.to_kebab_case();
+        ba.cache_path = dirs::CACHE.join(&pathname);
+        ba.installs_path = dirs::INSTALLS.join(&pathname);
+        ba.downloads_path = dirs::DOWNLOADS.join(&pathname);
+        ba
+    }
 }
 
 impl FromStr for BackendArg {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let short = unalias_backend(s).to_string();
-        let explicit = if let Some((prefix, _)) = short.split_once(':') {
-            BackendType::guess(prefix) != BackendType::Unknown
-        } else {
-            false
-        };
+        let short = resolve_constructor_short(s, None, false);
+        let explicit = is_explicit_backend_syntax(s);
         let (short_parsed, tool_name, opts) = parse_backend_components_fallible(&short, None)?;
         Ok(Self::new_raw(
             short_parsed,
@@ -716,7 +796,10 @@ mod tests {
             asdf("clojure", "asdf:mise-plugins/mise-clojure", "clojure");
         }
         cargo("cargo:eza", "cargo:eza", "eza");
+        t("nodejs", "core:node", "node", BackendType::Core);
+        t("golang", "core:go", "go", BackendType::Core);
         t("dotnet-core", "core:dotnet", "dotnet", BackendType::Core);
+        t("core:node", "core:node", "node", BackendType::Core);
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
         npm("npm:prettier", "npm:prettier", "prettier");
@@ -768,7 +851,10 @@ mod tests {
         };
         t("asdf:node", "asdf-node");
         t("node", "node");
+        t("nodejs", "node");
+        t("golang", "go");
         t("dotnet-core", "dotnet");
+        t("core:node", "core-node");
         t("cargo:eza", "cargo-eza");
         t("npm:@antfu/ni", "npm-antfu-ni");
         t("npm:prettier", "npm-prettier");
@@ -1029,5 +1115,40 @@ mod tests {
         assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
         assert_eq!(opts.get("bin"), Some("solc"));
         assert_eq!(opts.get("foo"), Some("resolved"));
+    }
+
+    #[tokio::test]
+    async fn test_explicit_backend_alias_preserves_short() {
+        let _config = Config::get().await.unwrap();
+
+        let ba = BackendArg::new("nodejs".to_string(), Some("asdf:tiny".to_string()));
+
+        assert_eq!(ba.short, "nodejs");
+        assert_str_eq!("asdf:tiny", ba.full());
+        assert_eq!(BackendType::Asdf, ba.backend_type());
+        assert_str_eq!(
+            ba.installs_path.to_string_lossy(),
+            dirs::INSTALLS.join("nodejs").to_string_lossy()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_explicit_core_backend_preserves_identity() {
+        let _config = Config::get().await.unwrap();
+
+        let ba: BackendArg = "core:node".into();
+
+        assert_eq!(ba.short, "core:node");
+        assert_str_eq!("core:node", ba.full());
+        assert_eq!("node", ba.tool_name);
+        assert_eq!(BackendType::Core, ba.backend_type());
+        assert_str_eq!(
+            ba.installs_path.to_string_lossy(),
+            dirs::INSTALLS.join("core-node").to_string_lossy()
+        );
+
+        let backend = ba.backend().unwrap();
+        assert_eq!(backend.ba().short, "core:node");
+        assert_str_eq!("core:node", backend.ba().full());
     }
 }

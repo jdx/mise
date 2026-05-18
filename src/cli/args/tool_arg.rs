@@ -11,6 +11,7 @@ use xx::regex;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {
+    pub input: String,
     pub short: String,
     pub ba: Arc<BackendArg>,
     pub version: Option<String>,
@@ -44,6 +45,7 @@ impl FromStr for ToolArg {
             .map(|v| ToolRequest::new(ba.clone(), v, ToolSource::Argument))
             .transpose()?;
         Ok(Self {
+            input: backend_input.to_string(),
             short: ba.short.clone(),
             tvr,
             version: version.map(|v| v.to_string()),
@@ -89,6 +91,32 @@ impl Display for ToolVersionType {
 }
 
 impl ToolArg {
+    pub fn resolve_user_alias(&self) -> eyre::Result<Self> {
+        if crate::config::is_loaded() {
+            let config = crate::config::Config::get_();
+            if self.input != self.ba.short
+                && (config.all_aliases.contains_key(&self.input)
+                    || config.repo_urls.contains_key(&self.input))
+            {
+                let ba = Arc::new(BackendArg::new_preserve_short(self.input.clone(), None));
+                let tvr = self
+                    .version
+                    .as_ref()
+                    .map(|v| ToolRequest::new(ba.clone(), v, ToolSource::Argument))
+                    .transpose()?;
+                return Ok(Self {
+                    input: self.input.clone(),
+                    short: ba.short.clone(),
+                    ba,
+                    version: self.version.clone(),
+                    version_type: self.version_type.clone(),
+                    tvr,
+                });
+            }
+        }
+        Ok(self.clone())
+    }
+
     /// this handles the case where the user typed in:
     /// mise local node 20.0.0
     /// instead of
@@ -104,6 +132,7 @@ impl ToolArg {
             let b = tools[1].clone();
             if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.ba.tool_name) {
                 tools[1].short = a.short.clone();
+                tools[1].input = a.input.clone();
                 tools[1].tvr = Some(ToolRequest::new(
                     a.ba.clone(),
                     &b.ba.tool_name,
@@ -210,6 +239,7 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
+                input: "node".into(),
                 short: "node".into(),
                 ba: Arc::new("node".into()),
                 version: None,
@@ -226,6 +256,7 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
+                input: "node".into(),
                 short: "node".into(),
                 ba: Arc::new("node".into()),
                 version: Some("20".into()),
@@ -244,6 +275,7 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
+                input: "nodejs".into(),
                 short: "node".into(),
                 ba: Arc::new("node".into()),
                 version: Some("lts".into()),

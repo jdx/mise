@@ -108,3 +108,22 @@ pub fn new_backend_arg(tool_name: &str) -> BackendArg {
         BackendResolution::new(true),
     )
 }
+
+pub fn backend_from_arg(canonical_short: &str, ba: BackendArg) -> Option<Arc<dyn Backend>> {
+    match canonical_short {
+        "bun" => Some(Arc::new(bun::BunPlugin::from_arg(ba))),
+        "deno" => Some(Arc::new(deno::DenoPlugin::from_arg(ba))),
+        "dotnet" => Some(Arc::new(dotnet::DotnetPlugin::from_arg(ba))),
+        "elixir" => Some(Arc::new(elixir::ElixirPlugin::from_arg(ba))),
+        "erlang" => Some(Arc::new(erlang::ErlangPlugin::from_arg(ba))),
+        "go" => Some(Arc::new(go::GoPlugin::from_arg(ba))),
+        "java" => Some(Arc::new(java::JavaPlugin::from_arg(ba))),
+        "node" => Some(Arc::new(node::NodePlugin::from_arg(ba))),
+        "python" => Some(Arc::new(python::PythonPlugin::from_arg(ba))),
+        "ruby" => Some(Arc::new(ruby::RubyPlugin::from_arg(ba))),
+        "rust" => Some(Arc::new(rust::RustPlugin::from_arg(ba))),
+        "swift" => Some(Arc::new(swift::SwiftPlugin::from_arg(ba))),
+        "zig" => Some(Arc::new(zig::ZigPlugin::from_arg(ba))),
+        _ => None,
+    }
+}
