@@ -509,6 +509,15 @@ impl Client {
             }
             return Err(status_error.into());
         }
+        if is_authenticated_github_unauthorized(&url, &final_headers, &resp) {
+            let mut headers = final_headers;
+            headers.remove(AUTHORIZATION);
+            debug!(
+                "{} {} retrying without GitHub auth after 401",
+                verb_label, &url
+            );
+            return Box::pin(self.send_once_inner(method, url, &headers, verb_label, false)).await;
+        }
         resp.error_for_status_ref()?;
         Ok(resp)
     }
@@ -516,6 +525,12 @@ impl Client {
 
 fn is_authenticated_github_forbidden(url: &Url, headers: &HeaderMap, resp: &Response) -> bool {
     resp.status() == StatusCode::FORBIDDEN
+        && url.host_str() == Some("api.github.com")
+        && headers.contains_key(AUTHORIZATION)
+}
+
+fn is_authenticated_github_unauthorized(url: &Url, headers: &HeaderMap, resp: &Response) -> bool {
+    resp.status() == StatusCode::UNAUTHORIZED
         && url.host_str() == Some("api.github.com")
         && headers.contains_key(AUTHORIZATION)
 }
