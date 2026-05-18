@@ -1,7 +1,7 @@
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::BackendOptions;
+use crate::backend::options::{BackendOptions, bool_value};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -59,12 +59,14 @@ impl<'a> SpmOptions<'a> {
         self.values.str("artifactbundle_asset")
     }
 
-    fn artifactbundle_mode(&self) -> eyre::Result<ArtifactBundleMode> {
-        match self.values.raw().get_string("artifactbundle").as_deref() {
-            None => Ok(ArtifactBundleMode::Auto),
-            Some("true") => Ok(ArtifactBundleMode::Required),
-            Some("false") => Ok(ArtifactBundleMode::SourceOnly),
-            Some(value) => bail!("artifactbundle must be true or false, got {value}"),
+    fn artifactbundle_mode(&self) -> ArtifactBundleMode {
+        let Some(value) = self.values.raw().opts.get("artifactbundle") else {
+            return ArtifactBundleMode::Auto;
+        };
+        match bool_value("artifactbundle", value) {
+            Some(true) => ArtifactBundleMode::Required,
+            Some(false) => ArtifactBundleMode::SourceOnly,
+            None => ArtifactBundleMode::Auto,
         }
     }
 
@@ -177,7 +179,7 @@ impl Backend for SPMBackend {
             tv.version.clone()
         };
 
-        let artifactbundle_mode = opts.artifactbundle_mode()?;
+        let artifactbundle_mode = opts.artifactbundle_mode();
         if artifactbundle_mode == ArtifactBundleMode::SourceOnly
             && Settings::get().spm.artifactbundle_only
         {
@@ -1094,33 +1096,52 @@ mod tests {
     fn test_resolve_artifactbundle_mode() {
         let default_opts = ToolVersionOptions::default();
         assert_eq!(
-            SpmOptions::new(&default_opts)
-                .artifactbundle_mode()
-                .unwrap(),
+            SpmOptions::new(&default_opts).artifactbundle_mode(),
             ArtifactBundleMode::Auto
         );
         let required_opts = opts_with("artifactbundle", toml::Value::Boolean(true));
         assert_eq!(
-            SpmOptions::new(&required_opts)
-                .artifactbundle_mode()
-                .unwrap(),
+            SpmOptions::new(&required_opts).artifactbundle_mode(),
             ArtifactBundleMode::Required
         );
         let source_only_opts = opts_with("artifactbundle", toml::Value::Boolean(false));
         assert_eq!(
-            SpmOptions::new(&source_only_opts)
-                .artifactbundle_mode()
-                .unwrap(),
+            SpmOptions::new(&source_only_opts).artifactbundle_mode(),
             ArtifactBundleMode::SourceOnly
+        );
+        let required_opts = opts_with("artifactbundle", toml::Value::String("TRUE".to_string()));
+        assert_eq!(
+            SpmOptions::new(&required_opts).artifactbundle_mode(),
+            ArtifactBundleMode::Required
+        );
+        let required_opts = opts_with("artifactbundle", toml::Value::String("1".to_string()));
+        assert_eq!(
+            SpmOptions::new(&required_opts).artifactbundle_mode(),
+            ArtifactBundleMode::Required
+        );
+        let source_only_opts =
+            opts_with("artifactbundle", toml::Value::String("FALSE".to_string()));
+        assert_eq!(
+            SpmOptions::new(&source_only_opts).artifactbundle_mode(),
+            ArtifactBundleMode::SourceOnly
+        );
+        let source_only_opts = opts_with("artifactbundle", toml::Value::String("0".to_string()));
+        assert_eq!(
+            SpmOptions::new(&source_only_opts).artifactbundle_mode(),
+            ArtifactBundleMode::SourceOnly
+        );
+        let invalid_opts = opts_with("artifactbundle", toml::Value::String("00".to_string()));
+        assert_eq!(
+            SpmOptions::new(&invalid_opts).artifactbundle_mode(),
+            ArtifactBundleMode::Auto
         );
         let invalid_opts = opts_with(
             "artifactbundle",
             toml::Value::String("sometimes".to_string()),
         );
-        assert!(
-            SpmOptions::new(&invalid_opts)
-                .artifactbundle_mode()
-                .is_err()
+        assert_eq!(
+            SpmOptions::new(&invalid_opts).artifactbundle_mode(),
+            ArtifactBundleMode::Auto
         );
     }
 
