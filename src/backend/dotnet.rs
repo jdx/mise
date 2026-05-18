@@ -33,11 +33,12 @@ impl<'a> DotnetOptions<'a> {
     }
 
     fn prerelease(&self) -> bool {
+        // Preserve the previous parser: TOML booleans and "true"/"false"
+        // strings are supported, but truthy strings such as "1" are not.
         self.values
             .raw()
-            .opts
-            .get("prerelease")
-            .is_some_and(tool_option_bool)
+            .get_string("prerelease")
+            .is_some_and(|value| value.parse::<bool>().unwrap_or(false))
     }
 }
 
@@ -182,14 +183,6 @@ fn dotnet_legacy_prerelease_package_flag_enabled() -> bool {
     enabled
 }
 
-fn tool_option_bool(value: &toml::Value) -> bool {
-    match value {
-        toml::Value::Boolean(b) => *b,
-        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
-        _ => false,
-    }
-}
-
 #[derive(serde::Deserialize)]
 struct NugetFeed {
     resources: Vec<NugetFeedResource>,
@@ -236,6 +229,9 @@ mod tests {
         assert!(!DotnetOptions::new(&ToolVersionOptions::default()).prerelease());
         assert!(DotnetOptions::new(&opts_with_prerelease(toml::Value::Boolean(true))).prerelease());
         assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::Boolean(false))).prerelease()
+        );
+        assert!(
             DotnetOptions::new(&opts_with_prerelease(toml::Value::String(
                 "true".to_string()
             )))
@@ -246,6 +242,10 @@ mod tests {
                 "false".to_string()
             )))
             .prerelease()
+        );
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("1".to_string())))
+                .prerelease()
         );
     }
 }
