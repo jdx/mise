@@ -1364,6 +1364,17 @@ mod tests {
         let args = vec![
             "mise".to_string(),
             "run".to_string(),
+            "-vj1".to_string(),
+            "-C".to_string(),
+            "project".to_string(),
+            "mytask".to_string(),
+        ];
+
+        assert_eq!(early_cd_arg(&args), None);
+
+        let args = vec![
+            "mise".to_string(),
+            "run".to_string(),
             "-mytask".to_string(),
             "--cd=project".to_string(),
         ];
