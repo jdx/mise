@@ -68,11 +68,6 @@ impl<'a> CargoOptions<'a> {
         self.values.raw().get_string("crate")
     }
 
-    fn has_features_options(&self) -> bool {
-        self.values.raw().contains_key("features")
-            || self.values.raw().contains_key("default-features")
-    }
-
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
         for key in ["features", "default-features", "crate", "locked"] {
