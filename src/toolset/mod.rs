@@ -183,7 +183,7 @@ impl Toolset {
             .collect();
         let current_versions = Arc::new(current_versions);
         let mut versions = vec![];
-        for b in self.list_cached_and_current_backends() {
+        for b in self.list_backends_for_installed_version_listing() {
             for v in b.list_installed_versions() {
                 if let Some((p, tv)) =
                     current_versions.get(&(b.ba().installs_path.clone(), v.clone()))
@@ -223,6 +223,18 @@ impl Toolset {
             .map(|(backend, _)| backend)
             .chain(backend::list())
             .unique_by(|backend| backend.ba().installs_path.clone())
+            .collect()
+    }
+
+    fn list_backends_for_installed_version_listing(&self) -> backend::BackendList {
+        // Path-based deduping is correct for install-dir rebuilds, but installed
+        // versions are keyed by backend short name in install_state. vfox file://
+        // plugins create a generated plugin backend and a file-url backend with
+        // the same install path, and the file-url backend owns the versions.
+        self.list_cached_and_current_backends()
+            .into_iter()
+            .chain(backend::list())
+            .unique_by(|backend| backend.ba().short.clone())
             .collect()
     }
 
