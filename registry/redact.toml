@@ -1,0 +1,3 @@
+backends = ["aqua:julian7/redact"]
+description = "Data encryptor for git"
+test = { cmd = "redact --version", expected = "redact version {{version}}" }
