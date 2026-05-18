@@ -198,10 +198,7 @@ fn registry_canonical_short(short: &str) -> Option<&'static str> {
         "dotnet-core" => Some("dotnet"),
         "nodejs" => Some("node"),
         "golang" => Some("go"),
-        _ => REGISTRY
-            .get(&short)
-            .map(|rt| rt.short)
-            .filter(|canonical| *canonical != short),
+        _ => None,
     }
 }
 
@@ -1129,6 +1126,20 @@ mod tests {
         assert_str_eq!(
             ba.installs_path.to_string_lossy(),
             dirs::INSTALLS.join("nodejs").to_string_lossy()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_registry_lookup_alias_preserves_identity() {
+        let _config = Config::get().await.unwrap();
+
+        let ba: BackendArg = "gh".into();
+
+        assert_eq!(ba.short, "gh");
+        assert_str_eq!("aqua:cli/cli", ba.full());
+        assert_str_eq!(
+            ba.installs_path.to_string_lossy(),
+            dirs::INSTALLS.join("gh").to_string_lossy()
         );
     }
 

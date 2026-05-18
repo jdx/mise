@@ -2978,7 +2978,7 @@ pub fn unalias_backend(backend: &str) -> &str {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
-        _ => REGISTRY.get(backend).map(|rt| rt.short).unwrap_or(backend),
+        _ => backend,
     }
 }
 

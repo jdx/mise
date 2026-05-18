@@ -2275,6 +2275,22 @@ mod tests {
     }
 
     #[test]
+    fn test_registry_lookup_alias_tool_key_preserves_identity() {
+        let cf = parse(formatdoc! {r#"
+            tools.gh = "2.92.0"
+        "#});
+
+        let tools = cf.tools.lock().unwrap();
+        let keys = tools.keys().map(|ba| ba.short.as_str()).collect::<Vec<_>>();
+
+        assert_eq!(keys, vec!["gh"]);
+        assert_eq!(
+            tools.keys().next().unwrap().installs_path,
+            dirs::INSTALLS.join("gh")
+        );
+    }
+
+    #[test]
     fn test_tasks_confirm_parses() {
         let body = r#"
 [tasks.deploy]
