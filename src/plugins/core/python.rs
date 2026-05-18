@@ -416,6 +416,16 @@ impl PythonPlugin {
         if !packages_file.exists() {
             return Ok(());
         }
+        if file::read_to_string(packages_file)
+            .unwrap_or_default()
+            .lines()
+            .any(|package| Settings::parse_default_package_line(package).is_some())
+        {
+            Settings::warn_default_package_file_deprecated(
+                "python.default_packages_file",
+                "python package",
+            );
+        }
         pr.set_message("install default packages".into());
         CmdLineRunner::new(tv.install_path().join("bin/python"))
             .with_pr(pr)
