@@ -765,8 +765,20 @@ mod tests {
 
         opts.opts.insert(
             "prerelease".to_string(),
-            toml::Value::String("false".into()),
+            toml::Value::String("FALSE".into()),
         );
+        assert!(!backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("1".into()));
+        assert!(backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("0".into()));
+        assert!(!backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("00".into()));
         assert!(!backend.include_prereleases(&opts));
 
         // Defense-in-depth: also accept a native TOML boolean, in case a future
@@ -2881,11 +2893,7 @@ pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
 }
 
 fn tool_option_bool(value: &toml::Value) -> bool {
-    match value {
-        toml::Value::Boolean(b) => *b,
-        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
-        _ => false,
-    }
+    crate::backend::options::bool_value_or_default("prerelease", value, false)
 }
 
 /// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection

@@ -1,3 +1,4 @@
+use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::backend::{Backend, VersionCacheManager, VersionInfo};
@@ -12,7 +13,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::platform::Platform;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
 use crate::{dirs, file, plugins, sysconfig};
@@ -35,6 +36,27 @@ const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_PY
 #[derive(Debug)]
 pub struct PythonPlugin {
     ba: Arc<BackendArg>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PythonOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> PythonOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn patch_sysconfig(&self) -> bool {
+        self.values.bool_with_default("patch_sysconfig", true)
+    }
+
+    fn virtualenv(&self) -> Option<&'a str> {
+        self.values.str("virtualenv")
+    }
 }
 
 pub fn python_path(tv: &ToolVersion) -> PathBuf {
@@ -354,7 +376,9 @@ impl PythonPlugin {
             .map(|s| re_digits.replace(s, "").to_string());
         if cfg!(unix) {
             if let (Some(major), Some(minor), Some(suffix)) = (major, minor, suffix) {
-                if tv.request.options().get("patch_sysconfig") != Some("false") {
+                let raw_opts = tv.request.options();
+                let opts = PythonOptions::new(&raw_opts);
+                if opts.patch_sysconfig() {
                     sysconfig::update_sysconfig(&install, major, minor, &suffix)?;
                 }
             } else {
@@ -447,7 +471,9 @@ impl PythonPlugin {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<Option<PathBuf>> {
-        if let Some(virtualenv) = tv.request.options().get("virtualenv") {
+        let raw_opts = tv.request.options();
+        let opts = PythonOptions::new(&raw_opts);
+        if let Some(virtualenv) = opts.virtualenv() {
             if !Settings::get().experimental {
                 warn!(
                     "please enable experimental mode with `mise settings experimental=true` \
@@ -1042,6 +1068,39 @@ fn filter_freethreaded(v: &str, flavor: &Option<String>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn opts_with(key: &str, value: &str) -> ToolVersionOptions {
+        opts_with_value(key, toml::Value::String(value.to_string()))
+    }
+
+    fn opts_with_value(key: &str, value: toml::Value) -> ToolVersionOptions {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(key.to_string(), value);
+        opts
+    }
+
+    #[test]
+    fn python_options_reads_patch_sysconfig() {
+        assert!(PythonOptions::new(&ToolVersionOptions::default()).patch_sysconfig());
+        assert!(!PythonOptions::new(&opts_with("patch_sysconfig", "false")).patch_sysconfig());
+        assert!(!PythonOptions::new(&opts_with("patch_sysconfig", "FALSE")).patch_sysconfig());
+        assert!(!PythonOptions::new(&opts_with("patch_sysconfig", "0")).patch_sysconfig());
+        assert!(
+            !PythonOptions::new(&opts_with_value(
+                "patch_sysconfig",
+                toml::Value::Boolean(false)
+            ))
+            .patch_sysconfig()
+        );
+        assert!(PythonOptions::new(&opts_with("patch_sysconfig", "1")).patch_sysconfig());
+        assert!(PythonOptions::new(&opts_with("patch_sysconfig", "00")).patch_sysconfig());
+    }
+
+    #[test]
+    fn python_options_reads_virtualenv() {
+        let opts = opts_with("virtualenv", ".venv");
+        assert_eq!(PythonOptions::new(&opts).virtualenv(), Some(".venv"));
+    }
 
     #[test]
     fn test_resolve_python_arch_windows_x64() {
