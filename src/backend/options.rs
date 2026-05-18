@@ -75,17 +75,28 @@ pub(crate) fn is_falsey(value: &str) -> bool {
 }
 
 pub(crate) fn bool_value_or_default(key: &str, value: &toml::Value, default: bool) -> bool {
-    match value {
-        toml::Value::Boolean(value) => *value,
-        toml::Value::String(value) => bool_str_or_default(key, value, default),
-        toml::Value::Integer(0) => false,
-        toml::Value::Integer(1) => true,
-        _ => invalid_bool_value(key, value, default),
+    bool_value(key, value).unwrap_or(default)
+}
+
+pub(crate) fn bool_value(key: &str, value: &toml::Value) -> Option<bool> {
+    let parsed = match value {
+        toml::Value::Boolean(value) => Some(*value),
+        toml::Value::String(value) => parse_bool_str(value),
+        toml::Value::Integer(0) => Some(false),
+        toml::Value::Integer(1) => Some(true),
+        _ => None,
+    };
+    if parsed.is_none() {
+        warn_invalid_bool_value(key, value);
     }
+    parsed
 }
 
 fn bool_str_or_default(key: &str, value: &str, default: bool) -> bool {
-    parse_bool_str(value).unwrap_or_else(|| invalid_bool_value(key, value, default))
+    parse_bool_str(value).unwrap_or_else(|| {
+        warn_invalid_bool_value(key, value);
+        default
+    })
 }
 
 fn parse_bool_str(value: &str) -> Option<bool> {
@@ -98,11 +109,10 @@ fn parse_bool_str(value: &str) -> Option<bool> {
     }
 }
 
-fn invalid_bool_value(key: &str, value: impl std::fmt::Display, default: bool) -> bool {
+fn warn_invalid_bool_value(key: &str, value: impl std::fmt::Display) {
     warn!(
-        "invalid boolean value for tool option `{key}`: {value}; expected true, false, 1, or 0; using {default}"
+        "invalid boolean value for tool option `{key}`: {value}; expected true, false, 1, or 0; using default"
     );
-    default
 }
 
 #[cfg(test)]
@@ -167,6 +177,7 @@ mod tests {
             BackendOptions::new(&opts_with_value("flag", toml::Value::Integer(2)))
                 .bool_with_default("flag", true)
         );
+        assert_eq!(bool_value("flag", &toml::Value::String("00".into())), None);
     }
 
     #[test]
