@@ -33,12 +33,7 @@ impl<'a> DotnetOptions<'a> {
     }
 
     fn prerelease(&self) -> bool {
-        // Preserve the previous parser: TOML booleans and "true"/"false"
-        // strings are supported, but truthy strings such as "1" are not.
-        self.values
-            .raw()
-            .get_string("prerelease")
-            .is_some_and(|value| value.parse::<bool>().unwrap_or(false))
+        self.values.bool("prerelease")
     }
 }
 
@@ -239,12 +234,20 @@ mod tests {
         );
         assert!(
             !DotnetOptions::new(&opts_with_prerelease(toml::Value::String(
-                "false".to_string()
+                "FALSE".to_string()
             )))
             .prerelease()
         );
         assert!(
-            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("1".to_string())))
+            DotnetOptions::new(&opts_with_prerelease(toml::Value::String("1".to_string())))
+                .prerelease()
+        );
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("0".to_string())))
+                .prerelease()
+        );
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("00".to_string())))
                 .prerelease()
         );
     }
