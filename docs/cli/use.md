@@ -67,12 +67,6 @@ Specify a path to a config file or directory
 
 If a directory is specified, it will look for a config file in that directory following the rules above.
 
-### `--before <BEFORE>`
-
-Only install versions released before this date
-
-Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-
 ### `--dry-run-code`
 
 Like --dry-run but exits with code 1 if there are changes to make
@@ -85,6 +79,12 @@ Save fuzzy version to config file
 
 e.g.: `mise use --fuzzy node@20` will save 20 as the version
 this is the default behavior unless `MISE_PIN=1`
+
+### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
+
+Only install versions released before this date or older than this duration
+
+Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 
 ### `--pin`
 

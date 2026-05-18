@@ -53,17 +53,17 @@ pub struct Install {
     #[clap(long, short, action = clap::ArgAction::Count)]
     verbose: u8,
 
-    /// Only install versions released before this date
-    ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[clap(long, verbatim_doc_comment)]
-    before: Option<String>,
-
     /// Like --dry-run but exits with code 1 if there are tools to install
     ///
     /// This is useful for scripts to check if tools need to be installed.
     #[clap(long, verbatim_doc_comment)]
     dry_run_code: bool,
+
+    /// Only install versions released before this date or older than this duration
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(long, alias = "before", verbatim_doc_comment)]
+    minimum_release_age: Option<String>,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
@@ -253,11 +253,11 @@ impl Install {
         })
     }
 
-    /// Get the before_date from the CLI --before flag only.
+    /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(before) = &self.before {
-            return Ok(Some(parse_into_timestamp(before)?));
+        if let Some(minimum_release_age) = &self.minimum_release_age {
+            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
         }
         Ok(None)
     }
