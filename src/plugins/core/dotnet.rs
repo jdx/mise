@@ -154,7 +154,7 @@ impl Backend for DotnetPlugin {
         let opts = DotnetOptions::new(&raw_opts);
         let runtime = opts.runtime().map(str::to_string);
         if let Some(ref rt) = runtime
-            && runtime_framework_name(rt).is_none()
+            && opts.runtime_framework_name().is_none()
         {
             return Err(eyre::eyre!(
                 "Invalid runtime option '{}'. Valid options: dotnet, aspnetcore, windowsdesktop",
@@ -204,9 +204,9 @@ impl Backend for DotnetPlugin {
         } else {
             let raw_opts = tv.request.options();
             let opts = DotnetOptions::new(&raw_opts);
-            if let Some(rt) = opts.runtime() {
+            if opts.runtime().is_some() {
                 // Runtime: remove the shared runtime directory for this version
-                let Some(framework) = runtime_framework_name(rt) else {
+                let Some(framework) = opts.runtime_framework_name() else {
                     return Ok(());
                 };
                 let runtime_dir = dotnet_root()
