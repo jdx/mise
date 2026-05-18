@@ -241,7 +241,10 @@ async fn download_registry_source(registry_url: &str) -> aqua_registry::Result<S
                     ))
                 })
         } else {
-            download_registry_url(&format!("{registry_url}/{file_name}")).await
+            match registry_file_url(registry_url, file_name) {
+                Ok(url) => download_registry_url(url.as_str()).await,
+                Err(err) => Err(err),
+            }
         };
 
         match source {
@@ -264,9 +267,11 @@ async fn download_registry_source(registry_url: &str) -> aqua_registry::Result<S
 }
 
 async fn download_registry_url(url: &str) -> aqua_registry::Result<String> {
-    if let Ok(parsed) = Url::parse(url)
-        && parsed.scheme() == "file"
-    {
+    let parsed = Url::parse(url).map_err(|err| {
+        AquaRegistryError::RegistryNotAvailable(format!("invalid aqua registry URL {url}: {err}"))
+    })?;
+
+    if parsed.scheme() == "file" {
         let path = parsed.to_file_path().map_err(|_| {
             AquaRegistryError::RegistryNotAvailable(format!("invalid aqua registry URL {url}"))
         })?;
@@ -286,11 +291,24 @@ async fn download_registry_url(url: &str) -> aqua_registry::Result<String> {
         })?;
     }
 
-    HTTP.get_text(url).await.map_err(|err| {
+    HTTP.get_text(parsed).await.map_err(|err| {
         AquaRegistryError::RegistryNotAvailable(format!(
             "failed to download aqua registry source {url}: {err}"
         ))
     })
+}
+
+fn registry_file_url(registry_url: &str, file_name: &str) -> aqua_registry::Result<Url> {
+    let mut url = Url::parse(registry_url).map_err(|err| {
+        AquaRegistryError::RegistryNotAvailable(format!(
+            "invalid aqua registry URL {registry_url}: {err}"
+        ))
+    })?;
+    let path = url.path().trim_end_matches('/');
+    url.set_path(&format!("{path}/{file_name}"));
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url)
 }
 
 async fn parse_registry_source(
@@ -353,7 +371,7 @@ fn github_repo_slug(registry_url: &str) -> Option<(String, String)> {
     let mut segments = url.path_segments()?;
     let owner = segments.next()?;
     let repo = segments.next()?.trim_end_matches(".git");
-    if owner.is_empty() || repo.is_empty() || segments.next().is_some() {
+    if owner.is_empty() || repo.is_empty() || segments.any(|segment| !segment.is_empty()) {
         return None;
     }
 
@@ -421,6 +439,10 @@ mod tests {
             Some(("aquaproj".to_string(), "aqua-registry".to_string()))
         );
         assert_eq!(
+            github_repo_slug("https://github.com/aquaproj/aqua-registry/"),
+            Some(("aquaproj".to_string(), "aqua-registry".to_string()))
+        );
+        assert_eq!(
             github_repo_slug("http://github.com/aqua/aqua-registry"),
             None
         );
@@ -435,6 +457,25 @@ mod tests {
         assert_eq!(
             github_repo_slug("https://github.com/aquaproj/aqua-registry?ref=main"),
             None
+        );
+    }
+
+    #[test]
+    fn registry_file_url_appends_registry_file_name() {
+        assert_eq!(
+            registry_file_url("https://example.com/aqua-registry/", "registry.yml")
+                .unwrap()
+                .as_str(),
+            "https://example.com/aqua-registry/registry.yml"
+        );
+        assert_eq!(
+            registry_file_url(
+                "https://example.com/aqua-registry?ref=main",
+                "registry.yaml"
+            )
+            .unwrap()
+            .as_str(),
+            "https://example.com/aqua-registry/registry.yaml"
         );
     }
 
