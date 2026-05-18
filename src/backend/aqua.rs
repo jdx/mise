@@ -1418,8 +1418,21 @@ impl AquaBackend {
             let bundle_path = download_dir.join(get_filename_from_url(&bundle_url));
             HTTP.download_file(&bundle_url, &bundle_path, pr).await?;
 
-            match crate::github::sigstore::verify_cosign_signature(target_path, &bundle_path).await
-            {
+            let opts = cosign.opts(pkg, v, os(), arch())?;
+            let result = if let Some(key_url) = cosign_opt_value(&opts, "--key") {
+                let key_path = download_dir.join(get_filename_from_url(key_url));
+                HTTP.download_file(key_url, &key_path, pr).await?;
+                crate::github::sigstore::verify_cosign_signature_with_key(
+                    target_path,
+                    &bundle_path,
+                    &key_path,
+                )
+                .await
+            } else {
+                crate::github::sigstore::verify_cosign_signature(target_path, &bundle_path).await
+            };
+
+            match result {
                 Ok(true) => {
                     debug!("cosign (bundle) verified");
                     Ok(())
@@ -2567,6 +2580,12 @@ fn toml_value_kind(value: &toml::Value) -> &'static str {
         toml::Value::Table(_) => "object",
         toml::Value::Datetime(_) => "datetime",
     }
+}
+
+fn cosign_opt_value<'a>(opts: &'a [String], flag: &str) -> Option<&'a str> {
+    opts.windows(2)
+        .find(|pair| pair[0] == flag)
+        .map(|pair| pair[1].as_str())
 }
 
 fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Cow<'a, str> {
