@@ -270,12 +270,20 @@ async fn download_registry_url(url: &str) -> aqua_registry::Result<String> {
         let path = parsed.to_file_path().map_err(|_| {
             AquaRegistryError::RegistryNotAvailable(format!("invalid aqua registry URL {url}"))
         })?;
-        return std::fs::read_to_string(&path).map_err(|err| {
+        let path_display = path.display().to_string();
+        return tokio::task::spawn_blocking(move || {
+            std::fs::read_to_string(&path).map_err(|err| {
+                AquaRegistryError::RegistryNotAvailable(format!(
+                    "failed to read aqua registry source {path_display}: {err}"
+                ))
+            })
+        })
+        .await
+        .map_err(|err| {
             AquaRegistryError::RegistryNotAvailable(format!(
-                "failed to read aqua registry source {}: {err}",
-                path.display()
+                "failed to read aqua registry source on blocking worker: {err}"
             ))
-        });
+        })?;
     }
 
     HTTP.get_text(url).await.map_err(|err| {
