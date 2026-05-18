@@ -136,34 +136,52 @@ impl AquaRegistry {
         let source = self.registry_source(registry_url).await?;
         let source_hash = RegistryCache::source_hash(&source);
 
-        if let Ok(registry) = self.cache.load_compiled(registry_url, &source_hash) {
-            self.cache.prune_stale_compiled(registry_url, &source_hash);
+        if let Some(registry) = self
+            .load_compiled_registry(registry_url, &source_hash)
+            .await
+        {
+            spawn_stale_compiled_prune(
+                self.cache.clone(),
+                registry_url.to_string(),
+                source_hash.clone(),
+            );
             return Ok(Some(Arc::new(ActiveRegistry::Compiled(registry))));
         }
 
-        info!("parsing aqua registry from {registry_url}");
-        let registry = Arc::new(measure!("aqua_registry::parse_yaml", {
-            ParsedRegistry::parse_yaml(&source)
-        })?);
-        let registry_url = registry_url.to_string();
-        let cache = self.cache.clone();
-        let registry_for_cache = Arc::clone(&registry);
-        tokio::task::spawn_blocking(move || {
-            if cache.load_compiled(&registry_url, &source_hash).is_ok() {
-                cache.prune_stale_compiled(&registry_url, &source_hash);
-                return;
-            }
-
-            info!("writing compiled aqua registry cache for {registry_url}");
-            if let Err(err) = measure!("aqua_registry::write_compiled_cache", {
-                cache
-                    .write_compiled(&registry_url, &source_hash, registry_for_cache.as_ref())
-                    .map(|_| ())
-            }) {
-                warn!("failed to write compiled aqua registry cache for {registry_url}: {err}");
-            }
-        });
+        let registry = parse_registry_source(registry_url.to_string(), source).await?;
+        spawn_compiled_registry_cache_writer(
+            registry_url.to_string(),
+            self.cache.clone(),
+            source_hash,
+            Arc::clone(&registry),
+        );
         Ok(Some(Arc::new(ActiveRegistry::Parsed(registry))))
+    }
+
+    async fn load_compiled_registry(
+        &self,
+        registry_url: &str,
+        source_hash: &str,
+    ) -> Option<CompiledRegistry> {
+        let cache = self.cache.clone();
+        let registry_url = registry_url.to_string();
+        let cache_registry_url = registry_url.clone();
+        let cache_source_hash = source_hash.to_string();
+        match tokio::task::spawn_blocking(move || {
+            cache.load_compiled(&cache_registry_url, &cache_source_hash)
+        })
+        .await
+        {
+            Ok(Ok(registry)) => Some(registry),
+            Ok(Err(err)) => {
+                log::debug!("compiled aqua registry cache miss for {registry_url}: {err}");
+                None
+            }
+            Err(err) => {
+                warn!("failed to load compiled aqua registry cache for {registry_url}: {err}");
+                None
+            }
+        }
     }
 
     async fn registry_source(&self, registry_url: &str) -> aqua_registry::Result<String> {
@@ -232,9 +250,11 @@ async fn download_registry_source(registry_url: &str) -> aqua_registry::Result<S
         }
     }
 
-    match download_registry_url(registry_url).await {
-        Ok(source) => return Ok(source),
-        Err(err) => errors.push(err.to_string()),
+    if github_repo.is_none() {
+        match download_registry_url(registry_url).await {
+            Ok(source) => return Ok(source),
+            Err(err) => errors.push(err.to_string()),
+        }
     }
 
     Err(AquaRegistryError::RegistryNotAvailable(format!(
@@ -263,6 +283,53 @@ async fn download_registry_url(url: &str) -> aqua_registry::Result<String> {
             "failed to download aqua registry source {url}: {err}"
         ))
     })
+}
+
+async fn parse_registry_source(
+    registry_url: String,
+    source: String,
+) -> aqua_registry::Result<Arc<ParsedRegistry>> {
+    tokio::task::spawn_blocking(move || {
+        info!("parsing aqua registry from {registry_url}");
+        measure!("aqua_registry::parse_yaml", {
+            ParsedRegistry::parse_yaml(&source).map(Arc::new)
+        })
+    })
+    .await
+    .map_err(|err| {
+        AquaRegistryError::RegistryNotAvailable(format!(
+            "failed to parse aqua registry on blocking worker: {err}"
+        ))
+    })?
+}
+
+fn spawn_stale_compiled_prune(cache: RegistryCache, registry_url: String, source_hash: String) {
+    tokio::task::spawn_blocking(move || {
+        cache.prune_stale_compiled(&registry_url, &source_hash);
+    });
+}
+
+fn spawn_compiled_registry_cache_writer(
+    registry_url: String,
+    cache: RegistryCache,
+    source_hash: String,
+    registry: Arc<ParsedRegistry>,
+) {
+    tokio::task::spawn_blocking(move || {
+        if cache.load_compiled(&registry_url, &source_hash).is_ok() {
+            cache.prune_stale_compiled(&registry_url, &source_hash);
+            return;
+        }
+
+        info!("writing compiled aqua registry cache for {registry_url}");
+        if let Err(err) = measure!("aqua_registry::write_compiled_cache", {
+            cache
+                .write_compiled(&registry_url, &source_hash, registry.as_ref())
+                .map(|_| ())
+        }) {
+            warn!("failed to write compiled aqua registry cache for {registry_url}: {err}");
+        }
+    });
 }
 
 fn github_repo_slug(registry_url: &str) -> Option<(String, String)> {

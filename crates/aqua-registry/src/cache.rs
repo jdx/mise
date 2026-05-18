@@ -192,6 +192,7 @@ fn prune_stale_compiled_registries(current_dir: &Path) {
             continue;
         }
         if entry.file_type().is_ok_and(|file_type| file_type.is_dir())
+            && is_compiled_source_hash_dir(&path)
             && let Err(err) = fs::remove_dir_all(&path)
         {
             log::debug!(
@@ -200,6 +201,12 @@ fn prune_stale_compiled_registries(current_dir: &Path) {
             );
         }
     }
+}
+
+fn is_compiled_source_hash_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.len() == 64 && name.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 fn cleanup_tmp_dir_for_existing_compiled_cache(tmp_dir: &Path, compiled_dir: &Path) -> Result<()> {
@@ -311,6 +318,31 @@ mod tests {
         assert!(second_dir.is_dir());
         assert!(!first_dir.exists());
         assert!(loaded.package("example/second").is_ok());
+    }
+
+    #[test]
+    fn compiled_cache_prune_skips_temp_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = RegistryCache::new(temp.path());
+        let registry_url = "https://example.com/aqua-registry";
+        let current_hash = RegistryCache::source_hash(&registry_source("example/current"));
+        let stale_hash = RegistryCache::source_hash(&registry_source("example/stale"));
+        let current_dir = cache.compiled_dir(registry_url, &current_hash);
+        let stale_dir = cache.compiled_dir(registry_url, &stale_hash);
+        let tmp_dir = current_dir
+            .parent()
+            .unwrap()
+            .join(format!("{current_hash}.tmp-in-progress"));
+
+        fs::create_dir_all(&current_dir).unwrap();
+        fs::create_dir_all(&stale_dir).unwrap();
+        fs::create_dir_all(&tmp_dir).unwrap();
+
+        cache.prune_stale_compiled(registry_url, &current_hash);
+
+        assert!(current_dir.is_dir());
+        assert!(!stale_dir.exists());
+        assert!(tmp_dir.is_dir());
     }
 
     #[test]
