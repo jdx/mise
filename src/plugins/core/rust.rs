@@ -43,7 +43,7 @@ impl<'a> RustOptions<'a> {
     fn comma_list(&self, name: &str) -> Option<Vec<String>> {
         self.values
             .str(name)
-            .map(|c| c.split(',').map(|s| s.to_string()).collect())
+            .map(|c| c.split(',').map(|s| s.trim().to_string()).collect())
     }
 
     fn install_args(
@@ -451,7 +451,7 @@ mod tests {
         let mut opts = opts_with("profile", "minimal");
         opts.opts.insert(
             "components".to_string(),
-            toml::Value::String("clippy,rustfmt".to_string()),
+            toml::Value::String("clippy, rustfmt".to_string()),
         );
         opts.opts.insert(
             "targets".to_string(),

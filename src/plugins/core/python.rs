@@ -51,6 +51,8 @@ impl<'a> PythonOptions<'a> {
     }
 
     fn patch_sysconfig(&self) -> bool {
+        // Preserve the existing option semantics: only the string "false"
+        // disables sysconfig patching.
         self.values.str("patch_sysconfig") != Some("false")
     }
 
