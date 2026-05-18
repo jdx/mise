@@ -128,43 +128,28 @@ impl Toolset {
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
 
-        let disabled_backend_errors: Vec<_> = versions
-            .iter()
-            .filter_map(|tr| {
-                tr.backend()
-                    .ok()
-                    .and_then(|backend| backend::ensure_backend_enabled(&backend.get_type()).err())
-                    .map(|err| (tr.clone(), err))
-            })
-            .collect();
-        let tools_with_disabled_backend_errors: HashSet<_> = disabled_backend_errors
-            .iter()
-            .map(|(tr, _)| tr.clone())
-            .collect();
-        let versions_with_enabled_backends: Vec<_> = versions
-            .iter()
-            .filter(|tr| !tools_with_disabled_backend_errors.contains(*tr))
-            .cloned()
-            .collect();
+        let mut disabled_backend_errors = vec![];
+        versions.retain(|tr| {
+            if let Ok(backend) = tr.backend()
+                && let Err(err) = backend::ensure_backend_enabled(&backend.get_type())
+            {
+                disabled_backend_errors.push((tr.clone(), err));
+                false
+            } else {
+                true
+            }
+        });
 
         // Ensure plugins are installed before building dependency graph
-        let plugin_errors = self
-            .ensure_plugins_installed(config, &versions_with_enabled_backends, opts)
-            .await;
+        let plugin_errors = self.ensure_plugins_installed(config, &versions, opts).await;
 
         // Filter out tools with plugin errors
         let tools_with_plugin_errors: HashSet<_> =
             plugin_errors.iter().map(|(tr, _)| tr.clone()).collect();
-        let versions_to_install: Vec<_> = versions
-            .into_iter()
-            .filter(|tr| !tools_with_disabled_backend_errors.contains(tr))
-            .filter(|tr| !tools_with_plugin_errors.contains(tr))
-            .collect();
+        versions.retain(|tr| !tools_with_plugin_errors.contains(tr));
 
         // Build dependency graph and install using Kahn's algorithm
-        let (installed, failed) = self
-            .install_with_deps(config, versions_to_install, opts)
-            .await;
+        let (installed, failed) = self.install_with_deps(config, versions, opts).await;
 
         // Update footer for errors found before install tasks are spawned.
         let pre_install_error_count = disabled_backend_errors.len() + plugin_errors.len();
