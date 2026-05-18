@@ -47,11 +47,18 @@ impl<'a> BackendOptions<'a> {
 
     pub(crate) fn platform_bool_for_target(&self, key: &str, target: &PlatformTarget) -> bool {
         self.platform_string_for_target(key, target)
-            .is_some_and(|v| is_truthy(&v))
+            .is_some_and(|v| bool_str_or_default(key, &v, false))
     }
 
     pub(crate) fn bool(&self, key: &str) -> bool {
-        self.raw.get_string(key).is_some_and(|v| is_truthy(&v))
+        self.bool_with_default(key, false)
+    }
+
+    pub(crate) fn bool_with_default(&self, key: &str, default: bool) -> bool {
+        self.raw
+            .opts
+            .get(key)
+            .map_or(default, |value| bool_value_or_default(key, value, default))
     }
 
     pub(crate) fn available_platforms_with_key(&self, key: &str) -> Vec<String> {
@@ -60,13 +67,107 @@ impl<'a> BackendOptions<'a> {
 }
 
 pub(crate) fn is_truthy(value: &str) -> bool {
-    matches!(value.trim(), "true" | "1")
+    matches!(value.trim().to_ascii_lowercase().as_str(), "true" | "1")
+}
+
+pub(crate) fn is_falsey(value: &str) -> bool {
+    matches!(value.trim().to_ascii_lowercase().as_str(), "false" | "0")
+}
+
+pub(crate) fn bool_value_or_default(key: &str, value: &toml::Value, default: bool) -> bool {
+    match value {
+        toml::Value::Boolean(value) => *value,
+        toml::Value::String(value) => bool_str_or_default(key, value, default),
+        toml::Value::Integer(0) => false,
+        toml::Value::Integer(1) => true,
+        _ => invalid_bool_value(key, value, default),
+    }
+}
+
+fn bool_str_or_default(key: &str, value: &str, default: bool) -> bool {
+    parse_bool_str(value).unwrap_or_else(|| invalid_bool_value(key, value, default))
+}
+
+fn parse_bool_str(value: &str) -> Option<bool> {
+    if is_truthy(value) {
+        Some(true)
+    } else if is_falsey(value) {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn invalid_bool_value(key: &str, value: impl std::fmt::Display, default: bool) -> bool {
+    warn!(
+        "invalid boolean value for tool option `{key}`: {value}; expected true, false, 1, or 0; using {default}"
+    );
+    default
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::platform::Platform;
+
+    fn opts_with_value(key: &str, value: toml::Value) -> ToolVersionOptions {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(key.to_string(), value);
+        opts
+    }
+
+    #[test]
+    fn test_bool_parses_consistent_formats() {
+        assert!(
+            BackendOptions::new(&opts_with_value("flag", toml::Value::Boolean(true))).bool("flag")
+        );
+        assert!(
+            !BackendOptions::new(&opts_with_value("flag", toml::Value::Boolean(false)))
+                .bool("flag")
+        );
+        assert!(
+            BackendOptions::new(&opts_with_value("flag", toml::Value::String("TRUE".into())))
+                .bool("flag")
+        );
+        assert!(
+            !BackendOptions::new(&opts_with_value(
+                "flag",
+                toml::Value::String("FALSE".into())
+            ))
+            .bool("flag")
+        );
+        assert!(
+            BackendOptions::new(&opts_with_value("flag", toml::Value::String("1".into())))
+                .bool("flag")
+        );
+        assert!(
+            !BackendOptions::new(&opts_with_value("flag", toml::Value::String("0".into())))
+                .bool("flag")
+        );
+        assert!(
+            BackendOptions::new(&opts_with_value("flag", toml::Value::Integer(1))).bool("flag")
+        );
+        assert!(
+            !BackendOptions::new(&opts_with_value("flag", toml::Value::Integer(0))).bool("flag")
+        );
+    }
+
+    #[test]
+    fn test_bool_invalid_values_fall_back_to_default() {
+        assert!(!BackendOptions::new(&ToolVersionOptions::default()).bool("missing"));
+        assert!(
+            !BackendOptions::new(&opts_with_value("flag", toml::Value::String("00".into())))
+                .bool("flag")
+        );
+        assert!(
+            BackendOptions::new(&opts_with_value("flag", toml::Value::String("00".into())))
+                .bool_with_default("flag", true)
+        );
+        assert!(
+            BackendOptions::new(&opts_with_value("flag", toml::Value::Integer(2)))
+                .bool_with_default("flag", true)
+        );
+    }
 
     #[test]
     fn test_platform_bool_for_target_uses_requested_target() {

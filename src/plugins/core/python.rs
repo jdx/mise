@@ -51,9 +51,7 @@ impl<'a> PythonOptions<'a> {
     }
 
     fn patch_sysconfig(&self) -> bool {
-        // Preserve the existing option semantics: only the string "false"
-        // disables sysconfig patching.
-        self.values.str("patch_sysconfig") != Some("false")
+        self.values.bool_with_default("patch_sysconfig", true)
     }
 
     fn virtualenv(&self) -> Option<&'a str> {
@@ -1072,9 +1070,12 @@ mod tests {
     use super::*;
 
     fn opts_with(key: &str, value: &str) -> ToolVersionOptions {
+        opts_with_value(key, toml::Value::String(value.to_string()))
+    }
+
+    fn opts_with_value(key: &str, value: toml::Value) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
-        opts.opts
-            .insert(key.to_string(), toml::Value::String(value.to_string()));
+        opts.opts.insert(key.to_string(), value);
         opts
     }
 
@@ -1082,6 +1083,17 @@ mod tests {
     fn python_options_reads_patch_sysconfig() {
         assert!(PythonOptions::new(&ToolVersionOptions::default()).patch_sysconfig());
         assert!(!PythonOptions::new(&opts_with("patch_sysconfig", "false")).patch_sysconfig());
+        assert!(!PythonOptions::new(&opts_with("patch_sysconfig", "FALSE")).patch_sysconfig());
+        assert!(!PythonOptions::new(&opts_with("patch_sysconfig", "0")).patch_sysconfig());
+        assert!(
+            !PythonOptions::new(&opts_with_value(
+                "patch_sysconfig",
+                toml::Value::Boolean(false)
+            ))
+            .patch_sysconfig()
+        );
+        assert!(PythonOptions::new(&opts_with("patch_sysconfig", "1")).patch_sysconfig());
+        assert!(PythonOptions::new(&opts_with("patch_sysconfig", "00")).patch_sysconfig());
     }
 
     #[test]
