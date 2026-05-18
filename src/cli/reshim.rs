@@ -26,7 +26,7 @@ use crate::toolset::ToolsetBuilder;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Reshim {
     #[clap(hide = true)]
-    pub plugin: Option<String>,
+    pub tool: Option<String>,
     #[clap(hide = true)]
     pub version: Option<String>,
 

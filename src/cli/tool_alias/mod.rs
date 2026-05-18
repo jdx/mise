@@ -19,9 +19,9 @@ pub struct ToolAlias {
     #[clap(subcommand)]
     command: Option<Commands>,
 
-    /// filter aliases by plugin
-    #[clap(short, long)]
-    pub plugin: Option<BackendArg>,
+    /// Filter aliases by tool
+    #[clap(short = 'p', long = "tool", alias = "plugin", value_name = "TOOL")]
+    pub tool: Option<BackendArg>,
 
     /// Don't show table header
     #[clap(long)]
@@ -50,7 +50,7 @@ impl Commands {
 impl ToolAlias {
     pub async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::ToolAliasLs {
-            tool: self.plugin,
+            tool: self.tool,
             no_header: self.no_header,
         }));
 

@@ -704,8 +704,7 @@
         },
         "env_file": {
           "description": "Path to a file containing environment variables to automatically load.",
-          "type": "string",
-          "deprecated": true
+          "type": "string"
         },
         "env_shell_expand": {
           "description": "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",

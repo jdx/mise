@@ -178,7 +178,7 @@ See [Tools](/dev-tools/). In addition to specifying versions, each tool entry ca
 
 - `os`: Restrict installation to certain operating systems
 - `depends`: Install order relative to other tools in this config only; vfox plugin hook dependencies belong in plugin `metadata.lua` (see [Tool Dependencies](/dev-tools/#tool-dependencies))
-- `install_env`: Environment vars used during install
+- `install_env`: Environment vars used during install and tool-level `postinstall`
 - `postinstall`: Command to run after installation completes for that specific tool
 
 Examples:
@@ -326,12 +326,11 @@ trusted_config_paths = [
     '~/work/my-trusted-projects',
 ]
 
+env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
+
 [settings.status]
 show_env = false
 show_tools = false
-
-[env]
-_.file = '.env'
 
 # "_" is a special key for information you'd like to put into mise.toml that mise will never parse
 [_]
@@ -499,14 +498,13 @@ This is the path which is used as `{{config_root}}` for the global config file.
 
 ### `MISE_ENV_FILE`
 
-Deprecated. Use `env._.file` in `mise.toml` or `~/.config/mise/config.toml` instead.
-
-Set to a filename to read from env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
+Set to a filename to read env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
+This searches for and loads all matching files in the current directory and parent directories.
 Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
-### `MISE_${PLUGIN}_VERSION`
+### `MISE_${TOOL}_VERSION`
 
-Set the version for a runtime. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
+Set the version for a tool. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
 of what is set in `mise.toml`/`.tool-versions`.
 
 ### `MISE_TRUSTED_CONFIG_PATHS`

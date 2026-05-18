@@ -52,8 +52,8 @@ pub struct Local {
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
-    /// Remove the plugin(s) from .tool-versions
-    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
+    /// Remove the tool(s) from .tool-versions
+    #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Option<Vec<BackendArg>>,
 }
 
