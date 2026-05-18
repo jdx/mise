@@ -7,8 +7,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sigstore_verify::VerificationPolicy;
 use sigstore_verify::trust_root::{SigstoreInstance, TrustedRoot};
+use sigstore_verify::types::bundle::VerificationMaterialContent;
 use sigstore_verify::types::{
-    Artifact, Bundle, DerCertificate, DerPublicKey, Sha256Hash, SignatureBytes,
+    Artifact, Bundle, DerCertificate, DerPublicKey, HashAlgorithm, Sha256Hash, SignatureBytes,
+    SignatureContent,
 };
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
@@ -424,6 +426,15 @@ pub async fn verify_cosign_signature_with_key(
         .ok()
         .and_then(|content| Bundle::from_json(content).ok());
     if let Some(bundle) = bundle {
+        if matches!(
+            &bundle.verification_material.content,
+            VerificationMaterialContent::PublicKey { .. }
+        ) {
+            let artifact = tokio::fs::read(artifact_path).await?;
+            verify_public_key_bundle(&artifact, &bundle, &public_key)?;
+            return Ok(true);
+        }
+
         // Bundle path: needs the trust root for tlog (Rekor) verification.
         let trusted_root = production_trusted_root().await?;
         let artifact = tokio::fs::read(artifact_path).await?;
@@ -446,6 +457,79 @@ pub async fn verify_cosign_signature_with_key(
     let signature = decode_cosign_signature(&raw_bytes);
     verify_raw_signature(&artifact, &signature, &public_key)?;
     Ok(true)
+}
+
+fn verify_public_key_bundle(
+    artifact: &[u8],
+    bundle: &Bundle,
+    public_key: &DerPublicKey,
+) -> Result<()> {
+    use sigstore_verify::bundle::{ValidationOptions, validate_bundle_with_options};
+    use sigstore_verify::crypto::{
+        KeyType, SigningScheme, detect_key_type, verify_signature, verify_signature_prehashed,
+    };
+
+    validate_bundle_with_options(
+        bundle,
+        &ValidationOptions {
+            require_inclusion_proof: true,
+            require_timestamp: false,
+        },
+    )
+    .map_err(|e| AttestationError::Verification(format!("bundle validation failed: {e}")))?;
+
+    let scheme = match detect_key_type(public_key) {
+        KeyType::Ed25519 => SigningScheme::Ed25519,
+        KeyType::EcdsaP256 => SigningScheme::EcdsaP256Sha256,
+        KeyType::Unknown => {
+            return Err(AttestationError::Verification(
+                "unsupported or unrecognized public key type".to_string(),
+            ));
+        }
+    };
+
+    match &bundle.content {
+        SignatureContent::MessageSignature(msg_sig) => {
+            let artifact_hash = Sha256Hash::try_from_slice(&Sha256::digest(artifact))?;
+            if let Some(digest) = &msg_sig.message_digest {
+                if digest.algorithm != HashAlgorithm::Sha2256 {
+                    return Err(AttestationError::Verification(format!(
+                        "unsupported message digest algorithm {}",
+                        digest.algorithm
+                    )));
+                }
+                if digest.digest != artifact_hash {
+                    return Err(AttestationError::Verification(
+                        "message digest in bundle does not match artifact hash".to_string(),
+                    ));
+                }
+            }
+
+            if scheme.uses_sha256() && scheme.supports_prehashed() {
+                verify_signature_prehashed(public_key, &artifact_hash, &msg_sig.signature, scheme)
+            } else {
+                verify_signature(public_key, artifact, &msg_sig.signature, scheme)
+            }
+            .map_err(|e| {
+                AttestationError::Verification(format!("signature verification failed: {e}"))
+            })?;
+        }
+        SignatureContent::DsseEnvelope(envelope) => {
+            let payload = envelope.decode_payload();
+            let pae = sigstore_verify::types::pae(&envelope.payload_type, &payload);
+            if !envelope
+                .signatures
+                .iter()
+                .any(|sig| verify_signature(public_key, &pae, &sig.sig, scheme).is_ok())
+            {
+                return Err(AttestationError::Verification(
+                    "DSSE signature verification failed: no valid signatures found".to_string(),
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn verify_slsa_provenance(
