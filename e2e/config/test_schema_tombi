@@ -39,6 +39,11 @@ cat >"$HOME/workdir/mise.toml" <<'TOML'
 env_file = ".env"
 env_path = "./bin"
 
+[[watch_files]]
+patterns = ["src/**/*.rs"]
+run = "cargo fmt"
+shell = "bash -c"
+
 [task_templates.base]
 quiet = true
 dir = "{{config_root}}"
@@ -119,7 +124,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-directive.toml", "mise-bad-tmpl.toml", "mise-bad-os.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-directive.toml", "mise-bad-tmpl.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -159,6 +164,15 @@ node = { version = "latest", os = true }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-os.toml"
+
+cat >"$HOME/workdir/mise-bad-watch-files.toml" <<'TOML'
+[[watch_files]]
+patterns = ["uv.lock"]
+task = "sync-deps"
+shell = "bash -c"
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-watch-files.toml"
 
 cat >"$HOME/workdir/mise-bad-task-os.toml" <<'TOML'
 [build]

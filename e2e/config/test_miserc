@@ -15,6 +15,16 @@ MISE_ENV=ci assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml 
 
 # Test ceiling_paths in .miserc.toml - subdirectory should pick up parent miserc
 rm -f .miserc.toml
+
+# Invalid global miserc TOML should be reported instead of silently ignored.
+cat >"$MISE_CONFIG_DIR/miserc.toml" <<'EOF'
+ceiling_paths = ["{{ env.HOME }}"]
+fdsfads
+EOF
+assert_fail "mise config ls" "Invalid TOML in config file:"
+assert_fail "mise config ls" "~/.config/mise/miserc.toml:2:8"
+assert_fail "mise config ls" "key with no value, expected"
+rm -f "$MISE_CONFIG_DIR/miserc.toml"
 echo 'env = ["test"]' >.miserc.toml
 mkdir -p subdir
 cd subdir || exit 1

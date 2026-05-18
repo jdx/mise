@@ -198,7 +198,8 @@ impl RubyPlugin {
             }
             PluginSource::Git {
                 url: repo_url,
-                git_ref: _,
+                git_ref,
+                subdir,
             } => {
                 let git = Git::new(tmp.clone());
                 let mut clone_options = CloneOptions::default();
@@ -206,6 +207,19 @@ impl RubyPlugin {
                     clone_options = clone_options.pr(pr);
                 }
                 git.clone(&repo_url, clone_options)?;
+                if let Some(ref_) = &git_ref {
+                    git.update(Some(ref_.to_string()))?;
+                }
+                if let Some(subdir) = subdir {
+                    let subdir_path = tmp.join(subdir);
+                    if !subdir_path.is_dir() {
+                        return Err(eyre!(
+                            "plugin subdirectory does not exist: {}",
+                            file::display_path(&subdir_path)
+                        ));
+                    }
+                    return Ok(subdir_path);
+                }
             }
         }
         Ok(tmp)

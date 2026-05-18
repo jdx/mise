@@ -204,6 +204,14 @@ If true, mise will use `cargo binstall` instead of `cargo install` if
 [`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.
 This makes installing CLIs with cargo _much_ faster by downloading precompiled binaries.
 
+When `cargo-binstall` installs a prebuilt binary, Cargo build settings and `cargo install`
+behavior do not affect the downloaded artifact. Set `cargo.binstall = false` to force
+`cargo install` when you need Cargo settings to control the install.
+
+When mise invokes `cargo-binstall`, `cargo-binstall` handles its own fallback order, including
+its final fallback to compiling with `cargo install`. mise does not retry with a separate
+`cargo install` command if `cargo-binstall` exits with an error.
+
 You can install it with mise:
 
 ```sh
@@ -717,7 +725,7 @@ env = "MISE_GITHUB_OAUTH_API_URL"
 type = "String"
 
 [github.oauth_auth_url]
-default = "https://github.com/login/oauth"
+default = "https://github.com/login"
 description = "GitHub OAuth endpoint base URL for native device-flow tokens."
 docs = """
 OAuth endpoint base URL used by native GitHub device flow. The default is for
@@ -1730,12 +1738,28 @@ env = "MISE_PRERELEASES"
 type = "Bool"
 
 [profile]
-deprecated = "Use MISE_ENV_FILE instead."
+deprecated = "Use MISE_ENV instead."
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 env = "MISE_PROFILE"
 hide = true
 optional = true
 type = "String"
+
+[provenance_api_failures_fatal]
+default = true
+description = "Fail when provenance API checks cannot be completed."
+docs = """
+When enabled, mise treats provenance API failures as install errors. This keeps
+provenance strict by default: if a remote attestation or release-provenance API
+cannot be reached or queried, mise will fail instead of silently installing
+without provenance.
+
+Set this to `false` to warn and continue when provenance API checks fail. This
+does not ignore checksum failures, provenance verification mismatches, or
+lockfiles that already require provenance for the tool being installed.
+"""
+env = "MISE_PROVENANCE_API_FAILURES_FATAL"
+type = "Bool"
 
 [python.compile]
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
@@ -2087,6 +2111,12 @@ type = "Bool"
 default = true
 description = "If true, fail when sops decryption fails (including when sops is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases."
 env = "MISE_SOPS_STRICT"
+type = "Bool"
+
+[spm.artifactbundle_only]
+default = false
+description = "Only use SwiftPM artifact bundles for installation, fail if no matching bundle is available."
+env = "MISE_SPM_ARTIFACTBUNDLE_ONLY"
 type = "Bool"
 
 [status.missing_tools]

@@ -44,7 +44,7 @@ pub struct HookEnv {
     #[clap(long, hide = true)]
     reason: Option<HookReason>,
 
-    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
+    /// Show "mise: <TOOL>@<VERSION>" message when changing directories
     #[clap(long, hide = true)]
     status: bool,
 }

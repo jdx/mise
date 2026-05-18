@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 /// Install a tool version
 ///
-/// Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
+/// Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`
 /// Installing alone will not activate the tools so they won't be in PATH.
 /// To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
 /// in the current directory to activate this tool when inside the directory.
@@ -49,7 +49,7 @@ pub struct Install {
 
     /// Show installation output
     ///
-    /// This argument will print plugin output such as download, configuration, and compilation output.
+    /// This argument will print backend output such as download, configuration, and compilation output.
     #[clap(long, short, action = clap::ArgAction::Count)]
     verbose: u8,
 
@@ -65,8 +65,8 @@ pub struct Install {
     #[clap(long, verbatim_doc_comment)]
     dry_run_code: bool,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 
@@ -170,7 +170,7 @@ impl Install {
         let tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;
         let mut versions = if tool_versions.is_empty() {
             warn!("no runtimes to install");
-            warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
+            warn!("specify a version with `mise install <TOOL>@<VERSION>`");
             vec![]
         } else {
             ts.install_all_versions(&mut config, tool_versions, &self.install_opts()?)

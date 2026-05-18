@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -17,6 +17,7 @@ use eyre::bail;
 use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
+use sha2::{Digest, Sha256};
 use std::sync::LazyLock as Lazy;
 use tar::Archive;
 use walkdir::WalkDir;
@@ -1339,6 +1340,168 @@ pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ArchiveContent {
+    pub name: String,
+    pub sha256: String,
+}
+
+/// Return the regular files in an archive after applying strip-components.
+///
+/// This is intentionally stricter than extraction: content-level provenance is
+/// only safe when every installed regular file is covered, so ambiguous archive
+/// entries (links, unsafe paths, stripped-away file names, unsupported formats)
+/// fail closed instead of being ignored.
+pub fn archive_content_files(
+    archive_path: &Path,
+    format: TarFormat,
+    strip_components: usize,
+) -> Result<Vec<ArchiveContent>> {
+    if strip_components > 1 {
+        bail!("content-level SLSA verification only supports strip_components values of 0 or 1");
+    }
+
+    match format {
+        TarFormat::TarGz
+        | TarFormat::TarXz
+        | TarFormat::TarBz2
+        | TarFormat::TarZst
+        | TarFormat::Tar => archive_content_files_tar(archive_path, format, strip_components),
+        TarFormat::Zip => archive_content_files_zip(archive_path, strip_components),
+        TarFormat::SevenZip => {
+            bail!("content-level SLSA verification does not support 7z archives")
+        }
+        TarFormat::Gz | TarFormat::Xz | TarFormat::Bz2 | TarFormat::Zst | TarFormat::Raw => {
+            bail!("content-level SLSA verification only supports archive formats")
+        }
+    }
+}
+
+fn archive_content_files_tar(
+    archive_path: &Path,
+    format: TarFormat,
+    strip_components: usize,
+) -> Result<Vec<ArchiveContent>> {
+    let tar = open_tar(format, archive_path)?;
+    let mut archive = Archive::new(tar);
+    let mut files = Vec::new();
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.into_owned();
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_dir() {
+            continue;
+        }
+        if !entry_type.is_file() {
+            bail!(
+                "content-level SLSA verification does not support non-regular archive entry: {}",
+                path.display()
+            );
+        }
+        let name = normalize_archive_content_path(&path, strip_components)?;
+        let sha256 = sha256_reader(&mut entry)?;
+        files.push(ArchiveContent { name, sha256 });
+    }
+
+    validate_archive_content_files(files)
+}
+
+fn archive_content_files_zip(
+    archive_path: &Path,
+    strip_components: usize,
+) -> Result<Vec<ArchiveContent>> {
+    let f = File::open(archive_path)?;
+    let mut archive = ZipArchive::new(f)
+        .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive_path)))?;
+    let mut files = Vec::new();
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        if file.is_dir() {
+            continue;
+        }
+        if file.is_symlink() {
+            bail!(
+                "content-level SLSA verification does not support symlink archive entry: {}",
+                file.name()
+            );
+        }
+        let enclosed_name = file.enclosed_name().ok_or_else(|| {
+            eyre::eyre!(
+                "content-level SLSA verification rejected unsafe zip path: {}",
+                file.name()
+            )
+        })?;
+        let name = normalize_archive_content_path(&enclosed_name, strip_components)?;
+        let sha256 = sha256_reader(&mut file)?;
+        files.push(ArchiveContent { name, sha256 });
+    }
+
+    validate_archive_content_files(files)
+}
+
+fn sha256_reader(reader: &mut impl Read) -> Result<String> {
+    let mut hasher = Sha256::new();
+    let mut buf = [0; 8192];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn validate_archive_content_files(files: Vec<ArchiveContent>) -> Result<Vec<ArchiveContent>> {
+    if files.is_empty() {
+        bail!("content-level SLSA verification found no regular files in archive");
+    }
+    let mut names = std::collections::HashSet::new();
+    for file in &files {
+        if !names.insert(file.name.clone()) {
+            bail!(
+                "content-level SLSA verification found duplicate installed archive path: {}",
+                file.name
+            );
+        }
+    }
+    Ok(files)
+}
+
+fn normalize_archive_content_path(path: &Path, strip_components: usize) -> Result<String> {
+    let mut parts = Vec::new();
+    for component in skip_curdir_components(path) {
+        match component {
+            std::path::Component::Normal(part) => parts.push(part.to_string_lossy().to_string()),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {
+                bail!(
+                    "content-level SLSA verification rejected unsafe archive path: {}",
+                    path.display()
+                )
+            }
+        }
+    }
+    if strip_components > parts.len() {
+        bail!(
+            "content-level SLSA verification stripped all components from archive path: {}",
+            path.display()
+        );
+    }
+    let parts = &parts[strip_components..];
+    if parts.is_empty() {
+        bail!(
+            "content-level SLSA verification stripped all components from archive path: {}",
+            path.display()
+        );
+    }
+    Ok(parts.join("/"))
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
@@ -1346,6 +1509,50 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[test]
+    fn test_archive_content_files_tar_hashes_regular_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let mut builder = tar::Builder::new(file);
+            let mut header = tar::Header::new_gnu();
+            header.set_path("pkg/tool").unwrap();
+            header.set_size(4);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder.append(&header, &b"tool"[..]).unwrap();
+            builder.finish().unwrap();
+        }
+
+        let files = archive_content_files(&archive_path, TarFormat::Tar, 1).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "tool");
+        assert_eq!(files[0].sha256, hex::encode(Sha256::digest(b"tool")));
+    }
+
+    #[test]
+    fn test_archive_content_files_tar_rejects_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let mut builder = tar::Builder::new(file);
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_path("tool-link").unwrap();
+            header.set_link_name("tool").unwrap();
+            header.set_size(0);
+            header.set_mode(0o777);
+            header.set_cksum();
+            builder.append(&header, std::io::empty()).unwrap();
+            builder.finish().unwrap();
+        }
+
+        let err = archive_content_files(&archive_path, TarFormat::Tar, 0).unwrap_err();
+        assert!(err.to_string().contains("non-regular archive entry"));
+    }
 
     #[tokio::test]
     async fn test_find_up() {

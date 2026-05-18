@@ -28,7 +28,7 @@ use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Task, TaskTemplate};
-use crate::tera::take_tera_accessed_files;
+use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
@@ -1300,7 +1300,11 @@ pub async fn load_config_hierarchy_from_dir(
 }
 
 pub fn is_global_config(path: &Path) -> bool {
-    global_config_files().contains(path) || system_config_files().contains(path)
+    global_config_files().contains(path) || is_system_config(path)
+}
+
+pub fn is_system_config(path: &Path) -> bool {
+    system_config_files().contains(path)
 }
 
 /// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
@@ -2353,9 +2357,13 @@ async fn load_tasks_includes(
             if task.dir.is_none()
                 && let Some(ref dir) = *task_config_dir
             {
-                let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
-                let tera_ctx = task.tera_ctx(&config).await?;
-                task.dir = Some(tera.render_str(dir, &tera_ctx)?);
+                task.dir = Some(if contains_template_syntax(dir) {
+                    let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
+                    let tera_ctx = task.tera_ctx(&config).await?;
+                    render_str(&mut tera, dir, &tera_ctx)?
+                } else {
+                    dir.clone()
+                });
             }
             tasks.push(task);
         }

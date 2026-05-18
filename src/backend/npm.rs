@@ -2,6 +2,7 @@ use crate::Result;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 #[cfg(windows)]
 use crate::backend::runtime_path_for_install_path;
@@ -14,7 +15,7 @@ use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
 use crate::semver::{semver_is_at_least, semver_is_older_than, semver_triplet};
 use crate::timeout;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use async_trait::async_trait;
 use jiff::Timestamp;
 use serde_json::Value;
@@ -42,6 +43,42 @@ pub struct NPMBackend {
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct NpmOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> NpmOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn npm_args(&self) -> Option<&'a str> {
+        self.values.str("npm_args")
+    }
+
+    fn pnpm_args(&self) -> Option<&'a str> {
+        self.values.str("pnpm_args")
+    }
+
+    fn bun_args(&self) -> Option<&'a str> {
+        self.values.str("bun_args")
+    }
+
+    fn aube_args(&self) -> Option<&'a str> {
+        self.values.str("aube_args")
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        install_time_option_keys()
+            .into_iter()
+            .filter_map(|key| self.values.str(&key).map(|value| (key, value.to_string())))
+            .collect()
+    }
+}
+
 const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
 
 #[async_trait]
@@ -66,8 +103,10 @@ impl Backend for NPMBackend {
         let package_manager = settings.npm.package_manager;
         let tool_name = self.tool_name();
 
-        // Avoid circular dependency when installing npm itself
-        // But we still need the configured package manager for installation
+        // Explicit `npm:npm` still bootstraps through node's bundled npm even
+        // when the registry shorthand prefers aqua. Keep node here so users of
+        // the npm backend, or the registry fallback, wait for that bootstrap
+        // npm before installation starts.
         if tool_name == "npm" {
             return match package_manager {
                 NpmPackageManager::Auto => Ok(vec!["node"]),
@@ -113,15 +152,7 @@ impl Backend for NPMBackend {
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         let opts = request.options();
-        let mut result = BTreeMap::new();
-
-        for key in install_time_option_keys() {
-            if let Some(value) = opts.get(&key) {
-                result.insert(key, value.to_string());
-            }
-        }
-
-        result
+        NpmOptions::new(&opts).lockfile_options()
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -211,7 +242,8 @@ impl Backend for NPMBackend {
             .await;
         self.check_install_deps(&ctx.config, package_manager, Some(&ctx.ts))
             .await;
-        let options = tv.request.options();
+        let request_options = tv.request.options();
+        let options = NpmOptions::new(&request_options);
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
                 self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
@@ -243,7 +275,7 @@ impl Backend for NPMBackend {
                             .await,
                     )?
                     .current_dir(tv.install_path());
-                if let Some(args) = options.get("aube_args") {
+                if let Some(args) = options.aube_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
                 cmd.execute()?;
@@ -271,7 +303,7 @@ impl Backend for NPMBackend {
                             .await,
                     )?
                     .current_dir(tv.install_path());
-                if let Some(args) = options.get("bun_args") {
+                if let Some(args) = options.bun_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
                 cmd.execute()?;
@@ -300,7 +332,7 @@ impl Backend for NPMBackend {
                     // required to avoid pnpm error "global bin dir isn't in PATH"
                     // https://github.com/pnpm/pnpm/issues/9333
                     .prepend_path(vec![bin_dir])?;
-                if let Some(args) = options.get("pnpm_args") {
+                if let Some(args) = options.pnpm_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
                 cmd.execute()?;
@@ -323,7 +355,7 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?;
-                if let Some(args) = options.get("npm_args") {
+                if let Some(args) = options.npm_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
                 cmd.execute()?;

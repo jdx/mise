@@ -21,6 +21,9 @@ mkdir -p "$old_dir/.mise/tasks" "$new_dir"
 cat >"$old_dir/mise.toml" <<EOF
 [tools]
 dummy = "1.0.0"
+
+[tasks.probe]
+env = { PATH = "{{env.PATH}}" }
 EOF
 
 cat >"$new_dir/mise.toml" <<EOF

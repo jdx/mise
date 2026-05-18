@@ -89,8 +89,8 @@ pub struct Upgrade {
     #[clap(long, verbatim_doc_comment)]
     local: bool,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 }
@@ -380,6 +380,7 @@ impl Upgrade {
             }
         }
 
+        mpr.finish_progress();
         let ts = config.get_toolset().await?;
 
         // Fix up sources and requests for lockfile update - CLI args produce
@@ -411,6 +412,7 @@ impl Upgrade {
                 });
         }
 
+        mpr.finish_progress();
         Self::print_summary(&outdated, &successful_versions)?;
 
         install_error

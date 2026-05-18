@@ -1,7 +1,7 @@
 use crate::cmd::cmd;
 use crate::config::{Config, Settings, config_file};
 use crate::shell::Shell;
-use crate::tera::get_tera;
+use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, hook_env};
 use eyre::Result;
@@ -434,16 +434,29 @@ async fn execute(
     // providing those env vars aren't installed yet (fixes #6162)
     let (tera_ctx, mut env) = if hook.hook == Hooks::Preinstall {
         let env = ts.full_env_without_tools(config).await?;
-        let mut ctx = config.tera_ctx.clone();
-        ctx.insert("env", &env);
+        let ctx = if contains_template_syntax(run) {
+            let mut ctx = config.tera_ctx.clone();
+            ctx.insert("env", &env);
+            Some(ctx)
+        } else {
+            None
+        };
         (ctx, env)
     } else {
-        let ctx = ts.tera_ctx(config).await?.clone();
         let env = ts.full_env(config).await?;
+        let ctx = if contains_template_syntax(run) {
+            Some(ts.tera_ctx(config).await?.clone())
+        } else {
+            None
+        };
         (ctx, env)
     };
-    let mut tera = get_tera(Some(root));
-    let rendered_script = tera.render_str(run, &tera_ctx)?;
+    let rendered_script = if let Some(tera_ctx) = tera_ctx {
+        let mut tera = get_tera(Some(root));
+        render_str(&mut tera, run, &tera_ctx)?
+    } else {
+        run.to_string()
+    };
 
     let args = shell
         .iter()

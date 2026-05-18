@@ -1,16 +1,18 @@
 use crate::config::env_directive::EnvResults;
+use crate::env_diff::EnvMap;
 use crate::result;
 use std::path::{Path, PathBuf};
 
 impl EnvResults {
     pub async fn path(
         ctx: &mut tera::Context,
-        tera: &mut tera::Tera,
+        tera: &mut Option<tera::Tera>,
         r: &mut EnvResults,
         source: &Path,
+        exec_env: &EnvMap,
         input: String,
     ) -> result::Result<PathBuf> {
-        r.parse_template(ctx, tera, source, &input)
+        r.parse_template(ctx, tera, source, exec_env, &input)
             .map(PathBuf::from)
     }
 }
