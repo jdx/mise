@@ -1,5 +1,7 @@
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::{lookup_platform_key_for_target, lookup_with_fallback};
+use crate::backend::static_helpers::{
+    list_available_platforms_with_key, lookup_platform_key_for_target, lookup_with_fallback,
+};
 use crate::toolset::ToolVersionOptions;
 
 #[derive(Debug, Clone, Copy)]
@@ -50,6 +52,10 @@ impl<'a> BackendOptions<'a> {
 
     pub(crate) fn bool(&self, key: &str) -> bool {
         self.raw.get_string(key).is_some_and(|v| is_truthy(&v))
+    }
+
+    pub(crate) fn available_platforms_with_key(&self, key: &str) -> Vec<String> {
+        list_available_platforms_with_key(self.raw, key)
     }
 }
 
