@@ -644,6 +644,14 @@ mod tests {
     }
 
     #[test]
+    fn go_options_no_tags() {
+        let opts = ToolVersionOptions::default();
+
+        assert_eq!(GoOptions::new(&opts).tags(), None);
+        assert_eq!(GoOptions::new(&opts).lockfile_options(), BTreeMap::new());
+    }
+
+    #[test]
     fn parse_go_mod_info_without_versions() {
         let raw = r#"{"Path":"github.com/go-kratos/kratos/cmd/kratos/v2"}"#;
         let info: GoModInfo = serde_json::from_str(raw).unwrap();
