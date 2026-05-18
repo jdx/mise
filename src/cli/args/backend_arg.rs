@@ -225,6 +225,15 @@ fn resolve_constructor_short(short: &str, full: Option<&String>, preserve_short:
     }
 }
 
+fn paths_for_short(short: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let pathname = short.to_kebab_case();
+    (
+        dirs::CACHE.join(&pathname),
+        dirs::INSTALLS.join(&pathname),
+        dirs::DOWNLOADS.join(&pathname),
+    )
+}
+
 impl BackendArg {
     #[requires(!short.is_empty())]
     pub fn new(short: String, full: Option<String>) -> Self {
@@ -250,14 +259,14 @@ impl BackendArg {
         opts: Option<ToolVersionOptions>,
         resolution: BackendResolution,
     ) -> Self {
-        let pathname = short.to_kebab_case();
+        let (cache_path, installs_path, downloads_path) = paths_for_short(&short);
         Self {
             tool_name,
             short,
             full,
-            cache_path: dirs::CACHE.join(&pathname),
-            installs_path: dirs::INSTALLS.join(&pathname),
-            downloads_path: dirs::DOWNLOADS.join(&pathname),
+            cache_path,
+            installs_path,
+            downloads_path,
             opts,
             resolution,
             // backend: Default::default(),
@@ -698,10 +707,7 @@ impl BackendArg {
                 .unwrap_or(&ba.short)
                 .to_string();
         }
-        let pathname = ba.short.to_kebab_case();
-        ba.cache_path = dirs::CACHE.join(&pathname);
-        ba.installs_path = dirs::INSTALLS.join(&pathname);
-        ba.downloads_path = dirs::DOWNLOADS.join(&pathname);
+        (ba.cache_path, ba.installs_path, ba.downloads_path) = paths_for_short(&ba.short);
         ba
     }
 }

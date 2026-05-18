@@ -301,16 +301,16 @@ impl MiseToml {
     }
 
     fn normalize_tool_registry_aliases(&mut self) {
-        let user_aliases = self
+        let user_aliases: HashSet<&str> = self
             .alias
             .keys()
             .chain(self.tool_alias.keys())
-            .cloned()
+            .map(|s| s.as_str())
             .collect::<HashSet<_>>();
         let mut tools = self.tools.lock().unwrap();
         let mut normalized = IndexMap::with_capacity(tools.len());
         for (ba, tvp) in std::mem::take(&mut *tools) {
-            if user_aliases.contains(&ba.short) || ba.has_explicit_backend() {
+            if user_aliases.contains(ba.short.as_str()) || ba.has_explicit_backend() {
                 normalized.insert(ba, tvp);
             } else {
                 normalized.insert(ba.registry_alias_canonicalized(), tvp);
