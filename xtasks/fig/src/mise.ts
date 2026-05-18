@@ -1162,6 +1162,12 @@ const completionSpec: Fig.Spec = {
           description: "Generate a mise.toml file",
           options: [
             {
+              name: ["-g", "--global"],
+              description:
+                "Generate the global config file (~/.config/mise/config.toml)",
+              isRepeatable: false,
+            },
+            {
               name: ["-n", "--dry-run"],
               description:
                 "Show what would be generated without writing to file",
@@ -1461,6 +1467,12 @@ const completionSpec: Fig.Spec = {
       name: "edit",
       description: "Edit mise.toml interactively",
       options: [
+        {
+          name: ["-g", "--global"],
+          description:
+            "Edit the global config file (~/.config/mise/config.toml)",
+          isRepeatable: false,
+        },
         {
           name: ["-n", "--dry-run"],
           description: "Show what would be generated without writing to file",
