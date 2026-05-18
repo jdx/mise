@@ -68,12 +68,8 @@ go in `[tools]` in `mise.toml`.
 
 Set environment variables for Swift Package Manager commands such as
 `swift package dump-package`, `swift -print-target-info`, and `swift build`.
-This applies when the selected backend is `spm`.
-
-If you use a registry shorthand whose registry entry prefers another backend
-before `spm`, that other backend's behavior applies instead. For example, a
-tool whose registry entry lists `github:` before `spm:` will not run Swift
-Package Manager commands unless you explicitly use `spm:owner/repo`.
+For artifact bundle installs, this only applies to `swift -print-target-info`;
+the download, extract, and symlink steps are handled by mise directly.
 
 ```toml
 [tools]
