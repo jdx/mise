@@ -7,12 +7,12 @@ things are hardcoded, but I'm happy to add more settings to cover whatever confi
 Below I explain the behavior it uses around caching. If you're seeing behavior where things don't appear
 to be updating, this is a good place to start.
 
-## Plugin/Runtime Cache
+## Tool Cache
 
-Each plugin has a cache that's stored in `~/$MISE_CACHE_DIR/<PLUGIN>`. It stores
-the list of versions available for that plugin (`mise ls-remote <PLUGIN>`), the idiomatic filenames (see below),
-the list of aliases, the bin directories within each runtime installation, and the result of
-running `exec-env` after the runtime was installed.
+Each tool/backend has a cache that's stored in `~/$MISE_CACHE_DIR/<TOOL>`. It stores
+the list of versions available for that tool (`mise ls-remote <TOOL>`), the idiomatic filenames (see below),
+the list of aliases, the bin directories within each tool installation, and the result of
+running `exec-env` after the tool was installed.
 
 Remote versions are updated daily by default. The file is zlib messagepack, if you want to view it you can
 run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).

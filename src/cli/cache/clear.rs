@@ -10,9 +10,9 @@ use walkdir::WalkDir;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
 pub struct CacheClear {
-    /// Plugin(s) to clear cache for
+    /// Tool(s) to clear cache for
     /// e.g.: node, python
-    plugin: Option<Vec<String>>,
+    tool: Option<Vec<String>>,
 
     /// Mark all cache files as old
     #[clap(long, hide = true)]
@@ -21,13 +21,13 @@ pub struct CacheClear {
 
 impl CacheClear {
     pub fn run(self) -> Result<()> {
-        let cache_dirs = match &self.plugin {
-            Some(plugins) => plugins
+        let cache_dirs = match &self.tool {
+            Some(tools) => tools
                 .iter()
                 .filter_map(|p| {
                     let kebab = p.to_kebab_case();
                     if kebab.is_empty() {
-                        warn!("invalid plugin name: {p}");
+                        warn!("invalid tool name: {p}");
                         None
                     } else {
                         Some(CACHE.join(kebab))
@@ -61,11 +61,11 @@ impl CacheClear {
                 }
             }
             // Also clear env cache when clearing all caches
-            if self.plugin.is_none() {
+            if self.tool.is_none() {
                 CachedEnv::clear()?;
             }
-            match &self.plugin {
-                Some(plugins) => info!("cache cleared for {}", plugins.join(", ")),
+            match &self.tool {
+                Some(tools) => info!("cache cleared for {}", tools.join(", ")),
                 None => info!("cache cleared"),
             }
         }

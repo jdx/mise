@@ -89,8 +89,8 @@ pub struct Upgrade {
     #[clap(long, verbatim_doc_comment)]
     local: bool,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 }

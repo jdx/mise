@@ -1818,6 +1818,7 @@ pub trait Backend: Debug + Send + Sync {
                 env_vars.entry(k).or_insert(v);
             }
         }
+        env_vars.extend(tv.request.options().core.install_env);
 
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual

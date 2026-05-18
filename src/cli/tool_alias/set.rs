@@ -4,14 +4,15 @@ use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::config_file::ConfigFile;
 
-/// Add/update an alias for a backend/plugin
+/// Add/update an alias for a tool/backend
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct ToolAliasSet {
-    /// The backend/plugin to set the alias for
-    pub plugin: BackendArg,
+    /// The tool/backend to set the alias for
+    #[clap(value_name = "TOOL")]
+    pub tool: BackendArg,
     /// The alias to set
     pub alias: String,
     /// The value to set the alias to
@@ -22,8 +23,8 @@ impl ToolAliasSet {
     pub async fn run(self) -> Result<()> {
         let mut global_config = Config::get().await?.global_config()?;
         match &self.value {
-            None => global_config.set_backend_alias(&self.plugin, &self.alias)?,
-            Some(val) => global_config.set_alias(&self.plugin, &self.alias, val)?,
+            None => global_config.set_backend_alias(&self.tool, &self.alias)?,
+            Some(val) => global_config.set_alias(&self.tool, &self.alias, val)?,
         }
         global_config.save()
     }
