@@ -4,7 +4,6 @@ use std::{fmt::Debug, sync::Arc};
 use async_trait::async_trait;
 use color_eyre::Section;
 use eyre::{bail, eyre};
-use indexmap::IndexMap;
 use url::Url;
 
 use crate::Result;
@@ -69,8 +68,9 @@ impl<'a> CargoOptions<'a> {
         self.values.raw().get_string("crate")
     }
 
-    fn install_env(&self) -> &'a IndexMap<String, String> {
-        &self.values.raw().install_env
+    fn has_features_options(&self) -> bool {
+        self.values.raw().contains_key("features")
+            || self.values.raw().contains_key("default-features")
     }
 
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
