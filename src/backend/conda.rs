@@ -146,7 +146,7 @@ impl CondaBackend {
         &self,
         specs: Vec<MatchSpec>,
         platform: CondaPlatform,
-        opts: &CondaOptions<'_>,
+        opts: CondaOptions<'_>,
     ) -> Result<Vec<RepoDataRecord>> {
         let channel = opts.channel()?;
         let gateway = Self::create_gateway();
@@ -387,7 +387,7 @@ impl CondaBackend {
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(vec![match_spec], CondaPlatform::current(), &opts)
+            .solve_packages(vec![match_spec], CondaPlatform::current(), opts)
             .await?;
 
         // Separate main package from deps
@@ -616,7 +616,7 @@ impl CondaBackend {
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(vec![match_spec], platform, &opts)
+            .solve_packages(vec![match_spec], platform, opts)
             .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
@@ -755,7 +755,7 @@ impl Backend for CondaBackend {
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
-        let records = match self.solve_packages(vec![match_spec], platform, &opts).await {
+        let records = match self.solve_packages(vec![match_spec], platform, opts).await {
             Ok(r) => r,
             Err(e) => {
                 debug!(
