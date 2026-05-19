@@ -368,12 +368,15 @@ impl ToolVersion {
                 return build(v);
             }
             let prefer_offline_latest = prefer_offline && !opts.latest_versions;
-            let latest_version = if prefer_offline_latest {
-                backend
+            if prefer_offline_latest
+                && let Some(v) = backend
                     .latest_version_from_cache(config, "latest", opts.before_date)
                     .await?
-            } else if !is_offline {
-                backend
+            {
+                return build(v);
+            }
+            if !is_offline
+                && let Some(v) = backend
                     .latest_version_with_refresh(
                         config,
                         None,
@@ -381,13 +384,7 @@ impl ToolVersion {
                         opts.refresh_remote_versions,
                     )
                     .await?
-            } else {
-                None
-            };
-            if let Some(v) = latest_version {
-                return build(v);
-            }
-            if prefer_offline_latest {
+            {
                 return build(v);
             }
             if !is_offline {
@@ -467,7 +464,7 @@ impl ToolVersion {
         // In prefer-offline mode (hook-env, activate, exec), skip remote version
         // fetching for fully-qualified versions (e.g. "2.3.2") that aren't installed.
         // Prefix versions like "2" still need remote resolution to find e.g. "2.1.0".
-        // "latest" uses installed/cache-only resolution in the block above.
+        // "latest" checks installed/cached versions first in the block above.
         if settings.prefer_offline() && v.matches('.').count() >= 2 {
             return build(v);
         }
@@ -507,8 +504,7 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
-        let prefer_offline_latest = Settings::get().prefer_offline() && !opts.latest_versions;
-        if v == "latest" && (opts.offline || prefer_offline_latest) {
+        if v == "latest" && opts.offline {
             // Can't resolve sub-N:latest offline (no remote latest, and
             // applying version_sub to latest_installed_version would shift
             // one step too low). Return the raw spec; callers that care
