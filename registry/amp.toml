@@ -1,5 +1,5 @@
 description = "An agentic coding tool built by Sourcegraph"
-test = { cmd = "amp --version", expected = "{{version}}" }
+test = { cmd = "amp --version", expected = "{{version}}", tools = ["aube"] }
 
 [[backends]]
 full = "npm:@sourcegraph/amp"

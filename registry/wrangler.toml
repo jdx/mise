@@ -1,5 +1,7 @@
 description = "A command line tool for building Cloudflare Workers"
-test = { cmd = "wrangler --version", expected = "{{version}}" }
+test = { cmd = "wrangler --version", expected = "{{version}}", tools = [
+  "aube",
+] }
 
 [[backends]]
 full = "npm:wrangler"
