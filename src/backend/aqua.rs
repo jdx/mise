@@ -71,33 +71,43 @@ impl<'a> AquaOptions<'a> {
         {
             return toml_string_var(&format!("vars.{name}"), value).map(Some);
         }
+        if let Some(value) = opts.opts.get(name) {
+            return toml_string_var(name, value).map(Some);
+        }
         let prefixed = format!("vars.{name}");
         if let Some(value) = opts.opts.get(&prefixed) {
             return toml_string_var(&prefixed, value).map(Some);
         }
-        opts.opts
-            .get(name)
-            .map(|value| toml_string_var(name, value).map(Some))
-            .unwrap_or(Ok(None))
+        Ok(None)
     }
 
     fn lockfile_options(&self) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
         for (key, value) in self.values.raw().iter() {
-            if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
+            if key.starts_with("vars.")
+                && !EPHEMERAL_OPT_KEYS.contains(&key.as_str())
+                && let Some(value) = toml_value_to_string(value)
+            {
+                result.insert(key.clone(), value);
+            }
+        }
+        for (key, value) in self.values.raw().iter() {
+            if key == "vars"
+                || key == "symlink_bins"
+                || key.starts_with("vars.")
+                || EPHEMERAL_OPT_KEYS.contains(&key.as_str())
+            {
                 continue;
             }
+            if let Some(value) = toml_value_to_string(value) {
+                result.insert(format!("vars.{key}"), value);
+            }
+        }
+        for (key, value) in self.values.raw().iter() {
             if key == "vars" {
                 if let toml::Value::Table(table) = value {
                     Self::insert_vars_lockfile_options(&mut result, table);
                 }
-            } else if let Some(value) = toml_value_to_string(value) {
-                let key = if key.starts_with("vars.") {
-                    key.clone()
-                } else {
-                    format!("vars.{key}")
-                };
-                result.entry(key).or_insert(value);
             }
         }
         result
@@ -2789,6 +2799,30 @@ mod tests {
     }
 
     #[test]
+    fn test_apply_var_options_prefers_plain_vars_over_prefixed_vars() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
+        pkg.vars = vec![aqua_var("channel", true)];
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("manifest".to_string()),
+        );
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
+        let opts = AquaOptions::new(&opts);
+        let pkg = AquaBackend::apply_var_options(pkg, &opts).unwrap();
+
+        assert_eq!(
+            pkg.asset("1.0.0", "linux", "amd64").unwrap(),
+            "tool-stable-1.0.0.tar.gz"
+        );
+    }
+
+    #[test]
     fn test_apply_var_options_errors_for_array_vars() {
         let mut pkg = AquaPackage::default();
         pkg.vars = vec![aqua_var("channels", true)];
@@ -2896,6 +2930,23 @@ mod tests {
         let lock_opts = AquaOptions::new(&opts).lockfile_options();
 
         assert_eq!(lock_opts.get("vars.channel"), Some(&"beta".to_string()));
+    }
+
+    #[test]
+    fn test_lockfile_options_plain_aqua_vars_take_precedence_over_prefixed_vars() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("manifest".to_string()),
+        );
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
+        let lock_opts = AquaOptions::new(&opts).lockfile_options();
+
+        assert_eq!(lock_opts.get("vars.channel"), Some(&"stable".to_string()));
     }
 
     #[test]
