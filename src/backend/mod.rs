@@ -1461,6 +1461,40 @@ pub trait Backend: Debug + Send + Sync {
         Ok(find_match_in_list(&matches, query))
     }
 
+    /// Resolve latest from the existing remote-version cache without fetching.
+    /// Used by prefer-offline config resolution so activation-style paths avoid
+    /// backend latest endpoints and remote listings.
+    async fn latest_version_from_cache(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        before_date: Option<Timestamp>,
+    ) -> eyre::Result<Option<String>> {
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let want_prereleases = self.include_prereleases(&opts);
+        let remote_versions = self.get_remote_version_cache();
+        let remote_versions = remote_versions.lock().await;
+        let versions = match remote_versions.get_cached() {
+            Ok(versions) => filter_cached_prereleases(versions, want_prereleases),
+            Err(err) => {
+                debug!(
+                    "No cached remote versions available for {} while resolving latest in prefer-offline mode: {:#}",
+                    self.ba(),
+                    err
+                );
+                vec![]
+            }
+        };
+        let versions: Vec<String> = match before_date {
+            Some(before) => VersionInfo::filter_by_date(versions, before)
+                .into_iter()
+                .map(|v| v.version)
+                .collect(),
+            None => versions.into_iter().map(|v| v.version).collect(),
+        };
+        Ok(find_match_in_list(&versions, query))
+    }
+
     /// Get the latest version, optionally filtered by release date.
     ///
     /// `latest_stable_version` may use backend-specific fast paths (dist tags,
@@ -2745,6 +2779,59 @@ mod latest_version_tests {
 
         assert_eq!(latest.as_deref(), Some("2.0.0"));
         assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_cached_latest_uses_cached_versions_without_fetching() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-cached-latest-cache");
+        let cache = backend.get_remote_version_cache();
+        {
+            let mut cache = cache.lock().await;
+            cache.clear().unwrap();
+            cache
+                .write(&vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "2.0.0".to_string(),
+                        ..Default::default()
+                    },
+                ])
+                .unwrap();
+        }
+
+        let latest = backend
+            .latest_version_from_cache(&config, "latest", None)
+            .await
+            .unwrap();
+
+        assert_eq!(latest.as_deref(), Some("2.0.0"));
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_cached_latest_without_cache_does_not_fetch() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-cached-latest-no-cache");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        let latest = backend
+            .latest_version_from_cache(&config, "latest", None)
+            .await
+            .unwrap();
+
+        assert_eq!(latest, None);
+        assert_eq!(backend.stable_calls(), 0);
         assert_eq!(backend.list_calls(), 0);
     }
 
