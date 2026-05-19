@@ -54,7 +54,7 @@ impl Completion {
 
     async fn call_usage(&self, shell: Shell) -> Result<String> {
         let config = Config::get().await?;
-        // Completion generation only needs installed/cached tool paths to find `usage`;
+        // Completion generation only needs enough of the local tool environment to find `usage`;
         // offline resolution avoids shell-startup network fetches.
         let toolset = ToolsetBuilder::new()
             .with_resolve_options(ResolveOptions {
