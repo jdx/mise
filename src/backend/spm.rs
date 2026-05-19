@@ -16,6 +16,7 @@ use eyre::{WrapErr, bail};
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::de::{MapAccess, Visitor};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::{
     fmt::{self, Debug},
@@ -74,6 +75,30 @@ impl<'a> SpmOptions<'a> {
         mode.requires_artifactbundle() || self.artifactbundle_asset().is_some()
     }
 
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        let provider = self.provider();
+        if provider != GitProviderKind::GitHub.as_ref() {
+            opts.insert("provider".to_string(), provider.to_string());
+        }
+        if let Some(api_url) = self.api_url() {
+            opts.insert("api_url".to_string(), api_url.to_string());
+        }
+        match self.artifactbundle_mode() {
+            ArtifactBundleMode::Required => {
+                opts.insert("artifactbundle".to_string(), "true".to_string());
+            }
+            ArtifactBundleMode::SourceOnly => {
+                opts.insert("artifactbundle".to_string(), "false".to_string());
+            }
+            ArtifactBundleMode::Auto => {}
+        }
+        if let Some(asset) = self.artifactbundle_asset() {
+            opts.insert("artifactbundle_asset".to_string(), asset.to_string());
+        }
+        opts
+    }
+
     fn filter_bins(&self) -> Option<Vec<String>> {
         let value = self.values.raw().opts.get("filter_bins")?;
         let bins: Vec<String> = match value {
@@ -113,6 +138,15 @@ impl Backend for SPMBackend {
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
         &["provider", "api_url", "artifactbundle_asset"]
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &crate::toolset::ToolRequest,
+        _target: &crate::backend::platform_target::PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let raw_opts = request.options();
+        SpmOptions::new(&raw_opts).lockfile_options()
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -219,6 +253,16 @@ impl Backend for SPMBackend {
 
         Ok(tv)
     }
+}
+
+pub fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "provider".into(),
+        "api_url".into(),
+        "artifactbundle".into(),
+        "artifactbundle_asset".into(),
+        "filter_bins".into(),
+    ]
 }
 
 impl SPMBackend {
@@ -1069,6 +1113,59 @@ mod tests {
             opts: indexmap![key.to_string() => value].into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn test_lockfile_options_include_artifact_inputs_not_filter_bins() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "provider".to_string(),
+            toml::Value::String("gitlab".to_string()),
+        );
+        opts.opts.insert(
+            "api_url".to_string(),
+            toml::Value::String("https://gitlab.example.com/api/v4".to_string()),
+        );
+        opts.opts
+            .insert("artifactbundle".to_string(), toml::Value::Boolean(true));
+        opts.opts.insert(
+            "artifactbundle_asset".to_string(),
+            toml::Value::String("tool.artifactbundle.zip".to_string()),
+        );
+        opts.opts.insert(
+            "filter_bins".to_string(),
+            toml::Value::String("tool".to_string()),
+        );
+
+        assert_eq!(
+            SpmOptions::new(&opts).lockfile_options(),
+            BTreeMap::from([
+                (
+                    "api_url".to_string(),
+                    "https://gitlab.example.com/api/v4".to_string()
+                ),
+                ("artifactbundle".to_string(), "true".to_string()),
+                (
+                    "artifactbundle_asset".to_string(),
+                    "tool.artifactbundle.zip".to_string()
+                ),
+                ("provider".to_string(), "gitlab".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_install_time_options_include_layout_and_artifact_inputs() {
+        assert_eq!(
+            install_time_option_keys(),
+            vec![
+                "provider".to_string(),
+                "api_url".to_string(),
+                "artifactbundle".to_string(),
+                "artifactbundle_asset".to_string(),
+                "filter_bins".to_string(),
+            ]
+        );
     }
 
     fn release_asset(name: &str) -> ArtifactBundleReleaseAsset {
