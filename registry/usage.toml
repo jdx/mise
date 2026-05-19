@@ -1,5 +1,6 @@
 backends = [
   "aqua:jdx/usage",
+  "github:jdx/usage",
   { full = "asdf:mise-plugins/mise-usage", platforms = [
     "linux",
     "macos",
