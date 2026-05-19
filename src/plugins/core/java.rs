@@ -64,11 +64,23 @@ impl<'a> JavaOptions<'a> {
         self.values.str("release_type").unwrap_or("ga")
     }
 
-    fn lockfile_options(&self) -> BTreeMap<String, String> {
+    fn lockfile_options(
+        &self,
+        requested_version: &str,
+        shorthand_vendor: &str,
+    ) -> BTreeMap<String, String> {
         let mut opts = BTreeMap::new();
         let release_type = self.release_type();
         if release_type != "ga" {
             opts.insert("release_type".to_string(), release_type.to_string());
+        }
+        if requested_version
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+            && shorthand_vendor != "openjdk"
+        {
+            opts.insert("shorthand_vendor".to_string(), shorthand_vendor.to_string());
         }
         opts
     }
@@ -480,7 +492,8 @@ impl Backend for JavaPlugin {
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         let raw_opts = request.options();
-        JavaOptions::new(&raw_opts).lockfile_options()
+        JavaOptions::new(&raw_opts)
+            .lockfile_options(&request.version(), &Settings::get().java.shorthand_vendor)
     }
 
     async fn resolve_lock_info(
@@ -798,15 +811,30 @@ mod tests {
         assert_eq!(JavaOptions::new(&default_opts).release_type(), "ga");
         assert!(
             JavaOptions::new(&default_opts)
-                .lockfile_options()
+                .lockfile_options("17", "openjdk")
                 .is_empty()
         );
 
         let opts = opts_with_release_type("ea");
         assert_eq!(JavaOptions::new(&opts).release_type(), "ea");
         assert_eq!(
-            JavaOptions::new(&opts).lockfile_options(),
+            JavaOptions::new(&opts).lockfile_options("17", "openjdk"),
             BTreeMap::from([("release_type".to_string(), "ea".to_string())])
+        );
+    }
+
+    #[test]
+    fn java_lockfile_options_include_non_default_shorthand_vendor() {
+        let opts = ToolVersionOptions::default();
+
+        assert_eq!(
+            JavaOptions::new(&opts).lockfile_options("17", "temurin"),
+            BTreeMap::from([("shorthand_vendor".to_string(), "temurin".to_string())])
+        );
+        assert!(
+            JavaOptions::new(&opts)
+                .lockfile_options("temurin-17", "temurin")
+                .is_empty()
         );
     }
 }
