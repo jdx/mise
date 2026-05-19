@@ -1,4 +1,4 @@
-backends = ["aqua:npm/cli"]
+backends = ["aqua:npm/cli", "npm:npm"]
 description = "the package manager for JavaScript"
 idiomatic_files = ["package.json"]
 overrides = ["node"]
