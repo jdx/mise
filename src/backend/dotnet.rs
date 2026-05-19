@@ -1,13 +1,15 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::HTTP_FETCH;
-use crate::toolset::ToolVersionOptions;
+use crate::toolset::{ToolRequest, ToolVersionOptions};
 use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
@@ -34,6 +36,20 @@ impl<'a> DotnetOptions<'a> {
 
     fn prerelease(&self) -> bool {
         self.values.bool("prerelease")
+    }
+
+    fn runtime(&self) -> Option<&'a str> {
+        self.values.str("runtime")
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut options = BTreeMap::new();
+
+        if let Some(runtime) = self.runtime() {
+            options.insert("runtime".into(), runtime.into());
+        }
+
+        options
     }
 }
 
@@ -117,6 +133,10 @@ impl Backend for DotnetBackend {
             cli = cli.arg("--version").arg(&tv.version);
         }
 
+        if let Some(runtime) = DotnetOptions::new(&tv.request.options()).runtime() {
+            cli = cli.arg("--runtime").arg(runtime);
+        }
+
         cli.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
             .envs(tv.install_env())
@@ -131,6 +151,15 @@ impl Backend for DotnetBackend {
         }
 
         DotnetOptions::new(opts).prerelease() || dotnet_legacy_prerelease_package_flag_enabled()
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let opts = request.options();
+        DotnetOptions::new(&opts).lockfile_options()
     }
 }
 
@@ -213,42 +242,83 @@ struct NugetFeedSearchDataVersion {
 mod tests {
     use super::*;
 
-    fn opts_with_prerelease(value: toml::Value) -> ToolVersionOptions {
+    fn opts_with_value(key: &str, value: toml::Value) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
-        opts.opts.insert("prerelease".to_string(), value);
+        opts.opts.insert(key.to_string(), value);
         opts
     }
 
     #[test]
     fn dotnet_options_reads_prerelease() {
         assert!(!DotnetOptions::new(&ToolVersionOptions::default()).prerelease());
-        assert!(DotnetOptions::new(&opts_with_prerelease(toml::Value::Boolean(true))).prerelease());
         assert!(
-            !DotnetOptions::new(&opts_with_prerelease(toml::Value::Boolean(false))).prerelease()
+            DotnetOptions::new(&opts_with_value("prerelease", toml::Value::Boolean(true)))
+                .prerelease()
         );
         assert!(
-            DotnetOptions::new(&opts_with_prerelease(toml::Value::String(
-                "true".to_string()
-            )))
+            !DotnetOptions::new(&opts_with_value("prerelease", toml::Value::Boolean(false)))
+                .prerelease()
+        );
+        assert!(
+            DotnetOptions::new(&opts_with_value(
+                "prerelease",
+                toml::Value::String("true".to_string())
+            ))
             .prerelease()
         );
         assert!(
-            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String(
-                "FALSE".to_string()
-            )))
+            !DotnetOptions::new(&opts_with_value(
+                "prerelease",
+                toml::Value::String("FALSE".to_string())
+            ))
             .prerelease()
         );
         assert!(
-            DotnetOptions::new(&opts_with_prerelease(toml::Value::String("1".to_string())))
-                .prerelease()
+            DotnetOptions::new(&opts_with_value(
+                "prerelease",
+                toml::Value::String("1".to_string())
+            ))
+            .prerelease()
         );
         assert!(
-            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("0".to_string())))
-                .prerelease()
+            !DotnetOptions::new(&opts_with_value(
+                "prerelease",
+                toml::Value::String("0".to_string())
+            ))
+            .prerelease()
         );
         assert!(
-            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("00".to_string())))
-                .prerelease()
+            !DotnetOptions::new(&opts_with_value(
+                "prerelease",
+                toml::Value::String("00".to_string())
+            ))
+            .prerelease()
+        );
+    }
+
+    #[test]
+    fn dotnet_options_reads_runtime() {
+        assert_eq!(
+            DotnetOptions::new(&opts_with_value(
+                "runtime",
+                toml::Value::String("linux-x64".into())
+            ))
+            .runtime(),
+            Some("linux-x64")
+        );
+    }
+
+    #[test]
+    fn dotnet_lockfile_options_include_runtime() {
+        assert_eq!(
+            DotnetOptions::new(&opts_with_value(
+                "runtime",
+                toml::Value::String("linux-musl-x64".into())
+            ))
+            .lockfile_options()
+            .get("runtime")
+            .map(String::as_str),
+            Some("linux-musl-x64")
         );
     }
 }
