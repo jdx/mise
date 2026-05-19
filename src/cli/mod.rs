@@ -48,6 +48,7 @@ mod ls_remote;
 mod mcp;
 mod oci;
 mod outdated;
+mod patrons;
 mod plugins;
 mod prune;
 mod registry;
@@ -235,6 +236,7 @@ pub enum Commands {
     Mcp(mcp::Mcp),
     Oci(oci::Oci),
     Outdated(outdated::Outdated),
+    Patrons(patrons::Patrons),
     Plugins(plugins::Plugins),
     Deps(deps::Deps),
     Prune(prune::Prune),
@@ -306,6 +308,7 @@ impl Commands {
             Self::Mcp(cmd) => cmd.run().await,
             Self::Oci(cmd) => cmd.run().await,
             Self::Outdated(cmd) => cmd.run().await,
+            Self::Patrons(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
             Self::Deps(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
@@ -614,9 +617,7 @@ impl Cli {
         crate::env::ARGS.write().unwrap().clone_from(args);
         // Load .miserc.toml early, before MISE_ENV and other early settings are accessed.
         // This allows setting MISE_ENV in a config file instead of only via env vars.
-        if let Err(err) = crate::config::miserc::init() {
-            warn!("Failed to load .miserc.toml: {err}");
-        }
+        crate::config::miserc::init()?;
         if *crate::env::MISE_TOOL_STUB && args.len() >= 2 {
             tool_stub::short_circuit_stub(&args[2..]).await?;
         }

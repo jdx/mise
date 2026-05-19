@@ -1,6 +1,7 @@
 use mlua::Table;
 use mlua::prelude::*;
 use std::path::Path;
+use std::process::Command;
 
 pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     let package: Table = lua.globals().get("package")?;
@@ -12,8 +13,6 @@ pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
 }
 
 fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
-    use std::process::Command;
-
     let (command, options) = match args.len() {
         1 => {
             let command: String = args.into_iter().next().unwrap().to_string()?;
@@ -32,17 +31,8 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
         }
     };
 
-    let mut cmd = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-    } else {
-        Command::new("sh")
-    };
-
-    if cfg!(target_os = "windows") {
-        cmd.args(["/C", &command]);
-    } else {
-        cmd.args(["-c", &command]);
-    }
+    let shell = cmd_shell(lua)?;
+    let mut cmd = command_from_shell(&shell, &command)?;
 
     // Apply mise-constructed environment if available in Lua registry.
     // This ensures mise-managed tools are on PATH when called from env module hooks.
@@ -56,7 +46,7 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
     } else {
         false
     };
-    debug!("[cmd.exec] command={command:?} has_mise_env={has_mise_env}");
+    debug!("[cmd.exec] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
 
     // Apply options if provided (explicit env vars override mise env)
     if let Some(options) = options {
@@ -95,6 +85,31 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
             output.status, stderr
         )))
     }
+}
+
+fn cmd_shell(lua: &Lua) -> LuaResult<Vec<String>> {
+    if let Ok(shell) = lua.named_registry_value::<Table>("mise_cmd_shell") {
+        return shell.sequence_values::<String>().collect();
+    }
+    Ok(default_cmd_shell())
+}
+
+fn default_cmd_shell() -> Vec<String> {
+    if cfg!(target_os = "windows") {
+        vec!["cmd".to_string(), "/C".to_string()]
+    } else {
+        vec!["sh".to_string(), "-c".to_string()]
+    }
+}
+
+fn command_from_shell(shell: &[String], command: &str) -> LuaResult<Command> {
+    let (program, args) = shell.split_first().ok_or_else(|| {
+        mlua::Error::RuntimeError("cmd.exec shell command cannot be empty".to_string())
+    })?;
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    cmd.arg(command);
+    Ok(cmd)
 }
 
 #[cfg(test)]
@@ -168,5 +183,35 @@ mod tests {
         ))
         .exec()
         .unwrap();
+    }
+
+    #[test]
+    fn test_cmd_shell_from_registry() {
+        let lua = Lua::new();
+        let shell = lua
+            .create_sequence_from(["custom-shell", "-custom-arg"])
+            .unwrap();
+        lua.set_named_registry_value("mise_cmd_shell", shell)
+            .unwrap();
+
+        assert_eq!(
+            cmd_shell(&lua).unwrap(),
+            vec!["custom-shell".to_string(), "-custom-arg".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_command_from_shell_appends_command() {
+        let shell = vec!["custom-shell".to_string(), "-custom-arg".to_string()];
+        let command = command_from_shell(&shell, "echo hello").unwrap();
+
+        assert_eq!(command.get_program(), "custom-shell");
+        assert_eq!(
+            command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().to_string())
+                .collect::<Vec<_>>(),
+            vec!["-custom-arg".to_string(), "echo hello".to_string()]
+        );
     }
 }

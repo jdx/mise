@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{
     MISE_BINS_DIR, VersionInfo, filter_cached_prereleases, mark_prerelease,
@@ -48,6 +49,34 @@ pub struct CondaBackend {
     ba: Arc<BackendArg>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CondaOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> CondaOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn channel_name(&self) -> String {
+        self.values
+            .str("channel")
+            .map(str::to_string)
+            .unwrap_or_else(|| Settings::get().conda.channel.clone())
+    }
+
+    fn channel(&self) -> Result<Channel> {
+        let name = self.channel_name();
+        let root_dir = std::env::current_dir().unwrap_or_else(|_| dirs::HOME.to_path_buf());
+        let config = ChannelConfig::default_with_root_dir(root_dir);
+        Channel::from_str(&name, &config)
+            .map_err(|e| eyre::eyre!("invalid conda channel '{}': {}", name, e))
+    }
+}
+
 impl CondaBackend {
     fn next_temp_id() -> u64 {
         static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -64,20 +93,6 @@ impl CondaBackend {
 
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
-    }
-
-    fn channel_name(&self, opts: &ToolVersionOptions) -> String {
-        opts.get("channel")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| Settings::get().conda.channel.clone())
-    }
-
-    fn channel(&self, opts: &ToolVersionOptions) -> Result<Channel> {
-        let name = self.channel_name(opts);
-        let root_dir = std::env::current_dir().unwrap_or_else(|_| dirs::HOME.to_path_buf());
-        let config = ChannelConfig::default_with_root_dir(root_dir);
-        Channel::from_str(&name, &config)
-            .map_err(|e| eyre::eyre!("invalid conda channel '{}': {}", name, e))
     }
 
     fn create_gateway() -> Gateway {
@@ -131,9 +146,9 @@ impl CondaBackend {
         &self,
         specs: Vec<MatchSpec>,
         platform: CondaPlatform,
-        opts: &ToolVersionOptions,
+        opts: CondaOptions<'_>,
     ) -> Result<Vec<RepoDataRecord>> {
-        let channel = self.channel(opts)?;
+        let channel = opts.channel()?;
         let gateway = Self::create_gateway();
 
         let repodata: Vec<RepoData> = gateway
@@ -369,12 +384,10 @@ impl CondaBackend {
             .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
 
         ctx.pr.set_message("fetching repodata".to_string());
+        let raw_opts = tv.request.options();
+        let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(
-                vec![match_spec],
-                CondaPlatform::current(),
-                &tv.request.options(),
-            )
+            .solve_packages(vec![match_spec], CondaPlatform::current(), opts)
             .await?;
 
         // Separate main package from deps
@@ -600,8 +613,10 @@ impl CondaBackend {
         let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
             .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
 
+        let raw_opts = tv.request.options();
+        let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(vec![match_spec], platform, &tv.request.options())
+            .solve_packages(vec![match_spec], platform, opts)
             .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
@@ -639,8 +654,9 @@ impl Backend for CondaBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let channel = self.channel(&opts)?;
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = CondaOptions::new(&raw_opts);
+        let channel = opts.channel()?;
         let current_platform = CondaPlatform::current();
         let tool_name = self.tool_name();
 
@@ -737,10 +753,9 @@ impl Backend for CondaBackend {
             }
         };
 
-        let records = match self
-            .solve_packages(vec![match_spec], platform, &tv.request.options())
-            .await
-        {
+        let raw_opts = tv.request.options();
+        let opts = CondaOptions::new(&raw_opts);
+        let records = match self.solve_packages(vec![match_spec], platform, opts).await {
             Ok(r) => r,
             Err(e) => {
                 debug!(
@@ -810,7 +825,8 @@ impl Backend for CondaBackend {
 
 #[cfg(test)]
 mod tests {
-    use super::CondaBackend;
+    use super::{CondaBackend, CondaOptions};
+    use crate::toolset::ToolVersionOptions;
     use rattler_conda_types::package::{ArchiveIdentifier, CondaArchiveType, DistArchiveType};
     use rattler_conda_types::{
         PackageName, PackageRecord, RepoDataRecord, Version, package::DistArchiveIdentifier,
@@ -839,6 +855,17 @@ mod tests {
             url: Url::parse(url).unwrap(),
             channel: None,
         }
+    }
+
+    #[test]
+    fn conda_options_reads_channel() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("conda-forge".to_string()),
+        );
+
+        assert_eq!(CondaOptions::new(&opts).channel_name(), "conda-forge");
     }
 
     #[test]

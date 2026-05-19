@@ -4,7 +4,7 @@ use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::path_env::PathEnv;
-use crate::tera::{get_tera, tera_exec};
+use crate::tera::{contains_template_syntax, get_tera, render_str, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -317,16 +317,7 @@ impl EnvResults {
         let filtered_input_for_validation = filtered_input.clone();
 
         for (directive, source) in filtered_input {
-            let mut tera = get_tera(source.parent());
-            tera.register_function(
-                "exec",
-                tera_exec(
-                    source.parent().map(|d| d.to_path_buf()),
-                    env.iter()
-                        .map(|(k, (v, _))| (k.clone(), v.clone()))
-                        .collect(),
-                ),
-            );
+            let mut tera = None;
             // trace!(
             //     "resolve: directive: {:?}, source: {:?}",
             //     &directive,
@@ -357,7 +348,7 @@ impl EnvResults {
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
-                    let v = r.parse_template(&ctx, &mut tera, &source, &v)?;
+                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
 
                     if resolve_opts.vars {
                         r.vars.insert(k, (v, source.clone()));
@@ -388,7 +379,7 @@ impl EnvResults {
                     let decrypted_v = match res {
                         Ok(decrypted_v) => {
                             // Parse as template after decryption
-                            r.parse_template(&ctx, &mut tera, &source, &decrypted_v)?
+                            r.parse_template(&ctx, &mut tera, &source, &env_vars, &decrypted_v)?
                         }
                         Err(e) if Settings::get().age.strict => {
                             return Err(e)
@@ -438,7 +429,9 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Path(input_str, _opts) => {
-                    let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str).await?;
+                    let path =
+                        Self::path(&mut ctx, &mut tera, &mut r, &source, &env_vars, input_str)
+                            .await?;
                     paths.push((path.clone(), source.clone()));
                     // Don't modify PATH in env - just add to env_paths
                     // This allows consumers to control PATH ordering
@@ -451,6 +444,7 @@ impl EnvResults {
                         &mut r,
                         normalize_path,
                         &source,
+                        &env_vars,
                         &config_root,
                         input,
                     )
@@ -477,6 +471,7 @@ impl EnvResults {
                         &mut r,
                         normalize_path,
                         &source,
+                        &env_vars,
                         &config_root,
                         &env_vars,
                         input,
@@ -511,8 +506,9 @@ impl EnvResults {
                         &mut r,
                         normalize_path,
                         &source,
+                        &env_vars,
                         &config_root,
-                        env_vars,
+                        env_vars.clone(),
                         path,
                         create,
                         python,
@@ -673,17 +669,25 @@ impl EnvResults {
     fn parse_template(
         &self,
         ctx: &tera::Context,
-        tera: &mut tera::Tera,
+        tera: &mut Option<tera::Tera>,
         path: &Path,
+        exec_env: &EnvMap,
         input: &str,
     ) -> eyre::Result<String> {
         let mut output = input.to_string();
 
         // Step 1: Tera template expansion
-        if input.contains("{{") || input.contains("{%") || input.contains("{#") {
+        if contains_template_syntax(input) {
             trust_check(path)?;
-            output = tera
-                .render_str(input, ctx)
+            let tera = tera.get_or_insert_with(|| {
+                let mut tera = get_tera(path.parent());
+                tera.register_function(
+                    "exec",
+                    tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                );
+                tera
+            });
+            output = render_str(tera, input, ctx)
                 .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         }
 

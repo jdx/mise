@@ -23,7 +23,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode()
         form = urllib.parse.parse_qs(body)
 
-        if self.path == "/login/oauth/device/code":
+        if self.path == "/login/device/code":
             payload = {
                 "device_code": "device-mock",
                 "user_code": "ABCD-1234",

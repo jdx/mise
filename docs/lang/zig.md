@@ -45,6 +45,20 @@ mise use -g zls@latest # install latest zls release
 Note that a tagged release of `zig` should be used with
 the same tagged release of `zls`. Currently there is no Mach version of `zls`.
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `zig` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for install-time commands run by the core `zig` backend:
+
+```toml
+[tools]
+zig = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
+```
+
 ## Settings
 
 <script setup>

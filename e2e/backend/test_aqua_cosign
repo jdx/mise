@@ -50,5 +50,23 @@ fi
 assert_contains "mise x aqua:technicalpickles/envsense@0.3.4 -- which envsense" "envsense"
 echo "✓ envsense installed and working correctly"
 
+echo "=== Testing Native Cosign Verification (public key bundle config) ==="
+echo "Installing kube-linter with native public-key bundle verification..."
+
+output=$(mise install aqua:stackrox/kube-linter@0.8.3 2>&1)
+echo "$output"
+
+if echo "$output" | grep -q "Cosign verified"; then
+  echo "✅ Native public-key bundle Cosign verification was used"
+else
+  echo "❌ ERROR: public-key bundle Cosign verification was not detected in output"
+  echo "Output was:"
+  echo "$output"
+  exit 1
+fi
+
+assert_contains "mise x aqua:stackrox/kube-linter@0.8.3 -- kube-linter version" "0.8.3"
+echo "✓ kube-linter installed and working correctly"
+
 echo ""
 echo "=== Native Cosign Verification Test Passed ✓ ==="

@@ -107,6 +107,16 @@ impl Plugin {
         Ok(())
     }
 
+    /// Store the shell command used by cmd.exec().
+    pub fn set_cmd_shell(&self, shell: &[String]) -> Result<()> {
+        let table = self.lua.create_table()?;
+        for (idx, arg) in shell.iter().enumerate() {
+            table.set(idx + 1, arg.as_str())?;
+        }
+        self.lua.set_named_registry_value("mise_cmd_shell", table)?;
+        Ok(())
+    }
+
     /// Store a GitHub token for the Lua http module.
     pub fn set_github_token(&self, token: &str) -> Result<()> {
         self.lua.set_named_registry_value("github_token", token)?;

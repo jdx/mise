@@ -716,6 +716,7 @@ mod tests {
             asdf("clojure", "asdf:mise-plugins/mise-clojure", "clojure");
         }
         cargo("cargo:eza", "cargo:eza", "eza");
+        t("dotnet-core", "core:dotnet", "dotnet", BackendType::Core);
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
         npm("npm:prettier", "npm:prettier", "prettier");
@@ -742,9 +743,18 @@ mod tests {
         let fa: BackendArg = "gem:bashly".into();
         assert_eq!(BackendType::Gem, fa.backend_type());
 
-        let fa: BackendArg = "npm".into();
+        let fa: BackendArg = "npm:npm".into();
         assert_str_eq!("npm:npm", fa.full());
         assert_eq!(BackendType::Npm, fa.backend_type());
+    }
+
+    #[tokio::test]
+    async fn test_bare_npm_uses_registry_tool() {
+        let _config = Config::get().await.unwrap();
+
+        let fa: BackendArg = "npm".into();
+        assert_str_eq!("aqua:npm/cli", fa.full());
+        assert_eq!(BackendType::Aqua, fa.backend_type());
     }
 
     #[tokio::test]
@@ -758,6 +768,7 @@ mod tests {
         };
         t("asdf:node", "asdf-node");
         t("node", "node");
+        t("dotnet-core", "dotnet");
         t("cargo:eza", "cargo-eza");
         t("npm:@antfu/ni", "npm-antfu-ni");
         t("npm:prettier", "npm-prettier");

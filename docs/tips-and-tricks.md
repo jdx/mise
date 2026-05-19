@@ -197,7 +197,7 @@ version = "latest"
 minimum_release_age = "1d"  # trivy updates are time-sensitive, use a shorter window
 ```
 
-Precedence: `--before` CLI flag > per-tool `minimum_release_age` > global `minimum_release_age` setting.
+Precedence: `--minimum-release-age` CLI flag > per-tool `minimum_release_age` > global `minimum_release_age` setting.
 
 See [`minimum_release_age`](/configuration/settings.html#minimum_release_age) for more details.
 

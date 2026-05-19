@@ -164,7 +164,7 @@ Behavior:
 
 - The command runs once the install completes successfully for that tool/version.
 - The tool's bin path is on PATH during the command, so you can invoke the installed tool directly.
-- Environment variables include `MISE_TOOL_INSTALL_PATH` pointing to the tool's install directory.
+- Environment variables include `MISE_TOOL_INSTALL_PATH` pointing to the tool's install directory and any variables from that tool's `install_env` option.
 - If the install fails, the `postinstall` command is not run.
 
 ## OS-Specific Tools
@@ -183,7 +183,7 @@ ripgrep = { version = "latest", os = ["linux", "macos"] }
 "cargo:usage-cli" = {
     version = "latest",
     os = ["linux", "macos"],
-    install_env = { RUST_BACKTRACE = "1" }
+    locked = false
 }
 ```
 
