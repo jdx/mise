@@ -63,8 +63,8 @@ sudo apt install -y mise
 == Fedora 41+, RHEL/CentOS Stream 9+ (dnf)
 
 ```sh
-sudo dnf copr enable jdxcode/mise
-sudo dnf install mise
+sudo dnf copr enable jdxcode/mise centos-stream+epel-next-9-x86_64 -y
+sudo dnf install mise -y
 ```
 
 See the [copr page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/) for more information.
