@@ -9,7 +9,7 @@ use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     sync::{Mutex, MutexGuard},
 };
 use tera::Context as TeraContext;
@@ -295,28 +295,24 @@ impl MiseToml {
             task.config_source.clone_from(&rf.path);
             task.config_root = project_root.clone();
         }
-        rf.normalize_tool_registry_aliases();
         // trace!("{}", rf.dump()?);
         Ok(rf)
     }
 
-    fn normalize_tool_registry_aliases(&mut self) {
-        let user_aliases: HashSet<&str> = self
-            .alias
-            .keys()
-            .chain(self.tool_alias.keys())
-            .map(|s| s.as_str())
-            .collect::<HashSet<_>>();
-        let mut tools = self.tools.lock().unwrap();
-        let mut normalized = IndexMap::with_capacity(tools.len());
-        for (ba, tvp) in std::mem::take(&mut *tools) {
-            if user_aliases.contains(ba.short.as_str()) || ba.has_explicit_backend() {
-                normalized.insert(ba, tvp);
-            } else {
-                normalized.insert(ba.registry_alias_canonicalized(), tvp);
-            }
+    fn has_user_alias_for_tool(&self, short: &str) -> bool {
+        self.alias.contains_key(short)
+            || self.tool_alias.contains_key(short)
+            || Config::maybe_get().is_some_and(|config| {
+                config.all_aliases.contains_key(short) || config.repo_urls.contains_key(short)
+            })
+    }
+
+    fn tool_backend_arg(&self, ba: &BackendArg) -> BackendArg {
+        if ba.has_explicit_backend() || self.has_user_alias_for_tool(&ba.short) {
+            ba.clone()
+        } else {
+            ba.registry_alias_canonicalized()
         }
-        *tools = normalized;
     }
 
     fn doc(&self) -> eyre::Result<DocumentMut> {
@@ -822,6 +818,7 @@ impl ConfigFile for MiseToml {
             }
         }
         for (ba, tvp) in tools.iter() {
+            let ba = self.tool_backend_arg(ba);
             for tool in &tvp.0 {
                 let version = self.parse_template_with_context(&context, &tool.tt.to_string())?;
                 let tvr = if let Some(mut options) = tool.options.clone() {
@@ -2265,13 +2262,10 @@ mod tests {
         "#});
 
         let tools = cf.tools.lock().unwrap();
-        let keys = tools.keys().map(|ba| ba.short.as_str()).collect::<Vec<_>>();
+        let ba = cf.tool_backend_arg(tools.keys().next().unwrap());
 
-        assert_eq!(keys, vec!["node"]);
-        assert_eq!(
-            tools.keys().next().unwrap().installs_path,
-            dirs::INSTALLS.join("node")
-        );
+        assert_eq!(ba.short, "node");
+        assert_eq!(ba.installs_path, dirs::INSTALLS.join("node"));
     }
 
     #[test]
