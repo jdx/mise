@@ -48,9 +48,10 @@ impl<'a> SpmOptions<'a> {
     }
 
     fn option_string(&self, key: &str, target: Option<&PlatformTarget>) -> Option<String> {
-        target
-            .and_then(|target| self.values.platform_string_for_target(key, target))
-            .or_else(|| self.values.platform_string(key))
+        match target {
+            Some(target) => self.values.platform_string_for_target(key, target),
+            None => self.values.platform_string(key),
+        }
     }
 
     fn provider(&self, target: Option<&PlatformTarget>) -> String {
@@ -1200,6 +1201,24 @@ mod tests {
                 "artifactbundle_asset".to_string(),
                 "windows.artifactbundle.zip".to_string()
             )])
+        );
+
+        let mut current_host_only_opts = ToolVersionOptions::default();
+        let mut platforms = toml::Table::new();
+        let mut linux = toml::Table::new();
+        linux.insert(
+            "artifactbundle_asset".to_string(),
+            toml::Value::String("linux.artifactbundle.zip".to_string()),
+        );
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(linux));
+        current_host_only_opts
+            .opts
+            .insert("platforms".to_string(), toml::Value::Table(platforms));
+
+        assert!(
+            SpmOptions::new(&current_host_only_opts)
+                .lockfile_options(&windows)
+                .is_empty()
         );
     }
 
