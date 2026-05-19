@@ -1,5 +1,6 @@
 backends = [
   "aqua:mikefarah/yq",
+  "github:mikefarah/yq",
   "asdf:sudermanjr/asdf-yq",
   "go:github.com/mikefarah/yq/v4",
 ]
