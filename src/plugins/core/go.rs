@@ -27,13 +27,7 @@ pub struct GoPlugin {
 }
 
 impl GoPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("go"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("go");
 
     /// Check if a Go version string is valid (not "1" and not beta/rc)
     /// - "1" corresponds to the `go1` tag which has no installable download

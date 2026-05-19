@@ -17,12 +17,12 @@ use crate::backend::static_helpers::fetch_checksum_from_file;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
+use crate::file;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{file, plugins};
 
 #[derive(Debug)]
 pub struct DenoPlugin {
@@ -30,13 +30,7 @@ pub struct DenoPlugin {
 }
 
 impl DenoPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("deno"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("deno");
 
     fn deno_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join(if cfg!(target_os = "windows") {

@@ -23,7 +23,7 @@ use crate::{
     config::{Config, Settings},
     platform::Platform,
 };
-use crate::{file, github, plugins};
+use crate::{file, github};
 
 #[derive(Debug)]
 pub struct BunPlugin {
@@ -31,13 +31,7 @@ pub struct BunPlugin {
 }
 
 impl BunPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("bun"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("bun");
 
     fn bun_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join(bun_bin_name())

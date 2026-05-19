@@ -31,13 +31,7 @@ pub struct ErlangPlugin {
 const KERL_VERSION: &str = "4.4.0";
 
 impl ErlangPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("erlang"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("erlang");
 
     fn kerl_path(&self) -> PathBuf {
         self.ba.cache_path.join(format!("kerl-{KERL_VERSION}"))

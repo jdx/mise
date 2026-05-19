@@ -12,7 +12,7 @@ use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, backend::VersionInfo, config::Config};
-use crate::{env, file, plugins};
+use crate::{env, file};
 use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
@@ -25,13 +25,7 @@ pub struct ElixirPlugin {
 }
 
 impl ElixirPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("elixir"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("elixir");
 
     fn elixir_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join(elixir_bin_name())

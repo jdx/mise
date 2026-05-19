@@ -6,7 +6,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, backend::VersionInfo, config::Config};
-use crate::{file, github, gpg, plugins};
+use crate::{file, github, gpg};
 use async_trait::async_trait;
 use eyre::Result;
 use std::{
@@ -21,13 +21,7 @@ pub struct SwiftPlugin {
 }
 
 impl SwiftPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("swift"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("swift");
 
     fn swift_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join(swift_bin_name())

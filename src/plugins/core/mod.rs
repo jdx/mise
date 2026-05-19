@@ -13,6 +13,20 @@ use crate::path_env::PathEnv;
 use crate::timeout::{TimeoutError, run_with_timeout, run_with_timeout_async};
 use crate::toolset::ToolVersion;
 
+macro_rules! simple_core_plugin_constructor {
+    ($tool_name:literal) => {
+        pub fn new() -> Self {
+            Self::from_arg($crate::plugins::core::new_backend_arg($tool_name))
+        }
+
+        pub fn from_arg(ba: $crate::cli::args::BackendArg) -> Self {
+            Self {
+                ba: std::sync::Arc::new(ba),
+            }
+        }
+    };
+}
+
 mod bun;
 mod deno;
 mod dotnet;

@@ -17,7 +17,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{file, minisign, plugins};
+use crate::{file, minisign};
 use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
@@ -35,13 +35,7 @@ const REQUEST_SUFFIX: &str = "?source=mise-en-place";
 const MIRRORS_FILENAME: &str = "community-mirrors.txt";
 
 impl ZigPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("zig"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("zig");
 
     fn zig_bin(&self, tv: &ToolVersion) -> PathBuf {
         if cfg!(windows) {

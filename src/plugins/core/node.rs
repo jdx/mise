@@ -40,13 +40,7 @@ enum FetchOutcome {
 }
 
 impl NodePlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("node"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("node");
 
     async fn fetch_binary(
         &self,

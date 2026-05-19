@@ -13,7 +13,7 @@ use crate::toolset::ToolSource::IdiomaticVersionFile;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ResolveOptions, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, file, github, plugins};
+use crate::{dirs, env, file, github};
 use async_trait::async_trait;
 use eyre::Result;
 use xx::regex;
@@ -24,13 +24,7 @@ pub struct RustPlugin {
 }
 
 impl RustPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("rust"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("rust");
 
     async fn setup_rustup(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         let settings = Settings::get();

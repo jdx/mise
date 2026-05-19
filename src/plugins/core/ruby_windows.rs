@@ -29,13 +29,7 @@ pub struct RubyPlugin {
 }
 
 impl RubyPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("ruby"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("ruby");
 
     fn ruby_path(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join("ruby.exe")

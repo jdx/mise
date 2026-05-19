@@ -17,7 +17,7 @@ use crate::install_context::InstallContext;
 use crate::parallel;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, file, plugins};
+use crate::{dirs, env, file};
 
 #[derive(Debug)]
 pub struct DotnetPlugin {
@@ -25,13 +25,7 @@ pub struct DotnetPlugin {
 }
 
 impl DotnetPlugin {
-    pub fn new() -> Self {
-        Self::from_arg(plugins::core::new_backend_arg("dotnet"))
-    }
-
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
-    }
+    simple_core_plugin_constructor!("dotnet");
 
     fn is_isolated() -> bool {
         Settings::get().dotnet.isolated
