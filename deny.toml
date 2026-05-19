@@ -70,7 +70,6 @@ feature-depth = 1
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error dependency from sigstore crate - no safe upgrade available" },
   { id = "RUSTSEC-2023-0071", reason = "rsa crate Marvin attack vulnerability from sigstore crate - no safe upgrade available" },
   { id = "RUSTSEC-2025-0119", reason = "number_prefix crate is unmaintained - used by indicatif/self_update, no safe upgrade available" },
   # rustls-webpki 0.102.8 advisories — pulled in transitively by sigstore-tsa
