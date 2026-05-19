@@ -1,5 +1,6 @@
 backends = [
   "aqua:google/yamlfmt",
+  "github:google/yamlfmt",
   "asdf:mise-plugins/asdf-yamlfmt",
   "go:github.com/google/yamlfmt/cmd/yamlfmt",
 ]
