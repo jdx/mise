@@ -1124,6 +1124,9 @@ mod tests {
             PythonOptions::new(&opts).lockfile_options(),
             BTreeMap::from([("patch_sysconfig".to_string(), "false".to_string())])
         );
+
+        let opts = opts_with("patch_sysconfig", "true");
+        assert!(PythonOptions::new(&opts).lockfile_options().is_empty());
     }
 
     #[test]
