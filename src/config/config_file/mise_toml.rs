@@ -2269,6 +2269,19 @@ mod tests {
     }
 
     #[test]
+    fn test_explicit_core_tool_key_uses_canonical_identity() {
+        let cf = parse(formatdoc! {r#"
+            tools."core:node" = "22.0.0"
+        "#});
+
+        let tools = cf.tools.lock().unwrap();
+        let ba = tools.keys().next().unwrap();
+
+        assert_eq!(ba.short, "node");
+        assert_eq!(ba.installs_path, dirs::INSTALLS.join("node"));
+    }
+
+    #[test]
     fn test_registry_lookup_alias_tool_key_preserves_identity() {
         let cf = parse(formatdoc! {r#"
             tools.gh = "2.92.0"

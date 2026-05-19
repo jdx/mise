@@ -188,32 +188,39 @@ fn user_alias_exists(short: &str) -> bool {
     config.all_aliases.contains_key(&short) || config.repo_urls.contains_key(&short)
 }
 
-fn registry_canonical_short(short: &str) -> Option<&'static str> {
-    let short = strip_opts(short);
-    if short.contains(':') {
-        return None;
-    }
-
-    match short.as_str() {
-        "dotnet-core" => Some("dotnet"),
-        "nodejs" => Some("node"),
-        "golang" => Some("go"),
-        _ => None,
-    }
-}
-
 fn canonicalize_registry_alias(short: &str) -> String {
     let (name, opts) = split_bracketed_opts(short)
         .map(|(name, opts)| (name, Some(opts)))
         .unwrap_or((short, None));
-    let canonical = registry_canonical_short(name).unwrap_or(name);
+    let canonical = if name.contains(':') {
+        name
+    } else {
+        backend::unalias_backend(name)
+    };
     match opts {
         Some(opts) => format!("{canonical}[{opts}]"),
         None => canonical.to_string(),
     }
 }
 
+fn core_backend_short(short: &str) -> Option<String> {
+    let (name, opts) = split_bracketed_opts(short)
+        .map(|(name, opts)| (name, Some(opts)))
+        .unwrap_or((short, None));
+    let core_short = name.strip_prefix("core:")?;
+    Some(match opts {
+        Some(opts) => format!("{core_short}[{opts}]"),
+        None => core_short.to_string(),
+    })
+}
+
 fn resolve_constructor_short(short: &str, full: Option<&String>, preserve_short: bool) -> String {
+    if full.is_none()
+        && let Some(core_short) = core_backend_short(short)
+    {
+        return core_short;
+    }
+
     if preserve_short
         || full.is_some()
         || is_explicit_backend_syntax(short)
@@ -580,9 +587,25 @@ impl BackendArg {
         self.env_backend_override().is_some()
     }
 
+    fn env_backend_override_keys(&self) -> Vec<String> {
+        let mut keys = vec![format!(
+            "MISE_BACKENDS_{}",
+            self.short.to_shouty_snake_case()
+        )];
+        let canonical_short = backend::unalias_backend(&self.short);
+        if canonical_short != self.short {
+            keys.push(format!(
+                "MISE_BACKENDS_{}",
+                canonical_short.to_shouty_snake_case()
+            ));
+        }
+        keys
+    }
+
     fn env_backend_override(&self) -> Option<String> {
-        let env_key = format!("MISE_BACKENDS_{}", self.short.to_shouty_snake_case());
-        env::var(&env_key).ok()
+        self.env_backend_override_keys()
+            .into_iter()
+            .find_map(|key| env::var(key).ok())
     }
 
     fn backend_alias_opts_from_loaded_config(&self) -> Option<ToolVersionOptions> {
@@ -857,7 +880,7 @@ mod tests {
         t("nodejs", "node");
         t("golang", "go");
         t("dotnet-core", "dotnet");
-        t("core:node", "core-node");
+        t("core:node", "node");
         t("cargo:eza", "cargo-eza");
         t("npm:@antfu/ni", "npm-antfu-ni");
         t("npm:prettier", "npm-prettier");
@@ -1150,22 +1173,60 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_explicit_core_backend_preserves_identity() {
+    async fn test_explicit_core_backend_uses_canonical_identity() {
         let _config = Config::get().await.unwrap();
 
         let ba: BackendArg = "core:node".into();
 
-        assert_eq!(ba.short, "core:node");
+        assert_eq!(ba.short, "node");
         assert_str_eq!("core:node", ba.full());
         assert_eq!("node", ba.tool_name);
         assert_eq!(BackendType::Core, ba.backend_type());
         assert_str_eq!(
             ba.installs_path.to_string_lossy(),
-            dirs::INSTALLS.join("core-node").to_string_lossy()
+            dirs::INSTALLS.join("node").to_string_lossy()
         );
 
         let backend = ba.backend().unwrap();
-        assert_eq!(backend.ba().short, "core:node");
+        assert_eq!(backend.ba().short, "node");
         assert_str_eq!("core:node", backend.ba().full());
+    }
+
+    #[tokio::test]
+    async fn test_core_backend_opts_use_canonical_identity() {
+        let _config = Config::get().await.unwrap();
+
+        let ba: BackendArg = "core:node[foo=bar]".into();
+
+        assert_eq!(ba.short, "node");
+        assert_str_eq!("core:node[foo=bar]", ba.full_with_opts());
+        assert_eq!(ba.opts().get("foo"), Some("bar"));
+        assert_str_eq!(
+            ba.installs_path.to_string_lossy(),
+            dirs::INSTALLS.join("node").to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn test_preserved_registry_alias_checks_alias_and_canonical_env_backend_override_keys() {
+        let ba = BackendArg::new_preserve_short("nodejs".to_string(), None);
+
+        assert_eq!(ba.short, "nodejs");
+        assert_eq!(
+            ba.env_backend_override_keys(),
+            vec!["MISE_BACKENDS_NODEJS", "MISE_BACKENDS_NODE"]
+        );
+        assert_str_eq!(
+            ba.installs_path.to_string_lossy(),
+            dirs::INSTALLS.join("nodejs").to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn test_canonical_registry_alias_checks_only_canonical_env_backend_override_key() {
+        let ba: BackendArg = "nodejs".into();
+
+        assert_eq!(ba.short, "node");
+        assert_eq!(ba.env_backend_override_keys(), vec!["MISE_BACKENDS_NODE"]);
     }
 }

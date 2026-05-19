@@ -318,8 +318,8 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
             let canonical = if CORE_PLUGINS.contains_key(&ba.short) {
                 ba.short.clone()
             } else {
-                // this can happen for explicit core syntax like "core:node" or
-                // if something like "corenode" is aliased to "core:node"
+                // this can happen if something like "corenode" is aliased to
+                // "core:node" while keeping "corenode" as the install identity
                 let full = ba.full_without_opts();
                 full.strip_prefix("core:")?.to_string()
             };
