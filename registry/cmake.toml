@@ -1,5 +1,6 @@
 backends = [
   "aqua:Kitware/CMake",
+  "github:Kitware/CMake",
   "asdf:mise-plugins/mise-cmake",
   "vfox:mise-plugins/vfox-cmake",
 ]
