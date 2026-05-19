@@ -22,6 +22,10 @@ else
   }
 fi
 
+warn() {
+  echo "$@" >&2
+}
+
 error() {
   echo "$@" >&2
   exit 1
