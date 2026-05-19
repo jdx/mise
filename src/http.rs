@@ -25,7 +25,7 @@ use crate::{env, file};
 
 #[cfg(not(test))]
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
-    Lazy::new(|| Client::new(Duration::from_secs(3), ClientKind::VersionCheck).unwrap());
+    Lazy::new(|| Client::new(Settings::get().http_timeout(), ClientKind::Http).unwrap());
 
 pub static HTTP: Lazy<Client> =
     Lazy::new(|| Client::new(Settings::get().http_timeout(), ClientKind::Http).unwrap());
@@ -57,8 +57,6 @@ pub struct Client {
 enum ClientKind {
     Http,
     Fetch,
-    #[allow(dead_code)]
-    VersionCheck,
 }
 
 impl Client {
@@ -457,7 +455,6 @@ impl Client {
                             "fetch_remote_versions_timeout",
                             "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT",
                         ),
-                        ClientKind::VersionCheck => ("version_check_timeout", ""),
                     };
                     let hint = if env_var.is_empty() {
                         format!(
