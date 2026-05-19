@@ -23,10 +23,6 @@ use crate::ui::progress_report::SingleReport;
 use crate::ui::time::format_duration;
 use crate::{env, file};
 
-#[cfg(not(test))]
-pub static HTTP_VERSION_CHECK: Lazy<Client> =
-    Lazy::new(|| Client::new(Settings::get().http_timeout(), ClientKind::Http).unwrap());
-
 pub static HTTP: Lazy<Client> =
     Lazy::new(|| Client::new(Settings::get().http_timeout(), ClientKind::Http).unwrap());
 
