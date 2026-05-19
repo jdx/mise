@@ -299,4 +299,13 @@ mod tests {
         t("@biomejs/biome@1.0.0", "@biomejs/biome", Some("1.0.0"));
         t("@biomejs/biome@", "@biomejs/biome", None);
     }
+
+    #[tokio::test]
+    async fn test_tool_arg_rejects_dash_prefixed_version() {
+        let _config = Config::get().await.unwrap();
+        assert!(ToolArg::from_str("ruby@--version").is_err());
+        assert!(ToolArg::from_str("ruby@--list").is_err());
+        assert!(ToolArg::from_str("node@-").is_err());
+        assert!(ToolArg::from_str("node@-rc1").is_err());
+    }
 }

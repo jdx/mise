@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/9975
+# `mise use dummy@--version` (or any dash-prefixed identifier) must fail and
+# leave mise.toml untouched, instead of silently writing the bad value because
+# the underlying tool happened to exit 0.
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert_fail "mise use dummy@--version"
+assert_fail "mise use dummy@--list"
+assert_fail "mise use dummy@-"
+
+assert "cat mise.toml" '[tools]
+dummy = "1.0.0"'

@@ -418,6 +418,9 @@ fn validate_version_string(s: &str) -> Result<()> {
     if s.is_empty() {
         return Ok(());
     }
+    if s.starts_with('-') {
+        bail!("invalid tool version {s:?}: cannot start with '-'");
+    }
     if s.contains("..") {
         bail!("invalid tool version {s:?}: contains path-traversal sequence");
     }
@@ -620,6 +623,13 @@ mod tests {
             // path traversal
             "../etc/passwd",
             "1.0/../etc",
+            // leading dash — would be parsed as a flag by the backend's
+            // underlying CLI (e.g. `ruby-build --version` exits 0) and silently
+            // written to mise.toml. See discussion #9975.
+            "--version",
+            "--list",
+            "-rc1",
+            "-",
         ] {
             assert!(
                 validate_version_string(v).is_err(),
