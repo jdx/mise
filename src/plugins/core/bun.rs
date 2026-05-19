@@ -42,6 +42,7 @@ impl BunPlugin {
         CmdLineRunner::new(self.bun_bin(tv))
             .with_pr(ctx.pr.as_ref())
             .arg("-v")
+            .envs(tv.install_env())
             .execute()
     }
 

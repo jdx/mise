@@ -4,6 +4,7 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::backend::options::BackendOptions;
 use crate::backend::{
     Backend, VersionInfo, normalize_idiomatic_contents, platform_target::PlatformTarget,
 };
@@ -17,7 +18,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::platform::Platform;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
 use async_trait::async_trait;
@@ -45,6 +46,32 @@ pub struct JavaPlugin {
     java_metadata_ga_cache: CacheManager<HashMap<String, JavaMetadata>>,
     java_metadata_target_cache:
         tokio::sync::Mutex<HashMap<(String, String), HashMap<String, JavaMetadata>>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct JavaOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> JavaOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn release_type(&self) -> &'a str {
+        self.values.str("release_type").unwrap_or("ga")
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        let release_type = self.release_type();
+        if release_type != "ga" {
+            opts.insert("release_type".to_string(), release_type.to_string());
+        }
+        opts
+    }
 }
 
 impl JavaPlugin {
@@ -155,6 +182,7 @@ impl JavaPlugin {
         CmdLineRunner::new(self.java_bin(tv))
             .with_pr(pr)
             .env("JAVA_HOME", tv.install_path())
+            .envs(tv.install_env())
             .arg("-version")
             .execute()
     }
@@ -300,11 +328,8 @@ impl JavaPlugin {
     }
 
     fn tv_release_type(&self, tv: &ToolVersion) -> String {
-        tv.request
-            .options()
-            .get("release_type")
-            .map(|s| s.to_string())
-            .unwrap_or(String::from("ga"))
+        let raw_opts = tv.request.options();
+        JavaOptions::new(&raw_opts).release_type().to_string()
     }
 
     fn tv_to_java_version(&self, tv: &ToolVersion) -> String {
@@ -364,11 +389,8 @@ impl Backend for JavaPlugin {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let release_type = opts
-            .get("release_type")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "ga".to_string());
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let release_type = JavaOptions::new(&raw_opts).release_type().to_string();
 
         let versions = self
             .fetch_java_metadata(&release_type)
@@ -461,14 +483,8 @@ impl Backend for JavaPlugin {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
-        let mut opts = BTreeMap::new();
-        if let Some(release_type) = request.options().get("release_type") {
-            let release_type = release_type.to_string();
-            if release_type != "ga" {
-                opts.insert("release_type".to_string(), release_type);
-            }
-        }
-        opts
+        let raw_opts = request.options();
+        JavaOptions::new(&raw_opts).lockfile_options()
     }
 
     async fn resolve_lock_info(
@@ -766,3 +782,35 @@ impl JavaMetadata {
 static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
     HashSet::from(["crac", "javafx", "jcef", "leyden", "lite", "musl"].map(|s| s.to_string()))
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opts_with_release_type(release_type: &str) -> ToolVersionOptions {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "release_type".to_string(),
+            toml::Value::String(release_type.to_string()),
+        );
+        opts
+    }
+
+    #[test]
+    fn java_options_reads_release_type() {
+        let default_opts = ToolVersionOptions::default();
+        assert_eq!(JavaOptions::new(&default_opts).release_type(), "ga");
+        assert!(
+            JavaOptions::new(&default_opts)
+                .lockfile_options()
+                .is_empty()
+        );
+
+        let opts = opts_with_release_type("ea");
+        assert_eq!(JavaOptions::new(&opts).release_type(), "ea");
+        assert_eq!(
+            JavaOptions::new(&opts).lockfile_options(),
+            BTreeMap::from([("release_type".to_string(), "ea".to_string())])
+        );
+    }
+}

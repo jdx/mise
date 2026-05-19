@@ -155,6 +155,7 @@ impl ErlangPlugin {
             .with_pr(ctx.pr.as_ref())
             .arg("-minimal")
             .arg(tv.install_path())
+            .envs(tv.install_env())
             .execute()?;
 
         Ok(Some(tv))
@@ -308,16 +309,19 @@ impl ErlangPlugin {
                 unimplemented!("erlang does not yet support refs");
             }
             _ => {
-                cmd!(
+                let mut cmd = cmd!(
                     self.kerl_path(),
                     "build-install",
                     &tv.version,
                     &tv.version,
                     tv.install_path()
                 )
-                .env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
-                .env("MAKEFLAGS", format!("-j{}", num_cpus::get()))
-                .run()?;
+                .env("MAKEFLAGS", format!("-j{}", num_cpus::get()));
+                for (key, value) in tv.install_env() {
+                    cmd = cmd.env(key, value);
+                }
+                cmd.env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
+                    .run()?;
             }
         }
 

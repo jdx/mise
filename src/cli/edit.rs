@@ -16,7 +16,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cli::version::VERSION_PLAIN;
 use crate::config::config_file;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, global_config_path};
 use crate::file::display_path;
 use crate::plugins::PluginType;
 use crate::registry::{REGISTRY, RegistryTool};
@@ -121,6 +121,9 @@ impl BackendProvider for MiseBackendProvider {
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Edit {
+    /// Edit the global config file (~/.config/mise/config.toml)
+    #[clap(long, short = 'g')]
+    global: bool,
     /// Show what would be generated without writing to file
     #[clap(long, short = 'n')]
     dry_run: bool,
@@ -142,15 +145,32 @@ struct DetectedTool {
 }
 
 impl Edit {
+    pub(crate) fn new(
+        global: bool,
+        dry_run: bool,
+        path: Option<PathBuf>,
+        tool_versions: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            global,
+            dry_run,
+            path,
+            tool_versions,
+        }
+    }
+
     pub async fn run(self) -> Result<()> {
-        let path = self
-            .path
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(&*env::MISE_DEFAULT_CONFIG_FILENAME));
+        let path = if let Some(path) = self.path.clone() {
+            path
+        } else if self.global {
+            global_config_path()
+        } else {
+            PathBuf::from(&*env::MISE_DEFAULT_CONFIG_FILENAME)
+        };
 
         if let Some(tool_versions) = &self.tool_versions {
             // Import from .tool-versions file
-            let doc = self.tool_versions(tool_versions).await?;
+            let doc = self.tool_versions(tool_versions, &path).await?;
 
             if self.dry_run {
                 info!("would write to {}", display_path(&path));
@@ -249,9 +269,8 @@ impl Edit {
         Ok(())
     }
 
-    async fn tool_versions(&self, tool_versions: &Path) -> Result<String> {
-        let to =
-            config_file::parse_or_init(&PathBuf::from(&*env::MISE_DEFAULT_CONFIG_FILENAME)).await?;
+    async fn tool_versions(&self, tool_versions: &Path, path: &Path) -> Result<String> {
+        let to = config_file::parse_or_init(path).await?;
         let from = config_file::parse(tool_versions).await?;
         let tools = from.to_tool_request_set()?.tools;
         for (ba, tools) in tools {
@@ -370,11 +389,12 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
     }
 }
 
-pub static AFTER_LONG_HELP: &str = color_print::cstr!(
+static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise edit</bold>             <dim># edit mise.toml interactively</dim>
     $ <bold>mise edit .mise.toml</bold>  <dim># edit a specific file</dim>
+    $ <bold>mise edit -g</bold>          <dim># edit the global config file</dim>
     $ <bold>mise edit -y</bold>          <dim># skip interactive editor</dim>
     $ <bold>mise edit -n</bold>          <dim># preview without writing</dim>
 "#

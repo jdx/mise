@@ -68,11 +68,17 @@ impl GoPlugin {
         let settings = Settings::get();
         let default_packages_file = file::replace_path(&settings.go.default_packages_file);
         let body = file::read_to_string(default_packages_file).unwrap_or_default();
-        for package in body.lines() {
-            let package = package.split('#').next().unwrap_or_default().trim();
-            if package.is_empty() {
-                continue;
-            }
+        let mut packages = body
+            .lines()
+            .filter_map(Settings::parse_default_package_line)
+            .peekable();
+        if packages.peek().is_some() {
+            Settings::warn_default_package_file_deprecated(
+                "go.default_packages_file",
+                "go package",
+            );
+        }
+        for package in packages {
             pr.set_message(format!("install default package: {package}"));
             let package = if package.contains('@') {
                 package.to_string()
@@ -84,6 +90,7 @@ impl GoPlugin {
                 .arg("install")
                 .arg(package)
                 .envs(self._exec_env(tv)?)
+                .envs(tv.install_env())
                 .execute()?;
         }
         Ok(())
@@ -96,6 +103,7 @@ impl GoPlugin {
             .current_dir(tv.install_path())
             .with_pr(pr)
             .arg("version")
+            .envs(tv.install_env())
             .execute()
     }
 

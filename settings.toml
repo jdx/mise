@@ -204,6 +204,14 @@ If true, mise will use `cargo binstall` instead of `cargo install` if
 [`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.
 This makes installing CLIs with cargo _much_ faster by downloading precompiled binaries.
 
+When `cargo-binstall` installs a prebuilt binary, Cargo build settings and `cargo install`
+behavior do not affect the downloaded artifact. Set `cargo.binstall = false` to force
+`cargo install` when you need Cargo settings to control the install.
+
+When mise invokes `cargo-binstall`, `cargo-binstall` handles its own fallback order, including
+its final fallback to compiling with `cargo install`. mise does not retry with a separate
+`cargo install` command if `cargo-binstall` exits with an error.
+
 You can install it with mise:
 
 ```sh
@@ -519,9 +527,6 @@ env = "MISE_ENV_CACHE_TTL"
 type = "Duration"
 
 [env_file]
-deprecated = "Use env._.file instead."
-deprecated_remove_at = "2027.11.0"
-deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing environment variables to automatically load."
 env = "MISE_ENV_FILE"
 optional = true
@@ -897,6 +902,9 @@ type = "Path"
 
 [go.default_packages_file]
 default = "~/.default-go-packages"
+deprecated = "Default go package files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every go version, or use the go: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default go packages to install when installing go."
 env = "MISE_GO_DEFAULT_PACKAGES_FILE"
 type = "Path"
@@ -1335,7 +1343,7 @@ cutoff date.
 Some package-manager backends also forward the cutoff to transitive dependency resolution during
 install. This includes `npm:` and `pipx:` tools.
 
-Can be overridden with the `--before` CLI flag or per-tool with the `minimum_release_age` tool option.
+Can be overridden with the `--minimum-release-age` CLI flag or per-tool with the `minimum_release_age` tool option.
 
 ```toml
 [tools.trivy]
@@ -1428,6 +1436,9 @@ type = "Bool"
 
 [node.default_packages_file]
 default_docs = "~/.default-npm-packages"
+deprecated = "Default npm package files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every node version, or use the npm: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default npm packages to install."
 docs = """
 Path to a file containing packages to install with npm after installing a new Node.js version.
@@ -1733,7 +1744,7 @@ env = "MISE_PRERELEASES"
 type = "Bool"
 
 [profile]
-deprecated = "Use env._.file instead."
+deprecated = "Use MISE_ENV instead."
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 env = "MISE_PROFILE"
 hide = true
@@ -1769,6 +1780,9 @@ optional = true
 type = "Bool"
 
 [python.default_packages_file]
+deprecated = "Default python package files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every python version, or use the pipx: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default python packages to install when installing a python version."
 env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE"
 optional = true
@@ -1904,6 +1918,9 @@ type = "Bool"
 
 [ruby.default_packages_file]
 default = "~/.default-gems"
+deprecated = "Default ruby gem files are deprecated. Use tool-level postinstall hooks for gems that should be installed into every ruby version, or use the gem: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default ruby gems to install when installing ruby."
 env = "MISE_RUBY_DEFAULT_PACKAGES_FILE"
 type = "String"

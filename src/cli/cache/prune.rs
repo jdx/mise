@@ -15,9 +15,9 @@ use std::time::Duration;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "p")]
 pub struct CachePrune {
-    /// Plugin(s) to prune cache for
+    /// Tool(s) to prune cache for
     /// e.g.: node, python
-    plugin: Option<Vec<String>>,
+    tool: Option<Vec<String>>,
 
     /// Show pruned files
     #[clap(long, short, action = clap::ArgAction::Count)]
@@ -40,13 +40,13 @@ impl CachePrune {
         };
         let mut results = PruneResults { size: 0, count: 0 };
 
-        let cache_dirs = match &self.plugin {
-            Some(plugins) => plugins
+        let cache_dirs = match &self.tool {
+            Some(tools) => tools
                 .iter()
-                .filter_map(|plugin| {
-                    let kebab = plugin.to_kebab_case();
+                .filter_map(|tool| {
+                    let kebab = tool.to_kebab_case();
                     if kebab.is_empty() {
-                        warn!("invalid plugin name: {plugin}");
+                        warn!("invalid tool name: {tool}");
                         None
                     } else {
                         Some(CACHE.join(kebab))
@@ -66,7 +66,7 @@ impl CachePrune {
 
         // Prune env cache using env_cache_ttl
         let env_cache_dir = CachedEnv::cache_dir();
-        if self.plugin.is_none() && env_cache_dir.exists() {
+        if self.tool.is_none() && env_cache_dir.exists() {
             let env_opts = PruneOptions {
                 dry_run: self.dry_run,
                 verbose: self.verbose > 0,
@@ -79,10 +79,10 @@ impl CachePrune {
 
         let count = results.count;
         let size = bytes_str(results.size);
-        match &self.plugin {
-            Some(plugins) => info!(
+        match &self.tool {
+            Some(tools) => info!(
                 "cache pruned for {}: {count} files, {size}",
-                plugins.join(", ")
+                tools.join(", ")
             ),
             None => info!("cache pruned {count} files, {size}"),
         }

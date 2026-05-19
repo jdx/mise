@@ -81,12 +81,6 @@ pub struct Use {
     #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
-    /// Only install versions released before this date
-    ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[clap(long, verbatim_doc_comment)]
-    before: Option<String>,
-
     /// Like --dry-run but exits with code 1 if there are changes to make
     ///
     /// This is useful for scripts to check if tools need to be added or removed.
@@ -100,6 +94,12 @@ pub struct Use {
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
 
+    /// Only install versions released before this date or older than this duration
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(long, alias = "before", verbatim_doc_comment)]
+    minimum_release_age: Option<String>,
+
     /// Save exact version to config file
     /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
     /// Set `MISE_PIN=1` to make this the default behavior
@@ -109,13 +109,13 @@ pub struct Use {
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets `--jobs=1`
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies `--jobs=1`
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 
-    /// Remove the plugin(s) from config file
-    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
+    /// Remove the tool(s) from config file
+    #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Vec<BackendArg>,
 }
 
@@ -216,8 +216,8 @@ impl Use {
         if self.global {
             self.warn_if_hidden(&config, cf.get_path()).await;
         }
-        for plugin_name in &self.remove {
-            cf.remove_tool(plugin_name)?;
+        for tool_name in &self.remove {
+            cf.remove_tool(tool_name)?;
         }
 
         if !self.is_dry_run() {
@@ -368,11 +368,11 @@ impl Use {
         }
     }
 
-    /// Get the before_date from the CLI --before flag only.
+    /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(before) = &self.before {
-            return Ok(Some(parse_into_timestamp(before)?));
+        if let Some(minimum_release_age) = &self.minimum_release_age {
+            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
         }
         Ok(None)
     }

@@ -9,19 +9,41 @@ use versions::Versioning;
 
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
+use crate::backend::options::BackendOptions;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::parallel;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file};
 
 #[derive(Debug)]
 pub struct DotnetPlugin {
     ba: Arc<BackendArg>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DotnetOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> DotnetOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn runtime(&self) -> Option<&'a str> {
+        self.values.str("runtime")
+    }
+
+    fn runtime_framework_name(&self) -> Option<&'static str> {
+        self.runtime().and_then(runtime_framework_name)
+    }
 }
 
 impl DotnetPlugin {
@@ -32,7 +54,9 @@ impl DotnetPlugin {
     }
 
     async fn test_dotnet(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        if tv.request.options().get("runtime").is_some() {
+        let raw_opts = tv.request.options();
+        let opts = DotnetOptions::new(&raw_opts);
+        if opts.runtime().is_some() {
             // Skip version check for runtime-only installs — `dotnet --version` exits non-zero without an SDK
             return Ok(());
         }
@@ -40,6 +64,7 @@ impl DotnetPlugin {
         CmdLineRunner::new(DOTNET_BIN)
             .with_pr(ctx.pr.as_ref())
             .arg("--version")
+            .envs(tv.install_env())
             .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
             .prepend_path(self.list_bin_paths(&ctx.config, tv).await?)?
             .execute()
@@ -121,9 +146,11 @@ impl Backend for DotnetPlugin {
         file::create_dir_all(&install_dir)?;
 
         // Read and validate runtime options
-        let runtime = tv.request.options().get("runtime").map(|s| s.to_string());
+        let raw_opts = tv.request.options();
+        let opts = DotnetOptions::new(&raw_opts);
+        let runtime = opts.runtime().map(str::to_string);
         if let Some(ref rt) = runtime
-            && runtime_framework_name(rt).is_none()
+            && opts.runtime_framework_name().is_none()
         {
             return Err(eyre::eyre!(
                 "Invalid runtime option '{}'. Valid options: dotnet, aspnetcore, windowsdesktop",
@@ -147,6 +174,7 @@ impl Backend for DotnetPlugin {
             .set_message(format!("Installing .NET {} {}", install_type, tv.version));
         install_cmd(&script_path, &install_dir, &tv.version, runtime.as_deref())
             .with_pr(ctx.pr.as_ref())
+            .envs(tv.install_env())
             .envs(self.exec_env(&ctx.config, &ctx.ts, &tv).await?)
             .execute()?;
 
@@ -170,10 +198,11 @@ impl Backend for DotnetPlugin {
         if Self::is_isolated() {
             // Isolated: mise handles removal of install_path by default
         } else {
-            let runtime = tv.request.options().get("runtime").map(|s| s.to_string());
-            if let Some(rt) = runtime {
+            let raw_opts = tv.request.options();
+            let opts = DotnetOptions::new(&raw_opts);
+            if opts.runtime().is_some() {
                 // Runtime: remove the shared runtime directory for this version
-                let Some(framework) = runtime_framework_name(&rt) else {
+                let Some(framework) = opts.runtime_framework_name() else {
                     return Ok(());
                 };
                 let runtime_dir = dotnet_root()
@@ -378,5 +407,31 @@ impl Ord for SortedVersion {
 impl PartialOrd for SortedVersion {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opts_with_runtime(runtime: &str) -> ToolVersionOptions {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "runtime".to_string(),
+            toml::Value::String(runtime.to_string()),
+        );
+        opts
+    }
+
+    #[test]
+    fn dotnet_options_reads_runtime() {
+        let opts = opts_with_runtime("aspnetcore");
+        let parsed = DotnetOptions::new(&opts);
+
+        assert_eq!(parsed.runtime(), Some("aspnetcore"));
+        assert_eq!(
+            parsed.runtime_framework_name(),
+            Some("Microsoft.AspNetCore.App")
+        );
     }
 }

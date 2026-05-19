@@ -4,7 +4,6 @@ use std::{fmt::Debug, sync::Arc};
 use async_trait::async_trait;
 use color_eyre::Section;
 use eyre::{bail, eyre};
-use indexmap::IndexMap;
 use url::Url;
 
 use crate::Result;
@@ -50,37 +49,29 @@ impl<'a> CargoOptions<'a> {
     fn locked(&self) -> bool {
         self.values
             .raw()
-            .get("locked")
+            .get_string("locked")
             .is_none_or(|v| v.to_lowercase() != "false")
     }
 
-    fn features(&self) -> Option<&'a str> {
-        self.values.str("features")
+    fn features(&self) -> Option<String> {
+        self.values.raw().get_string("features")
     }
 
     fn default_features_disabled(&self) -> bool {
         self.values
-            .str("default-features")
+            .raw()
+            .get_string("default-features")
             .is_some_and(|v| v.to_lowercase() == "false")
     }
 
-    fn crate_arg(&self) -> Option<&'a str> {
-        self.values.str("crate")
-    }
-
-    fn install_env(&self) -> &'a IndexMap<String, String> {
-        &self.values.raw().install_env
-    }
-
-    fn has_features_options(&self) -> bool {
-        self.values.raw().contains_key("features")
-            || self.values.raw().contains_key("default-features")
+    fn crate_arg(&self) -> Option<String> {
+        self.values.raw().get_string("crate")
     }
 
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
-        for key in ["features", "default-features"] {
-            if let Some(value) = self.values.str(key) {
+        for key in ["features", "default-features", "crate", "locked"] {
+            if let Some(value) = self.values.raw().get_string(key) {
                 result.insert(key.to_string(), value.to_string());
             }
         }
@@ -89,6 +80,14 @@ impl<'a> CargoOptions<'a> {
         }
         result
     }
+}
+
+#[derive(Debug)]
+enum BinstallStatus {
+    Enabled,
+    Disabled,
+    Unavailable,
+    UnsupportedOptions(Vec<&'static str>),
 }
 
 #[async_trait]
@@ -183,16 +182,39 @@ impl Backend for CargoBackend {
                 ))?;
             }
             cmd
-        } else if self.is_binstall_enabled(&config, &tv).await {
-            let mut cmd = CmdLineRunner::new("cargo-binstall").arg("-y");
-            if let Some(token) = &*GITHUB_TOKEN {
-                cmd = cmd.env("GITHUB_TOKEN", token)
-            }
-            cmd.arg(install_arg)
-        } else if Settings::get().cargo.binstall_only {
-            bail!("cargo-binstall is not available, but cargo.binstall_only is set");
         } else {
-            cmd.arg(install_arg)
+            match self.binstall_status(&config, &tv).await {
+                BinstallStatus::Enabled => {
+                    let mut cmd = CmdLineRunner::new("cargo-binstall").arg("-y");
+                    if let Some(token) = &*GITHUB_TOKEN {
+                        cmd = cmd.env("GITHUB_TOKEN", token)
+                    }
+                    cmd.arg(install_arg)
+                }
+                BinstallStatus::UnsupportedOptions(options)
+                    if Settings::get().cargo.binstall_only =>
+                {
+                    let options = format_tool_options(&options);
+                    bail!(
+                        "cargo-binstall cannot honor cargo install-only tool option(s): {options}\n\
+                        hint: Remove the option(s), or disable cargo.binstall_only to allow cargo install"
+                    );
+                }
+                BinstallStatus::Disabled if Settings::get().cargo.binstall_only => {
+                    bail!("cargo-binstall is disabled, but cargo.binstall_only is set");
+                }
+                _ if Settings::get().cargo.binstall_only => {
+                    bail!("cargo-binstall is not available, but cargo.binstall_only is set");
+                }
+                BinstallStatus::UnsupportedOptions(options) => {
+                    let options = format_tool_options(&options);
+                    info!(
+                        "not using cargo-binstall because cargo install-only tool option(s) are specified: {options}"
+                    );
+                    cmd.arg(install_arg)
+                }
+                _ => cmd.arg(install_arg),
+            }
         };
 
         let request_options = tv.request.options();
@@ -220,7 +242,7 @@ impl Backend for CargoBackend {
             .arg(tv.install_path())
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-            .envs(opts.install_env().clone())
+            .envs(tv.install_env())
             .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
             .prepend_path(
                 self.dependency_toolset(&ctx.config)
@@ -245,7 +267,13 @@ impl Backend for CargoBackend {
 
 /// Returns install-time-only option keys for Cargo backend.
 pub fn install_time_option_keys() -> Vec<String> {
-    vec!["features".into(), "default-features".into(), "bin".into()]
+    vec![
+        "features".into(),
+        "default-features".into(),
+        "bin".into(),
+        "crate".into(),
+        "locked".into(),
+    ]
 }
 
 impl CargoBackend {
@@ -253,29 +281,45 @@ impl CargoBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    async fn is_binstall_enabled(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
+    fn cargo_install_required_options(opts: &ToolVersionOptions) -> Vec<&'static str> {
+        let mut options = vec![];
+        if opts
+            .get_string("features")
+            .is_some_and(|features| !features.trim().is_empty())
+        {
+            options.push("features");
+        }
+        if opts
+            .get_string("default-features")
+            .is_some_and(|default_features| default_features.to_lowercase() == "false")
+        {
+            options.push("default-features");
+        }
+        options
+    }
+
+    async fn binstall_status(&self, config: &Arc<Config>, tv: &ToolVersion) -> BinstallStatus {
         if !Settings::get().cargo.binstall {
-            return false;
+            return BinstallStatus::Disabled;
+        }
+        let opts = tv.request.options();
+        let cargo_install_required_options = Self::cargo_install_required_options(&opts);
+        if !cargo_install_required_options.is_empty() {
+            return BinstallStatus::UnsupportedOptions(cargo_install_required_options);
         }
         if file::which_non_pristine("cargo-binstall").is_none() {
             match self.dependency_toolset(config).await {
                 Ok(ts) => {
                     if ts.which(config, "cargo-binstall").await.is_none() {
-                        return false;
+                        return BinstallStatus::Unavailable;
                     }
                 }
                 Err(_e) => {
-                    return false;
+                    return BinstallStatus::Unavailable;
                 }
             }
         }
-        let request_options = tv.request.options();
-        let opts = CargoOptions::new(&request_options);
-        if opts.has_features_options() {
-            info!("not using cargo-binstall because features are specified");
-            return false;
-        }
-        true
+        BinstallStatus::Enabled
     }
 
     /// if the name is a git repo, return the git url
@@ -288,6 +332,14 @@ impl CargoBackend {
             None
         }
     }
+}
+
+fn format_tool_options(options: &[&'static str]) -> String {
+    options
+        .iter()
+        .map(|option| format!("`{option}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -306,6 +358,7 @@ struct CratesIoVersion {
 mod tests {
     use super::*;
     use crate::platform::Platform;
+    use crate::toolset::parse_tool_options;
 
     #[test]
     fn test_lockfile_options_uses_target_platform_bin() {
@@ -323,5 +376,53 @@ mod tests {
         let lock_opts = CargoOptions::new(&opts).lockfile_options(&target);
 
         assert_eq!(lock_opts.get("bin").map(String::as_str), Some("linux-bin"));
+    }
+
+    #[test]
+    fn test_lockfile_options_include_crate_and_locked() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("crate".into(), toml::Value::String("demo".into()));
+        opts.opts
+            .insert("locked".into(), toml::Value::Boolean(false));
+
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let lock_opts = CargoOptions::new(&opts).lockfile_options(&target);
+
+        assert_eq!(lock_opts.get("crate").map(String::as_str), Some("demo"));
+        assert_eq!(lock_opts.get("locked").map(String::as_str), Some("false"));
+    }
+
+    #[test]
+    fn cargo_install_required_options_skips_feature_options() {
+        let opts = parse_tool_options("features=add,default-features=false");
+
+        assert_eq!(
+            CargoBackend::cargo_install_required_options(&opts),
+            vec!["features", "default-features"]
+        );
+    }
+
+    #[test]
+    fn cargo_install_required_options_allows_binstall_supported_options() {
+        let opts =
+            parse_tool_options("bin=cargo-add,crate=cargo-edit,locked=false,default-features=true");
+
+        assert_eq!(
+            CargoBackend::cargo_install_required_options(&opts),
+            Vec::<&str>::new()
+        );
+    }
+
+    #[test]
+    fn cargo_install_required_options_skips_toml_bool_default_features() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("default-features".into(), toml::Value::Boolean(false));
+
+        assert_eq!(
+            CargoBackend::cargo_install_required_options(&opts),
+            vec!["default-features"]
+        );
     }
 }

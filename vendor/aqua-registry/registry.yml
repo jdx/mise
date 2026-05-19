@@ -306,6 +306,27 @@ packages:
           - linux/amd64
           - windows
   - type: github_release
+    repo_owner: AOMediaCodec
+    repo_name: libavif
+    description: Library for encoding and decoding AVIF files
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: "{{.OS}}-artifacts.{{.Format}}"
+        format: zip
+        replacements:
+          darwin: macOS
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+          - windows/amd64
+        files:
+          - name: avifenc
+          - name: avifdec
+          - name: avifgainmaputil
+  - type: github_release
     repo_owner: Adembc
     repo_name: lazyssh
     description: "A terminal-based SSH manager inspired by lazydocker and k9s - Written in go"
@@ -13280,7 +13301,7 @@ packages:
     description: A free and open source Java framework for building Semantic Web and Linked Data applications (CLI tools)
     version_source: github_tag
     version_prefix: jena-
-    version_filter: Version matches "^jena-\\d+"
+    version_filter: Version matches "^jena-\\d+\\.\\d+\\.\\d+$"
     files:
       - name: arq
         src: apache-jena-{{.SemVer}}/bin/arq
@@ -13403,6 +13424,8 @@ packages:
             src: apache-jena-{{.SemVer}}/bat/tdbdump.bat
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 3.13.0")
+        error_message: apache/jena is supported from jena-3.13.0 because older archives use different command sets or checksum files
       - version_constraint: "true"
         url: https://archive.apache.org/dist/jena/binaries/apache-jena-{{.SemVer}}.tar.gz
         format: tgz
@@ -52406,6 +52429,101 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: julian7
+    repo_name: redact
+    description: Data encryptor for git
+    files:
+      - name: redact
+      - name: redact-ext-aws
+      - name: redact-ext-azure
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.3.0"
+        asset: redact-{{.OS}}-{{.Arch}}-{{.Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.2.0")
+        asset: redact-{{.OS}}-{{.Arch}}-{{.Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.1")
+        no_asset: true
+      - version_constraint: semver("<= 0.6.0")
+        asset: redact-{{.OS}}-{{.Arch}}-{{trimV .Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.redact-{{trimV .Version}}
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.7.1")
+        asset: redact-{{.OS}}-{{.Arch}}-{{trimV .Version}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.redact-{{trimV .Version}}
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: redact-{{.OS}}-all-{{trimV .Version}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.9.0")
+        asset: redact-{{.OS}}-{{.Arch}}-{{trimV .Version}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.redact-{{trimV .Version}}
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: redact-{{.OS}}-all-{{trimV .Version}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: redact-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.redact-{{trimV .Version}}
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: redact-{{.OS}}-all-{{trimV .Version}}.{{.Format}}
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
   - type: github_release
     repo_owner: juliosueiras
     repo_name: terraform-lsp

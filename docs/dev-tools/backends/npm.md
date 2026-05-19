@@ -74,6 +74,17 @@ import Settings from '/components/settings.vue';
 The following [tool-options](/dev-tools/#tool-options) are available for the `npm` backend—these
 go in `[tools]` in `mise.toml`.
 
+### `install_env`
+
+Set environment variables for the configured package manager install command.
+mise still controls install destination variables such as `BUN_INSTALL_GLOBAL_DIR`
+and `BUN_INSTALL_BIN` after applying `install_env`.
+
+```toml
+[tools]
+"npm:prettier" = { version = "latest", install_env = { NPM_CONFIG_REGISTRY = "https://registry.npmjs.org/" } }
+```
+
 ### `npm_args`
 
 Additional arguments to pass to `npm` installs when `settings.npm.package_manager = "npm"`.

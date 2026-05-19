@@ -1,3 +1,3 @@
-backends = ["github:dathere/qsv", "asdf:vjda/asdf-qsv"]
+backends = ["aqua:dathere/qsv", "github:dathere/qsv", "asdf:vjda/asdf-qsv"]
 description = "Blazing-fast Data-Wrangling toolkit"
 test = { cmd = "qsv --version", expected = "qsv {{version}}" }

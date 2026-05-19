@@ -704,8 +704,7 @@
         },
         "env_file": {
           "description": "Path to a file containing environment variables to automatically load.",
-          "type": "string",
-          "deprecated": true
+          "type": "string"
         },
         "env_shell_expand": {
           "description": "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
@@ -868,7 +867,8 @@
             "default_packages_file": {
               "default": "~/.default-go-packages",
               "description": "Path to a file containing default go packages to install when installing go.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "download_mirror": {
               "default": "https://dl.google.com/go",
@@ -1115,7 +1115,8 @@
             },
             "default_packages_file": {
               "description": "Path to a file containing default npm packages to install.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "flavor": {
               "description": "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo.",
@@ -1280,7 +1281,8 @@
             },
             "default_packages_file": {
               "description": "Path to a file containing default python packages to install when installing a python version.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "github_attestations": {
               "description": "Enable GitHub Artifact Attestations verification for precompiled Python binaries.",
@@ -1367,7 +1369,8 @@
             "default_packages_file": {
               "default": "~/.default-gems",
               "description": "Path to a file containing default ruby gems to install when installing ruby.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "github_attestations": {
               "description": "Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
