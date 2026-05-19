@@ -1,5 +1,57 @@
 # Changelog
 
+## [2026.5.12](https://github.com/jdx/mise/compare/v2026.5.11..v2026.5.12) - 2026-05-19
+
+### 🚀 Features
+
+- **(cli)** rename before flag to minimum release age by @risu729 in [#9768](https://github.com/jdx/mise/pull/9768)
+- **(core)** deprecate default package files by @jdx in [#9970](https://github.com/jdx/mise/pull/9970)
+- **(edit)** add --global flag for editing the global config file by @fru1tworld in [#9953](https://github.com/jdx/mise/pull/9953)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support cosign public-key bundles by @jdx in [#9972](https://github.com/jdx/mise/pull/9972)
+- **(backend)** pass install_env to postinstall by @risu729 in [#9930](https://github.com/jdx/mise/pull/9930)
+- **(backend)** apply install_env to install commands by @risu729 in [#9929](https://github.com/jdx/mise/pull/9929)
+- **(cargo)** skip binstall for cargo install options by @risu729 in [#9928](https://github.com/jdx/mise/pull/9928)
+- **(config)** restore MISE_ENV_FILE setting by @risu729 in [#9903](https://github.com/jdx/mise/pull/9903)
+
+### 🚜 Refactor
+
+- **(cli)** use tool wording in version env help by @risu729 in [#9906](https://github.com/jdx/mise/pull/9906)
+- **(conda)** parse tool options locally by @risu729 in [#9960](https://github.com/jdx/mise/pull/9960)
+- **(core)** parse plugin tool options locally by @risu729 in [#9963](https://github.com/jdx/mise/pull/9963)
+- **(go)** parse tool options locally by @risu729 in [#9961](https://github.com/jdx/mise/pull/9961)
+- **(http)** parse tool options locally by @risu729 in [#9870](https://github.com/jdx/mise/pull/9870)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#9954](https://github.com/jdx/mise/pull/9954)
+- lock file maintenance by @renovate[bot] in [#9957](https://github.com/jdx/mise/pull/9957)
+
+### 📦 Registry
+
+- use aqua backend for qsv by @risu729 in [#9910](https://github.com/jdx/mise/pull/9910)
+
+### Ci
+
+- build/publish snap package for arm64 by @jnsgruk in [#9948](https://github.com/jdx/mise/pull/9948)
+
+### New Contributors
+
+- @jnsgruk made their first contribution in [#9948](https://github.com/jdx/mise/pull/9948)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`AOMediaCodec/libavif`](https://github.com/AOMediaCodec/libavif)
+- [`julian7/redact`](https://github.com/julian7/redact)
+
+#### Updated Packages (1)
+
+- [`apache/jena`](https://github.com/apache/jena)
+
 ## [2026.5.11](https://github.com/jdx/mise/compare/v2026.5.10..v2026.5.11) - 2026-05-17
 
 ### 🐛 Bug Fixes
