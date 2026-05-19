@@ -1111,17 +1111,10 @@ fn ruby_lockfile_options(
     let mut opts = BTreeMap::new();
 
     if is_current_platform {
-        match ruby.compile {
-            Some(true) => {
-                opts.insert("compile".to_string(), "true".to_string());
-            }
-            Some(false) => {
-                opts.insert("compile".to_string(), "false".to_string());
-            }
-            None if experimental => {
-                opts.insert("compile".to_string(), "false".to_string());
-            }
-            None => {}
+        if let Some(compile) = ruby.compile {
+            opts.insert("compile".to_string(), compile.to_string());
+        } else if experimental {
+            opts.insert("compile".to_string(), "false".to_string());
         }
 
         // Ruby uses ruby-install vs ruby-build. The installer and its options
@@ -1278,6 +1271,48 @@ mod tests {
                     "https://example.com/ruby.patch".to_string(),
                 ),
                 ("compile".to_string(), "true".to_string()),
+                ("ruby_build_opts".to_string(), "--enable-yjit".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_experimental_precompiled_default() {
+        let ruby = SettingsRuby {
+            precompiled_url: "acme/ruby".to_string(),
+            precompiled_arch: Some("arm64".to_string()),
+            precompiled_os: Some("linux".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            ruby_lockfile_options(&ruby, true, true),
+            BTreeMap::from([
+                ("compile".to_string(), "false".to_string()),
+                ("precompiled_arch".to_string(), "arm64".to_string()),
+                ("precompiled_os".to_string(), "linux".to_string()),
+                ("precompiled_url".to_string(), "acme/ruby".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_source_fallback_inputs() {
+        let ruby = SettingsRuby {
+            compile: Some(false),
+            ruby_build_opts: Some("--enable-yjit".to_string()),
+            apply_patches: Some("https://example.com/ruby.patch".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            ruby_lockfile_options(&ruby, false, true),
+            BTreeMap::from([
+                (
+                    "apply_patches".to_string(),
+                    "https://example.com/ruby.patch".to_string(),
+                ),
+                ("compile".to_string(), "false".to_string()),
                 ("ruby_build_opts".to_string(), "--enable-yjit".to_string()),
             ])
         );
