@@ -73,11 +73,15 @@ impl<'a> RustOptions<'a> {
         if let Some(components) = components
             && !components.is_empty()
         {
+            let mut components = components;
+            components.sort();
             opts.insert("components".into(), components.join(","));
         }
         if let Some(targets) = targets
             && !targets.is_empty()
         {
+            let mut targets = targets;
+            targets.sort();
             opts.insert("targets".into(), targets.join(","));
         }
 
@@ -152,13 +156,9 @@ impl Backend for RustPlugin {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
-        let rt = if request.source().is_idiomatic_version_file() {
-            match request.source() {
-                IdiomaticVersionFile(path) => parse_idiomatic_file(path).ok(),
-                _ => None,
-            }
-        } else {
-            None
+        let rt = match request.source() {
+            IdiomaticVersionFile(path) => parse_idiomatic_file(path).ok(),
+            _ => None,
         };
 
         let raw_opts = request.options();
