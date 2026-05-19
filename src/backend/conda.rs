@@ -75,6 +75,10 @@ impl<'a> CondaOptions<'a> {
         Channel::from_str(&name, &config)
             .map_err(|e| eyre::eyre!("invalid conda channel '{}': {}", name, e))
     }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        BTreeMap::from([("channel".to_string(), self.channel_name())])
+    }
 }
 
 impl CondaBackend {
@@ -653,6 +657,15 @@ impl Backend for CondaBackend {
         &["channel"]
     }
 
+    fn resolve_lockfile_options(
+        &self,
+        request: &crate::toolset::ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let raw_opts = request.options();
+        CondaOptions::new(&raw_opts).lockfile_options()
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = CondaOptions::new(&raw_opts);
@@ -831,6 +844,7 @@ mod tests {
     use rattler_conda_types::{
         PackageName, PackageRecord, RepoDataRecord, Version, package::DistArchiveIdentifier,
     };
+    use std::collections::BTreeMap;
     use std::str::FromStr;
     use url::Url;
 
@@ -866,6 +880,20 @@ mod tests {
         );
 
         assert_eq!(CondaOptions::new(&opts).channel_name(), "conda-forge");
+    }
+
+    #[test]
+    fn conda_lockfile_options_include_channel() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("bioconda".to_string()),
+        );
+
+        assert_eq!(
+            CondaOptions::new(&opts).lockfile_options(),
+            BTreeMap::from([("channel".to_string(), "bioconda".to_string())])
+        );
     }
 
     #[test]
