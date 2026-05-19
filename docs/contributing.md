@@ -653,8 +653,8 @@ separately-installed package manager** — packages are downloaded and extracted
 directly from anaconda.org, with no `conda`/`mamba`/`micromamba` needed on the
 user's PATH. The tool still needs to be popular and well-maintained.
 
-**Tier 3 — very high bar, rarely accepted:** `npm`, `pipx`, `gem`, `cargo`, `go`,
-`dotnet`.
+**Tier 3 — very high bar, rarely accepted:** [`npm`](/dev-tools/backends/npm.html),
+`pipx`, `gem`, `cargo`, `go`, `dotnet`.
 
 These all depend on a separately-installed runtime or toolchain being present on
 the user's PATH (`node`, `python`, `ruby`, `cargo`, `go`, `dotnet`), which is
@@ -662,6 +662,12 @@ fragile — `npm`/`pipx`/`gem` in particular silently bind tools to whichever
 `node`/`python`/`ruby` happened to be on PATH at install time, which breaks when
 versions change or the runtime isn't installed. Accepted only when no aqua/github
 option exists and the tool is widely used. Discuss with @jdx before submitting.
+
+Do not add `npm` as a fallback behind another primary backend. The npm backend can
+be flaky for packages that require lifecycle scripts, and it should only be used
+when the npm package is the intended primary distribution path. See the
+[npm backend docs](/dev-tools/backends/npm.html) for package-manager-specific
+script behavior.
 
 **Not accepted:** `asdf`, `vfox`, `ubi`.
 
@@ -683,8 +689,7 @@ The `registry/` file uses this format:
 description = "Tool description"
 backends = [
     "aqua:owner/repo",           # Preferred backend first
-    "github:owner/repo",         # Fallback backends
-    "npm:package-name"           # Multiple backends supported
+    "github:owner/repo",         # Fallback backend
 ]
 test = [
     "your-tool --version",       # Command to run
@@ -698,6 +703,8 @@ os = ["linux", "macos"] # Optional OS restrictions
 
 List backends in order of preference. Users will get the first available
 backend, but can override with explicit syntax like `mise use aqua:owner/repo`.
+Do not include `npm` only as a fallback for a tool that already has a non-npm
+primary backend.
 
 ### Tool Testing
 
