@@ -57,6 +57,14 @@ impl<'a> PythonOptions<'a> {
     fn virtualenv(&self) -> Option<&'a str> {
         self.values.str("virtualenv")
     }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        if !self.patch_sysconfig() {
+            opts.insert("patch_sysconfig".into(), "false".into());
+        }
+        opts
+    }
 }
 
 pub fn python_path(tv: &ToolVersion) -> PathBuf {
@@ -894,7 +902,7 @@ impl Backend for PythonPlugin {
 
     fn resolve_lockfile_options(
         &self,
-        _request: &ToolRequest,
+        request: &ToolRequest,
         target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         let mut opts = BTreeMap::new();
@@ -925,6 +933,8 @@ impl Backend for PythonPlugin {
             }
         }
 
+        let raw_opts = request.options();
+        opts.extend(PythonOptions::new(&raw_opts).lockfile_options());
         opts
     }
 
@@ -1100,6 +1110,20 @@ mod tests {
     fn python_options_reads_virtualenv() {
         let opts = opts_with("virtualenv", ".venv");
         assert_eq!(PythonOptions::new(&opts).virtualenv(), Some(".venv"));
+    }
+
+    #[test]
+    fn python_lockfile_options_include_patch_sysconfig_but_not_virtualenv() {
+        let mut opts = opts_with("patch_sysconfig", "false");
+        opts.opts.insert(
+            "virtualenv".to_string(),
+            toml::Value::String(".venv".to_string()),
+        );
+
+        assert_eq!(
+            PythonOptions::new(&opts).lockfile_options(),
+            BTreeMap::from([("patch_sysconfig".to_string(), "false".to_string())])
+        );
     }
 
     #[test]
