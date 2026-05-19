@@ -32,6 +32,8 @@ use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 use xx::regex;
 
+const DEFAULT_JAVA_SHORTHAND_VENDOR: &str = "openjdk";
+
 static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
         r"(?i)(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|snapshot|SNAPSHOT|master)"
@@ -74,16 +76,17 @@ impl<'a> JavaOptions<'a> {
         if release_type != "ga" {
             opts.insert("release_type".to_string(), release_type.to_string());
         }
-        if requested_version
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_digit())
-            && shorthand_vendor != "openjdk"
+        if is_shorthand_java_request(requested_version)
+            && shorthand_vendor != DEFAULT_JAVA_SHORTHAND_VENDOR
         {
             opts.insert("shorthand_vendor".to_string(), shorthand_vendor.to_string());
         }
         opts
     }
+}
+
+fn is_shorthand_java_request(requested_version: &str) -> bool {
+    !requested_version.contains('-')
 }
 
 impl JavaPlugin {
@@ -811,14 +814,14 @@ mod tests {
         assert_eq!(JavaOptions::new(&default_opts).release_type(), "ga");
         assert!(
             JavaOptions::new(&default_opts)
-                .lockfile_options("17", "openjdk")
+                .lockfile_options("17", DEFAULT_JAVA_SHORTHAND_VENDOR)
                 .is_empty()
         );
 
         let opts = opts_with_release_type("ea");
         assert_eq!(JavaOptions::new(&opts).release_type(), "ea");
         assert_eq!(
-            JavaOptions::new(&opts).lockfile_options("17", "openjdk"),
+            JavaOptions::new(&opts).lockfile_options("17", DEFAULT_JAVA_SHORTHAND_VENDOR),
             BTreeMap::from([("release_type".to_string(), "ea".to_string())])
         );
     }
@@ -829,6 +832,10 @@ mod tests {
 
         assert_eq!(
             JavaOptions::new(&opts).lockfile_options("17", "temurin"),
+            BTreeMap::from([("shorthand_vendor".to_string(), "temurin".to_string())])
+        );
+        assert_eq!(
+            JavaOptions::new(&opts).lockfile_options("lts", "temurin"),
             BTreeMap::from([("shorthand_vendor".to_string(), "temurin".to_string())])
         );
         assert!(
