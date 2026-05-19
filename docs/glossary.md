@@ -189,7 +189,7 @@ mise supports multiple backends for installing tools from different sources:
 : Alternative names for tool backends or tool versions, managed via `mise tool-alias` or the `[tool_alias]` config section. Backend aliases let a short name like `node` point to a custom backend. Version aliases let symbolic names like `lts-iron` map to a concrete version number. See [Tool Aliases](/dev-tools/aliases).
 
 **Shell Aliases**
-: Shell command aliases (e.g. `ll = "ls -la"`) defined in the `[shell_alias]` config section and managed via `mise shell-alias`. They are set dynamically when entering a directory and unset when leaving it, similar to environment variables. Supported in bash, zsh, fish, and xonsh. See [Shell Aliases](/shell-aliases).
+: Shell command aliases (example: `ll = "ls -la"`) managed via `mise shell-alias` or the `[shell_alias]` config section. They are set dynamically when entering a directory and unset when leaving it, similar to environment variables. Supported in bash, zsh, fish, and xonsh. See [Shell Aliases](/shell-aliases).
 
 **direnv**
 : An external tool for environment management that mise can work alongside. See [direnv integration](/direnv).
