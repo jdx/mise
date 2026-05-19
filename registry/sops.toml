@@ -1,2 +1,6 @@
-backends = ["aqua:getsops/sops", "asdf:mise-plugins/mise-sops"]
+backends = [
+  "aqua:getsops/sops",
+  "github:getsops/sops",
+  "asdf:mise-plugins/mise-sops",
+]
 description = "Simple and flexible tool for managing secrets"

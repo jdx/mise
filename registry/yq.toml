@@ -1,7 +1,17 @@
-backends = [
-  "aqua:mikefarah/yq",
-  "asdf:sudermanjr/asdf-yq",
-  "go:github.com/mikefarah/yq/v4",
-]
 description = "yq is a portable command-line YAML processor"
 test = { cmd = "yq --version", expected = "version v{{version}}" }
+
+[[backends]]
+full = "aqua:mikefarah/yq"
+
+[[backends]]
+full = "github:mikefarah/yq"
+
+[backends.options]
+rename_exe = "yq"
+
+[[backends]]
+full = "asdf:sudermanjr/asdf-yq"
+
+[[backends]]
+full = "go:github.com/mikefarah/yq/v4"

@@ -1,7 +1,17 @@
-backends = [
-  "aqua:pre-commit/pre-commit",
-  "asdf:jonathanmorley/asdf-pre-commit",
-  "pipx:pre-commit",
-]
 description = "A framework for managing and maintaining multi-language pre-commit hooks"
 test = { cmd = "pre-commit --version", expected = "pre-commit {{version}}" }
+
+[[backends]]
+full = "aqua:pre-commit/pre-commit"
+
+[[backends]]
+full = "github:pre-commit/pre-commit"
+
+[backends.options]
+rename_exe = "pre-commit"
+
+[[backends]]
+full = "asdf:jonathanmorley/asdf-pre-commit"
+
+[[backends]]
+full = "pipx:pre-commit"

@@ -1,6 +1,7 @@
 aliases = ["rg"]
 backends = [
   "aqua:BurntSushi/ripgrep",
+  "github:BurntSushi/ripgrep",
   "asdf:https://gitlab.com/wt0f/asdf-ripgrep",
   "cargo:ripgrep",
 ]

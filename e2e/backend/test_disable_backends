@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 export MISE_EXPERIMENTAL=1
 
-assert "mise registry age" "aqua:FiloSottile/age asdf:threkk/asdf-age"
+assert "mise registry age" "aqua:FiloSottile/age github:FiloSottile/age asdf:threkk/asdf-age"
 
 mise install age
 assert_fail "ls $MISE_DATA_DIR/plugins/age"
 mise uninstall age
 
-MISE_DISABLE_BACKENDS=aqua mise install age
+MISE_DISABLE_BACKENDS=aqua,github mise install age
 ls "$MISE_DATA_DIR/plugins/age"
 eval "$(mise activate bash)" && _mise_hook
 assert_contains "MISE_DISABLE_BACKENDS=asdf mise doctor 2>&1 || true" "age"

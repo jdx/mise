@@ -1,7 +1,17 @@
-backends = [
-  "aqua:mvdan/sh",
-  "asdf:luizm/asdf-shfmt",
-  "go:mvdan.cc/sh/v3/cmd/shfmt",
-]
 description = "A shell parser, formatter, and interpreter with bash support; includes shfmt"
 test = { cmd = "shfmt --version", expected = "v{{version}}" }
+
+[[backends]]
+full = "aqua:mvdan/sh"
+
+[[backends]]
+full = "github:mvdan/sh"
+
+[backends.options]
+rename_exe = "shfmt"
+
+[[backends]]
+full = "asdf:luizm/asdf-shfmt"
+
+[[backends]]
+full = "go:mvdan.cc/sh/v3/cmd/shfmt"

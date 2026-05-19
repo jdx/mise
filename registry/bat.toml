@@ -1,5 +1,6 @@
 backends = [
   "aqua:sharkdp/bat",
+  "github:sharkdp/bat",
   "cargo:bat",
   "asdf:https://gitlab.com/wt0f/asdf-bat",
 ]
