@@ -452,21 +452,13 @@ impl Client {
                             "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT",
                         ),
                     };
-                    let hint = if env_var.is_empty() {
-                        format!(
-                            "HTTP timed out after {} for {}.",
-                            format_duration(self.timeout),
-                            url
-                        )
-                    } else {
-                        format!(
-                            "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
-                            format_duration(self.timeout),
-                            url,
-                            setting,
-                            env_var
-                        )
-                    };
+                    let hint = format!(
+                        "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
+                        format_duration(self.timeout),
+                        url,
+                        setting,
+                        env_var
+                    );
                     // wrap_err preserves the underlying reqwest::Error in the chain so
                     // is_transient() can still classify this as a retryable timeout.
                     return Err(Report::new(err).wrap_err(hint));
