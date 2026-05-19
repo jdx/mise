@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::options::BackendOptions;
+use crate::backend::{Backend, platform_target::PlatformTarget};
 use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -12,7 +12,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolSource::IdiomaticVersionFile;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{ResolveOptions, ToolVersion, ToolVersionOptions, Toolset};
+use crate::toolset::{ResolveOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, github, plugins};
 use async_trait::async_trait;
@@ -61,6 +61,27 @@ impl<'a> RustOptions<'a> {
             .or_else(|| self.comma_list("targets"));
 
         (profile, components, targets)
+    }
+
+    fn lockfile_options(&self, rt: Option<&RustToolchain>) -> BTreeMap<String, String> {
+        let (profile, components, targets) = self.install_args(rt);
+        let mut opts = BTreeMap::new();
+
+        if let Some(profile) = profile {
+            opts.insert("profile".into(), profile);
+        }
+        if let Some(components) = components
+            && !components.is_empty()
+        {
+            opts.insert("components".into(), components.join(","));
+        }
+        if let Some(targets) = targets
+            && !targets.is_empty()
+        {
+            opts.insert("targets".into(), targets.join(","));
+        }
+
+        opts
     }
 }
 
@@ -124,6 +145,24 @@ impl Backend for RustPlugin {
     /// Lockfile URLs are not applicable since we don't download artifacts directly.
     fn supports_lockfile_url(&self) -> bool {
         false
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let rt = if request.source().is_idiomatic_version_file() {
+            match request.source() {
+                IdiomaticVersionFile(path) => parse_idiomatic_file(path).ok(),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        let raw_opts = request.options();
+        RustOptions::new(&raw_opts).lockfile_options(rt.as_ref())
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -479,5 +518,45 @@ mod tests {
         let (profile, _, _) = RustOptions::new(&opts).install_args(Some(&rt));
 
         assert_eq!(profile, Some("default".to_string()));
+    }
+
+    #[test]
+    fn rust_lockfile_options_include_install_args() {
+        let mut opts = opts_with("profile", "minimal");
+        opts.opts.insert(
+            "components".to_string(),
+            toml::Value::String("clippy, rustfmt".to_string()),
+        );
+        opts.opts.insert(
+            "targets".to_string(),
+            toml::Value::String("wasm32-wasip1".to_string()),
+        );
+
+        assert_eq!(
+            RustOptions::new(&opts).lockfile_options(None),
+            BTreeMap::from([
+                ("components".to_string(), "clippy,rustfmt".to_string()),
+                ("profile".to_string(), "minimal".to_string()),
+                ("targets".to_string(), "wasm32-wasip1".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn rust_lockfile_options_use_idiomatic_options() {
+        let opts = opts_with("profile", "minimal");
+        let rt = RustToolchain {
+            profile: Some("default".to_string()),
+            components: Some(vec!["rustfmt".to_string()]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            RustOptions::new(&opts).lockfile_options(Some(&rt)),
+            BTreeMap::from([
+                ("components".to_string(), "rustfmt".to_string()),
+                ("profile".to_string(), "default".to_string()),
+            ])
+        );
     }
 }
