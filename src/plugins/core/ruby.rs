@@ -12,6 +12,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::SettingsRuby;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
 use crate::env::PATH_KEY;
@@ -1021,22 +1022,8 @@ impl Backend for RubyPlugin {
         _request: &ToolRequest,
         target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
-        let mut opts = BTreeMap::new();
         let settings = Settings::get();
-        let is_current_platform = target.is_current();
-
-        // Ruby uses ruby-install vs ruby-build (ruby compiles from source either way)
-        // Only include if using non-default ruby-install tool
-        let ruby_install = if is_current_platform {
-            settings.ruby.ruby_install
-        } else {
-            false
-        };
-        if ruby_install {
-            opts.insert("ruby_install".to_string(), "true".to_string());
-        }
-
-        opts
+        ruby_lockfile_options(&settings.ruby, settings.experimental, target.is_current())
     }
 
     async fn resolve_lock_info(
@@ -1116,6 +1103,70 @@ fn parse_gemfile(body: &str) -> String {
     v
 }
 
+fn ruby_lockfile_options(
+    ruby: &SettingsRuby,
+    experimental: bool,
+    is_current_platform: bool,
+) -> BTreeMap<String, String> {
+    let mut opts = BTreeMap::new();
+
+    if is_current_platform {
+        match ruby.compile {
+            Some(true) => {
+                opts.insert("compile".to_string(), "true".to_string());
+            }
+            Some(false) => {
+                opts.insert("compile".to_string(), "false".to_string());
+            }
+            None if experimental => {
+                opts.insert("compile".to_string(), "false".to_string());
+            }
+            None => {}
+        }
+
+        // Ruby uses ruby-install vs ruby-build. The installer and its options
+        // can affect the source-built output, including fallback after a
+        // missing precompiled binary.
+        if ruby.ruby_install {
+            opts.insert("ruby_install".to_string(), "true".to_string());
+            if let Some(ruby_install_opts) = ruby.ruby_install_opts.clone() {
+                opts.insert("ruby_install_opts".to_string(), ruby_install_opts);
+            }
+            if ruby.ruby_install_repo != SettingsRuby::default().ruby_install_repo {
+                opts.insert(
+                    "ruby_install_repo".to_string(),
+                    ruby.ruby_install_repo.clone(),
+                );
+            }
+        } else {
+            if let Some(ruby_build_opts) = ruby.ruby_build_opts.clone() {
+                opts.insert("ruby_build_opts".to_string(), ruby_build_opts);
+            }
+            if ruby.ruby_build_repo != SettingsRuby::default().ruby_build_repo {
+                opts.insert("ruby_build_repo".to_string(), ruby.ruby_build_repo.clone());
+            }
+        }
+
+        if let Some(apply_patches) = ruby.apply_patches.clone() {
+            opts.insert("apply_patches".to_string(), apply_patches);
+        }
+    }
+
+    if ruby.compile == Some(false) || (experimental && ruby.compile.is_none()) {
+        if ruby.precompiled_url != SettingsRuby::default().precompiled_url {
+            opts.insert("precompiled_url".to_string(), ruby.precompiled_url.clone());
+        }
+        if let Some(precompiled_arch) = ruby.precompiled_arch.clone() {
+            opts.insert("precompiled_arch".to_string(), precompiled_arch);
+        }
+        if let Some(precompiled_os) = ruby.precompiled_os.clone() {
+            opts.insert("precompiled_os".to_string(), precompiled_os);
+        }
+    }
+
+    opts
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1186,6 +1237,69 @@ mod tests {
             ruby File.read(File.expand_path(".ruby-version", __dir__)).strip
         "#}),
             ""
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_precompiled_inputs() {
+        let ruby = SettingsRuby {
+            compile: Some(false),
+            precompiled_url: "acme/ruby".to_string(),
+            precompiled_arch: Some("arm64".to_string()),
+            precompiled_os: Some("linux".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            ruby_lockfile_options(&ruby, false, true),
+            BTreeMap::from([
+                ("compile".to_string(), "false".to_string()),
+                ("precompiled_arch".to_string(), "arm64".to_string()),
+                ("precompiled_os".to_string(), "linux".to_string()),
+                ("precompiled_url".to_string(), "acme/ruby".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_source_build_inputs() {
+        let ruby = SettingsRuby {
+            compile: Some(true),
+            ruby_build_opts: Some("--enable-yjit".to_string()),
+            apply_patches: Some("https://example.com/ruby.patch".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            ruby_lockfile_options(&ruby, false, true),
+            BTreeMap::from([
+                (
+                    "apply_patches".to_string(),
+                    "https://example.com/ruby.patch".to_string(),
+                ),
+                ("compile".to_string(), "true".to_string()),
+                ("ruby_build_opts".to_string(), "--enable-yjit".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_ruby_install_inputs() {
+        let ruby = SettingsRuby {
+            ruby_install: true,
+            ruby_install_opts: Some("--no-reinstall".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            ruby_lockfile_options(&ruby, false, true),
+            BTreeMap::from([
+                ("ruby_install".to_string(), "true".to_string()),
+                (
+                    "ruby_install_opts".to_string(),
+                    "--no-reinstall".to_string()
+                ),
+            ])
         );
     }
 }
