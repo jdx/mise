@@ -20,8 +20,8 @@ use async_trait::async_trait;
 use jiff::Timestamp;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::ffi::OsString;
-use std::path::Path;
+use std::ffi::{OsStr, OsString};
+use std::path::{Path, PathBuf};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -281,6 +281,7 @@ impl Backend for NPMBackend {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
                 cmd.execute()?;
+                Self::repair_aube_bin_links(&tv.install_path())?;
             }
             NpmPackageManager::Bun => {
                 let mut cmd = CmdLineRunner::new("bun")
@@ -714,6 +715,109 @@ impl NPMBackend {
         seconds.div_ceil(60)
     }
 
+    #[cfg(unix)]
+    fn repair_aube_bin_links(install_path: &Path) -> Result<()> {
+        let bin_dir = install_path.join("bin");
+        for bin in crate::file::ls(&bin_dir)? {
+            let Ok(metadata) = std::fs::symlink_metadata(&bin) else {
+                continue;
+            };
+            if !metadata.file_type().is_symlink() {
+                continue;
+            }
+            let Some(bin_name) = bin.file_name() else {
+                continue;
+            };
+            let mut candidates = Self::aube_executable_candidates(install_path, bin_name)?;
+            if let Ok(target) = std::fs::read_link(&bin)
+                && let Some(session) = Self::aube_session_name(install_path, &target)
+            {
+                let session_candidates = candidates
+                    .iter()
+                    .filter(|candidate| {
+                        Self::aube_session_name(install_path, candidate).as_ref() == Some(&session)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !session_candidates.is_empty() {
+                    candidates = session_candidates;
+                }
+            }
+            if let [target] = candidates.as_slice() {
+                crate::file::make_symlink(target, &bin)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    fn repair_aube_bin_links(_install_path: &Path) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn aube_executable_candidates(install_path: &Path, bin_name: &OsStr) -> Result<Vec<PathBuf>> {
+        let mut candidates = vec![];
+        let aube_root = install_path.join("global-aube");
+        for entry in crate::file::dir_subdirs(&aube_root)? {
+            let node_modules = aube_root
+                .join(entry)
+                .join("node_modules")
+                .join(".aube")
+                .join("node_modules");
+            Self::push_aube_executable_candidates(&mut candidates, &node_modules, bin_name)?;
+        }
+        candidates.sort();
+        candidates.dedup();
+        Ok(candidates)
+    }
+
+    #[cfg(unix)]
+    fn aube_session_name(install_path: &Path, path: &Path) -> Option<OsString> {
+        let mut components = path.strip_prefix(install_path).ok()?.components();
+        if components.next()?.as_os_str() != OsStr::new("global-aube") {
+            return None;
+        }
+        Some(components.next()?.as_os_str().to_os_string())
+    }
+
+    #[cfg(unix)]
+    fn push_aube_executable_candidates(
+        candidates: &mut Vec<PathBuf>,
+        node_modules: &Path,
+        bin_name: &OsStr,
+    ) -> Result<()> {
+        for package in crate::file::ls(node_modules)? {
+            if package
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with('@'))
+            {
+                for scoped_package in crate::file::ls(&package)? {
+                    Self::push_aube_package_bin_candidates(candidates, &scoped_package, bin_name);
+                }
+            } else {
+                Self::push_aube_package_bin_candidates(candidates, &package, bin_name);
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn push_aube_package_bin_candidates(
+        candidates: &mut Vec<PathBuf>,
+        package: &Path,
+        bin_name: &OsStr,
+    ) {
+        for candidate in [
+            package.join(Path::new(bin_name)),
+            package.join("bin").join(Path::new(bin_name)),
+        ] {
+            if crate::file::is_executable(&candidate) {
+                candidates.push(candidate);
+            }
+        }
+    }
+
     #[cfg(any(windows, test))]
     fn windows_bin_paths_for_install_path(install_path: &Path) -> Vec<std::path::PathBuf> {
         let bin_dir = install_path.join("bin");
@@ -919,6 +1023,67 @@ mod tests {
             NPMBackend::windows_bin_paths_for_install_path(&install_path),
             vec![install_path]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_repair_aube_bin_links_retargets_dangling_link() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-amp").join("1.0.0");
+        let bin_dir = install_path.join("bin");
+        let link = bin_dir.join("amp");
+        let broken_target = install_path
+            .join("global-aube")
+            .join("aube-install")
+            .join("node_modules")
+            .join(".aube")
+            .join("@sourcegraph+amp@1.0.0")
+            .join("node_modules")
+            .join("@sourcegraph")
+            .join("amp")
+            .join("node_modules")
+            .join("@ampcode")
+            .join("cli")
+            .join("bin")
+            .join("amp.exe");
+        let repaired_target = install_path
+            .join("global-aube")
+            .join("aube-install")
+            .join("node_modules")
+            .join(".aube")
+            .join("node_modules")
+            .join("@ampcode")
+            .join("cli-linux-x64")
+            .join("amp");
+        let other_session_target = install_path
+            .join("global-aube")
+            .join("other-aube-install")
+            .join("node_modules")
+            .join(".aube")
+            .join("node_modules")
+            .join("@ampcode")
+            .join("cli-linux-x64")
+            .join("amp");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        std::fs::create_dir_all(repaired_target.parent().unwrap()).unwrap();
+        std::fs::write(&repaired_target, "#!/bin/sh\n").unwrap();
+        let mut permissions = std::fs::metadata(&repaired_target).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&repaired_target, permissions).unwrap();
+        std::fs::create_dir_all(other_session_target.parent().unwrap()).unwrap();
+        std::fs::write(&other_session_target, "#!/bin/sh\n").unwrap();
+        let mut permissions = std::fs::metadata(&other_session_target)
+            .unwrap()
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&other_session_target, permissions).unwrap();
+        crate::file::make_symlink(&broken_target, &link).unwrap();
+
+        NPMBackend::repair_aube_bin_links(&install_path).unwrap();
+
+        assert_eq!(std::fs::read_link(&link).unwrap(), repaired_target);
     }
 
     #[test]
