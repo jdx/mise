@@ -230,16 +230,6 @@ The obvious downside is that anytime one wants to use `mise` they need to prefix
   not to use it to manage anything else on your system. Using a shell extension for that use-case
   would be overkill.
 
-::: info This is the method Jeff uses
-
-> Part of the reason for this is I often need to make sure I'm on my development version of mise. If you
-> work on mise yourself I would recommend working in a similar way and disabling `mise activate` or shims
-> while you are working on it.
->
-> See [How I use mise](https://mise.en.dev/how-i-use-mise.html) for more information.
-
-:::
-
 ## Hook on `cd` {#hook-on-cd}
 
 For some shells (`bash`, `zsh`, `fish`, `xonsh`), `mise` hooks into the `cd` command, while in others, it only runs when the prompt is displayed. This relies on `chpwd` in `zsh`, `PROMPT_COMMAND` in `bash`, `fish_prompt` in `fish`, and `on_chdir` in `xonsh`.
