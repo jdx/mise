@@ -19,7 +19,7 @@ use crate::config::config_file;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::plugins::PluginType;
-use crate::registry::REGISTRY;
+use crate::registry::{REGISTRY, RegistryTool};
 use crate::toolset::install_state;
 use crate::ui::progress_report::{ProgressIcon, SingleReport};
 use crate::{env, file};
@@ -29,10 +29,9 @@ struct MiseToolProvider;
 
 impl ToolProvider for MiseToolProvider {
     fn list_tools(&self) -> Vec<ToolInfo> {
-        REGISTRY
-            .iter()
-            .map(|(name, rt)| ToolInfo {
-                name: name.to_string(),
+        canonical_registry_tools()
+            .map(|rt| ToolInfo {
+                name: rt.short.to_string(),
                 description: rt.description.map(|s| s.to_string()),
                 aliases: rt.aliases.iter().map(|s| s.to_string()).collect(),
             })
@@ -292,27 +291,34 @@ impl Edit {
 // Tool detection
 // ============================================================================
 
+fn canonical_registry_tools() -> impl Iterator<Item = &'static RegistryTool> {
+    REGISTRY
+        .iter()
+        .filter_map(|(short, rt)| (short == rt.short).then_some(rt))
+}
+
 fn detect_tools() -> Vec<DetectedTool> {
-    let cwd = env::current_dir().unwrap_or_default();
+    detect_tools_in_dir(&env::current_dir().unwrap_or_default())
+}
+
+fn detect_tools_in_dir(cwd: &Path) -> Vec<DetectedTool> {
     let mut detected = Vec::new();
-    let mut seen_tools = std::collections::HashSet::new();
 
     // Scan registry for tools with detect files
-    for (name, tool) in REGISTRY.iter() {
+    for tool in canonical_registry_tools() {
         if tool.detect.is_empty() {
             continue;
         }
 
         for detect_file in tool.detect.iter() {
             let path = cwd.join(detect_file);
-            if path.exists() && !seen_tools.contains(name) {
-                let version = extract_version(name, &path);
+            if path.exists() {
+                let version = extract_version(tool.short, &path);
                 detected.push(DetectedTool {
-                    name: name.to_string(),
+                    name: tool.short.to_string(),
                     version,
                     source: detect_file.to_string(),
                 });
-                seen_tools.insert(name);
                 break; // Only detect once per tool
             }
         }
@@ -373,3 +379,66 @@ pub static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise edit -n</bold>          <dim># preview without writing</dim>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_tools_keeps_registry_aliases_on_canonical_tools() {
+        let tools = MiseToolProvider.list_tools();
+
+        assert_eq!(tools.iter().filter(|tool| tool.name == "node").count(), 1);
+        assert_eq!(tools.iter().filter(|tool| tool.name == "nodejs").count(), 0);
+        assert!(
+            tools
+                .iter()
+                .find(|tool| tool.name == "node")
+                .is_some_and(|tool| tool.aliases.iter().any(|alias| alias == "nodejs"))
+        );
+    }
+
+    #[test]
+    fn detect_tools_keeps_registry_aliases_canonical() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            temp_dir.path().join("package.json"),
+            r#"{"engines":{"node":"24"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp_dir.path().join("go.mod"),
+            "module example.com/test\n\ngo 1.24.0\n",
+        )
+        .unwrap();
+
+        let detected = detect_tools_in_dir(temp_dir.path());
+
+        assert_eq!(
+            detected.iter().filter(|tool| tool.name == "node").count(),
+            1
+        );
+        assert_eq!(detected.iter().filter(|tool| tool.name == "go").count(), 1);
+        assert_eq!(
+            detected
+                .iter()
+                .filter(|tool| tool.name == "nodejs" || tool.name == "golang")
+                .count(),
+            0
+        );
+        assert_eq!(
+            detected
+                .iter()
+                .find(|tool| tool.name == "node")
+                .and_then(|tool| tool.version.as_deref()),
+            Some("24")
+        );
+        assert_eq!(
+            detected
+                .iter()
+                .find(|tool| tool.name == "go")
+                .and_then(|tool| tool.version.as_deref()),
+            Some("1.24.0")
+        );
+    }
+}
