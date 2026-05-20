@@ -9,17 +9,18 @@ impl EnvResults {
     #[allow(clippy::too_many_arguments)]
     pub fn source(
         ctx: &mut tera::Context,
-        tera: &mut tera::Tera,
+        tera: &mut Option<tera::Tera>,
         paths: &mut Vec<(PathBuf, PathBuf)>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
+        exec_env: &EnvMap,
         config_root: &Path,
         env_vars: &EnvMap,
         input: String,
     ) -> Result<IndexMap<PathBuf, IndexMap<String, String>>> {
         let mut out = IndexMap::new();
-        let s = r.parse_template(ctx, tera, source, &input)?;
+        let s = r.parse_template(ctx, tera, source, exec_env, &input)?;
         let orig_path = env_vars.get(&*env::PATH_KEY).cloned().unwrap_or_default();
         let mut env_diff_opts = EnvDiffOptions::default();
         env_diff_opts.ignore_keys.shift_remove(&*env::PATH_KEY); // allow modifying PATH

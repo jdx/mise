@@ -75,6 +75,7 @@ Tool-level postinstall scripts receive the following environment variables:
 - `MISE_TOOL_NAME`: The short name of the tool (e.g., "node", "python")
 - `MISE_TOOL_VERSION`: The version that was installed (e.g., "20.10.0", "3.12.0")
 - `MISE_TOOL_INSTALL_PATH`: The path where the tool was installed
+- Variables from that tool's `install_env` option
 
 ## Task hooks
 
@@ -110,7 +111,19 @@ patterns = ["src/**/*.rs"]
 run = "cargo fmt"
 ```
 
-You can also reference a mise task instead of an inline script:
+By default, `run` uses the configured inline shell:
+[`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
+or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args).
+Add `shell = "bash -c"` to choose a different inline shell command for a watch file hook:
+
+```toml
+[[watch_files]]
+patterns = ["*.js"]
+run = "eslint --fix ."
+shell = "bash -c"
+```
+
+`shell` only applies to `run` hooks. You can also reference a mise task instead of an inline script:
 
 ```toml
 [[watch_files]]

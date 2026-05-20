@@ -3,7 +3,7 @@ use crate::env_diff::EnvMap;
 use crate::exit::exit;
 use crate::shell::ShellType;
 use crate::task::Task;
-use crate::tera::get_tera;
+use crate::tera::{contains_template_syntax, get_tera, render_str};
 use eyre::{Context, Result};
 use heck::ToSnakeCase;
 use indexmap::IndexMap;
@@ -64,7 +64,7 @@ impl TaskScriptParser {
         script: &str,
         ctx: &tera::Context,
     ) -> Result<String> {
-        tera.render_str(script.trim(), ctx)
+        render_str(tera, script.trim(), ctx)
             .with_context(|| format!("Failed to render task script: {}", script))
     }
 
@@ -73,7 +73,7 @@ impl TaskScriptParser {
         usage: &str,
         ctx: &tera::Context,
     ) -> Result<String> {
-        tera.render_str(usage.trim(), ctx)
+        render_str(tera, usage.trim(), ctx)
             .with_context(|| format!("Failed to render task usage: {}", usage))
     }
 
@@ -524,11 +524,7 @@ impl TaskScriptParser {
                 let mut resolved = Vec::with_capacity(glob_patterns.len());
 
                 for pattern in glob_patterns.iter() {
-                    // pattern is considered a tera template string if it contains opening tags:
-                    // - "{#" for comments
-                    // - "{{" for expressions
-                    // - "{%" for statements
-                    if pattern.contains("{#") || pattern.contains("{{") || pattern.contains("{%") {
+                    if contains_template_syntax(pattern) {
                         trace!(
                             "tera::render::resolve_task_sources including tera template string in resolved task sources: {pattern}"
                         );
@@ -605,10 +601,24 @@ impl TaskScriptParser {
         task: &Task,
         scripts: &[String],
     ) -> Result<usage::Spec> {
+        let usage_has_template = contains_template_syntax(&task.usage);
+        let scripts_have_template = scripts
+            .iter()
+            .any(|script| contains_template_syntax(script));
+        if !usage_has_template
+            && (!scripts_have_template || Settings::get().task.disable_spec_from_run_scripts)
+        {
+            return task.usage.trim().parse().map_err(Into::into);
+        }
+
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let mut tera_ctx = task.tera_ctx(config).await?;
         // First render the usage field to collect the spec
-        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
+        let rendered_usage = if usage_has_template {
+            Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?
+        } else {
+            task.usage.trim().to_string()
+        };
         let spec_from_field: usage::Spec = rendered_usage.parse()?;
 
         if Settings::get().task.disable_spec_from_run_scripts {
@@ -624,8 +634,12 @@ impl TaskScriptParser {
         // Render scripts to trigger spec collection via Tera template functions
         // (arg/option/flag), but discard the results. Ignore rendering errors since we only
         // care about collecting arg/flag definitions from the deprecated Tera syntax.
-        for script in scripts {
-            let _ = Self::render_script_with_context(&mut tera, script, &tera_ctx);
+        if scripts_have_template {
+            for script in scripts {
+                if contains_template_syntax(script) {
+                    let _ = Self::render_script_with_context(&mut tera, script, &tera_ctx);
+                }
+            }
         }
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
@@ -660,6 +674,15 @@ impl TaskScriptParser {
         scripts: &[String],
         env: &EnvMap,
     ) -> Result<(Vec<String>, usage::Spec)> {
+        let usage_has_template = contains_template_syntax(&task.usage);
+        let scripts_have_template = scripts
+            .iter()
+            .any(|script| contains_template_syntax(script));
+        if !usage_has_template && !scripts_have_template {
+            let scripts = scripts.iter().map(|s| s.trim().to_string()).collect();
+            return Ok((scripts, task.usage.trim().parse()?));
+        }
+
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let mut tera_ctx = task.tera_ctx(config).await?;
         self.inject_extra_vars(&mut tera_ctx);
@@ -667,15 +690,29 @@ impl TaskScriptParser {
         // First render the usage field to collect the spec and build a default
         // usage map, so that `{{ usage.* }}` references in run scripts do not
         // fail during this initial parsing phase (e.g. for inline tasks).
-        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
+        let rendered_usage = if usage_has_template {
+            Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?
+        } else {
+            task.usage.trim().to_string()
+        };
         let spec_from_field: usage::Spec = rendered_usage.parse()?;
         let usage_ctx = Self::make_usage_ctx_from_spec_defaults(&spec_from_field);
         tera_ctx.insert("usage", &usage_ctx);
 
-        let scripts = scripts
-            .iter()
-            .map(|s| Self::render_script_with_context(&mut tera, s, &tera_ctx))
-            .collect::<Result<Vec<String>>>()?;
+        let scripts = if scripts_have_template {
+            scripts
+                .iter()
+                .map(|s| {
+                    if contains_template_syntax(s) {
+                        Self::render_script_with_context(&mut tera, s, &tera_ctx)
+                    } else {
+                        Ok(s.trim().to_string())
+                    }
+                })
+                .collect::<Result<Vec<String>>>()?
+        } else {
+            scripts.iter().map(|s| s.trim().to_string()).collect()
+        };
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
         let arg_order = arg_order.lock().unwrap();
@@ -730,6 +767,10 @@ impl TaskScriptParser {
 
         let mut out: Vec<String> = vec![];
         for script in scripts {
+            if !contains_template_syntax(script) {
+                out.push(script.trim().to_string());
+                continue;
+            }
             let shell_type = shell_from_shebang(script)
                 .or(task.shell())
                 .unwrap_or(Settings::get().default_inline_shell()?)[0]

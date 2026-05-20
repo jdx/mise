@@ -19,6 +19,7 @@ use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
 use eyre::{Result, bail};
+use indexmap::IndexMap;
 use jiff::Timestamp;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
@@ -182,6 +183,11 @@ impl ToolVersion {
         }
         path
     }
+
+    pub fn install_env(&self) -> IndexMap<String, String> {
+        self.request.options().core.install_env
+    }
+
     pub fn runtime_path(&self) -> PathBuf {
         if self.locked {
             return self.install_path();

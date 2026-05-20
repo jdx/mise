@@ -204,6 +204,14 @@ If true, mise will use `cargo binstall` instead of `cargo install` if
 [`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.
 This makes installing CLIs with cargo _much_ faster by downloading precompiled binaries.
 
+When `cargo-binstall` installs a prebuilt binary, Cargo build settings and `cargo install`
+behavior do not affect the downloaded artifact. Set `cargo.binstall = false` to force
+`cargo install` when you need Cargo settings to control the install.
+
+When mise invokes `cargo-binstall`, `cargo-binstall` handles its own fallback order, including
+its final fallback to compiling with `cargo install`. mise does not retry with a separate
+`cargo install` command if `cargo-binstall` exits with an error.
+
 You can install it with mise:
 
 ```sh
@@ -609,13 +617,13 @@ default = ""
 description = "Shell command to run to obtain a Forgejo token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for Forgejo Enterprise environments. This replaces the
-`git credential fill` fallback and does not require
+from stdout. The hostname is exposed as `MISE_CREDENTIAL_HOST`, making
+the command host-aware for self-hosted Forgejo environments. This
+replaces the `git credential fill` fallback and does not require
 `forgejo.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed.
 
 Example: `op read "op://Private/Forgejo Token/credential"`
 """
@@ -661,13 +669,13 @@ default = ""
 description = "Shell command to run to obtain a GitHub token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for GitHub Enterprise environments. This replaces the
-`git credential fill` fallback and does not require
+from stdout. The hostname is exposed as `MISE_CREDENTIAL_HOST`, making
+the command host-aware for GitHub Enterprise environments. This
+replaces the `git credential fill` fallback and does not require
 `github.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed.
 
 Example: `op read "op://Private/GitHub Token/credential"`
 """
@@ -717,7 +725,7 @@ env = "MISE_GITHUB_OAUTH_API_URL"
 type = "String"
 
 [github.oauth_auth_url]
-default = "https://github.com/login/oauth"
+default = "https://github.com/login"
 description = "GitHub OAuth endpoint base URL for native device-flow tokens."
 docs = """
 OAuth endpoint base URL used by native GitHub device flow. The default is for
@@ -824,13 +832,13 @@ default = ""
 description = "Shell command to run to obtain a GitLab token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. The hostname is passed as `$1`, making the command
-host-aware for GitLab self-managed environments. This replaces the
-`git credential fill` fallback and does not require
+from stdout. The hostname is exposed as `MISE_CREDENTIAL_HOST`, making
+the command host-aware for self-managed GitLab environments. This
+replaces the `git credential fill` fallback and does not require
 `gitlab.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per host per session.
+is trimmed.
 
 Example: `op read "op://Private/GitLab Token/credential"`
 """
@@ -894,6 +902,9 @@ type = "Path"
 
 [go.default_packages_file]
 default = "~/.default-go-packages"
+deprecated = "Default go package files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every go version, or use the go: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default go packages to install when installing go."
 env = "MISE_GO_DEFAULT_PACKAGES_FILE"
 type = "Path"
@@ -1332,7 +1343,7 @@ cutoff date.
 Some package-manager backends also forward the cutoff to transitive dependency resolution during
 install. This includes `npm:` and `pipx:` tools.
 
-Can be overridden with the `--before` CLI flag or per-tool with the `minimum_release_age` tool option.
+Can be overridden with the `--minimum-release-age` CLI flag or per-tool with the `minimum_release_age` tool option.
 
 ```toml
 [tools.trivy]
@@ -1425,6 +1436,9 @@ type = "Bool"
 
 [node.default_packages_file]
 default_docs = "~/.default-npm-packages"
+deprecated = "Default npm package files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every node version, or use the npm: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default npm packages to install."
 docs = """
 Path to a file containing packages to install with npm after installing a new Node.js version.
@@ -1730,12 +1744,28 @@ env = "MISE_PRERELEASES"
 type = "Bool"
 
 [profile]
-deprecated = "Use MISE_ENV_FILE instead."
+deprecated = "Use MISE_ENV instead."
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 env = "MISE_PROFILE"
 hide = true
 optional = true
 type = "String"
+
+[provenance_api_failures_fatal]
+default = true
+description = "Fail when provenance API checks cannot be completed."
+docs = """
+When enabled, mise treats provenance API failures as install errors. This keeps
+provenance strict by default: if a remote attestation or release-provenance API
+cannot be reached or queried, mise will fail instead of silently installing
+without provenance.
+
+Set this to `false` to warn and continue when provenance API checks fail. This
+does not ignore checksum failures, provenance verification mismatches, or
+lockfiles that already require provenance for the tool being installed.
+"""
+env = "MISE_PROVENANCE_API_FAILURES_FATAL"
+type = "Bool"
 
 [python.compile]
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
@@ -1750,6 +1780,9 @@ optional = true
 type = "Bool"
 
 [python.default_packages_file]
+deprecated = "Default python package files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every python version, or use the pipx: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default python packages to install when installing a python version."
 env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE"
 optional = true
@@ -1885,6 +1918,9 @@ type = "Bool"
 
 [ruby.default_packages_file]
 default = "~/.default-gems"
+deprecated = "Default ruby gem files are deprecated. Use tool-level postinstall hooks for gems that should be installed into every ruby version, or use the gem: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default ruby gems to install when installing ruby."
 env = "MISE_RUBY_DEFAULT_PACKAGES_FILE"
 type = "String"
@@ -2087,6 +2123,12 @@ type = "Bool"
 default = true
 description = "If true, fail when sops decryption fails (including when sops is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases."
 env = "MISE_SOPS_STRICT"
+type = "Bool"
+
+[spm.artifactbundle_only]
+default = false
+description = "Only use SwiftPM artifact bundles for installation, fail if no matching bundle is available."
+env = "MISE_SPM_ARTIFACTBUNDLE_ONLY"
 type = "Bool"
 
 [status.missing_tools]

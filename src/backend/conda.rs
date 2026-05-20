@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{
     MISE_BINS_DIR, VersionInfo, filter_cached_prereleases, mark_prerelease,
@@ -48,6 +49,34 @@ pub struct CondaBackend {
     ba: Arc<BackendArg>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CondaOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> CondaOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn channel_name(&self) -> String {
+        self.values
+            .str("channel")
+            .map(str::to_string)
+            .unwrap_or_else(|| Settings::get().conda.channel.clone())
+    }
+
+    fn channel(&self) -> Result<Channel> {
+        let name = self.channel_name();
+        let root_dir = std::env::current_dir().unwrap_or_else(|_| dirs::HOME.to_path_buf());
+        let config = ChannelConfig::default_with_root_dir(root_dir);
+        Channel::from_str(&name, &config)
+            .map_err(|e| eyre::eyre!("invalid conda channel '{}': {}", name, e))
+    }
+}
+
 impl CondaBackend {
     fn next_temp_id() -> u64 {
         static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -64,20 +93,6 @@ impl CondaBackend {
 
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
-    }
-
-    fn channel_name(&self, opts: &ToolVersionOptions) -> String {
-        opts.get("channel")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| Settings::get().conda.channel.clone())
-    }
-
-    fn channel(&self, opts: &ToolVersionOptions) -> Result<Channel> {
-        let name = self.channel_name(opts);
-        let root_dir = std::env::current_dir().unwrap_or_else(|_| dirs::HOME.to_path_buf());
-        let config = ChannelConfig::default_with_root_dir(root_dir);
-        Channel::from_str(&name, &config)
-            .map_err(|e| eyre::eyre!("invalid conda channel '{}': {}", name, e))
     }
 
     fn create_gateway() -> Gateway {
@@ -104,16 +119,26 @@ impl CondaBackend {
             .unwrap_or_default()
     }
 
-    /// Flatten gateway RepoData into owned records for the solver, deduplicating
-    /// by URL to avoid DuplicateRecords errors when the same package appears in
-    /// multiple subdir queries (e.g. platform + noarch).
-    fn flatten_repodata(repodata: &[RepoData]) -> Vec<RepoDataRecord> {
+    /// Deduplicate records that share the same archive identifier
+    /// (name-version-build plus archive type) — the same key rattler-solve uses
+    /// to detect duplicates, so URL-only dedup isn't sufficient when conda-forge
+    /// serves the same archive under multiple URLs (e.g. distinct CDN paths).
+    fn dedup_records_by_identifier<'a, I>(records: I) -> Vec<RepoDataRecord>
+    where
+        I: IntoIterator<Item = &'a RepoDataRecord>,
+    {
         let mut seen = HashSet::new();
-        repodata
-            .iter()
-            .flat_map(|rd| rd.iter().cloned())
-            .filter(|r| seen.insert(r.url.clone()))
+        records
+            .into_iter()
+            .filter(|r| seen.insert(&r.identifier))
+            .cloned()
             .collect()
+    }
+
+    /// Flatten gateway RepoData into owned records for the solver, deduplicating
+    /// by archive identifier. See [`Self::dedup_records_by_identifier`].
+    fn flatten_repodata(repodata: &[RepoData]) -> Vec<RepoDataRecord> {
+        Self::dedup_records_by_identifier(repodata.iter().flat_map(|rd| rd.iter()))
     }
 
     /// Fetch repodata and solve the conda environment for the given specs and platform.
@@ -121,9 +146,9 @@ impl CondaBackend {
         &self,
         specs: Vec<MatchSpec>,
         platform: CondaPlatform,
-        opts: &ToolVersionOptions,
+        opts: CondaOptions<'_>,
     ) -> Result<Vec<RepoDataRecord>> {
-        let channel = self.channel(opts)?;
+        let channel = opts.channel()?;
         let gateway = Self::create_gateway();
 
         let repodata: Vec<RepoData> = gateway
@@ -359,12 +384,10 @@ impl CondaBackend {
             .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
 
         ctx.pr.set_message("fetching repodata".to_string());
+        let raw_opts = tv.request.options();
+        let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(
-                vec![match_spec],
-                CondaPlatform::current(),
-                &tv.request.options(),
-            )
+            .solve_packages(vec![match_spec], CondaPlatform::current(), opts)
             .await?;
 
         // Separate main package from deps
@@ -590,8 +613,10 @@ impl CondaBackend {
         let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
             .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
 
+        let raw_opts = tv.request.options();
+        let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(vec![match_spec], platform, &tv.request.options())
+            .solve_packages(vec![match_spec], platform, opts)
             .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
@@ -629,8 +654,9 @@ impl Backend for CondaBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let channel = self.channel(&opts)?;
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = CondaOptions::new(&raw_opts);
+        let channel = opts.channel()?;
         let current_platform = CondaPlatform::current();
         let tool_name = self.tool_name();
 
@@ -727,10 +753,9 @@ impl Backend for CondaBackend {
             }
         };
 
-        let records = match self
-            .solve_packages(vec![match_spec], platform, &tv.request.options())
-            .await
-        {
+        let raw_opts = tv.request.options();
+        let opts = CondaOptions::new(&raw_opts);
+        let records = match self.solve_packages(vec![match_spec], platform, opts).await {
             Ok(r) => r,
             Err(e) => {
                 debug!(
@@ -800,7 +825,48 @@ impl Backend for CondaBackend {
 
 #[cfg(test)]
 mod tests {
-    use super::CondaBackend;
+    use super::{CondaBackend, CondaOptions};
+    use crate::toolset::ToolVersionOptions;
+    use rattler_conda_types::package::{ArchiveIdentifier, CondaArchiveType, DistArchiveType};
+    use rattler_conda_types::{
+        PackageName, PackageRecord, RepoDataRecord, Version, package::DistArchiveIdentifier,
+    };
+    use std::str::FromStr;
+    use url::Url;
+
+    fn make_record(name: &str, version: &str, build: &str, url: &str) -> RepoDataRecord {
+        let archive_id = ArchiveIdentifier {
+            name: name.to_string(),
+            version: version.to_string(),
+            build_string: build.to_string(),
+        };
+        let conda_type = if url.ends_with(".conda") {
+            CondaArchiveType::Conda
+        } else {
+            CondaArchiveType::TarBz2
+        };
+        RepoDataRecord {
+            package_record: PackageRecord::new(
+                PackageName::from_str(name).unwrap(),
+                Version::from_str(version).unwrap(),
+                build.to_string(),
+            ),
+            identifier: DistArchiveIdentifier::new(archive_id, DistArchiveType::Conda(conda_type)),
+            url: Url::parse(url).unwrap(),
+            channel: None,
+        }
+    }
+
+    #[test]
+    fn conda_options_reads_channel() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("conda-forge".to_string()),
+        );
+
+        assert_eq!(CondaOptions::new(&opts).channel_name(), "conda-forge");
+    }
 
     #[test]
     fn temp_download_path_is_unique_per_call() {
@@ -813,5 +879,58 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(first.parent(), dest.parent());
         assert_eq!(second.parent(), dest.parent());
+    }
+
+    /// Regression test for https://github.com/jdx/mise/discussions/9829:
+    /// conda-forge can serve the same archive under multiple URLs, so URL-based
+    /// dedup leaves duplicates that the solver rejects. Dedup must use the
+    /// archive identifier (name-version-build + archive type).
+    #[test]
+    fn dedup_records_collapses_same_identifier_different_urls() {
+        let records = [
+            make_record(
+                "adwaita-icon-theme",
+                "40.1.1",
+                "ha770c72_1",
+                "https://conda.anaconda.org/conda-forge/noarch/adwaita-icon-theme-40.1.1-ha770c72_1.tar.bz2",
+            ),
+            make_record(
+                "adwaita-icon-theme",
+                "40.1.1",
+                "ha770c72_1",
+                "https://mirror.example.com/conda-forge/noarch/adwaita-icon-theme-40.1.1-ha770c72_1.tar.bz2",
+            ),
+        ];
+
+        let deduped = CondaBackend::dedup_records_by_identifier(records.iter());
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(
+            deduped[0].identifier.to_string(),
+            "adwaita-icon-theme-40.1.1-ha770c72_1.tar.bz2"
+        );
+    }
+
+    /// .conda and .tar.bz2 variants of the same name-version-build are distinct
+    /// archives (the solver prefers .conda); dedup must preserve both so the
+    /// solver's archive-type preference logic still applies.
+    #[test]
+    fn dedup_records_preserves_conda_and_tarbz2_variants() {
+        let records = [
+            make_record(
+                "foo",
+                "1.0",
+                "h0_0",
+                "https://example.com/foo-1.0-h0_0.tar.bz2",
+            ),
+            make_record(
+                "foo",
+                "1.0",
+                "h0_0",
+                "https://example.com/foo-1.0-h0_0.conda",
+            ),
+        ];
+
+        let deduped = CondaBackend::dedup_records_by_identifier(records.iter());
+        assert_eq!(deduped.len(), 2);
     }
 }

@@ -1,6 +1,7 @@
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -11,7 +12,7 @@ use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::timeout;
-use crate::toolset::{ToolRequest, ToolVersion};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use eyre::WrapErr;
@@ -27,6 +28,31 @@ use xx::regex;
 pub struct GoBackend {
     ba: Arc<BackendArg>,
     module_versions_cache: DashMap<String, CacheManager<Option<Vec<VersionInfo>>>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct GoOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> GoOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn tags(&self) -> Option<&'a str> {
+        self.values.str("tags")
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut result = BTreeMap::new();
+        if let Some(value) = self.tags() {
+            result.insert("tags".to_string(), value.to_string());
+        }
+        result
+    }
 }
 
 #[async_trait]
@@ -105,18 +131,20 @@ impl Backend for GoBackend {
 
         let install_version = tv.version.clone();
 
-        let opts = tv.request.options();
+        let raw_opts = tv.request.options();
+        let opts = GoOptions::new(&raw_opts);
 
         let install = async |v| {
             let mut cmd = CmdLineRunner::new("go").arg("install").arg("-mod=readonly");
 
-            if let Some(tags) = opts.get("tags") {
+            if let Some(tags) = opts.tags() {
                 cmd = cmd.arg("-tags").arg(tags);
             }
 
             cmd.arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(ctx.pr.as_ref())
                 .envs(self.dependency_env(&ctx.config).await?)
+                .envs(tv.install_env())
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()
         };
@@ -142,15 +170,8 @@ impl Backend for GoBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
-        let opts = request.options();
-        let mut result = BTreeMap::new();
-
-        // tags affect compilation
-        if let Some(value) = opts.get("tags") {
-            result.insert("tags".to_string(), value.to_string());
-        }
-
-        result
+        let raw_opts = request.options();
+        GoOptions::new(&raw_opts).lockfile_options()
     }
 }
 
@@ -606,6 +627,30 @@ async fn fetch_proxy_version_infos(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::toolset::ToolVersionOptions;
+
+    #[test]
+    fn go_options_reads_tags() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "tags".to_string(),
+            toml::Value::String("sqlite,fts5".to_string()),
+        );
+
+        assert_eq!(GoOptions::new(&opts).tags(), Some("sqlite,fts5"));
+        assert_eq!(
+            GoOptions::new(&opts).lockfile_options(),
+            BTreeMap::from([("tags".to_string(), "sqlite,fts5".to_string())])
+        );
+    }
+
+    #[test]
+    fn go_options_no_tags() {
+        let opts = ToolVersionOptions::default();
+
+        assert_eq!(GoOptions::new(&opts).tags(), None);
+        assert_eq!(GoOptions::new(&opts).lockfile_options(), BTreeMap::new());
+    }
 
     #[test]
     fn parse_go_mod_info_without_versions() {

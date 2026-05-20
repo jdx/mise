@@ -66,7 +66,7 @@ export default {
         settings[key] = buildElement(key, props);
       } else {
         for (const subkey in props) {
-          if (props.hide) continue;
+          if (props[subkey].hide) continue;
           settings[key] = settings[key] || {
             key,
             additionalProperties: false,

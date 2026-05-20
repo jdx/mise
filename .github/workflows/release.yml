@@ -27,7 +27,7 @@ jobs:
   build-tarball-linux:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: namespace-profile-endev-linux-amd64
+    runs-on: namespace-profile-endev-linux-amd64-large
     timeout-minutes: 45
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -178,7 +178,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:b8b0b723cce085069b4b324a9485ac5a5944d2695ea4ed1375ad1ecb0941c363
+    container: ghcr.io/jdx/mise:rpm@sha256:7880c748d583aeaaf1280f9fa6fb8eaae58af19c6b0dc14fb737027e3b4a5d98
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
@@ -202,7 +202,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
-    container: ghcr.io/jdx/mise:deb@sha256:71bda117cf49daa530f6c44cda8c9960321c3ceede0a6a3b9623904a32e66dc3
+    container: ghcr.io/jdx/mise:deb@sha256:a6fe62d7ce9a7df1a68592898078bed17291a816beeb4e867ddf47e0c5baf0f4
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

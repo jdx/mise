@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# `mise edit --global` writes to the global config file path.
+
+export MISE_GLOBAL_CONFIG_FILE="$PWD/global-config.toml"
+
+assert_contains "mise edit --global --dry-run 2>&1" "global-config.toml"
+assert_contains "mise edit -g -n 2>&1" "global-config.toml"
+
+# A positional path overrides --global regardless of argument order.
+assert_contains "mise edit --global custom.toml --dry-run 2>&1" "custom.toml"
+assert_not_contains "mise edit --global custom.toml --dry-run 2>&1" "global-config.toml"
+assert_contains "mise edit custom.toml --global --dry-run 2>&1" "custom.toml"
+assert_not_contains "mise edit custom.toml --global --dry-run 2>&1" "global-config.toml"
+
+# Without --global, the default config filename is used (regression guard).
+assert_contains "mise edit --dry-run 2>&1" "mise.toml"
+assert_not_contains "mise edit --dry-run 2>&1" "global-config.toml"
+
+# --tool-versions merges into the resolved target file, not the local mise.toml.
+cat >preexisting.toml <<EOF
+[tools]
+go = "1.22"
+EOF
+cat >.tool-versions <<EOF
+node 22
+EOF
+assert_contains "mise edit preexisting.toml --tool-versions .tool-versions --dry-run 2>&1" 'go = "1.22"'
+assert_contains "mise edit preexisting.toml --tool-versions .tool-versions --dry-run 2>&1" 'node = "22"'

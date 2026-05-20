@@ -338,7 +338,27 @@ impl AssetPicker {
             }
         }
 
-        if format.is_archive() { 10 } else { 0 }
+        if format.is_archive() {
+            return 10;
+        }
+
+        // Platform-agnostic runtime archives (composer.phar, foo.jar, bar.pyz)
+        // run on the language runtime, not the OS — give them the same score as
+        // a regular archive so single-asset releases like composer's
+        // `composer.phar` are picked instead of failing platform matching.
+        // See: https://github.com/jdx/mise/discussions/9936
+        //
+        // `.whl` and `.gem` are intentionally NOT in this list: both have
+        // platform-tagged variants whose tokens OS_PATTERNS doesn't reliably
+        // catch (`manylinux2014_x86_64`, `mingw32`), so granting the bonus
+        // could let a wrong-platform variant be picked. Those cases should
+        // use an explicit `asset_pattern`.
+        let lower = asset.to_lowercase();
+        if lower.ends_with(".phar") || lower.ends_with(".jar") || lower.ends_with(".pyz") {
+            return 10;
+        }
+
+        0
     }
 
     fn score_build_penalties(&self, asset: &str) -> i32 {
@@ -1135,6 +1155,76 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
         let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
         let picked = picker.pick_best_asset(&assets).unwrap();
         assert_eq!(picked, "bun-linux-x64.zip");
+    }
+
+    #[test]
+    fn test_platform_agnostic_phar_picked() {
+        // composer ships a single platform-agnostic `composer.phar` (plus a
+        // signature). `.phar` is a PHP runtime archive — it runs on any OS
+        // PHP supports, so we should pick it without requiring platform tokens.
+        // See: https://github.com/jdx/mise/discussions/9936
+        let assets = vec!["composer.phar".to_string(), "composer.phar.asc".to_string()];
+
+        for os in ["linux", "macos", "windows"] {
+            let picker = AssetPicker::with_libc(os.to_string(), "x86_64".to_string(), None);
+            let picked = picker.pick_best_asset(&assets).unwrap();
+            assert_eq!(picked, "composer.phar", "should pick .phar on {os}");
+        }
+    }
+
+    #[test]
+    fn test_platform_agnostic_jar_picked() {
+        // JVM tools commonly ship a single platform-agnostic `.jar`.
+        let assets = vec!["tool.jar".to_string(), "tool.jar.sha256".to_string()];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool.jar");
+    }
+
+    #[test]
+    fn test_platform_tagged_extensions_excluded_from_bonus() {
+        // Regression guard: .whl and .gem are intentionally excluded from the
+        // platform-agnostic format-score bonus that .phar/.jar/.pyz get.
+        // Both have platform-tagged variants (`manylinux2014_x86_64.whl`,
+        // `x86_64-mingw32.gem`) whose tokens OS_PATTERNS doesn't reliably
+        // catch — granting the bonus would help wrong-platform variants
+        // win against the right one.
+        //
+        // Concretely: `.whl` and `.gem` with no other tokens should score 0
+        // (filtered out), while `.jar` with no other tokens scores 10.
+        let picker = AssetPicker::with_libc("macos".to_string(), "x86_64".to_string(), None);
+        assert!(picker.pick_best_asset(&["tool.whl".to_string()]).is_none());
+        assert!(picker.pick_best_asset(&["tool.gem".to_string()]).is_none());
+        assert_eq!(
+            picker.pick_best_asset(&["tool.jar".to_string()]).as_deref(),
+            Some("tool.jar")
+        );
+    }
+
+    #[test]
+    fn test_platform_specific_still_wins_over_phar() {
+        // If a release ships both platform-specific binaries and a .phar,
+        // platform-specific should still win (it scores higher: 100+50+10 vs 10).
+        let assets = vec![
+            "tool.phar".to_string(),
+            "tool-linux-x86_64.tar.gz".to_string(),
+            "tool-darwin-x86_64.tar.gz".to_string(),
+        ];
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-linux-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn test_exe_on_non_windows_not_picked() {
+        // Regression guard: a Windows .exe with no other platform tokens
+        // should NOT be auto-picked on Linux just because it's the only
+        // non-metadata asset. This is the failure mode that scuttled
+        // https://github.com/jdx/mise/pull/8756 — preserve it.
+        let assets = vec!["foo.exe".to_string()];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        assert!(picker.pick_best_asset(&assets).is_none());
     }
 
     #[test]

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Test that vfox env module cmd.exec uses mise's configured default inline shell.
+
+CUSTOM_SHELL="$HOME/custom-inline-shell"
+cat >"$CUSTOM_SHELL" <<'EOFSHELL'
+#!/usr/bin/env bash
+if [[ "$1" != "-c" ]]; then
+  echo "unexpected shell args: $*" >&2
+  exit 1
+fi
+shift
+printf "custom-shell:"
+bash -c "$1"
+EOFSHELL
+chmod +x "$CUSTOM_SHELL"
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/test-cmd-shell"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOFMETA'
+PLUGIN = {}
+PLUGIN.name = "test-cmd-shell"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test that cmd.exec uses the default inline shell"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+
+cat >"$PLUGIN_DIR/hooks/mise_env.lua" <<'EOFHOOK'
+local cmd = require("cmd")
+
+function PLUGIN:MiseEnv(ctx)
+    local output = cmd.exec("printf plugin-body")
+    output = output:gsub("%s+$", "")
+
+    return {
+        env = {{key = "TEST_CMD_SHELL_RESULT", value = output}},
+        cacheable = false,
+        watch_files = {}
+    }
+end
+EOFHOOK
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[env]
+_.test-cmd-shell = {}
+EOF
+
+assert_contains "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='$CUSTOM_SHELL -c' mise env -s bash" "TEST_CMD_SHELL_RESULT='custom-shell:plugin-body'"

@@ -37,6 +37,21 @@ mise use -g python@anaconda         # latest version of anaconda
 
 See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examples.
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `python` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for python-build, default package installation, and install-time
+verification commands run by the core `python` backend:
+
+```toml
+[tools]
+python = { version = "latest", install_env = { CONFIGURE_OPTS = "--enable-optimizations" } }
+```
+
 ## `.python-version` support
 
 `.python-version`/`.python-versions` files are supported by mise. See [idiomatic version files](/configuration.html#idiomatic-version-files).
@@ -135,9 +150,30 @@ See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for more exampl
 
 ## Default Python packages
 
+::: warning Planned deprecation
+Default package files are deprecated. They are still supported for now, but mise will start warning
+in `2026.11.0` and support will be removed in `2027.11.0`.
+
+For Python CLIs, install the tool directly with the [pipx backend](/dev-tools/backends/pipx.html):
+
+```toml
+[tools]
+"pipx:black" = "latest"
+```
+
+For packages that really should be installed into every Python version, use a tool-level
+`postinstall` hook:
+
+```toml
+[tools]
+python = { version = "3.13", postinstall = "python -m pip install --upgrade ansible" }
+```
+
+:::
+
 mise can automatically install a default set of Python packages with pip right after installing a
-Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists
-one package per line, for example:
+Python version. To use this legacy feature, provide a `$HOME/.default-python-packages` file that
+lists one package per line, for example:
 
 ```text
 ansible
