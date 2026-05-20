@@ -653,23 +653,14 @@ separately-installed package manager** — packages are downloaded and extracted
 directly from anaconda.org, with no `conda`/`mamba`/`micromamba` needed on the
 user's PATH. The tool still needs to be popular and well-maintained.
 
-**Tier 3 — very high bar, rarely accepted:** [`npm`](/dev-tools/backends/npm.html),
-`pipx`, `gem`, `cargo`, `go`, `dotnet`.
+**Tier 3 — very high bar, rarely accepted:** `npm`, `pipx`, `gem`, `cargo`, `go`, `dotnet`.
 
 These all depend on a separately-installed runtime or toolchain being present on
 the user's PATH (`node`, `python`, `ruby`, `cargo`, `go`, `dotnet`), which is
 fragile — `npm`/`pipx`/`gem` in particular silently bind tools to whichever
 `node`/`python`/`ruby` happened to be on PATH at install time, which breaks when
-versions change or the runtime isn't installed. Accepted as the primary
-distribution only when no aqua/github option exists and the tool is widely used.
-Discuss with @jdx before submitting.
-
-Do not add `npm` as a fallback behind another primary backend unless you have
-verified the package installs and passes its registry test with lifecycle scripts
-disabled. The npm backend disables scripts by default on the npm package-manager
-path, so packages that require `install`/`postinstall` work need explicit
-review before they are added. See the [npm backend docs](/dev-tools/backends/npm.html)
-for package-manager-specific script behavior.
+versions change or the runtime isn't installed. Accepted only when no aqua/github
+option exists and the tool is widely used. Discuss with @jdx before submitting.
 
 **Not accepted:** `asdf`, `vfox`, `ubi`.
 
