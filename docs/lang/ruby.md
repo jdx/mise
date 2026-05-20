@@ -64,8 +64,29 @@ mise use -g ruby@truffleruby            # latest version of truffleruby
 
 ## Default gems
 
+::: warning Planned deprecation
+Default package files are deprecated. They are still supported for now, but mise will start warning
+in `2026.11.0` and support will be removed in `2027.11.0`.
+
+For Ruby CLIs, install the tool directly with the [gem backend](/dev-tools/backends/gem.html):
+
+```toml
+[tools]
+"gem:rubocop" = "latest"
+```
+
+For gems that really should be installed into every Ruby version, use a tool-level `postinstall`
+hook:
+
+```toml
+[tools]
+ruby = { version = "3.4", postinstall = "gem install rubocop" }
+```
+
+:::
+
 mise can automatically install a default set of gems right after installing a new ruby version.
-To enable this feature, provide a `$HOME/.default-gems` file that lists one gem per line, for
+To use this legacy feature, provide a `$HOME/.default-gems` file that lists one gem per line, for
 example:
 
 ```text
@@ -73,6 +94,20 @@ example:
 pry
 bcat ~> 0.6.0 # supports version constraints
 rubocop --pre # install prerelease version
+```
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `ruby` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for ruby-build or ruby-install and default gem installation:
+
+```toml
+[tools]
+ruby = { version = "latest", install_env = { RUBY_CONFIGURE_OPTS = "--disable-install-doc" } }
 ```
 
 ## `.ruby-version` and `Gemfile` support

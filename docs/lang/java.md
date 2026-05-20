@@ -111,6 +111,15 @@ mise/java/21.0.1-open:
 The following [tool-options](/dev-tools/#tool-options) are available for the `java` backend.
 These options go in the `[tools]` section in `mise.toml`.
 
+### `install_env`
+
+Set environment variables for install-time commands run by the core `java` backend:
+
+```toml
+[tools]
+java = { version = "latest", install_env = { JAVA_TOOL_OPTIONS = "-Djava.net.useSystemProxies=true" } }
+```
+
 ### `release_type`
 
 The `release_type` option allows you to specify the type of release to install. The following values

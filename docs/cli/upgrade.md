@@ -51,16 +51,6 @@ Just print what would be done, don't actually do it
 Tool(s) to exclude from upgrading
 e.g.: go python
 
-### `--before <BEFORE>`
-
-Only upgrade to versions released before this date
-
-Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-This can be useful for reproducibility or security purposes.
-
-This only affects fuzzy version matches like "20" or "latest".
-Explicitly pinned versions like "22.5.0" are not filtered.
-
 ### `--dry-run-code`
 
 Like --dry-run but exits with code 1 if there are outdated tools
@@ -77,6 +67,16 @@ Only upgrade tools defined in local config files
 
 This will only upgrade tools that are defined in project-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
+
+### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
+
+Only upgrade to versions released before this date or older than this duration
+
+Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+This can be useful for reproducibility or security purposes.
+
+This only affects fuzzy version matches like "20" or "latest".
+Explicitly pinned versions like "22.5.0" are not filtered.
 
 ### `--raw`
 

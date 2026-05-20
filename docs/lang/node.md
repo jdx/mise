@@ -20,6 +20,21 @@ mise use -g node@26
 
 See the [Node.JS Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `node` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for source builds, default package installation, Corepack setup, and
+install-time verification commands run by the core `node` backend:
+
+```toml
+[tools]
+node = { version = "latest", install_env = { CFLAGS = "-O2" } }
+```
+
 ## Pinning npm version
 
 By default, Node.js ships with a bundled version of npm. If you need a specific npm version
@@ -75,7 +90,30 @@ idiomatic_version_file_enable_tools = ["node"]
 
 ## Default node packages
 
-mise-node can automatically install a default set of npm packages right after installing a node version. To enable this feature, provide a `$HOME/.default-npm-packages` file that lists one package per line, for example:
+::: warning Planned deprecation
+Default package files are deprecated. They are still supported for now, but mise will start warning
+in `2026.11.0` and support will be removed in `2027.11.0`.
+
+For npm CLIs, install the tool directly with the [npm backend](/dev-tools/backends/npm.html):
+
+```toml
+[tools]
+"npm:typescript" = "latest"
+```
+
+For packages that really should be installed into every Node.js version, use a tool-level
+`postinstall` hook:
+
+```toml
+[tools]
+node = { version = "22", postinstall = "npm install -g typescript" }
+```
+
+:::
+
+mise-node can automatically install a default set of npm packages right after installing a node
+version. To use this legacy feature, provide a `$HOME/.default-npm-packages` file that lists one
+package per line, for example:
 
 ```text
 lodash

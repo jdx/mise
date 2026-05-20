@@ -251,6 +251,20 @@ fn warn_deprecated(key: &str) {
 }
 
 impl Settings {
+    pub fn parse_default_package_line(package: &str) -> Option<String> {
+        let package = package.split('#').next().unwrap_or_default().trim();
+        (!package.is_empty()).then(|| package.to_string())
+    }
+
+    pub fn warn_default_package_file_deprecated(id: &'static str, package_type: &str) {
+        deprecated_at!(
+            "2026.11.0",
+            "2027.11.0",
+            id,
+            "Default {package_type} files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every runtime version, or use package manager backends such as npm:, pipx:, gem:, or go: for CLI tools."
+        );
+    }
+
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
     }

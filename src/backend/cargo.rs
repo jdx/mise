@@ -4,7 +4,6 @@ use std::{fmt::Debug, sync::Arc};
 use async_trait::async_trait;
 use color_eyre::Section;
 use eyre::{bail, eyre};
-use indexmap::IndexMap;
 use url::Url;
 
 use crate::Result;
@@ -67,10 +66,6 @@ impl<'a> CargoOptions<'a> {
 
     fn crate_arg(&self) -> Option<String> {
         self.values.raw().get_string("crate")
-    }
-
-    fn install_env(&self) -> &'a IndexMap<String, String> {
-        &self.values.raw().install_env
     }
 
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
@@ -247,7 +242,7 @@ impl Backend for CargoBackend {
             .arg(tv.install_path())
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-            .envs(opts.install_env().clone())
+            .envs(tv.install_env())
             .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
             .prepend_path(
                 self.dependency_toolset(&ctx.config)
