@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
@@ -17,6 +18,23 @@ pub const EXPERIMENTAL: bool = true;
 #[derive(Debug)]
 pub struct DotnetBackend {
     ba: Arc<BackendArg>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DotnetOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> DotnetOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn prerelease(&self) -> bool {
+        self.values.bool("prerelease")
+    }
 }
 
 #[async_trait]
@@ -112,8 +130,7 @@ impl Backend for DotnetBackend {
             return true;
         }
 
-        opts.opts.get("prerelease").is_some_and(tool_option_bool)
-            || dotnet_legacy_prerelease_package_flag_enabled()
+        DotnetOptions::new(opts).prerelease() || dotnet_legacy_prerelease_package_flag_enabled()
     }
 }
 
@@ -161,14 +178,6 @@ fn dotnet_legacy_prerelease_package_flag_enabled() -> bool {
     enabled
 }
 
-fn tool_option_bool(value: &toml::Value) -> bool {
-    match value {
-        toml::Value::Boolean(b) => *b,
-        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
-        _ => false,
-    }
-}
-
 #[derive(serde::Deserialize)]
 struct NugetFeed {
     resources: Vec<NugetFeedResource>,
@@ -198,4 +207,48 @@ struct NugetFeedSearchData {
 #[derive(serde::Deserialize)]
 struct NugetFeedSearchDataVersion {
     version: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opts_with_prerelease(value: toml::Value) -> ToolVersionOptions {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert("prerelease".to_string(), value);
+        opts
+    }
+
+    #[test]
+    fn dotnet_options_reads_prerelease() {
+        assert!(!DotnetOptions::new(&ToolVersionOptions::default()).prerelease());
+        assert!(DotnetOptions::new(&opts_with_prerelease(toml::Value::Boolean(true))).prerelease());
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::Boolean(false))).prerelease()
+        );
+        assert!(
+            DotnetOptions::new(&opts_with_prerelease(toml::Value::String(
+                "true".to_string()
+            )))
+            .prerelease()
+        );
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String(
+                "FALSE".to_string()
+            )))
+            .prerelease()
+        );
+        assert!(
+            DotnetOptions::new(&opts_with_prerelease(toml::Value::String("1".to_string())))
+                .prerelease()
+        );
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("0".to_string())))
+                .prerelease()
+        );
+        assert!(
+            !DotnetOptions::new(&opts_with_prerelease(toml::Value::String("00".to_string())))
+                .prerelease()
+        );
+    }
 }
