@@ -31,6 +31,7 @@ pub async fn handle_shim() -> Result<()> {
     let mut config = Config::get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
+    env::CACHE_ONLY_REMOTE_LATEST.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
     args[0] = which_shim(&mut config, &env::MISE_BIN_NAME)
         .await?

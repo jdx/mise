@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<EOF
+[tools]
+dummy = "latest"
+EOF
+
+mise cache clear dummy
+
+output="$TMPDIR/hook_env_latest_cache_only.txt"
+MISE_DEBUG=1 MISE_FAILURE=1 RTX_FAILURE=1 mise hook-env --shell bash --force 2>&1 |
+  tee "$output"
+
+if grep -q "latest-stable" "$output"; then
+  fail "hook-env should not call latest-stable in cache-only mode"
+fi
+
+if grep -q "bin/list-all" "$output"; then
+  fail "hook-env should not fetch remote versions in cache-only mode"
+fi

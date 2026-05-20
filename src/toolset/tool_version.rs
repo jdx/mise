@@ -367,12 +367,15 @@ impl ToolVersion {
             {
                 return build(v);
             }
-            let prefer_offline_latest = prefer_offline && !opts.latest_versions;
-            if prefer_offline_latest
-                && let Some(v) = backend
+            let cache_only_remote_latest =
+                settings.cache_only_remote_latest() && !opts.latest_versions;
+            if cache_only_remote_latest {
+                if let Some(v) = backend
                     .latest_version_from_cache(config, "latest", opts.before_date)
                     .await?
-            {
+                {
+                    return build(v);
+                }
                 return build(v);
             }
             if !is_offline
@@ -504,7 +507,9 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
-        if v == "latest" && opts.offline {
+        let cache_only_remote_latest =
+            Settings::get().cache_only_remote_latest() && !opts.latest_versions;
+        if v == "latest" && (opts.offline || cache_only_remote_latest) {
             // Can't resolve sub-N:latest offline (no remote latest, and
             // applying version_sub to latest_installed_version would shift
             // one step too low). Return the raw spec; callers that care

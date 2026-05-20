@@ -18,7 +18,10 @@ use std::{
 };
 use std::{path, process};
 use std::{path::Path, string::ToString};
-use std::{path::PathBuf, sync::atomic::AtomicBool};
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
@@ -417,6 +420,7 @@ pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static LINUX_GLIBC_VERSION: Lazy<Option<(u32, u32)>> = Lazy::new(linux_glibc_version);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
+pub static CACHE_ONLY_REMOTE_LATEST: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
 pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
     Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()));
@@ -606,25 +610,55 @@ fn prefer_offline(args: &[String]) -> bool {
     }
 
     // Otherwise fall back to the original command-based logic
+    command_matches(
+        args,
+        &[
+            "--prefer-offline",
+            "activate",
+            "current",
+            "direnv",
+            "env",
+            "exec",
+            "hook-env",
+            "ls",
+            "where",
+            "x",
+        ],
+    )
+}
+
+/// returns true if symbolic latest resolution should avoid both latest-stable
+/// endpoints and remote version listings unless a caller explicitly requested
+/// latest-version semantics.
+pub fn cache_only_remote_latest() -> bool {
+    CACHE_ONLY_REMOTE_LATEST.load(Ordering::Relaxed)
+        || cache_only_remote_latest_args(&ARGS.read().unwrap())
+}
+
+fn cache_only_remote_latest_args(args: &[String]) -> bool {
+    if var_is_true("MISE_PREFER_OFFLINE") {
+        return true;
+    }
+
+    command_matches(
+        args,
+        &[
+            "--prefer-offline",
+            "activate",
+            "completion",
+            "direnv",
+            "doctor",
+            "hook-env",
+        ],
+    )
+}
+
+fn command_matches(args: &[String], commands: &[&str]) -> bool {
     args.iter()
         .take_while(|a| *a != "--")
         .filter(|a| !a.starts_with('-') || *a == "--prefer-offline")
         .nth(1)
-        .map(|a| {
-            [
-                "--prefer-offline",
-                "activate",
-                "current",
-                "direnv",
-                "env",
-                "exec",
-                "hook-env",
-                "ls",
-                "where",
-                "x",
-            ]
-            .contains(&a.as_str())
-        })
+        .map(|a| commands.contains(&a.as_str()))
         .unwrap_or_default()
 }
 
@@ -882,6 +916,32 @@ mod tests {
             let expected: IndexSet<String> = expected.into_iter().map(|s| s.to_string()).collect();
             assert_eq!(result, expected, "input: {input:?}");
         }
+    }
+
+    #[test]
+    fn test_cache_only_remote_latest_command_scope() {
+        assert!(cache_only_remote_latest_args(&[
+            "mise".into(),
+            "hook-env".into()
+        ]));
+        assert!(cache_only_remote_latest_args(&[
+            "mise".into(),
+            "completion".into()
+        ]));
+        assert!(cache_only_remote_latest_args(&[
+            "mise".into(),
+            "--prefer-offline".into(),
+            "current".into()
+        ]));
+        assert!(!cache_only_remote_latest_args(&[
+            "mise".into(),
+            "current".into()
+        ]));
+        assert!(!cache_only_remote_latest_args(&[
+            "mise".into(),
+            "ls".into()
+        ]));
+        assert!(!cache_only_remote_latest_args(&["mise".into(), "x".into()]));
     }
 
     #[test]

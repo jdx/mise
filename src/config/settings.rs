@@ -673,6 +673,12 @@ impl Settings {
         self.offline() || self.prefer_offline || env::PREFER_OFFLINE.load(Ordering::Relaxed)
     }
 
+    /// Returns true when resolving symbolic latest should only use installed
+    /// versions or the on-disk remote-version cache.
+    pub fn cache_only_remote_latest(&self) -> bool {
+        self.prefer_offline || env::cache_only_remote_latest()
+    }
+
     pub fn env_cache_ttl(&self) -> Duration {
         duration::parse_duration(&self.env_cache_ttl).unwrap()
     }
