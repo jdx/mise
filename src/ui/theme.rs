@@ -28,7 +28,20 @@ pub fn get_theme() -> Theme {
 
 fn no_color_theme() -> Theme {
     let mut theme = Theme::new();
+    theme.title = Default::default();
+    theme.description = Default::default();
+    theme.cursor = Default::default();
+    theme.selected_option = Default::default();
+    theme.selected_prefix_fg = Default::default();
+    theme.unselected_option = Default::default();
+    theme.unselected_prefix_fg = Default::default();
+    theme.error_indicator = Default::default();
+    theme.input_cursor = Default::default();
     theme.input_placeholder = Default::default();
+    theme.input_prompt = Default::default();
+    theme.help_key = Default::default();
+    theme.help_desc = Default::default();
+    theme.help_sep = Default::default();
     theme.focused_button = Default::default();
     theme.blurred_button = Default::default();
     theme.cursor_style = Default::default();
@@ -49,7 +62,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_theme_returns_no_color_theme_when_color_is_disabled() {
+    fn get_theme_returns_no_color_theme_when_stderr_colors_are_disabled() {
         let mut partial = SettingsPartial::empty();
         partial.color = Some(false);
         partial.color_theme = Some("base16".to_string());
@@ -58,10 +71,31 @@ mod tests {
         let theme = get_theme();
         let cursor_color = theme.real_cursor_color(None);
 
-        assert!(theme.title.fg().is_none());
-        assert!(theme.description.fg().is_none());
-        assert!(theme.selected_option.fg().is_none());
-        assert!(theme.unselected_option.fg().is_none());
+        for color in [
+            &theme.title,
+            &theme.description,
+            &theme.cursor,
+            &theme.selected_option,
+            &theme.selected_prefix_fg,
+            &theme.unselected_option,
+            &theme.unselected_prefix_fg,
+            &theme.error_indicator,
+            &theme.input_cursor,
+            &theme.input_placeholder,
+            &theme.input_prompt,
+            &theme.help_key,
+            &theme.help_desc,
+            &theme.help_sep,
+            &theme.focused_button,
+            &theme.blurred_button,
+            &theme.cursor_style,
+            &theme.breadcrumb_active,
+            &theme.breadcrumb_clickable,
+            &theme.breadcrumb_future,
+        ] {
+            assert!(color.fg().is_none());
+            assert!(color.bg().is_none());
+        }
         assert!(cursor_color.fg().is_none());
         assert!(cursor_color.bg().is_none());
 
