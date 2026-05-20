@@ -353,8 +353,16 @@ EMBEDDED_PLUGINS_DIR="crates/vfox/embedded-plugins"
 rm -rf "$EMBEDDED_PLUGINS_DIR"
 mkdir -p "$EMBEDDED_PLUGINS_DIR"
 
-# Clone all tools where vfox is the FIRST (default) backend
-mise registry | awk '$2 ~ /^vfox:/ {print $2}' | sed 's|vfox:||' | sort -u | while read -r repo_path; do
+# Clone mise-plugins vfox tools when vfox is the default backend or the
+# fallback after an asdf default backend.
+mise registry | awk '
+	$2 ~ /^vfox:mise-plugins\// {
+		print $2
+	}
+	$2 ~ /^asdf:/ && $3 ~ /^vfox:mise-plugins\// {
+		print $3
+	}
+' | sed 's|vfox:||' | sort -u | while read -r repo_path; do
 	plugin="$(basename "$repo_path")"
 	echo "Cloning $plugin from https://github.com/$repo_path"
 	TEMP_DIR="$(mktemp -d)"
