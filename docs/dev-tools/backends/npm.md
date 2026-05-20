@@ -133,9 +133,6 @@ script trust:
 "npm:some-tool" = { version = "latest", bun_args = "--trust" }
 ```
 
-If a registry tool fails under Bun because dependency lifecycle scripts are required, switch to
-`aube` or `pnpm` so the needed package builds can be approved explicitly.
-
 ### `npm`
 
 `npm` normally runs lifecycle scripts by default and does not provide a native per-dependency build
