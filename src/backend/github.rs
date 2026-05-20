@@ -854,6 +854,14 @@ impl UnifiedGitBackend {
         self.ba.tool_name()
     }
 
+    fn preferred_asset_name(&self) -> String {
+        self.repo()
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .to_string()
+    }
+
     // Helper to format asset names for error messages
     fn format_asset_list<'a, I>(assets: I) -> String
     where
@@ -1178,6 +1186,7 @@ impl UnifiedGitBackend {
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
             .with_no_app(opts.no_app_for_target(target))
+            .with_preferred_name(self.preferred_asset_name())
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1264,6 +1273,7 @@ impl UnifiedGitBackend {
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
             .with_no_app(opts.no_app_for_target(target))
+            .with_preferred_name(self.preferred_asset_name())
             .pick_from(&available_assets)?
             .name;
         let asset = self
@@ -1350,6 +1360,7 @@ impl UnifiedGitBackend {
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
             .with_no_app(opts.no_app_for_target(target))
+            .with_preferred_name(self.preferred_asset_name())
             .pick_from(&available_assets)?
             .name;
         let asset = self
