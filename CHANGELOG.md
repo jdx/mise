@@ -1,5 +1,55 @@
 # Changelog
 
+## [2026.5.13](https://github.com/jdx/mise/compare/v2026.5.12..v2026.5.13) - 2026-05-21
+
+### 🚀 Features
+
+- **(npm)** disable npm lifecycle scripts by default by @risu729 in [#9913](https://github.com/jdx/mise/pull/9913)
+
+### 🐛 Bug Fixes
+
+- **(completion)** avoid network calls when generating completions by @sargunv-headway in [#10010](https://github.com/jdx/mise/pull/10010)
+- **(config)** track install manifest option source by @risu729 in [#9958](https://github.com/jdx/mise/pull/9958)
+- **(doctor)** honor http timeout for version checks by @risu729 in [#9977](https://github.com/jdx/mise/pull/9977)
+- **(github)** prefer primary binary assets by @risu729 in [#10008](https://github.com/jdx/mise/pull/10008)
+- **(release)** bake secondary mise-plugins vfox plugins by @risu729 in [#9832](https://github.com/jdx/mise/pull/9832)
+- **(shim)** preserve optioned aliases during rebuilds by @risu729 in [#9848](https://github.com/jdx/mise/pull/9848)
+
+### 🚜 Refactor
+
+- **(dotnet)** parse backend tool options locally by @risu729 in [#9962](https://github.com/jdx/mise/pull/9962)
+
+### 📚 Documentation
+
+- remove how i use mise article by @jdx in [#9996](https://github.com/jdx/mise/pull/9996)
+
+### 🧪 Testing
+
+- **(s3)** cover current config over install manifest opts by @risu729 in [#9917](https://github.com/jdx/mise/pull/9917)
+
+### 📦️ Dependency Updates
+
+- update astral-tokio-tar by @jdx in [#9997](https://github.com/jdx/mise/pull/9997)
+
+### 📦 Registry
+
+- update entry for vale by @eread in [#10002](https://github.com/jdx/mise/pull/10002)
+- use aqua backend for vector by @jdx in [#10011](https://github.com/jdx/mise/pull/10011)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- `google.com/antigravity-cli`
+- [`sholdee/crd-schema-publisher`](https://github.com/sholdee/crd-schema-publisher)
+
+#### Updated Packages (4)
+
+- [`FairwindsOps/pluto`](https://github.com/FairwindsOps/pluto)
+- [`goccy/bigquery-emulator`](https://github.com/goccy/bigquery-emulator)
+- [`sourcemeta/jsonschema`](https://github.com/sourcemeta/jsonschema)
+- [`wasmCloud/wasmCloud/wash`](https://github.com/wasmCloud/wasmCloud)
+
 ## [2026.5.12](https://github.com/jdx/mise/compare/v2026.5.11..v2026.5.12) - 2026-05-19
 
 ### 🚀 Features
