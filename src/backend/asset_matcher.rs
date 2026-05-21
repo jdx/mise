@@ -113,7 +113,7 @@ static OS_PATTERNS: LazyLock<Vec<(AssetOs, Regex)>> = LazyLock::new(|| {
     vec![
         (
             AssetOs::Linux,
-            Regex::new(r"(?i)(?:\b|_)(?:linux|ubuntu|debian|fedora|centos|rhel|alpine|arch)(?:\b|_|32|64|-)")
+            Regex::new(r"(?i)(?:\b|_)(?:linux|manylinux(?:[0-9_]+)?|musllinux(?:[0-9_]+)?|ubuntu|debian|fedora|centos|rhel|alpine|arch)(?:\b|_|32|64|-)")
                 .unwrap(),
         ),
         (
@@ -156,11 +156,11 @@ static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
         ),
         (
             AssetLibc::Gnu,
-            Regex::new(r"(?i)(?:\b|_)(?:gnu|glibc)(?:\b|_)").unwrap(),
+            Regex::new(r"(?i)(?:\b|_)(?:gnu|glibc|manylinux(?:[0-9_]+)?)(?:\b|_)").unwrap(),
         ),
         (
             AssetLibc::Musl,
-            Regex::new(r"(?i)(?:\b|_)(?:musl)(?:\b|_)").unwrap(),
+            Regex::new(r"(?i)(?:\b|_)(?:musl|musllinux(?:[0-9_]+)?)(?:\b|_)").unwrap(),
         ),
     ]
 });
@@ -173,6 +173,7 @@ pub struct AssetPicker {
     target_arch: String,
     target_libc: String,
     no_app: bool,
+    preferred_name: Option<String>,
 }
 
 impl AssetPicker {
@@ -195,12 +196,22 @@ impl AssetPicker {
             target_arch,
             target_libc,
             no_app: false,
+            preferred_name: None,
         }
     }
 
     /// Set whether to avoid .app bundles (prefer standalone CLI tools)
     pub fn with_no_app(mut self, no_app: bool) -> Self {
         self.no_app = no_app;
+        self
+    }
+
+    /// Prefer assets whose platform-stripped name matches the primary tool.
+    pub fn with_preferred_name(mut self, preferred_name: impl Into<String>) -> Self {
+        let preferred_name = preferred_name.into();
+        if !preferred_name.is_empty() {
+            self.preferred_name = Some(preferred_name);
+        }
         self
     }
 
@@ -272,6 +283,7 @@ impl AssetPicker {
             score += self.score_libc_match(asset);
         }
         score += self.score_format_preferences(asset);
+        score += self.score_preferred_name_match(asset);
         score += self.score_build_penalties(asset);
         score
     }
@@ -416,6 +428,123 @@ impl AssetPicker {
 
         penalty
     }
+
+    fn score_preferred_name_match(&self, asset: &str) -> i32 {
+        const PREFERRED_NAME_BONUS: i32 = 20;
+
+        match &self.preferred_name {
+            Some(preferred_name) if asset_matches_preferred_name(asset, preferred_name) => {
+                PREFERRED_NAME_BONUS
+            }
+            _ => 0,
+        }
+    }
+}
+
+fn asset_matches_preferred_name(asset: &str, preferred_name: &str) -> bool {
+    let asset = asset_name_stem(asset);
+    let preferred_name = preferred_name
+        .rsplit('/')
+        .next()
+        .unwrap_or(preferred_name)
+        .to_lowercase();
+
+    if asset == preferred_name {
+        return true;
+    }
+
+    let Some(rest) = asset.strip_prefix(&preferred_name) else {
+        return false;
+    };
+
+    if !rest.starts_with(['-', '_', '.']) {
+        return false;
+    }
+
+    rest[1..]
+        .split(['-', '_', '.'])
+        .all(is_platform_or_version_token)
+}
+
+fn asset_name_stem(asset: &str) -> String {
+    let mut name = asset.rsplit('/').next().unwrap_or(asset).to_lowercase();
+    let suffixes = [
+        ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".tar", ".zip", ".gz", ".xz", ".bz2",
+        ".zst", ".phar", ".jar", ".pyz", ".exe", ".msi",
+    ];
+
+    if let Some(suffix) = suffixes.iter().find(|suffix| name.ends_with(*suffix)) {
+        name.truncate(name.len() - suffix.len());
+    }
+
+    name
+}
+
+fn is_platform_or_version_token(token: &str) -> bool {
+    if token.is_empty() {
+        return true;
+    }
+    if token.starts_with("manylinux") || token.starts_with("musllinux") {
+        return true;
+    }
+    if token.starts_with('v')
+        && token[1..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+    {
+        return true;
+    }
+    if token.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        return true;
+    }
+
+    matches!(
+        token,
+        "linux"
+            | "ubuntu"
+            | "debian"
+            | "fedora"
+            | "centos"
+            | "rhel"
+            | "alpine"
+            | "arch"
+            | "darwin"
+            | "mac"
+            | "macos"
+            | "macosx"
+            | "osx"
+            | "windows"
+            | "win"
+            | "win32"
+            | "win64"
+            | "mingw"
+            | "mingw32"
+            | "mingw64"
+            | "w64"
+            | "x86"
+            | "64"
+            | "x64"
+            | "amd64"
+            | "aarch64"
+            | "arm64"
+            | "arm"
+            | "armv6"
+            | "armv7"
+            | "i386"
+            | "i686"
+            | "ppc64"
+            | "ppc64le"
+            | "riscv64"
+            | "s390x"
+            | "gnu"
+            | "glibc"
+            | "musl"
+            | "msvc"
+            | "pc"
+            | "apple"
+            | "unknown"
+    )
 }
 
 /// Detects platform information from a URL
@@ -511,6 +640,8 @@ pub struct AssetMatcher {
     target_libc: Option<String>,
     /// Whether to avoid .app bundles
     no_app: bool,
+    /// Preferred primary executable/tool name for asset selection
+    preferred_name: Option<String>,
 }
 
 impl AssetMatcher {
@@ -530,6 +661,15 @@ impl AssetMatcher {
     /// Set whether to avoid .app bundles (prefer standalone CLI tools)
     pub fn with_no_app(mut self, no_app: bool) -> Self {
         self.no_app = no_app;
+        self
+    }
+
+    /// Prefer assets whose platform-stripped name matches the primary tool.
+    pub fn with_preferred_name(mut self, preferred_name: impl Into<String>) -> Self {
+        let preferred_name = preferred_name.into();
+        if !preferred_name.is_empty() {
+            self.preferred_name = Some(preferred_name);
+        }
         self
     }
 
@@ -578,7 +718,8 @@ impl AssetMatcher {
         let arch = self.target_arch.as_ref()?;
         Some(
             AssetPicker::with_libc(os.clone(), arch.clone(), self.target_libc.clone())
-                .with_no_app(self.no_app),
+                .with_no_app(self.no_app)
+                .with_preferred_name(self.preferred_name.clone().unwrap_or_default()),
         )
     }
 
@@ -1155,6 +1296,55 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
         let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
         let picked = picker.pick_best_asset(&assets).unwrap();
         assert_eq!(picked, "bun-linux-x64.zip");
+    }
+
+    #[test]
+    fn test_preferred_name_picks_primary_binary_over_related_archive() {
+        // opengrep ships both a primary CLI binary and an opengrep-core archive
+        // for the same platform. Prefer the asset whose platform-stripped name
+        // matches the repo/tool name.
+        let assets = vec![
+            "opengrep-core_osx_aarch64.tar.gz".to_string(),
+            "opengrep_osx_arm64".to_string(),
+        ];
+
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_preferred_name("opengrep");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "opengrep_osx_arm64");
+    }
+
+    #[test]
+    fn test_manylinux_and_musllinux_assets_are_linux_with_libc() {
+        let assets = vec![
+            "opengrep-core_linux_aarch64.tar.gz".to_string(),
+            "opengrep_manylinux_aarch64".to_string(),
+            "opengrep_musllinux_aarch64".to_string(),
+        ];
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None)
+            .with_preferred_name("opengrep");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "opengrep_manylinux_aarch64");
+
+        let picker = AssetPicker::with_libc(
+            "linux".to_string(),
+            "aarch64".to_string(),
+            Some("musl".to_string()),
+        )
+        .with_preferred_name("opengrep");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "opengrep_musllinux_aarch64");
+    }
+
+    #[test]
+    fn test_preferred_name_handles_tar_and_split_platform_tokens() {
+        let assets = vec!["tool-mingw-w64-x86_64.tar".to_string()];
+
+        let picker = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("tool");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-mingw-w64-x86_64.tar");
     }
 
     #[test]
