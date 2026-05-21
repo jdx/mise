@@ -2789,6 +2789,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_resolve_tool_opts_prefers_s3_listing_config_over_install_manifest_opts()
+    -> Result<()> {
+        crate::toolset::install_state::init().await?;
+
+        let source = crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml"));
+        let config_ba = Arc::new(BackendArg::from("s3:manifest-opts"));
+        let config_opts = crate::toolset::parse_tool_options(
+            "version_prefix=current/,version_regex=current-(.*)",
+        );
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(
+            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            &source,
+        );
+
+        let mut manifest_opts = BTreeMap::new();
+        manifest_opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("manifest/".to_string()),
+        );
+        manifest_opts.insert(
+            "version_regex".to_string(),
+            toml::Value::String("manifest-(.*)".to_string()),
+        );
+        manifest_opts.insert(
+            "endpoint".to_string(),
+            toml::Value::String("https://manifest.example".to_string()),
+        );
+        let ba = Arc::new(BackendArg::from(
+            crate::toolset::install_state::InstallStateTool {
+                short: "s3:manifest-opts".to_string(),
+                full: Some("s3:manifest-opts".to_string()),
+                versions: vec!["1.0.0".to_string()],
+                explicit_backend: true,
+                opts: manifest_opts,
+                installs_path: None,
+            },
+        ));
+
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
+        };
+        config.tool_request_set.set(trs).ok();
+        let config = Arc::new(config);
+
+        let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
+        let opts = resolved.options();
+
+        assert_eq!(opts.get("version_prefix"), Some("current/"));
+        assert_eq!(
+            resolved.source_for_key("version_prefix"),
+            Some(crate::toolset::ToolOptionSource::Config)
+        );
+        assert_eq!(opts.get("version_regex"), Some("current-(.*)"));
+        assert_eq!(
+            resolved.source_for_key("version_regex"),
+            Some(crate::toolset::ToolOptionSource::Config)
+        );
+        assert_eq!(opts.get("endpoint"), Some("https://manifest.example"));
+        assert_eq!(
+            resolved.source_for_key("endpoint"),
+            Some(crate::toolset::ToolOptionSource::InstallManifest)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_resolve_tool_opts_prefers_env_backend_override_over_alias_opts() -> Result<()> {
         unsafe {
             std::env::set_var("MISE_BACKENDS_ENV_OPTS_TEST", "github:env/repo[foo=env]");
