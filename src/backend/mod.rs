@@ -2165,16 +2165,29 @@ pub trait Backend: Debug + Send + Sync {
         // the shim for the dependency would call `mise exec` which would call the
         // shim again infinitely.
         //
+        // Both the user shims dir (`dirs::SHIMS`) and the system shims dir
+        // (`MISE_SYSTEM_DATA_DIR/shims`) must be filtered: in devcontainer/Docker
+        // setups that install tools with `mise install --system`, both directories
+        // are on PATH. Filtering only the user dir leaves the system shim in
+        // place, the npm backend's `npm view` call finds it, and the recursion
+        // reappears via the system shim. Mirrors the dual-dir guard in
+        // `shims::which_shim` (#8816).
+        //
         // `paths_eq` handles case-insensitive matching on macOS/Windows: e.g. if
         // `$HOME` is mixed-case in PATH (`/Users/Foo`) but lowercase in the
         // resolved shims path, byte-equal comparison would miss it and the shim
         // would survive in the child env.
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
+            let sys_shims = env::MISE_SYSTEM_DATA_DIR.join("shims");
             let paths: Vec<_> = env::split_paths(path_val).collect();
             let original_len = paths.len();
             let filtered: Vec<_> = paths
                 .into_iter()
-                .filter(|p| !file::paths_eq(&file::replace_path(p), &dirs::SHIMS))
+                .filter(|p| {
+                    let resolved = file::replace_path(p);
+                    !file::paths_eq(&resolved, &dirs::SHIMS)
+                        && !file::paths_eq(&resolved, &sys_shims)
+                })
                 .collect();
             if filtered.len() != original_len {
                 let joined = env::join_paths(&filtered)?;
