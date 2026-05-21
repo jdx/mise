@@ -7,6 +7,7 @@ function PLUGIN:Available(ctx)
     local resp, err = http.get({
         url = util.SEARCH_URL,
     })
+    print(err)
     if err ~= nil or resp.status_code ~= 200 then
         return {}
     end

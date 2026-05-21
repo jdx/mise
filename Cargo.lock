@@ -5330,7 +5330,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.5.12"
+version = "2026.5.13"
 dependencies = [
  "age",
  "aho-corasick",
@@ -9738,7 +9738,7 @@ dependencies = [
 
 [[package]]
 name = "vfox"
-version = "2026.3.0"
+version = "2026.5.0"
 dependencies = [
  "clap",
  "env_logger",
