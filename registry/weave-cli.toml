@@ -21,3 +21,4 @@ asset_pattern = "weave-cli-x86_64-apple-darwin.tar.gz"
 
 [backends.options.platforms.windows-x64]
 asset_pattern = "weave-cli-x86_64-pc-windows-msvc.zip"
+bin = "weave.exe"
