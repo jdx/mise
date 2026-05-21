@@ -1,0 +1,3 @@
+backends = ["github:Staffbase/gq"]
+description = "CLI and MCP server for querying logs and metrics via Grafana's datasource proxy"
+test = { cmd = "gq version", expected = "gq {{version}}" }
