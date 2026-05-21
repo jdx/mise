@@ -31,11 +31,14 @@ export PATH="$MISE_SYSTEM_DATA_DIR/shims:$PATH"
 
 # Configure an npm:* backend tool + node uninstalled, so the npm backend's
 # _list_remote_versions runs `npm view ... --json` and the only `npm` on
-# PATH is the system shim we just planted.
+# PATH is the system shim we just planted. Use a real-but-uninstalled node
+# version (matches the pattern in test_go_shim_recursion using
+# `go = "1.23.3"`) — picking a non-existent version like `99.0.0` would risk
+# `mise ls` failing on version resolution and masking a fork-bomb regression.
 cat >>mise.toml <<'EOF'
 [tools]
 "npm:left-pad" = "latest"
-node = "99.0.0"
+node = "22.0.0"
 EOF
 mise trust --yes
 
@@ -50,8 +53,11 @@ mise cache clear
 # With the fix: both shim dirs are stripped, no `npm` is reachable in the
 # dependency PATH, `npm view` fails cleanly, mise reports the resolution
 # failure and exits.
-output="$(run_with_timeout 15 mise ls --json -c)" || {
-  echo "ERROR: mise ls timed out or failed (likely infinite recursion fork bomb via system shims dir)"
-  exit 1
-}
+#
+# `|| true` keeps the test focused on "no fork bomb" rather than "ls returns
+# zero" — `mise ls` may exit non-zero when npm:left-pad's version resolution
+# fails (the expected failure when shims are stripped), and we don't want
+# that to be confused with a recursion regression. The `assert_contains`
+# on the actual output still verifies mise made it past resolution.
+output="$(run_with_timeout 15 mise ls --json -c || true)"
 assert_contains "echo '$output'" '"node"'
