@@ -1,0 +1,23 @@
+description = "Semantic merge tool for code — git merge driver"
+test = { cmd = "weave-driver --version", expected = "{{version}}" }
+
+[[backends]]
+full = "github:Ataraxy-Labs/weave"
+
+[backends.options]
+bin = "weave-driver"
+
+[backends.options.platforms.linux-x64]
+asset_pattern = "weave-driver-x86_64-unknown-linux-gnu.tar.gz"
+
+[backends.options.platforms.linux-arm64]
+asset_pattern = "weave-driver-aarch64-unknown-linux-gnu.tar.gz"
+
+[backends.options.platforms.macos-arm64]
+asset_pattern = "weave-driver-aarch64-apple-darwin.tar.gz"
+
+[backends.options.platforms.macos-x64]
+asset_pattern = "weave-driver-x86_64-apple-darwin.tar.gz"
+
+[backends.options.platforms.windows-x64]
+asset_pattern = "weave-driver-x86_64-pc-windows-msvc.zip"
