@@ -327,9 +327,7 @@ impl AssetPicker {
     }
 
     fn has_arch_mismatch(&self, asset: &str) -> bool {
-        ARCH_PATTERNS.iter().any(|(arch, pattern)| {
-            pattern.is_match(asset) && !arch.matches_target(&self.target_arch)
-        })
+        self.score_arch_match(asset) < 0
     }
 
     fn score_libc_match(&self, asset: &str) -> i32 {
