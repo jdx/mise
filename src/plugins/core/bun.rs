@@ -393,7 +393,17 @@ impl BunPlugin {
             .or_else(|| version.strip_prefix('v'))
             .unwrap_or(version);
 
-        Versioning::new(version) >= Versioning::new(WINDOWS_ARM64_NATIVE_ARCHIVE_VERSION)
+        let Some(version) = Versioning::new(version) else {
+            // The historical x64-baseline fallback only applies to concrete
+            // releases before 1.3.10. If a non-semver ref ever reaches here
+            // (for example a channel/tag), prefer the native Windows ARM64
+            // archive instead of silently forcing x64 emulation.
+            return true;
+        };
+
+        version
+            >= Versioning::new(WINDOWS_ARM64_NATIVE_ARCHIVE_VERSION)
+                .expect("Windows ARM64 native archive cutoff must be a valid version")
     }
 
     /// Check if the current system has AVX2 support (runtime detection)
@@ -486,7 +496,9 @@ mod tests {
         for (version, expected) in [
             ("1.3.9", "bun-windows-x64-baseline.zip"),
             ("1.3.10", "bun-windows-aarch64.zip"),
+            ("v1.3.10", "bun-windows-aarch64.zip"),
             ("bun-v1.3.10", "bun-windows-aarch64.zip"),
+            ("canary", "bun-windows-aarch64.zip"),
         ] {
             assert_eq!(
                 BunPlugin::bun_asset_filename(&target("windows-arm64"), version),
