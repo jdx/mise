@@ -280,6 +280,7 @@ impl Backend for BunPlugin {
         // - macos-x64: x64, x64-baseline
         // - macos-arm64: aarch64
         // - windows-x64: x64, x64-baseline
+        // - windows-arm64: aarch64
 
         // If the platform already has a qualifier, it's already a specific variant
         // Don't expand it to avoid duplicates
@@ -446,9 +447,6 @@ impl BunPlugin {
             "arm64" => {
                 if Self::is_musl() {
                     "aarch64-musl".to_string()
-                } else if os == "windows" {
-                    // Bun has no native windows-arm64 build; fall back to x64 under emulation
-                    "x64-baseline".to_string()
                 } else {
                     "aarch64".to_string()
                 }
