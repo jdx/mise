@@ -82,6 +82,7 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
+    ToolOptionSource::InstallManifest,
     ToolOptionSource::BackendAlias,
     ToolOptionSource::Config,
     ToolOptionSource::InlineBackendArg,
@@ -498,6 +499,24 @@ mod tests {
         resolved.apply_overrides(&opts, ToolOptionSource::Registry);
 
         assert!(!has_local_version_listing_option_override(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
+    }
+
+    #[test]
+    fn test_remote_version_listing_opts_include_install_manifest_sources() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource, ToolVersionOptions};
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("release-".into()),
+        );
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&opts, ToolOptionSource::InstallManifest);
+
+        assert!(has_local_version_listing_option_override(
             &resolved,
             &["api_url", "version_prefix"],
         ));

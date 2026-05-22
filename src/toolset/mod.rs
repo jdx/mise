@@ -171,16 +171,23 @@ impl Toolset {
     }
 
     pub async fn list_installed_versions(&self, _config: &Arc<Config>) -> Result<Vec<TVTuple>> {
-        let current_versions: HashMap<(String, String), TVTuple> = self
+        let current_versions: HashMap<(PathBuf, String), TVTuple> = self
             .list_current_versions()
             .into_iter()
-            .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
+            .map(|(p, tv)| {
+                (
+                    (p.ba().installs_path.clone(), tv.version.clone()),
+                    (p.clone(), tv),
+                )
+            })
             .collect();
         let current_versions = Arc::new(current_versions);
         let mut versions = vec![];
-        for b in backend::list().into_iter() {
+        for b in self.list_backends_for_installed_version_listing() {
             for v in b.list_installed_versions() {
-                if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
+                if let Some((p, tv)) =
+                    current_versions.get(&(b.ba().installs_path.clone(), v.clone()))
+                {
                     versions.push((p.clone(), tv.clone()));
                 } else {
                     // The version string came from an on-disk install directory,
@@ -205,6 +212,30 @@ impl Toolset {
             }
         }
         Ok(versions)
+    }
+
+    pub(crate) fn list_cached_and_current_backends(&self) -> backend::BackendList {
+        // Backends with explicit tool options intentionally bypass the global
+        // backend cache. Prefer current toolset backends so same-process
+        // rebuilds keep configured options like bin_path and asset_pattern.
+        self.list_current_versions()
+            .into_iter()
+            .map(|(backend, _)| backend)
+            .chain(backend::list())
+            .unique_by(|backend| backend.ba().installs_path.clone())
+            .collect()
+    }
+
+    fn list_backends_for_installed_version_listing(&self) -> backend::BackendList {
+        // Path-based deduping is correct for install-dir rebuilds, but installed
+        // versions are keyed by backend short name in install_state. vfox file://
+        // plugins create a generated plugin backend and a file-url backend with
+        // the same install path, and the file-url backend owns the versions.
+        self.list_cached_and_current_backends()
+            .into_iter()
+            .chain(backend::list())
+            .unique_by(|backend| backend.ba().short.clone())
+            .collect()
     }
 
     pub fn list_current_requests(&self) -> Vec<&ToolRequest> {
