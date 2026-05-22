@@ -209,7 +209,11 @@ impl Watch {
                             break;
                         }
                     }
-                    cfg
+                    if cfg.as_os_str().is_empty() {
+                        common
+                    } else {
+                        cfg
+                    }
                 }
                 (Some(cfg), None) => cfg,
                 (None, Some(common)) => common,
@@ -353,10 +357,17 @@ fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
     } else {
         cwd.join(rest)
     };
-    let relative = absolute
-        .strip_prefix(anchor)
-        .map(|p| p.to_path_buf())
-        .unwrap_or(absolute);
+    let relative = match absolute.strip_prefix(anchor) {
+        Ok(p) => p.to_path_buf(),
+        Err(_) => {
+            debug!(
+                "watch source {} is outside filter anchor {}; watchexec will silently drop it",
+                absolute.display(),
+                anchor.display()
+            );
+            absolute
+        }
+    };
     let relative = relative.to_string_lossy();
     match kind {
         Kind::Negation => format!("!{relative}"),
