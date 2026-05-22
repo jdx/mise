@@ -25,6 +25,8 @@ use crate::{
 };
 use crate::{file, github, plugins};
 
+const WINDOWS_ARM64_NATIVE_ARCHIVE_VERSION: &str = "1.3.10";
+
 #[derive(Debug)]
 pub struct BunPlugin {
     ba: Arc<BackendArg>,
@@ -55,7 +57,7 @@ impl BunPlugin {
             "https://github.com/oven-sh/bun/releases/download/bun-v{}/bun-{}-{}.zip",
             tv.version,
             os(),
-            arch()
+            arch(&tv.version)
         );
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
@@ -74,7 +76,7 @@ impl BunPlugin {
         file::unzip(tarball_path, &tv.download_path(), &Default::default())?;
         file::move_file(
             tv.download_path()
-                .join(format!("bun-{}-{}", os(), arch()))
+                .join(format!("bun-{}-{}", os(), arch(&tv.version)))
                 .join(bun_bin_name()),
             self.bun_bin(tv),
         )?;
@@ -222,9 +224,7 @@ impl Backend for BunPlugin {
 
         // Build the asset pattern for Bun's GitHub releases
         // Pattern: bun-{os}-{arch}.zip (where arch may include variants like -musl, -baseline)
-        let os_name = Self::map_os_to_bun(target.os_name());
-        let arch_name = Self::get_bun_arch_for_target(target);
-        let asset_pattern = format!("bun-{os_name}-{arch_name}.zip");
+        let asset_pattern = Self::bun_asset_filename(target, version);
 
         Ok(Some(GitHubReleaseInfo {
             repo: "oven-sh/bun".to_string(),
@@ -244,9 +244,7 @@ impl Backend for BunPlugin {
         let version = &tv.version;
 
         // Build platform-specific filename
-        let os_name = Self::map_os_to_bun(target.os_name());
-        let arch_name = Self::get_bun_arch_for_target(target);
-        let filename = format!("bun-{os_name}-{arch_name}.zip");
+        let filename = Self::bun_asset_filename(target, version);
 
         // Build download URL
         let url =
@@ -354,22 +352,48 @@ impl BunPlugin {
         }
     }
 
-    /// Get the full Bun arch string for a target platform
-    /// This handles musl, baseline, and other variants based on platform qualifiers
-    fn get_bun_arch_for_target(target: &PlatformTarget) -> String {
-        let base_arch = Self::map_arch_to_bun(target.arch_name());
+    fn bun_asset_filename(target: &PlatformTarget, version: &str) -> String {
+        let os_name = Self::map_os_to_bun(target.os_name());
+        let arch_name = Self::get_bun_arch_for_target(target, version);
+        format!("bun-{os_name}-{arch_name}.zip")
+    }
 
-        // Handle qualifiers like musl, baseline, etc.
-        if let Some(qualifier) = target.qualifier() {
-            match qualifier {
-                "musl" => format!("{}-musl", base_arch),
-                "musl-baseline" => format!("{}-musl-baseline", base_arch),
-                "baseline" => format!("{}-baseline", base_arch),
-                other => format!("{}-{}", base_arch, other),
+    /// Get the full Bun arch string for a target platform.
+    ///
+    /// This handles Bun's platform qualifiers (musl, baseline, etc.) and the
+    /// Windows ARM64 release cutover. Bun started publishing native Windows
+    /// ARM64 archives as `bun-windows-aarch64.zip` in 1.3.10; older releases
+    /// only provide x64 Windows builds, so Windows ARM64 uses x64-baseline
+    /// under emulation for those versions.
+    fn get_bun_arch_for_target(target: &PlatformTarget, version: &str) -> String {
+        match (target.os_name(), target.arch_name()) {
+            ("windows", "arm64") if !Self::has_native_windows_arm64_archive(version) => {
+                "x64-baseline".to_string()
             }
-        } else {
-            base_arch.to_string()
+            (_, arch) => Self::bun_arch_with_qualifier(
+                Self::map_arch_to_bun(arch),
+                target.qualifier(),
+            ),
         }
+    }
+
+    fn bun_arch_with_qualifier(base_arch: &str, qualifier: Option<&str>) -> String {
+        match qualifier {
+            Some("musl") => format!("{base_arch}-musl"),
+            Some("musl-baseline") => format!("{base_arch}-musl-baseline"),
+            Some("baseline") => format!("{base_arch}-baseline"),
+            Some(other) => format!("{base_arch}-{other}"),
+            None => base_arch.to_string(),
+        }
+    }
+
+    fn has_native_windows_arm64_archive(version: &str) -> bool {
+        let version = version
+            .strip_prefix("bun-v")
+            .or_else(|| version.strip_prefix('v'))
+            .unwrap_or(version);
+
+        Versioning::new(version) >= Versioning::new(WINDOWS_ARM64_NATIVE_ARCHIVE_VERSION)
     }
 
     /// Check if the current system has AVX2 support (runtime detection)
@@ -426,33 +450,17 @@ impl BunPlugin {
 
     /// Get the full Bun arch string with variants (musl, baseline, etc.)
     /// Uses Settings::get().arch() to respect MISE_ARCH overrides and runtime AVX2 detection
-    fn get_bun_arch_with_variants() -> String {
+    fn get_bun_arch_with_variants(version: &str) -> String {
+        Self::get_bun_arch_for_target(&Self::current_platform_target(), version)
+    }
+
+    fn current_platform_target() -> PlatformTarget {
         let settings = Settings::get();
-        let arch = settings.arch();
-        let os = settings.os();
-        match arch {
-            "x64" => {
-                if Self::is_musl() {
-                    if Self::has_avx2() {
-                        "x64-musl".to_string()
-                    } else {
-                        "x64-musl-baseline".to_string()
-                    }
-                } else if Self::has_avx2() {
-                    "x64".to_string()
-                } else {
-                    "x64-baseline".to_string()
-                }
-            }
-            "arm64" => {
-                if Self::is_musl() {
-                    "aarch64-musl".to_string()
-                } else {
-                    "aarch64".to_string()
-                }
-            }
-            other => other.to_string(),
-        }
+        PlatformTarget::new(Platform {
+            os: settings.os().to_string(),
+            arch: settings.arch().to_string(),
+            qualifier: Self::get_platform_variant().map(str::to_string),
+        })
     }
 }
 
@@ -461,8 +469,58 @@ fn os() -> String {
     BunPlugin::map_os_to_bun(settings.os()).to_string()
 }
 
-fn arch() -> String {
-    BunPlugin::get_bun_arch_with_variants()
+fn arch(version: &str) -> String {
+    BunPlugin::get_bun_arch_with_variants(version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn target(platform: &str) -> PlatformTarget {
+        PlatformTarget::new(Platform::parse(platform).unwrap())
+    }
+
+    #[test]
+    fn windows_arm64_asset_filename_matches_bun_release_cutover() {
+        for (version, expected) in [
+            ("1.3.9", "bun-windows-x64-baseline.zip"),
+            ("1.3.10", "bun-windows-aarch64.zip"),
+            ("bun-v1.3.10", "bun-windows-aarch64.zip"),
+        ] {
+            assert_eq!(
+                BunPlugin::bun_asset_filename(&target("windows-arm64"), version),
+                expected,
+                "unexpected Windows ARM64 asset for Bun {version}"
+            );
+        }
+    }
+
+    #[test]
+    fn bun_asset_filename_preserves_platform_variants() {
+        for (platform, expected) in [
+            ("linux-x64", "bun-linux-x64.zip"),
+            ("linux-x64-baseline", "bun-linux-x64-baseline.zip"),
+            ("linux-x64-musl", "bun-linux-x64-musl.zip"),
+            (
+                "linux-x64-musl-baseline",
+                "bun-linux-x64-musl-baseline.zip",
+            ),
+            ("linux-arm64", "bun-linux-aarch64.zip"),
+            ("linux-arm64-musl", "bun-linux-aarch64-musl.zip"),
+            ("macos-x64", "bun-darwin-x64.zip"),
+            ("macos-x64-baseline", "bun-darwin-x64-baseline.zip"),
+            ("macos-arm64", "bun-darwin-aarch64.zip"),
+            ("windows-x64", "bun-windows-x64.zip"),
+            ("windows-x64-baseline", "bun-windows-x64-baseline.zip"),
+        ] {
+            assert_eq!(
+                BunPlugin::bun_asset_filename(&target(platform), "1.3.14"),
+                expected,
+                "unexpected asset for {platform}"
+            );
+        }
+    }
 }
 
 fn bun_bin_name() -> &'static str {
