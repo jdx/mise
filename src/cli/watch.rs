@@ -3,9 +3,11 @@ use crate::cli::Cli;
 use crate::cli::args::BackendArg;
 use crate::cmd;
 use crate::config::Config;
+use crate::dirs;
 use crate::env;
 use crate::exit::exit;
 use crate::task::Deps;
+use crate::task::task_source_checker::task_cwd;
 use crate::toolset::ToolsetBuilder;
 use clap::{CommandFactory, ValueEnum, ValueHint};
 use console::style;
@@ -13,7 +15,7 @@ use eyre::bail;
 use itertools::Itertools;
 use std::cmp::PartialEq;
 use std::iter::once;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Run task(s) and watch for changes to rerun it
 ///
@@ -180,8 +182,16 @@ impl Watch {
             args.push("--watch-file".to_string());
             args.push(watch_file.to_string_lossy().to_string());
         }
-        let (globs, ignores) = if !self.glob.is_empty() {
-            (self.glob.clone(), Vec::new())
+        // The anchor is the common ancestor of all watch paths, either
+        // the monorepo root, the project root, or cwd. This is used by
+        // watchexec as an explicit --project-origin
+        let anchor_root = config.monorepo_root().or_else(|| config.project_root.clone());
+        let has_anchor = anchor_root.is_some();
+        let filter_anchor: PathBuf = anchor_root
+            .or_else(|| dirs::CWD.clone())
+            .unwrap_or_default();
+        let (globs, ignores, extra_watch_dirs) = if !self.glob.is_empty() {
+            (self.glob.clone(), Vec::new(), Vec::new())
         } else {
             let collected: Vec<_> = if self.skip_deps {
                 tasks.to_vec()
@@ -189,8 +199,37 @@ impl Watch {
                 let deps = Deps::new(&config, tasks.clone()).await?;
                 deps.all().cloned().collect()
             };
-            merge_watch_patterns(collected.iter().map(|t| t.sources.as_slice()))
+            // Resolve each task's sources relative to the filter_anchor.
+            // Otherwise, watchexec is given a bunch of relative paths out of
+            // context.
+            let mut resolved: Vec<Vec<String>> = Vec::with_capacity(collected.len());
+            let mut watch_dirs: Vec<PathBuf> = Vec::with_capacity(collected.len());
+            for t in &collected {
+                let cwd = task_cwd(t, &config).await?;
+                resolved.push(
+                    t.sources
+                        .iter()
+                        .map(|s| resolve_source(s, &cwd, &filter_anchor))
+                        .collect(),
+                );
+                watch_dirs.push(cwd);
+            }
+            let watch_dirs: Vec<PathBuf> = watch_dirs.into_iter().unique().collect();
+            let (i, e) = merge_watch_patterns(resolved.iter().map(|v| v.as_slice()));
+            (i, e, watch_dirs)
         };
+        if has_anchor {
+            args.push("--project-origin".to_string());
+            args.push(filter_anchor.to_string_lossy().to_string());
+        }
+        // Always include each task's cwd as a watch path
+        for path in &extra_watch_dirs {
+            if self.watchexec.recursive_paths.contains(path) {
+                continue;
+            }
+            args.push("--watch".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
         if !globs.is_empty() {
             args.push("-f".to_string());
             args.extend(itertools::intersperse(globs, "-f".to_string()).collect::<Vec<_>>());
@@ -255,6 +294,39 @@ impl Watch {
             .find(|s| s.get_name() == "watch")
             .unwrap()
             .clone()
+    }
+}
+
+/// Resolve a source pattern relative to an anchor, taking
+/// into account negations and escaped negations.
+fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
+    enum Kind {
+        Negation,
+        LiteralBang,
+        Plain,
+    }
+    let (kind, rest) = if let Some(r) = s.strip_prefix('!') {
+        (Kind::Negation, r)
+    } else if s.starts_with("\\!") {
+        (Kind::LiteralBang, &s[1..])
+    } else {
+        (Kind::Plain, s)
+    };
+    let p = Path::new(rest);
+    let absolute = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        cwd.join(rest)
+    };
+    let relative = absolute
+        .strip_prefix(anchor)
+        .map(|p| p.to_path_buf())
+        .unwrap_or(absolute);
+    let relative = relative.to_string_lossy();
+    match kind {
+        Kind::Negation => format!("!{relative}"),
+        Kind::LiteralBang if relative.starts_with('!') => format!("\\{relative}"),
+        Kind::LiteralBang | Kind::Plain => relative.into_owned(),
     }
 }
 
@@ -1259,7 +1331,8 @@ pub enum ColourMode {
 
 #[cfg(test)]
 mod tests {
-    use super::merge_watch_patterns;
+    use super::{merge_watch_patterns, resolve_source};
+    use std::path::Path;
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
@@ -1306,6 +1379,22 @@ mod tests {
         assert!(
             !exc.contains(&"src/**/*.test.ts".to_string()),
             "exc should not contain a pattern that any task positively includes; got {exc:?}",
+        );
+    }
+
+    #[test]
+    fn resolve_preserves_literal_bang_escape_at_anchor() {
+        let anchor = Path::new("/repo");
+        assert_eq!(resolve_source("\\!keep.txt", anchor, anchor), "\\!keep.txt");
+    }
+
+    #[test]
+    fn resolve_drops_literal_bang_escape_when_no_longer_ambiguous() {
+        let anchor = Path::new("/repo");
+        let cwd = Path::new("/repo/packages/foo");
+        assert_eq!(
+            resolve_source("\\!keep.txt", cwd, anchor),
+            "packages/foo/!keep.txt",
         );
     }
 }
