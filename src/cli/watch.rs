@@ -182,16 +182,12 @@ impl Watch {
             args.push("--watch-file".to_string());
             args.push(watch_file.to_string_lossy().to_string());
         }
-        // The anchor is the common ancestor of all watch paths, either
-        // the monorepo root, the project root, or cwd. This is used by
-        // watchexec as an explicit --project-origin
-        let anchor_root = config.monorepo_root().or_else(|| config.project_root.clone());
-        let has_anchor = anchor_root.is_some();
-        let filter_anchor: PathBuf = anchor_root
-            .or_else(|| dirs::CWD.clone())
-            .unwrap_or_default();
-        let (globs, ignores, extra_watch_dirs) = if !self.glob.is_empty() {
-            (self.glob.clone(), Vec::new(), Vec::new())
+        // Filter anchor: the path that --project-origin is set to and that
+        // every glob filter is made relative to. watchexec interprets -f
+        // patterns relative to the origin and silently rejects absolute
+        // paths, so the anchor must be an ancestor of every task cwd.
+        let (globs, ignores, extra_watch_dirs, filter_anchor) = if !self.glob.is_empty() {
+            (self.glob.clone(), Vec::new(), Vec::new(), None)
         } else {
             let collected: Vec<_> = if self.skip_deps {
                 tasks.to_vec()
@@ -199,28 +195,46 @@ impl Watch {
                 let deps = Deps::new(&config, tasks.clone()).await?;
                 deps.all().cloned().collect()
             };
-            // Resolve each task's sources relative to the filter_anchor.
-            // Otherwise, watchexec is given a bunch of relative paths out of
-            // context.
-            let mut resolved: Vec<Vec<String>> = Vec::with_capacity(collected.len());
-            let mut watch_dirs: Vec<PathBuf> = Vec::with_capacity(collected.len());
+            let mut task_cwds: Vec<(&_, PathBuf)> = Vec::with_capacity(collected.len());
             for t in &collected {
                 let cwd = task_cwd(t, &config).await?;
-                resolved.push(
+                task_cwds.push((t, cwd));
+            }
+            let configured = config.monorepo_root().or_else(|| config.project_root.clone());
+            let common = common_ancestor(task_cwds.iter().map(|(_, c)| c.clone()));
+            let anchor: PathBuf = match (configured, common) {
+                (Some(mut cfg), Some(common)) => {
+                    while !common.starts_with(&cfg) {
+                        if !cfg.pop() {
+                            break;
+                        }
+                    }
+                    cfg
+                }
+                (Some(cfg), None) => cfg,
+                (None, Some(common)) => common,
+                (None, None) => dirs::CWD.clone().unwrap_or_default(),
+            };
+            let resolved: Vec<Vec<String>> = task_cwds
+                .iter()
+                .map(|(t, cwd)| {
                     t.sources
                         .iter()
-                        .map(|s| resolve_source(s, &cwd, &filter_anchor))
-                        .collect(),
-                );
-                watch_dirs.push(cwd);
-            }
-            let watch_dirs: Vec<PathBuf> = watch_dirs.into_iter().unique().collect();
+                        .map(|s| resolve_source(s, cwd, &anchor))
+                        .collect()
+                })
+                .collect();
+            let watch_dirs: Vec<PathBuf> = task_cwds
+                .into_iter()
+                .map(|(_, c)| c)
+                .unique()
+                .collect();
             let (i, e) = merge_watch_patterns(resolved.iter().map(|v| v.as_slice()));
-            (i, e, watch_dirs)
+            (i, e, watch_dirs, Some(anchor))
         };
-        if has_anchor {
+        if let Some(anchor) = &filter_anchor {
             args.push("--project-origin".to_string());
-            args.push(filter_anchor.to_string_lossy().to_string());
+            args.push(anchor.to_string_lossy().to_string());
         }
         // Always include each task's cwd as a watch path
         for path in &extra_watch_dirs {
@@ -295,6 +309,27 @@ impl Watch {
             .unwrap()
             .clone()
     }
+}
+
+/// Longest path that is a prefix of every input path. Returns `None` for
+/// an empty iterator.
+fn common_ancestor<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<PathBuf> {
+    let mut iter = paths.into_iter();
+    let first = iter.next()?;
+    let mut acc: Vec<std::ffi::OsString> = first
+        .components()
+        .map(|c| c.as_os_str().to_os_string())
+        .collect();
+    for p in iter {
+        let comps: Vec<_> = p.components().map(|c| c.as_os_str()).collect();
+        let n = acc
+            .iter()
+            .zip(comps.iter())
+            .take_while(|(a, b)| a.as_os_str() == **b)
+            .count();
+        acc.truncate(n);
+    }
+    Some(acc.iter().collect())
 }
 
 /// Resolve a source pattern relative to an anchor, taking
@@ -1331,8 +1366,8 @@ pub enum ColourMode {
 
 #[cfg(test)]
 mod tests {
-    use super::{merge_watch_patterns, resolve_source};
-    use std::path::Path;
+    use super::{common_ancestor, merge_watch_patterns, resolve_source};
+    use std::path::{Path, PathBuf};
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
@@ -1396,5 +1431,33 @@ mod tests {
             resolve_source("\\!keep.txt", cwd, anchor),
             "packages/foo/!keep.txt",
         );
+    }
+
+    fn pb(s: &str) -> PathBuf {
+        PathBuf::from(s)
+    }
+
+    #[test]
+    fn common_ancestor_of_siblings_is_parent() {
+        let got = common_ancestor([pb("/repo/packages/foo"), pb("/repo/packages/bar")]);
+        assert_eq!(got, Some(pb("/repo/packages")));
+    }
+
+    #[test]
+    fn common_ancestor_of_nested_is_shorter() {
+        let got = common_ancestor([pb("/repo/a"), pb("/repo/a/b/c")]);
+        assert_eq!(got, Some(pb("/repo/a")));
+    }
+
+    #[test]
+    fn common_ancestor_of_disjoint_is_root() {
+        let got = common_ancestor([pb("/x/a"), pb("/y/b")]);
+        assert_eq!(got, Some(pb("/")));
+    }
+
+    #[test]
+    fn common_ancestor_empty_is_none() {
+        let got = common_ancestor(std::iter::empty());
+        assert_eq!(got, None);
     }
 }
