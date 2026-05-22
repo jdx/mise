@@ -84,9 +84,9 @@ impl Platform {
 
         // Validate architecture
         match self.arch.as_str() {
-            "x64" | "arm64" | "x86" => {}
+            "x64" | "arm64" | "x86" | "loongarch64" | "riscv64" => {}
             _ => bail!(
-                "Unsupported architecture '{}'. Supported: x64, arm64, x86",
+                "Unsupported architecture '{}'. Supported: x64, arm64, x86, loongarch64, riscv64",
                 self.arch
             ),
         }
