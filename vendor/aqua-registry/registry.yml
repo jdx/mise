@@ -7639,6 +7639,26 @@ packages:
       - name: go-timeout
         src: timeout_{{.Version}}_{{.OS}}_{{.Arch}}/go-timeout
   - type: github_release
+    repo_owner: Staffbase
+    repo_name: gq
+    description: CLI and MCP server for querying logs and metrics via Grafana datasource proxy
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gq_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: Stranger6667
     repo_name: jsonschema
     description: A high-performance JSON Schema validator for Rust
@@ -68917,6 +68937,25 @@ packages:
         format: tar.gz
         files:
           - name: gog
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: openclaw
+    repo_name: wacli
+    description: WhatsApp in your terminal
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.10.0")
+        error_message: Please upgrade to version 0.10.0 or higher
+      - version_constraint: "true"
+        asset: wacli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
         checksum:
           type: github_release
           asset: checksums.txt
