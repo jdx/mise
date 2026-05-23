@@ -226,7 +226,7 @@ impl AssetPicker {
         let scored_assets = self.score_all_assets(assets);
         scored_assets
             .into_iter()
-            .filter(|(score, _)| *score > 0)
+            .filter(|(score, asset)| *score > 0 && !self.has_arch_mismatch(asset))
             .min_by(|(score_a, name_a), (score_b, name_b)| {
                 score_b
                     .cmp(score_a)
@@ -324,6 +324,10 @@ impl AssetPicker {
             }
         }
         0
+    }
+
+    fn has_arch_mismatch(&self, asset: &str) -> bool {
+        self.score_arch_match(asset) < 0
     }
 
     fn score_libc_match(&self, asset: &str) -> i32 {
@@ -1572,6 +1576,26 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             "Architecture mismatch should result in negative score, got {}",
             score
         );
+    }
+
+    #[test]
+    fn test_arch_mismatch_rejected_after_positive_bonuses() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None)
+            .with_preferred_name("cargo-msrv");
+        let assets = vec![
+            "cargo-msrv-aarch64-apple-darwin-v0.19.3.tgz".to_string(),
+            "cargo-msrv-x86_64-apple-darwin-v0.19.3.tgz".to_string(),
+            "cargo-msrv-x86_64-pc-windows-msvc-v0.19.3.zip".to_string(),
+            "cargo-msrv-x86_64-unknown-linux-gnu-v0.19.3.tgz".to_string(),
+            "cargo-msrv-x86_64-unknown-linux-musl-v0.19.3.tgz".to_string(),
+        ];
+
+        let score = picker.score_asset("cargo-msrv-x86_64-unknown-linux-gnu-v0.19.3.tgz");
+        assert!(
+            score > 0,
+            "regression setup should cover wrong-arch assets rescued by bonuses, got {score}"
+        );
+        assert_eq!(picker.pick_best_asset(&assets), None);
     }
 
     #[test]

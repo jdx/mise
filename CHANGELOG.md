@@ -1,5 +1,48 @@
 # Changelog
 
+## [2026.5.15](https://github.com/jdx/mise/compare/v2026.5.14..v2026.5.15) - 2026-05-23
+
+### 🐛 Bug Fixes
+
+- allow loongarch64 and riscv64 as valid platform arches by @k0tran in [#10038](https://github.com/jdx/mise/pull/10038)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 96c55b3 by @renovate[bot] in [#10047](https://github.com/jdx/mise/pull/10047)
+- update ghcr.io/jdx/mise:rpm docker digest to b0e279b by @renovate[bot] in [#10049](https://github.com/jdx/mise/pull/10049)
+- update ghcr.io/jdx/mise:deb docker digest to a03ee45 by @renovate[bot] in [#10048](https://github.com/jdx/mise/pull/10048)
+- update docker/setup-buildx-action digest to d7f5e7f by @renovate[bot] in [#10050](https://github.com/jdx/mise/pull/10050)
+- update rattler by @renovate[bot] in [#10030](https://github.com/jdx/mise/pull/10030)
+
+### New Contributors
+
+- @k0tran made their first contribution in [#10038](https://github.com/jdx/mise/pull/10038)
+
+## [2026.5.14](https://github.com/jdx/mise/compare/v2026.5.13..v2026.5.14) - 2026-05-22
+
+### 🐛 Bug Fixes
+
+- reject wrong-arch release assets by @jdx in [#10018](https://github.com/jdx/mise/pull/10018)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:deb docker digest to fcb3768 by @renovate[bot] in [#10027](https://github.com/jdx/mise/pull/10027)
+- update docker/build-push-action digest to f9f3042 by @renovate[bot] in [#10024](https://github.com/jdx/mise/pull/10024)
+- update ghcr.io/jdx/mise:rpm docker digest to 5b2e369 by @renovate[bot] in [#10028](https://github.com/jdx/mise/pull/10028)
+- update docker/dockerfile:1 docker digest to 87999aa by @renovate[bot] in [#10025](https://github.com/jdx/mise/pull/10025)
+- update ghcr.io/jdx/mise:alpine docker digest to d2b3b40 by @renovate[bot] in [#10026](https://github.com/jdx/mise/pull/10026)
+- update zizmorcore/zizmor-action action to v0.5.4 by @renovate[bot] in [#10032](https://github.com/jdx/mise/pull/10032)
+- update rust docker digest to 0861191 by @renovate[bot] in [#10029](https://github.com/jdx/mise/pull/10029)
+- update docker/login-action digest to 650006c by @renovate[bot] in [#10040](https://github.com/jdx/mise/pull/10040)
+- update docker/metadata-action digest to 80c7e94 by @renovate[bot] in [#10041](https://github.com/jdx/mise/pull/10041)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`Staffbase/gq`](https://github.com/Staffbase/gq)
+- [`openclaw/wacli`](https://github.com/openclaw/wacli)
+
 ## [2026.5.13](https://github.com/jdx/mise/compare/v2026.5.12..v2026.5.13) - 2026-05-21
 
 ### 🚀 Features
