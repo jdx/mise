@@ -1,2 +1,3 @@
-backends = ["asdf:mise-plugins/mise-liquibase"]
+backends = ["github:liquibase/liquibase", "asdf:mise-plugins/mise-liquibase"]
 description = "Liquibase helps millions of developers track, version, and deploy database schema changes"
+test = { cmd = "liquibase --version", expected = "Liquibase Version: {{version}}" }
