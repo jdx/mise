@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026.5.15](https://github.com/jdx/mise/compare/v2026.5.14..v2026.5.15) - 2026-05-23
+
+### 🐛 Bug Fixes
+
+- allow loongarch64 and riscv64 as valid platform arches by @k0tran in [#10038](https://github.com/jdx/mise/pull/10038)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 96c55b3 by @renovate[bot] in [#10047](https://github.com/jdx/mise/pull/10047)
+- update ghcr.io/jdx/mise:rpm docker digest to b0e279b by @renovate[bot] in [#10049](https://github.com/jdx/mise/pull/10049)
+- update ghcr.io/jdx/mise:deb docker digest to a03ee45 by @renovate[bot] in [#10048](https://github.com/jdx/mise/pull/10048)
+- update docker/setup-buildx-action digest to d7f5e7f by @renovate[bot] in [#10050](https://github.com/jdx/mise/pull/10050)
+- update rattler by @renovate[bot] in [#10030](https://github.com/jdx/mise/pull/10030)
+
+### New Contributors
+
+- @k0tran made their first contribution in [#10038](https://github.com/jdx/mise/pull/10038)
+
 ## [2026.5.14](https://github.com/jdx/mise/compare/v2026.5.13..v2026.5.14) - 2026-05-22
 
 ### 🐛 Bug Fixes
