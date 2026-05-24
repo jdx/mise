@@ -205,50 +205,53 @@ impl Watch {
             // `..` or an absolute path.
             let parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
                 .iter()
-                .map(|(t, cwd)| {
-                    t.sources.iter().map(|s| parse_source(s, cwd)).collect()
-                })
+                .map(|(t, cwd)| t.sources.iter().map(|s| parse_source(s, cwd)).collect())
                 .collect();
-            let configured = config.monorepo_root().or_else(|| config.project_root.clone());
-            let common = common_ancestor(
-                task_cwds
-                    .iter()
-                    .map(|(_, c)| c.as_path())
-                    .chain(parsed.iter().flatten().map(|(_, p)| p.as_path())),
-            );
-            let anchor: PathBuf = match (configured, common) {
-                (Some(mut cfg), Some(common)) => {
-                    while !common.starts_with(&cfg) {
-                        if !cfg.pop() {
-                            break;
+            // If no task declared any sources, opt out of source-based
+            // watching entirely and let watchexec apply its defaults.
+            if parsed.iter().all(|v| v.is_empty()) {
+                (Vec::new(), Vec::new(), Vec::new(), None)
+            } else {
+                let configured = config
+                    .monorepo_root()
+                    .or_else(|| config.project_root.clone());
+                let common = common_ancestor(
+                    task_cwds
+                        .iter()
+                        .map(|(_, c)| c.as_path())
+                        .chain(parsed.iter().flatten().map(|(_, p)| p.as_path())),
+                );
+                let anchor: PathBuf = match (configured, common) {
+                    (Some(mut cfg), Some(common)) => {
+                        while !common.starts_with(&cfg) {
+                            if !cfg.pop() {
+                                break;
+                            }
+                        }
+                        if cfg.as_os_str().is_empty() {
+                            common
+                        } else {
+                            cfg
                         }
                     }
-                    if cfg.as_os_str().is_empty() {
-                        common
-                    } else {
-                        cfg
-                    }
-                }
-                (Some(cfg), None) => cfg,
-                (None, Some(common)) => common,
-                (None, None) => dirs::CWD.clone().unwrap_or_default(),
-            };
-            let resolved: Vec<Vec<String>> = parsed
-                .iter()
-                .map(|sources| {
-                    sources
-                        .iter()
-                        .map(|(k, abs)| relativize_source(*k, abs, &anchor))
-                        .collect()
-                })
-                .collect();
-            let watch_dirs: Vec<PathBuf> = task_cwds
-                .into_iter()
-                .map(|(_, c)| c)
-                .unique()
-                .collect();
-            let (i, e) = merge_watch_patterns(resolved.iter().map(|v| v.as_slice()));
-            (i, e, watch_dirs, Some(anchor))
+                    (Some(cfg), None) => cfg,
+                    (None, Some(common)) => common,
+                    (None, None) => dirs::CWD.clone().unwrap_or_default(),
+                };
+                let resolved: Vec<Vec<String>> = parsed
+                    .iter()
+                    .map(|sources| {
+                        sources
+                            .iter()
+                            .map(|(k, abs)| relativize_source(*k, abs, &anchor))
+                            .collect()
+                    })
+                    .collect();
+                let watch_dirs: Vec<PathBuf> =
+                    task_cwds.into_iter().map(|(_, c)| c).unique().collect();
+                let (i, e) = merge_watch_patterns(resolved.iter().map(|v| v.as_slice()));
+                (i, e, watch_dirs, Some(anchor))
+            }
         };
         if let Some(anchor) = &filter_anchor {
             args.push("--project-origin".to_string());
