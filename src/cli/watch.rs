@@ -364,7 +364,7 @@ fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
     let relative = match absolute.strip_prefix(anchor) {
         Ok(p) => p.to_path_buf(),
         Err(_) => {
-            debug!(
+            warn!(
                 "watch source {} is outside filter anchor {}; watchexec will silently drop it",
                 absolute.display(),
                 anchor.display()
