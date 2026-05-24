@@ -41,7 +41,6 @@ winget install jdx.mise
 ```
 
 ```shell [scoop]
-# https://github.com/ScoopInstaller/Main/pull/6374
 scoop install mise
 ```
 
