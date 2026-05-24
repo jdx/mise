@@ -201,7 +201,7 @@ impl Watch {
                 task_cwds.push((t, cwd));
             }
             let configured = config.monorepo_root().or_else(|| config.project_root.clone());
-            let common = common_ancestor(task_cwds.iter().map(|(_, c)| c.clone()));
+            let common = common_ancestor(task_cwds.iter().map(|(_, c)| c));
             let anchor: PathBuf = match (configured, common) {
                 (Some(mut cfg), Some(common)) => {
                     while !common.starts_with(&cfg) {
@@ -317,19 +317,23 @@ impl Watch {
 
 /// Longest path that is a prefix of every input path. Returns `None` for
 /// an empty iterator.
-fn common_ancestor<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<PathBuf> {
+fn common_ancestor<I, P>(paths: I) -> Option<PathBuf>
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<Path>,
+{
     let mut iter = paths.into_iter();
     let first = iter.next()?;
     let mut acc: Vec<std::ffi::OsString> = first
+        .as_ref()
         .components()
         .map(|c| c.as_os_str().to_os_string())
         .collect();
     for p in iter {
-        let comps: Vec<_> = p.components().map(|c| c.as_os_str()).collect();
         let n = acc
             .iter()
-            .zip(comps.iter())
-            .take_while(|(a, b)| a.as_os_str() == **b)
+            .zip(p.as_ref().components())
+            .take_while(|(a, b)| a.as_os_str() == b.as_os_str())
             .count();
         acc.truncate(n);
     }
@@ -1468,7 +1472,7 @@ mod tests {
 
     #[test]
     fn common_ancestor_empty_is_none() {
-        let got = common_ancestor(std::iter::empty());
+        let got = common_ancestor(std::iter::empty::<PathBuf>());
         assert_eq!(got, None);
     }
 }
