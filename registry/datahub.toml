@@ -1,0 +1,3 @@
+backends = ["pipx:acryl-datahub"]
+description = "DataHub CLI - open-source metadata platform for the modern data stack"
+test = { cmd = "datahub version", expected = "DataHub CLI version" }
