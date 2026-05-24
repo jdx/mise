@@ -200,8 +200,22 @@ impl Watch {
                 let cwd = task_cwd(t, &config).await?;
                 task_cwds.push((t, cwd));
             }
+            // Pre-resolve sources to absolute paths so the anchor can be
+            // widened to cover any source that escapes its task's cwd via
+            // `..` or an absolute path.
+            let parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
+                .iter()
+                .map(|(t, cwd)| {
+                    t.sources.iter().map(|s| parse_source(s, cwd)).collect()
+                })
+                .collect();
             let configured = config.monorepo_root().or_else(|| config.project_root.clone());
-            let common = common_ancestor(task_cwds.iter().map(|(_, c)| c));
+            let common = common_ancestor(
+                task_cwds
+                    .iter()
+                    .map(|(_, c)| c.as_path())
+                    .chain(parsed.iter().flatten().map(|(_, p)| p.as_path())),
+            );
             let anchor: PathBuf = match (configured, common) {
                 (Some(mut cfg), Some(common)) => {
                     while !common.starts_with(&cfg) {
@@ -219,12 +233,12 @@ impl Watch {
                 (None, Some(common)) => common,
                 (None, None) => dirs::CWD.clone().unwrap_or_default(),
             };
-            let resolved: Vec<Vec<String>> = task_cwds
+            let resolved: Vec<Vec<String>> = parsed
                 .iter()
-                .map(|(t, cwd)| {
-                    t.sources
+                .map(|sources| {
+                    sources
                         .iter()
-                        .map(|s| resolve_source(s, cwd, &anchor))
+                        .map(|(k, abs)| relativize_source(*k, abs, &anchor))
                         .collect()
                 })
                 .collect();
@@ -340,20 +354,21 @@ where
     Some(acc.iter().collect())
 }
 
-/// Resolve a source pattern relative to an anchor, taking
-/// into account negations and escaped negations.
-fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
-    enum Kind {
-        Negation,
-        LiteralBang,
-        Plain,
-    }
+#[derive(Clone, Copy, Debug)]
+enum SourceKind {
+    Negation,
+    LiteralBang,
+    Plain,
+}
+
+/// Parse a source pattern into its kind and an absolute path
+fn parse_source(s: &str, cwd: &Path) -> (SourceKind, PathBuf) {
     let (kind, rest) = if let Some(r) = s.strip_prefix('!') {
-        (Kind::Negation, r)
+        (SourceKind::Negation, r)
     } else if s.starts_with("\\!") {
-        (Kind::LiteralBang, &s[1..])
+        (SourceKind::LiteralBang, &s[1..])
     } else {
-        (Kind::Plain, s)
+        (SourceKind::Plain, s)
     };
     let p = Path::new(rest);
     let absolute = if p.is_absolute() {
@@ -361,6 +376,32 @@ fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
     } else {
         cwd.join(rest)
     };
+    (kind, normalize_path(&absolute))
+}
+
+/// Resolve `.` and `..` components without touching the FS.
+/// Used so a source like `../shared/src/*.ts` produces a path
+/// we can contain in the anchor.
+fn normalize_path(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            Component::CurDir => {}
+            _ => out.push(c.as_os_str()),
+        }
+    }
+    out
+}
+
+/// Express an already-absolute source path relative to the filter anchor,
+/// re-applying the original negation/literal-bang prefix.
+fn relativize_source(kind: SourceKind, absolute: &Path, anchor: &Path) -> String {
     let relative = match absolute.strip_prefix(anchor) {
         Ok(p) => p.to_path_buf(),
         Err(_) => {
@@ -369,14 +410,14 @@ fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
                 absolute.display(),
                 anchor.display()
             );
-            absolute
+            absolute.to_path_buf()
         }
     };
     let relative = relative.to_string_lossy();
     match kind {
-        Kind::Negation => format!("!{relative}"),
-        Kind::LiteralBang if relative.starts_with('!') => format!("\\{relative}"),
-        Kind::LiteralBang | Kind::Plain => relative.into_owned(),
+        SourceKind::Negation => format!("!{relative}"),
+        SourceKind::LiteralBang if relative.starts_with('!') => format!("\\{relative}"),
+        SourceKind::LiteralBang | SourceKind::Plain => relative.into_owned(),
     }
 }
 
@@ -1381,11 +1422,18 @@ pub enum ColourMode {
 
 #[cfg(test)]
 mod tests {
-    use super::{common_ancestor, merge_watch_patterns, resolve_source};
+    use super::{
+        common_ancestor, merge_watch_patterns, normalize_path, parse_source, relativize_source,
+    };
     use std::path::{Path, PathBuf};
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
+    }
+
+    fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
+        let (k, abs) = parse_source(s, cwd);
+        relativize_source(k, &abs, anchor)
     }
 
     #[test]
@@ -1468,6 +1516,31 @@ mod tests {
     fn common_ancestor_of_disjoint_is_root() {
         let got = common_ancestor([pb("/x/a"), pb("/y/b")]);
         assert_eq!(got, Some(pb("/")));
+    }
+
+    #[test]
+    fn normalize_resolves_parent_components() {
+        assert_eq!(
+            normalize_path(Path::new("/repo/pkg/foo/../../shared/src")),
+            pb("/repo/shared/src"),
+        );
+    }
+
+    #[test]
+    fn parse_source_absolutizes_relative_with_parent_escape() {
+        let cwd = Path::new("/repo/packages/foo");
+        let (_, abs) = parse_source("../../shared/src/*.ts", cwd);
+        assert_eq!(abs, pb("/repo/shared/src/*.ts"));
+    }
+
+    #[test]
+    fn anchor_widens_to_cover_source_escaping_cwd() {
+        let cwd = pb("/repo/packages/foo");
+        let (_, abs) = parse_source("../../shared/src/*.ts", &cwd);
+        let common = common_ancestor([cwd.as_path(), abs.as_path()]);
+        assert_eq!(common, Some(pb("/repo")));
+        let rel = relativize_source(super::SourceKind::Plain, &abs, &common.unwrap());
+        assert_eq!(rel, "shared/src/*.ts");
     }
 
     #[test]
