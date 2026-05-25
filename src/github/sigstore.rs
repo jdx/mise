@@ -22,7 +22,9 @@
 //! Functions that accept `api_url: Option<&str>` fall back to [`crate::github::API_URL`]
 //! (`"https://api.github.com"`) when `None` is passed. The default must be a full URL so
 //! [`crate::github::resolve_token_for_api_url`] can parse the host correctly; a bare hostname
-//! would be silently misrouted for GitHub Enterprise Server tenants.
+//! would be silently misrouted for GitHub Enterprise Server tenants. After token resolution,
+//! the API URL is routed through [`crate::http::apply_url_replacements`] so attestation
+//! requests follow the same trusted proxy/cache replacements as normal mise HTTP requests.
 
 use std::path::Path;
 
@@ -40,11 +42,24 @@ fn resolve_token_for_wrapper(api_url: Option<&str>) -> Option<String> {
     crate::github::resolve_token_for_api_url(url)
 }
 
+fn routed_api_url(api_url: &str) -> String {
+    let Ok(mut url) = url::Url::parse(api_url) else {
+        debug!("invalid GitHub attestation API URL, skipping url_replacements: {api_url}");
+        return api_url.to_string();
+    };
+    let original = url.clone();
+    crate::http::apply_url_replacements(&mut url);
+    if url == original {
+        api_url.to_string()
+    } else {
+        url.to_string()
+    }
+}
+
 /// Verify a GitHub artifact attestation for a file on disk.
 ///
-/// Dispatches to [`mise_sigstore::verify_github_attestation_with_base_url`] when
-/// `api_url` is `Some` (to support GitHub Enterprise) and to
-/// [`mise_sigstore::verify_github_attestation`] otherwise.
+/// Applies configured URL replacements to the API base URL before dispatching to
+/// [`mise_sigstore::verify_github_attestation_with_base_url`].
 pub async fn verify_attestation(
     artifact_path: &Path,
     owner: &str,
@@ -53,29 +68,16 @@ pub async fn verify_attestation(
     api_url: Option<&str>,
 ) -> AttestationResult<bool> {
     let token = resolve_token_for_wrapper(api_url);
-    match api_url {
-        Some(base_url) => {
-            mise_sigstore::verify_github_attestation_with_base_url(
-                artifact_path,
-                owner,
-                repo,
-                token.as_deref(),
-                expected_workflow,
-                base_url,
-            )
-            .await
-        }
-        None => {
-            mise_sigstore::verify_github_attestation(
-                artifact_path,
-                owner,
-                repo,
-                token.as_deref(),
-                expected_workflow,
-            )
-            .await
-        }
-    }
+    let base_url = routed_api_url(api_url.unwrap_or(crate::github::API_URL));
+    mise_sigstore::verify_github_attestation_with_base_url(
+        artifact_path,
+        owner,
+        repo,
+        token.as_deref(),
+        expected_workflow,
+        &base_url,
+    )
+    .await
 }
 
 /// Reason the pre-download attestation probe could not complete.
@@ -123,7 +125,8 @@ pub async fn detect_attestations(
     digest: &str,
 ) -> Result<bool, DetectError> {
     let token = resolve_token_for_wrapper(Some(api_url));
-    let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), api_url)
+    let base_url = routed_api_url(api_url);
+    let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), &base_url)
         .map_err(DetectError::SourceCreation)?;
     let artifact_ref = ArtifactRef::from_digest(digest);
     let attestations = source
@@ -184,6 +187,8 @@ pub async fn verify_cosign_signature_with_key(
 mod tests {
     use super::*;
     use crate::env as mise_env;
+    use confique::Layer;
+    use std::sync::Mutex;
 
     const TOKEN_ENV_VARS: &[&str] = &[
         "MISE_GITHUB_TOKEN",
@@ -191,6 +196,27 @@ mod tests {
         "GITHUB_TOKEN",
         "MISE_GITHUB_ENTERPRISE_TOKEN",
     ];
+    static TEST_SETTINGS_LOCK: Mutex<()> = Mutex::new(());
+
+    struct SettingsGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl SettingsGuard {
+        fn new(replacements: Option<indexmap::IndexMap<String, String>>) -> Self {
+            let lock = TEST_SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let mut settings = crate::config::settings::SettingsPartial::empty();
+            settings.url_replacements = replacements;
+            crate::config::Settings::reset(Some(settings));
+            Self { _lock: lock }
+        }
+    }
+
+    impl Drop for SettingsGuard {
+        fn drop(&mut self) {
+            crate::config::Settings::reset(None);
+        }
+    }
 
     /// RAII guard: snapshots the tracked token env vars on construction, clears them for the
     /// test body, and restores the original values on drop — including when a test panics.
@@ -324,5 +350,36 @@ mod tests {
         assert!(!is_api_failure(&AttestationError::Json(
             serde_json::from_str::<serde_json::Value>("{").unwrap_err()
         )));
+    }
+
+    #[test]
+    fn test_routed_api_url_applies_simple_url_replacement() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "https://github-proxy.example.com".to_string(),
+        }));
+
+        let routed = routed_api_url(crate::github::API_URL);
+
+        assert_eq!(routed, "https://github-proxy.example.com/");
+    }
+
+    #[test]
+    fn test_routed_api_url_applies_regex_url_replacement() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "regex:^https://api\\.github\\.com".to_string() => "https://github-proxy.example.com/api".to_string(),
+        }));
+
+        let routed = routed_api_url(crate::github::API_URL);
+
+        assert_eq!(routed, "https://github-proxy.example.com/api/");
+    }
+
+    #[test]
+    fn test_routed_api_url_keeps_original_url_without_replacement() {
+        let _settings = SettingsGuard::new(None);
+
+        let routed = routed_api_url(crate::github::API_URL);
+
+        assert_eq!(routed, crate::github::API_URL);
     }
 }
