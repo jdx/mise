@@ -1,3 +1,4 @@
+use crate::file::canonicalize_or_self;
 use crate::task::Task;
 use std::path::{Path, PathBuf};
 
@@ -11,5 +12,5 @@ pub fn task_needs_permit(task: &Task) -> bool {
 /// Canonicalize a path for use as cache key
 /// Falls back to original path if canonicalization fails
 pub fn canonicalize_path(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    canonicalize_or_self(path)
 }

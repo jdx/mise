@@ -738,6 +738,34 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &env::PATH_NON_PRISTINE)
 }
 
+/// Canonicalize a path and cache successful resolutions for the current process.
+///
+/// Use this for repeated comparisons against stable roots or PATH entries. Failed
+/// canonicalizations are not cached because many callers handle paths that may be
+/// created later in the same process.
+pub fn canonicalize_cached(path: &Path) -> Option<PathBuf> {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
+
+    if !path.is_absolute() {
+        return path.canonicalize().ok();
+    }
+    if let Some(path) = CACHE.lock().unwrap().get(path).cloned() {
+        return Some(path);
+    }
+    let canonicalized = path.canonicalize().ok()?;
+    CACHE
+        .lock()
+        .unwrap()
+        .insert(path.to_path_buf(), canonicalized.clone());
+    Some(canonicalized)
+}
+
+/// Canonicalize a path using the process cache, falling back to the original
+/// path when canonicalization fails.
+pub fn canonicalize_or_self(path: &Path) -> PathBuf {
+    canonicalize_cached(path).unwrap_or_else(|| path.to_path_buf())
+}
+
 /// Build a PATH value with mise shims filtered out, suitable for passing to
 /// subprocesses via `.env("PATH", ...)`. Prevents infinite recursion when a
 /// subprocess (e.g. `gh auth token`, `git credential fill`) resolves to a

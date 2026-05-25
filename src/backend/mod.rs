@@ -18,7 +18,9 @@ use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
-use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
+use crate::file::{
+    canonicalize_cached, display_path, remove_all_with_progress, remove_all_with_warning,
+};
 use crate::install_before::resolve_before_date;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
@@ -1346,21 +1348,16 @@ pub trait Backend: Debug + Send + Sync {
             };
             // Canonicalize to resolve any ".." components before checking.
             // If target doesn't exist (canonicalize fails), don't skip - treat as needing install
-            let Ok(target) = target.canonicalize() else {
-                return None;
-            };
+            let target = canonicalize_cached(&target)?;
             // Canonicalize INSTALLS too for consistent comparison (handles symlinked data dirs)
-            let installs = dirs::INSTALLS
-                .canonicalize()
-                .unwrap_or(dirs::INSTALLS.to_path_buf());
+            let installs =
+                canonicalize_cached(&dirs::INSTALLS).unwrap_or(dirs::INSTALLS.to_path_buf());
             if target.starts_with(&installs) {
                 return Some(path);
             }
             // Also check shared install directories
             for shared_dir in env::shared_install_dirs() {
-                let shared = shared_dir
-                    .canonicalize()
-                    .unwrap_or(shared_dir.to_path_buf());
+                let shared = canonicalize_cached(&shared_dir).unwrap_or(shared_dir.to_path_buf());
                 if target.starts_with(&shared) {
                     return Some(path);
                 }
