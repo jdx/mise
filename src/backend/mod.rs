@@ -2165,16 +2165,18 @@ pub trait Backend: Debug + Send + Sync {
         // the shim for the dependency would call `mise exec` which would call the
         // shim again infinitely.
         //
-        // `paths_eq` handles case-insensitive matching on macOS/Windows: e.g. if
-        // `$HOME` is mixed-case in PATH (`/Users/Foo`) but lowercase in the
-        // resolved shims path, byte-equal comparison would miss it and the shim
-        // would survive in the child env.
+        // `is_mise_shims_dir` covers both the user shims dir (`dirs::SHIMS`) and
+        // the system shims dir (`MISE_SYSTEM_DATA_DIR/shims`). Both are typically
+        // on PATH in devcontainer/Docker setups built with `mise install --system`;
+        // filtering only one used to leak recursion through the other (#8475
+        // closed the user dir for `dependency_env`, this PR closes the system dir
+        // and aligns with the dual-dir guard already in `which_shim` (#8816)).
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
             let paths: Vec<_> = env::split_paths(path_val).collect();
             let original_len = paths.len();
             let filtered: Vec<_> = paths
                 .into_iter()
-                .filter(|p| !file::paths_eq(&file::replace_path(p), &dirs::SHIMS))
+                .filter(|p| !file::is_mise_shims_dir(p))
                 .collect();
             if filtered.len() != original_len {
                 let joined = env::join_paths(&filtered)?;
