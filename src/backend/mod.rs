@@ -28,7 +28,7 @@ use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PEP440_PRERELEASE_REGEX, PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::tera::get_tera;
+use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
     ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, Toolset, install_state,
@@ -64,6 +64,7 @@ pub mod go;
 pub mod http;
 pub mod jq;
 pub mod npm;
+pub(crate) mod options;
 pub mod pipx;
 pub mod platform_target;
 pub mod s3;
@@ -81,6 +82,7 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
+    ToolOptionSource::InstallManifest,
     ToolOptionSource::BackendAlias,
     ToolOptionSource::Config,
     ToolOptionSource::InlineBackendArg,
@@ -356,7 +358,9 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
     match backend_type {
         BackendType::Http => http::install_time_option_keys(),
         BackendType::S3 => s3::install_time_option_keys(),
-        BackendType::Github | BackendType::Gitlab => github::install_time_option_keys(),
+        BackendType::Github | BackendType::Gitlab | BackendType::Forgejo => {
+            github::install_time_option_keys()
+        }
         BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
@@ -495,6 +499,24 @@ mod tests {
         resolved.apply_overrides(&opts, ToolOptionSource::Registry);
 
         assert!(!has_local_version_listing_option_override(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
+    }
+
+    #[test]
+    fn test_remote_version_listing_opts_include_install_manifest_sources() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource, ToolVersionOptions};
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("release-".into()),
+        );
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&opts, ToolOptionSource::InstallManifest);
+
+        assert!(has_local_version_listing_option_override(
             &resolved,
             &["api_url", "version_prefix"],
         ));
@@ -762,8 +784,20 @@ mod tests {
 
         opts.opts.insert(
             "prerelease".to_string(),
-            toml::Value::String("false".into()),
+            toml::Value::String("FALSE".into()),
         );
+        assert!(!backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("1".into()));
+        assert!(backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("0".into()));
+        assert!(!backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("00".into()));
         assert!(!backend.include_prereleases(&opts));
 
         // Defense-in-depth: also accept a native TOML boolean, in case a future
@@ -1754,14 +1788,20 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         let install_path = tv.install_path();
+        let mut update_install_state = false;
         if install_path.starts_with(*dirs::INSTALLS) {
             install_state::write_backend_meta(self.ba())?;
+            update_install_state = true;
         } else if env::install_path_category(&install_path) != env::InstallPathCategory::Local {
             // For --system/--shared installs, write manifest to the target installs dir
             if let Some(installs_dir) = install_path.parent().and_then(|p| p.parent()) {
                 let manifest = installs_dir.join(".mise-installs.toml");
                 install_state::write_backend_meta_to(self.ba(), &manifest)?;
+                update_install_state = true;
             }
+        }
+        if update_install_state {
+            install_state::add_tool_version(self.ba(), &install_path, &tv.tv_pathname());
         }
 
         self.cleanup_install_dirs(&tv);
@@ -1809,6 +1849,7 @@ pub trait Backend: Debug + Send + Sync {
                 env_vars.entry(k).or_insert(v);
             }
         }
+        env_vars.extend(tv.request.options().core.install_env);
 
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
@@ -1820,18 +1861,29 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         // Render tera template variables (e.g. {{tools.ripgrep.path}})
-        let tera_ctx = ctx.ts.tera_ctx(&ctx.config).await?;
-        let dir = tv.request.source().path().and_then(|p| p.parent());
-        let mut tera = get_tera(dir);
-        let rendered_script = tera.render_str(script, tera_ctx)?;
+        let rendered_script = if contains_template_syntax(script) {
+            let tera_ctx = ctx.ts.tera_ctx(&ctx.config).await?;
+            let dir = tv.request.source().path().and_then(|p| p.parent());
+            let mut tera = get_tera(dir);
+            render_str(&mut tera, script, tera_ctx)?
+        } else {
+            script.to_string()
+        };
 
-        let mut runner = CmdLineRunner::new(&*env::SHELL)
+        let shell = Settings::get().default_inline_shell()?;
+        let (program, shell_args) = shell.split_first().ok_or_else(|| {
+            eyre!(
+                "default inline shell is empty; check unix_default_inline_shell_args / windows_default_inline_shell_args"
+            )
+        })?;
+
+        let mut runner = CmdLineRunner::new(program)
             .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env("MISE_TOOL_VERSION", tv.version.clone())
             .with_pr(ctx.pr.as_ref())
-            .arg(env::SHELL_COMMAND_FLAG)
+            .args(shell_args)
             .arg(&rendered_script)
             .envs(env_vars);
 
@@ -1882,6 +1934,9 @@ pub trait Backend: Debug + Send + Sync {
             rmdir(&tv.download_path())?;
         }
         rmdir(&tv.cache_path())?;
+        if !dryrun {
+            self.cleanup_empty_installs_dir();
+        }
         Ok(())
     }
     async fn uninstall_version_impl(
@@ -1978,6 +2033,18 @@ pub trait Backend: Debug + Send + Sync {
             let _ = remove_all_with_warning(tv.download_path());
         }
     }
+    fn cleanup_empty_installs_dir(&self) {
+        let installs_path = &self.ba().installs_path;
+        if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
+            let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
+            if installs_path
+                .read_dir()
+                .is_ok_and(|mut entries| entries.next().is_none())
+            {
+                let _ = remove_all_with_warning(installs_path);
+            }
+        }
+    }
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
         install_state::incomplete_file_path(&tv.ba().short, &tv.tv_pathname())
     }
@@ -2008,7 +2075,17 @@ pub trait Backend: Debug + Send + Sync {
             .await?
             .filter_by_tool(dependencies)
             .into();
-        ts.resolve(config).await?;
+        // Dependency envs only need PATH entries for tools that are already
+        // available. Resolving offline avoids applying global release-age
+        // cutoffs to helper tools like node/npm while querying another backend.
+        ts.resolve_with_opts(
+            config,
+            &ResolveOptions {
+                offline: true,
+                ..Default::default()
+            },
+        )
+        .await?;
         Ok(ts)
     }
 
@@ -2835,11 +2912,7 @@ pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
 }
 
 fn tool_option_bool(value: &toml::Value) -> bool {
-    match value {
-        toml::Value::Boolean(b) => *b,
-        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
-        _ => false,
-    }
+    crate::backend::options::bool_value_or_default("prerelease", value, false)
 }
 
 /// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection
@@ -2929,6 +3002,7 @@ pub(crate) fn fuzzy_match_versions(
 
 pub fn unalias_backend(backend: &str) -> &str {
     match backend {
+        "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
         _ => backend.trim_start_matches("core:"),
@@ -2941,6 +3015,7 @@ fn test_unalias_backend() {
     assert_eq!(unalias_backend("nodejs"), "node");
     assert_eq!(unalias_backend("core:node"), "node");
     assert_eq!(unalias_backend("golang"), "go");
+    assert_eq!(unalias_backend("dotnet-core"), "dotnet");
 }
 
 impl Display for dyn Backend {

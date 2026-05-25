@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+echo 'dummy 1' >.tool-versions
+mise install dummy@1.0.0 >/dev/null 2>&1 || fail "pre-install of dummy@1.0.0 failed"
+
+output="$(MISE_FORCE_PROGRESS=1 mise up dummy 2>&1)"
+summary_line="  dummy 1.0.0 → 1.1.0"
+
+if [[ $output != *"$summary_line"* ]]; then
+  fail "upgrade summary did not include '$summary_line': $output"
+fi
+
+after_summary="${output#*"$summary_line"}"
+if grep -q $'\033\\[[0-9;]*J' <<<"$after_summary"; then
+  fail "upgrade summary was followed by a terminal clear sequence"
+fi

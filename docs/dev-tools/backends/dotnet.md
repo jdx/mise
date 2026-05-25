@@ -69,6 +69,15 @@ import Settings from '/components/settings.vue';
 The following [tool-options](/dev-tools/#tool-options) are available for the `dotnet` backend—these
 go in `[tools]` in `mise.toml`.
 
+### `install_env`
+
+Set environment variables for the `dotnet tool install` command:
+
+```toml
+[tools]
+"dotnet:GitVersion.Tool" = { version = "latest", install_env = { DOTNET_CLI_TELEMETRY_OPTOUT = "1" } }
+```
+
 ### `prerelease`
 
 By default, NuGet pre-release versions are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:

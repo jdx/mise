@@ -9,7 +9,7 @@ use tokio::task::JoinSet;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
-use crate::tera::{BASE_CONTEXT, get_tera};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::style;
@@ -783,16 +783,24 @@ impl DepsEngine {
 
         // Apply command-specific environment (can override toolset env)
         // Render tera templates in env values (e.g., "{{env.baz}}")
-        let mut tera_ctx = BASE_CONTEXT.clone();
-        // Merge toolset env (which includes [env] directives) into tera context
-        // so templates like "{{env.MY_VAR}}" can resolve config-defined vars
-        let mut env_map = crate::env::PRISTINE_ENV.clone();
-        env_map.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-        tera_ctx.insert("env", &env_map);
-        let mut tera = get_tera(cmd.cwd.as_deref());
+        let has_template_env = cmd.env.values().any(|v| contains_template_syntax(v));
+        let mut tera_state = if has_template_env {
+            let mut tera_ctx = BASE_CONTEXT.clone();
+            // Merge toolset env (which includes [env] directives) into tera context
+            // so templates like "{{env.MY_VAR}}" can resolve config-defined vars
+            let mut env_map = crate::env::PRISTINE_ENV.clone();
+            env_map.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+            tera_ctx.insert("env", &env_map);
+            Some((get_tera(cmd.cwd.as_deref()), tera_ctx))
+        } else {
+            None
+        };
         for (k, v) in &cmd.env {
-            let rendered = if v.contains("{{") || v.contains("{%") || v.contains("{#") {
-                tera.render_str(v, &tera_ctx).unwrap_or_else(|e| {
+            let rendered = if contains_template_syntax(v) {
+                let (tera, tera_ctx) = tera_state
+                    .as_mut()
+                    .expect("tera state should exist for template env values");
+                render_str(tera, v, tera_ctx).unwrap_or_else(|e| {
                     warn!("failed to render template for deps env {k}: {e}");
                     v.clone()
                 })

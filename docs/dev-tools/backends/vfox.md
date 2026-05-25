@@ -102,3 +102,19 @@ For more information, see:
 - [Using Plugins](../../plugin-usage.md) - End-user guide
 - [Plugin Development](../../tool-plugin-development.md) - Developer guide
 - [Plugin Template](https://github.com/jdx/mise-tool-plugin-template) - Quick start template for creating plugins
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `vfox` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for commands that a vfox plugin starts with `cmd.exec`
+during install hooks. vfox's built-in Lua HTTP, archive, and JSON helpers do not
+use these variables directly.
+
+```toml
+[tools]
+"vfox:version-fox/vfox-cmake" = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
+```

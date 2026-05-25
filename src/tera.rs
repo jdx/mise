@@ -42,6 +42,31 @@ pub fn take_tera_accessed_files() -> Vec<PathBuf> {
     files
 }
 
+/// Fast marker check for Tera 1.x syntax.
+///
+/// Tera 1.20.1's grammar starts every variable, tag, and comment block with
+/// `{{`, `{%`, or `{#` respectively, including whitespace-trimmed forms like
+/// `{{-`, `{%-`, and `{#-`.
+pub fn contains_template_syntax(input: &str) -> bool {
+    input.contains("{{") || input.contains("{%") || input.contains("{#")
+}
+
+pub fn render_str_if_template(
+    tera: &mut Tera,
+    input: &str,
+    context: &Context,
+) -> tera::Result<String> {
+    if contains_template_syntax(input) {
+        render_str(tera, input, context)
+    } else {
+        Ok(input.to_string())
+    }
+}
+
+pub fn render_str(tera: &mut Tera, input: &str, context: &Context) -> tera::Result<String> {
+    tera.render_str(input, context)
+}
+
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
@@ -818,6 +843,38 @@ mod tests {
         assert_eq!(s.trim(), "ok");
     }
 
+    #[test]
+    fn test_contains_template_syntax() {
+        assert!(contains_template_syntax("{{ foo }}"));
+        assert!(contains_template_syntax("{{- foo -}}"));
+        assert!(contains_template_syntax("{% if foo %}bar{% endif %}"));
+        assert!(contains_template_syntax("{%- if foo -%}bar{%- endif -%}"));
+        assert!(contains_template_syntax("{# comment #}"));
+        assert!(contains_template_syntax("{#- comment -#}"));
+        assert!(!contains_template_syntax("plain text"));
+    }
+
+    #[test]
+    fn test_render_str_if_template_skips_plain_text() {
+        let mut tera = Tera::default();
+        let ctx = Context::new();
+        assert_eq!(
+            render_str_if_template(&mut tera, "plain text", &ctx).unwrap(),
+            "plain text"
+        );
+    }
+
+    #[test]
+    fn test_render_str_if_template_renders_template() {
+        let mut tera = Tera::default();
+        let mut ctx = Context::new();
+        ctx.insert("name", "world");
+        assert_eq!(
+            render_str_if_template(&mut tera, "hello {{ name }}", &ctx).unwrap(),
+            "hello world"
+        );
+    }
+
     #[tokio::test]
     #[cfg(unix)]
     async fn test_read_file() {
@@ -837,15 +894,17 @@ mod tests {
         tera_ctx.insert("cwd", temp_dir.path().to_str().unwrap());
         let mut tera = get_tera(Some(temp_dir.path()));
 
-        let s = tera
-            .render_str(r#"{{ read_file(path="test.txt") }}"#, &tera_ctx)
+        let s = render_str_if_template(&mut tera, r#"{{ read_file(path="test.txt") }}"#, &tera_ctx)
             .unwrap();
         assert_eq!(s, "test content\nwith multiple lines");
 
         // Test with trim filter
-        let s = tera
-            .render_str(r#"{{ read_file(path="test.txt") | trim }}"#, &tera_ctx)
-            .unwrap();
+        let s = render_str_if_template(
+            &mut tera,
+            r#"{{ read_file(path="test.txt") | trim }}"#,
+            &tera_ctx,
+        )
+        .unwrap();
         assert_eq!(s, "test content\nwith multiple lines");
     }
 
@@ -855,6 +914,6 @@ mod tests {
         tera_ctx.insert("config_root", &config_root);
         tera_ctx.insert("cwd", "/");
         let mut tera = get_tera(Option::from(config_root));
-        tera.render_str(s, &tera_ctx).unwrap()
+        render_str_if_template(&mut tera, s, &tera_ctx).unwrap()
     }
 }

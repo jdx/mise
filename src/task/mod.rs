@@ -4,7 +4,7 @@ use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, 
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::TaskScriptParser;
-use crate::tera::get_tera;
+use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{measure_text_width, truncate_str};
@@ -159,21 +159,46 @@ impl RunEntry {
         match self {
             RunEntry::Script(s) => Ok(RunEntry::Script(s.clone())),
             RunEntry::SingleTask { task, args, env } => {
-                let task = tera.render_str(task, tera_ctx)?;
+                let task = if contains_template_syntax(task) {
+                    render_str(tera, task, tera_ctx)?
+                } else {
+                    task.clone()
+                };
                 let args = args
                     .iter()
-                    .map(|a| tera.render_str(a, tera_ctx))
+                    .map(|a| {
+                        if contains_template_syntax(a) {
+                            render_str(tera, a, tera_ctx)
+                        } else {
+                            Ok(a.clone())
+                        }
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 let env = env
                     .iter()
-                    .map(|(k, v)| Ok((k.clone(), tera.render_str(v, tera_ctx)?)))
+                    .map(|(k, v)| {
+                        Ok((
+                            k.clone(),
+                            if contains_template_syntax(v) {
+                                render_str(tera, v, tera_ctx)?
+                            } else {
+                                v.clone()
+                            },
+                        ))
+                    })
                     .collect::<Result<IndexMap<_, _>, tera::Error>>()?;
                 Ok(RunEntry::SingleTask { task, args, env })
             }
             RunEntry::TaskGroup { tasks } => {
                 let tasks = tasks
                     .iter()
-                    .map(|t| tera.render_str(t, tera_ctx))
+                    .map(|t| {
+                        if contains_template_syntax(t) {
+                            render_str(tera, t, tera_ctx)
+                        } else {
+                            Ok(t.clone())
+                        }
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(RunEntry::TaskGroup { tasks })
             }
@@ -181,13 +206,14 @@ impl RunEntry {
     }
 
     pub fn has_tera_template(&self) -> bool {
-        let has_ref = |s: &str| s.contains("{{") || s.contains("{%") || s.contains("{#");
         match self {
             RunEntry::Script(_) => false,
             RunEntry::SingleTask { task, args, env } => {
-                has_ref(task) || args.iter().any(|a| has_ref(a)) || env.values().any(|v| has_ref(v))
+                contains_template_syntax(task)
+                    || args.iter().any(|a| contains_template_syntax(a))
+                    || env.values().any(|v| contains_template_syntax(v))
             }
-            RunEntry::TaskGroup { tasks } => tasks.iter().any(|t| has_ref(t)),
+            RunEntry::TaskGroup { tasks } => tasks.iter().any(|t| contains_template_syntax(t)),
         }
     }
 }
@@ -1035,10 +1061,14 @@ impl Task {
                 .as_ref()
                 .and_then(|cf| cf.task_config().dir.clone())
         }) {
-            let config_root = self.config_root.clone().unwrap_or_default();
-            let mut tera = get_tera(Some(&config_root));
-            let tera_ctx = self.tera_ctx(config).await?;
-            let dir = tera.render_str(&dir, &tera_ctx)?;
+            let dir = if contains_template_syntax(&dir) {
+                let config_root = self.config_root.clone().unwrap_or_default();
+                let mut tera = get_tera(Some(&config_root));
+                let tera_ctx = self.tera_ctx(config).await?;
+                render_str(&mut tera, &dir, &tera_ctx)?
+            } else {
+                dir
+            };
             let dir = file::replace_path(&dir);
             if dir.is_absolute() {
                 Ok(Some(dir.to_path_buf()))
@@ -1055,10 +1085,14 @@ impl Task {
     pub async fn file_path(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(file) = &self.file {
             let file_str = file.to_string_lossy().to_string();
-            let config_root = self.config_root.clone().unwrap_or_default();
-            let mut tera = get_tera(Some(&config_root));
-            let tera_ctx = self.tera_ctx(config).await?;
-            let rendered = tera.render_str(&file_str, &tera_ctx)?;
+            let rendered = if contains_template_syntax(&file_str) {
+                let config_root = self.config_root.clone().unwrap_or_default();
+                let mut tera = get_tera(Some(&config_root));
+                let tera_ctx = self.tera_ctx(config).await?;
+                render_str(&mut tera, &file_str, &tera_ctx)?
+            } else {
+                file_str
+            };
             let rendered_path = file::replace_path(&rendered);
             if rendered_path.is_absolute() {
                 Ok(Some(rendered_path))
@@ -1329,26 +1363,96 @@ impl Task {
         self.allow_env.extend(other.allow_env);
     }
 
-    pub async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
-        let mut tera = get_tera(Some(config_root));
-        let tera_ctx = self.tera_ctx(config).await?;
-        for a in &mut self.aliases {
-            *a = tera.render_str(a, &tera_ctx)?;
-        }
+    fn has_render_templates(&self) -> bool {
+        let deps_have_template = |deps: &[TaskDep]| {
+            deps.iter().any(|dep| {
+                contains_template_syntax(&dep.task)
+                    || dep.args.iter().any(|arg| contains_template_syntax(arg))
+                    || dep
+                        .env
+                        .values()
+                        .any(|value| contains_template_syntax(value))
+            })
+        };
+        let tools_have_template = self.tools.values().any(|tool| match tool {
+            TaskToolValue::String(s) => contains_template_syntax(s),
+            TaskToolValue::Map(map) => {
+                contains_template_syntax(&map.version)
+                    || map
+                        .opts
+                        .values()
+                        .any(|value| value.as_str().is_some_and(contains_template_syntax))
+            }
+        });
 
-        self.description = tera.render_str(&self.description, &tera_ctx)?;
-        for s in &mut self.sources {
-            *s = tera.render_str(s, &tera_ctx)?;
-        }
+        self.aliases.iter().any(|s| contains_template_syntax(s))
+            || contains_template_syntax(&self.description)
+            || self.sources.iter().any(|s| contains_template_syntax(s))
+            || self.outputs.has_tera_template()
+            || deps_have_template(&self.depends)
+            || deps_have_template(&self.depends_post)
+            || deps_have_template(&self.wait_for)
+            || self
+                .dir
+                .as_ref()
+                .is_some_and(|s| contains_template_syntax(s))
+            || self
+                .shell
+                .as_ref()
+                .is_some_and(|s| contains_template_syntax(s))
+            || tools_have_template
+    }
+
+    fn store_raw_render_inputs(&mut self) {
         if !self.sources.is_empty() && self.outputs.is_empty() {
             self.outputs = TaskOutputs::Auto;
         }
-        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
+        self.raw_outputs = self.outputs.raw_templates_without_env();
         // Save unrendered dependency templates so they can be re-rendered later
         // with parent task args available (for passing args to dependencies).
         self.depends_raw = Some(self.depends.clone());
         self.depends_post_raw = Some(self.depends_post.clone());
         self.wait_for_raw = Some(self.wait_for.clone());
+    }
+
+    fn parse_plain_depends(&mut self) -> Result<()> {
+        for d in &mut self.depends {
+            d.parse_shell_style_env()?;
+        }
+        for d in &mut self.depends_post {
+            d.parse_shell_style_env()?;
+        }
+        for d in &mut self.wait_for {
+            d.parse_shell_style_env()?;
+        }
+        Ok(())
+    }
+
+    pub async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
+        if !self.has_render_templates() {
+            self.store_raw_render_inputs();
+            self.parse_plain_depends()?;
+            return Ok(());
+        }
+
+        let mut tera = get_tera(Some(config_root));
+        let tera_ctx = self.tera_ctx(config).await?;
+        for a in &mut self.aliases {
+            if contains_template_syntax(a) {
+                *a = render_str(&mut tera, a, &tera_ctx)?;
+            }
+        }
+
+        if contains_template_syntax(&self.description) {
+            self.description = render_str(&mut tera, &self.description, &tera_ctx)?;
+        }
+        for s in &mut self.sources {
+            if contains_template_syntax(s) {
+                *s = render_str(&mut tera, s, &tera_ctx)?;
+            }
+        }
+        self.store_raw_render_inputs();
+        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
         // Render deps that don't contain {{usage.*}} references. Deps with usage
         // references are deferred until render_depends_with_usage() is called with
         // the actual arg values from CLI or parent dependency.
@@ -1367,22 +1471,32 @@ impl Task {
                 d.render(&mut tera, &tera_ctx)?;
             }
         }
-        if let Some(dir) = &mut self.dir {
-            *dir = tera.render_str(dir, &tera_ctx)?;
+        if let Some(dir) = &mut self.dir
+            && contains_template_syntax(dir)
+        {
+            *dir = render_str(&mut tera, dir, &tera_ctx)?;
         }
-        if let Some(shell) = &mut self.shell {
-            *shell = tera.render_str(shell, &tera_ctx)?;
+        if let Some(shell) = &mut self.shell
+            && contains_template_syntax(shell)
+        {
+            *shell = render_str(&mut tera, shell, &tera_ctx)?;
         }
         for (_, v) in &mut self.tools {
             match v {
                 TaskToolValue::String(s) => {
-                    *v = TaskToolValue::String(tera.render_str(s, &tera_ctx)?);
+                    if contains_template_syntax(s) {
+                        *v = TaskToolValue::String(render_str(&mut tera, s, &tera_ctx)?);
+                    }
                 }
                 TaskToolValue::Map(map) => {
-                    map.version = tera.render_str(&map.version, &tera_ctx)?;
+                    if contains_template_syntax(&map.version) {
+                        map.version = render_str(&mut tera, &map.version, &tera_ctx)?;
+                    }
                     for (_ok, ov) in &mut map.opts {
-                        if let toml::Value::String(s) = ov {
-                            *ov = toml::Value::String(tera.render_str(s, &tera_ctx)?);
+                        if let toml::Value::String(s) = ov
+                            && contains_template_syntax(s)
+                        {
+                            *ov = toml::Value::String(render_str(&mut tera, s, &tera_ctx)?);
                         }
                     }
                 }
@@ -1400,6 +1514,16 @@ impl Task {
         usage_values: &IndexMap<String, tera::Value>,
     ) -> Result<()> {
         if usage_values.is_empty() {
+            return Ok(());
+        }
+        let has_usage_deps = |raw: &Option<Vec<_>>| {
+            raw.as_ref()
+                .is_some_and(|deps| deps.iter().any(dep_has_usage_ref))
+        };
+        if !has_usage_deps(&self.depends_raw)
+            && !has_usage_deps(&self.depends_post_raw)
+            && !has_usage_deps(&self.wait_for_raw)
+        {
             return Ok(());
         }
         let config_root = self.config_root.clone().unwrap_or_default();

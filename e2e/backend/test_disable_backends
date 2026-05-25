@@ -9,3 +9,6 @@ mise uninstall age
 
 MISE_DISABLE_BACKENDS=aqua mise install age
 ls "$MISE_DATA_DIR/plugins/age"
+eval "$(mise activate bash)" && _mise_hook
+assert_contains "MISE_DISABLE_BACKENDS=asdf mise doctor 2>&1 || true" "age"
+assert_contains "MISE_DISABLE_BACKENDS=asdf mise doctor -J 2>&1 || true" '"age"'

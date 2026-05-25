@@ -22,3 +22,17 @@ See available versions with `mise ls-remote deno`.
 
 > [!NOTE]
 > Avoid using `deno upgrade` to upgrade `deno` as `mise` will not be aware of the change.
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `deno` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for install-time commands run by the core `deno` backend:
+
+```toml
+[tools]
+deno = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
+```

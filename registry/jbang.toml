@@ -1,2 +1,3 @@
-backends = ["asdf:mise-plugins/jbang-asdf"]
+backends = ["aqua:jbangdev/jbang", "asdf:mise-plugins/jbang-asdf"]
 description = "Lets Students, Educators and Professional Developers create, edit and run self-contained source-only Java programs with unprecedented ease"
+test = { cmd = "jbang --version", expected = "{{version}}", tools = ["java"] }

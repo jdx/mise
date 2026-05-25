@@ -11,6 +11,8 @@ assert_matches "mise x -- swift --version" 'Swift version 6\.'
 #assert "mise x spm:nicklockwood/SwiftFormat@0.53.10 -- swiftformat --version" "0.53.10"
 #assert "mise x spm:https://github.com/nicklockwood/SwiftFormat.git@0.53.10 -- swiftformat --version" "0.53.10"
 
+assert "mise x spm:nicklockwood/SwiftFormat@0.61.1 -- swiftformat --version" "0.61.1"
+
 # test package with resources (`templates list` command depends on resources being installed)
 #assert "mise x spm:SwiftGen/SwiftGen@6.6.2 --verbose -- swiftgen templates list --only colors" "colors:
 #   - literals-swift4

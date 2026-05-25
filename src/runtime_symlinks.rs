@@ -13,27 +13,8 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use versions::Versioning;
 
-pub async fn rebuild(config: &Config) -> Result<()> {
-    for backend in backend::list() {
-        for installs_dir in install_dirs_for(&backend) {
-            rebuild_symlinks_in_dir(config, &backend, &installs_dir)?;
-        }
-    }
-    Ok(())
-}
-
 pub async fn rebuild_for_toolset(config: &Config, ts: &Toolset) -> Result<()> {
-    let mut backends = backend::list();
-    for (backend, _) in ts.list_current_versions() {
-        if !backends
-            .iter()
-            .any(|b| b.ba().installs_path == backend.ba().installs_path)
-        {
-            backends.push(backend);
-        }
-    }
-
-    for backend in backends {
+    for backend in ts.list_cached_and_current_backends() {
         for installs_dir in install_dirs_for(&backend) {
             rebuild_symlinks_in_dir(config, &backend, &installs_dir)?;
         }

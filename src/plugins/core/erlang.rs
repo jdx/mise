@@ -15,7 +15,7 @@ use crate::lock_file::LockFile;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{file, github, plugins};
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Result, bail};
 use xx::regex;
 
 #[cfg(linux)]
@@ -84,6 +84,15 @@ impl ErlangPlugin {
         Ok(())
     }
 
+    fn precompiled_unavailable(&self, reason: impl Into<String>) -> Result<Option<ToolVersion>> {
+        let reason = reason.into();
+        if Settings::get().erlang.compile == Some(false) {
+            bail!("precompiled erlang is not available: {reason}");
+        }
+        debug!("{reason}");
+        Ok(None)
+    }
+
     #[cfg(linux)]
     async fn install_precompiled(
         &self,
@@ -100,8 +109,7 @@ impl ErlangPlugin {
             "x64" => "amd64".to_string(),
             "arm64" => "arm64".to_string(),
             other => {
-                debug!("Unsupported architecture: {}", other);
-                return Ok(None);
+                return self.precompiled_unavailable(format!("unsupported architecture: {other}"));
             }
         };
 
@@ -116,13 +124,12 @@ impl ErlangPlugin {
         } else if let Ok(os_release) = &*os_release::OS_RELEASE {
             os_ver = format!("{}-{}", os_release.id, os_release.version_id);
         } else {
-            return Ok(None);
+            return self.precompiled_unavailable("could not determine OS release");
         };
 
         // Currently, Bob only builds for Ubuntu, so we have to check that we're on ubuntu, and on a supported version
         if !["ubuntu-20.04", "ubuntu-22.04", "ubuntu-24.04"].contains(&os_ver.as_str()) {
-            debug!("Unsupported OS version: {}", os_ver);
-            return Ok(None);
+            return self.precompiled_unavailable(format!("unsupported OS version: {os_ver}"));
         }
 
         let url: String =
@@ -152,6 +159,7 @@ impl ErlangPlugin {
             .with_pr(ctx.pr.as_ref())
             .arg("-minimal")
             .arg(tv.install_path())
+            .envs(tv.install_env())
             .execute()?;
 
         Ok(Some(tv))
@@ -190,8 +198,8 @@ impl ErlangPlugin {
         let gh_release = match github::get_release("erlef/otp_builds", &release_tag).await {
             Ok(release) => release,
             Err(e) => {
-                debug!("Failed to get release: {}", e);
-                return Ok(None);
+                return self
+                    .precompiled_unavailable(format!("failed to get release {release_tag}: {e}"));
             }
         };
         let settings = Settings::get();
@@ -208,8 +216,9 @@ impl ErlangPlugin {
         let asset = match gh_release.assets.iter().find(|a| a.name == tarball_name) {
             Some(asset) => asset,
             None => {
-                debug!("No asset found for {}", release_tag);
-                return Ok(None);
+                return self.precompiled_unavailable(format!(
+                    "no asset found for {tarball_name} in {release_tag}"
+                ));
             }
         };
         ctx.pr.set_message(format!("Downloading {tarball_name}"));
@@ -246,8 +255,8 @@ impl ErlangPlugin {
         let gh_release = match github::get_release("erlang/otp", &release_tag).await {
             Ok(release) => release,
             Err(e) => {
-                debug!("Failed to get release: {}", e);
-                return Ok(None);
+                return self
+                    .precompiled_unavailable(format!("failed to get release {release_tag}: {e}"));
             }
         };
         let settings = Settings::get();
@@ -259,8 +268,9 @@ impl ErlangPlugin {
         let asset = match gh_release.assets.iter().find(|a| a.name == zip_name) {
             Some(asset) => asset,
             None => {
-                debug!("No asset found for {}", release_tag);
-                return Ok(None);
+                return self.precompiled_unavailable(format!(
+                    "no asset found for {zip_name} in {release_tag}"
+                ));
             }
         };
         ctx.pr.set_message(format!("Downloading {}", zip_name));
@@ -280,10 +290,14 @@ impl ErlangPlugin {
     #[cfg(not(any(linux, macos, windows)))]
     async fn install_precompiled(
         &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
+        _ctx: &InstallContext,
+        _tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        Ok(None)
+        if Settings::get().erlang.compile == Some(true) {
+            Ok(None)
+        } else {
+            self.precompiled_unavailable("precompiled erlang is not supported on this platform")
+        }
     }
 
     async fn install_via_kerl(
@@ -299,16 +313,19 @@ impl ErlangPlugin {
                 unimplemented!("erlang does not yet support refs");
             }
             _ => {
-                cmd!(
+                let mut cmd = cmd!(
                     self.kerl_path(),
                     "build-install",
                     &tv.version,
                     &tv.version,
                     tv.install_path()
                 )
-                .env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
-                .env("MAKEFLAGS", format!("-j{}", num_cpus::get()))
-                .run()?;
+                .env("MAKEFLAGS", format!("-j{}", num_cpus::get()));
+                for (key, value) in tv.install_env() {
+                    cmd = cmd.env(key, value);
+                }
+                cmd.env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
+                    .run()?;
             }
         }
 
