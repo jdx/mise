@@ -288,7 +288,7 @@ if [ "$DRY_RUN" != "true" ]; then
 	# be interpreted as shell syntax, and validate each value against a
 	# conservative chroot pattern before forwarding to copr-cli.
 	IFS=' ' read -ra chroot_array <<<"$CHROOTS"
-	copr_args=("build")
+	copr_args=("build" "--nowait")
 	for chroot in "${chroot_array[@]}"; do
 		[ -z "$chroot" ] && continue
 		if ! [[ "$chroot" =~ ^[A-Za-z0-9._+-]+$ ]]; then
