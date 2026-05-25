@@ -12,6 +12,7 @@ MAINTAINER_NAME="${MAINTAINER_NAME:-mise Release Bot}"
 MAINTAINER_EMAIL="${MAINTAINER_EMAIL:-noreply@mise.jdx.dev}"
 COPR_OWNER="${COPR_OWNER:-jdxcode}"
 COPR_PROJECT="${COPR_PROJECT:-mise}"
+COPR_BUILD_TIMEOUT="${COPR_BUILD_TIMEOUT:-180000}"
 DRY_RUN="${DRY_RUN:-false}"
 
 # Store the repository root directory
@@ -105,6 +106,7 @@ echo "Build Profile: $BUILD_PROFILE"
 echo "Chroots: $CHROOTS"
 echo "COPR Owner: $COPR_OWNER"
 echo "COPR Project: $COPR_PROJECT"
+echo "COPR Build Timeout: $COPR_BUILD_TIMEOUT"
 echo "Maintainer: $MAINTAINER_NAME <$MAINTAINER_EMAIL>"
 echo "Dry Run: $DRY_RUN"
 echo ""
@@ -288,7 +290,7 @@ if [ "$DRY_RUN" != "true" ]; then
 	# be interpreted as shell syntax, and validate each value against a
 	# conservative chroot pattern before forwarding to copr-cli.
 	IFS=' ' read -ra chroot_array <<<"$CHROOTS"
-	copr_args=("build" "--nowait")
+	copr_args=("build" "--timeout" "$COPR_BUILD_TIMEOUT")
 	for chroot in "${chroot_array[@]}"; do
 		[ -z "$chroot" ] && continue
 		if ! [[ "$chroot" =~ ^[A-Za-z0-9._+-]+$ ]]; then
