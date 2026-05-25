@@ -88,25 +88,22 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
         }
     }
     // fallback for "system"
-    let mise_bin = fs::canonicalize(&*env::MISE_BIN).unwrap_or_else(|_| env::MISE_BIN.clone());
-    let user_shims = fs::canonicalize(*dirs::SHIMS).unwrap_or_default();
+    let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
+    let user_shims = file::canonicalize_cached(&dirs::SHIMS);
     let sys_shims = {
         let p = env::MISE_SYSTEM_DATA_DIR.join("shims");
-        if p.exists() {
-            fs::canonicalize(&p).unwrap_or(p)
-        } else {
-            PathBuf::new()
-        }
+        file::canonicalize_cached(&p)
     };
     for path in &*env::PATH {
-        let canon_path = fs::canonicalize(path).unwrap_or_default();
-        if canon_path == user_shims || canon_path == sys_shims {
+        if let Some(canon_path) = file::canonicalize_cached(path)
+            && (user_shims.as_ref() == Some(&canon_path) || sys_shims.as_ref() == Some(&canon_path))
+        {
             continue;
         }
         let bin = path.join(bin_name);
         if bin.exists() {
             // Skip if this binary is a mise shim (symlink pointing to the mise binary)
-            if fs::canonicalize(&bin).unwrap_or_default() == mise_bin {
+            if file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin) {
                 continue;
             }
             trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
