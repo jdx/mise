@@ -258,11 +258,7 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
             &backend.id().to_string(),
         )
     });
-    tools.retain(|backend| {
-        !settings
-            .disable_backends
-            .contains(&backend.get_type().to_string())
-    });
+    tools.retain(|backend| !is_disabled_backend_type(&backend.get_type()));
 
     let tools: BackendMap = tools
         .into_iter()
@@ -313,6 +309,26 @@ pub fn remove(short: &str) {
         tools_.remove(short);
         *tools = Some(Arc::new(tools_));
     }
+}
+
+pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+    backend_type
+        .disable_key()
+        .is_some_and(is_disabled_backend_name)
+}
+
+pub fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
+    if is_disabled_backend_type(backend_type) {
+        bail!("backend {backend_type} is disabled by disable_backends");
+    }
+    Ok(())
+}
+
+fn is_disabled_backend_name(backend: &str) -> bool {
+    Settings::get()
+        .disable_backends
+        .iter()
+        .any(|disabled| disabled == backend)
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {

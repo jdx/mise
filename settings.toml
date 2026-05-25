@@ -343,7 +343,7 @@ type = "String"
 
 [disable_backends]
 default = []
-description = "Backends to disable such as `asdf` or `pipx`"
+description = "Backends to disable for new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. This does not uninstall or disable tools already installed with those backends."
 env = "MISE_DISABLE_BACKENDS"
 parse_env = "list_by_comma"
 rust_type = "Vec<String>"
