@@ -11,6 +11,7 @@ RUN dnf update -y && \
         rust \
         cargo \
         gcc \
+        openssl-devel \
         tar \
         gzip && \
     dnf clean all
@@ -20,13 +21,6 @@ RUN dnf install -y copr-cli && \
     dnf clean all && \
     test "$(readlink -f "$(command -v copr-cli)")" = "/usr/bin/copr-cli" && \
     copr-cli --help >/dev/null
-
-# Add mise to PATH
-ENV PATH="/root/.local/bin:${PATH}"
-
-# Install mise and use it to install cargo-vendor
-RUN curl https://mise.run | sh
-RUN mise use -g cargo-binstall cargo:cargo-vendor
 
 # Set up RPM build environment
 RUN rpmdev-setuptree
