@@ -51,11 +51,11 @@ impl BunPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+        let os = get_os();
+        let arch = BunPlugin::get_bun_arch_with_variants_for_version(&tv.version);
         let url = format!(
             "https://github.com/oven-sh/bun/releases/download/bun-v{}/bun-{}-{}.zip",
-            tv.version,
-            os(),
-            arch()
+            tv.version, os, arch
         );
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
@@ -67,6 +67,8 @@ impl BunPlugin {
     }
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
+        let os = get_os();
+        let arch = BunPlugin::get_bun_arch_with_variants_for_version(&tv.version);
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
@@ -74,7 +76,7 @@ impl BunPlugin {
         file::unzip(tarball_path, &tv.download_path(), &Default::default())?;
         file::move_file(
             tv.download_path()
-                .join(format!("bun-{}-{}", os(), arch()))
+                .join(format!("bun-{os}-{arch}"))
                 .join(bun_bin_name()),
             self.bun_bin(tv),
         )?;
@@ -223,7 +225,7 @@ impl Backend for BunPlugin {
         // Build the asset pattern for Bun's GitHub releases
         // Pattern: bun-{os}-{arch}.zip (where arch may include variants like -musl, -baseline)
         let os_name = Self::map_os_to_bun(target.os_name());
-        let arch_name = Self::get_bun_arch_for_target(target);
+        let arch_name = Self::get_bun_arch_for_target(target, version);
         let asset_pattern = format!("bun-{os_name}-{arch_name}.zip");
 
         Ok(Some(GitHubReleaseInfo {
@@ -245,7 +247,7 @@ impl Backend for BunPlugin {
 
         // Build platform-specific filename
         let os_name = Self::map_os_to_bun(target.os_name());
-        let arch_name = Self::get_bun_arch_for_target(target);
+        let arch_name = Self::get_bun_arch_for_target(target, version);
         let filename = format!("bun-{os_name}-{arch_name}.zip");
 
         // Build download URL
@@ -280,6 +282,7 @@ impl Backend for BunPlugin {
         // - macos-x64: x64, x64-baseline
         // - macos-arm64: aarch64
         // - windows-x64: x64, x64-baseline
+        // - windows-arm64: aarch64 (since Bun v1.3.10)
 
         // If the platform already has a qualifier, it's already a specific variant
         // Don't expand it to avoid duplicates
@@ -355,7 +358,17 @@ impl BunPlugin {
 
     /// Get the full Bun arch string for a target platform
     /// This handles musl, baseline, and other variants based on platform qualifiers
-    fn get_bun_arch_for_target(target: &PlatformTarget) -> String {
+    fn get_bun_arch_for_target(target: &PlatformTarget, version: &str) -> String {
+        if target.os_name() == "windows"
+            && target.arch_name() == "arm64"
+            && target.qualifier().is_none()
+            && !Self::supports_windows_arm64(version)
+        {
+            // Bun added native windows-aarch64 archives in v1.3.10.
+            // Older releases require x64 under emulation.
+            return "x64-baseline".to_string();
+        }
+
         let base_arch = Self::map_arch_to_bun(target.arch_name());
 
         // Handle qualifiers like musl, baseline, etc.
@@ -369,6 +382,14 @@ impl BunPlugin {
         } else {
             base_arch.to_string()
         }
+    }
+
+    fn supports_windows_arm64(version: &str) -> bool {
+        static MIN_VERSION: std::sync::LazyLock<Versioning> =
+            std::sync::LazyLock::new(|| Versioning::new("1.3.10").unwrap());
+        Versioning::new(version)
+            .map(|v| v >= *MIN_VERSION)
+            .unwrap_or(false)
     }
 
     /// Check if the current system has AVX2 support (runtime detection)
@@ -425,7 +446,7 @@ impl BunPlugin {
 
     /// Get the full Bun arch string with variants (musl, baseline, etc.)
     /// Uses Settings::get().arch() to respect MISE_ARCH overrides and runtime AVX2 detection
-    fn get_bun_arch_with_variants() -> String {
+    fn get_bun_arch_with_variants_for_version(version: &str) -> String {
         let settings = Settings::get();
         let arch = settings.arch();
         let os = settings.os();
@@ -446,8 +467,9 @@ impl BunPlugin {
             "arm64" => {
                 if Self::is_musl() {
                     "aarch64-musl".to_string()
-                } else if os == "windows" {
-                    // Bun has no native windows-arm64 build; fall back to x64 under emulation
+                } else if os == "windows" && !Self::supports_windows_arm64(version) {
+                    // Bun gained native windows-aarch64 archives in v1.3.10.
+                    // Use x64 under emulation for older Bun releases.
                     "x64-baseline".to_string()
                 } else {
                     "aarch64".to_string()
@@ -458,15 +480,51 @@ impl BunPlugin {
     }
 }
 
-fn os() -> String {
+fn get_os() -> String {
     let settings = Settings::get();
     BunPlugin::map_os_to_bun(settings.os()).to_string()
 }
 
-fn arch() -> String {
-    BunPlugin::get_bun_arch_with_variants()
-}
-
 fn bun_bin_name() -> &'static str {
     if cfg!(windows) { "bun.exe" } else { "bun" }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supports_windows_arm64_from_1_3_10() {
+        assert!(!BunPlugin::supports_windows_arm64("1.3.9"));
+        assert!(BunPlugin::supports_windows_arm64("1.3.10"));
+        assert!(BunPlugin::supports_windows_arm64("1.3.11"));
+    }
+
+    #[test]
+    fn bun_arch_for_windows_arm64_respects_version_cutoff() {
+        let target = PlatformTarget::new(Platform::parse("windows-arm64").unwrap());
+
+        assert_eq!(
+            BunPlugin::get_bun_arch_for_target(&target, "1.3.9"),
+            "x64-baseline"
+        );
+        assert_eq!(
+            BunPlugin::get_bun_arch_for_target(&target, "1.3.10"),
+            "aarch64"
+        );
+    }
+
+    #[test]
+    fn bun_arch_for_windows_x64_still_supports_baseline_variant() {
+        let target = PlatformTarget::new(Platform::parse("windows-x64-baseline").unwrap());
+
+        assert_eq!(
+            BunPlugin::get_bun_arch_for_target(&target, "1.3.9"),
+            "x64-baseline"
+        );
+        assert_eq!(
+            BunPlugin::get_bun_arch_for_target(&target, "1.3.10"),
+            "x64-baseline"
+        );
+    }
 }
