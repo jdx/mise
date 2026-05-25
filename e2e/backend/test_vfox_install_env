@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+PLUGIN_DIR="$PWD/vfox-install-env"
+MARKER="$PWD/install-env-marker"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "install-env"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/install-env"
+PLUGIN.license = "MIT"
+PLUGIN.description = "install env test plugin"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return {
+		version = ctx.version,
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/post_install.lua" <<LUA
+function PLUGIN:PostInstall(ctx)
+	local cmd = require("cmd")
+	cmd.exec("printf '%s' \"\$MISE_TEST_INSTALL_ENV_VALUE\" > \"$MARKER\"")
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {}
+end
+LUA
+
+git -C "$PLUGIN_DIR" init
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.name="mise" -c user.email="mise@example.com" commit -m "initial plugin"
+
+cat >mise.toml <<EOF
+[settings]
+unix_default_inline_shell_args = "sh -c"
+
+[tools]
+"vfox:file://$PLUGIN_DIR" = { version = "1.0.0", install_env = { MISE_TEST_INSTALL_ENV_VALUE = "available" } }
+EOF
+
+mise install
+assert "cat '$MARKER'" "available"

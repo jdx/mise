@@ -194,7 +194,7 @@ async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse>
     let deadline = chrono::Utc::now() + chrono::Duration::seconds(device.expires_in as i64);
     let mut interval = device.interval.max(1);
     let url = format!(
-        "{}/access_token",
+        "{}/oauth/access_token",
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
     let client_id = settings.github.oauth_client_id.trim();
@@ -263,7 +263,7 @@ async fn refresh_token(cached: &CachedToken) -> Result<Option<CachedToken>> {
 
     let settings = Settings::get();
     let url = format!(
-        "{}/access_token",
+        "{}/oauth/access_token",
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
     let response = crate::http::HTTP

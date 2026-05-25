@@ -14,7 +14,7 @@ use crate::cli::args::BackendArg;
 use crate::config::config_file::{ConfigFile, trust_check};
 use crate::file;
 use crate::file::display_path;
-use crate::tera::{BASE_CONTEXT, get_tera};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 use super::ConfigFileType;
@@ -60,9 +60,10 @@ impl ToolVersions {
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
         let dir = path.parent();
-        let s = if s.contains("{{") || s.contains("{%") || s.contains("{#") {
+        let s = if contains_template_syntax(s) {
             trust_check(&path)?;
-            get_tera(dir).render_str(s, &cf.context)?
+            let mut tera = get_tera(dir);
+            render_str(&mut tera, s, &cf.context)?
         } else {
             s.to_string()
         };

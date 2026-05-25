@@ -113,7 +113,7 @@ static OS_PATTERNS: LazyLock<Vec<(AssetOs, Regex)>> = LazyLock::new(|| {
     vec![
         (
             AssetOs::Linux,
-            Regex::new(r"(?i)(?:\b|_)(?:linux|ubuntu|debian|fedora|centos|rhel|alpine|arch)(?:\b|_|32|64|-)")
+            Regex::new(r"(?i)(?:\b|_)(?:linux|manylinux(?:[0-9_]+)?|musllinux(?:[0-9_]+)?|ubuntu|debian|fedora|centos|rhel|alpine|arch)(?:\b|_|32|64|-)")
                 .unwrap(),
         ),
         (
@@ -156,11 +156,11 @@ static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
         ),
         (
             AssetLibc::Gnu,
-            Regex::new(r"(?i)(?:\b|_)(?:gnu|glibc)(?:\b|_)").unwrap(),
+            Regex::new(r"(?i)(?:\b|_)(?:gnu|glibc|manylinux(?:[0-9_]+)?)(?:\b|_)").unwrap(),
         ),
         (
             AssetLibc::Musl,
-            Regex::new(r"(?i)(?:\b|_)(?:musl)(?:\b|_)").unwrap(),
+            Regex::new(r"(?i)(?:\b|_)(?:musl|musllinux(?:[0-9_]+)?)(?:\b|_)").unwrap(),
         ),
     ]
 });
@@ -173,6 +173,7 @@ pub struct AssetPicker {
     target_arch: String,
     target_libc: String,
     no_app: bool,
+    preferred_name: Option<String>,
 }
 
 impl AssetPicker {
@@ -195,12 +196,22 @@ impl AssetPicker {
             target_arch,
             target_libc,
             no_app: false,
+            preferred_name: None,
         }
     }
 
     /// Set whether to avoid .app bundles (prefer standalone CLI tools)
     pub fn with_no_app(mut self, no_app: bool) -> Self {
         self.no_app = no_app;
+        self
+    }
+
+    /// Prefer assets whose platform-stripped name matches the primary tool.
+    pub fn with_preferred_name(mut self, preferred_name: impl Into<String>) -> Self {
+        let preferred_name = preferred_name.into();
+        if !preferred_name.is_empty() {
+            self.preferred_name = Some(preferred_name);
+        }
         self
     }
 
@@ -215,7 +226,7 @@ impl AssetPicker {
         let scored_assets = self.score_all_assets(assets);
         scored_assets
             .into_iter()
-            .filter(|(score, _)| *score > 0)
+            .filter(|(score, asset)| *score > 0 && !self.has_arch_mismatch(asset))
             .min_by(|(score_a, name_a), (score_b, name_b)| {
                 score_b
                     .cmp(score_a)
@@ -272,6 +283,7 @@ impl AssetPicker {
             score += self.score_libc_match(asset);
         }
         score += self.score_format_preferences(asset);
+        score += self.score_preferred_name_match(asset);
         score += self.score_build_penalties(asset);
         score
     }
@@ -314,6 +326,10 @@ impl AssetPicker {
         0
     }
 
+    fn has_arch_mismatch(&self, asset: &str) -> bool {
+        self.score_arch_match(asset) < 0
+    }
+
     fn score_libc_match(&self, asset: &str) -> i32 {
         for (libc, pattern) in LIBC_PATTERNS.iter() {
             if pattern.is_match(asset) {
@@ -338,7 +354,27 @@ impl AssetPicker {
             }
         }
 
-        if format.is_archive() { 10 } else { 0 }
+        if format.is_archive() {
+            return 10;
+        }
+
+        // Platform-agnostic runtime archives (composer.phar, foo.jar, bar.pyz)
+        // run on the language runtime, not the OS — give them the same score as
+        // a regular archive so single-asset releases like composer's
+        // `composer.phar` are picked instead of failing platform matching.
+        // See: https://github.com/jdx/mise/discussions/9936
+        //
+        // `.whl` and `.gem` are intentionally NOT in this list: both have
+        // platform-tagged variants whose tokens OS_PATTERNS doesn't reliably
+        // catch (`manylinux2014_x86_64`, `mingw32`), so granting the bonus
+        // could let a wrong-platform variant be picked. Those cases should
+        // use an explicit `asset_pattern`.
+        let lower = asset.to_lowercase();
+        if lower.ends_with(".phar") || lower.ends_with(".jar") || lower.ends_with(".pyz") {
+            return 10;
+        }
+
+        0
     }
 
     fn score_build_penalties(&self, asset: &str) -> i32 {
@@ -396,6 +432,123 @@ impl AssetPicker {
 
         penalty
     }
+
+    fn score_preferred_name_match(&self, asset: &str) -> i32 {
+        const PREFERRED_NAME_BONUS: i32 = 20;
+
+        match &self.preferred_name {
+            Some(preferred_name) if asset_matches_preferred_name(asset, preferred_name) => {
+                PREFERRED_NAME_BONUS
+            }
+            _ => 0,
+        }
+    }
+}
+
+fn asset_matches_preferred_name(asset: &str, preferred_name: &str) -> bool {
+    let asset = asset_name_stem(asset);
+    let preferred_name = preferred_name
+        .rsplit('/')
+        .next()
+        .unwrap_or(preferred_name)
+        .to_lowercase();
+
+    if asset == preferred_name {
+        return true;
+    }
+
+    let Some(rest) = asset.strip_prefix(&preferred_name) else {
+        return false;
+    };
+
+    if !rest.starts_with(['-', '_', '.']) {
+        return false;
+    }
+
+    rest[1..]
+        .split(['-', '_', '.'])
+        .all(is_platform_or_version_token)
+}
+
+fn asset_name_stem(asset: &str) -> String {
+    let mut name = asset.rsplit('/').next().unwrap_or(asset).to_lowercase();
+    let suffixes = [
+        ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".tar", ".zip", ".gz", ".xz", ".bz2",
+        ".zst", ".phar", ".jar", ".pyz", ".exe", ".msi",
+    ];
+
+    if let Some(suffix) = suffixes.iter().find(|suffix| name.ends_with(*suffix)) {
+        name.truncate(name.len() - suffix.len());
+    }
+
+    name
+}
+
+fn is_platform_or_version_token(token: &str) -> bool {
+    if token.is_empty() {
+        return true;
+    }
+    if token.starts_with("manylinux") || token.starts_with("musllinux") {
+        return true;
+    }
+    if token.starts_with('v')
+        && token[1..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+    {
+        return true;
+    }
+    if token.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        return true;
+    }
+
+    matches!(
+        token,
+        "linux"
+            | "ubuntu"
+            | "debian"
+            | "fedora"
+            | "centos"
+            | "rhel"
+            | "alpine"
+            | "arch"
+            | "darwin"
+            | "mac"
+            | "macos"
+            | "macosx"
+            | "osx"
+            | "windows"
+            | "win"
+            | "win32"
+            | "win64"
+            | "mingw"
+            | "mingw32"
+            | "mingw64"
+            | "w64"
+            | "x86"
+            | "64"
+            | "x64"
+            | "amd64"
+            | "aarch64"
+            | "arm64"
+            | "arm"
+            | "armv6"
+            | "armv7"
+            | "i386"
+            | "i686"
+            | "ppc64"
+            | "ppc64le"
+            | "riscv64"
+            | "s390x"
+            | "gnu"
+            | "glibc"
+            | "musl"
+            | "msvc"
+            | "pc"
+            | "apple"
+            | "unknown"
+    )
 }
 
 /// Detects platform information from a URL
@@ -491,6 +644,8 @@ pub struct AssetMatcher {
     target_libc: Option<String>,
     /// Whether to avoid .app bundles
     no_app: bool,
+    /// Preferred primary executable/tool name for asset selection
+    preferred_name: Option<String>,
 }
 
 impl AssetMatcher {
@@ -510,6 +665,15 @@ impl AssetMatcher {
     /// Set whether to avoid .app bundles (prefer standalone CLI tools)
     pub fn with_no_app(mut self, no_app: bool) -> Self {
         self.no_app = no_app;
+        self
+    }
+
+    /// Prefer assets whose platform-stripped name matches the primary tool.
+    pub fn with_preferred_name(mut self, preferred_name: impl Into<String>) -> Self {
+        let preferred_name = preferred_name.into();
+        if !preferred_name.is_empty() {
+            self.preferred_name = Some(preferred_name);
+        }
         self
     }
 
@@ -558,7 +722,8 @@ impl AssetMatcher {
         let arch = self.target_arch.as_ref()?;
         Some(
             AssetPicker::with_libc(os.clone(), arch.clone(), self.target_libc.clone())
-                .with_no_app(self.no_app),
+                .with_no_app(self.no_app)
+                .with_preferred_name(self.preferred_name.clone().unwrap_or_default()),
         )
     }
 
@@ -1138,6 +1303,125 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
     }
 
     #[test]
+    fn test_preferred_name_picks_primary_binary_over_related_archive() {
+        // opengrep ships both a primary CLI binary and an opengrep-core archive
+        // for the same platform. Prefer the asset whose platform-stripped name
+        // matches the repo/tool name.
+        let assets = vec![
+            "opengrep-core_osx_aarch64.tar.gz".to_string(),
+            "opengrep_osx_arm64".to_string(),
+        ];
+
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_preferred_name("opengrep");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "opengrep_osx_arm64");
+    }
+
+    #[test]
+    fn test_manylinux_and_musllinux_assets_are_linux_with_libc() {
+        let assets = vec![
+            "opengrep-core_linux_aarch64.tar.gz".to_string(),
+            "opengrep_manylinux_aarch64".to_string(),
+            "opengrep_musllinux_aarch64".to_string(),
+        ];
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None)
+            .with_preferred_name("opengrep");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "opengrep_manylinux_aarch64");
+
+        let picker = AssetPicker::with_libc(
+            "linux".to_string(),
+            "aarch64".to_string(),
+            Some("musl".to_string()),
+        )
+        .with_preferred_name("opengrep");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "opengrep_musllinux_aarch64");
+    }
+
+    #[test]
+    fn test_preferred_name_handles_tar_and_split_platform_tokens() {
+        let assets = vec!["tool-mingw-w64-x86_64.tar".to_string()];
+
+        let picker = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("tool");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-mingw-w64-x86_64.tar");
+    }
+
+    #[test]
+    fn test_platform_agnostic_phar_picked() {
+        // composer ships a single platform-agnostic `composer.phar` (plus a
+        // signature). `.phar` is a PHP runtime archive — it runs on any OS
+        // PHP supports, so we should pick it without requiring platform tokens.
+        // See: https://github.com/jdx/mise/discussions/9936
+        let assets = vec!["composer.phar".to_string(), "composer.phar.asc".to_string()];
+
+        for os in ["linux", "macos", "windows"] {
+            let picker = AssetPicker::with_libc(os.to_string(), "x86_64".to_string(), None);
+            let picked = picker.pick_best_asset(&assets).unwrap();
+            assert_eq!(picked, "composer.phar", "should pick .phar on {os}");
+        }
+    }
+
+    #[test]
+    fn test_platform_agnostic_jar_picked() {
+        // JVM tools commonly ship a single platform-agnostic `.jar`.
+        let assets = vec!["tool.jar".to_string(), "tool.jar.sha256".to_string()];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool.jar");
+    }
+
+    #[test]
+    fn test_platform_tagged_extensions_excluded_from_bonus() {
+        // Regression guard: .whl and .gem are intentionally excluded from the
+        // platform-agnostic format-score bonus that .phar/.jar/.pyz get.
+        // Both have platform-tagged variants (`manylinux2014_x86_64.whl`,
+        // `x86_64-mingw32.gem`) whose tokens OS_PATTERNS doesn't reliably
+        // catch — granting the bonus would help wrong-platform variants
+        // win against the right one.
+        //
+        // Concretely: `.whl` and `.gem` with no other tokens should score 0
+        // (filtered out), while `.jar` with no other tokens scores 10.
+        let picker = AssetPicker::with_libc("macos".to_string(), "x86_64".to_string(), None);
+        assert!(picker.pick_best_asset(&["tool.whl".to_string()]).is_none());
+        assert!(picker.pick_best_asset(&["tool.gem".to_string()]).is_none());
+        assert_eq!(
+            picker.pick_best_asset(&["tool.jar".to_string()]).as_deref(),
+            Some("tool.jar")
+        );
+    }
+
+    #[test]
+    fn test_platform_specific_still_wins_over_phar() {
+        // If a release ships both platform-specific binaries and a .phar,
+        // platform-specific should still win (it scores higher: 100+50+10 vs 10).
+        let assets = vec![
+            "tool.phar".to_string(),
+            "tool-linux-x86_64.tar.gz".to_string(),
+            "tool-darwin-x86_64.tar.gz".to_string(),
+        ];
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-linux-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn test_exe_on_non_windows_not_picked() {
+        // Regression guard: a Windows .exe with no other platform tokens
+        // should NOT be auto-picked on Linux just because it's the only
+        // non-metadata asset. This is the failure mode that scuttled
+        // https://github.com/jdx/mise/pull/8756 — preserve it.
+        let assets = vec!["foo.exe".to_string()];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        assert!(picker.pick_best_asset(&assets).is_none());
+    }
+
+    #[test]
     fn test_for_target_with_libc_qualifier() {
         use crate::backend::platform_target::PlatformTarget;
         use crate::platform::Platform;
@@ -1292,6 +1576,26 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             "Architecture mismatch should result in negative score, got {}",
             score
         );
+    }
+
+    #[test]
+    fn test_arch_mismatch_rejected_after_positive_bonuses() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None)
+            .with_preferred_name("cargo-msrv");
+        let assets = vec![
+            "cargo-msrv-aarch64-apple-darwin-v0.19.3.tgz".to_string(),
+            "cargo-msrv-x86_64-apple-darwin-v0.19.3.tgz".to_string(),
+            "cargo-msrv-x86_64-pc-windows-msvc-v0.19.3.zip".to_string(),
+            "cargo-msrv-x86_64-unknown-linux-gnu-v0.19.3.tgz".to_string(),
+            "cargo-msrv-x86_64-unknown-linux-musl-v0.19.3.tgz".to_string(),
+        ];
+
+        let score = picker.score_asset("cargo-msrv-x86_64-unknown-linux-gnu-v0.19.3.tgz");
+        assert!(
+            score > 0,
+            "regression setup should cover wrong-arch assets rescued by bonuses, got {score}"
+        );
+        assert_eq!(picker.pick_best_asset(&assets), None);
     }
 
     #[test]

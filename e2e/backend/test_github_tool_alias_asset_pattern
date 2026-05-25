@@ -30,6 +30,11 @@ assert_contains "mise x -- hello-world" "hello world"
 # Both aliases should have installed using their own asset patterns
 assert "test -d ~/.local/share/mise/installs/hw1/1.0.0/hello-world-1.0.0"
 assert "test -d ~/.local/share/mise/installs/hw2/1.0.0/hello-world-2.0.0"
+# Configured aliases with tool options are command-scoped backends internally,
+# but active aliases still need runtime symlinks and shims after install.
+assert "test -L ~/.local/share/mise/installs/hw1/latest"
+assert "test -L ~/.local/share/mise/installs/hw2/latest"
+assert "test -L ~/.local/share/mise/shims/hello-world"
 
 # When both an alias and its resolved backend are configured, the alias-specific
 # entry should win and should not fall back to the backend entry's options.

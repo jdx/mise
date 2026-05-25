@@ -53,6 +53,8 @@ pub struct Vfox {
     /// instead of inheriting the process environment. This allows dependency tools'
     /// bin paths to be on PATH during version resolution and installation.
     pub cmd_env: Option<IndexMap<String, String>>,
+    /// Shell command used by Lua `cmd.exec()`.
+    pub default_inline_shell: Option<Vec<String>>,
     /// Optional GitHub token for Lua http requests to GitHub API endpoints.
     pub github_token: Option<String>,
     /// Optional lazy resolver for the GitHub token. When set, the token is only
@@ -153,6 +155,7 @@ impl Vfox {
     pub fn get_sdk(&self, name: &str) -> Result<Plugin> {
         let mut plugin = Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))?;
         plugin.runtime_env_type = self.runtime_env_type.clone();
+        self.set_cmd_shell(&plugin)?;
         Ok(plugin)
     }
 
@@ -163,6 +166,13 @@ impl Vfox {
         }
         self.set_github_token(&plugin)?;
         Ok(plugin)
+    }
+
+    fn set_cmd_shell(&self, plugin: &Plugin) -> Result<()> {
+        if let Some(shell) = &self.default_inline_shell {
+            plugin.set_cmd_shell(shell)?;
+        }
+        Ok(())
     }
 
     fn set_github_token(&self, plugin: &Plugin) -> Result<()> {
@@ -332,10 +342,32 @@ impl Vfox {
     ) -> Result<Vec<EnvKey>> {
         debug!("Getting env keys for {sdk} version {version}");
         let sdk = self.get_sdk_with_env(sdk)?;
-        let sdk_info = sdk.sdk_info(
-            version.to_string(),
-            self.install_dir.join(&sdk.name).join(version),
-        )?;
+        let install_dir = self.install_dir.join(&sdk.name).join(version);
+        self.env_keys_for_sdk_install_dir(sdk, version, install_dir, options)
+            .await
+    }
+
+    pub async fn env_keys_for_install_dir<T: serde::Serialize>(
+        &self,
+        sdk: &str,
+        version: &str,
+        install_dir: impl AsRef<Path>,
+        options: T,
+    ) -> Result<Vec<EnvKey>> {
+        debug!("Getting env keys for {sdk} version {version}");
+        let sdk = self.get_sdk_with_env(sdk)?;
+        self.env_keys_for_sdk_install_dir(sdk, version, install_dir, options)
+            .await
+    }
+
+    async fn env_keys_for_sdk_install_dir<T: serde::Serialize>(
+        &self,
+        sdk: Plugin,
+        version: &str,
+        install_dir: impl AsRef<Path>,
+        options: T,
+    ) -> Result<Vec<EnvKey>> {
+        let sdk_info = sdk.sdk_info(version.to_string(), install_dir.as_ref().to_path_buf())?;
         let ctx = EnvKeysContext {
             args: vec![],
             version: version.to_string(),
@@ -653,6 +685,7 @@ impl Default for Vfox {
             install_dir: home().join(".version-fox/installs"),
             skip_verification: false,
             cmd_env: None,
+            default_inline_shell: None,
             github_token: None,
             github_token_resolver: None,
             runtime_env_type: None,
@@ -682,6 +715,7 @@ mod tests {
                 install_dir: PathBuf::from("test/installs"),
                 skip_verification: false,
                 cmd_env: None,
+                default_inline_shell: None,
                 github_token: None,
                 github_token_resolver: None,
                 runtime_env_type: None,
@@ -707,6 +741,27 @@ mod tests {
             "<INSTALL_DIR>",
         );
         assert_snapshot!(output);
+    }
+
+    #[tokio::test]
+    async fn test_env_keys_for_install_dir() {
+        let vfox = Vfox::test();
+        let install_dir = PathBuf::from("custom/installs/dummy/1.0.0");
+        let keys = vfox
+            .env_keys_for_install_dir(
+                "dummy",
+                "1.0.0",
+                &install_dir,
+                serde_json::Value::Object(Default::default()),
+            )
+            .await
+            .unwrap();
+        let expected = if cfg!(windows) {
+            install_dir
+        } else {
+            install_dir.join("bin")
+        };
+        assert_eq!(keys[0].value, expected.to_string_lossy().into_owned());
     }
 
     #[tokio::test]

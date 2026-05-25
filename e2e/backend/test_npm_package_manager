@@ -39,7 +39,7 @@ echo "✓ npm backend lists versions using npm"
 # Test installation using npm
 cat >.mise.toml <<EOF
 [tools]
-"npm:tiny" = { version = "latest", npm_args = "--foreground-scripts" }
+"npm:tiny" = { version = "latest", npm_args = "--ignore-scripts=false --foreground-scripts" }
 EOF
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 NPM_DEBUG_LOG="$TMPDIR/npm_debug.log"
@@ -47,6 +47,7 @@ assert_succeed "MISE_DEBUG=1 mise install >'$NPM_DEBUG_LOG' 2>&1"
 # npm 11.10.0+ uses `--min-release-age={days}`; older npm uses `--before {ts}`.
 # Accept either since the underlying npm version varies between environments.
 assert_matches "cat '$NPM_DEBUG_LOG'" "--(before|min-release-age)"
+assert_matches "tr '\n' ' ' < '$NPM_DEBUG_LOG'" "--ignore-scripts=true.*--ignore-scripts=false"
 assert_contains "cat '$NPM_DEBUG_LOG'" "--foreground-scripts"
 echo "✓ npm backend successfully installs package using npm"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
@@ -63,6 +64,16 @@ BUN_DEBUG_LOG="$TMPDIR/bun_debug.log"
 assert_succeed "MISE_DEBUG=1 mise install >'$BUN_DEBUG_LOG' 2>&1"
 assert_contains "cat '$BUN_DEBUG_LOG'" "--minimum-release-age"
 assert_contains "cat '$BUN_DEBUG_LOG'" "--verbose"
+assert_not_contains "cat '$BUN_DEBUG_LOG'" "--trust"
+mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
+
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", bun_args = "--trust" }
+EOF
+BUN_TRUST_DEBUG_LOG="$TMPDIR/bun_trust_debug.log"
+assert_succeed "MISE_DEBUG=1 mise install >'$BUN_TRUST_DEBUG_LOG' 2>&1"
+assert_contains "cat '$BUN_TRUST_DEBUG_LOG'" "--trust"
 echo "✓ npm backend successfully installs package using bun (package_manager=bun)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -91,11 +102,10 @@ export MISE_NPM_PACKAGE_MANAGER=aube
 
 # Ensure aube is available after the default package manager test, since
 # npm.package_manager=auto uses aube when it is already installed.
-# Pin to a known-good aube version: `latest` has bitten us when a new
-# release goes out hours before CI runs (e.g. v1.11.0 on 2026-05-11 broke
-# `aube add --global` here). Bypass MISE_MINIMUM_RELEASE_AGE because the
-# global filter is set to test the package-manager flag plumbing below.
-AUBE_TEST_VERSION="1.10.4"
+# Pin to the current aube release checked for this test. Bypass
+# MISE_MINIMUM_RELEASE_AGE because the global filter is set to test the
+# package-manager flag plumbing below.
+AUBE_TEST_VERSION="1.15.0"
 if ! command -v aube >/dev/null 2>&1; then
   echo "aube not available in test environment, installing..."
   assert_succeed "env -u MISE_MINIMUM_RELEASE_AGE mise use aube@$AUBE_TEST_VERSION"

@@ -1,0 +1,3 @@
+backends = ["aqua:SonarSource/sonarqube-cli"]
+description = "CLI tool to provide access to Sonar features"
+test = { cmd = "sonar --version", expected = "{{ version | split(pat='.') | slice(start=0, end=3) | join(sep='.') }}" }

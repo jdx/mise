@@ -401,7 +401,13 @@ impl AquaPackage {
         arch: &str,
         runtime: AquaRuntime<'_>,
     ) -> AquaPackage {
-        self = apply_override(self.clone(), self.version_override(versions));
+        if let Some(version_override) = self
+            .version_override(versions)
+            .filter(|version_override| !std::ptr::eq(*version_override, &self))
+            .cloned()
+        {
+            self = apply_override(self, &version_override);
+        }
         if let Some(pkg) = self
             .overrides
             .iter()
@@ -420,7 +426,11 @@ impl AquaPackage {
         Ok(self)
     }
 
-    fn version_override(&self, versions: &[&str]) -> &AquaPackage {
+    pub fn version_constraint_ok(&self, versions: &[&str]) -> bool {
+        self.version_override(versions).is_some()
+    }
+
+    fn version_override(&self, versions: &[&str]) -> Option<&AquaPackage> {
         let expressions = versions
             .iter()
             .map(|v| (self.expr_parser(v), self.expr_ctx(v)))
@@ -443,7 +453,6 @@ impl AquaPackage {
                     })
                 }
             })
-            .unwrap_or(self)
     }
 
     /// Detect the format of an archive based on its filename
@@ -1316,7 +1325,7 @@ packages:
             ..Default::default()
         };
 
-        let result = pkg.version_override(&["brew"]);
+        let result = pkg.version_override(&["brew"]).unwrap();
         // "brew" matches semver("<= 0.2.13") instead of "true",
         // because Versioning::new("brew") parses as General(Alphanum("brew"))
         // which sorts before numeric versions.

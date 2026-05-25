@@ -12,11 +12,14 @@ use std::sync::OnceLock;
 use eyre::Result;
 use tera::Context;
 
+use crate::config::config_file::diagnostic::toml_parse_error;
 use crate::config::settings::MisercSettings;
 use crate::dirs;
 use crate::env;
 use crate::file;
-use crate::tera::{get_miserc_tera, take_tera_accessed_files};
+use crate::tera::{
+    contains_template_syntax, get_miserc_tera, render_str, take_tera_accessed_files,
+};
 
 static MISERC: OnceLock<MisercSettings> = OnceLock::new();
 
@@ -84,7 +87,7 @@ fn render_miserc_template(
     content: &str,
     config_root: &Path,
 ) -> String {
-    if !content.contains("{{") && !content.contains("{%") && !content.contains("{#") {
+    if !contains_template_syntax(content) {
         return content.to_string();
     }
     // Lazily initialize the Tera instance — only pay the clone cost if at least one file
@@ -103,7 +106,7 @@ fn render_miserc_template(
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
-    match tera.render_str(content, &context) {
+    match render_str(tera, content, &context) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template in miserc: {e}");
@@ -131,14 +134,9 @@ fn load_miserc_settings() -> Result<MisercSettings> {
         if let Ok(content) = file::read_to_string(&path) {
             let config_root = path.parent().unwrap_or(Path::new("."));
             let content = render_miserc_template(&mut tera, &content, config_root);
-            match toml::from_str::<MisercSettings>(&content) {
-                Ok(settings) => {
-                    merge_settings(&mut merged, settings);
-                }
-                Err(e) => {
-                    warn!("Failed to parse {}: {}", path.display(), e);
-                }
-            }
+            let settings = toml::from_str::<MisercSettings>(&content)
+                .map_err(|e| toml_parse_error(&e, &content, &path))?;
+            merge_settings(&mut merged, settings);
         }
     }
 

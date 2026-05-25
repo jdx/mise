@@ -789,7 +789,7 @@
               "type": "string"
             },
             "oauth_auth_url": {
-              "default": "https://github.com/login/oauth",
+              "default": "https://github.com/login",
               "description": "GitHub OAuth endpoint base URL for native device-flow tokens.",
               "type": "string"
             },
@@ -871,7 +871,8 @@
             "default_packages_file": {
               "default": "~/.default-go-packages",
               "description": "Path to a file containing default go packages to install when installing go.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "download_mirror": {
               "default": "https://dl.google.com/go",
@@ -1118,7 +1119,8 @@
             },
             "default_packages_file": {
               "description": "Path to a file containing default npm packages to install.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "flavor": {
               "description": "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo.",
@@ -1268,6 +1270,11 @@
           "type": "string",
           "deprecated": true
         },
+        "provenance_api_failures_fatal": {
+          "default": true,
+          "description": "Fail when provenance API checks cannot be completed.",
+          "type": "boolean"
+        },
         "python": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1278,7 +1285,8 @@
             },
             "default_packages_file": {
               "description": "Path to a file containing default python packages to install when installing a python version.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "github_attestations": {
               "description": "Enable GitHub Artifact Attestations verification for precompiled Python binaries.",
@@ -1365,7 +1373,8 @@
             "default_packages_file": {
               "default": "~/.default-gems",
               "description": "Path to a file containing default ruby gems to install when installing ruby.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "github_attestations": {
               "description": "Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
@@ -1475,6 +1484,17 @@
             "strict": {
               "default": true,
               "description": "If true, fail when sops decryption fails (including when sops is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases.",
+              "type": "boolean"
+            }
+          }
+        },
+        "spm": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "artifactbundle_only": {
+              "default": false,
+              "description": "Only use SwiftPM artifact bundles for installation, fail if no matching bundle is available.",
               "type": "boolean"
             }
           }
@@ -2131,29 +2151,43 @@
       "items": {
         "type": "object",
         "description": "file to watch for changes",
-        "unevaluatedProperties": false,
-        "properties": {
-          "run": {
-            "type": "string",
-            "description": "script to run when file changes"
-          },
-          "task": {
-            "type": "string",
-            "description": "mise task to run when file changes"
-          },
-          "patterns": {
-            "type": "array",
-            "description": "patterns to watch for",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
         "oneOf": [
           {
+            "unevaluatedProperties": false,
+            "properties": {
+              "run": {
+                "type": "string",
+                "description": "script to run when file changes"
+              },
+              "shell": {
+                "type": "string",
+                "description": "inline shell command used to run script when file changes"
+              },
+              "patterns": {
+                "type": "array",
+                "description": "patterns to watch for",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
             "required": ["run"]
           },
           {
+            "unevaluatedProperties": false,
+            "properties": {
+              "task": {
+                "type": "string",
+                "description": "mise task to run when file changes"
+              },
+              "patterns": {
+                "type": "array",
+                "description": "patterns to watch for",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
             "required": ["task"]
           }
         ]

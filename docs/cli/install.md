@@ -7,7 +7,7 @@
 
 Install a tool version
 
-Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
+Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`
 Installing alone will not activate the tools so they won't be in PATH.
 To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
 in the current directory to activate this tool when inside the directory.
@@ -40,13 +40,7 @@ Show what would be installed without actually installing
 
 Show installation output
 
-This argument will print plugin output such as download, configuration, and compilation output.
-
-### `--before <BEFORE>`
-
-Only install versions released before this date
-
-Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+This argument will print backend output such as download, configuration, and compilation output.
 
 ### `--dry-run-code`
 
@@ -54,9 +48,15 @@ Like --dry-run but exits with code 1 if there are tools to install
 
 This is useful for scripts to check if tools need to be installed.
 
+### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
+
+Only install versions released before this date or older than this duration
+
+Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+
 ### `--raw`
 
-Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
 
 ### `--shared <SHARED>`
 
