@@ -6,6 +6,7 @@ use crate::env::TERM_WIDTH;
 use crate::lockfile::{Lockfile, lockfile_path_for_config};
 use crate::registry::REGISTRY;
 use crate::registry::tool_enabled;
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::{backend, parallel};
 pub use builder::{ConfigScope, ToolsetBuilder};
 use console::truncate_str;
@@ -362,7 +363,9 @@ impl Toolset {
                     warn!("Error getting outdated info for {tv}: {e:#}");
                 }
             }
-            if t.symlink_path(&tv).is_some() {
+            if let Some(symlink_path) = t.symlink_path(&tv)
+                && !is_runtime_symlink(&symlink_path)
+            {
                 trace!("skipping symlinked version {tv}");
                 // do not consider symlinked versions to be outdated
                 return Ok(outdated);
