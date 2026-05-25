@@ -16,8 +16,9 @@ RUN dnf update -y && \
     dnf clean all
 
 # Install copr-cli via dnf to ensure dependencies are properly managed and to avoid potential issues with manual installation
-RUN dnf install -y copr-cli && \
-    dnf clean all
+RUN dnf install -y copr-cli python3-rich && \
+    dnf clean all && \
+    copr-cli --help >/dev/null
 
 # Add mise to PATH
 ENV PATH="/root/.local/bin:${PATH}"
