@@ -23,10 +23,6 @@ use crate::ui::progress_report::SingleReport;
 use crate::ui::time::format_duration;
 use crate::{env, file};
 
-#[cfg(not(test))]
-pub static HTTP_VERSION_CHECK: Lazy<Client> =
-    Lazy::new(|| Client::new(Duration::from_secs(3), ClientKind::VersionCheck).unwrap());
-
 pub static HTTP: Lazy<Client> =
     Lazy::new(|| Client::new(Settings::get().http_timeout(), ClientKind::Http).unwrap());
 
@@ -57,8 +53,6 @@ pub struct Client {
 enum ClientKind {
     Http,
     Fetch,
-    #[allow(dead_code)]
-    VersionCheck,
 }
 
 impl Client {
@@ -457,23 +451,14 @@ impl Client {
                             "fetch_remote_versions_timeout",
                             "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT",
                         ),
-                        ClientKind::VersionCheck => ("version_check_timeout", ""),
                     };
-                    let hint = if env_var.is_empty() {
-                        format!(
-                            "HTTP timed out after {} for {}.",
-                            format_duration(self.timeout),
-                            url
-                        )
-                    } else {
-                        format!(
-                            "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
-                            format_duration(self.timeout),
-                            url,
-                            setting,
-                            env_var
-                        )
-                    };
+                    let hint = format!(
+                        "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
+                        format_duration(self.timeout),
+                        url,
+                        setting,
+                        env_var
+                    );
                     // wrap_err preserves the underlying reqwest::Error in the chain so
                     // is_transient() can still classify this as a retryable timeout.
                     return Err(Report::new(err).wrap_err(hint));

@@ -95,6 +95,15 @@ For options that do not skip `cargo-binstall`, any source-build fallback is hand
 | `crate`                    | Does not skip `cargo-binstall` when applicable. Git installs always use `cargo install`. |
 | `locked`                   | Passed through to `cargo-binstall`; does not skip it.                                    |
 
+### `install_env`
+
+Set environment variables for the `cargo install` or `cargo-binstall` command:
+
+```toml
+[tools]
+"cargo:eza" = { version = "latest", install_env = { CARGO_NET_GIT_FETCH_WITH_CLI = "true" } }
+```
+
 ### `features`
 
 Install additional components (passed as `cargo install --features`):

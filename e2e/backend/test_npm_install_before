@@ -18,18 +18,18 @@ unset MISE_MINIMUM_RELEASE_AGE
 # Test: without minimum_release_age, latest is the absolute latest (newer than 2.8.8)
 assert_not_contains "mise latest npm:prettier" "2.8.8"
 
-# Test: `mise latest --before` CLI flag should filter by date
-assert_contains "mise latest npm:prettier --before 2023-06-01" "2.8.8"
+# Test: `mise latest --minimum-release-age` CLI flag should filter by date
+assert_contains "mise latest npm:prettier --minimum-release-age 2023-06-01" "2.8.8"
 
-# Test: CLI --before flag overrides the global minimum_release_age setting
+# Test: CLI --minimum-release-age flag overrides the global minimum_release_age setting
 # Global is 2024-01-01 (would give 3.1.0), CLI is 2023-06-01 (gives 2.8.8)
 export MISE_MINIMUM_RELEASE_AGE="2024-01-01"
 assert_not_contains "mise latest npm:prettier" "2.8.8"
-assert_contains "mise latest npm:prettier --before 2023-06-01" "2.8.8"
+assert_contains "mise latest npm:prettier --minimum-release-age 2023-06-01" "2.8.8"
 unset MISE_MINIMUM_RELEASE_AGE
 
-# Test: CLI --before flag accepts relative durations.
-assert_not_empty "mise latest npm:prettier --before 5y"
+# Test: CLI --minimum-release-age flag accepts relative durations.
+assert_not_empty "mise latest npm:prettier --minimum-release-age 5y"
 
 # Test: per-tool minimum_release_age also affects backend-level latest lookup.
 cat <<EOF >mise.toml
@@ -38,10 +38,10 @@ cat <<EOF >mise.toml
 EOF
 assert_contains "mise latest npm:prettier" "2.8.8"
 
-# Test: CLI --before flag overrides per-tool minimum_release_age.
+# Test: CLI --minimum-release-age flag overrides per-tool minimum_release_age.
 cat <<EOF >mise.toml
 [tools]
 "npm:prettier" = { version = "latest", minimum_release_age = "2024-01-01" }
 EOF
 assert_not_contains "mise latest npm:prettier" "2.8.8"
-assert_contains "mise latest npm:prettier --before 2023-06-01" "2.8.8"
+assert_contains "mise latest npm:prettier --minimum-release-age 2023-06-01" "2.8.8"

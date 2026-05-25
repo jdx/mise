@@ -183,7 +183,7 @@ ripgrep = { version = "latest", os = ["linux", "macos"] }
 "cargo:usage-cli" = {
     version = "latest",
     os = ["linux", "macos"],
-    install_env = { RUST_BACKTRACE = "1" }
+    locked = false
 }
 ```
 

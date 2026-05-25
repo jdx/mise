@@ -34,6 +34,7 @@ const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
 const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
 const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
+const NPM_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 
 #[derive(Debug)]
@@ -267,6 +268,7 @@ impl Backend for NPMBackend {
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                    .envs(tv.install_env())
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
@@ -285,7 +287,6 @@ impl Backend for NPMBackend {
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global")
-                    .arg("--trust")
                     // Isolated linker does not symlink binaries into BUN_INSTALL_BIN properly.
                     // https://github.com/jdx/mise/discussions/7541
                     .arg("--linker")
@@ -293,6 +294,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                    .envs(tv.install_env())
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
                     .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
@@ -322,6 +324,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                    .envs(tv.install_env())
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
@@ -347,6 +350,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                    .envs(tv.install_env())
                     .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
@@ -355,6 +359,7 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?;
+                cmd = cmd.arg(NPM_IGNORE_SCRIPTS_ARG);
                 if let Some(args) = options.npm_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }

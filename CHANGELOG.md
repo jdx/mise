@@ -1,5 +1,150 @@
 # Changelog
 
+## [2026.5.15](https://github.com/jdx/mise/compare/v2026.5.14..v2026.5.15) - 2026-05-23
+
+### 🐛 Bug Fixes
+
+- allow loongarch64 and riscv64 as valid platform arches by @k0tran in [#10038](https://github.com/jdx/mise/pull/10038)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 96c55b3 by @renovate[bot] in [#10047](https://github.com/jdx/mise/pull/10047)
+- update ghcr.io/jdx/mise:rpm docker digest to b0e279b by @renovate[bot] in [#10049](https://github.com/jdx/mise/pull/10049)
+- update ghcr.io/jdx/mise:deb docker digest to a03ee45 by @renovate[bot] in [#10048](https://github.com/jdx/mise/pull/10048)
+- update docker/setup-buildx-action digest to d7f5e7f by @renovate[bot] in [#10050](https://github.com/jdx/mise/pull/10050)
+- update rattler by @renovate[bot] in [#10030](https://github.com/jdx/mise/pull/10030)
+
+### New Contributors
+
+- @k0tran made their first contribution in [#10038](https://github.com/jdx/mise/pull/10038)
+
+## [2026.5.14](https://github.com/jdx/mise/compare/v2026.5.13..v2026.5.14) - 2026-05-22
+
+### 🐛 Bug Fixes
+
+- reject wrong-arch release assets by @jdx in [#10018](https://github.com/jdx/mise/pull/10018)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:deb docker digest to fcb3768 by @renovate[bot] in [#10027](https://github.com/jdx/mise/pull/10027)
+- update docker/build-push-action digest to f9f3042 by @renovate[bot] in [#10024](https://github.com/jdx/mise/pull/10024)
+- update ghcr.io/jdx/mise:rpm docker digest to 5b2e369 by @renovate[bot] in [#10028](https://github.com/jdx/mise/pull/10028)
+- update docker/dockerfile:1 docker digest to 87999aa by @renovate[bot] in [#10025](https://github.com/jdx/mise/pull/10025)
+- update ghcr.io/jdx/mise:alpine docker digest to d2b3b40 by @renovate[bot] in [#10026](https://github.com/jdx/mise/pull/10026)
+- update zizmorcore/zizmor-action action to v0.5.4 by @renovate[bot] in [#10032](https://github.com/jdx/mise/pull/10032)
+- update rust docker digest to 0861191 by @renovate[bot] in [#10029](https://github.com/jdx/mise/pull/10029)
+- update docker/login-action digest to 650006c by @renovate[bot] in [#10040](https://github.com/jdx/mise/pull/10040)
+- update docker/metadata-action digest to 80c7e94 by @renovate[bot] in [#10041](https://github.com/jdx/mise/pull/10041)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`Staffbase/gq`](https://github.com/Staffbase/gq)
+- [`openclaw/wacli`](https://github.com/openclaw/wacli)
+
+## [2026.5.13](https://github.com/jdx/mise/compare/v2026.5.12..v2026.5.13) - 2026-05-21
+
+### 🚀 Features
+
+- **(npm)** disable npm lifecycle scripts by default by @risu729 in [#9913](https://github.com/jdx/mise/pull/9913)
+
+### 🐛 Bug Fixes
+
+- **(completion)** avoid network calls when generating completions by @sargunv-headway in [#10010](https://github.com/jdx/mise/pull/10010)
+- **(config)** track install manifest option source by @risu729 in [#9958](https://github.com/jdx/mise/pull/9958)
+- **(doctor)** honor http timeout for version checks by @risu729 in [#9977](https://github.com/jdx/mise/pull/9977)
+- **(github)** prefer primary binary assets by @risu729 in [#10008](https://github.com/jdx/mise/pull/10008)
+- **(release)** bake secondary mise-plugins vfox plugins by @risu729 in [#9832](https://github.com/jdx/mise/pull/9832)
+- **(shim)** preserve optioned aliases during rebuilds by @risu729 in [#9848](https://github.com/jdx/mise/pull/9848)
+
+### 🚜 Refactor
+
+- **(dotnet)** parse backend tool options locally by @risu729 in [#9962](https://github.com/jdx/mise/pull/9962)
+
+### 📚 Documentation
+
+- remove how i use mise article by @jdx in [#9996](https://github.com/jdx/mise/pull/9996)
+
+### 🧪 Testing
+
+- **(s3)** cover current config over install manifest opts by @risu729 in [#9917](https://github.com/jdx/mise/pull/9917)
+
+### 📦️ Dependency Updates
+
+- update astral-tokio-tar by @jdx in [#9997](https://github.com/jdx/mise/pull/9997)
+
+### 📦 Registry
+
+- update entry for vale by @eread in [#10002](https://github.com/jdx/mise/pull/10002)
+- use aqua backend for vector by @jdx in [#10011](https://github.com/jdx/mise/pull/10011)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- `google.com/antigravity-cli`
+- [`sholdee/crd-schema-publisher`](https://github.com/sholdee/crd-schema-publisher)
+
+#### Updated Packages (4)
+
+- [`FairwindsOps/pluto`](https://github.com/FairwindsOps/pluto)
+- [`goccy/bigquery-emulator`](https://github.com/goccy/bigquery-emulator)
+- [`sourcemeta/jsonschema`](https://github.com/sourcemeta/jsonschema)
+- [`wasmCloud/wasmCloud/wash`](https://github.com/wasmCloud/wasmCloud)
+
+## [2026.5.12](https://github.com/jdx/mise/compare/v2026.5.11..v2026.5.12) - 2026-05-19
+
+### 🚀 Features
+
+- **(cli)** rename before flag to minimum release age by @risu729 in [#9768](https://github.com/jdx/mise/pull/9768)
+- **(core)** deprecate default package files by @jdx in [#9970](https://github.com/jdx/mise/pull/9970)
+- **(edit)** add --global flag for editing the global config file by @fru1tworld in [#9953](https://github.com/jdx/mise/pull/9953)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support cosign public-key bundles by @jdx in [#9972](https://github.com/jdx/mise/pull/9972)
+- **(backend)** pass install_env to postinstall by @risu729 in [#9930](https://github.com/jdx/mise/pull/9930)
+- **(backend)** apply install_env to install commands by @risu729 in [#9929](https://github.com/jdx/mise/pull/9929)
+- **(cargo)** skip binstall for cargo install options by @risu729 in [#9928](https://github.com/jdx/mise/pull/9928)
+- **(config)** restore MISE_ENV_FILE setting by @risu729 in [#9903](https://github.com/jdx/mise/pull/9903)
+
+### 🚜 Refactor
+
+- **(cli)** use tool wording in version env help by @risu729 in [#9906](https://github.com/jdx/mise/pull/9906)
+- **(conda)** parse tool options locally by @risu729 in [#9960](https://github.com/jdx/mise/pull/9960)
+- **(core)** parse plugin tool options locally by @risu729 in [#9963](https://github.com/jdx/mise/pull/9963)
+- **(go)** parse tool options locally by @risu729 in [#9961](https://github.com/jdx/mise/pull/9961)
+- **(http)** parse tool options locally by @risu729 in [#9870](https://github.com/jdx/mise/pull/9870)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#9954](https://github.com/jdx/mise/pull/9954)
+- lock file maintenance by @renovate[bot] in [#9957](https://github.com/jdx/mise/pull/9957)
+
+### 📦 Registry
+
+- use aqua backend for qsv by @risu729 in [#9910](https://github.com/jdx/mise/pull/9910)
+
+### Ci
+
+- build/publish snap package for arm64 by @jnsgruk in [#9948](https://github.com/jdx/mise/pull/9948)
+
+### New Contributors
+
+- @jnsgruk made their first contribution in [#9948](https://github.com/jdx/mise/pull/9948)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`AOMediaCodec/libavif`](https://github.com/AOMediaCodec/libavif)
+- [`julian7/redact`](https://github.com/julian7/redact)
+
+#### Updated Packages (1)
+
+- [`apache/jena`](https://github.com/apache/jena)
+
 ## [2026.5.11](https://github.com/jdx/mise/compare/v2026.5.10..v2026.5.11) - 2026-05-17
 
 ### 🐛 Bug Fixes

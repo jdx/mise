@@ -82,6 +82,7 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
+    ToolOptionSource::InstallManifest,
     ToolOptionSource::BackendAlias,
     ToolOptionSource::Config,
     ToolOptionSource::InlineBackendArg,
@@ -520,6 +521,24 @@ mod tests {
     }
 
     #[test]
+    fn test_remote_version_listing_opts_include_install_manifest_sources() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource, ToolVersionOptions};
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("release-".into()),
+        );
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&opts, ToolOptionSource::InstallManifest);
+
+        assert!(has_local_version_listing_option_override(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
+    }
+
+    #[test]
     fn test_runtime_path_for_install_path_remaps_install_subpath() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let short = format!(
@@ -781,8 +800,20 @@ mod tests {
 
         opts.opts.insert(
             "prerelease".to_string(),
-            toml::Value::String("false".into()),
+            toml::Value::String("FALSE".into()),
         );
+        assert!(!backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("1".into()));
+        assert!(backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("0".into()));
+        assert!(!backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("00".into()));
         assert!(!backend.include_prereleases(&opts));
 
         // Defense-in-depth: also accept a native TOML boolean, in case a future
@@ -2897,11 +2928,7 @@ pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
 }
 
 fn tool_option_bool(value: &toml::Value) -> bool {
-    match value {
-        toml::Value::Boolean(b) => *b,
-        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
-        _ => false,
-    }
+    crate::backend::options::bool_value_or_default("prerelease", value, false)
 }
 
 /// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection

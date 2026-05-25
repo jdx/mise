@@ -64,6 +64,18 @@ Other syntax may work but is unsupported and untested.
 The following [tool-options](/dev-tools/#tool-options) are available for the backend — these
 go in `[tools]` in `mise.toml`.
 
+### `install_env`
+
+Set environment variables for Swift Package Manager commands such as
+`swift package dump-package`, `swift -print-target-info`, and `swift build`.
+For artifact bundle installs, this only applies to `swift -print-target-info`;
+the download, extract, and symlink steps are handled by mise directly.
+
+```toml
+[tools]
+"spm:tuist/tuist" = { version = "latest", install_env = { SWIFTPM_ENABLE_PLUGINS = "1" } }
+```
+
 ### `provider`
 
 Set the provider type to use for fetching assets and release information. Either `github` or `gitlab` (default is `github`).
