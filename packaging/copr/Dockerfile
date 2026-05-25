@@ -18,7 +18,7 @@ RUN dnf update -y && \
 # Install copr-cli via dnf to ensure dependencies are properly managed and to avoid potential issues with manual installation
 RUN dnf install -y copr-cli && \
     dnf clean all && \
-    test "$(command -v copr-cli)" = "/usr/bin/copr-cli" && \
+    test "$(readlink -f "$(command -v copr-cli)")" = "/usr/bin/copr-cli" && \
     copr-cli --help >/dev/null
 
 # Add mise to PATH
