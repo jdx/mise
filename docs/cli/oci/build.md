@@ -44,6 +44,12 @@ Where to place tool installs inside the image (default: /mise)
 
 Do not embed the currently-running mise binary at /usr/local/bin/mise
 
+### `--owner <UID[:GID]>`
+
+UID[:GID] to assign to every tar entry in generated layers
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+
 Examples:
 
 ```

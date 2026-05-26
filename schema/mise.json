@@ -2862,6 +2862,18 @@
           "type": "string",
           "description": "User baked into the image config"
         },
+        "user_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Numeric UID assigned to tar layer entries"
+        },
+        "group_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Numeric GID assigned to tar layer entries. Defaults to user_id when unset"
+        },
         "mount_point": {
           "type": "string",
           "description": "Override where mise installs go in the image (default /mise)"

@@ -16,6 +16,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 pub use builder::{BuildOptions, BuildOutput, Builder};
+pub use layer::LayerOwner;
 
 /// Normalize a Rust-style arch name (`x86_64`, `aarch64`) to the OCI-spec
 /// value (`amd64`, `arm64`).
@@ -62,6 +63,12 @@ pub struct OciConfig {
     /// User baked into the image config.
     #[serde(default)]
     pub user: Option<String>,
+    /// Numeric UID assigned to tar layer entries.
+    #[serde(default)]
+    pub user_id: Option<u32>,
+    /// Numeric GID assigned to tar layer entries. Defaults to `user_id` when unset.
+    #[serde(default)]
+    pub group_id: Option<u32>,
     /// Override where mise installs go in the image. Defaults to the value of
     /// the `oci.default_mount_point` setting (`/mise`).
     #[serde(default)]
@@ -101,6 +108,12 @@ impl OciConfig {
         }
         if self.user.is_none() {
             self.user = other.user;
+        }
+        if self.user_id.is_none() {
+            self.user_id = other.user_id;
+        }
+        if self.group_id.is_none() {
+            self.group_id = other.group_id;
         }
         if self.mount_point.is_none() {
             self.mount_point = other.mount_point;

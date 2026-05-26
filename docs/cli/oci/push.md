@@ -45,6 +45,10 @@ Override in-image mount point (ignored with --image-dir)
 
 Don't embed the mise binary (ignored with --image-dir)
 
+### `--owner <UID[:GID]>`
+
+UID[:GID] to assign to every tar entry when building (ignored with --image-dir)
+
 ### `--tool <TOOL>`
 
 Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`

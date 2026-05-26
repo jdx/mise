@@ -62,6 +62,10 @@ Override in-image mount point (ignored with --image-dir)
 
 Don't embed the mise binary (ignored with --image-dir)
 
+### `--owner <UID[:GID]>`
+
+UID[:GID] to assign to every tar entry when building (ignored with --image-dir)
+
 ### `--volume… <HOST:CONTAINER>`
 
 Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
