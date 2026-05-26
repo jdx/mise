@@ -36,6 +36,7 @@
     "typescript-eslint": "^8.58.2",
     "vitepress": "1.6.4",
     "vitepress-plugin-group-icons": "^1.6.5",
+    "vitepress-plugin-llms": "1.13.0",
     "vitepress-plugin-mermaid": "2.0.17",
     "vitepress-plugin-tabs": "^0.9.0"
   }

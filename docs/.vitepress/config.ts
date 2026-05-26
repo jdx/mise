@@ -10,6 +10,7 @@ import {
 import { tabsMarkdownPlugin } from "vitepress-plugin-tabs";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import kdlGrammar from "./grammars/kdl.tmLanguage.json";
+import llmstxt from "vitepress-plugin-llms";
 import miseTomlGrammar from "./grammars/mise-toml.tmLanguage.json";
 
 const configDir = dirname(fileURLToPath(import.meta.url));
@@ -304,6 +305,7 @@ export default withMermaid(
             ruby: "logos:ruby",
           },
         }),
+        llmstxt(),
       ],
     },
     head: [
