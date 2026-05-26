@@ -1,0 +1,3 @@
+backends = ["aqua:xai/grok-build"]
+description = "Grok Build is an agentic coding tool by xAI"
+test = { cmd = "grok --version" }
