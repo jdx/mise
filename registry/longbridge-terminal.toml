@@ -1,0 +1,2 @@
+backends = ["cargo:longbridge-terminal"]
+description = "AI-native CLI for Longbridge Securities — real-time market data, portfolio, and trading"
