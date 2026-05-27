@@ -1,0 +1,3 @@
+backends = ["github:fosrl/cli"]
+description = "Pangolin CLI tool and VPN client"
+test = { cmd = "pangolin-cli version", expected = "{{version}}" }
