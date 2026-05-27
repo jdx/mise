@@ -1,4 +1,6 @@
 aliases = ["confluent"]
-backends = ["github:confluentinc/cli"]
+backends = [
+  { full = "github:confluentinc/cli", options = { bin = "confluent" } }
+]
 description = "CLI for Confluent Cloud and Confluent Platform"
 test = { cmd = "confluent --version", expected = "confluent version v{{version}}" }
