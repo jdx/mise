@@ -43,6 +43,7 @@ Replace `bash` with your shell. Common causes of slow prompts:
 - Expensive `_.source` scripts in `mise.toml` — these re-run on every prompt
 - Large numbers of tools or plugins
 - Network-dependent operations in env directives
+- Missing `mise.lock` - run `mise lock` or `mise lock -g`
 
 Note that [`mise activate --shims`](/dev-tools/shims) moves the cost from every prompt to every tool invocation, which may or may not be faster depending on your workflow. See [Shims vs PATH](/dev-tools/shims.html#shims-vs-path) for tradeoffs.
 
