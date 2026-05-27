@@ -409,7 +409,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | python     | `.python-version`, `.python-versions`     |
 | ruby       | `.ruby-version`, `Gemfile`                |
 | rust       | `rust-toolchain.toml`                     |
-| terraform  | `.terraform-version`, `main.tf`           |
+| terraform  | `.terraform-version`                      |
 | terragrunt | `.terragrunt-version`                     |
 | terramate  | `.terramate-version`                      |
 | yarn       | `.yvmrc`, `package.json`                  |
