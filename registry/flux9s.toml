@@ -1,0 +1,3 @@
+backends = ["github:dgunzy/flux9s"]
+description = "A K9s-inspired terminal UI for monitoring Flux resources in real-time"
+test = { cmd = "flux9s version", expected = "flux9s {{version}}" }
