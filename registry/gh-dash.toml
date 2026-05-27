@@ -1,0 +1,2 @@
+backends = ["github:dlvhdr/gh-dash"]
+description = "A rich terminal UI for GitHub that doesn't break your flow."
