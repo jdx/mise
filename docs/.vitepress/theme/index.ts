@@ -1,6 +1,7 @@
 import type { Theme } from "vitepress";
 import DefaultTheme from "vitepress/theme";
 import { enhanceAppWithTabs } from "vitepress-plugin-tabs/client";
+import CopyOrDownloadAsMarkdownButtons from "vitepress-plugin-llms/vitepress-components/CopyOrDownloadAsMarkdownButtons.vue";
 import { initBanner } from "./banner";
 import "virtual:group-icons.css";
 import "./custom.css";
@@ -13,6 +14,10 @@ export default {
   Layout,
   enhanceApp({ app }) {
     enhanceAppWithTabs(app);
+    app.component(
+      "CopyOrDownloadAsMarkdownButtons",
+      CopyOrDownloadAsMarkdownButtons,
+    );
     initBanner();
   },
   setup() {
