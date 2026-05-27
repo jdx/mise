@@ -1,2 +1,3 @@
 backends = ["github:project-stacker/stacker"]
+os = ["linux"]
 description = "A vendor-neutral OCI-native container image (tgz, squashfs, erofs) builder (purely based on OCI Image Specification)"
