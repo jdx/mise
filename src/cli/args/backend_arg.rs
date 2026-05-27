@@ -774,8 +774,16 @@ mod tests {
         let _config = Config::get().await.unwrap();
 
         let fa: BackendArg = "npm".into();
-        assert_str_eq!("aqua:npm/cli", fa.full());
-        assert_eq!(BackendType::Aqua, fa.backend_type());
+        #[cfg(windows)]
+        {
+            assert_str_eq!("npm:npm", fa.full());
+            assert_eq!(BackendType::Npm, fa.backend_type());
+        }
+        #[cfg(not(windows))]
+        {
+            assert_str_eq!("aqua:npm/cli", fa.full());
+            assert_eq!(BackendType::Aqua, fa.backend_type());
+        }
     }
 
     #[tokio::test]
