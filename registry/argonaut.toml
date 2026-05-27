@@ -1,0 +1,3 @@
+backends = ["github:darksworm/argonaut"]
+description = "Keyboard-first terminal UI for Argo CD. Browse apps, scope by clusters/namespaces/projects, stream live resource status, trigger syncs, inspect diffs, and roll back safely — all without leaving your terminal."
+test = { cmd = "argonaut -version", expected = "{{version}}" }
