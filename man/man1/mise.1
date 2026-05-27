@@ -3238,13 +3238,11 @@ All arguments after the stub file path will be forwarded to the underlying tool.
 .SH "MISE TRUST"
 Marks a config file as trusted
 
-This means mise will parse the file with potentially dangerous
-features enabled.
-
-This includes:
-\- environment variables
-\- templates
-\- `path:` plugin versions
+This means mise is allowed to parse the file when it needs to read config
+that may execute code or affect the environment. mise checks trust before
+parsing `mise.toml`. Without trust, mise may prompt, skip the config in some
+discovery paths, fail with an untrusted\-config error when it cannot prompt,
+or assume trust in detected CI unless paranoid mode is enabled.
 .PP
 \fBUsage:\fR mise trust [OPTIONS] [<CONFIG_FILE>]
 .PP

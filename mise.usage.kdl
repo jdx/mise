@@ -1321,7 +1321,7 @@ cmd tool-stub help="Execute a tool stub" {
     arg "[ARGS]…" help="Arguments to pass to the tool" help_long="Arguments to pass to the tool\n\nAll arguments after the stub file path will be forwarded to the underlying tool. Use '--' to separate mise arguments from tool arguments if needed." required=#false double_dash=automatic var=#true
 }
 cmd trust help="Marks a config file as trusted" {
-    long_help "Marks a config file as trusted\n\nThis means mise will parse the file with potentially dangerous\nfeatures enabled.\n\nThis includes:\n- environment variables\n- templates\n- `path:` plugin versions"
+    long_help "Marks a config file as trusted\n\nThis means mise is allowed to parse the file when it needs to read config\nthat may execute code or affect the environment. mise checks trust before\nparsing `mise.toml`. Without trust, mise may prompt, skip the config in some\ndiscovery paths, fail with an untrusted-config error when it cannot prompt,\nor assume trust in detected CI unless paranoid mode is enabled."
     after_long_help "Examples:\n\n    # trusts ~/some_dir/mise.toml\n    $ mise trust ~/some_dir/mise.toml\n\n    # trusts mise.toml in the current or parent directory\n    $ mise trust\n"
     flag "-a --all" help="Trust all config files in the current directory and its parents"
     flag --ignore help="Do not trust this config and ignore it in the future"
