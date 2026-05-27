@@ -760,8 +760,13 @@ impl Backend for AquaBackend {
                 }
                 result
             }
-            AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
-                (Some(self.github_archive_url(&pkg, &v)), None)
+            AquaPackageType::GithubArchive => (Some(self.github_archive_url(&pkg, &v)), None),
+            AquaPackageType::GithubContent => {
+                if pkg.path.is_some() {
+                    (Some(self.github_content_url(&pkg, &v)), None)
+                } else {
+                    bail!("github_content package requires `path`")
+                }
             }
             AquaPackageType::Http => (pkg.url(&v, target_os, target_arch).ok(), None),
             _ => (None, None),
