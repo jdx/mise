@@ -653,8 +653,7 @@ separately-installed package manager** — packages are downloaded and extracted
 directly from anaconda.org, with no `conda`/`mamba`/`micromamba` needed on the
 user's PATH. The tool still needs to be popular and well-maintained.
 
-**Tier 3 — very high bar, rarely accepted:** `npm`, `pipx`, `gem`, `cargo`, `go`,
-`dotnet`.
+**Tier 3 — very high bar, rarely accepted:** `npm`, `pipx`, `gem`, `cargo`, `go`, `dotnet`.
 
 These all depend on a separately-installed runtime or toolchain being present on
 the user's PATH (`node`, `python`, `ruby`, `cargo`, `go`, `dotnet`), which is
@@ -683,8 +682,7 @@ The `registry/` file uses this format:
 description = "Tool description"
 backends = [
     "aqua:owner/repo",           # Preferred backend first
-    "github:owner/repo",         # Fallback backends
-    "npm:package-name"           # Multiple backends supported
+    "github:owner/repo",         # Fallback backend
 ]
 test = [
     "your-tool --version",       # Command to run
@@ -698,6 +696,8 @@ os = ["linux", "macos"] # Optional OS restrictions
 
 List backends in order of preference. Users will get the first available
 backend, but can override with explicit syntax like `mise use aqua:owner/repo`.
+Only include `npm` as a fallback for a tool that already has a non-npm primary
+backend when the npm package works with lifecycle scripts disabled.
 
 ### Tool Testing
 

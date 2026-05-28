@@ -1,3 +1,11 @@
-backends = ["npm:wrangler"]
 description = "A command line tool for building Cloudflare Workers"
-test = { cmd = "wrangler --version", expected = "{{version}}" }
+test = { cmd = "wrangler --version", expected = "{{version}}", tools = [
+  "aube",
+] }
+
+[[backends]]
+full = "npm:wrangler"
+
+[backends.options]
+aube_args = "--allow-build=esbuild --allow-build=sharp --allow-build=workerd"
+pnpm_args = "--allow-build=esbuild --allow-build=sharp --allow-build=workerd"
