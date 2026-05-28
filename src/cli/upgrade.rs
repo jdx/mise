@@ -1,14 +1,15 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::backend::pipx::PIPXBackend;
-use crate::cli::args::ToolArg;
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
 use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
-    get_versions_needed_by_tracked_configs,
+    get_versions_needed_by_tracked_configs_excluding_locks,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -346,10 +347,51 @@ impl Upgrade {
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
 
-        // Get versions needed by tracked configs AFTER upgrade
-        // This ensures we don't uninstall versions still needed by other projects
-        let versions_needed_by_tracked =
-            get_versions_needed_by_tracked_configs(config, false, false).await?;
+        // Get versions needed by tracked configs AFTER upgrade. Preserve lockfile pins
+        // from other projects, but ignore stale pre-upgrade locks for configs we just
+        // upgraded so their old versions can still be removed.
+        let successful_backends: HashSet<_> = successful_versions
+            .iter()
+            .flat_map(|v| {
+                [
+                    v.ba().short.clone(),
+                    v.ba().tool_name.clone(),
+                    v.ba().full(),
+                    v.ba().full_without_opts(),
+                ]
+            })
+            .collect();
+        let mut upgraded_config_paths: HashSet<_> = outdated
+            .iter()
+            .filter(|o| backend_matches(&successful_backends, o.tool_version.ba()))
+            .filter_map(|o| o.source.path().map(|path| path.to_path_buf()))
+            .collect();
+        for tvl in ts.versions.values() {
+            if backend_matches(&successful_backends, &tvl.backend)
+                && let Some(path) = tvl.source.path()
+            {
+                upgraded_config_paths.insert(path.to_path_buf());
+            }
+        }
+        for (path, cf) in config.config_files.iter() {
+            let Ok(trs) = cf.to_tool_request_set() else {
+                continue;
+            };
+            if trs
+                .tools
+                .keys()
+                .any(|ba| backend_matches(&successful_backends, ba))
+            {
+                upgraded_config_paths.insert(path.clone());
+            }
+        }
+        let versions_needed_by_tracked = get_versions_needed_by_tracked_configs_excluding_locks(
+            config,
+            true,
+            false,
+            &upgraded_config_paths,
+        )
+        .await?;
 
         // Only uninstall old versions of tools that were successfully upgraded
         // and are not needed by any tracked config
@@ -479,6 +521,13 @@ impl Upgrade {
         }
         Ok(None)
     }
+}
+
+fn backend_matches(backends: &HashSet<String>, ba: &BackendArg) -> bool {
+    backends.contains(&ba.short)
+        || backends.contains(&ba.tool_name)
+        || backends.contains(&ba.full())
+        || backends.contains(&ba.full_without_opts())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
