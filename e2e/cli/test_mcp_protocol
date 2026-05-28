@@ -3,12 +3,8 @@
 # Test MCP protocol interactions in more detail
 export MISE_EXPERIMENTAL=1
 
-# Create a test environment with tools, tasks and env vars
+# Create a test environment with tasks and env vars
 cat >mise.toml <<EOF
-[tools]
-node = "20.11.0"
-python = "3.12"
-
 [env]
 TEST_MCP_VAR = "test_value"
 PROJECT_ENV = "development"
@@ -33,7 +29,14 @@ quiet = true
 [tasks.lint]
 run = "echo 'Linting code'"
 description = "Run linters"
-usage = "lint [files...]"
+
+[tasks."test:unit"]
+run = 'echo "unit args: $@"'
+description = "Run unit tests"
+
+[tasks.internal]
+run = "echo hidden"
+hide = true
 EOF
 
 echo "Testing MCP server startup and error handling..."
@@ -133,80 +136,103 @@ def test_tools_list(proc):
 
     tools = resp["result"]["tools"]
     tool_names = {t["name"] for t in tools}
-    assert "run_task" in tool_names, f"run_task not in tools: {tool_names}"
     assert "install_tool" in tool_names, f"install_tool not in tools: {tool_names}"
+    assert "test-task" in tool_names, f"test-task not in tools: {tool_names}"
+    assert "echo-args" in tool_names, f"echo-args not in tools: {tool_names}"
+    assert "lint" in tool_names, f"lint task tool not in tools: {tool_names}"
+    assert "test_unit" in tool_names, f"sanitized task tool not in tools: {tool_names}"
+    assert "internal" not in tool_names, f"hidden task should not be exposed: {tool_names}"
+    assert "run_task" not in tool_names, f"run_task should not be exposed: {tool_names}"
     print(f"✓ tools/list returned {len(tools)} tools: {tool_names}")
 
-    # Verify run_task has proper input schema
-    run_task = next(t for t in tools if t["name"] == "run_task")
-    schema_props = run_task["inputSchema"]["properties"]
-    assert "task" in schema_props, "run_task missing 'task' param"
-    assert "args" in schema_props, "run_task missing 'args' param"
-    print("✓ run_task schema has task and args parameters")
+    lint = next(t for t in tools if t["name"] == "lint")
+    assert lint["description"] == "Run linters", "task tool should use task description"
+    assert "args" in lint["inputSchema"]["properties"], "task tool missing optional args param"
+    print("✓ task MCP tools are exposed with args schema")
     return 0
 
 
-def test_run_task_success(proc):
+def test_task_tool_success(proc):
     send(proc, {
         "jsonrpc": "2.0", "id": 3,
         "method": "tools/call",
         "params": {
-            "name": "run_task",
-            "arguments": {"task": "test-task"},
+            "name": "test-task",
+            "arguments": {},
         },
     })
     resp = recv(proc, timeout=30.0)
     if not resp or "result" not in resp:
-        print(f"ERROR: Bad run_task response: {resp}")
+        print(f"ERROR: Bad task tool response: {resp}")
         return 1
 
     result = resp["result"]
-    assert not result.get("isError", False), f"run_task returned error: {result}"
+    assert not result.get("isError", False), f"task tool returned error: {result}"
     text = result["content"][0]["text"]
     assert "Running test task" in text, f"unexpected output: {text}"
-    print(f"✓ run_task success: {text.strip()}")
+    print(f"✓ task MCP tool success: {text.strip()}")
     return 0
 
 
-def test_run_task_with_args(proc):
+def test_task_tool_with_args(proc):
     send(proc, {
         "jsonrpc": "2.0", "id": 4,
         "method": "tools/call",
         "params": {
-            "name": "run_task",
-            "arguments": {"task": "echo-args", "args": ["hello", "world"]},
+            "name": "echo-args",
+            "arguments": {"args": ["hello", "world"]},
         },
     })
     resp = recv(proc, timeout=30.0)
     if not resp or "result" not in resp:
-        print(f"ERROR: Bad run_task response: {resp}")
+        print(f"ERROR: Bad task tool response: {resp}")
         return 1
 
     result = resp["result"]
-    assert not result.get("isError", False), f"run_task returned error: {result}"
+    assert not result.get("isError", False), f"task tool returned error: {result}"
     text = result["content"][0]["text"]
     assert "hello" in text and "world" in text, f"args not forwarded: {text}"
-    print(f"✓ run_task with args forwarded correctly: {text.strip()}")
+    print(f"✓ task MCP tool forwarded args: {text.strip()}")
     return 0
 
 
-def test_run_task_unknown(proc):
+def test_unknown_tool(proc):
     send(proc, {
         "jsonrpc": "2.0", "id": 5,
         "method": "tools/call",
         "params": {
-            "name": "run_task",
-            "arguments": {"task": "nonexistent-task-xyz"},
+            "name": "nonexistent-task-xyz",
+            "arguments": {},
+        },
+    })
+    resp = recv(proc, timeout=30.0)
+    if not resp or "error" not in resp:
+        print(f"ERROR: Expected unknown tool error, got: {resp}")
+        return 1
+
+    print("✓ unknown task tool returns protocol error")
+    return 0
+
+
+def test_sanitized_task_tool_with_args(proc):
+    send(proc, {
+        "jsonrpc": "2.0", "id": 8,
+        "method": "tools/call",
+        "params": {
+            "name": "test_unit",
+            "arguments": {"args": ["hello", "unit"]},
         },
     })
     resp = recv(proc, timeout=30.0)
     if not resp or "result" not in resp:
-        print(f"ERROR: Bad run_task response: {resp}")
+        print(f"ERROR: Bad sanitized task tool response: {resp}")
         return 1
 
     result = resp["result"]
-    assert result.get("isError", False), "expected error for unknown task"
-    print("✓ run_task with unknown task returns error")
+    assert not result.get("isError", False), f"sanitized task tool returned error: {result}"
+    text = result["content"][0]["text"]
+    assert "hello" in text and "unit" in text, f"args not forwarded: {text}"
+    print(f"✓ sanitized task MCP tool forwarded args: {text.strip()}")
     return 0
 
 
@@ -251,9 +277,10 @@ def main():
         tests = [
             ("initialize", test_initialize),
             ("tools/list", test_tools_list),
-            ("run_task success", test_run_task_success),
-            ("run_task with args", test_run_task_with_args),
-            ("run_task unknown task", test_run_task_unknown),
+            ("task tool success", test_task_tool_success),
+            ("task tool with args", test_task_tool_with_args),
+            ("unknown tool", test_unknown_tool),
+            ("sanitized task tool with args", test_sanitized_task_tool_with_args),
             ("install_tool stub", test_install_tool_stub),
         ]
         for name, test_fn in tests:

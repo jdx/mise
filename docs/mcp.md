@@ -65,25 +65,24 @@ The following tools are available for AI assistants to call:
 
 Install a specific tool version (not yet implemented)
 
-### `run_task`
+### Task Tools
 
-Execute a mise task with optional arguments.
+Visible mise tasks are exposed as individual MCP tools:
 
-**Parameters:**
+```mise-toml
+[tasks.test]
+run = "cargo test"
+```
 
-- `task` (required, string): Name of the task to run
-- `args` (optional, array of strings): Arguments to pass to the task
-
-**Example:**
+This exposes a `test` MCP tool that delegates to the `test` task. Task tools accept an optional `args` array:
 
 ```json
 {
-  "task": "build",
-  "args": ["--verbose"]
+  "args": ["--workspace"]
 }
 ```
 
-When the AI assistant calls this tool, it will execute the specified task and return the output, including stdout, stderr, and the exit status.
+MCP tool names may contain only letters, numbers, `.`, `_`, or `-`. Task names with other characters are converted to safe tool names, so a task named `test:unit` is exposed as `test_unit`.
 
 ## Integration with AI Assistants
 

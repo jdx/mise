@@ -6,9 +6,9 @@ use rmcp::{
     handler::server::{ServerHandler, tool::ToolRouter, wrapper::Parameters},
     model::{
         AnnotateAble, CallToolRequestParams, CallToolResult, Content, ErrorCode, ErrorData,
-        ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion, RawResource,
-        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
-        ServerInfo,
+        JsonObject, ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
+        RawResource, ReadResourceRequestParams, ReadResourceResult, ResourceContents,
+        ServerCapabilities, ServerInfo, Tool,
     },
     schemars::JsonSchema,
     service::RequestContext,
@@ -17,7 +17,8 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// [experimental] Run Model Context Protocol (MCP) server
 ///
@@ -29,7 +30,7 @@ use std::collections::HashMap;
 /// - Task definitions and execution
 /// - Environment variables
 /// - Configuration information
-/// - Task execution via the run_task tool
+/// - Task execution via individual MCP tools for each task
 ///
 /// Resources available:
 /// - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
@@ -39,7 +40,7 @@ use std::collections::HashMap;
 ///
 /// Tools available:
 /// - install_tool - Install a tool with an optional version (not yet implemented)
-/// - run_task - Execute a mise task with optional arguments
+/// - visible mise tasks are exposed as individual tools with optional arguments
 ///
 /// Note: This is primarily intended for integration with AI assistants like Claude,
 /// Cursor, or other tools that support the Model Context Protocol.
@@ -63,17 +64,6 @@ struct InstallToolParams {
     version: Option<String>,
 }
 
-/// Parameters for running a mise task
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[schemars(crate = "rmcp::schemars")]
-struct RunTaskParams {
-    /// Name of the task to run
-    task: String,
-    /// Optional arguments to pass to the task
-    #[serde(default)]
-    args: Vec<String>,
-}
-
 #[tool_router]
 impl MiseServer {
     fn new() -> Self {
@@ -86,18 +76,16 @@ impl MiseServer {
     #[tool(description = "Install a tool with an optional version (e.g. node@20, python@3.12)")]
     async fn install_tool(
         &self,
-        Parameters(_params): Parameters<InstallToolParams>,
+        _params: Parameters<InstallToolParams>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
         Ok(CallToolResult::error(vec![Content::text(
             "Tool installation not yet implemented",
         )]))
     }
 
-    /// Execute a mise task with optional arguments
-    #[tool(description = "Execute a mise task with optional arguments")]
-    async fn run_task(
-        &self,
-        Parameters(RunTaskParams { task, args }): Parameters<RunTaskParams>,
+    async fn run_mise_task(
+        task: String,
+        args: Vec<String>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
         let exe = std::env::current_exe().map_err(|e| ErrorData {
             code: ErrorCode::INTERNAL_ERROR,
@@ -165,6 +153,159 @@ impl MiseServer {
                 output.status.code().unwrap_or(1),
             ))]))
         }
+    }
+
+    async fn mcp_task_tools(&self) -> std::result::Result<Vec<McpTaskTool>, ErrorData> {
+        let config = Config::get().await.map_err(|e| ErrorData {
+            code: ErrorCode::INTERNAL_ERROR,
+            message: Cow::Owned(format!("Failed to load config: {e}")),
+            data: None,
+        })?;
+
+        let tasks = config.tasks().await.map_err(|e| ErrorData {
+            code: ErrorCode::INTERNAL_ERROR,
+            message: Cow::Owned(format!("Failed to load tasks: {e}")),
+            data: None,
+        })?;
+
+        let reserved_names: HashSet<String> = self
+            .tool_router
+            .list_all()
+            .into_iter()
+            .map(|tool| tool.name.into_owned())
+            .collect();
+        let mut seen_names = reserved_names.clone();
+        let mut mcp_task_tools = vec![];
+
+        for (name, task) in tasks.iter() {
+            if task.hide {
+                continue;
+            }
+
+            let tool_name = unique_mcp_tool_name(name, &mut seen_names);
+
+            let mut tool = Tool::default();
+            tool.name = Cow::Owned(tool_name);
+            tool.description = Some(Cow::Owned(if task.description.is_empty() {
+                format!("Execute the mise task '{name}'")
+            } else {
+                task.description.clone()
+            }));
+            tool.input_schema = task_tool_input_schema();
+
+            mcp_task_tools.push(McpTaskTool {
+                task: name.clone(),
+                tool,
+            });
+        }
+
+        Ok(mcp_task_tools)
+    }
+}
+
+fn unique_mcp_tool_name(task_name: &str, seen_names: &mut HashSet<String>) -> String {
+    let mut tool_name = sanitize_mcp_tool_name(task_name);
+
+    if !seen_names.insert(tool_name.clone()) {
+        let suffix = task_name_hash(task_name);
+        let max_base_len = 128usize.saturating_sub(suffix.len() + 1);
+        tool_name.truncate(max_base_len);
+        trim_trailing_separators(&mut tool_name);
+        tool_name = format!("{tool_name}_{suffix}");
+        seen_names.insert(tool_name.clone());
+    }
+
+    tool_name
+}
+
+fn sanitize_mcp_tool_name(task_name: &str) -> String {
+    let mut tool_name = task_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+
+    while tool_name.contains("__") {
+        tool_name = tool_name.replace("__", "_");
+    }
+    trim_trailing_separators(&mut tool_name);
+    while tool_name.starts_with('_') {
+        tool_name.remove(0);
+    }
+    if tool_name.is_empty() {
+        tool_name = "task".to_string();
+    }
+    if tool_name.len() > 128 {
+        let suffix = task_name_hash(task_name);
+        let max_base_len = 128usize.saturating_sub(suffix.len() + 1);
+        tool_name.truncate(max_base_len);
+        trim_trailing_separators(&mut tool_name);
+        tool_name = format!("{tool_name}_{suffix}");
+    }
+
+    tool_name
+}
+
+fn trim_trailing_separators(s: &mut String) {
+    while s.ends_with('_') {
+        s.pop();
+    }
+}
+
+fn task_name_hash(task_name: &str) -> String {
+    blake3::hash(task_name.as_bytes()).to_hex()[..8].to_string()
+}
+
+struct McpTaskTool {
+    task: String,
+    tool: Tool,
+}
+
+fn task_tool_input_schema() -> Arc<JsonObject> {
+    Arc::new(
+        json!({
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional arguments to pass to the task"
+                }
+            }
+        })
+        .as_object()
+        .cloned()
+        .unwrap(),
+    )
+}
+
+fn task_tool_args(arguments: Option<JsonObject>) -> std::result::Result<Vec<String>, ErrorData> {
+    let Some(arguments) = arguments else {
+        return Ok(vec![]);
+    };
+
+    match arguments.get("args") {
+        Some(Value::Array(args)) => args
+            .iter()
+            .map(|arg| {
+                arg.as_str().map(String::from).ok_or_else(|| ErrorData {
+                    code: ErrorCode::INVALID_PARAMS,
+                    message: Cow::Borrowed("Task tool args must be strings"),
+                    data: None,
+                })
+            })
+            .collect(),
+        Some(_) => Err(ErrorData {
+            code: ErrorCode::INVALID_PARAMS,
+            message: Cow::Borrowed("Task tool args must be an array"),
+            data: None,
+        }),
+        None => Ok(vec![]),
     }
 }
 
@@ -404,7 +545,15 @@ impl ServerHandler for MiseServer {
         _pagination: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult::with_all_items(self.tool_router.list_all()))
+        let mut tools = self.tool_router.list_all();
+        tools.extend(
+            self.mcp_task_tools()
+                .await?
+                .into_iter()
+                .map(|mcp_task_tool| mcp_task_tool.tool),
+        );
+        tools.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(ListToolsResult::with_all_items(tools))
     }
 
     async fn call_tool(
@@ -412,6 +561,17 @@ impl ServerHandler for MiseServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
+        let tool_name = request.name.clone();
+        if let Some(mcp_task_tool) = self
+            .mcp_task_tools()
+            .await?
+            .into_iter()
+            .find(|mcp_task_tool| mcp_task_tool.tool.name == tool_name)
+        {
+            let args = task_tool_args(request.arguments)?;
+            return Self::run_mise_task(mcp_task_tool.task, args).await;
+        }
+
         let tool_call_context =
             rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         self.tool_router.call(tool_call_context).await
@@ -474,7 +634,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Tools available:
     - <bold>install_tool</bold> - Install a tool (not yet implemented)
-    - <bold>run_task</bold> - Execute a mise task with optional arguments
-      Example: {"task": "build", "args": ["--verbose"]}
+    - visible mise tasks are exposed as individual MCP tools with optional <bold>args</bold>
 "#
 );
