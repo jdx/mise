@@ -218,7 +218,7 @@ where
         Err(err) => match http::error_code(&err).unwrap_or(0) {
             404 => Ok(None),
             429 => {
-                warn!("mise-versions rate limited while fetching {label}");
+                debug!("mise-versions rate limited while fetching {label}");
                 Ok(None)
             }
             _ => {
