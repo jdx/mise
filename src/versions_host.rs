@@ -68,7 +68,6 @@ struct VersionEntry {
 
 #[derive(serde::Deserialize)]
 struct AttestationsResponse {
-    #[serde(default)]
     attestations: Vec<Attestation>,
 }
 
@@ -472,5 +471,16 @@ mod tests {
         assert!(valid_github_release_tag(&release, "v1.0.0"));
         assert!(valid_github_release_tag(&release, "latest"));
         assert!(!valid_github_release_tag(&release, "v2.0.0"));
+    }
+
+    #[test]
+    fn test_attestations_response_requires_attestations_field() {
+        assert!(serde_json::from_str::<AttestationsResponse>("{}").is_err());
+        assert!(
+            serde_json::from_str::<AttestationsResponse>(r#"{"attestations":[]}"#)
+                .unwrap()
+                .attestations
+                .is_empty()
+        );
     }
 }
