@@ -31,7 +31,7 @@ if [[ -f $RELEASE_SKIP_FILE ]]; then
   fi
 fi
 
-pushd e2e
+pushd e2e >/dev/null
 # List test files with a portable fallback chain.
 list_test_files() {
   local pattern="$1"
@@ -53,7 +53,7 @@ FAST_FILES=()
 while IFS= read -r line; do
   FAST_FILES+=("$line")
 done < <(list_test_files "test_*" | grep -v "_slow$")
-popd
+popd >/dev/null
 FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
 MISE_BIN="$(resolve_mise_bin)"
 test_count=0
@@ -120,6 +120,15 @@ STATUS_FILES=()
 FINISHED=()
 FAILED_TESTS=()
 ORIGINAL_GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:-}"
+
+SHOW_PASSING_LOGS="${E2E_SHOW_PASSING_LOGS:-}"
+if [[ -z $SHOW_PASSING_LOGS ]]; then
+  if [[ -n ${GITHUB_ACTIONS:-} ]]; then
+    SHOW_PASSING_LOGS=0
+  else
+    SHOW_PASSING_LOGS=1
+  fi
+fi
 
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mise-e2e-logs.XXXXXX")"
 # shellcheck disable=SC2329
@@ -193,12 +202,16 @@ while [[ $completed -lt $total ]]; do
   done
 
   while [[ $printed -lt $total && ${FINISHED[$printed]:-0} == 1 ]]; do
-    cat "${LOG_FILES[$printed]}"
     test_status="$(cat "${STATUS_FILES[$printed]}")"
     test_status="${test_status:-1}"
     if [[ $test_status != 0 ]]; then
       status=1
       FAILED_TESTS+=("${RUN_FILES[$printed]}")
+      cat "${LOG_FILES[$printed]}"
+    elif [[ $SHOW_PASSING_LOGS == 1 ]]; then
+      cat "${LOG_FILES[$printed]}"
+    else
+      echo "PASS: ${RUN_FILES[$printed]}" >&2
     fi
     test_count=$((test_count + 1))
     printed=$((printed + 1))
