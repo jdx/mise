@@ -457,7 +457,7 @@ impl ToolVersion {
         // fetching for fully-qualified versions (e.g. "2.3.2") that aren't installed.
         // Prefix versions like "2" still need remote resolution to find e.g. "2.1.0".
         // "latest" also needs remote resolution but is handled in the block above.
-        if settings.prefer_offline() && v.matches('.').count() >= 2 {
+        if prefer_offline && !opts.latest_versions && v.matches('.').count() >= 2 {
             return build(v);
         }
         // First try with date filter (common case)
