@@ -223,7 +223,7 @@ fn remove_shims_individually(shims_dir: &Path) -> Result<()> {
         let entry = entry?;
         let name = entry.file_name();
         // skip dotfiles (e.g. .mode) — these are metadata, not shims
-        if name.to_string_lossy().starts_with('.') {
+        if is_hidden_shim_name(&name) {
             continue;
         }
         let path = entry.path();
@@ -440,11 +440,15 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
         .read_dir()?
         .map(|bin| {
             let bin = bin?;
+            let name = bin.file_name();
+            if is_hidden_shim_name(&name) {
+                return Ok(None);
+            }
             // files and symlinks which are executable
             if file::is_executable(&bin.path())
                 && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
             {
-                Ok(Some(bin.file_name().into_string().unwrap()))
+                Ok(name.into_string().ok())
             } else {
                 Ok(None)
             }
@@ -462,14 +466,14 @@ fn list_shims() -> Result<HashSet<String>> {
             let bin = bin?;
             let name = bin.file_name();
             // skip dotfiles (e.g. .mode) — these are metadata, not shims
-            if name.to_string_lossy().starts_with('.') {
+            if is_hidden_shim_name(&name) {
                 return Ok(None);
             }
             // files and symlinks which are executable or extensionless files (Git Bash/Cygwin)
             if (file::is_executable(&bin.path()) || bin.path().extension().is_none())
                 && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
             {
-                Ok(Some(bin.file_name().into_string().unwrap()))
+                Ok(name.into_string().ok())
             } else {
                 Ok(None)
             }
@@ -478,6 +482,10 @@ fn list_shims() -> Result<HashSet<String>> {
         .into_iter()
         .flatten()
         .collect())
+}
+
+fn is_hidden_shim_name(name: &std::ffi::OsStr) -> bool {
+    name.to_string_lossy().starts_with('.')
 }
 
 async fn get_desired_shims(
@@ -608,5 +616,49 @@ async fn err_no_version_set(
         }
         msg.push_str("Install all missing tools with: mise install\n");
         Err(eyre!(msg.trim().to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_executables_in_dir_skips_dotfiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let visible_name = if cfg!(windows) {
+            "ffmpeg.exe"
+        } else {
+            "ffmpeg"
+        };
+        let visible = dir.path().join(visible_name);
+        let hidden = dir.path().join(".librsvg-post-link.exe");
+
+        fs::write(&visible, "").unwrap();
+        fs::write(&hidden, "").unwrap();
+        file::make_executable(&visible).unwrap();
+        file::make_executable(&hidden).unwrap();
+
+        let bins = list_executables_in_dir(dir.path()).unwrap();
+
+        assert!(bins.contains(visible_name));
+        assert!(!bins.contains(".librsvg-post-link.exe"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn list_executables_in_dir_skips_non_utf8_names() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let non_utf8 = dir.path().join(OsString::from_vec(vec![0xff]));
+
+        fs::write(&non_utf8, "").unwrap();
+        file::make_executable(&non_utf8).unwrap();
+
+        let bins = list_executables_in_dir(dir.path()).unwrap();
+
+        assert!(bins.is_empty());
     }
 }
