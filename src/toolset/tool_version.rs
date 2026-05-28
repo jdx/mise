@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
+use crate::backend::backend_type::BackendType;
 use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
@@ -458,6 +459,14 @@ impl ToolVersion {
         // Prefix versions like "2" still need remote resolution to find e.g. "2.1.0".
         // "latest" also needs remote resolution but is handled in the block above.
         if prefer_offline && !opts.latest_versions && v.matches('.').count() >= 2 {
+            return build(v);
+        }
+        // Exact pinned github: versions do not need the full releases list.
+        // Asset resolution will fetch the specific release later, and public
+        // GitHub release metadata can come from mise-versions there. Keeping
+        // this path exact avoids an unnecessary GitHub `/releases` API call in
+        // normal installs without changing prefix/latest resolution.
+        if backend.get_type() == BackendType::Github && v.matches('.').count() >= 2 {
             return build(v);
         }
         // First try with date filter (common case)

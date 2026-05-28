@@ -81,7 +81,9 @@ pub async fn verify_attestation(
                     "got {} GitHub attestations for {owner}/{repo}@sha256:{artifact_digest} from mise-versions",
                     attestations.len()
                 );
-                if attestations.iter().any(|a| !a.has_inline_bundle()) {
+                if attestations.is_empty() {
+                    return Err(AttestationError::NoAttestations);
+                } else if attestations.iter().any(|a| !a.has_inline_bundle()) {
                     debug!(
                         "mise-versions returned GitHub attestations without inline bundles; falling back to GitHub API"
                     );

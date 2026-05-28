@@ -197,7 +197,7 @@ pub async fn github_attestations(
         "https://mise-versions.jdx.dev/api/github/repos/{}/{}/attestations/{}",
         encode_path_segment(owner),
         encode_path_segment(repo_name),
-        encode_path_segment(digest)
+        encode_digest_path_segment(digest)
     );
 
     let response: Option<AttestationsResponse> =
@@ -240,6 +240,10 @@ fn split_github_repo(repo: &str) -> Option<(&str, &str)> {
 
 fn encode_path_segment(segment: &str) -> String {
     urlencoding::encode(segment).into_owned()
+}
+
+fn encode_digest_path_segment(digest: &str) -> String {
+    encode_path_segment(digest).replace("%3A", ":")
 }
 
 fn valid_github_release_asset_urls(release: &GithubRelease, owner: &str, repo: &str) -> bool {
@@ -391,6 +395,14 @@ mod tests {
     #[test]
     fn test_encode_path_segment_encodes_digest() {
         assert_eq!(encode_path_segment("sha256:abc/def"), "sha256%3Aabc%2Fdef");
+    }
+
+    #[test]
+    fn test_encode_digest_path_segment_preserves_algorithm_separator() {
+        assert_eq!(
+            encode_digest_path_segment("sha256:abc/def"),
+            "sha256:abc%2Fdef"
+        );
     }
 
     #[test]
