@@ -1259,6 +1259,19 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Backend-specific fast path for exact version requests.
+    ///
+    /// Return `Ok(None)` when the backend cannot cheaply prove that `version`
+    /// is an exact upstream version. Callers must still fall back to normal
+    /// prefix/latest resolution in that case.
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        _version: &str,
+    ) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Backend opt-in for installing an unresolved `latest` request.
     ///
     /// Most backends must resolve `latest` to a concrete version before install.

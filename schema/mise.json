@@ -1732,7 +1732,7 @@
         },
         "use_versions_host": {
           "default": true,
-          "description": "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions.",
+          "description": "Set to false to disable using the mise-versions API for version lists, public GitHub release metadata, and GitHub artifact attestations.",
           "type": "boolean"
         },
         "use_versions_host_track": {

@@ -219,6 +219,12 @@ pub struct Attestation {
     bundle_url: Option<String>,
 }
 
+impl Attestation {
+    pub fn has_inline_bundle(&self) -> bool {
+        self.bundle.is_some()
+    }
+}
+
 impl AttestationClient {
     pub fn builder() -> AttestationClientBuilder {
         AttestationClientBuilder::default()
@@ -332,7 +338,16 @@ pub async fn verify_github_attestation(
     token: Option<&str>,
     signer_workflow: Option<&str>,
 ) -> Result<bool> {
-    verify_github_attestation_inner(artifact_path, owner, repo, token, signer_workflow, None).await
+    verify_github_attestation_inner(
+        artifact_path,
+        owner,
+        repo,
+        token,
+        signer_workflow,
+        None,
+        None,
+    )
+    .await
 }
 
 pub async fn verify_github_attestation_with_base_url(
@@ -350,8 +365,44 @@ pub async fn verify_github_attestation_with_base_url(
         token,
         signer_workflow,
         Some(base_url),
+        None,
     )
     .await
+}
+
+pub async fn verify_github_attestation_with_base_url_and_digest(
+    artifact_path: &Path,
+    owner: &str,
+    repo: &str,
+    token: Option<&str>,
+    signer_workflow: Option<&str>,
+    base_url: &str,
+    digest: &str,
+) -> Result<bool> {
+    verify_github_attestation_inner(
+        artifact_path,
+        owner,
+        repo,
+        token,
+        signer_workflow,
+        Some(base_url),
+        Some(digest),
+    )
+    .await
+}
+
+pub async fn verify_github_attestation_with_attestations(
+    artifact_path: &Path,
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+) -> Result<bool> {
+    if attestations.is_empty() {
+        return Err(AttestationError::NoAttestations);
+    }
+
+    let artifact = tokio::fs::read(artifact_path).await?;
+    let mut trust_roots = TrustRoots::default();
+    verify_attestation_bundles(attestations, &artifact, signer_workflow, &mut trust_roots).await
 }
 
 async fn verify_github_attestation_inner(
@@ -361,6 +412,7 @@ async fn verify_github_attestation_inner(
     token: Option<&str>,
     signer_workflow: Option<&str>,
     base_url: Option<&str>,
+    digest: Option<&str>,
 ) -> Result<bool> {
     let mut builder = AttestationClient::builder();
     if let Some(token) = token {
@@ -370,7 +422,10 @@ async fn verify_github_attestation_inner(
         builder = builder.base_url(base_url);
     }
     let client = builder.build()?;
-    let digest = calculate_file_digest_async(artifact_path).await?;
+    let digest = match digest {
+        Some(digest) => digest.to_string(),
+        None => calculate_file_digest(artifact_path).await?,
+    };
     let attestations = client
         .fetch_attestations(FetchParams {
             owner: owner.to_string(),
@@ -1261,7 +1316,7 @@ fn verify_raw_signature(
         .map_err(|e| AttestationError::Verification(format!("signature verification failed: {e}")))
 }
 
-async fn calculate_file_digest_async(path: &Path) -> Result<String> {
+pub async fn calculate_file_digest(path: &Path) -> Result<String> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut hasher = Sha256::new();
     let mut buffer = [0; 8192];

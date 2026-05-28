@@ -460,6 +460,15 @@ impl ToolVersion {
         if prefer_offline && !opts.latest_versions && v.matches('.').count() >= 2 {
             return build(v);
         }
+        // Exact pinned GitHub versions do not need the full releases list when
+        // the backend can cheaply prove the tag exists. If it cannot, fall
+        // through to normal prefix resolution so requests like "1.2.3" can
+        // still resolve to "1.2.3.4" when that is the latest matching version.
+        if v.matches('.').count() >= 2
+            && let Some(v) = backend.resolve_exact_version(config, &v).await?
+        {
+            return build(v);
+        }
         // First try with date filter (common case)
         let matches = backend
             .list_versions_matching_with_opts(

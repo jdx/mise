@@ -2513,12 +2513,24 @@ type = "Bool"
 
 [use_versions_host]
 default = true
-description = "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions."
+description = "Set to false to disable using the mise-versions API for version lists, public GitHub release metadata, and GitHub artifact attestations."
 docs = """
 Set to "false" to disable using [mise-versions](https://mise-versions.jdx.dev) as
-a quick way for mise to query for new versions. This host regularly grabs all the
-latest versions of core and community plugins. It's faster than running a plugin's
-`list-all` command and gets around GitHub rate limiting problems when using it.
+a shared cache for version lists, public GitHub release metadata, and GitHub artifact
+attestations.
+
+This host regularly grabs all the latest versions of core and community plugins.
+It's faster than running a plugin's `list-all` command and gets around GitHub
+rate limiting problems when using it. For tools distributed through public GitHub
+releases, mise also uses this host before calling GitHub's releases and artifact
+attestation APIs directly. This avoids the anonymous GitHub API rate limit in
+normal installs, including Docker builds and CI jobs that do not have a GitHub
+token configured.
+
+If the versions host does not have the requested metadata yet, mise falls back to
+GitHub's API. Private repositories, GitHub Enterprise, custom GitHub API URLs, and
+users who disable this setting still need normal GitHub authentication when they
+would otherwise exceed GitHub's rate limits.
 
 mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
 with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply
