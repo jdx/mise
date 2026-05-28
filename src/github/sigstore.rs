@@ -67,17 +67,63 @@ pub async fn verify_attestation(
     expected_workflow: Option<&str>,
     api_url: Option<&str>,
 ) -> AttestationResult<bool> {
+    let mut digest = None;
+    if use_versions_host_for_attestations(api_url) {
+        let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
+        match crate::versions_host::github_attestations(
+            &format!("{owner}/{repo}"),
+            &format!("sha256:{artifact_digest}"),
+        )
+        .await
+        {
+            Ok(Some(attestations)) => {
+                trace!(
+                    "got {} GitHub attestations for {owner}/{repo}@sha256:{artifact_digest} from mise-versions",
+                    attestations.len()
+                );
+                if attestations.iter().any(|a| !a.has_inline_bundle()) {
+                    debug!(
+                        "mise-versions returned GitHub attestations without inline bundles; falling back to GitHub API"
+                    );
+                } else {
+                    return mise_sigstore::verify_github_attestation_with_attestations(
+                        artifact_path,
+                        &attestations,
+                        expected_workflow,
+                    )
+                    .await;
+                }
+            }
+            Ok(None) => {}
+            Err(err) => debug!("mise-versions GitHub attestations lookup failed: {err:#}"),
+        }
+        digest = Some(artifact_digest);
+    }
+
     let token = resolve_token_for_wrapper(api_url);
     let base_url = routed_api_url(api_url.unwrap_or(crate::github::API_URL));
-    mise_sigstore::verify_github_attestation_with_base_url(
-        artifact_path,
-        owner,
-        repo,
-        token.as_deref(),
-        expected_workflow,
-        &base_url,
-    )
-    .await
+    if let Some(digest) = digest {
+        mise_sigstore::verify_github_attestation_with_base_url_and_digest(
+            artifact_path,
+            owner,
+            repo,
+            token.as_deref(),
+            expected_workflow,
+            &base_url,
+            &digest,
+        )
+        .await
+    } else {
+        mise_sigstore::verify_github_attestation_with_base_url(
+            artifact_path,
+            owner,
+            repo,
+            token.as_deref(),
+            expected_workflow,
+            &base_url,
+        )
+        .await
+    }
 }
 
 /// Reason the pre-download attestation probe could not complete.
@@ -124,6 +170,20 @@ pub async fn detect_attestations(
     api_url: &str,
     digest: &str,
 ) -> Result<bool, DetectError> {
+    if use_versions_host_for_attestations(Some(api_url)) {
+        match crate::versions_host::github_attestations(&format!("{owner}/{repo}"), digest).await {
+            Ok(Some(attestations)) => {
+                trace!(
+                    "got {} GitHub attestation probes for {owner}/{repo}@{digest} from mise-versions",
+                    attestations.len()
+                );
+                return Ok(!attestations.is_empty());
+            }
+            Ok(None) => {}
+            Err(err) => debug!("mise-versions GitHub attestation probe failed: {err:#}"),
+        }
+    }
+
     let token = resolve_token_for_wrapper(Some(api_url));
     let base_url = routed_api_url(api_url);
     let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), &base_url)
@@ -134,6 +194,18 @@ pub async fn detect_attestations(
         .await
         .map_err(DetectError::Fetch)?;
     Ok(!attestations.is_empty())
+}
+
+fn use_versions_host_for_attestations(api_url: Option<&str>) -> bool {
+    let settings = crate::config::Settings::get();
+    if settings.prefer_offline() || !settings.use_versions_host {
+        return false;
+    }
+
+    api_url
+        .unwrap_or(crate::github::API_URL)
+        .trim_end_matches('/')
+        == crate::github::API_URL
 }
 
 /// Verify SLSA provenance for an already-downloaded artifact. Passthrough — no token needed.
@@ -204,9 +276,17 @@ mod tests {
 
     impl SettingsGuard {
         fn new(replacements: Option<indexmap::IndexMap<String, String>>) -> Self {
+            Self::with_versions_host(replacements, None)
+        }
+
+        fn with_versions_host(
+            replacements: Option<indexmap::IndexMap<String, String>>,
+            use_versions_host: Option<bool>,
+        ) -> Self {
             let lock = TEST_SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let mut settings = crate::config::settings::SettingsPartial::empty();
             settings.url_replacements = replacements;
+            settings.use_versions_host = use_versions_host;
             crate::config::Settings::reset(Some(settings));
             Self { _lock: lock }
         }
@@ -381,5 +461,14 @@ mod tests {
         let routed = routed_api_url(crate::github::API_URL);
 
         assert_eq!(routed, crate::github::API_URL);
+    }
+
+    #[test]
+    fn test_use_versions_host_for_attestations_respects_setting() {
+        let _settings = SettingsGuard::with_versions_host(None, Some(false));
+
+        assert!(!use_versions_host_for_attestations(Some(
+            crate::github::API_URL
+        )));
     }
 }
