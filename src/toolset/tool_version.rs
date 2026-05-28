@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::backend::backend_type::BackendType;
 use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
@@ -461,12 +460,13 @@ impl ToolVersion {
         if prefer_offline && !opts.latest_versions && v.matches('.').count() >= 2 {
             return build(v);
         }
-        // Exact pinned github: versions do not need the full releases list.
-        // Asset resolution will fetch the specific release later, and public
-        // GitHub release metadata can come from mise-versions there. Keeping
-        // this path exact avoids an unnecessary GitHub `/releases` API call in
-        // normal installs without changing prefix/latest resolution.
-        if backend.get_type() == BackendType::Github && v.matches('.').count() >= 2 {
+        // Exact pinned GitHub versions do not need the full releases list when
+        // the backend can cheaply prove the tag exists. If it cannot, fall
+        // through to normal prefix resolution so requests like "1.2.3" can
+        // still resolve to "1.2.3.4" when that is the latest matching version.
+        if v.matches('.').count() >= 2
+            && let Some(v) = backend.resolve_exact_version(config, &v).await?
+        {
             return build(v);
         }
         // First try with date filter (common case)
