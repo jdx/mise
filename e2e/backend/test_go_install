@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Create system "tools" that always fail and push them to the front of PATH
+cat >"$HOME/bin/fail" <<'EOF'
+#!/usr/bin/env bash
+echo "CALL TO SYSTEM $(basename $0)! args: $*" >&2
+exit 1
+EOF
+chmod +x "$HOME"/bin/fail
+ln -s fail "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+
+# Just to be sure...
+assert_fail go
+
+cat >>.mise.toml <<EOF
+[tools]
+go = "prefix:1.24"
+"go:github.com/jdx/go-example" = "v0.1.0"
+"go:github.com/jdx/go-example/deep/cmd/tool/v2[tags=postgres]" = "latest"
+[settings]
+experimental = true
+EOF
+
+mise install go
+GOPROXY=direct mise install
+
+eval "$(mise activate bash --shims)"
+
+assert "go-example" "hello world"
+assert "tool" "deep v2 postgres"
+
+# See https://github.com/jdx/mise/discussions/6737
+assert "mise x go:github.com/jdx/go-example@e16a340 -- go-example" "hello world"
+
+# Deep sub-module with no tagged versions; direct mode resolves a pseudo-version via @latest.
+assert_matches \
+  "GOPROXY=direct mise install --dry-run 'go:github.com/jdx/go-example/deep/cmd/tool/v2@latest' 2>&1" \
+  'go:github.com/jdx/go-example/deep/cmd/tool/v2@2\.0\.0-[0-9]{14}-[0-9a-f]+'
+
+# Required to properly cleanup as go installs read-only sources
+if [ -d ~/go ]; then
+  chmod -R +w ~/go
+fi
