@@ -198,7 +198,18 @@ impl Exec {
         // would outrank the inner toolset's resolved tool. See discussion #9754.
         // Computed after all env modifications so the diff fully describes what
         // mise added (matches task_executor.rs).
-        if let Ok(serialized) = EnvDiff::from_final_env(&env::PRISTINE_ENV, &env).serialize() {
+        let removed_mise_env = if !env::MISE_ENV.is_empty() {
+            // Keep explicit -E profiles active if the child shell sources `mise activate`.
+            env.remove("MISE_ENV")
+        } else {
+            None
+        };
+        env.remove("__MISE_DIFF");
+        let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &env).serialize();
+        if let Some(mise_env) = removed_mise_env {
+            env.insert("MISE_ENV".to_string(), mise_env);
+        }
+        if let Ok(serialized) = serialized {
             env.insert("__MISE_DIFF".to_string(), serialized);
         }
 
