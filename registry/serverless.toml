@@ -4,8 +4,7 @@ description = "Serverless Framework"
 full = "npm:serverless"
 
 [backends.options]
-aube_args = "--allow-build=serverless"
-pnpm_args = "--allow-build=serverless"
+allow_builds = ["serverless"]
 
 [[backends]]
 full = "asdf:mise-plugins/mise-serverless"

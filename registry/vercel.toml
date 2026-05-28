@@ -5,5 +5,4 @@ test = { cmd = "vc --version", expected = "{{version}}", tools = ["aube"] }
 full = "npm:vercel"
 
 [backends.options]
-aube_args = "--allow-build=esbuild"
-pnpm_args = "--allow-build=esbuild"
+allow_builds = ["esbuild"]

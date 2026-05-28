@@ -5,5 +5,4 @@ test = { cmd = "orval --version", expected = "{{version}}", tools = ["aube"] }
 full = "npm:orval"
 
 [backends.options]
-aube_args = "--allow-build=esbuild"
-pnpm_args = "--allow-build=esbuild"
+allow_builds = ["esbuild"]

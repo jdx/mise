@@ -49,6 +49,13 @@ struct NpmOptions<'a> {
     values: BackendOptions<'a>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AllowBuilds {
+    None,
+    All,
+    Packages(Vec<String>),
+}
+
 impl<'a> NpmOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
@@ -72,10 +79,76 @@ impl<'a> NpmOptions<'a> {
         self.values.str("aube_args")
     }
 
+    fn allow_builds(&self) -> eyre::Result<AllowBuilds> {
+        let Some(value) = self.values.raw().opts.get("allow_builds") else {
+            return Ok(AllowBuilds::None);
+        };
+        match value {
+            toml::Value::Boolean(true) => Ok(AllowBuilds::All),
+            toml::Value::Boolean(false) => Ok(AllowBuilds::None),
+            toml::Value::String(value) => {
+                Ok(Self::canonical_allow_build_packages(vec![value.clone()]))
+            }
+            toml::Value::Array(values) => {
+                let packages = values
+                    .iter()
+                    .map(|value| {
+                        value.as_str().map(str::to_string).ok_or_else(|| {
+                            eyre::eyre!("allow_builds array must contain only strings")
+                        })
+                    })
+                    .collect::<eyre::Result<Vec<_>>>()?;
+                Ok(Self::canonical_allow_build_packages(packages))
+            }
+            _ => Err(eyre::eyre!(
+                "allow_builds must be true, false, a string, or array"
+            )),
+        }
+    }
+
+    fn allow_build_args(&self) -> eyre::Result<Vec<OsString>> {
+        Ok(match self.allow_builds()? {
+            AllowBuilds::None => vec![],
+            AllowBuilds::All => vec![OsString::from("--dangerously-allow-all-builds")],
+            AllowBuilds::Packages(packages) => packages
+                .into_iter()
+                .map(|package| OsString::from(format!("--allow-build={package}")))
+                .collect(),
+        })
+    }
+
+    fn canonical_allow_build_packages(mut packages: Vec<String>) -> AllowBuilds {
+        packages.sort();
+        packages.dedup();
+        if packages.is_empty() {
+            AllowBuilds::None
+        } else {
+            AllowBuilds::Packages(packages)
+        }
+    }
+
+    fn canonical_allow_builds_lockfile_value(&self) -> eyre::Result<Option<String>> {
+        Ok(match self.allow_builds()? {
+            AllowBuilds::None => None,
+            AllowBuilds::All => Some("true".into()),
+            AllowBuilds::Packages(packages) => Some(format!("{packages:?}")),
+        })
+    }
+
     fn lockfile_options(&self) -> BTreeMap<String, String> {
         install_time_option_keys()
             .into_iter()
-            .filter_map(|key| self.values.str(&key).map(|value| (key, value.to_string())))
+            .filter_map(|key| {
+                let value = if key == "allow_builds" {
+                    self.canonical_allow_builds_lockfile_value().ok().flatten()
+                } else {
+                    self.values.raw().opts.get(&key).map(|value| match value {
+                        toml::Value::String(value) => value.clone(),
+                        _ => value.to_string(),
+                    })
+                };
+                value.map(|value| (key, value))
+            })
             .collect()
     }
 }
@@ -280,6 +353,7 @@ impl Backend for NPMBackend {
                 if let Some(args) = options.aube_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
+                cmd = cmd.args(options.allow_build_args()?);
                 cmd.execute()?;
             }
             NpmPackageManager::Bun => {
@@ -338,6 +412,7 @@ impl Backend for NPMBackend {
                 if let Some(args) = options.pnpm_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
+                cmd = cmd.args(options.allow_build_args()?);
                 cmd.execute()?;
             }
             _ => {
@@ -747,6 +822,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "pnpm_args".into(),
         "bun_args".into(),
         "aube_args".into(),
+        "allow_builds".into(),
     ]
 }
 
@@ -1028,6 +1104,14 @@ mod tests {
             "aube_args".to_string(),
             toml::Value::String("--loglevel=warn".into()),
         );
+        options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("sharp".into()),
+                toml::Value::String("esbuild".into()),
+                toml::Value::String("sharp".into()),
+            ]),
+        );
         options.install_env.insert(
             "NPM_CONFIG_REGISTRY".to_string(),
             "https://registry.example.com".to_string(),
@@ -1049,7 +1133,91 @@ mod tests {
             resolved.get("aube_args"),
             Some(&"--loglevel=warn".to_string())
         );
+        assert_eq!(
+            resolved.get("allow_builds"),
+            Some(&"[\"esbuild\", \"sharp\"]".to_string())
+        );
         assert!(!resolved.contains_key("install_env.NPM_CONFIG_REGISTRY"));
+    }
+
+    #[test]
+    fn test_allow_build_args_accepts_string_array_or_true() {
+        let mut string_options = ToolVersionOptions::default();
+        string_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::String("esbuild".into()),
+        );
+        assert_eq!(
+            NpmOptions::new(&string_options).allow_build_args().unwrap(),
+            vec![OsString::from("--allow-build=esbuild")]
+        );
+
+        let mut array_options = ToolVersionOptions::default();
+        array_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("esbuild".into()),
+                toml::Value::String("sharp".into()),
+            ]),
+        );
+        assert_eq!(
+            NpmOptions::new(&array_options).allow_build_args().unwrap(),
+            vec![
+                OsString::from("--allow-build=esbuild"),
+                OsString::from("--allow-build=sharp"),
+            ]
+        );
+
+        let mut true_options = ToolVersionOptions::default();
+        true_options
+            .opts
+            .insert("allow_builds".to_string(), toml::Value::Boolean(true));
+        assert_eq!(
+            NpmOptions::new(&true_options).allow_build_args().unwrap(),
+            vec![OsString::from("--dangerously-allow-all-builds")]
+        );
+    }
+
+    #[test]
+    fn test_allow_build_lockfile_value_is_canonical() {
+        let mut string_options = ToolVersionOptions::default();
+        string_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::String("esbuild".into()),
+        );
+        assert_eq!(
+            NpmOptions::new(&string_options)
+                .canonical_allow_builds_lockfile_value()
+                .unwrap(),
+            Some("[\"esbuild\"]".into())
+        );
+
+        let mut array_options = ToolVersionOptions::default();
+        array_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("sharp".into()),
+                toml::Value::String("esbuild".into()),
+                toml::Value::String("sharp".into()),
+            ]),
+        );
+        assert_eq!(
+            NpmOptions::new(&array_options)
+                .canonical_allow_builds_lockfile_value()
+                .unwrap(),
+            Some("[\"esbuild\", \"sharp\"]".into())
+        );
+
+        let mut true_options = ToolVersionOptions::default();
+        true_options
+            .opts
+            .insert("allow_builds".to_string(), toml::Value::Boolean(true));
+        assert_eq!(
+            NpmOptions::new(&true_options)
+                .canonical_allow_builds_lockfile_value()
+                .unwrap(),
+            Some("true".into())
+        );
     }
 
     #[test]
