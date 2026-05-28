@@ -3,6 +3,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use base64::Engine;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
+use reqwest::{Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sigstore_verify::VerificationPolicy;
@@ -243,6 +244,34 @@ impl AttestationClient {
         Ok(headers)
     }
 
+    async fn github_get(&self, url: reqwest::Url) -> Result<Response> {
+        let headers = self.github_headers(url.as_str())?;
+        let response = self.client.get(url).headers(headers.clone()).send().await?;
+
+        if response.status() == StatusCode::FORBIDDEN && headers.contains_key(AUTHORIZATION) {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            if body.contains("IP allow list") {
+                return Err(AttestationError::Api(format!(
+                    "GitHub rejected the configured token because the organization has an IP allow list enabled. \
+                     Use a token permitted by the organization, or unset MISE_GITHUB_TOKEN/GITHUB_API_TOKEN/GITHUB_TOKEN \
+                     for this command if the resource is public and anonymous access is acceptable. \
+                     GitHub API returned {status}: {body}"
+                )));
+            }
+
+            return Err(AttestationError::Api(format!(
+                "GitHub API returned {status}: {body}"
+            )));
+        }
+
+        Ok(response)
+    }
+
     pub async fn fetch_attestations(&self, params: FetchParams) -> Result<Vec<Attestation>> {
         let url = if let Some(repo) = &params.repo {
             format!(
@@ -263,12 +292,7 @@ impl AttestationClient {
         let url = reqwest::Url::parse_with_params(&url, query_params)
             .map_err(|e| AttestationError::Api(format!("Invalid GitHub attestations URL: {e}")))?;
 
-        let response = self
-            .client
-            .get(url.clone())
-            .headers(self.github_headers(url.as_str())?)
-            .send()
-            .await?;
+        let response = self.github_get(url).await?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(vec![]);
@@ -301,12 +325,9 @@ impl AttestationClient {
     }
 
     async fn fetch_bundle_url(&self, bundle_url: &str) -> Result<serde_json::Value> {
-        let response = self
-            .client
-            .get(bundle_url)
-            .headers(self.github_headers(bundle_url)?)
-            .send()
-            .await?;
+        let url = reqwest::Url::parse(bundle_url)
+            .map_err(|e| AttestationError::Api(format!("Invalid GitHub bundle URL: {e}")))?;
+        let response = self.github_get(url).await?;
         if !response.status().is_success() {
             return Err(AttestationError::Api(format!(
                 "bundle URL returned {}",
@@ -1277,6 +1298,9 @@ async fn calculate_file_digest_async(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Matcher;
+
+    const IP_ALLOW_LIST_BODY: &str = r#"{"message":"Although you appear to have the correct authorization credentials, the `databricks` organization has an IP allow list enabled, and your IP address is not permitted to access this resource.","status":"403"}"#;
 
     #[test]
     fn signer_workflow_requires_identity() {
@@ -1318,6 +1342,78 @@ mod tests {
         .to_string();
 
         assert!(err.contains("Workflow verification failed"));
+    }
+
+    #[tokio::test]
+    async fn github_attestations_explain_ip_allow_list_403_without_retrying() {
+        let mut server = mockito::Server::new_async().await;
+        let path = "/repos/databricks/cli/attestations/sha256:abc123";
+        let authenticated = server
+            .mock("GET", path)
+            .match_query(Matcher::UrlEncoded("per_page".into(), "30".into()))
+            .match_header("authorization", "Bearer ghs_blocked")
+            .with_status(403)
+            .with_body(IP_ALLOW_LIST_BODY)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = AttestationClient::builder()
+            .base_url(&server.url())
+            .github_token("ghs_blocked")
+            .build()
+            .unwrap();
+
+        let err = client
+            .fetch_attestations(FetchParams {
+                owner: "databricks".to_string(),
+                repo: Some("databricks/cli".to_string()),
+                digest: "sha256:abc123".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("organization has an IP allow list enabled"));
+        assert!(err.contains("configured token"));
+        assert!(err.contains("unset MISE_GITHUB_TOKEN/GITHUB_API_TOKEN/GITHUB_TOKEN"));
+        authenticated.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn github_attestations_do_not_retry_non_ip_allow_list_403() {
+        let mut server = mockito::Server::new_async().await;
+        let path = "/repos/owner/repo/attestations/sha256:def456";
+        let authenticated = server
+            .mock("GET", path)
+            .match_query(Matcher::UrlEncoded("per_page".into(), "30".into()))
+            .match_header("authorization", "Bearer ghs_forbidden")
+            .with_status(403)
+            .with_body(r#"{"message":"rate limit exceeded","status":"403"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = AttestationClient::builder()
+            .base_url(&server.url())
+            .github_token("ghs_forbidden")
+            .build()
+            .unwrap();
+
+        let err = client
+            .fetch_attestations(FetchParams {
+                owner: "owner".to_string(),
+                repo: Some("owner/repo".to_string()),
+                digest: "sha256:def456".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("rate limit exceeded"));
+        authenticated.assert_async().await;
     }
 
     /// A genuine `*.intoto.jsonl` produced by slsa-github-generator (sops

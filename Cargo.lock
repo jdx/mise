@@ -5486,6 +5486,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "hex",
+ "mockito",
  "reqwest 0.13.3",
  "rustls-pki-types",
  "rustls-webpki 0.103.13",
