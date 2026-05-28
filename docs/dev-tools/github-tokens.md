@@ -1,6 +1,8 @@
 # GitHub Tokens
 
-Many tools in mise are hosted on GitHub, and mise uses the GitHub API to list versions and download releases. Unauthenticated requests are subject to low [rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api), which can cause `403 Forbidden` errors — especially in CI. This page explains how to configure GitHub authentication in mise.
+Many tools in mise are hosted on GitHub. For public releases, mise uses [mise-versions](https://mise-versions.jdx.dev) by default as a shared cache for version lists, release metadata, and GitHub artifact attestations. This avoids most unauthenticated GitHub API calls during normal installs, including CI and Docker builds.
+
+GitHub tokens are still useful when mise has to fall back to GitHub's API, when `MISE_USE_VERSIONS_HOST=0` is set, or when installing tools from private repositories, GitHub Enterprise, or custom GitHub API hosts. Unauthenticated requests are subject to low [rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api), which can cause `403 Forbidden` errors. This page explains how to configure GitHub authentication in mise.
 
 ## Token Priority
 
