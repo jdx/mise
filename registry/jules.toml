@@ -7,5 +7,4 @@ test = { cmd = "jules version", expected = "Version: v{{version}}", tools = [
 full = "npm:@google/jules"
 
 [backends.options]
-aube_args = "--allow-build=@google/jules"
-pnpm_args = "--allow-build=@google/jules"
+allow_builds = ["@google/jules"]

@@ -7,5 +7,4 @@ test = { cmd = "wrangler --version", expected = "{{version}}", tools = [
 full = "npm:wrangler"
 
 [backends.options]
-aube_args = "--allow-build=esbuild --allow-build=sharp --allow-build=workerd"
-pnpm_args = "--allow-build=esbuild --allow-build=sharp --allow-build=workerd"
+allow_builds = ["esbuild", "sharp", "workerd"]
