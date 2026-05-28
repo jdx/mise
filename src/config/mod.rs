@@ -2267,6 +2267,9 @@ async fn load_config_tasks(
         if is_global {
             t.global = true;
         }
+        if t.config_root.is_none() {
+            t.config_root = Some(config_root.to_path_buf());
+        }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
         match t.render(&config, &config_root).await {

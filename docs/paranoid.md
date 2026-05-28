@@ -21,9 +21,16 @@ $ mise install
 mise ~/src/mise/.tool-versions is not trusted. Trust it [y/n]?
 ```
 
-Generally only potentially dangerous config files are checked such as files
-that use templates (which can execute arbitrary code) or that set env vars.
-Under paranoid, however, all config files must be trusted first.
+In normal mode, mise checks trust before parsing `mise.toml` files because they
+can contain behavior that executes code or affects the environment. Some
+discovery paths that look at previously tracked configs may skip untrusted files
+instead of prompting. Commands that directly need an untrusted config, such as
+`mise lock`, can fail with an untrusted-config error when mise cannot prompt.
+When mise detects that it is running in CI, configs are assumed to be trusted
+unless paranoid mode is enabled.
+
+Under paranoid, all config files must be trusted first, including formats that
+normally do not require trust.
 
 Also, in normal mode, a config file only needs to be trusted a single time.
 In paranoid, the contents of the file are hashed to check if the file changes.
