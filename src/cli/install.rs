@@ -204,7 +204,13 @@ impl Install {
         // ensure that only current versions are sent to lockfile rebuild
         versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
 
-        config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
+        config::rebuild_shims_and_runtime_symlinks(
+            &config,
+            ts,
+            &versions,
+            crate::lockfile::LockfileUpdateMode::Normal,
+        )
+        .await?;
 
         // Warn about tools that were installed but not in any config file
         if !inactive_tools.is_empty() {
@@ -349,7 +355,13 @@ impl Install {
         }
         measure!("rebuild_shims_and_runtime_symlinks", {
             let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                &config,
+                ts,
+                &versions,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
         });
         Ok(())
     }
