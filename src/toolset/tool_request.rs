@@ -433,11 +433,15 @@ fn validate_version_string(s: &str) -> Result<()> {
 
 /// Validate `ref:`/`branch:`/`tag:`/`rev:` values. Same character rules as
 /// version strings: branch/tag names already use the same broad vocabulary
-/// (`/`, `+`, `-`, etc.), and only the shell-quote-breaking characters need
-/// rejection. Kept as a separate function for distinct error messages.
+/// (`/`, `+`, `-`, etc.), so only shell-quote-breaking characters and leading
+/// dashes need rejection. Kept as a separate function for distinct error
+/// messages.
 fn validate_ref_string(s: &str) -> Result<()> {
     if s.is_empty() {
         return Ok(());
+    }
+    if s.starts_with('-') {
+        bail!("invalid tool ref {s:?}: must not start with '-'");
     }
     if s.contains("..") {
         bail!("invalid tool ref {s:?}: contains path-traversal sequence");
@@ -644,7 +648,16 @@ mod tests {
 
     #[test]
     fn test_validate_ref_string_rejects_metacharacters() {
-        for v in ["a$(id)", "a..b", "a`b`", "a\"b", "a'b", "a\\b"] {
+        for v in [
+            "a$(id)",
+            "a..b",
+            "a`b`",
+            "a\"b",
+            "a'b",
+            "a\\b",
+            "--version",
+            "-v",
+        ] {
             assert!(
                 validate_ref_string(v).is_err(),
                 "expected ref {v:?} to be rejected"
