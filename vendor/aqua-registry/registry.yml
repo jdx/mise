@@ -19160,6 +19160,18 @@ packages:
       - secrets
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 1.3.0")
+        asset: betterleaks_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: betterleaks_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -19169,6 +19181,15 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/betterleaks/betterleaks/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -26493,6 +26514,16 @@ packages:
         overrides:
           - goos: linux
             format: tar
+      - version_constraint: semver("< 2.33.0")
+        asset: coder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: coder_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
       - version_constraint: "true"
         asset: coder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: zip
@@ -26503,6 +26534,8 @@ packages:
         overrides:
           - goos: linux
             format: tar.gz
+        github_artifact_attestations:
+          signer_workflow: coder/coder/\.github/workflows/release\.yaml
   - type: github_release
     repo_owner: coder3101
     repo_name: protols
@@ -30229,6 +30262,21 @@ packages:
       type: github_release
       asset: "{{.Asset}}.sha256"
       algorithm: sha256
+  - type: github_release
+    repo_owner: databricks
+    repo_name: cli
+    description: Databricks CLI
+    files:
+      - name: databricks
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: databricks_cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: databricks_cli_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
   - type: github_release
     repo_owner: databricks
     repo_name: click
@@ -36954,6 +37002,45 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: felixgwilliams
+    repo_name: nbwipers
+    description: nbwipers is a command line tool to wipe clean jupyter notebooks, written in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.6")
+        asset: nbwipers-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: nbwipers-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: ffuf
     repo_name: ffuf
     description: Fast web fuzzer written in Go
@@ -40763,6 +40850,8 @@ packages:
               - https://token.actions.githubusercontent.com
               - --certificate-identity
               - "https://github.com/gittuf/gittuf/.github/workflows/release.yml@refs/tags/{{.Version}}"
+        github_artifact_attestations:
+          signer_workflow: gittuf/gittuf/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: gitui-org
     repo_name: gitui
@@ -50272,6 +50361,10 @@ packages:
         supported_envs:
           - linux
           - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
       - version_constraint: semver("<= 2024.0.0")
         asset: rtx-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -50287,6 +50380,29 @@ packages:
         supported_envs:
           - linux
           - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
+      - version_constraint: semver("<= 2024.12.17")
+        asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+        format: tar.gz
+        files:
+          - name: mise
+            src: mise/bin/mise
+        overrides:
+          - goos: darwin
+            asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
       - version_constraint: semver(">= 2025.7.13, <= 2025.7.15")
         no_asset: true
       - version_constraint: semver("<= 2025.8.21")
@@ -50304,6 +50420,15 @@ packages:
         supported_envs:
           - linux
           - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
+          minisign:
+            type: github_release
+            asset: SHASUMS512.txt.minisig
+            # https://github.com/jdx/mise/blob/main/minisign.pub
+            public_key: RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
       - version_constraint: "true"
         asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
         format: tar.gz
@@ -50321,6 +50446,15 @@ packages:
           - darwin
         github_immutable_release: true
         github_release_attestations: true
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
+          minisign:
+            type: github_release
+            asset: SHASUMS512.txt.minisig
+            # https://github.com/jdx/mise/blob/main/minisign.pub
+            public_key: RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
   - type: github_release
     repo_owner: jdx
     repo_name: usage
@@ -50410,6 +50544,10 @@ packages:
           darwin: osx
         supported_envs:
           - darwin
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: Version == "0.4"
         no_asset: true
       - version_constraint: semver("<= 0.8")
@@ -50420,6 +50558,10 @@ packages:
           darwin: osx
         supported_envs:
           - darwin
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: Version == "0.9"
         asset: minisign-{{.OS}}.{{.Format}}
         format: zip
@@ -50432,6 +50574,10 @@ packages:
         supported_envs:
           - darwin
           - windows/amd64
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: Version in ["0.10", "0.11"]
         asset: minisign-{{.Version}}-{{.OS}}.{{.Format}}
         format: zip
@@ -50451,11 +50597,15 @@ packages:
           - goos: windows
             files:
               - name: minisign
-                src: minisign-win64/minisign.exe
+                src: minisign-win64/minisign
         supported_envs:
           - darwin
           - windows
           - amd64
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: "true"
         asset: minisign-{{.Version}}-{{.OS}}.{{.Format}}
         format: zip
@@ -50478,6 +50628,10 @@ packages:
           - darwin/arm64
           - windows
           - linux/amd64
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
   - type: github_release
     repo_owner: jedisct1
     repo_name: piknik
@@ -51039,6 +51193,62 @@ packages:
         supported_envs:
           - linux/amd64
           - linux/arm64
+  - type: github_release
+    repo_owner: jgm
+    repo_name: pandoc
+    description: Universal markup converter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 3.0.0")
+        error_message: This version is too old. Please upgrade to 3.0.0 or a newer version.
+      - version_constraint: semver("<= 3.1.1")
+        asset: pandoc-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macOS
+        overrides:
+          - goos: linux
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/bin/pandoc"
+          - goos: darwin
+            format: zip
+            asset: pandoc-{{.Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/bin/pandoc"
+          - goos: windows
+            format: zip
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/pandoc"
+            replacements:
+              amd64: x86_64
+      - version_constraint: "true"
+        asset: pandoc-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macOS
+        overrides:
+          - goos: linux
+            format: tar.gz
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/bin/pandoc"
+            replacements:
+              amd64: amd64
+          - goos: darwin
+            asset: pandoc-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}-{{.Arch}}/bin/pandoc"
+          - goos: windows
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/pandoc"
   - type: github_release
     repo_owner: jiro4989
     repo_name: ojosama
@@ -55939,6 +56149,23 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: ktlint
+    repo_name: ktlint
+    aliases:
+      - name: pinterest/ktlint
+    description: An anti-bikeshedding Kotlin linter with built-in formatter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.49.0")
+        complete_windows_ext: false
+        asset: ktlint
+      - version_constraint: "true"
+        asset: "ktlint-{{.Version}}.{{.Format}}"
+        format: zip
+        files:
+          - name: ktlint
+            src: "{{.AssetWithoutExt}}/bin/ktlint"
   - type: github_release
     repo_owner: ktock
     repo_name: buildg
@@ -63285,6 +63512,10 @@ packages:
       type: http
       algorithm: sha256
       url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.sha256sum
+    minisign:
+      type: http
+      url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.minisig
+      public_key: RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav
   - type: github_release
     repo_owner: miniscruff
     repo_name: changie
@@ -72207,21 +72438,6 @@ packages:
         overrides:
           - goos: windows
             replacements: {}
-  - type: github_release
-    repo_owner: pinterest
-    repo_name: ktlint
-    description: An anti-bikeshedding Kotlin linter with built-in formatter
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.49.0")
-        complete_windows_ext: false
-        asset: ktlint
-      - version_constraint: "true"
-        asset: "ktlint-{{.Version}}.{{.Format}}"
-        format: zip
-        files:
-          - name: ktlint
-            src: "{{.AssetWithoutExt}}/bin/ktlint"
   - name: pipe-cd/pipecd/pipectl
     type: github_release
     repo_owner: pipe-cd
@@ -96738,6 +96954,19 @@ packages:
     files:
       - name: gobump
         src: gobump_{{.Version}}_{{.OS}}_{{.Arch}}/gobump
+  - type: http
+    name: x.ai/cli/grok
+    link: https://x.ai/cli
+    description: Grok Build TUI
+    format: raw
+    url: https://storage.googleapis.com/grok-build-public-artifacts/cli/grok-{{.Version}}-{{.OS}}-{{.Arch}}
+    files:
+      - name: grok
+      - name: agent
+    replacements:
+      darwin: macos
+      amd64: x86_64
+      arm64: aarch64
   - type: github_release
     repo_owner: xataio
     repo_name: pgroll
