@@ -272,6 +272,7 @@ impl Upgrade {
                 refresh_remote_versions: false,
                 inactive: self.inactive,
             },
+            locked: false,
             ..Default::default()
         };
 
@@ -444,7 +445,13 @@ impl Upgrade {
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
+        config::rebuild_shims_and_runtime_symlinks(
+            config,
+            ts,
+            &successful_versions,
+            crate::lockfile::LockfileUpdateMode::AllowLocked,
+        )
+        .await?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
             PIPXBackend::reinstall_all(config)
