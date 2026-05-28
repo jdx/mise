@@ -926,8 +926,25 @@ pub fn extract_env_from_config_path(path: &Path) -> Option<String> {
         .filter(|s| s != "local")
 }
 
-pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersion]) -> Result<()> {
-    if !Settings::get().lockfile_enabled() || Settings::get().locked {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockfileUpdateMode {
+    Normal,
+    AllowLocked,
+}
+
+impl LockfileUpdateMode {
+    fn allow_locked(self) -> bool {
+        matches!(self, Self::AllowLocked)
+    }
+}
+
+pub fn update_lockfiles(
+    config: &Config,
+    ts: &Toolset,
+    new_versions: &[ToolVersion],
+    mode: LockfileUpdateMode,
+) -> Result<()> {
+    if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
         return Ok(());
     }
 
@@ -1314,11 +1331,14 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform
 /// so the lockfile is complete and doesn't change when other developers on different
 /// platforms run `mise install`.
 pub async fn auto_lock_new_versions(
-    _config: &Config,
     new_versions: &[ToolVersion],
     pre_install_platforms: &HashMap<PathBuf, BTreeSet<String>>,
+    mode: LockfileUpdateMode,
 ) -> Result<()> {
-    if !Settings::get().lockfile_enabled() || Settings::get().locked || new_versions.is_empty() {
+    if !Settings::get().lockfile_enabled()
+        || (Settings::get().locked && !mode.allow_locked())
+        || new_versions.is_empty()
+    {
         return Ok(());
     }
 

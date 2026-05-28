@@ -231,7 +231,13 @@ impl Use {
 
             let config = Config::reset().await?;
             let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                &config,
+                ts,
+                &versions,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
         }
 
         self.render_success_message(cf.as_ref(), &versions, &self.remove)?;

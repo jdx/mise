@@ -1,4 +1,10 @@
 aliases = ["gemini"]
-backends = ["npm:@google/gemini-cli"]
 description = "Gemini CLI, a command-line AI workflow tool that connects to your tools, understands your code and accelerates your workflows"
-test = { cmd = "gemini --version", expected = "{{version}}" }
+test = { cmd = "gemini --version", expected = "{{version}}", tools = ["aube"] }
+
+[[backends]]
+full = "npm:@google/gemini-cli"
+
+[backends.options]
+aube_args = "--allow-build=@github/keytar --allow-build=node-pty"
+pnpm_args = "--allow-build=@github/keytar --allow-build=node-pty"

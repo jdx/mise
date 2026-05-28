@@ -1,3 +1,9 @@
-backends = ["npm:orval"]
 description = "Generate type-safe TypeScript clients from OpenAPI specifications provided by https://orval.dev"
-test = { cmd = "orval --version", expected = "{{version}}" }
+test = { cmd = "orval --version", expected = "{{version}}", tools = ["aube"] }
+
+[[backends]]
+full = "npm:orval"
+
+[backends.options]
+aube_args = "--allow-build=esbuild"
+pnpm_args = "--allow-build=esbuild"
