@@ -249,8 +249,12 @@ fn encode_digest_path_segment(digest: &str) -> String {
 fn valid_github_release_asset_urls(release: &GithubRelease, owner: &str, repo: &str) -> bool {
     !release.assets.is_empty()
         && release.assets.iter().all(|asset| {
-            valid_github_browser_download_url(&asset.browser_download_url, owner, repo)
-                && valid_github_asset_api_url(&asset.url, owner, repo)
+            valid_github_browser_download_url(
+                &asset.browser_download_url,
+                owner,
+                repo,
+                &release.tag_name,
+            ) && valid_github_asset_api_url(&asset.url, owner, repo)
         })
 }
 
@@ -258,7 +262,7 @@ fn valid_github_release_tag(release: &GithubRelease, tag: &str) -> bool {
     tag == "latest" || release.tag_name == tag
 }
 
-fn valid_github_browser_download_url(url: &str, owner: &str, repo: &str) -> bool {
+fn valid_github_browser_download_url(url: &str, owner: &str, repo: &str, tag: &str) -> bool {
     let Ok(url) = url::Url::parse(url) else {
         return false;
     };
@@ -276,9 +280,13 @@ fn valid_github_browser_download_url(url: &str, owner: &str, repo: &str) -> bool
             segments.next(),
             segments.next()
         ),
-        (Some(o), Some(r), Some("releases"), Some("download"), Some(_tag), Some(_asset), None)
-            if o == owner && r == repo
+        (Some(o), Some(r), Some("releases"), Some("download"), Some(t), Some(_asset), None)
+            if o == owner && r == repo && path_segment_matches(t, tag)
     )
+}
+
+fn path_segment_matches(segment: &str, expected: &str) -> bool {
+    segment == expected || urlencoding::decode(segment).is_ok_and(|decoded| decoded == expected)
 }
 
 fn valid_github_asset_api_url(url: &str, owner: &str, repo: &str) -> bool {
@@ -410,22 +418,38 @@ mod tests {
         assert!(valid_github_browser_download_url(
             "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
             "jdx",
-            "mise-test-fixtures"
+            "mise-test-fixtures",
+            "v1.0.0"
+        ));
+        assert!(valid_github_browser_download_url(
+            "https://github.com/jdx/mise-test-fixtures/releases/download/release%2F2026/hello-world.tar.gz",
+            "jdx",
+            "mise-test-fixtures",
+            "release/2026"
+        ));
+        assert!(!valid_github_browser_download_url(
+            "https://github.com/jdx/mise-test-fixtures/releases/download/v0.9.0/hello-world.tar.gz",
+            "jdx",
+            "mise-test-fixtures",
+            "v1.0.0"
         ));
         assert!(!valid_github_browser_download_url(
             "https://evil.example.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
             "jdx",
-            "mise-test-fixtures"
+            "mise-test-fixtures",
+            "v1.0.0"
         ));
         assert!(!valid_github_browser_download_url(
             "https://github.com/other/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
             "jdx",
-            "mise-test-fixtures"
+            "mise-test-fixtures",
+            "v1.0.0"
         ));
         assert!(!valid_github_browser_download_url(
             "https://github.com/jdx/mise-test-fixtures/releases/download",
             "jdx",
-            "mise-test-fixtures"
+            "mise-test-fixtures",
+            "v1.0.0"
         ));
     }
 
