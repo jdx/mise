@@ -601,7 +601,7 @@ impl Settings {
             .iter()
             .filter(|p| !p.to_string_lossy().is_empty())
             .map(file::replace_path)
-            .filter_map(|p| p.canonicalize().ok())
+            .filter_map(|p| file::canonicalize_cached(&p))
     }
 
     pub fn global_tools_file(&self) -> PathBuf {

@@ -355,6 +355,9 @@ impl Config {
         let alias_opts = self.get_backend_alias_opts(backend_arg);
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
+        if let Some(manifest_opts) = backend_arg.install_manifest_opts() {
+            resolved.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
+        }
         if alias_opts.is_none()
             && let Some(full_opts) = backend_arg.resolved_full_opts()
         {
@@ -1744,16 +1747,17 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     config: &Arc<Config>,
     ts: &Toolset,
     new_versions: &[ToolVersion],
+    lockfile_update_mode: lockfile::LockfileUpdateMode,
 ) -> Result<()> {
-    measure!("rebuilding shims", {
-        shims::reshim(config, ts, false)
-            .await
-            .wrap_err("failed to rebuild shims")?;
-    });
     measure!("rebuilding runtime symlinks", {
         runtime_symlinks::rebuild_for_toolset(config, ts)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
+    });
+    measure!("rebuilding shims", {
+        shims::reshim(config, ts, false)
+            .await
+            .wrap_err("failed to rebuild shims")?;
     });
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
     // current-platform entries — auto-lock uses this to tell a curated lockfile
@@ -1764,14 +1768,18 @@ pub async fn rebuild_shims_and_runtime_symlinks(
         lockfile::snapshot_pre_install_platforms(new_versions)
     };
     measure!("updating lockfiles", {
-        lockfile::update_lockfiles(config, ts, new_versions)
+        lockfile::update_lockfiles(config, ts, new_versions, lockfile_update_mode)
             .wrap_err("failed to update lockfiles")?;
     });
     if !new_versions.is_empty() {
         measure!("auto-locking platforms", {
-            lockfile::auto_lock_new_versions(config, new_versions, &pre_install_platforms)
-                .await
-                .wrap_err("failed to auto-lock platforms for new versions")?;
+            lockfile::auto_lock_new_versions(
+                new_versions,
+                &pre_install_platforms,
+                lockfile_update_mode,
+            )
+            .await
+            .wrap_err("failed to auto-lock platforms for new versions")?;
         });
     }
 
@@ -2264,6 +2272,9 @@ async fn load_config_tasks(
         if is_global {
             t.global = true;
         }
+        if t.config_root.is_none() {
+            t.config_root = Some(config_root.to_path_buf());
+        }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
         match t.render(&config, &config_root).await {
@@ -2703,6 +2714,168 @@ mod tests {
         assert_eq!(
             resolved.source_for_key("foo"),
             Some(crate::toolset::ToolOptionSource::BackendAlias)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_tool_opts_prefers_config_over_install_manifest_opts() -> Result<()> {
+        crate::toolset::install_state::init().await?;
+
+        let source = crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml"));
+        let config_ba = Arc::new(BackendArg::from("http:manifest-opts"));
+        let config_opts =
+            crate::toolset::parse_tool_options("version_json_path=.current,config_only=true");
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(
+            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            &source,
+        );
+
+        let mut manifest_opts = BTreeMap::new();
+        manifest_opts.insert(
+            "version_json_path".to_string(),
+            toml::Value::String(".manifest".to_string()),
+        );
+        manifest_opts.insert(
+            "manifest_only".to_string(),
+            toml::Value::String("true".to_string()),
+        );
+        let ba = Arc::new(BackendArg::from(
+            crate::toolset::install_state::InstallStateTool {
+                short: "http:manifest-opts".to_string(),
+                full: Some("http:manifest-opts".to_string()),
+                versions: vec!["1.0.0".to_string()],
+                explicit_backend: true,
+                opts: manifest_opts,
+                installs_path: None,
+            },
+        ));
+
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
+        };
+        config.tool_request_set.set(trs).ok();
+        let config = Arc::new(config);
+
+        let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
+        let opts = resolved.options();
+
+        assert_eq!(opts.get("version_json_path"), Some(".current"));
+        assert_eq!(
+            resolved.source_for_key("version_json_path"),
+            Some(crate::toolset::ToolOptionSource::Config)
+        );
+        assert_eq!(opts.get("manifest_only"), Some("true"));
+        assert_eq!(
+            resolved.source_for_key("manifest_only"),
+            Some(crate::toolset::ToolOptionSource::InstallManifest)
+        );
+        assert_eq!(opts.get("config_only"), Some("true"));
+        assert_eq!(
+            resolved.source_for_key("config_only"),
+            Some(crate::toolset::ToolOptionSource::Config)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_tool_opts_prefers_s3_listing_config_over_install_manifest_opts()
+    -> Result<()> {
+        crate::toolset::install_state::init().await?;
+
+        let source = crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml"));
+        let config_ba = Arc::new(BackendArg::from("s3:manifest-opts"));
+        let config_opts = crate::toolset::parse_tool_options(
+            "version_prefix=current/,version_regex=current-(.*)",
+        );
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(
+            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            &source,
+        );
+
+        let mut manifest_opts = BTreeMap::new();
+        manifest_opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("manifest/".to_string()),
+        );
+        manifest_opts.insert(
+            "version_regex".to_string(),
+            toml::Value::String("manifest-(.*)".to_string()),
+        );
+        manifest_opts.insert(
+            "endpoint".to_string(),
+            toml::Value::String("https://manifest.example".to_string()),
+        );
+        let ba = Arc::new(BackendArg::from(
+            crate::toolset::install_state::InstallStateTool {
+                short: "s3:manifest-opts".to_string(),
+                full: Some("s3:manifest-opts".to_string()),
+                versions: vec!["1.0.0".to_string()],
+                explicit_backend: true,
+                opts: manifest_opts,
+                installs_path: None,
+            },
+        ));
+
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
+        };
+        config.tool_request_set.set(trs).ok();
+        let config = Arc::new(config);
+
+        let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
+        let opts = resolved.options();
+
+        assert_eq!(opts.get("version_prefix"), Some("current/"));
+        assert_eq!(
+            resolved.source_for_key("version_prefix"),
+            Some(crate::toolset::ToolOptionSource::Config)
+        );
+        assert_eq!(opts.get("version_regex"), Some("current-(.*)"));
+        assert_eq!(
+            resolved.source_for_key("version_regex"),
+            Some(crate::toolset::ToolOptionSource::Config)
+        );
+        assert_eq!(opts.get("endpoint"), Some("https://manifest.example"));
+        assert_eq!(
+            resolved.source_for_key("endpoint"),
+            Some(crate::toolset::ToolOptionSource::InstallManifest)
         );
         Ok(())
     }

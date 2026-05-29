@@ -77,6 +77,17 @@ assert_contains "echo '$output'" "Processing 1 tool(s)"
 assert_contains "cat mise.lock" "jqlang/jq"
 assert_not_contains "cat mise.lock" "mikefarah/yq"
 
+echo "=== Testing aqua github_content lock URLs ==="
+rm -f mise.lock
+cat <<EOF >mise.toml
+[tools]
+"aqua:awslabs/git-secrets" = "1.3.0"
+EOF
+
+mise lock --platform macos-arm64
+assert_contains "cat mise.lock" 'url = "https://raw.githubusercontent.com/awslabs/git-secrets/1.3.0/git-secrets"'
+assert_not_contains "cat mise.lock" "archive/refs/tags/1.3.0.tar.gz"
+
 echo "=== Testing minimum release age filtering ==="
 rm -f mise.lock
 cat <<EOF >mise.toml

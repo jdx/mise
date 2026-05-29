@@ -1,9 +1,11 @@
 use crate::backend::VersionInfo;
 use crate::config::Settings;
+use crate::github::GithubRelease;
 use crate::http;
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
+use mise_sigstore::Attestation;
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::{
     collections::{HashMap, HashSet},
@@ -62,6 +64,11 @@ struct VersionEntry {
     /// fields by default), so populating it in mise-versions is forward-compatible.
     #[serde(default)]
     prerelease: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct AttestationsResponse {
+    attestations: Vec<Attestation>,
 }
 
 /// List versions from the versions host (mise-versions.jdx.dev).
@@ -133,6 +140,176 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
         .await
         .insert(tool.to_string(), versions.clone());
     Ok(Some(versions))
+}
+
+/// Fetch cached public GitHub release metadata from the versions host.
+///
+/// This endpoint is intentionally shaped like GitHub's release object so the
+/// normal backend asset-selection code remains authoritative on the client.
+pub async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<GithubRelease>> {
+    if !enabled_for_github_metadata() {
+        return Ok(None);
+    }
+
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/releases/{}",
+        encode_path_segment(owner),
+        encode_path_segment(repo_name),
+        encode_path_segment(tag)
+    );
+
+    let Some(release) = fetch_optional_json(&url, "GitHub release metadata").await? else {
+        return Ok(None);
+    };
+    if !valid_github_release_asset_urls(&release, owner, repo_name) {
+        warn!("mise-versions returned invalid GitHub release asset URLs for {repo}@{tag}");
+        return Ok(None);
+    }
+    if !valid_github_release_tag(&release, tag) {
+        warn!(
+            "mise-versions returned GitHub release tag {} for requested {repo}@{tag}",
+            release.tag_name
+        );
+        return Ok(None);
+    }
+    Ok(Some(release))
+}
+
+/// Fetch cached GitHub Artifact Attestation payloads by artifact digest.
+///
+/// The returned bundles are not trusted by virtue of coming from mise-versions;
+/// callers still verify them cryptographically against the downloaded artifact.
+pub async fn github_attestations(
+    repo: &str,
+    digest: &str,
+) -> eyre::Result<Option<Vec<Attestation>>> {
+    if !enabled_for_github_metadata() {
+        return Ok(None);
+    }
+
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/attestations/{}",
+        encode_path_segment(owner),
+        encode_path_segment(repo_name),
+        encode_digest_path_segment(digest)
+    );
+
+    let response: Option<AttestationsResponse> =
+        fetch_optional_json(&url, "GitHub attestations").await?;
+    Ok(response.map(|r| r.attestations))
+}
+
+async fn fetch_optional_json<T>(url: &str, label: &str) -> eyre::Result<Option<T>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    match HTTP_FETCH
+        .json_with_headers(url, &VERSIONS_HOST_HEADERS)
+        .await
+    {
+        Ok(value) => Ok(Some(value)),
+        Err(err) => match http::error_code(&err).unwrap_or(0) {
+            404 => Ok(None),
+            429 => {
+                debug!("mise-versions rate limited while fetching {label}");
+                Ok(None)
+            }
+            _ => {
+                debug!("mise-versions {label} lookup failed: {err:#}");
+                Ok(None)
+            }
+        },
+    }
+}
+
+fn enabled_for_github_metadata() -> bool {
+    let settings = Settings::get();
+    !settings.prefer_offline() && settings.use_versions_host
+}
+
+fn split_github_repo(repo: &str) -> Option<(&str, &str)> {
+    let (owner, name) = repo.split_once('/')?;
+    (!owner.is_empty() && !name.is_empty() && !name.contains('/')).then_some((owner, name))
+}
+
+fn encode_path_segment(segment: &str) -> String {
+    urlencoding::encode(segment).into_owned()
+}
+
+fn encode_digest_path_segment(digest: &str) -> String {
+    encode_path_segment(digest).replace("%3A", ":")
+}
+
+fn valid_github_release_asset_urls(release: &GithubRelease, owner: &str, repo: &str) -> bool {
+    !release.assets.is_empty()
+        && release.assets.iter().all(|asset| {
+            valid_github_browser_download_url(
+                &asset.browser_download_url,
+                owner,
+                repo,
+                &release.tag_name,
+            ) && valid_github_asset_api_url(&asset.url, owner, repo)
+        })
+}
+
+fn valid_github_release_tag(release: &GithubRelease, tag: &str) -> bool {
+    tag == "latest" || release.tag_name == tag
+}
+
+fn valid_github_browser_download_url(url: &str, owner: &str, repo: &str, tag: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    if url.scheme() != "https" || url.host_str() != Some("github.com") {
+        return false;
+    }
+    let mut segments = url.path_segments().into_iter().flatten();
+    matches!(
+        (
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next()
+        ),
+        (Some(o), Some(r), Some("releases"), Some("download"), Some(t), Some(_asset), None)
+            if o == owner && r == repo && path_segment_matches(t, tag)
+    )
+}
+
+fn path_segment_matches(segment: &str, expected: &str) -> bool {
+    segment == expected || urlencoding::decode(segment).is_ok_and(|decoded| decoded == expected)
+}
+
+fn valid_github_asset_api_url(url: &str, owner: &str, repo: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    if url.scheme() != "https" || url.host_str() != Some("api.github.com") {
+        return false;
+    }
+    let mut segments = url.path_segments().into_iter().flatten();
+    matches!(
+        (
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next()
+        ),
+        (Some("repos"), Some(o), Some(r), Some("releases"), Some("assets"), Some(_), None)
+            if o == owner && r == repo
+    )
 }
 
 /// Tracks a tool installation asynchronously (fire-and-forget)
@@ -213,6 +390,133 @@ mod tests {
         assert_eq!(
             track_install_url("node"),
             "https://mise-versions.jdx.dev/api/tools/node"
+        );
+    }
+
+    #[test]
+    fn test_split_github_repo() {
+        assert_eq!(split_github_repo("cli/cli"), Some(("cli", "cli")));
+        assert_eq!(split_github_repo("cli"), None);
+        assert_eq!(split_github_repo("cli/cli/extra"), None);
+    }
+
+    #[test]
+    fn test_encode_path_segment_encodes_digest() {
+        assert_eq!(encode_path_segment("sha256:abc/def"), "sha256%3Aabc%2Fdef");
+    }
+
+    #[test]
+    fn test_encode_digest_path_segment_preserves_algorithm_separator() {
+        assert_eq!(
+            encode_digest_path_segment("sha256:abc/def"),
+            "sha256:abc%2Fdef"
+        );
+    }
+
+    #[test]
+    fn test_valid_github_browser_download_url() {
+        assert!(valid_github_browser_download_url(
+            "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+            "jdx",
+            "mise-test-fixtures",
+            "v1.0.0"
+        ));
+        assert!(valid_github_browser_download_url(
+            "https://github.com/jdx/mise-test-fixtures/releases/download/release%2F2026/hello-world.tar.gz",
+            "jdx",
+            "mise-test-fixtures",
+            "release/2026"
+        ));
+        assert!(!valid_github_browser_download_url(
+            "https://github.com/jdx/mise-test-fixtures/releases/download/v0.9.0/hello-world.tar.gz",
+            "jdx",
+            "mise-test-fixtures",
+            "v1.0.0"
+        ));
+        assert!(!valid_github_browser_download_url(
+            "https://evil.example.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+            "jdx",
+            "mise-test-fixtures",
+            "v1.0.0"
+        ));
+        assert!(!valid_github_browser_download_url(
+            "https://github.com/other/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+            "jdx",
+            "mise-test-fixtures",
+            "v1.0.0"
+        ));
+        assert!(!valid_github_browser_download_url(
+            "https://github.com/jdx/mise-test-fixtures/releases/download",
+            "jdx",
+            "mise-test-fixtures",
+            "v1.0.0"
+        ));
+    }
+
+    #[test]
+    fn test_valid_github_asset_api_url() {
+        assert!(valid_github_asset_api_url(
+            "https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
+            "jdx",
+            "mise-test-fixtures"
+        ));
+        assert!(!valid_github_asset_api_url(
+            "https://api.github.com/repos/other/mise-test-fixtures/releases/assets/1",
+            "jdx",
+            "mise-test-fixtures"
+        ));
+        assert!(!valid_github_asset_api_url(
+            "https://github.com/jdx/mise-test-fixtures/releases/assets/1",
+            "jdx",
+            "mise-test-fixtures"
+        ));
+        assert!(!valid_github_asset_api_url(
+            "https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1/extra",
+            "jdx",
+            "mise-test-fixtures"
+        ));
+    }
+
+    #[test]
+    fn test_valid_github_release_asset_urls_rejects_empty_assets() {
+        let release = GithubRelease {
+            tag_name: "v1.0.0".into(),
+            draft: false,
+            prerelease: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            assets: vec![],
+        };
+
+        assert!(!valid_github_release_asset_urls(
+            &release,
+            "jdx",
+            "mise-test-fixtures"
+        ));
+    }
+
+    #[test]
+    fn test_valid_github_release_tag() {
+        let release = GithubRelease {
+            tag_name: "v1.0.0".into(),
+            draft: false,
+            prerelease: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            assets: vec![],
+        };
+
+        assert!(valid_github_release_tag(&release, "v1.0.0"));
+        assert!(valid_github_release_tag(&release, "latest"));
+        assert!(!valid_github_release_tag(&release, "v2.0.0"));
+    }
+
+    #[test]
+    fn test_attestations_response_requires_attestations_field() {
+        assert!(serde_json::from_str::<AttestationsResponse>("{}").is_err());
+        assert!(
+            serde_json::from_str::<AttestationsResponse>(r#"{"attestations":[]}"#)
+                .unwrap()
+                .attestations
+                .is_empty()
         );
     }
 }

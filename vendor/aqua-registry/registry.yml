@@ -306,6 +306,27 @@ packages:
           - linux/amd64
           - windows
   - type: github_release
+    repo_owner: AOMediaCodec
+    repo_name: libavif
+    description: Library for encoding and decoding AVIF files
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: "{{.OS}}-artifacts.{{.Format}}"
+        format: zip
+        replacements:
+          darwin: macOS
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+          - windows/amd64
+        files:
+          - name: avifenc
+          - name: avifdec
+          - name: avifgainmaputil
+  - type: github_release
     repo_owner: Adembc
     repo_name: lazyssh
     description: "A terminal-based SSH manager inspired by lazydocker and k9s - Written in go"
@@ -3280,7 +3301,7 @@ packages:
               - https://artifacts.fairwinds.com/cosign.pub
               - --signature
               - https://github.com/FairwindsOps/pluto/releases/download/{{.Version}}/checksums.txt.sig
-      - version_constraint: "true"
+      - version_constraint: semver("<=5.23.5")
         asset: pluto_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -3293,6 +3314,20 @@ packages:
               - https://artifacts.fairwinds.com/cosign-p256.pub
               - --signature
               - https://github.com/FairwindsOps/pluto/releases/download/{{.Version}}/checksums.txt.sig
+      - version_constraint: "true"
+        asset: pluto_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --key
+              - https://artifacts.fairwinds.com/cosign-p256.pub
   - type: github_release
     repo_owner: FairwindsOps
     repo_name: polaris
@@ -7603,6 +7638,26 @@ packages:
     files:
       - name: go-timeout
         src: timeout_{{.Version}}_{{.OS}}_{{.Arch}}/go-timeout
+  - type: github_release
+    repo_owner: Staffbase
+    repo_name: gq
+    description: CLI and MCP server for querying logs and metrics via Grafana datasource proxy
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gq_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
   - type: github_release
     repo_owner: Stranger6667
     repo_name: jsonschema
@@ -13280,7 +13335,7 @@ packages:
     description: A free and open source Java framework for building Semantic Web and Linked Data applications (CLI tools)
     version_source: github_tag
     version_prefix: jena-
-    version_filter: Version matches "^jena-\\d+"
+    version_filter: Version matches "^jena-\\d+\\.\\d+\\.\\d+$"
     files:
       - name: arq
         src: apache-jena-{{.SemVer}}/bin/arq
@@ -13403,6 +13458,8 @@ packages:
             src: apache-jena-{{.SemVer}}/bat/tdbdump.bat
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 3.13.0")
+        error_message: apache/jena is supported from jena-3.13.0 because older archives use different command sets or checksum files
       - version_constraint: "true"
         url: https://archive.apache.org/dist/jena/binaries/apache-jena-{{.SemVer}}.tar.gz
         format: tgz
@@ -19103,6 +19160,18 @@ packages:
       - secrets
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 1.3.0")
+        asset: betterleaks_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: betterleaks_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -19112,6 +19181,15 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/betterleaks/betterleaks/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -26436,6 +26514,16 @@ packages:
         overrides:
           - goos: linux
             format: tar
+      - version_constraint: semver("< 2.33.0")
+        asset: coder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: coder_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
       - version_constraint: "true"
         asset: coder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: zip
@@ -26446,6 +26534,8 @@ packages:
         overrides:
           - goos: linux
             format: tar.gz
+        github_artifact_attestations:
+          signer_workflow: coder/coder/\.github/workflows/release\.yaml
   - type: github_release
     repo_owner: coder3101
     repo_name: protols
@@ -30172,6 +30262,21 @@ packages:
       type: github_release
       asset: "{{.Asset}}.sha256"
       algorithm: sha256
+  - type: github_release
+    repo_owner: databricks
+    repo_name: cli
+    description: Databricks CLI
+    files:
+      - name: databricks
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: databricks_cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: databricks_cli_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
   - type: github_release
     repo_owner: databricks
     repo_name: click
@@ -36897,6 +37002,45 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: felixgwilliams
+    repo_name: nbwipers
+    description: nbwipers is a command line tool to wipe clean jupyter notebooks, written in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.6")
+        asset: nbwipers-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: nbwipers-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: ffuf
     repo_name: ffuf
     description: Fast web fuzzer written in Go
@@ -40706,6 +40850,8 @@ packages:
               - https://token.actions.githubusercontent.com
               - --certificate-identity
               - "https://github.com/gittuf/gittuf/.github/workflows/release.yml@refs/tags/{{.Version}}"
+        github_artifact_attestations:
+          signer_workflow: gittuf/gittuf/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: gitui-org
     repo_name: gitui
@@ -41910,13 +42056,22 @@ packages:
         rosetta2: true
         supported_envs:
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("< 0.7.0")
         asset: bigquery-emulator-{{.OS}}-{{.Arch}}
         format: raw
         rosetta2: true
         supported_envs:
           - linux/amd64
           - darwin
+      - version_constraint: "true"
+        asset: bigquery-emulator_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: goccy/bigquery-emulator/\.github/workflows/release\.yml
   - name: goccy/go-yaml/ycat
     type: go_build
     repo_owner: goccy
@@ -43232,6 +43387,46 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: http
+    name: google.com/antigravity-cli
+    description: Google's agentic development platform CLI companion
+    link: https://antigravity.google/download
+    format: tar.gz
+    files:
+      - name: agy
+        src: antigravity
+    checksum:
+      type: http
+      url: https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/{{.OS}}_{{.Arch}}.json
+      file_format: regexp
+      algorithm: sha512
+      pattern:
+        checksum: '"sha512": "([0-9a-f]{128})"'
+    overrides:
+      - goos: linux
+        goarch: amd64
+        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/linux-x64/cli_linux_x64.tar.gz
+      - goos: linux
+        goarch: arm64
+        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/linux-arm/cli_linux_arm64.tar.gz
+      - goos: darwin
+        goarch: amd64
+        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/darwin-x64/cli_mac_x64.tar.gz
+      - goos: darwin
+        goarch: arm64
+        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/darwin-arm/cli_mac_arm64.tar.gz
+      - goos: windows
+        goarch: amd64
+        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/windows-x64/cli_windows_x64.exe
+        format: raw
+        files:
+          - name: agy
+      - goos: windows
+        goarch: arm64
+        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/windows-arm/cli_windows_arm64.exe
+        format: raw
+        files:
+          - name: agy
   - type: github_release
     repo_owner: google
     repo_name: addlicense
@@ -50166,6 +50361,10 @@ packages:
         supported_envs:
           - linux
           - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
       - version_constraint: semver("<= 2024.0.0")
         asset: rtx-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -50181,6 +50380,29 @@ packages:
         supported_envs:
           - linux
           - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
+      - version_constraint: semver("<= 2024.12.17")
+        asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+        format: tar.gz
+        files:
+          - name: mise
+            src: mise/bin/mise
+        overrides:
+          - goos: darwin
+            asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
       - version_constraint: semver(">= 2025.7.13, <= 2025.7.15")
         no_asset: true
       - version_constraint: semver("<= 2025.8.21")
@@ -50198,6 +50420,15 @@ packages:
         supported_envs:
           - linux
           - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
+          minisign:
+            type: github_release
+            asset: SHASUMS512.txt.minisig
+            # https://github.com/jdx/mise/blob/main/minisign.pub
+            public_key: RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
       - version_constraint: "true"
         asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
         format: tar.gz
@@ -50215,6 +50446,15 @@ packages:
           - darwin
         github_immutable_release: true
         github_release_attestations: true
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
+          minisign:
+            type: github_release
+            asset: SHASUMS512.txt.minisig
+            # https://github.com/jdx/mise/blob/main/minisign.pub
+            public_key: RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
   - type: github_release
     repo_owner: jdx
     repo_name: usage
@@ -50304,6 +50544,10 @@ packages:
           darwin: osx
         supported_envs:
           - darwin
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: Version == "0.4"
         no_asset: true
       - version_constraint: semver("<= 0.8")
@@ -50314,6 +50558,10 @@ packages:
           darwin: osx
         supported_envs:
           - darwin
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: Version == "0.9"
         asset: minisign-{{.OS}}.{{.Format}}
         format: zip
@@ -50326,6 +50574,10 @@ packages:
         supported_envs:
           - darwin
           - windows/amd64
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: Version in ["0.10", "0.11"]
         asset: minisign-{{.Version}}-{{.OS}}.{{.Format}}
         format: zip
@@ -50345,11 +50597,15 @@ packages:
           - goos: windows
             files:
               - name: minisign
-                src: minisign-win64/minisign.exe
+                src: minisign-win64/minisign
         supported_envs:
           - darwin
           - windows
           - amd64
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: "true"
         asset: minisign-{{.Version}}-{{.OS}}.{{.Format}}
         format: zip
@@ -50372,6 +50628,10 @@ packages:
           - darwin/arm64
           - windows
           - linux/amd64
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
   - type: github_release
     repo_owner: jedisct1
     repo_name: piknik
@@ -50933,6 +51193,62 @@ packages:
         supported_envs:
           - linux/amd64
           - linux/arm64
+  - type: github_release
+    repo_owner: jgm
+    repo_name: pandoc
+    description: Universal markup converter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 3.0.0")
+        error_message: This version is too old. Please upgrade to 3.0.0 or a newer version.
+      - version_constraint: semver("<= 3.1.1")
+        asset: pandoc-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macOS
+        overrides:
+          - goos: linux
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/bin/pandoc"
+          - goos: darwin
+            format: zip
+            asset: pandoc-{{.Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/bin/pandoc"
+          - goos: windows
+            format: zip
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/pandoc"
+            replacements:
+              amd64: x86_64
+      - version_constraint: "true"
+        asset: pandoc-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macOS
+        overrides:
+          - goos: linux
+            format: tar.gz
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/bin/pandoc"
+            replacements:
+              amd64: amd64
+          - goos: darwin
+            asset: pandoc-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}-{{.Arch}}/bin/pandoc"
+          - goos: windows
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/pandoc"
   - type: github_release
     repo_owner: jiro4989
     repo_name: ojosama
@@ -52406,6 +52722,101 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: julian7
+    repo_name: redact
+    description: Data encryptor for git
+    files:
+      - name: redact
+      - name: redact-ext-aws
+      - name: redact-ext-azure
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.3.0"
+        asset: redact-{{.OS}}-{{.Arch}}-{{.Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.2.0")
+        asset: redact-{{.OS}}-{{.Arch}}-{{.Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.1")
+        no_asset: true
+      - version_constraint: semver("<= 0.6.0")
+        asset: redact-{{.OS}}-{{.Arch}}-{{trimV .Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.redact-{{trimV .Version}}
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.7.1")
+        asset: redact-{{.OS}}-{{.Arch}}-{{trimV .Version}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.redact-{{trimV .Version}}
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: redact-{{.OS}}-all-{{trimV .Version}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.9.0")
+        asset: redact-{{.OS}}-{{.Arch}}-{{trimV .Version}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.redact-{{trimV .Version}}
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: redact-{{.OS}}-all-{{trimV .Version}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: redact-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.redact-{{trimV .Version}}
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: redact-{{.OS}}-all-{{trimV .Version}}.{{.Format}}
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
   - type: github_release
     repo_owner: juliosueiras
     repo_name: terraform-lsp
@@ -55738,6 +56149,23 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: ktlint
+    repo_name: ktlint
+    aliases:
+      - name: pinterest/ktlint
+    description: An anti-bikeshedding Kotlin linter with built-in formatter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.49.0")
+        complete_windows_ext: false
+        asset: ktlint
+      - version_constraint: "true"
+        asset: "ktlint-{{.Version}}.{{.Format}}"
+        format: zip
+        files:
+          - name: ktlint
+            src: "{{.AssetWithoutExt}}/bin/ktlint"
   - type: github_release
     repo_owner: ktock
     repo_name: buildg
@@ -63084,6 +63512,10 @@ packages:
       type: http
       algorithm: sha256
       url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.sha256sum
+    minisign:
+      type: http
+      url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.minisig
+      public_key: RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav
   - type: github_release
     repo_owner: miniscruff
     repo_name: changie
@@ -68744,6 +69176,25 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: openclaw
+    repo_name: wacli
+    description: WhatsApp in your terminal
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.10.0")
+        error_message: Please upgrade to version 0.10.0 or higher
+      - version_constraint: "true"
+        asset: wacli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: opencontainers
     repo_name: runc
     description: CLI tool for spawning and running containers according to the OCI specification
@@ -71987,21 +72438,6 @@ packages:
         overrides:
           - goos: windows
             replacements: {}
-  - type: github_release
-    repo_owner: pinterest
-    repo_name: ktlint
-    description: An anti-bikeshedding Kotlin linter with built-in formatter
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.49.0")
-        complete_windows_ext: false
-        asset: ktlint
-      - version_constraint: "true"
-        asset: "ktlint-{{.Version}}.{{.Format}}"
-        format: zip
-        files:
-          - name: ktlint
-            src: "{{.AssetWithoutExt}}/bin/ktlint"
   - name: pipe-cd/pipecd/pipectl
     type: github_release
     repo_owner: pipe-cd
@@ -80329,6 +80765,35 @@ packages:
           asset: tparagen_{{trimV .Version}}_checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: sholdee
+    repo_name: crd-schema-publisher
+    description: Browsable CRD docs and IDE validation schemas, straight from your Kubernetes cluster
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2026.424.75813")
+        no_asset: true
+      - version_constraint: "true"
+        asset: crd-schema-publisher-{{.OS}}-{{.Arch}}
+        format: raw
+        github_artifact_attestations:
+          signer_workflow: sholdee/crd-schema-publisher/.github/workflows/release.yaml
+        checksum:
+          type: github_release
+          asset: checksums-sha256.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/sholdee/crd-schema-publisher/.github/workflows/release.yaml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: checksums-sha256.txt.sigstore.json
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: showwin
     repo_name: speedtest-go
     asset: speedtest-go_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
@@ -82723,6 +83188,15 @@ packages:
           - goos: linux
             replacements:
               arm64: aarch64
+      - version_constraint: semver("<= 15.6.2")
+        asset: jsonschema-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: jsonschema
+            src: "{{.AssetWithoutExt}}/bin/jsonschema"
+        replacements:
+          amd64: x86_64
       - version_constraint: "true"
         asset: jsonschema-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
@@ -82732,6 +83206,16 @@ packages:
             src: "{{.AssetWithoutExt}}/bin/jsonschema"
         replacements:
           amd64: x86_64
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: jsonschema-{{trimV .Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            variants:
+              - key: libc
+                value: musl
   - type: github_release
     repo_owner: spacelift-io
     repo_name: spacectl
@@ -95196,9 +95680,64 @@ packages:
     repo_owner: wasmCloud
     repo_name: wasmCloud
     description: wasmCloud is an open source Cloud Native Computing Foundation (CNCF) project that enables teams to build, manage, and scale polyglot apps across any cloud, K8s, or edge
-    version_prefix: wash-v
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 2.0.0")
+        version_prefix: wash-v
+        asset: wash-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: semver("<= 2.0.1")
+        asset: wash-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        github_artifact_attestations:
+          signer_workflow: wasmCloud/wasmCloud/\.github/workflows/wash\.yml
+      - version_constraint: semver("<= 2.0.5")
+        asset: wash-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            asset: wash-{{.Arch}}-{{.OS}}.{{.Format}}
+        github_artifact_attestations:
+          signer_workflow: wasmCloud/wasmCloud/\.github/workflows/wash\.yml
+      - version_constraint: semver("< 2.1.0")
+        asset: wash-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            asset: wash-{{.Arch}}-{{.OS}}.{{.Format}}
+        github_artifact_attestations:
+          signer_workflow: wasmCloud/wasmCloud/\.github/workflows/release-tag\.yml
       - version_constraint: "true"
         asset: wash-{{.Arch}}-{{.OS}}
         format: raw
@@ -95209,6 +95748,21 @@ packages:
           darwin: apple-darwin
           linux: unknown-linux-musl
           windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            asset: wash-{{.Arch}}-{{.OS}}.{{.Format}}
+        cosign:
+          bundle:
+            type: github_release
+            asset: wash.sigstore.json
+          opts:
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+            - --certificate-identity
+            - https://github.com/wasmCloud/wasmCloud/.github/workflows/release-tag.yml@refs/heads/main
+        github_artifact_attestations:
+          signer_workflow: wasmCloud/wasmCloud/\.github/workflows/release-tag\.yml
   - type: github_release
     repo_owner: wasmerio
     repo_name: wapm-cli
@@ -96400,6 +96954,19 @@ packages:
     files:
       - name: gobump
         src: gobump_{{.Version}}_{{.OS}}_{{.Arch}}/gobump
+  - type: http
+    name: x.ai/cli/grok
+    link: https://x.ai/cli
+    description: Grok Build TUI
+    format: raw
+    url: https://storage.googleapis.com/grok-build-public-artifacts/cli/grok-{{.Version}}-{{.OS}}-{{.Arch}}
+    files:
+      - name: grok
+      - name: agent
+    replacements:
+      darwin: macos
+      amd64: x86_64
+      arm64: aarch64
   - type: github_release
     repo_owner: xataio
     repo_name: pgroll

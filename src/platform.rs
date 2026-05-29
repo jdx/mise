@@ -84,9 +84,9 @@ impl Platform {
 
         // Validate architecture
         match self.arch.as_str() {
-            "x64" | "arm64" | "x86" => {}
+            "x64" | "arm64" | "x86" | "loongarch64" | "riscv64" => {}
             _ => bail!(
-                "Unsupported architecture '{}'. Supported: x64, arm64, x86",
+                "Unsupported architecture '{}'. Supported: x64, arm64, x86, loongarch64, riscv64",
                 self.arch
             ),
         }
@@ -199,33 +199,78 @@ impl From<&str> for Platform {
     }
 }
 
-/// Detect whether the system uses musl libc at runtime.
-/// Checks for the absence of glibc's dynamic linker (`ld-linux-*`) in /lib and /lib64.
-/// On glibc systems, `ld-linux-*` is always present (even if musl-tools is installed
-/// for cross-compilation, which also places `ld-musl-*` in /lib). On musl-only systems
-/// (Alpine, Void musl, etc.), only `ld-musl-*` exists without `ld-linux-*`.
-// NOTE: This logic is mirrored in crates/vfox/src/config.rs env_type(). Keep in sync.
+/// Detect the current libc variant on Linux.
+///
+/// Returns `Some("gnu")` on glibc Linux, `Some("musl")` on musl Linux,
+/// `None` on non-Linux or when the variant can't be determined (e.g. minimal
+/// containers compiled against an unusual target_env).
+///
+/// Detection order on Linux:
+///   1. `/etc/os-release` ID/ID_LIKE — strong signal for known musl distros.
+///      Necessary because compat shims like `gcompat` on Alpine install
+///      `/lib/ld-linux-*` alongside `/lib/ld-musl-*`, which would otherwise
+///      cause the linker-based fallback to misclassify the system as glibc.
+///   2. Linker file presence in `/lib` and `/lib64`.
+///   3. Compile-time target (`target_env`) — for scratch/busybox containers
+///      with no linker files.
 #[cfg(target_os = "linux")]
-fn is_musl_system() -> bool {
+pub fn detect_libc() -> Option<&'static str> {
     use std::sync::LazyLock;
-    static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
-        // If glibc's dynamic linker exists, this is a glibc system
+    static DETECTED: LazyLock<Option<&'static str>> = LazyLock::new(|| {
+        if let Some(true) = musl_from_os_release("/etc/os-release") {
+            return Some("musl");
+        }
         for dir in ["/lib", "/lib64"] {
             if has_file_prefix(dir, "ld-linux-") {
-                return false;
+                return Some("gnu");
             }
         }
-        // No glibc linker found — check for musl's
         for dir in ["/lib", "/lib64"] {
             if has_file_prefix(dir, "ld-musl-") {
-                return true;
+                return Some("musl");
             }
         }
-        // No linker found at all (e.g., scratch/busybox container) —
-        // fall back to the binary's compile-time target
-        cfg!(target_env = "musl")
+        if cfg!(target_env = "musl") {
+            return Some("musl");
+        }
+        if cfg!(target_env = "gnu") {
+            return Some("gnu");
+        }
+        None
     });
-    *IS_MUSL
+    *DETECTED
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn detect_libc() -> Option<&'static str> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn musl_from_os_release(path: &str) -> Option<bool> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let mut ids: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key == "ID" || key == "ID_LIKE" {
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            ids.extend(value.split_whitespace().map(str::to_string));
+        }
+    }
+    // Known musl-libc distros. Compat shims (gcompat) don't change this — the
+    // underlying libc is still musl.
+    const MUSL_DISTROS: &[&str] = &["alpine", "postmarketos", "chimera"];
+    if ids.iter().any(|id| MUSL_DISTROS.contains(&id.as_str())) {
+        return Some(true);
+    }
+    None
 }
 
 #[cfg(target_os = "linux")]
@@ -239,9 +284,8 @@ fn has_file_prefix(dir: &str, prefix: &str) -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(not(target_os = "linux"))]
 fn is_musl_system() -> bool {
-    false
+    detect_libc() == Some("musl")
 }
 
 #[cfg(test)]
@@ -394,5 +438,67 @@ mod tests {
             "musl-compiled binary should have musl qualifier, got: {}",
             platform.to_key()
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_os_release_alpine_id_is_musl() {
+        let tmp = std::env::temp_dir().join("mise-libc-alpine");
+        std::fs::write(
+            &tmp,
+            "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.22.4\n",
+        )
+        .unwrap();
+        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), Some(true));
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_os_release_id_like_alpine_is_musl() {
+        let tmp = std::env::temp_dir().join("mise-libc-id-like");
+        std::fs::write(&tmp, "ID=postmarketos\nID_LIKE=\"alpine\"\n").unwrap();
+        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), Some(true));
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_os_release_debian_returns_none() {
+        let tmp = std::env::temp_dir().join("mise-libc-debian");
+        std::fs::write(&tmp, "ID=debian\nID_LIKE=\"\"\n").unwrap();
+        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), None);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_os_release_missing_returns_none() {
+        assert_eq!(musl_from_os_release("/nonexistent/os-release"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_os_release_comments_and_blank_lines_do_not_short_circuit() {
+        // Regression: previously `split_once('=')?` returned None on the first
+        // comment or blank line, causing the function to ignore the `ID=` line
+        // that came after and silently fall back to linker-based detection.
+        let tmp = std::env::temp_dir().join("mise-libc-comments");
+        std::fs::write(
+            &tmp,
+            "# this is a comment\n\nNAME=\"Alpine Linux\"\nID=alpine\n",
+        )
+        .unwrap();
+        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), Some(true));
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_os_release_whitespace_around_key_tolerated() {
+        let tmp = std::env::temp_dir().join("mise-libc-whitespace");
+        std::fs::write(&tmp, "  ID = alpine \n").unwrap();
+        assert_eq!(musl_from_os_release(tmp.to_str().unwrap()), Some(true));
+        let _ = std::fs::remove_file(&tmp);
     }
 }

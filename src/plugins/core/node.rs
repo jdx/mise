@@ -648,7 +648,7 @@ impl Backend for NodePlugin {
         }
         debug!("{:?}: checking installation is working as expected", self);
         self.test_node(&ctx.config, &tv, ctx.pr.as_ref()).await?;
-        if !cfg!(windows) {
+        if !cfg!(windows) && settings.node.npm_shim {
             self.install_npm_shim(&tv)?;
         }
         self.test_npm(&ctx.config, &tv, ctx.pr.as_ref()).await?;

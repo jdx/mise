@@ -193,6 +193,7 @@ fn display_friendly_err(err: &Report) {
     for err in err.chain() {
         error!("{err}");
     }
+    error!("Version: {}", *VERSION);
     let msg = ui::style::edim("Run with --verbose or MISE_VERBOSE=1 for more information");
     error!("{msg}");
 }

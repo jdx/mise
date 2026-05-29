@@ -409,7 +409,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | python     | `.python-version`, `.python-versions`     |
 | ruby       | `.ruby-version`, `Gemfile`                |
 | rust       | `rust-toolchain.toml`                     |
-| terraform  | `.terraform-version`, `main.tf`           |
+| terraform  | `.terraform-version`                      |
 | terragrunt | `.terragrunt-version`                     |
 | terramate  | `.terramate-version`                      |
 | yarn       | `.yvmrc`, `package.json`                  |
@@ -487,6 +487,17 @@ This is the directory where mise stores system-wide configuration.
 Default: `$MISE_CONFIG_DIR/config.toml` (Usually `~/.config/mise/config.toml`)
 
 This is the path to the config file.
+
+Use this when you want global writes, such as `mise use` or `mise set` run from
+`$HOME`, to target a different config file. [`MISE_DEFAULT_CONFIG_FILENAME`](#mise_default_config_filename)
+customizes the default local config filename, not the global config path.
+
+### `MISE_DEFAULT_CONFIG_FILENAME`
+
+Default: `mise.toml`
+
+This customizes the default local config filename used when mise creates or
+looks for project config files.
 
 ### `MISE_GLOBAL_CONFIG_ROOT`
 
