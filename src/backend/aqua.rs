@@ -139,7 +139,7 @@ impl Backend for AquaBackend {
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let pkg = match self.package_with_options(tv, &[&tv.version]).await {
             Ok(pkg) => pkg,
-            Err(_) => return 3, // fallback to default
+            Err(_) => return 3, // fall back to default
         };
         let format = pkg.format(&tv.version, os(), arch()).unwrap_or_default();
 
