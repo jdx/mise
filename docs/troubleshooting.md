@@ -10,7 +10,7 @@ For non-interactive setups, consider using shims instead which will route calls 
 directory by looking at `PWD` every time they're executed. You can also call `mise exec` instead of
 expecting things to be directly on PATH. You can also run `mise env` in a non-interactive shell,
 however that
-will only setup the global tools. It won't modify the environment variables when entering into a
+will only set up the global tools. It won't modify the environment variables when entering into a
 different project.
 
 ::: warning
