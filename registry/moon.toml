@@ -1,0 +1,2 @@
+description = "moonrepo: A build system and monorepo management tool for the web ecosystem, written in Rust"
+backends = ["github:moonrepo/moon"]
