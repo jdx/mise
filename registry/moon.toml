@@ -4,4 +4,4 @@ idiomatic_files = [".moon/*"]
 
 [test]
 cmd = "moon --version"
-expected = "moon"
+expected = "moon {{ version }}"
