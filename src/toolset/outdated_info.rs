@@ -137,8 +137,8 @@ impl OutdatedInfo {
         }
         if bump {
             let old = oi.tool_version.request.version();
-            let old = old.strip_prefix(&prefix).unwrap_or_default();
-            let new = oi.latest.strip_prefix(&prefix).unwrap_or_default();
+            let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
+            let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
             if let Some(bumped_version) = check_semver_bump(old, new)
                 && bumped_version != oi.tool_version.request.version()
             {
@@ -216,7 +216,14 @@ impl Display for OutdatedInfo {
 
 fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
     let prefix = prefix.trim();
-    if prefix.is_empty() || prefix_version.is_empty() || prefix.contains(':') {
+    if prefix.is_empty()
+        || prefix_version.is_empty()
+        || prefix.contains(':')
+        // A lone leading v/V is version syntax, not a backend/vendor prefix.
+        // Treat it as unprefixed so backends with normalized bare versions like
+        // 3.13.1 still resolve their latest release during --bump.
+        || matches!(prefix, "v" | "V")
+    {
         return None;
     }
 
@@ -504,8 +511,24 @@ mod tests {
             Some("corretto-2024".to_string())
         );
         assert_eq!(prefixed_latest_query("prefix:1.", "24"), None);
+        assert_eq!(prefixed_latest_query("v", "3.13.1"), None);
+        assert_eq!(prefixed_latest_query("V", "3.13.1"), None);
         assert_eq!(prefixed_latest_query("", "17.0.7"), None);
         assert_eq!(prefixed_latest_query("temurin-", ""), None);
+    }
+
+    #[test]
+    fn test_v_prefix_bump_preserves_bare_latest_version() {
+        let prefix = "v";
+        let old = "v3.12.0";
+        let latest = "3.13.1";
+
+        let old = old.strip_prefix(prefix).unwrap_or(old);
+        let new = latest.strip_prefix(prefix).unwrap_or(latest);
+        let bumped = check_semver_bump(old, new).unwrap();
+
+        assert_eq!(bumped, "3.13.1");
+        assert_eq!(format!("{prefix}{bumped}"), "v3.13.1");
     }
 
     #[tokio::test]
