@@ -417,10 +417,17 @@ fn relativize_source(kind: SourceKind, absolute: &Path, anchor: &Path) -> String
         }
     };
     let relative = relative.to_string_lossy();
+    let relative = if std::path::MAIN_SEPARATOR == '/' {
+        relative.into_owned()
+    } else {
+        relative.replace(std::path::MAIN_SEPARATOR, "/")
+    };
     match kind {
         SourceKind::Negation => format!("!{relative}"),
-        SourceKind::LiteralBang if relative.starts_with('!') => format!("\\{relative}"),
-        SourceKind::LiteralBang | SourceKind::Plain => relative.into_owned(),
+        SourceKind::LiteralBang | SourceKind::Plain if relative.starts_with('!') => {
+            format!("\\{relative}")
+        }
+        SourceKind::LiteralBang | SourceKind::Plain => relative,
     }
 }
 
@@ -1497,6 +1504,13 @@ mod tests {
             resolve_source("\\!keep.txt", cwd, anchor),
             "packages/foo/!keep.txt",
         );
+    }
+
+    #[test]
+    fn resolve_escapes_plain_source_relativized_to_leading_bang() {
+        let cwd = Path::new("/repo");
+        let anchor = Path::new("/repo/sub");
+        assert_eq!(resolve_source("sub/!gen/*.ts", cwd, anchor), "\\!gen/*.ts");
     }
 
     fn pb(s: &str) -> PathBuf {
