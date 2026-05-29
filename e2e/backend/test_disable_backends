@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 export MISE_EXPERIMENTAL=1
 
+assert_fail "MISE_DISABLE_BACKENDS=ubi mise install ubi:example/example@1.0.0" "backend ubi is disabled by disable_backends"
+assert_fail "MISE_DISABLE_BACKENDS=ubi mise use -g ubi:example/example@1.0.0" "backend ubi is disabled by disable_backends"
+assert_fail "MISE_DISABLE_BACKENDS=asdf mise install asdf:dummy@1.0.0" "backend asdf is disabled by disable_backends"
+
 assert "mise registry age" "aqua:FiloSottile/age asdf:threkk/asdf-age"
 
 mise install age
@@ -9,3 +13,7 @@ mise uninstall age
 
 MISE_DISABLE_BACKENDS=aqua mise install age
 ls "$MISE_DATA_DIR/plugins/age"
+assert "MISE_DISABLE_BACKENDS=asdf mise tool age --backend" "asdf:age"
+eval "$(mise activate bash)" && _mise_hook
+assert_contains "MISE_DISABLE_BACKENDS=asdf mise doctor 2>&1 || true" "age"
+assert_contains "MISE_DISABLE_BACKENDS=asdf mise doctor -J 2>&1 || true" '"age"'

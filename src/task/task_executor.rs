@@ -3,7 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
-use crate::file::{display_path, is_executable};
+use crate::file::{display_path, is_executable, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
@@ -49,6 +49,20 @@ async fn acquire_runtime_lock(interactive: bool) -> RuntimeLockGuard<'static> {
         RuntimeLockGuard::Write(TASK_RUNTIME_LOCK.write().await)
     } else {
         RuntimeLockGuard::Read(TASK_RUNTIME_LOCK.read().await)
+    }
+}
+
+fn resolve_task_sandbox_path(p: &Path, task_base: Option<&Path>) -> PathBuf {
+    if p.as_os_str().is_empty() {
+        return PathBuf::new();
+    }
+    let p = replace_path(p);
+    if p.is_absolute() {
+        p
+    } else if let Some(base) = task_base {
+        base.join(p)
+    } else {
+        p
     }
 }
 
@@ -143,15 +157,8 @@ impl TaskExecutor {
         config: &Arc<Config>,
     ) -> Result<SandboxConfig> {
         let task_base = task.dir(config).await?;
-        let resolve_task_path = |p: &PathBuf| -> PathBuf {
-            if p.is_absolute() {
-                p.clone()
-            } else if let Some(base) = &task_base {
-                base.join(p)
-            } else {
-                p.clone()
-            }
-        };
+        let resolve_task_path =
+            |p: &PathBuf| -> PathBuf { resolve_task_sandbox_path(p, task_base.as_deref()) };
         let mut sandbox = SandboxConfig {
             deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
@@ -270,15 +277,36 @@ impl TaskExecutor {
             task.name,
             env_render_start.elapsed().as_millis()
         );
+        let mut nested_mise_diff_exclude_keys: HashSet<String> = task_env
+            .iter()
+            .map(|(key, _)| key.clone())
+            .filter(|key| key.as_str() != crate::env::PATH_KEY.as_str())
+            .chain(once("__MISE_DIFF".to_string()))
+            .collect();
         if !self.timings {
-            env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_TASK_TIMINGS",
+                "0".to_string(),
+            );
         }
         // Propagate MISE_ENV to child tasks so -E flag works for nested mise invocations
         if !crate::env::MISE_ENV.is_empty() {
-            env.insert("MISE_ENV".to_string(), crate::env::MISE_ENV.join(","));
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_ENV",
+                crate::env::MISE_ENV.join(","),
+            );
         }
         if let Some(cwd) = &*crate::dirs::CWD {
-            env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_ORIGINAL_CWD",
+                cwd.display().to_string(),
+            );
         }
         // Prefer the task's own config_root so MISE_PROJECT_ROOT is the directory of the
         // mise.toml that defined the task. This keeps the value stable regardless of the
@@ -296,40 +324,74 @@ impl TaskExecutor {
             task.config_root.clone().or(config.project_root.clone())
         };
         if let Some(root) = project_root {
-            env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_PROJECT_ROOT",
+                root.display().to_string(),
+            );
         }
         if let Some(monorepo_root) = config.monorepo_root() {
-            env.insert(
-                "MISE_MONOREPO_ROOT".into(),
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_MONOREPO_ROOT",
                 monorepo_root.display().to_string(),
             );
         }
-        env.insert("MISE_TASK_NAME".into(), task.name.clone());
+        Self::insert_env_excluded_from_nested_mise_diff(
+            &mut env,
+            &mut nested_mise_diff_exclude_keys,
+            "MISE_TASK_NAME",
+            task.name.clone(),
+        );
         let task_file = task
             .file_path(config)
             .await?
             .unwrap_or(task.config_source.clone());
-        env.insert("MISE_TASK_FILE".into(), task_file.display().to_string());
+        Self::insert_env_excluded_from_nested_mise_diff(
+            &mut env,
+            &mut nested_mise_diff_exclude_keys,
+            "MISE_TASK_FILE",
+            task_file.display().to_string(),
+        );
         if let Some(dir) = task_file.parent() {
-            env.insert("MISE_TASK_DIR".into(), dir.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_TASK_DIR",
+                dir.display().to_string(),
+            );
         }
         if let Some(config_root) = &task.config_root {
-            env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "MISE_CONFIG_ROOT",
+                config_root.display().to_string(),
+            );
         }
 
         // Ensure cache key exists for task subprocesses for nested mise invocations
         // This matches exec.rs behavior - enables caching for subprocesses
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();
-            env.insert("__MISE_ENV_CACHE_KEY".into(), key);
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                "__MISE_ENV_CACHE_KEY",
+                key,
+            );
         }
 
         // Embed __MISE_DIFF so a nested `mise` invocation inside this task can
         // recover the pristine env (and pristine PATH) instead of stacking our
-        // tool dirs on top of its own. Without this, nested `mise -C <new> exec`
-        // would inherit our tool dirs as user-pre-PATH and they would outrank
-        // the inner toolset's resolved tool. See discussion #9754.
-        if let Ok(serialized) = EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env).serialize()
+        // tool dirs on top of its own. Keep task-scoped vars out of the diff:
+        // nested `mise hook-env` should not unset variables that belong to the
+        // currently running task.
+        let env_for_diff = self.env_for_nested_mise_diff(&env, &nested_mise_diff_exclude_keys);
+        if let Ok(serialized) =
+            EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
         {
             env.insert("__MISE_DIFF".into(), serialized);
         }
@@ -413,6 +475,30 @@ impl TaskExecutor {
         save_checksum(task, config).await?;
 
         Ok(true)
+    }
+
+    fn insert_env_excluded_from_nested_mise_diff(
+        env: &mut BTreeMap<String, String>,
+        excluded_keys: &mut HashSet<String>,
+        key: &str,
+        value: String,
+    ) {
+        env.insert(key.to_string(), value);
+        if key != crate::env::PATH_KEY.as_str() {
+            excluded_keys.insert(key.to_string());
+        }
+    }
+
+    fn env_for_nested_mise_diff(
+        &self,
+        env: &BTreeMap<String, String>,
+        excluded_keys: &HashSet<String>,
+    ) -> BTreeMap<String, String> {
+        let mut env = env.clone();
+        for key in excluded_keys {
+            env.remove(key);
+        }
+        env
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1451,6 +1537,29 @@ mod tests {
         env.insert((*crate::env::PATH_KEY).to_string(), path.to_string());
         env.insert("OTHER".to_string(), "unchanged".to_string());
         env
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_expands_home_before_task_base() {
+        let resolved =
+            resolve_task_sandbox_path(Path::new("~/sandbox-path"), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, crate::dirs::HOME.join("sandbox-path"));
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_uses_task_base_for_relative_paths() {
+        let resolved =
+            resolve_task_sandbox_path(Path::new("sandbox-path"), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, PathBuf::from("/task/base/sandbox-path"));
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_preserves_empty_paths_for_filtering() {
+        let resolved = resolve_task_sandbox_path(Path::new(""), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, PathBuf::new());
     }
 
     #[test]

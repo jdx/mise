@@ -361,8 +361,10 @@ _.file = [
 ]
 ```
 
-The legacy [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) setting can also load dotenv
-files automatically, but it is deprecated. Use `env._.file` in a config file instead.
+To automatically load dotenv files from the current directory and parent directories, set
+[`MISE_ENV_FILE=.env`](/configuration#mise-env-file) or `env_file = ".env"` under `[settings]`
+in `~/.config/mise/config.toml`. This is different from `env._.file`, which resolves paths
+relative to the config file that declares it.
 
 See [secrets](/environments/secrets/) for ways to read encrypted files with `env._.file`.
 

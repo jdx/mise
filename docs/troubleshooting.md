@@ -108,6 +108,12 @@ get around GitHub rate limits when querying for new versions. Check that repo fo
 see if it has an updated version. This service can be disabled by
 setting `MISE_USE_VERSIONS_HOST=0`.
 
+mise also uses the versions host as a shared cache for public GitHub release metadata and
+GitHub artifact attestations. This means normal installs of public `github:` and many
+`aqua:` tools can avoid unauthenticated GitHub API calls even in Docker builds or CI jobs
+that do not have a token configured. If the versions host does not have the requested
+metadata yet, mise falls back to GitHub's API.
+
 mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
 with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply
 fetches public repository information. The more people do this, the quicker
@@ -209,6 +215,12 @@ HTTP status client error (403 Forbidden) for url
 
 This can happen if the tool is hosted on GitHub, and you've hit the API rate limit. This is especially
 common running mise in a CI environment like GitHub Actions.
+
+By default, mise uses <https://mise-versions.jdx.dev> to avoid most public GitHub API calls
+for release metadata and artifact attestation checks. If you still see this error, it usually
+means the metadata was not available from the versions host yet, `MISE_USE_VERSIONS_HOST=0`
+is set, the tool uses a private repository, or the tool uses GitHub Enterprise/custom API
+settings.
 
 See [GitHub Tokens](/dev-tools/github-tokens.html) for how to configure authentication and avoid rate limits.
 

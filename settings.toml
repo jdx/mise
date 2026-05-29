@@ -204,6 +204,14 @@ If true, mise will use `cargo binstall` instead of `cargo install` if
 [`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.
 This makes installing CLIs with cargo _much_ faster by downloading precompiled binaries.
 
+When `cargo-binstall` installs a prebuilt binary, Cargo build settings and `cargo install`
+behavior do not affect the downloaded artifact. Set `cargo.binstall = false` to force
+`cargo install` when you need Cargo settings to control the install.
+
+When mise invokes `cargo-binstall`, `cargo-binstall` handles its own fallback order, including
+its final fallback to compiling with `cargo install`. mise does not retry with a separate
+`cargo install` command if `cargo-binstall` exits with an error.
+
 You can install it with mise:
 
 ```sh
@@ -335,7 +343,7 @@ type = "String"
 
 [disable_backends]
 default = []
-description = "Backends to disable such as `asdf` or `pipx`"
+description = "Backends to disable for new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. This does not uninstall or disable tools already installed with those backends."
 env = "MISE_DISABLE_BACKENDS"
 parse_env = "list_by_comma"
 rust_type = "Vec<String>"
@@ -519,9 +527,6 @@ env = "MISE_ENV_CACHE_TTL"
 type = "Duration"
 
 [env_file]
-deprecated = "Use env._.file instead."
-deprecated_remove_at = "2027.11.0"
-deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing environment variables to automatically load."
 env = "MISE_ENV_FILE"
 optional = true
@@ -897,6 +902,9 @@ type = "Path"
 
 [go.default_packages_file]
 default = "~/.default-go-packages"
+deprecated = "Default go package files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every go version, or use the go: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default go packages to install when installing go."
 env = "MISE_GO_DEFAULT_PACKAGES_FILE"
 type = "Path"
@@ -1335,7 +1343,7 @@ cutoff date.
 Some package-manager backends also forward the cutoff to transitive dependency resolution during
 install. This includes `npm:` and `pipx:` tools.
 
-Can be overridden with the `--before` CLI flag or per-tool with the `minimum_release_age` tool option.
+Can be overridden with the `--minimum-release-age` CLI flag or per-tool with the `minimum_release_age` tool option.
 
 ```toml
 [tools.trivy]
@@ -1428,6 +1436,9 @@ type = "Bool"
 
 [node.default_packages_file]
 default_docs = "~/.default-npm-packages"
+deprecated = "Default npm package files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every node version, or use the npm: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default npm packages to install."
 docs = """
 Path to a file containing packages to install with npm after installing a new Node.js version.
@@ -1498,6 +1509,12 @@ default = "~/.nodenv"
 description = "Directory for nodenv."
 env = "NODENV_ROOT"
 type = "Path"
+
+[node.npm_shim]
+default = true
+description = "Install a bash wrapper at bin/npm that triggers `mise reshim` after `npm install -g`. Disable to let corepack or a global `npm install -g npm@...` manage `bin/npm` directly."
+env = "MISE_NODE_NPM_SHIM"
+type = "Bool"
 
 [node.nvm_dir]
 default = "~/.nvm"
@@ -1733,12 +1750,28 @@ env = "MISE_PRERELEASES"
 type = "Bool"
 
 [profile]
-deprecated = "Use env._.file instead."
+deprecated = "Use MISE_ENV instead."
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 env = "MISE_PROFILE"
 hide = true
 optional = true
 type = "String"
+
+[provenance_api_failures_fatal]
+default = true
+description = "Fail when provenance API checks cannot be completed."
+docs = """
+When enabled, mise treats provenance API failures as install errors. This keeps
+provenance strict by default: if a remote attestation or release-provenance API
+cannot be reached or queried, mise will fail instead of silently installing
+without provenance.
+
+Set this to `false` to warn and continue when provenance API checks fail. This
+does not ignore checksum failures, provenance verification mismatches, or
+lockfiles that already require provenance for the tool being installed.
+"""
+env = "MISE_PROVENANCE_API_FAILURES_FATAL"
+type = "Bool"
 
 [python.compile]
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
@@ -1753,6 +1786,9 @@ optional = true
 type = "Bool"
 
 [python.default_packages_file]
+deprecated = "Default python package files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every python version, or use the pipx: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default python packages to install when installing a python version."
 env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE"
 optional = true
@@ -1888,6 +1924,9 @@ type = "Bool"
 
 [ruby.default_packages_file]
 default = "~/.default-gems"
+deprecated = "Default ruby gem files are deprecated. Use tool-level postinstall hooks for gems that should be installed into every ruby version, or use the gem: backend for CLI tools."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
 description = "Path to a file containing default ruby gems to install when installing ruby."
 env = "MISE_RUBY_DEFAULT_PACKAGES_FILE"
 type = "String"
@@ -2474,12 +2513,24 @@ type = "Bool"
 
 [use_versions_host]
 default = true
-description = "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions."
+description = "Set to false to disable using the mise-versions API for version lists, public GitHub release metadata, and GitHub artifact attestations."
 docs = """
 Set to "false" to disable using [mise-versions](https://mise-versions.jdx.dev) as
-a quick way for mise to query for new versions. This host regularly grabs all the
-latest versions of core and community plugins. It's faster than running a plugin's
-`list-all` command and gets around GitHub rate limiting problems when using it.
+a shared cache for version lists, public GitHub release metadata, and GitHub artifact
+attestations.
+
+This host regularly grabs all the latest versions of core and community plugins.
+It's faster than running a plugin's `list-all` command and gets around GitHub
+rate limiting problems when using it. For tools distributed through public GitHub
+releases, mise also uses this host before calling GitHub's releases and artifact
+attestation APIs directly. This avoids the anonymous GitHub API rate limit in
+normal installs, including Docker builds and CI jobs that do not have a GitHub
+token configured.
+
+If the versions host does not have the requested metadata yet, mise falls back to
+GitHub's API. Private repositories, GitHub Enterprise, custom GitHub API URLs, and
+users who disable this setting still need normal GitHub authentication when they
+would otherwise exceed GitHub's rate limits.
 
 mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
 with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply

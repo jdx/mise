@@ -557,12 +557,14 @@ const completionSpec: Fig.Spec = {
       subcommands: [
         {
           name: "get",
-          description: "Show an alias for a plugin",
+          description: "Show an alias for a tool",
           args: [
             {
-              name: "plugin",
-              description: "The plugin to show the alias for",
-              generators: pluginGenerator,
+              name: "tool",
+              description: "The tool to show the alias for",
+              generators: completionGeneratorTemplate(
+                `mise registry --complete`
+              ),
               debounce: true,
             },
             {
@@ -594,12 +596,14 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["set", "add", "create"],
-          description: "Add/update an alias for a backend/plugin",
+          description: "Add/update an alias for a tool/backend",
           args: [
             {
-              name: "plugin",
-              description: "The backend/plugin to set the alias for",
-              generators: pluginGenerator,
+              name: "tool",
+              description: "The tool/backend to set the alias for",
+              generators: completionGeneratorTemplate(
+                `mise registry --complete`
+              ),
               debounce: true,
             },
             {
@@ -617,12 +621,14 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["unset", "rm", "remove", "delete", "del"],
-          description: "Clears an alias for a backend/plugin",
+          description: "Clears an alias for a tool/backend",
           args: [
             {
-              name: "plugin",
-              description: "The backend/plugin to remove the alias from",
-              generators: pluginGenerator,
+              name: "tool",
+              description: "The tool/backend to remove the alias from",
+              generators: completionGeneratorTemplate(
+                `mise registry --complete`
+              ),
               debounce: true,
             },
             {
@@ -637,12 +643,12 @@ const completionSpec: Fig.Spec = {
       ],
       options: [
         {
-          name: ["-p", "--plugin"],
-          description: "Filter aliases by plugin",
+          name: ["-p", "--tool"],
+          description: "Filter aliases by tool",
           isRepeatable: false,
           args: {
-            name: "plugin",
-            generators: pluginGenerator,
+            name: "tool",
+            generators: completionGeneratorTemplate(`mise registry --complete`),
             debounce: true,
           },
         },
@@ -696,11 +702,11 @@ const completionSpec: Fig.Spec = {
           name: ["clear", "c"],
           description: "Deletes all cache files in mise",
           args: {
-            name: "plugin",
-            description: "Plugin(s) to clear cache for e.g.: node, python",
+            name: "tool",
+            description: "Tool(s) to clear cache for e.g.: node, python",
             isOptional: true,
             isVariadic: true,
-            generators: pluginGenerator,
+            generators: completionGeneratorTemplate(`mise registry --complete`),
             debounce: true,
           },
         },
@@ -724,11 +730,11 @@ const completionSpec: Fig.Spec = {
             },
           ],
           args: {
-            name: "plugin",
-            description: "Plugin(s) to clear cache for e.g.: node, python",
+            name: "tool",
+            description: "Tool(s) to prune cache for e.g.: node, python",
             isOptional: true,
             isVariadic: true,
-            generators: pluginGenerator,
+            generators: completionGeneratorTemplate(`mise registry --complete`),
             debounce: true,
           },
         },
@@ -1065,7 +1071,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--raw",
           description:
-            "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
+            "Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1",
           isRepeatable: false,
         },
       ],
@@ -1155,6 +1161,12 @@ const completionSpec: Fig.Spec = {
           name: "config",
           description: "Generate a mise.toml file",
           options: [
+            {
+              name: ["-g", "--global"],
+              description:
+                "Generate the global config file (~/.config/mise/config.toml)",
+              isRepeatable: false,
+            },
             {
               name: ["-n", "--dry-run"],
               description:
@@ -1456,6 +1468,12 @@ const completionSpec: Fig.Spec = {
       description: "Edit mise.toml interactively",
       options: [
         {
+          name: ["-g", "--global"],
+          description:
+            "Edit the global config file (~/.config/mise/config.toml)",
+          isRepeatable: false,
+        },
+        {
           name: ["-n", "--dry-run"],
           description: "Show what would be generated without writing to file",
           isRepeatable: false,
@@ -1505,23 +1523,24 @@ const completionSpec: Fig.Spec = {
           isRepeatable: true,
         },
         {
-          name: "--before",
-          description: "Only install versions released before this date",
-          isRepeatable: false,
-          args: {
-            name: "before",
-          },
-        },
-        {
           name: "--dry-run-code",
           description:
             "Like --dry-run but exits with code 1 if there are tools to install",
           isRepeatable: false,
         },
         {
+          name: "--minimum-release-age",
+          description:
+            "Only install versions released before this date or older than this duration",
+          isRepeatable: false,
+          args: {
+            name: "minimum_release_age",
+          },
+        },
+        {
           name: "--raw",
           description:
-            "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
+            "Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1",
           isRepeatable: false,
         },
         {
@@ -1575,11 +1594,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--before",
-          description: "Only consider versions released before this date",
+          name: "--minimum-release-age",
+          description:
+            "Only consider versions released before this date or older than this duration",
           isRepeatable: false,
           args: {
-            name: "before",
+            name: "minimum_release_age",
           },
         },
       ],
@@ -3027,7 +3047,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--raw",
           description:
-            "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
+            "Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1",
           isRepeatable: false,
         },
       ],
@@ -3754,7 +3774,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--raw",
           description:
-            "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
+            "Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1",
           isRepeatable: false,
         },
       ],
@@ -4089,14 +4109,6 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
-          name: "--before",
-          description: "Only upgrade to versions released before this date",
-          isRepeatable: false,
-          args: {
-            name: "before",
-          },
-        },
-        {
           name: "--dry-run-code",
           description:
             "Like --dry-run but exits with code 1 if there are outdated tools",
@@ -4114,9 +4126,18 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--minimum-release-age",
+          description:
+            "Only upgrade to versions released before this date or older than this duration",
+          isRepeatable: false,
+          args: {
+            name: "minimum_release_age",
+          },
+        },
+        {
           name: "--raw",
           description:
-            "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
+            "Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1",
           isRepeatable: false,
         },
       ],
@@ -4178,14 +4199,6 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
-          name: "--before",
-          description: "Only install versions released before this date",
-          isRepeatable: false,
-          args: {
-            name: "before",
-          },
-        },
-        {
           name: "--dry-run-code",
           description:
             "Like --dry-run but exits with code 1 if there are changes to make",
@@ -4197,6 +4210,15 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--minimum-release-age",
+          description:
+            "Only install versions released before this date or older than this duration",
+          isRepeatable: false,
+          args: {
+            name: "minimum_release_age",
+          },
+        },
+        {
           name: "--pin",
           description:
             "Save exact version to config file\ne.g.: `mise use --pin node@20` will save 20.0.0 as the version\nSet `MISE_PIN=1` to make this the default behavior",
@@ -4205,16 +4227,16 @@ const completionSpec: Fig.Spec = {
         {
           name: "--raw",
           description:
-            "Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`",
+            "Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`",
           isRepeatable: false,
         },
         {
           name: "--remove",
-          description: "Remove the plugin(s) from config file",
+          description: "Remove the tool(s) from config file",
           isRepeatable: true,
           args: {
-            name: "plugin",
-            generators: pluginGenerator,
+            name: "tool",
+            generators: completionGeneratorTemplate(`mise registry --complete`),
             debounce: true,
           },
         },

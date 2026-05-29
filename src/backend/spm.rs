@@ -10,6 +10,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
+use duct::Expression;
 use eyre::{WrapErr, bail};
 use serde::Deserialize;
 use serde::Deserializer;
@@ -235,18 +236,21 @@ impl SPMBackend {
         repo_dir: &PathBuf,
         tv: &ToolVersion,
     ) -> Result<Vec<String>, eyre::Error> {
-        let package_json = cmd!(
-            "swift",
-            "package",
-            "dump-package",
-            "--package-path",
-            &repo_dir,
-            "--scratch-path",
-            tv.install_path(),
-            "--cache-path",
-            dirs::CACHE.join("spm"),
+        let package_json = with_install_env(
+            cmd!(
+                "swift",
+                "package",
+                "dump-package",
+                "--package-path",
+                &repo_dir,
+                "--scratch-path",
+                tv.install_path(),
+                "--cache-path",
+                dirs::CACHE.join("spm"),
+            )
+            .full_env(self.dependency_env(&ctx.config).await?),
+            tv,
         )
-        .full_env(self.dependency_env(&ctx.config).await?)
         .read()?;
         let executables = serde_json::from_str::<PackageDescription>(&package_json)
             .wrap_err("Failed to parse package description")?
@@ -280,6 +284,7 @@ impl SPMBackend {
             .arg("--cache-path")
             .arg(dirs::CACHE.join("spm"))
             .with_pr(ctx.pr.as_ref())
+            .envs(tv.install_env())
             .prepend_path(
                 self.dependency_toolset(&ctx.config)
                     .await?
@@ -288,22 +293,25 @@ impl SPMBackend {
             )?
             .execute()?;
 
-        let bin_path = cmd!(
-            "swift",
-            "build",
-            "--configuration",
-            "release",
-            "--product",
-            &executable,
-            "--package-path",
-            &repo_dir,
-            "--scratch-path",
-            tv.install_path(),
-            "--cache-path",
-            dirs::CACHE.join("spm"),
-            "--show-bin-path"
+        let bin_path = with_install_env(
+            cmd!(
+                "swift",
+                "build",
+                "--configuration",
+                "release",
+                "--product",
+                &executable,
+                "--package-path",
+                &repo_dir,
+                "--scratch-path",
+                tv.install_path(),
+                "--cache-path",
+                dirs::CACHE.join("spm"),
+                "--show-bin-path"
+            )
+            .full_env(self.dependency_env(&ctx.config).await?),
+            tv,
         )
-        .full_env(self.dependency_env(&ctx.config).await?)
         .read()?;
         Ok(PathBuf::from(bin_path.trim().to_string()).join(executable))
     }
@@ -355,7 +363,7 @@ impl SPMBackend {
             &file::TarOptions::new(file::TarFormat::Zip),
         )?;
 
-        let triples = swift_target_triples(ctx, self).await?;
+        let triples = swift_target_triples(ctx, self, tv).await?;
         let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;
         if binaries.is_empty() {
             file::remove_all(tv.cache_path())?;
@@ -380,6 +388,13 @@ impl SPMBackend {
         file::remove_all(tv.cache_path())?;
         Ok(true)
     }
+}
+
+fn with_install_env(mut command: Expression, tv: &ToolVersion) -> Expression {
+    for (key, value) in tv.install_env() {
+        command = command.env(key, value);
+    }
+    command
 }
 
 /// Parses the `filter_bins` tool option if set.
@@ -558,10 +573,13 @@ impl SwiftPackageRepo {
 async fn swift_target_triples(
     ctx: &InstallContext,
     backend: &SPMBackend,
+    tv: &ToolVersion,
 ) -> eyre::Result<Vec<String>> {
-    let target_info = cmd!("swift", "-print-target-info")
-        .full_env(backend.dependency_env(&ctx.config).await?)
-        .read()?;
+    let target_info = with_install_env(
+        cmd!("swift", "-print-target-info").full_env(backend.dependency_env(&ctx.config).await?),
+        tv,
+    )
+    .read()?;
     parse_swift_target_triples(&target_info)
 }
 

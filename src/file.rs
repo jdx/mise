@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -17,6 +17,7 @@ use eyre::bail;
 use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
+use sha2::{Digest, Sha256};
 use std::sync::LazyLock as Lazy;
 use tar::Archive;
 use walkdir::WalkDir;
@@ -737,6 +738,60 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &env::PATH_NON_PRISTINE)
 }
 
+/// Canonicalize a path and cache successful resolutions for the current process.
+///
+/// Use this for repeated comparisons against stable roots or PATH entries. Failed
+/// canonicalizations are not cached because many callers handle paths that may be
+/// created later in the same process.
+pub fn canonicalize_cached(path: &Path) -> Option<PathBuf> {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
+
+    if !path.is_absolute() {
+        return path.canonicalize().ok();
+    }
+    if let Some(path) = CACHE.lock().unwrap().get(path).cloned() {
+        return Some(path);
+    }
+    let canonicalized = path.canonicalize().ok()?;
+    CACHE
+        .lock()
+        .unwrap()
+        .insert(path.to_path_buf(), canonicalized.clone());
+    Some(canonicalized)
+}
+
+/// Canonicalize a path using the process cache, falling back to the original
+/// path when canonicalization fails.
+pub fn canonicalize_or_self(path: &Path) -> PathBuf {
+    canonicalize_cached(path).unwrap_or_else(|| path.to_path_buf())
+}
+
+/// Returns true if `path` is one of mise's shim directories.
+///
+/// Two dirs qualify: the user shims dir (`dirs::SHIMS`) and the system shims
+/// dir (`$MISE_SYSTEM_DATA_DIR/shims`). Devcontainer / Docker setups built
+/// with `mise install --system` put both on PATH, so subprocess-env filters
+/// that strip "the shims dir" must consider both — otherwise the recursion
+/// these filters were added to prevent (#8475 for `dependency_env`, #8816
+/// for `which_shim`, this for the file.rs helpers) leaks back in through the
+/// remaining dir.
+///
+/// Uses `paths_eq` + `replace_path` for the fast path (expands `~`,
+/// case-insensitive on macOS/Windows), then falls back to `canonicalize_or_self`
+/// so symlinked roots (e.g. `/usr/local/share` → `/private/usr/local/share` on
+/// macOS) still match — the cached helper keeps this off the filesystem hot path.
+pub fn is_mise_shims_dir(path: &Path) -> bool {
+    let resolved = replace_path(path);
+    let sys_shims = env::MISE_SYSTEM_DATA_DIR.join("shims");
+    if paths_eq(&resolved, &dirs::SHIMS) || paths_eq(&resolved, &sys_shims) {
+        return true;
+    }
+    let canon_input = canonicalize_or_self(&resolved);
+    let canon_user = canonicalize_or_self(&dirs::SHIMS);
+    let canon_sys = canonicalize_or_self(&sys_shims);
+    paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
+}
+
 /// Build a PATH value with mise shims filtered out, suitable for passing to
 /// subprocesses via `.env("PATH", ...)`. Prevents infinite recursion when a
 /// subprocess (e.g. `gh auth token`, `git credential fill`) resolves to a
@@ -746,10 +801,9 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
 /// shims from an arbitrary PATH string (e.g. from `PRISTINE_ENV`), use
 /// `strip_shims_from_path` instead.
 pub fn path_env_without_shims() -> std::ffi::OsString {
-    let shim_dir = &*dirs::SHIMS;
     let filtered: Vec<_> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !paths_eq(&replace_path(p), shim_dir))
+        .filter(|p| !is_mise_shims_dir(p))
         .cloned()
         .collect();
     std::env::join_paths(filtered)
@@ -760,22 +814,20 @@ pub fn path_env_without_shims() -> std::ffi::OsString {
 /// subprocess receives a custom env map (e.g. `PRISTINE_ENV`) rather
 /// than inheriting the current process's PATH.
 pub fn strip_shims_from_path(path_val: &str) -> String {
-    let shim_dir = &*dirs::SHIMS;
-    let filtered = env::split_paths(path_val).filter(|p| !paths_eq(&replace_path(p), shim_dir));
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_shims_dir(p));
     std::env::join_paths(filtered)
         .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
         .to_string_lossy()
         .into_owned()
 }
 
-/// returns the first executable in PATH, excluding the mise shim directory
+/// returns the first executable in PATH, excluding the mise shim directories
 /// use this for internal tool lookups to avoid recursive shim invocations
 /// (shims call `mise exec`, which would re-enter the same code path)
 pub fn which_no_shims<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
-    let shim_dir = &*dirs::SHIMS;
     let paths: Vec<PathBuf> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !paths_eq(&replace_path(p), shim_dir))
+        .filter(|p| !is_mise_shims_dir(p))
         .cloned()
         .collect();
     _which(name, &paths)
@@ -1339,6 +1391,168 @@ pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ArchiveContent {
+    pub name: String,
+    pub sha256: String,
+}
+
+/// Return the regular files in an archive after applying strip-components.
+///
+/// This is intentionally stricter than extraction: content-level provenance is
+/// only safe when every installed regular file is covered, so ambiguous archive
+/// entries (links, unsafe paths, stripped-away file names, unsupported formats)
+/// fail closed instead of being ignored.
+pub fn archive_content_files(
+    archive_path: &Path,
+    format: TarFormat,
+    strip_components: usize,
+) -> Result<Vec<ArchiveContent>> {
+    if strip_components > 1 {
+        bail!("content-level SLSA verification only supports strip_components values of 0 or 1");
+    }
+
+    match format {
+        TarFormat::TarGz
+        | TarFormat::TarXz
+        | TarFormat::TarBz2
+        | TarFormat::TarZst
+        | TarFormat::Tar => archive_content_files_tar(archive_path, format, strip_components),
+        TarFormat::Zip => archive_content_files_zip(archive_path, strip_components),
+        TarFormat::SevenZip => {
+            bail!("content-level SLSA verification does not support 7z archives")
+        }
+        TarFormat::Gz | TarFormat::Xz | TarFormat::Bz2 | TarFormat::Zst | TarFormat::Raw => {
+            bail!("content-level SLSA verification only supports archive formats")
+        }
+    }
+}
+
+fn archive_content_files_tar(
+    archive_path: &Path,
+    format: TarFormat,
+    strip_components: usize,
+) -> Result<Vec<ArchiveContent>> {
+    let tar = open_tar(format, archive_path)?;
+    let mut archive = Archive::new(tar);
+    let mut files = Vec::new();
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.into_owned();
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_dir() {
+            continue;
+        }
+        if !entry_type.is_file() {
+            bail!(
+                "content-level SLSA verification does not support non-regular archive entry: {}",
+                path.display()
+            );
+        }
+        let name = normalize_archive_content_path(&path, strip_components)?;
+        let sha256 = sha256_reader(&mut entry)?;
+        files.push(ArchiveContent { name, sha256 });
+    }
+
+    validate_archive_content_files(files)
+}
+
+fn archive_content_files_zip(
+    archive_path: &Path,
+    strip_components: usize,
+) -> Result<Vec<ArchiveContent>> {
+    let f = File::open(archive_path)?;
+    let mut archive = ZipArchive::new(f)
+        .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive_path)))?;
+    let mut files = Vec::new();
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        if file.is_dir() {
+            continue;
+        }
+        if file.is_symlink() {
+            bail!(
+                "content-level SLSA verification does not support symlink archive entry: {}",
+                file.name()
+            );
+        }
+        let enclosed_name = file.enclosed_name().ok_or_else(|| {
+            eyre::eyre!(
+                "content-level SLSA verification rejected unsafe zip path: {}",
+                file.name()
+            )
+        })?;
+        let name = normalize_archive_content_path(&enclosed_name, strip_components)?;
+        let sha256 = sha256_reader(&mut file)?;
+        files.push(ArchiveContent { name, sha256 });
+    }
+
+    validate_archive_content_files(files)
+}
+
+fn sha256_reader(reader: &mut impl Read) -> Result<String> {
+    let mut hasher = Sha256::new();
+    let mut buf = [0; 8192];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn validate_archive_content_files(files: Vec<ArchiveContent>) -> Result<Vec<ArchiveContent>> {
+    if files.is_empty() {
+        bail!("content-level SLSA verification found no regular files in archive");
+    }
+    let mut names = std::collections::HashSet::new();
+    for file in &files {
+        if !names.insert(file.name.clone()) {
+            bail!(
+                "content-level SLSA verification found duplicate installed archive path: {}",
+                file.name
+            );
+        }
+    }
+    Ok(files)
+}
+
+fn normalize_archive_content_path(path: &Path, strip_components: usize) -> Result<String> {
+    let mut parts = Vec::new();
+    for component in skip_curdir_components(path) {
+        match component {
+            std::path::Component::Normal(part) => parts.push(part.to_string_lossy().to_string()),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {
+                bail!(
+                    "content-level SLSA verification rejected unsafe archive path: {}",
+                    path.display()
+                )
+            }
+        }
+    }
+    if strip_components > parts.len() {
+        bail!(
+            "content-level SLSA verification stripped all components from archive path: {}",
+            path.display()
+        );
+    }
+    let parts = &parts[strip_components..];
+    if parts.is_empty() {
+        bail!(
+            "content-level SLSA verification stripped all components from archive path: {}",
+            path.display()
+        );
+    }
+    Ok(parts.join("/"))
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
@@ -1346,6 +1560,50 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[test]
+    fn test_archive_content_files_tar_hashes_regular_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let mut builder = tar::Builder::new(file);
+            let mut header = tar::Header::new_gnu();
+            header.set_path("pkg/tool").unwrap();
+            header.set_size(4);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder.append(&header, &b"tool"[..]).unwrap();
+            builder.finish().unwrap();
+        }
+
+        let files = archive_content_files(&archive_path, TarFormat::Tar, 1).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "tool");
+        assert_eq!(files[0].sha256, hex::encode(Sha256::digest(b"tool")));
+    }
+
+    #[test]
+    fn test_archive_content_files_tar_rejects_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let mut builder = tar::Builder::new(file);
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_path("tool-link").unwrap();
+            header.set_link_name("tool").unwrap();
+            header.set_size(0);
+            header.set_mode(0o777);
+            header.set_cksum();
+            builder.append(&header, std::io::empty()).unwrap();
+            builder.finish().unwrap();
+        }
+
+        let err = archive_content_files(&archive_path, TarFormat::Tar, 0).unwrap_err();
+        assert!(err.to_string().contains("non-regular archive entry"));
+    }
 
     #[tokio::test]
     async fn test_find_up() {

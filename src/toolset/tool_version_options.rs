@@ -130,6 +130,7 @@ impl DerefMut for ToolOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolOptionSource {
     Registry,
+    InstallManifest,
     BackendAlias,
     Config,
     InlineBackendArg,

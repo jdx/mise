@@ -1,4 +1,4 @@
-backends = ["github:yonaskolb/XcodeGen"]
+backends = ["aqua:yonaskolb/XcodeGen", "github:yonaskolb/XcodeGen"]
 description = "A Swift command line tool for generating your Xcode project"
 os = ["macos"]
 test = { cmd = "xcodegen --version", expected = "Version: {{version}}" }

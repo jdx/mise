@@ -1,4 +1,5 @@
 use color_eyre::eyre::{Result, bail};
+use jiff::Timestamp;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
@@ -26,24 +27,29 @@ pub struct Latest {
     #[clap(short, long)]
     installed: bool,
 
-    /// Only consider versions released before this date
+    /// Only consider versions released before this date or older than this duration
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
     /// Overrides per-tool `minimum_release_age` options and the global `minimum_release_age` setting.
-    #[clap(long, verbatim_doc_comment, conflicts_with = "installed")]
-    before: Option<String>,
+    #[clap(
+        long,
+        alias = "before",
+        verbatim_doc_comment,
+        conflicts_with = "installed"
+    )]
+    minimum_release_age: Option<String>,
 }
 
 impl Latest {
     pub async fn run(self) -> Result<()> {
+        let before_date = self.get_before_date()?;
         let config = Config::get().await?;
         let Self {
             tool,
             asdf_version,
             installed,
-            before,
+            minimum_release_age: _,
         } = self;
-        let before_date = before.as_deref().map(parse_into_timestamp).transpose()?;
         let mut prefix = match &tool.tvr {
             None => asdf_version,
             Some(ToolRequest::Version { version, .. }) => Some(version.clone()),
@@ -70,6 +76,15 @@ impl Latest {
         }
         Ok(())
     }
+
+    /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
+    /// Per-tool and global setting fallbacks are handled by backend latest resolution.
+    fn get_before_date(&self) -> Result<Option<Timestamp>> {
+        if let Some(minimum_release_age) = &self.minimum_release_age {
+            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
+        }
+        Ok(None)
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -81,6 +96,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise latest node</bold>     # get the latest stable version of node
     20.0.0
 
-    $ <bold>mise latest node --before 2024-01-01</bold>  # latest stable node released before 2024-01-01
+    $ <bold>mise latest node --minimum-release-age 2024-01-01</bold>  # latest stable node released before 2024-01-01
 "#
 );

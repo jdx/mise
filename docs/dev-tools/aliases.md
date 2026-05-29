@@ -25,7 +25,7 @@ that points to a specific version, so you can reference it symbolically in
 `mise.toml`/`.tool-versions`. For example, you may want `lts-iron` to map to Node.js 20 so you can
 set it with `node = "lts-iron"`.
 
-User aliases can be created by adding a `tool_alias.<PLUGIN>.versions` section to
+User aliases can be created by adding a `tool_alias.<TOOL>.versions` section to
 `~/.config/mise/config.toml`:
 
 ```toml

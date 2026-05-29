@@ -61,6 +61,11 @@ echo "Test 4: Plugin not found"
 local_assert_fail "mise install nonexistent-tool@1.0.0" \
   "mise ERROR Failed to install nonexistent-tool@1.0.0: nonexistent-tool not found in mise tool registry"
 
+# Test 4b: Friendly errors include mise version
+echo "Test 4b: Friendly errors include mise version"
+local_assert_fail "mise install nonexistent-tool@1.0.0" \
+  "mise ERROR Version:"
+
 # Test 5: Multiple tool failures (could be single or multiple depending on timing)
 echo "Test 5: Multiple tool failures"
 local_assert_fail "mise install tiny@999.999.999 jq@999.999.999" \

@@ -2,6 +2,7 @@ use crate::Result;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 #[cfg(windows)]
 use crate::backend::runtime_path_for_install_path;
@@ -14,7 +15,7 @@ use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
 use crate::semver::{semver_is_at_least, semver_is_older_than, semver_triplet};
 use crate::timeout;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use async_trait::async_trait;
 use jiff::Timestamp;
 use serde_json::Value;
@@ -33,6 +34,7 @@ const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
 const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
 const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
+const NPM_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 
 #[derive(Debug)]
@@ -40,6 +42,115 @@ pub struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NpmOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AllowBuilds {
+    None,
+    All,
+    Packages(Vec<String>),
+}
+
+impl<'a> NpmOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn npm_args(&self) -> Option<&'a str> {
+        self.values.str("npm_args")
+    }
+
+    fn pnpm_args(&self) -> Option<&'a str> {
+        self.values.str("pnpm_args")
+    }
+
+    fn bun_args(&self) -> Option<&'a str> {
+        self.values.str("bun_args")
+    }
+
+    fn aube_args(&self) -> Option<&'a str> {
+        self.values.str("aube_args")
+    }
+
+    fn allow_builds(&self) -> eyre::Result<AllowBuilds> {
+        let Some(value) = self.values.raw().opts.get("allow_builds") else {
+            return Ok(AllowBuilds::None);
+        };
+        match value {
+            toml::Value::Boolean(true) => Ok(AllowBuilds::All),
+            toml::Value::Boolean(false) => Ok(AllowBuilds::None),
+            toml::Value::String(value) => {
+                Ok(Self::canonical_allow_build_packages(vec![value.clone()]))
+            }
+            toml::Value::Array(values) => {
+                let packages = values
+                    .iter()
+                    .map(|value| {
+                        value.as_str().map(str::to_string).ok_or_else(|| {
+                            eyre::eyre!("allow_builds array must contain only strings")
+                        })
+                    })
+                    .collect::<eyre::Result<Vec<_>>>()?;
+                Ok(Self::canonical_allow_build_packages(packages))
+            }
+            _ => Err(eyre::eyre!(
+                "allow_builds must be true, false, a string, or array"
+            )),
+        }
+    }
+
+    fn allow_build_args(&self) -> eyre::Result<Vec<OsString>> {
+        Ok(match self.allow_builds()? {
+            AllowBuilds::None => vec![],
+            AllowBuilds::All => vec![OsString::from("--dangerously-allow-all-builds")],
+            AllowBuilds::Packages(packages) => packages
+                .into_iter()
+                .map(|package| OsString::from(format!("--allow-build={package}")))
+                .collect(),
+        })
+    }
+
+    fn canonical_allow_build_packages(mut packages: Vec<String>) -> AllowBuilds {
+        packages.sort();
+        packages.dedup();
+        if packages.is_empty() {
+            AllowBuilds::None
+        } else {
+            AllowBuilds::Packages(packages)
+        }
+    }
+
+    fn canonical_allow_builds_lockfile_value(&self) -> eyre::Result<Option<String>> {
+        Ok(match self.allow_builds()? {
+            AllowBuilds::None => None,
+            AllowBuilds::All => Some("true".into()),
+            AllowBuilds::Packages(packages) => Some(format!("{packages:?}")),
+        })
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        install_time_option_keys()
+            .into_iter()
+            .filter_map(|key| {
+                let value = if key == "allow_builds" {
+                    self.canonical_allow_builds_lockfile_value().ok().flatten()
+                } else {
+                    self.values.raw().opts.get(&key).map(|value| match value {
+                        toml::Value::String(value) => value.clone(),
+                        _ => value.to_string(),
+                    })
+                };
+                value.map(|value| (key, value))
+            })
+            .collect()
+    }
 }
 
 const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
@@ -115,15 +226,7 @@ impl Backend for NPMBackend {
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         let opts = request.options();
-        let mut result = BTreeMap::new();
-
-        for key in install_time_option_keys() {
-            if let Some(value) = opts.get(&key) {
-                result.insert(key, value.to_string());
-            }
-        }
-
-        result
+        NpmOptions::new(&opts).lockfile_options()
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -213,7 +316,8 @@ impl Backend for NPMBackend {
             .await;
         self.check_install_deps(&ctx.config, package_manager, Some(&ctx.ts))
             .await;
-        let options = tv.request.options();
+        let request_options = tv.request.options();
+        let options = NpmOptions::new(&request_options);
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
                 self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
@@ -237,6 +341,7 @@ impl Backend for NPMBackend {
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                    .envs(tv.install_env())
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
@@ -245,9 +350,10 @@ impl Backend for NPMBackend {
                             .await,
                     )?
                     .current_dir(tv.install_path());
-                if let Some(args) = options.get("aube_args") {
+                if let Some(args) = options.aube_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
+                cmd = cmd.args(options.allow_build_args()?);
                 cmd.execute()?;
             }
             NpmPackageManager::Bun => {
@@ -255,7 +361,6 @@ impl Backend for NPMBackend {
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global")
-                    .arg("--trust")
                     // Isolated linker does not symlink binaries into BUN_INSTALL_BIN properly.
                     // https://github.com/jdx/mise/discussions/7541
                     .arg("--linker")
@@ -263,6 +368,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                    .envs(tv.install_env())
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
                     .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
@@ -273,7 +379,7 @@ impl Backend for NPMBackend {
                             .await,
                     )?
                     .current_dir(tv.install_path());
-                if let Some(args) = options.get("bun_args") {
+                if let Some(args) = options.bun_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
                 cmd.execute()?;
@@ -292,6 +398,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                    .envs(tv.install_env())
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
@@ -302,9 +409,10 @@ impl Backend for NPMBackend {
                     // required to avoid pnpm error "global bin dir isn't in PATH"
                     // https://github.com/pnpm/pnpm/issues/9333
                     .prepend_path(vec![bin_dir])?;
-                if let Some(args) = options.get("pnpm_args") {
+                if let Some(args) = options.pnpm_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
+                cmd = cmd.args(options.allow_build_args()?);
                 cmd.execute()?;
             }
             _ => {
@@ -317,6 +425,7 @@ impl Backend for NPMBackend {
                     .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                    .envs(tv.install_env())
                     .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
@@ -325,7 +434,8 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?;
-                if let Some(args) = options.get("npm_args") {
+                cmd = cmd.arg(NPM_IGNORE_SCRIPTS_ARG);
+                if let Some(args) = options.npm_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
                 cmd.execute()?;
@@ -712,6 +822,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "pnpm_args".into(),
         "bun_args".into(),
         "aube_args".into(),
+        "allow_builds".into(),
     ]
 }
 
@@ -993,6 +1104,14 @@ mod tests {
             "aube_args".to_string(),
             toml::Value::String("--loglevel=warn".into()),
         );
+        options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("sharp".into()),
+                toml::Value::String("esbuild".into()),
+                toml::Value::String("sharp".into()),
+            ]),
+        );
         options.install_env.insert(
             "NPM_CONFIG_REGISTRY".to_string(),
             "https://registry.example.com".to_string(),
@@ -1014,7 +1133,91 @@ mod tests {
             resolved.get("aube_args"),
             Some(&"--loglevel=warn".to_string())
         );
+        assert_eq!(
+            resolved.get("allow_builds"),
+            Some(&"[\"esbuild\", \"sharp\"]".to_string())
+        );
         assert!(!resolved.contains_key("install_env.NPM_CONFIG_REGISTRY"));
+    }
+
+    #[test]
+    fn test_allow_build_args_accepts_string_array_or_true() {
+        let mut string_options = ToolVersionOptions::default();
+        string_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::String("esbuild".into()),
+        );
+        assert_eq!(
+            NpmOptions::new(&string_options).allow_build_args().unwrap(),
+            vec![OsString::from("--allow-build=esbuild")]
+        );
+
+        let mut array_options = ToolVersionOptions::default();
+        array_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("esbuild".into()),
+                toml::Value::String("sharp".into()),
+            ]),
+        );
+        assert_eq!(
+            NpmOptions::new(&array_options).allow_build_args().unwrap(),
+            vec![
+                OsString::from("--allow-build=esbuild"),
+                OsString::from("--allow-build=sharp"),
+            ]
+        );
+
+        let mut true_options = ToolVersionOptions::default();
+        true_options
+            .opts
+            .insert("allow_builds".to_string(), toml::Value::Boolean(true));
+        assert_eq!(
+            NpmOptions::new(&true_options).allow_build_args().unwrap(),
+            vec![OsString::from("--dangerously-allow-all-builds")]
+        );
+    }
+
+    #[test]
+    fn test_allow_build_lockfile_value_is_canonical() {
+        let mut string_options = ToolVersionOptions::default();
+        string_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::String("esbuild".into()),
+        );
+        assert_eq!(
+            NpmOptions::new(&string_options)
+                .canonical_allow_builds_lockfile_value()
+                .unwrap(),
+            Some("[\"esbuild\"]".into())
+        );
+
+        let mut array_options = ToolVersionOptions::default();
+        array_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("sharp".into()),
+                toml::Value::String("esbuild".into()),
+                toml::Value::String("sharp".into()),
+            ]),
+        );
+        assert_eq!(
+            NpmOptions::new(&array_options)
+                .canonical_allow_builds_lockfile_value()
+                .unwrap(),
+            Some("[\"esbuild\", \"sharp\"]".into())
+        );
+
+        let mut true_options = ToolVersionOptions::default();
+        true_options
+            .opts
+            .insert("allow_builds".to_string(), toml::Value::Boolean(true));
+        assert_eq!(
+            NpmOptions::new(&true_options)
+                .canonical_allow_builds_lockfile_value()
+                .unwrap(),
+            Some("true".into())
+        );
     }
 
     #[test]

@@ -7,7 +7,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sigstore_verify::VerificationPolicy;
 use sigstore_verify::trust_root::{SigstoreInstance, TrustedRoot};
-use sigstore_verify::types::{Bundle, DerCertificate, DerPublicKey, SignatureBytes};
+use sigstore_verify::types::bundle::VerificationMaterialContent;
+use sigstore_verify::types::{
+    Artifact, Bundle, DerCertificate, DerPublicKey, HashAlgorithm, Sha256Hash, SignatureBytes,
+    SignatureContent,
+};
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
 
@@ -20,6 +24,8 @@ pub enum AttestationError {
     Api(String),
     #[error("Verification failed: {0}")]
     Verification(String),
+    #[error("SLSA subject mismatch: {0}")]
+    SubjectMismatch(String),
     #[error("Unsupported attestation format: {0}")]
     UnsupportedFormat(String),
     #[error("No attestations found")]
@@ -53,6 +59,21 @@ impl From<sigstore_verify::trust_root::Error> for AttestationError {
 }
 
 pub type Result<T> = std::result::Result<T, AttestationError>;
+
+#[derive(Debug, Clone)]
+pub struct SlsaArtifact {
+    pub name: String,
+    pub sha256: String,
+}
+
+impl SlsaArtifact {
+    pub fn from_bytes(name: String, bytes: &[u8]) -> Self {
+        Self {
+            name,
+            sha256: hex::encode(Sha256::digest(bytes)),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ArtifactRef {
@@ -198,6 +219,12 @@ pub struct Attestation {
     bundle_url: Option<String>,
 }
 
+impl Attestation {
+    pub fn has_inline_bundle(&self) -> bool {
+        self.bundle.is_some()
+    }
+}
+
 impl AttestationClient {
     pub fn builder() -> AttestationClientBuilder {
         AttestationClientBuilder::default()
@@ -311,7 +338,16 @@ pub async fn verify_github_attestation(
     token: Option<&str>,
     signer_workflow: Option<&str>,
 ) -> Result<bool> {
-    verify_github_attestation_inner(artifact_path, owner, repo, token, signer_workflow, None).await
+    verify_github_attestation_inner(
+        artifact_path,
+        owner,
+        repo,
+        token,
+        signer_workflow,
+        None,
+        None,
+    )
+    .await
 }
 
 pub async fn verify_github_attestation_with_base_url(
@@ -329,8 +365,44 @@ pub async fn verify_github_attestation_with_base_url(
         token,
         signer_workflow,
         Some(base_url),
+        None,
     )
     .await
+}
+
+pub async fn verify_github_attestation_with_base_url_and_digest(
+    artifact_path: &Path,
+    owner: &str,
+    repo: &str,
+    token: Option<&str>,
+    signer_workflow: Option<&str>,
+    base_url: &str,
+    digest: &str,
+) -> Result<bool> {
+    verify_github_attestation_inner(
+        artifact_path,
+        owner,
+        repo,
+        token,
+        signer_workflow,
+        Some(base_url),
+        Some(digest),
+    )
+    .await
+}
+
+pub async fn verify_github_attestation_with_attestations(
+    artifact_path: &Path,
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+) -> Result<bool> {
+    if attestations.is_empty() {
+        return Err(AttestationError::NoAttestations);
+    }
+
+    let artifact = tokio::fs::read(artifact_path).await?;
+    let mut trust_roots = TrustRoots::default();
+    verify_attestation_bundles(attestations, &artifact, signer_workflow, &mut trust_roots).await
 }
 
 async fn verify_github_attestation_inner(
@@ -340,6 +412,7 @@ async fn verify_github_attestation_inner(
     token: Option<&str>,
     signer_workflow: Option<&str>,
     base_url: Option<&str>,
+    digest: Option<&str>,
 ) -> Result<bool> {
     let mut builder = AttestationClient::builder();
     if let Some(token) = token {
@@ -349,7 +422,10 @@ async fn verify_github_attestation_inner(
         builder = builder.base_url(base_url);
     }
     let client = builder.build()?;
-    let digest = calculate_file_digest_async(artifact_path).await?;
+    let digest = match digest {
+        Some(digest) => digest.to_string(),
+        None => calculate_file_digest(artifact_path).await?,
+    };
     let attestations = client
         .fetch_attestations(FetchParams {
             owner: owner.to_string(),
@@ -405,6 +481,15 @@ pub async fn verify_cosign_signature_with_key(
         .ok()
         .and_then(|content| Bundle::from_json(content).ok());
     if let Some(bundle) = bundle {
+        if matches!(
+            &bundle.verification_material.content,
+            VerificationMaterialContent::PublicKey { .. }
+        ) {
+            let artifact = tokio::fs::read(artifact_path).await?;
+            verify_public_key_bundle(&artifact, &bundle, &public_key)?;
+            return Ok(true);
+        }
+
         // Bundle path: needs the trust root for tlog (Rekor) verification.
         let trusted_root = production_trusted_root().await?;
         let artifact = tokio::fs::read(artifact_path).await?;
@@ -429,12 +514,104 @@ pub async fn verify_cosign_signature_with_key(
     Ok(true)
 }
 
+fn verify_public_key_bundle(
+    artifact: &[u8],
+    bundle: &Bundle,
+    public_key: &DerPublicKey,
+) -> Result<()> {
+    use sigstore_verify::bundle::{ValidationOptions, validate_bundle_with_options};
+    use sigstore_verify::crypto::{
+        KeyType, SigningScheme, detect_key_type, verify_signature, verify_signature_prehashed,
+    };
+
+    validate_bundle_with_options(
+        bundle,
+        &ValidationOptions {
+            require_inclusion_proof: true,
+            require_timestamp: false,
+        },
+    )
+    .map_err(|e| AttestationError::Verification(format!("bundle validation failed: {e}")))?;
+
+    let scheme = match detect_key_type(public_key) {
+        KeyType::Ed25519 => SigningScheme::Ed25519,
+        KeyType::EcdsaP256 => SigningScheme::EcdsaP256Sha256,
+        KeyType::Unknown => {
+            return Err(AttestationError::Verification(
+                "unsupported or unrecognized public key type".to_string(),
+            ));
+        }
+    };
+
+    match &bundle.content {
+        SignatureContent::MessageSignature(msg_sig) => {
+            let artifact_hash = Sha256Hash::try_from_slice(&Sha256::digest(artifact))?;
+            if let Some(digest) = &msg_sig.message_digest {
+                if digest.algorithm != HashAlgorithm::Sha2256 {
+                    return Err(AttestationError::Verification(format!(
+                        "unsupported message digest algorithm {}",
+                        digest.algorithm
+                    )));
+                }
+                if digest.digest != artifact_hash {
+                    return Err(AttestationError::Verification(
+                        "message digest in bundle does not match artifact hash".to_string(),
+                    ));
+                }
+            }
+
+            if scheme.uses_sha256() && scheme.supports_prehashed() {
+                verify_signature_prehashed(public_key, &artifact_hash, &msg_sig.signature, scheme)
+            } else {
+                verify_signature(public_key, artifact, &msg_sig.signature, scheme)
+            }
+            .map_err(|e| {
+                AttestationError::Verification(format!("signature verification failed: {e}"))
+            })?;
+        }
+        SignatureContent::DsseEnvelope(envelope) => {
+            let payload = envelope.decode_payload();
+            let pae = sigstore_verify::types::pae(&envelope.payload_type, &payload);
+            if !envelope
+                .signatures
+                .iter()
+                .any(|sig| verify_signature(public_key, &pae, &sig.sig, scheme).is_ok())
+            {
+                return Err(AttestationError::Verification(
+                    "DSSE signature verification failed: no valid signatures found".to_string(),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn verify_slsa_provenance(
     artifact_path: &Path,
     provenance_path: &Path,
     min_level: u8,
 ) -> Result<bool> {
     let artifact = tokio::fs::read(artifact_path).await?;
+    verify_slsa_provenance_artifacts(
+        provenance_path,
+        &[SlsaArtifact::from_bytes(String::new(), &artifact)],
+        min_level,
+    )
+    .await
+}
+
+pub async fn verify_slsa_provenance_artifacts(
+    provenance_path: &Path,
+    artifacts: &[SlsaArtifact],
+    min_level: u8,
+) -> Result<bool> {
+    if artifacts.is_empty() {
+        return Err(AttestationError::SubjectMismatch(
+            "no artifacts supplied for SLSA subject verification".to_string(),
+        ));
+    }
+
     let content = tokio::fs::read_to_string(provenance_path).await?;
     let mut errors = Vec::new();
     let mut trust_roots = TrustRoots::default();
@@ -453,8 +630,8 @@ pub async fn verify_slsa_provenance(
         // Bundle::from_json failure falls through to the DSSE envelope path.
         if let Ok(bundle) = Bundle::from_json(candidate) {
             let result = match trust_roots.for_bundle(&bundle).await {
-                Ok(root) => verify_bundle(&artifact, &bundle, None, root)
-                    .and_then(|_| verify_bundle_slsa(&bundle, &artifact, min_level)),
+                Ok(root) => verify_bundle_for_any_artifact(artifacts, &bundle, root)
+                    .and_then(|_| verify_bundle_slsa_subjects(&bundle, artifacts, min_level)),
                 Err(e) => Err(e),
             };
             match result {
@@ -471,7 +648,7 @@ pub async fn verify_slsa_provenance(
         // Sigstore trust root since slsa-github-generator certs are issued by
         // Sigstore Fulcio.
         let result = match trust_roots.sigstore_root().await {
-            Ok(root) => verify_intoto_envelope(candidate, &artifact, min_level, root),
+            Ok(root) => verify_intoto_envelope_subjects(candidate, artifacts, min_level, root),
             Err(e) => Err(e),
         };
         match result {
@@ -485,9 +662,24 @@ pub async fn verify_slsa_provenance(
     })
 }
 
+#[cfg(test)]
 fn verify_intoto_envelope(
     line: &str,
     artifact: &[u8],
+    min_level: u8,
+    trusted_root: &TrustedRoot,
+) -> Result<()> {
+    verify_intoto_envelope_subjects(
+        line,
+        &[SlsaArtifact::from_bytes(String::new(), artifact)],
+        min_level,
+        trusted_root,
+    )
+}
+
+fn verify_intoto_envelope_subjects(
+    line: &str,
+    artifacts: &[SlsaArtifact],
     min_level: u8,
     trusted_root: &TrustedRoot,
 ) -> Result<()> {
@@ -555,7 +747,7 @@ fn verify_intoto_envelope(
         )));
     }
 
-    verify_intoto_payload(&payload, artifact, min_level)
+    verify_intoto_payload_subjects(&payload, artifacts, min_level)
 }
 
 /// Verify a legacy cosign v1 keyless bundle (`{base64Signature, cert, rekorBundle}`).
@@ -634,7 +826,11 @@ fn verify_dsse_signature(
     verify_raw_signature(pae, &sig_bytes, &public_key)
 }
 
-fn verify_intoto_payload(payload: &[u8], artifact: &[u8], min_level: u8) -> Result<()> {
+fn verify_intoto_payload_subjects(
+    payload: &[u8],
+    artifacts: &[SlsaArtifact],
+    min_level: u8,
+) -> Result<()> {
     let statement: serde_json::Value = serde_json::from_slice(payload).map_err(|e| {
         AttestationError::Verification(format!("Failed to parse SLSA payload: {e}"))
     })?;
@@ -652,23 +848,55 @@ fn verify_intoto_payload(payload: &[u8], artifact: &[u8], min_level: u8) -> Resu
             "SLSA level {min_level} verification is not supported by the native adapter"
         )));
     }
-    let artifact_digest = hex::encode(Sha256::digest(artifact));
     let subjects = statement
         .get("subject")
         .and_then(|v| v.as_array())
         .ok_or_else(|| {
             AttestationError::Verification("SLSA statement missing subject array".to_string())
         })?;
-    let matches_subject = subjects.iter().any(|subject| {
-        subject
-            .get("digest")
-            .and_then(|d| d.get("sha256"))
-            .and_then(|v| v.as_str())
-            .is_some_and(|sha| sha.eq_ignore_ascii_case(&artifact_digest))
-    });
-    if !matches_subject {
-        return Err(AttestationError::Verification(format!(
-            "artifact sha256 {artifact_digest} not found in SLSA statement subjects"
+
+    let subject_digests = subjects
+        .iter()
+        .filter_map(|subject| {
+            subject
+                .get("digest")
+                .and_then(|d| d.get("sha256"))
+                .and_then(|v| v.as_str())
+                .map(|sha| sha.to_ascii_lowercase())
+        })
+        .collect::<std::collections::HashSet<_>>();
+    let named_subjects = subjects
+        .iter()
+        .filter_map(|subject| {
+            let name = subject.get("name")?.as_str()?;
+            let sha = subject
+                .get("digest")
+                .and_then(|d| d.get("sha256"))
+                .and_then(|v| v.as_str())?;
+            Some((name.to_string(), sha.to_ascii_lowercase()))
+        })
+        .collect::<std::collections::HashSet<_>>();
+
+    let mut missing = Vec::new();
+    for artifact in artifacts {
+        let artifact_digest = artifact.sha256.to_ascii_lowercase();
+        let matches_subject = if artifact.name.is_empty() {
+            subject_digests.contains(&artifact_digest)
+        } else {
+            named_subjects.contains(&(artifact.name.clone(), artifact_digest.clone()))
+        };
+        if !matches_subject {
+            if artifact.name.is_empty() {
+                missing.push(artifact_digest);
+            } else {
+                missing.push(format!("{} ({artifact_digest})", artifact.name));
+            }
+        }
+    }
+    if !missing.is_empty() {
+        return Err(AttestationError::SubjectMismatch(format!(
+            "artifact subjects not found in SLSA statement subjects: {}",
+            missing.join(", ")
         )));
     }
     Ok(())
@@ -681,15 +909,34 @@ fn collapse_slsa_errors(
     let unsupported_format = errors
         .iter()
         .all(|error| matches!(error, AttestationError::UnsupportedFormat(_)));
+    let subject_mismatch = errors.iter().any(is_slsa_subject_mismatch);
     let message = join_error_strings(
         errors.into_iter().map(|error| error.to_string()).collect(),
         default,
     );
     Err(if unsupported_format {
         AttestationError::UnsupportedFormat(message)
+    } else if subject_mismatch {
+        AttestationError::SubjectMismatch(message)
     } else {
         AttestationError::Verification(message)
     })
+}
+
+pub fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
+    match error {
+        AttestationError::SubjectMismatch(_) => true,
+        AttestationError::Verification(msg) | AttestationError::Sigstore(msg) => {
+            is_subject_mismatch_message(msg)
+        }
+        _ => false,
+    }
+}
+
+fn is_subject_mismatch_message(message: &str) -> bool {
+    message.contains("artifact hash does not match any subject in attestation")
+        || message.contains("not found in SLSA statement subjects")
+        || message.contains("artifact subjects not found in SLSA statement subjects")
 }
 
 fn join_error_strings(errors: Vec<String>, default: impl FnOnce() -> String) -> String {
@@ -751,8 +998,8 @@ fn is_snappy_content_type(response: &reqwest::Response) -> bool {
         .is_some_and(|content_type| content_type.trim() == "application/x-snappy")
 }
 
-fn verify_bundle(
-    artifact: &[u8],
+fn verify_bundle<'a>(
+    artifact: impl Into<Artifact<'a>>,
     bundle: &Bundle,
     signer_workflow: Option<&str>,
     trusted_root: &TrustedRoot,
@@ -996,7 +1243,33 @@ fn verify_signer_workflow_identity(
 /// level is supported, and the artifact's SHA-256 appears in the statement's
 /// `subject` array. The subject check is the load-bearing part — without it,
 /// a valid SLSA bundle signed for *some* artifact would accept *any* artifact.
-fn verify_bundle_slsa(bundle: &Bundle, artifact: &[u8], min_level: u8) -> Result<()> {
+fn verify_bundle_for_any_artifact(
+    artifacts: &[SlsaArtifact],
+    bundle: &Bundle,
+    root: &TrustedRoot,
+) -> Result<()> {
+    let artifact = artifacts.first().ok_or_else(|| {
+        AttestationError::SubjectMismatch(
+            "no artifacts supplied for SLSA subject verification".to_string(),
+        )
+    })?;
+    let digest = Sha256Hash::from_hex(&artifact.sha256).map_err(|e| {
+        AttestationError::Verification(format!("invalid artifact sha256 digest: {e}"))
+    })?;
+    match verify_bundle(Artifact::from_digest(digest), bundle, None, root) {
+        Ok(()) => Ok(()),
+        Err(e) if is_slsa_subject_mismatch(&e) => {
+            Err(AttestationError::SubjectMismatch(e.to_string()))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn verify_bundle_slsa_subjects(
+    bundle: &Bundle,
+    artifacts: &[SlsaArtifact],
+    min_level: u8,
+) -> Result<()> {
     let payload = match &bundle.content {
         sigstore_verify::types::SignatureContent::DsseEnvelope(envelope) => {
             envelope.decode_payload()
@@ -1007,7 +1280,7 @@ fn verify_bundle_slsa(bundle: &Bundle, artifact: &[u8], min_level: u8) -> Result
             ));
         }
     };
-    verify_intoto_payload(&payload, artifact, min_level)
+    verify_intoto_payload_subjects(&payload, artifacts, min_level)
 }
 
 fn decode_cosign_signature(bytes: &[u8]) -> Vec<u8> {
@@ -1043,7 +1316,7 @@ fn verify_raw_signature(
         .map_err(|e| AttestationError::Verification(format!("signature verification failed: {e}")))
 }
 
-async fn calculate_file_digest_async(path: &Path) -> Result<String> {
+pub async fn calculate_file_digest(path: &Path) -> Result<String> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut hasher = Sha256::new();
     let mut buffer = [0; 8192];
@@ -1111,6 +1384,40 @@ mod tests {
     fn embedded_sigstore_root() -> TrustedRoot {
         TrustedRoot::from_json(sigstore_verify::trust_root::SIGSTORE_PRODUCTION_TRUSTED_ROOT)
             .expect("embedded production trusted_root.json parses")
+    }
+
+    fn slsa_statement(subjects: serde_json::Value) -> Vec<u8> {
+        serde_json::json!({
+            "predicateType": "https://slsa.dev/provenance/v1",
+            "subject": subjects,
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    #[test]
+    fn intoto_payload_accepts_complete_content_subjects() {
+        let artifact = SlsaArtifact::from_bytes("pixi".to_string(), b"binary");
+        let payload = slsa_statement(serde_json::json!([
+            {"name": "pixi", "digest": {"sha256": artifact.sha256.clone()}},
+        ]));
+
+        verify_intoto_payload_subjects(&payload, &[artifact], 1).unwrap();
+    }
+
+    #[test]
+    fn intoto_payload_rejects_partial_content_subjects() {
+        let covered = SlsaArtifact::from_bytes("bin/tool".to_string(), b"tool");
+        let uncovered = SlsaArtifact::from_bytes("README.md".to_string(), b"docs");
+        let payload = slsa_statement(serde_json::json!([
+            {"name": "bin/tool", "digest": {"sha256": covered.sha256.clone()}},
+        ]));
+
+        let err = verify_intoto_payload_subjects(&payload, &[covered, uncovered], 1)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("README.md"));
+        assert!(err.contains("not found in SLSA statement subjects"));
     }
 
     #[test]

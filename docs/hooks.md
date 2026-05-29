@@ -75,6 +75,7 @@ Tool-level postinstall scripts receive the following environment variables:
 - `MISE_TOOL_NAME`: The short name of the tool (e.g., "node", "python")
 - `MISE_TOOL_VERSION`: The version that was installed (e.g., "20.10.0", "3.12.0")
 - `MISE_TOOL_INSTALL_PATH`: The path where the tool was installed
+- Variables from that tool's `install_env` option
 
 ## Task hooks
 

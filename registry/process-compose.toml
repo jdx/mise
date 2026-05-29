@@ -1,3 +1,6 @@
-backends = ["github:F1bonacc1/process-compose"]
+backends = [
+  "aqua:F1bonacc1/process-compose",
+  "github:F1bonacc1/process-compose",
+]
 description = "Process Compose is a simple and flexible scheduler and orchestrator to manage non-containerized applications."
 test = { cmd = "process-compose version --short", expected = "{{version}}" }

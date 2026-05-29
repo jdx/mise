@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 /// Install a tool version
 ///
-/// Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
+/// Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`
 /// Installing alone will not activate the tools so they won't be in PATH.
 /// To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
 /// in the current directory to activate this tool when inside the directory.
@@ -49,15 +49,9 @@ pub struct Install {
 
     /// Show installation output
     ///
-    /// This argument will print plugin output such as download, configuration, and compilation output.
+    /// This argument will print backend output such as download, configuration, and compilation output.
     #[clap(long, short, action = clap::ArgAction::Count)]
     verbose: u8,
-
-    /// Only install versions released before this date
-    ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[clap(long, verbatim_doc_comment)]
-    before: Option<String>,
 
     /// Like --dry-run but exits with code 1 if there are tools to install
     ///
@@ -65,8 +59,14 @@ pub struct Install {
     #[clap(long, verbatim_doc_comment)]
     dry_run_code: bool,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
+    /// Only install versions released before this date or older than this duration
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(long, alias = "before", verbatim_doc_comment)]
+    minimum_release_age: Option<String>,
+
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 
@@ -170,7 +170,7 @@ impl Install {
         let tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;
         let mut versions = if tool_versions.is_empty() {
             warn!("no runtimes to install");
-            warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
+            warn!("specify a version with `mise install <TOOL>@<VERSION>`");
             vec![]
         } else {
             ts.install_all_versions(&mut config, tool_versions, &self.install_opts()?)
@@ -204,7 +204,13 @@ impl Install {
         // ensure that only current versions are sent to lockfile rebuild
         versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
 
-        config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
+        config::rebuild_shims_and_runtime_symlinks(
+            &config,
+            ts,
+            &versions,
+            crate::lockfile::LockfileUpdateMode::Normal,
+        )
+        .await?;
 
         // Warn about tools that were installed but not in any config file
         if !inactive_tools.is_empty() {
@@ -253,11 +259,11 @@ impl Install {
         })
     }
 
-    /// Get the before_date from the CLI --before flag only.
+    /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(before) = &self.before {
-            return Ok(Some(parse_into_timestamp(before)?));
+        if let Some(minimum_release_age) = &self.minimum_release_age {
+            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
         }
         Ok(None)
     }
@@ -349,7 +355,13 @@ impl Install {
         }
         measure!("rebuild_shims_and_runtime_symlinks", {
             let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                &config,
+                ts,
+                &versions,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
         });
         Ok(())
     }

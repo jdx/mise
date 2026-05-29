@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Settings;
 use crate::env::PATH_KEY;
-use crate::file::touch_dir;
+use crate::file::{canonicalize_cached, canonicalize_or_self, touch_dir};
 use crate::path_env::PathEnv;
 use crate::shell::{ActivateOptions, ActivatePrelude, Shell, ShellType, get_shell};
 use crate::toolset::env_cache::CachedEnv;
@@ -60,7 +60,7 @@ pub struct Activate {
     #[clap(long, verbatim_doc_comment)]
     shims: bool,
 
-    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
+    /// Show "mise: <TOOL>@<VERSION>" message when changing directories
     #[clap(long, hide = true)]
     status: bool,
 }
@@ -193,12 +193,10 @@ fn remove_shims() -> std::io::Result<Option<ActivatePrelude>> {
         return Ok(None);
     }
 
-    let shims = dirs::SHIMS
-        .canonicalize()
-        .unwrap_or(dirs::SHIMS.to_path_buf());
+    let shims = canonicalize_or_self(&dirs::SHIMS);
     if env::PATH
         .iter()
-        .filter_map(|p| p.canonicalize().ok())
+        .filter_map(|p| canonicalize_cached(p))
         .contains(&shims)
     {
         let path_env = PathEnv::from_iter(env::PATH.clone());
@@ -211,17 +209,15 @@ fn remove_shims() -> std::io::Result<Option<ActivatePrelude>> {
 }
 
 fn is_dir_in_path(dir: &Path) -> bool {
-    let dir = dir.canonicalize().unwrap_or(dir.to_path_buf());
+    let dir = canonicalize_or_self(dir);
     env::PATH
         .clone()
         .into_iter()
-        .any(|p| p.canonicalize().unwrap_or(p) == dir)
+        .any(|p| canonicalize_or_self(&p) == dir)
 }
 
 fn is_dir_not_in_nix(dir: &Path) -> bool {
-    !dir.canonicalize()
-        .unwrap_or(dir.to_path_buf())
-        .starts_with("/nix/")
+    !canonicalize_or_self(dir).starts_with("/nix/")
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

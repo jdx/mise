@@ -178,7 +178,7 @@ See [Tools](/dev-tools/). In addition to specifying versions, each tool entry ca
 
 - `os`: Restrict installation to certain operating systems
 - `depends`: Install order relative to other tools in this config only; vfox plugin hook dependencies belong in plugin `metadata.lua` (see [Tool Dependencies](/dev-tools/#tool-dependencies))
-- `install_env`: Environment vars used during install
+- `install_env`: Environment vars used during install and tool-level `postinstall`
 - `postinstall`: Command to run after installation completes for that specific tool
 
 Examples:
@@ -305,9 +305,11 @@ See [Monorepo Tasks](/tasks/monorepo) for detailed usage and examples.
 
 ## Global config: `~/.config/mise/config.toml`
 
-mise can be configured in `~/.config/mise/config.toml`. It's like local `mise.toml` files except
-that
-it is used for all directories.
+mise can be configured in `~/.config/mise/config.toml`. It works like a local `mise.toml`, but
+applies to every directory.
+
+Only a few common settings are shown here. See [Settings](/configuration/settings) for the full
+list and descriptions.
 
 ```toml [~/.config/mise/config.toml]
 [tools]
@@ -317,49 +319,18 @@ node = 'lts'
 python = ['3.10', '3.11']
 
 [settings]
-# tools can read the versions files used by other version managers
-# for example, .nvmrc in the case of node's nvm
+# read version files used by other version managers, such as .nvmrc
 idiomatic_version_file_enable_tools = ['node']
 
-# keep downloaded archive/source files for debugging
-always_keep_download = false        # deleted after install; not a cache
-always_keep_install = false         # deleted on failure by default
-
-# configure how frequently (in minutes) to fetch updated plugin repository changes
-# this is updated whenever a new runtime is installed
-# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdx/mise/discussions/6735)
-plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
-
-# config files with these prefixes will be trusted by default
 trusted_config_paths = [
     '~/work/my-trusted-projects',
 ]
 
-verbose = false       # set to true to see full installation output, see `MISE_VERBOSE`
-http_timeout = "30s"  # set the timeout for http requests as duration string, see `MISE_HTTP_TIMEOUT`
-jobs = 4              # number of plugins or runtimes to install in parallel. The default is `4`.
-raw = false           # set to true to directly pipe plugins to stdin/stdout/stderr
-yes = false           # set to true to automatically answer yes to all prompts
+env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
 
-not_found_auto_install = true # see MISE_NOT_FOUND_AUTO_INSTALL
-task.output = "prefix" # see Tasks Runner for more information
-paranoid = false       # see MISE_PARANOID
-
-# shorthands_file is deprecated - use [plugins] in this file (see "plugins" above)
-disable_default_registry = false   # disable the default registry, see `MISE_DISABLE_DEFAULT_REGISTRY`
-disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
-
-experimental = true # enable experimental features
-
-# configure messages displayed when entering directories with config files
-status = {
-  missing_tools = "if_other_versions_installed",
-  show_env = false,
-  show_tools = false,
-}
-
-[env]
-_.file = '.env'
+[settings.status]
+show_env = false
+show_tools = false
 
 # "_" is a special key for information you'd like to put into mise.toml that mise will never parse
 [_]
@@ -438,7 +409,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | python     | `.python-version`, `.python-versions`     |
 | ruby       | `.ruby-version`, `Gemfile`                |
 | rust       | `rust-toolchain.toml`                     |
-| terraform  | `.terraform-version`, `main.tf`           |
+| terraform  | `.terraform-version`                      |
 | terragrunt | `.terragrunt-version`                     |
 | terramate  | `.terramate-version`                      |
 | yarn       | `.yvmrc`, `package.json`                  |
@@ -517,6 +488,17 @@ Default: `$MISE_CONFIG_DIR/config.toml` (Usually `~/.config/mise/config.toml`)
 
 This is the path to the config file.
 
+Use this when you want global writes, such as `mise use` or `mise set` run from
+`$HOME`, to target a different config file. [`MISE_DEFAULT_CONFIG_FILENAME`](#mise_default_config_filename)
+customizes the default local config filename, not the global config path.
+
+### `MISE_DEFAULT_CONFIG_FILENAME`
+
+Default: `mise.toml`
+
+This customizes the default local config filename used when mise creates or
+looks for project config files.
+
 ### `MISE_GLOBAL_CONFIG_ROOT`
 
 Default: `$HOME`
@@ -527,14 +509,13 @@ This is the path which is used as `{{config_root}}` for the global config file.
 
 ### `MISE_ENV_FILE`
 
-Deprecated. Use `env._.file` in `mise.toml` or `~/.config/mise/config.toml` instead.
-
-Set to a filename to read from env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
+Set to a filename to read env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
+This searches for and loads all matching files in the current directory and parent directories.
 Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
-### `MISE_${PLUGIN}_VERSION`
+### `MISE_${TOOL}_VERSION`
 
-Set the version for a runtime. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
+Set the version for a tool. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
 of what is set in `mise.toml`/`.tool-versions`.
 
 ### `MISE_TRUSTED_CONFIG_PATHS`

@@ -11,7 +11,7 @@ use crate::cli::version;
 use crate::cli::version::VERSION;
 use crate::config::{Config, IGNORED_CONFIG_FILES, Settings};
 use crate::env::PATH_KEY;
-use crate::file::display_path;
+use crate::file::{canonicalize_cached, canonicalize_or_self, display_path};
 use crate::git::Git;
 use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
@@ -164,6 +164,7 @@ impl Doctor {
                 .map(|p| p.to_string_lossy().to_string())
                 .collect(),
         );
+        data.insert("plugins".into(), render_plugins_json());
 
         let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tv)| {
             let versions: serde_json::Value = tv
@@ -524,13 +525,13 @@ impl Doctor {
             return;
         }
 
-        let resolve = |p: &PathBuf| p.canonicalize().unwrap_or_else(|_| p.clone());
+        let resolve = |p: &PathBuf| canonicalize_or_self(p);
 
         // Resolve all mise-managed paths for comparison
         let mise_paths_resolved: HashSet<PathBuf> = mise_paths.iter().map(resolve).collect();
 
         // Also exclude the mise binary's own directory
-        let mise_bin_parent = env::MISE_BIN.parent().and_then(|p| p.canonicalize().ok());
+        let mise_bin_parent = env::MISE_BIN.parent().and_then(canonicalize_cached);
 
         // Find the index of the first mise-managed path in the current PATH
         // Note: mise_bin_parent is intentionally excluded here — it's a directory like
@@ -645,43 +646,88 @@ fn render_backends() -> String {
 }
 
 fn render_plugins() -> String {
-    let plugins = backend::list()
-        .into_iter()
-        .filter(|b| {
-            b.plugin()
-                .is_some_and(|p| p.is_installed() && b.get_type() == BackendType::Asdf)
-        })
-        .collect::<Vec<_>>();
+    let plugins = installed_plugins();
     let max_plugin_name_len = plugins
         .iter()
-        .map(|p| p.id().len())
+        .map(|p| p.name().len())
         .max()
         .unwrap_or(0)
         .min(40);
     plugins
         .into_iter()
-        .filter(|b| b.plugin().is_some())
         .map(|p| {
-            let p = p.plugin().unwrap();
             let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
-            let extra = match p {
-                PluginEnum::Asdf(_) | PluginEnum::Vfox(_) | PluginEnum::VfoxBackend(_) => {
-                    let git = Git::new(dirs::PLUGINS.join(p.name()));
-                    match git.get_remote_url() {
-                        Some(url) => {
-                            let sha = git
-                                .current_sha_short()
-                                .unwrap_or_else(|_| "(unknown)".to_string());
-                            format!("{url}#{sha}")
-                        }
-                        None => "".to_string(),
-                    }
-                } // TODO: PluginType::Core => "(core)".to_string(),
-            };
+            let extra = plugin_extra(&p);
             format!("{padded_name}  {}", style::ndim(extra))
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn render_plugins_json() -> serde_json::Value {
+    installed_plugins()
+        .into_iter()
+        .map(|plugin| {
+            let mut value = serde_json::Map::new();
+            value.insert(
+                "type".into(),
+                serde_json::Value::String(plugin_type_name(plugin.get_plugin_type()).to_string()),
+            );
+            if let Some(git) = plugin_git(&plugin)
+                && let Some(url) = git.get_remote_url()
+            {
+                value.insert("url".into(), serde_json::Value::String(url));
+                if let Ok(ref_) = git.current_abbrev_ref() {
+                    value.insert("ref".into(), serde_json::Value::String(ref_));
+                }
+                if let Ok(sha) = git.current_sha_short() {
+                    value.insert("sha".into(), serde_json::Value::String(sha));
+                }
+            }
+            (plugin.name().to_string(), serde_json::Value::Object(value))
+        })
+        .collect::<serde_json::Map<_, _>>()
+        .into()
+}
+
+fn installed_plugins() -> Vec<PluginEnum> {
+    install_state::list_plugins()
+        .iter()
+        .map(|(name, plugin_type)| plugin_type.plugin(name.clone()))
+        .filter(|plugin| plugin.is_installed())
+        .collect()
+}
+
+fn plugin_extra(plugin: &PluginEnum) -> String {
+    let Some(git) = plugin_git(plugin) else {
+        return "".to_string();
+    };
+    match git.get_remote_url() {
+        Some(url) => {
+            let sha = git
+                .current_sha_short()
+                .unwrap_or_else(|_| "(unknown)".to_string());
+            format!("{url}#{sha}")
+        }
+        None => "".to_string(),
+    }
+}
+
+fn plugin_git(plugin: &PluginEnum) -> Option<Git> {
+    let path = dirs::PLUGINS.join(plugin.name());
+    if path.join(".git").exists() {
+        Some(Git::new(path))
+    } else {
+        None
+    }
+}
+
+fn plugin_type_name(plugin_type: PluginType) -> &'static str {
+    match plugin_type {
+        PluginType::Asdf => "asdf",
+        PluginType::Vfox => "vfox",
+        PluginType::VfoxBackend => "vfox_backend",
+    }
 }
 
 fn build_info() -> IndexMap<String, &'static str> {

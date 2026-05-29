@@ -618,7 +618,7 @@
         },
         "disable_backends": {
           "default": [],
-          "description": "Backends to disable such as `asdf` or `pipx`",
+          "description": "Backends to disable for new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. This does not uninstall or disable tools already installed with those backends.",
           "type": "array",
           "items": {
             "type": "string"
@@ -704,8 +704,7 @@
         },
         "env_file": {
           "description": "Path to a file containing environment variables to automatically load.",
-          "type": "string",
-          "deprecated": true
+          "type": "string"
         },
         "env_shell_expand": {
           "description": "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
@@ -868,7 +867,8 @@
             "default_packages_file": {
               "default": "~/.default-go-packages",
               "description": "Path to a file containing default go packages to install when installing go.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "download_mirror": {
               "default": "https://dl.google.com/go",
@@ -1115,7 +1115,8 @@
             },
             "default_packages_file": {
               "description": "Path to a file containing default npm packages to install.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "flavor": {
               "description": "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo.",
@@ -1149,6 +1150,11 @@
               "default": "~/.nodenv",
               "description": "Directory for nodenv.",
               "type": "string"
+            },
+            "npm_shim": {
+              "default": true,
+              "description": "Install a bash wrapper at bin/npm that triggers `mise reshim` after `npm install -g`. Disable to let corepack or a global `npm install -g npm@...` manage `bin/npm` directly.",
+              "type": "boolean"
             },
             "nvm_dir": {
               "default": "~/.nvm",
@@ -1265,6 +1271,11 @@
           "type": "string",
           "deprecated": true
         },
+        "provenance_api_failures_fatal": {
+          "default": true,
+          "description": "Fail when provenance API checks cannot be completed.",
+          "type": "boolean"
+        },
         "python": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1275,7 +1286,8 @@
             },
             "default_packages_file": {
               "description": "Path to a file containing default python packages to install when installing a python version.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "github_attestations": {
               "description": "Enable GitHub Artifact Attestations verification for precompiled Python binaries.",
@@ -1362,7 +1374,8 @@
             "default_packages_file": {
               "default": "~/.default-gems",
               "description": "Path to a file containing default ruby gems to install when installing ruby.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "github_attestations": {
               "description": "Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
@@ -1719,7 +1732,7 @@
         },
         "use_versions_host": {
           "default": true,
-          "description": "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions.",
+          "description": "Set to false to disable using the mise-versions API for version lists, public GitHub release metadata, and GitHub artifact attestations.",
           "type": "boolean"
         },
         "use_versions_host_track": {

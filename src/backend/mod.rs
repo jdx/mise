@@ -18,7 +18,9 @@ use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
-use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
+use crate::file::{
+    canonicalize_cached, display_path, remove_all_with_progress, remove_all_with_warning,
+};
 use crate::install_before::resolve_before_date;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
@@ -82,6 +84,7 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
+    ToolOptionSource::InstallManifest,
     ToolOptionSource::BackendAlias,
     ToolOptionSource::Config,
     ToolOptionSource::InlineBackendArg,
@@ -255,11 +258,7 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
             &backend.id().to_string(),
         )
     });
-    tools.retain(|backend| {
-        !settings
-            .disable_backends
-            .contains(&backend.get_type().to_string())
-    });
+    tools.retain(|backend| !is_disabled_backend_type(&backend.get_type()));
 
     let tools: BackendMap = tools
         .into_iter()
@@ -310,6 +309,26 @@ pub fn remove(short: &str) {
         tools_.remove(short);
         *tools = Some(Arc::new(tools_));
     }
+}
+
+pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+    backend_type
+        .disable_key()
+        .is_some_and(is_disabled_backend_name)
+}
+
+pub fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
+    if is_disabled_backend_type(backend_type) {
+        bail!("backend {backend_type} is disabled by disable_backends");
+    }
+    Ok(())
+}
+
+fn is_disabled_backend_name(backend: &str) -> bool {
+    Settings::get()
+        .disable_backends
+        .iter()
+        .any(|disabled| disabled == backend)
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
@@ -498,6 +517,24 @@ mod tests {
         resolved.apply_overrides(&opts, ToolOptionSource::Registry);
 
         assert!(!has_local_version_listing_option_override(
+            &resolved,
+            &["api_url", "version_prefix"],
+        ));
+    }
+
+    #[test]
+    fn test_remote_version_listing_opts_include_install_manifest_sources() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource, ToolVersionOptions};
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("release-".into()),
+        );
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&opts, ToolOptionSource::InstallManifest);
+
+        assert!(has_local_version_listing_option_override(
             &resolved,
             &["api_url", "version_prefix"],
         ));
@@ -765,8 +802,20 @@ mod tests {
 
         opts.opts.insert(
             "prerelease".to_string(),
-            toml::Value::String("false".into()),
+            toml::Value::String("FALSE".into()),
         );
+        assert!(!backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("1".into()));
+        assert!(backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("0".into()));
+        assert!(!backend.include_prereleases(&opts));
+
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::String("00".into()));
         assert!(!backend.include_prereleases(&opts));
 
         // Defense-in-depth: also accept a native TOML boolean, in case a future
@@ -1210,6 +1259,19 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Backend-specific fast path for exact version requests.
+    ///
+    /// Return `Ok(None)` when the backend cannot cheaply prove that `version`
+    /// is an exact upstream version. Callers must still fall back to normal
+    /// prefix/latest resolution in that case.
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        _version: &str,
+    ) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Backend opt-in for installing an unresolved `latest` request.
     ///
     /// Most backends must resolve `latest` to a concrete version before install.
@@ -1315,21 +1377,16 @@ pub trait Backend: Debug + Send + Sync {
             };
             // Canonicalize to resolve any ".." components before checking.
             // If target doesn't exist (canonicalize fails), don't skip - treat as needing install
-            let Ok(target) = target.canonicalize() else {
-                return None;
-            };
+            let target = canonicalize_cached(&target)?;
             // Canonicalize INSTALLS too for consistent comparison (handles symlinked data dirs)
-            let installs = dirs::INSTALLS
-                .canonicalize()
-                .unwrap_or(dirs::INSTALLS.to_path_buf());
+            let installs =
+                canonicalize_cached(&dirs::INSTALLS).unwrap_or(dirs::INSTALLS.to_path_buf());
             if target.starts_with(&installs) {
                 return Some(path);
             }
             // Also check shared install directories
             for shared_dir in env::shared_install_dirs() {
-                let shared = shared_dir
-                    .canonicalize()
-                    .unwrap_or(shared_dir.to_path_buf());
+                let shared = canonicalize_cached(&shared_dir).unwrap_or(shared_dir.to_path_buf());
                 if target.starts_with(&shared) {
                     return Some(path);
                 }
@@ -1757,14 +1814,20 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         let install_path = tv.install_path();
+        let mut update_install_state = false;
         if install_path.starts_with(*dirs::INSTALLS) {
             install_state::write_backend_meta(self.ba())?;
+            update_install_state = true;
         } else if env::install_path_category(&install_path) != env::InstallPathCategory::Local {
             // For --system/--shared installs, write manifest to the target installs dir
             if let Some(installs_dir) = install_path.parent().and_then(|p| p.parent()) {
                 let manifest = installs_dir.join(".mise-installs.toml");
                 install_state::write_backend_meta_to(self.ba(), &manifest)?;
+                update_install_state = true;
             }
+        }
+        if update_install_state {
+            install_state::add_tool_version(self.ba(), &install_path, &tv.tv_pathname());
         }
 
         self.cleanup_install_dirs(&tv);
@@ -1812,6 +1875,7 @@ pub trait Backend: Debug + Send + Sync {
                 env_vars.entry(k).or_insert(v);
             }
         }
+        env_vars.extend(tv.request.options().core.install_env);
 
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
@@ -1832,13 +1896,20 @@ pub trait Backend: Debug + Send + Sync {
             script.to_string()
         };
 
-        let mut runner = CmdLineRunner::new(&*env::SHELL)
+        let shell = Settings::get().default_inline_shell()?;
+        let (program, shell_args) = shell.split_first().ok_or_else(|| {
+            eyre!(
+                "default inline shell is empty; check unix_default_inline_shell_args / windows_default_inline_shell_args"
+            )
+        })?;
+
+        let mut runner = CmdLineRunner::new(program)
             .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env("MISE_TOOL_VERSION", tv.version.clone())
             .with_pr(ctx.pr.as_ref())
-            .arg(env::SHELL_COMMAND_FLAG)
+            .args(shell_args)
             .arg(&rendered_script)
             .envs(env_vars);
 
@@ -1889,6 +1960,9 @@ pub trait Backend: Debug + Send + Sync {
             rmdir(&tv.download_path())?;
         }
         rmdir(&tv.cache_path())?;
+        if !dryrun {
+            self.cleanup_empty_installs_dir();
+        }
         Ok(())
     }
     async fn uninstall_version_impl(
@@ -1985,6 +2059,18 @@ pub trait Backend: Debug + Send + Sync {
             let _ = remove_all_with_warning(tv.download_path());
         }
     }
+    fn cleanup_empty_installs_dir(&self) {
+        let installs_path = &self.ba().installs_path;
+        if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
+            let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
+            if installs_path
+                .read_dir()
+                .is_ok_and(|mut entries| entries.next().is_none())
+            {
+                let _ = remove_all_with_warning(installs_path);
+            }
+        }
+    }
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
         install_state::incomplete_file_path(&tv.ba().short, &tv.tv_pathname())
     }
@@ -2015,7 +2101,17 @@ pub trait Backend: Debug + Send + Sync {
             .await?
             .filter_by_tool(dependencies)
             .into();
-        ts.resolve(config).await?;
+        // Dependency envs only need PATH entries for tools that are already
+        // available. Resolving offline avoids applying global release-age
+        // cutoffs to helper tools like node/npm while querying another backend.
+        ts.resolve_with_opts(
+            config,
+            &ResolveOptions {
+                offline: true,
+                ..Default::default()
+            },
+        )
+        .await?;
         Ok(ts)
     }
 
@@ -2098,16 +2194,18 @@ pub trait Backend: Debug + Send + Sync {
         // the shim for the dependency would call `mise exec` which would call the
         // shim again infinitely.
         //
-        // `paths_eq` handles case-insensitive matching on macOS/Windows: e.g. if
-        // `$HOME` is mixed-case in PATH (`/Users/Foo`) but lowercase in the
-        // resolved shims path, byte-equal comparison would miss it and the shim
-        // would survive in the child env.
+        // `is_mise_shims_dir` covers both the user shims dir (`dirs::SHIMS`) and
+        // the system shims dir (`MISE_SYSTEM_DATA_DIR/shims`). Both are typically
+        // on PATH in devcontainer/Docker setups built with `mise install --system`;
+        // filtering only one used to leak recursion through the other (#8475
+        // closed the user dir for `dependency_env`, this PR closes the system dir
+        // and aligns with the dual-dir guard already in `which_shim` (#8816)).
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
             let paths: Vec<_> = env::split_paths(path_val).collect();
             let original_len = paths.len();
             let filtered: Vec<_> = paths
                 .into_iter()
-                .filter(|p| !file::paths_eq(&file::replace_path(p), &dirs::SHIMS))
+                .filter(|p| !file::is_mise_shims_dir(p))
                 .collect();
             if filtered.len() != original_len {
                 let joined = env::join_paths(&filtered)?;
@@ -2842,11 +2940,7 @@ pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
 }
 
 fn tool_option_bool(value: &toml::Value) -> bool {
-    match value {
-        toml::Value::Boolean(b) => *b,
-        toml::Value::String(s) => s.parse::<bool>().unwrap_or(false),
-        _ => false,
-    }
+    crate::backend::options::bool_value_or_default("prerelease", value, false)
 }
 
 /// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection
@@ -2936,6 +3030,7 @@ pub(crate) fn fuzzy_match_versions(
 
 pub fn unalias_backend(backend: &str) -> &str {
     match backend {
+        "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
         _ => backend.trim_start_matches("core:"),
@@ -2948,6 +3043,7 @@ fn test_unalias_backend() {
     assert_eq!(unalias_backend("nodejs"), "node");
     assert_eq!(unalias_backend("core:node"), "node");
     assert_eq!(unalias_backend("golang"), "go");
+    assert_eq!(unalias_backend("dotnet-core"), "dotnet");
 }
 
 impl Display for dyn Backend {

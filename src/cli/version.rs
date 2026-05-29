@@ -168,7 +168,7 @@ async fn get_latest_version_call() -> Option<String> {
 async fn get_latest_version_call() -> Option<String> {
     let url = "https://mise.en.dev/VERSION";
     debug!("checking mise version from {}", url);
-    match crate::http::HTTP_VERSION_CHECK.get_text(url).await {
+    match crate::http::HTTP.get_text(url).await {
         Ok(text) => {
             debug!("got version {text}");
             Some(text.trim().to_string())

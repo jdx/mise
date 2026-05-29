@@ -192,9 +192,9 @@ impl NodePlugin {
                 ..TarOptions::new(TarFormat::TarGz)
             },
         )?;
-        self.exec_configure(ctx, opts)?;
-        self.exec_make(ctx, opts)?;
-        self.exec_make_install(ctx, opts)?;
+        self.exec_configure(ctx, opts, tv)?;
+        self.exec_make(ctx, opts, tv)?;
+        self.exec_make_install(ctx, opts, tv)?;
         Ok(())
     }
 
@@ -216,19 +216,33 @@ impl NodePlugin {
             HTTP.download_file(url.clone(), local, Some(pr)).await?;
         }
         ctx.pr.next_operation();
-        let platform_info = tv
-            .lock_platforms
-            .entry(self.get_platform_key())
-            .or_default();
+        let platform_key = self.get_platform_key();
+        let needs_checksum = settings.node.verify
+            && tv
+                .lock_platforms
+                .get(&platform_key)
+                .map(|platform_info| platform_info.checksum.is_none())
+                .unwrap_or(true);
+        let checksum = if needs_checksum {
+            Some(self.get_checksum(ctx, tv, local, version).await?)
+        } else {
+            None
+        };
+        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
         platform_info.url = Some(url.to_string());
-        if settings.node.verify && platform_info.checksum.is_none() {
-            platform_info.checksum = Some(self.get_checksum(ctx, local, version).await?);
+        if let Some(checksum) = checksum {
+            platform_info.checksum.get_or_insert(checksum);
         }
         self.verify_checksum(ctx, tv, local)?;
         Ok(())
     }
 
-    fn sh<'a>(&self, ctx: &'a InstallContext, opts: &BuildOpts) -> eyre::Result<CmdLineRunner<'a>> {
+    fn sh<'a>(
+        &self,
+        ctx: &'a InstallContext,
+        opts: &BuildOpts,
+        tv: &ToolVersion,
+    ) -> eyre::Result<CmdLineRunner<'a>> {
         let settings = Settings::get();
         let mut cmd = CmdLineRunner::new("sh")
             .prepend_path(opts.path.clone())?
@@ -238,22 +252,36 @@ impl NodePlugin {
         if let Some(cflags) = settings.node.cflags() {
             cmd = cmd.env("CFLAGS", cflags);
         }
+        cmd = cmd.envs(tv.install_env());
         Ok(cmd)
     }
 
-    fn exec_configure(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
-        self.sh(ctx, opts)?.arg(&opts.configure_cmd).execute()
+    fn exec_configure(
+        &self,
+        ctx: &InstallContext,
+        opts: &BuildOpts,
+        tv: &ToolVersion,
+    ) -> Result<()> {
+        self.sh(ctx, opts, tv)?.arg(&opts.configure_cmd).execute()
     }
-    fn exec_make(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
-        self.sh(ctx, opts)?.arg(&opts.make_cmd).execute()
+    fn exec_make(&self, ctx: &InstallContext, opts: &BuildOpts, tv: &ToolVersion) -> Result<()> {
+        self.sh(ctx, opts, tv)?.arg(&opts.make_cmd).execute()
     }
-    fn exec_make_install(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
-        self.sh(ctx, opts)?.arg(&opts.make_install_cmd).execute()
+    fn exec_make_install(
+        &self,
+        ctx: &InstallContext,
+        opts: &BuildOpts,
+        tv: &ToolVersion,
+    ) -> Result<()> {
+        self.sh(ctx, opts, tv)?
+            .arg(&opts.make_install_cmd)
+            .execute()
     }
 
     async fn get_checksum(
         &self,
         ctx: &InstallContext,
+        tv: &ToolVersion,
         tarball: &Path,
         version: &str,
     ) -> Result<String> {
@@ -266,7 +294,7 @@ impl NodePlugin {
         )
         .await?;
         if Settings::get().node.gpg_verify != Some(false) && version.starts_with("2") {
-            self.verify_with_gpg(ctx, &shasums_file, version, &tarball_name)
+            self.verify_with_gpg(ctx, tv, &shasums_file, version, &tarball_name)
                 .await?;
         }
         let shasums = file::read_to_string(&shasums_file)?;
@@ -278,6 +306,7 @@ impl NodePlugin {
     async fn verify_with_gpg(
         &self,
         ctx: &InstallContext,
+        tv: &ToolVersion,
         shasums_file: &Path,
         v: &str,
         tarball_name: &str,
@@ -307,6 +336,7 @@ impl NodePlugin {
             .arg(sig_file)
             .arg(shasums_file)
             .with_pr(ctx.pr.as_ref())
+            .envs(tv.install_env())
             .execute()?;
         Ok(())
     }
@@ -344,11 +374,17 @@ impl NodePlugin {
         let settings = Settings::get();
         let default_packages_file = file::replace_path(settings.node.default_packages_file());
         let body = file::read_to_string(&default_packages_file).unwrap_or_default();
-        for package in body.lines() {
-            let package = package.split('#').next().unwrap_or_default().trim();
-            if package.is_empty() {
-                continue;
-            }
+        let mut packages = body
+            .lines()
+            .filter_map(Settings::parse_default_package_line)
+            .peekable();
+        if packages.peek().is_some() {
+            Settings::warn_default_package_file_deprecated(
+                "node.default_packages_file",
+                "npm package",
+            );
+        }
+        for package in packages {
             pr.set_message(format!("install default package: {package}"));
             let npm = self.npm_path(tv);
             CmdLineRunner::new(npm)
@@ -357,6 +393,7 @@ impl NodePlugin {
                 .arg("--global")
                 .arg(package)
                 .envs(config.env().await?)
+                .envs(tv.install_env())
                 .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
@@ -376,6 +413,7 @@ impl NodePlugin {
         CmdLineRunner::new(corepack)
             .with_pr(pr)
             .arg("enable")
+            .envs(tv.install_env())
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()?;
         Ok(())
@@ -392,6 +430,7 @@ impl NodePlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env().await?)
+            .envs(tv.install_env())
             .execute()
     }
 
@@ -406,6 +445,7 @@ impl NodePlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env().await?)
+            .envs(tv.install_env())
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()
     }
@@ -608,7 +648,7 @@ impl Backend for NodePlugin {
         }
         debug!("{:?}: checking installation is working as expected", self);
         self.test_node(&ctx.config, &tv, ctx.pr.as_ref()).await?;
-        if !cfg!(windows) {
+        if !cfg!(windows) && settings.node.npm_shim {
             self.install_npm_shim(&tv)?;
         }
         self.test_npm(&ctx.config, &tv, ctx.pr.as_ref()).await?;

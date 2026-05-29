@@ -1,5 +1,6 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::BackendOptions;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
@@ -9,7 +10,7 @@ use crate::config::Settings;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{GithubAttestationsStatus, PlatformInfo, ProvenanceType};
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -45,6 +46,66 @@ pub struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AquaOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> AquaOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn symlink_bins(&self) -> bool {
+        self.values.bool("symlink_bins")
+    }
+
+    fn var(&self, name: &str) -> Result<Option<String>> {
+        let opts = self.values.raw();
+        if let Some(toml::Value::Table(vars)) = opts.opts.get("vars")
+            && let Some(value) = vars.get(name)
+        {
+            return toml_string_var(&format!("vars.{name}"), value).map(Some);
+        }
+        opts.opts
+            .get(name)
+            .map(|value| toml_string_var(name, value).map(Some))
+            .unwrap_or(Ok(None))
+    }
+
+    fn lockfile_options(&self) -> BTreeMap<String, String> {
+        let mut result = BTreeMap::new();
+        for (key, value) in self.values.raw().iter() {
+            if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
+                continue;
+            }
+            if key == "vars" {
+                if let toml::Value::Table(table) = value {
+                    Self::insert_vars_lockfile_options(&mut result, table);
+                }
+            } else if let Some(value) = toml_value_to_string(value) {
+                let key = if key.starts_with("vars.") {
+                    key.clone()
+                } else {
+                    format!("vars.{key}")
+                };
+                result.entry(key).or_insert(value);
+            }
+        }
+        result
+    }
+
+    fn insert_vars_lockfile_options(result: &mut BTreeMap<String, String>, table: &toml::Table) {
+        for (key, value) in table {
+            if let Some(value) = toml_value_to_string(value) {
+                result.insert(format!("vars.{key}"), value);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -502,7 +563,9 @@ impl Backend for AquaBackend {
     ) -> Result<Vec<PathBuf>> {
         let runtime_path = tv.runtime_path();
         let mise_bins_dir = tv.install_path().join(MISE_BINS_DIR);
-        if self.symlink_bins(tv) || mise_bins_dir.is_dir() {
+        let request_options = tv.request.options();
+        let opts = AquaOptions::new(&request_options);
+        if opts.symlink_bins() || mise_bins_dir.is_dir() {
             return Ok(vec![runtime_path.join(MISE_BINS_DIR)]);
         }
 
@@ -521,8 +584,7 @@ impl Backend for AquaBackend {
             });
         }
 
-        let request_options = tv.request.options();
-        let cache_key = Self::lockfile_options(&request_options);
+        let cache_key = opts.lockfile_options();
         let cache: CacheManager<Vec<PathBuf>> =
             CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
                 .with_fresh_file(install_path.clone())
@@ -561,7 +623,8 @@ impl Backend for AquaBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
-        Self::lockfile_options(&request.options())
+        let request_options = request.options();
+        AquaOptions::new(&request_options).lockfile_options()
     }
 
     fn fuzzy_match_filter(
@@ -632,7 +695,8 @@ impl Backend for AquaBackend {
         // Using package_with_version() here would apply overrides for the current host
         // platform first, which can leak host-specific overrides into cross-platform lock.
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        let opts = tv.request.options();
+        let raw_opts = tv.request.options();
+        let opts = AquaOptions::new(&raw_opts);
         let target_libc = Self::target_variant_libc(target);
         let pkg = pkg.with_version_libc(&versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(target));
@@ -696,8 +760,13 @@ impl Backend for AquaBackend {
                 }
                 result
             }
-            AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
-                (Some(self.github_archive_url(&pkg, &v)), None)
+            AquaPackageType::GithubArchive => (Some(self.github_archive_url(&pkg, &v)), None),
+            AquaPackageType::GithubContent => {
+                if pkg.path.is_some() {
+                    (Some(self.github_content_url(&pkg, &v)), None)
+                } else {
+                    bail!("github_content package requires `path`")
+                }
             }
             AquaPackageType::Http => (pkg.url(&v, target_os, target_arch).ok(), None),
             _ => (None, None),
@@ -717,23 +786,33 @@ impl Backend for AquaBackend {
 
         // Detect provenance from aqua registry config
         let mut provenance = self.detect_provenance_type(&pkg);
-        let mut github_attestations = None;
-
         if matches!(provenance, Some(ProvenanceType::GithubAttestations))
             && let Some(digest) = checksum.as_deref().filter(|d| d.starts_with("sha256:"))
         {
             match self.detect_github_attestations(&pkg, digest).await {
                 Ok(true) => {}
                 Ok(false) => {
-                    github_attestations = Some(GithubAttestationsStatus::Unavailable);
                     provenance = self.detect_non_github_provenance_type(&pkg);
                 }
                 Err(e) => {
+                    if Settings::get().provenance_api_failures_fatal
+                        || !crate::github::sigstore::is_api_failure(match &e {
+                            crate::github::sigstore::DetectError::SourceCreation(e)
+                            | crate::github::sigstore::DetectError::Fetch(e) => e,
+                        })
+                    {
+                        return Err(eyre!("{e}")).wrap_err_with(|| {
+                            format!(
+                                "GitHub attestation API query failed for {}/{}",
+                                pkg.repo_owner, pkg.repo_name
+                            )
+                        });
+                    }
                     warn!(
-                        "GitHub attestation API query failed for {}/{}: {e}. \
-                         Lockfile may not record github-attestations provenance.",
+                        "GitHub attestation API query failed for {}/{}, skipping attestation provenance: {e}",
                         pkg.repo_owner, pkg.repo_name
                     );
+                    provenance = self.detect_non_github_provenance_type(&pkg);
                 }
             }
         }
@@ -776,9 +855,8 @@ impl Backend for AquaBackend {
                 )
                 .await
             {
-                Ok((verified, gh_status)) => {
+                Ok(verified) => {
                     provenance = verified;
-                    github_attestations = gh_status;
                 }
                 Err(e) => {
                     // Clear provenance so install-time verification will run.
@@ -793,15 +871,11 @@ impl Backend for AquaBackend {
                 }
             }
         }
-        if provenance.is_some() {
-            github_attestations = None;
-        }
-
         Ok(PlatformInfo {
             url,
             checksum,
             provenance,
-            github_attestations,
+            github_attestations: None,
             ..Default::default()
         })
     }
@@ -819,7 +893,9 @@ impl AquaBackend {
         let target_libc = Self::target_variant_libc(&target);
         let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(&target));
-        Self::apply_var_options(pkg, &tv.request.options())
+        let raw_opts = tv.request.options();
+        let opts = AquaOptions::new(&raw_opts);
+        Self::apply_var_options(pkg, &opts)
     }
 
     fn to_aqua_platform(target: &PlatformTarget) -> (&str, &str) {
@@ -887,47 +963,17 @@ impl AquaBackend {
         pkg
     }
 
-    fn apply_var_options(pkg: AquaPackage, opts: &ToolVersionOptions) -> Result<AquaPackage> {
+    fn apply_var_options(pkg: AquaPackage, opts: &AquaOptions<'_>) -> Result<AquaPackage> {
         if pkg.vars.is_empty() {
             return Ok(pkg);
         }
         let mut var_values = HashMap::new();
         for var in &pkg.vars {
-            if let Some(value) = aqua_var_option(opts, &var.name)? {
+            if let Some(value) = opts.var(&var.name)? {
                 var_values.insert(var.name.clone(), value);
             }
         }
         pkg.with_var_values(var_values)
-    }
-
-    fn lockfile_options(opts: &ToolVersionOptions) -> BTreeMap<String, String> {
-        let mut result = BTreeMap::new();
-        for (key, value) in opts.iter() {
-            if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
-                continue;
-            }
-            if key == "vars" {
-                if let toml::Value::Table(table) = value {
-                    Self::insert_vars_lockfile_options(&mut result, table);
-                }
-            } else if let Some(value) = toml_value_to_string(value) {
-                let key = if key.starts_with("vars.") {
-                    key.clone()
-                } else {
-                    format!("vars.{key}")
-                };
-                result.entry(key).or_insert(value);
-            }
-        }
-        result
-    }
-
-    fn insert_vars_lockfile_options(result: &mut BTreeMap<String, String>, table: &toml::Table) {
-        for (key, value) in table {
-            if let Some(value) = toml_value_to_string(value) {
-                result.insert(format!("vars.{key}"), value);
-            }
-        }
     }
 
     fn has_native_cosign(cosign: &AquaCosign) -> bool {
@@ -1015,7 +1061,11 @@ impl AquaBackend {
         None
     }
 
-    async fn detect_github_attestations(&self, pkg: &AquaPackage, digest: &str) -> Result<bool> {
+    async fn detect_github_attestations(
+        &self,
+        pkg: &AquaPackage,
+        digest: &str,
+    ) -> std::result::Result<bool, crate::github::sigstore::DetectError> {
         crate::github::sigstore::detect_attestations(
             &pkg.repo_owner,
             &pkg.repo_name,
@@ -1023,7 +1073,6 @@ impl AquaBackend {
             digest,
         )
         .await
-        .map_err(|e| eyre!("{e}"))
     }
 
     /// Verify provenance at lock time by downloading the artifact to a temp directory
@@ -1035,7 +1084,7 @@ impl AquaBackend {
         v: &str,
         artifact_url: &str,
         detected: &ProvenanceType,
-    ) -> Result<(Option<ProvenanceType>, Option<GithubAttestationsStatus>)> {
+    ) -> Result<Option<ProvenanceType>> {
         let tmp_dir = tempfile::tempdir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
@@ -1054,28 +1103,23 @@ impl AquaBackend {
                     .await?
                 {
                     GithubAttestationStatus::Verified => {
-                        Ok((Some(ProvenanceType::GithubAttestations), None))
+                        Ok(Some(ProvenanceType::GithubAttestations))
                     }
-                    GithubAttestationStatus::Unavailable => {
-                        Ok((None, Some(GithubAttestationsStatus::Unavailable)))
-                    }
+                    GithubAttestationStatus::Unavailable => Ok(None),
                 }
             }
             ProvenanceType::Slsa { .. } => {
                 let provenance_url = self
                     .run_slsa_check(&artifact_path, pkg, v, tmp_dir.path(), None)
                     .await?;
-                Ok((
-                    Some(ProvenanceType::Slsa {
-                        url: Some(provenance_url),
-                    }),
-                    None,
-                ))
+                Ok(Some(ProvenanceType::Slsa {
+                    url: Some(provenance_url),
+                }))
             }
             ProvenanceType::Minisign => {
                 self.run_minisign_check(&artifact_path, &filename, pkg, v, tmp_dir.path(), None)
                     .await?;
-                Ok((Some(ProvenanceType::Minisign), None))
+                Ok(Some(ProvenanceType::Minisign))
             }
             ProvenanceType::Cosign => {
                 if let Some(cosign) = Self::binary_cosign_config(pkg) {
@@ -1091,7 +1135,7 @@ impl AquaBackend {
                     self.run_cosign_check(&checksum_path, cosign, pkg, v, tmp_dir.path(), None)
                         .await?;
                 }
-                Ok((Some(ProvenanceType::Cosign), None))
+                Ok(Some(ProvenanceType::Cosign))
             }
         }
     }
@@ -1132,6 +1176,16 @@ impl AquaBackend {
                 "GitHub artifact attestations verification returned false"
             )),
             Err(crate::github::sigstore::AttestationError::NoAttestations) => {
+                Ok(GithubAttestationStatus::Unavailable)
+            }
+            Err(e)
+                if !Settings::get().provenance_api_failures_fatal
+                    && crate::github::sigstore::is_api_failure(&e) =>
+            {
+                warn!(
+                    "GitHub artifact attestations API failed for {}/{}; skipping attestation provenance: {e}",
+                    pkg.repo_owner, pkg.repo_name
+                );
                 Ok(GithubAttestationStatus::Unavailable)
             }
             Err(e) => Err(eyre!(
@@ -1192,8 +1246,51 @@ impl AquaBackend {
                 Ok(provenance_url)
             }
             Ok(false) => Err(eyre!("SLSA provenance verification failed")),
+            Err(e) if crate::github::sigstore::is_slsa_subject_mismatch(&e) => {
+                debug!(
+                    "SLSA provenance did not cover downloaded artifact; trying archive content subjects: {e}"
+                );
+                match self
+                    .run_slsa_archive_content_check(artifact_path, &provenance_path, pkg, v)
+                    .await?
+                {
+                    true => Ok(provenance_url),
+                    false => Err(eyre!("SLSA archive content verification failed")),
+                }
+            }
             Err(e) => Err(e.into()),
         }
+    }
+
+    async fn run_slsa_archive_content_check(
+        &self,
+        artifact_path: &Path,
+        provenance_path: &Path,
+        pkg: &AquaPackage,
+        v: &str,
+    ) -> Result<bool> {
+        let format = pkg.format(v, os(), arch())?;
+        let format = TarFormat::from_ext(format);
+        if !format.is_archive() {
+            return Err(eyre!(
+                "SLSA provenance subject mismatch and content-level fallback is only supported for archives"
+            ));
+        }
+        // Aqua extraction does not auto-strip archive top-level directories.
+        // Keep strip_components=0 so SLSA subjects are compared against the
+        // same relative paths Aqua installs. The GitHub backend has separate
+        // auto-strip behavior and mirrors it in its own fallback.
+        let contents = file::archive_content_files(artifact_path, format, 0)?;
+        let artifacts = contents
+            .into_iter()
+            .map(|content| crate::github::sigstore::SlsaArtifact {
+                name: content.name,
+                sha256: content.sha256,
+            })
+            .collect::<Vec<_>>();
+        crate::github::sigstore::verify_slsa_provenance_artifacts(provenance_path, &artifacts, 1u8)
+            .await
+            .map_err(|e| eyre!("content-level SLSA verification failed: {e}"))
     }
 
     /// Download minisign signature and verify against an already-downloaded artifact.
@@ -1326,8 +1423,21 @@ impl AquaBackend {
             let bundle_path = download_dir.join(get_filename_from_url(&bundle_url));
             HTTP.download_file(&bundle_url, &bundle_path, pr).await?;
 
-            match crate::github::sigstore::verify_cosign_signature(target_path, &bundle_path).await
-            {
+            let opts = cosign.opts(pkg, v, os(), arch())?;
+            let result = if let Some(key_url) = cosign_opt_value(&opts, "--key") {
+                let key_path = download_dir.join(get_filename_from_url(key_url));
+                HTTP.download_file(key_url, &key_path, pr).await?;
+                crate::github::sigstore::verify_cosign_signature_with_key(
+                    target_path,
+                    &bundle_path,
+                    &key_path,
+                )
+                .await
+            } else {
+                crate::github::sigstore::verify_cosign_signature(target_path, &bundle_path).await
+            };
+
+            match result {
                 Ok(true) => {
                     debug!("cosign (bundle) verified");
                     Ok(())
@@ -1768,23 +1878,16 @@ impl AquaBackend {
         // Check if the lockfile expects provenance for this platform, then clear it
         // so we can detect whether verification actually re-set it
         let platform_key = self.get_platform_key();
-        let skip_cached_absent_attestations = !Settings::get().force_provenance_verify()
-            && tv
-                .lock_platforms
-                .get(&platform_key)
-                .is_some_and(PlatformInfo::has_checksum_and_github_attestations_unavailable);
         let locked_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
         let expected_provenance = locked_provenance.as_ref();
-        let mut github_attestations_unavailable = skip_cached_absent_attestations;
 
         // When the lockfile specifies a provenance type, only run that specific mechanism.
         // This prevents false-positive downgrade errors when a tool supports multiple mechanisms
         // (e.g., both minisign and cosign) that would otherwise compete for the provenance slot.
-        let skip_attestations = skip_cached_absent_attestations
-            || expected_provenance.is_some_and(|l| !l.is_github_attestations());
+        let skip_attestations = expected_provenance.is_some_and(|l| !l.is_github_attestations());
         let skip_slsa = expected_provenance.is_some_and(|l| !l.is_slsa());
         let skip_minisign = expected_provenance.is_some_and(|l| !l.is_minisign());
         let skip_cosign = expected_provenance.is_some_and(|l| !l.is_cosign());
@@ -1801,9 +1904,7 @@ impl AquaBackend {
                         pi.provenance = Some(ProvenanceType::GithubAttestations);
                     }
                 }
-                GithubAttestationStatus::Unavailable => {
-                    github_attestations_unavailable = true;
-                }
+                GithubAttestationStatus::Unavailable => {}
             }
         }
         if !skip_slsa {
@@ -1895,15 +1996,6 @@ impl AquaBackend {
                 let platform_key = self.get_platform_key();
                 let platform_info = tv.lock_platforms.entry(platform_key).or_default();
                 platform_info.checksum = Some(checksum_val);
-            }
-        }
-        if github_attestations_unavailable {
-            let platform_key = self.get_platform_key();
-            if let Some(pi) = tv.lock_platforms.get_mut(&platform_key)
-                && pi.checksum.is_some()
-                && pi.provenance.is_none()
-            {
-                pi.github_attestations = Some(GithubAttestationsStatus::Unavailable);
             }
         }
         if let Some(pi) = tv.lock_platforms.get_mut(&platform_key)
@@ -2251,7 +2343,9 @@ impl AquaBackend {
             }
         }
 
-        if self.symlink_bins(tv) {
+        let raw_opts = tv.request.options();
+        let opts = AquaOptions::new(&raw_opts);
+        if opts.symlink_bins() {
             self.create_symlink_bin_dir(tv, &srcs)?;
         }
 
@@ -2273,13 +2367,6 @@ impl AquaBackend {
             }
         }
         Ok(())
-    }
-
-    fn symlink_bins(&self, tv: &ToolVersion) -> bool {
-        tv.request
-            .options()
-            .get_string("symlink_bins")
-            .is_some_and(|v| v == "true" || v == "1")
     }
 
     fn srcs(pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<AquaFileLink>> {
@@ -2376,6 +2463,13 @@ impl AquaBackend {
             file::create_dir_all(parent)?;
         }
 
+        // On case-insensitive filesystems src and dst can be different
+        // strings but the same on-disk file; without this guard the branches
+        // below would overwrite src with a self-referential link.
+        if link.dst.exists() && same_disk_entry(&link.src, &link.dst) {
+            return Ok(());
+        }
+
         if link.hard || (cfg!(windows) && link.explicit_link) {
             trace!("ln {} {}", link.src.display(), link.dst.display());
             if link.dst.is_dir() {
@@ -2408,6 +2502,24 @@ impl AquaBackend {
             file::make_symlink(&target, &link.dst)?;
         }
         Ok(())
+    }
+}
+
+fn same_disk_entry(a: &Path, b: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        match (fs::metadata(a), fs::metadata(b)) {
+            (Ok(am), Ok(bm)) => am.dev() == bm.dev() && am.ino() == bm.ino(),
+            _ => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        match (fs::canonicalize(a), fs::canonicalize(b)) {
+            (Ok(ac), Ok(bc)) => ac == bc,
+            _ => false,
+        }
     }
 }
 
@@ -2478,18 +2590,6 @@ fn toml_value_to_string(value: &toml::Value) -> Option<String> {
     }
 }
 
-fn aqua_var_option(opts: &ToolVersionOptions, name: &str) -> Result<Option<String>> {
-    if let Some(toml::Value::Table(vars)) = opts.opts.get("vars")
-        && let Some(value) = vars.get(name)
-    {
-        return toml_string_var(&format!("vars.{name}"), value).map(Some);
-    }
-    opts.opts
-        .get(name)
-        .map(|value| toml_string_var(name, value).map(Some))
-        .unwrap_or(Ok(None))
-}
-
 fn toml_string_var(key: &str, value: &toml::Value) -> Result<String> {
     match value {
         toml::Value::String(s) => Ok(s.clone()),
@@ -2510,6 +2610,12 @@ fn toml_value_kind(value: &toml::Value) -> &'static str {
         toml::Value::Table(_) => "object",
         toml::Value::Datetime(_) => "datetime",
     }
+}
+
+fn cosign_opt_value<'a>(opts: &'a [String], flag: &str) -> Option<&'a str> {
+    opts.windows(2)
+        .find(|pair| pair[0] == flag)
+        .map(|pair| pair[1].as_str())
 }
 
 fn version_with_prefix<'a>(version: &'a str, version_prefix: Option<&str>) -> Cow<'a, str> {
@@ -2679,6 +2785,7 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
+        let opts = AquaOptions::new(&opts);
         let pkg = AquaBackend::apply_var_options(pkg, &opts).unwrap();
 
         assert_eq!(
@@ -2700,6 +2807,7 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
+        let opts = AquaOptions::new(&opts);
         let err = AquaBackend::apply_var_options(pkg, &opts).unwrap_err();
 
         assert!(
@@ -2713,7 +2821,9 @@ mod tests {
     fn test_apply_var_options_errors_for_missing_required_var() {
         let mut pkg = AquaPackage::default();
         pkg.vars = vec![aqua_var("go_version", true)];
-        let err = AquaBackend::apply_var_options(pkg, &ToolVersionOptions::default()).unwrap_err();
+        let opts = ToolVersionOptions::default();
+        let opts = AquaOptions::new(&opts);
+        let err = AquaBackend::apply_var_options(pkg, &opts).unwrap_err();
 
         assert!(
             err.to_string()
@@ -2742,7 +2852,7 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
-        let lock_opts = AquaBackend::lockfile_options(&opts);
+        let lock_opts = AquaOptions::new(&opts).lockfile_options();
 
         assert_eq!(lock_opts.get("vars.channel"), Some(&"stable".to_string()));
         assert_eq!(lock_opts.get("vars.go_version"), Some(&"1.24".to_string()));
@@ -2769,8 +2879,8 @@ mod tests {
             .insert("vars".to_string(), toml::Value::Table(vars));
 
         assert_eq!(
-            AquaBackend::lockfile_options(&top_level),
-            AquaBackend::lockfile_options(&nested)
+            AquaOptions::new(&top_level).lockfile_options(),
+            AquaOptions::new(&nested).lockfile_options()
         );
     }
 
@@ -2789,7 +2899,7 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
-        let lock_opts = AquaBackend::lockfile_options(&opts);
+        let lock_opts = AquaOptions::new(&opts).lockfile_options();
 
         assert_eq!(lock_opts.get("vars.channel"), Some(&"beta".to_string()));
     }
@@ -2964,6 +3074,30 @@ mod tests {
         .to_string();
 
         assert!(err.contains("destination is a directory"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_create_file_link_skips_when_dst_aliases_src_inode() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let src = tmp.path().join("Godot");
+        fs::write(&src, b"binary contents")?;
+        // hard_link gives portable same-inode src/dst without needing a
+        // case-insensitive filesystem
+        let dst = tmp.path().join("Godot-alias");
+        fs::hard_link(&src, &dst)?;
+
+        AquaBackend::create_file_link(&AquaFileLink {
+            src: src.clone(),
+            dst: dst.clone(),
+            hard: false,
+            explicit_link: false,
+        })?;
+
+        assert!(dst.exists(), "dst must still exist after the early return");
+        assert!(!dst.is_symlink(), "dst must not be replaced with a symlink");
+        assert_eq!(fs::read(&src)?, b"binary contents");
         Ok(())
     }
 

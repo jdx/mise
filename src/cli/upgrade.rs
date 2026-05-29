@@ -1,14 +1,15 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::backend::pipx::PIPXBackend;
-use crate::cli::args::ToolArg;
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
 use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
-    get_versions_needed_by_tracked_configs,
+    get_versions_needed_by_tracked_configs_excluding_locks,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -62,16 +63,6 @@ pub struct Upgrade {
     #[clap(long, short = 'x', value_name = "INSTALLED_TOOL", verbatim_doc_comment)]
     exclude: Vec<ToolArg>,
 
-    /// Only upgrade to versions released before this date
-    ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    /// This can be useful for reproducibility or security purposes.
-    ///
-    /// This only affects fuzzy version matches like "20" or "latest".
-    /// Explicitly pinned versions like "22.5.0" are not filtered.
-    #[clap(long, verbatim_doc_comment)]
-    before: Option<String>,
-
     /// Like --dry-run but exits with code 1 if there are outdated tools
     ///
     /// This is useful for scripts to check if tools need to be upgraded.
@@ -89,8 +80,18 @@ pub struct Upgrade {
     #[clap(long, verbatim_doc_comment)]
     local: bool,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
+    /// Only upgrade to versions released before this date or older than this duration
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    /// This can be useful for reproducibility or security purposes.
+    ///
+    /// This only affects fuzzy version matches like "20" or "latest".
+    /// Explicitly pinned versions like "22.5.0" are not filtered.
+    #[clap(long, alias = "before", verbatim_doc_comment)]
+    minimum_release_age: Option<String>,
+
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 }
@@ -271,6 +272,7 @@ impl Upgrade {
                 refresh_remote_versions: false,
                 inactive: self.inactive,
             },
+            locked: false,
             ..Default::default()
         };
 
@@ -341,14 +343,56 @@ impl Upgrade {
 
         // Rebuild symlinks BEFORE getting versions needed by tracked configs
         // This ensures "latest" symlinks point to the new versions, not the old ones
-        runtime_symlinks::rebuild(config)
+        let ts = config.get_toolset().await?;
+        runtime_symlinks::rebuild_for_toolset(config, ts)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
 
-        // Get versions needed by tracked configs AFTER upgrade
-        // This ensures we don't uninstall versions still needed by other projects
-        let versions_needed_by_tracked =
-            get_versions_needed_by_tracked_configs(config, false, false).await?;
+        // Get versions needed by tracked configs AFTER upgrade. Preserve lockfile pins
+        // from other projects, but ignore stale pre-upgrade locks for configs we just
+        // upgraded so their old versions can still be removed.
+        let successful_backends: HashSet<_> = successful_versions
+            .iter()
+            .flat_map(|v| {
+                [
+                    v.ba().short.clone(),
+                    v.ba().tool_name.clone(),
+                    v.ba().full(),
+                    v.ba().full_without_opts(),
+                ]
+            })
+            .collect();
+        let mut upgraded_config_paths: HashSet<_> = outdated
+            .iter()
+            .filter(|o| backend_matches(&successful_backends, o.tool_version.ba()))
+            .filter_map(|o| o.source.path().map(|path| path.to_path_buf()))
+            .collect();
+        for tvl in ts.versions.values() {
+            if backend_matches(&successful_backends, &tvl.backend)
+                && let Some(path) = tvl.source.path()
+            {
+                upgraded_config_paths.insert(path.to_path_buf());
+            }
+        }
+        for (path, cf) in config.config_files.iter() {
+            let Ok(trs) = cf.to_tool_request_set() else {
+                continue;
+            };
+            if trs
+                .tools
+                .keys()
+                .any(|ba| backend_matches(&successful_backends, ba))
+            {
+                upgraded_config_paths.insert(path.clone());
+            }
+        }
+        let versions_needed_by_tracked = get_versions_needed_by_tracked_configs_excluding_locks(
+            config,
+            true,
+            false,
+            &upgraded_config_paths,
+        )
+        .await?;
 
         // Only uninstall old versions of tools that were successfully upgraded
         // and are not needed by any tracked config
@@ -381,7 +425,6 @@ impl Upgrade {
         }
 
         mpr.finish_progress();
-        let ts = config.get_toolset().await?;
 
         // Fix up sources and requests for lockfile update - CLI args produce
         // ToolSource::Argument but lockfile update only processes ToolSource::MiseToml.
@@ -402,7 +445,13 @@ impl Upgrade {
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
+        config::rebuild_shims_and_runtime_symlinks(
+            config,
+            ts,
+            &successful_versions,
+            crate::lockfile::LockfileUpdateMode::AllowLocked,
+        )
+        .await?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
             PIPXBackend::reinstall_all(config)
@@ -471,14 +520,21 @@ impl Upgrade {
         }
     }
 
-    /// Get the before_date from the CLI --before flag only.
+    /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(before) = &self.before {
-            return Ok(Some(parse_into_timestamp(before)?));
+        if let Some(minimum_release_age) = &self.minimum_release_age {
+            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
         }
         Ok(None)
     }
+}
+
+fn backend_matches(backends: &HashSet<String>, ba: &BackendArg) -> bool {
+    backends.contains(&ba.short)
+        || backends.contains(&ba.tool_name)
+        || backends.contains(&ba.full())
+        || backends.contains(&ba.full_without_opts())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
