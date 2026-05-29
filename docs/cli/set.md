@@ -57,7 +57,8 @@ Can be used multiple times. Requires --age-encrypt.
 The TOML file to update
 
 Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 
 ### `--no-redact`
 

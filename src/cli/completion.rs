@@ -1,6 +1,6 @@
 use crate::cmd::cmd;
 use crate::config::Config;
-use crate::toolset::ToolsetBuilder;
+use crate::toolset::{ResolveOptions, ToolsetBuilder};
 use clap::ValueEnum;
 use clap::builder::PossibleValue;
 use eyre::Result;
@@ -54,7 +54,15 @@ impl Completion {
 
     async fn call_usage(&self, shell: Shell) -> Result<String> {
         let config = Config::get().await?;
-        let toolset = ToolsetBuilder::new().build(&config).await?;
+        // Completion generation only needs enough of the local tool environment to find `usage`;
+        // offline resolution avoids shell-startup network fetches.
+        let toolset = ToolsetBuilder::new()
+            .with_resolve_options(ResolveOptions {
+                offline: true,
+                ..Default::default()
+            })
+            .build(&config)
+            .await?;
         let mut args = vec![
             "generate".into(),
             "completion".into(),

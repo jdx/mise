@@ -1364,6 +1364,10 @@ impl Task {
     }
 
     fn has_render_templates(&self) -> bool {
+        fn path_contains_template(path: &Path) -> bool {
+            path.to_str().is_some_and(contains_template_syntax)
+        }
+
         let deps_have_template = |deps: &[TaskDep]| {
             deps.iter().any(|dep| {
                 contains_template_syntax(&dep.task)
@@ -1400,6 +1404,8 @@ impl Task {
                 .shell
                 .as_ref()
                 .is_some_and(|s| contains_template_syntax(s))
+            || self.allow_read.iter().any(|p| path_contains_template(p))
+            || self.allow_write.iter().any(|p| path_contains_template(p))
             || tools_have_template
     }
 
@@ -1481,6 +1487,26 @@ impl Task {
         {
             *shell = render_str(&mut tera, shell, &tera_ctx)?;
         }
+        let mut render_sandbox_paths = |paths: &mut Vec<PathBuf>| -> Result<()> {
+            let mut rendered = Vec::with_capacity(paths.len());
+            for p in paths.drain(..) {
+                if let Some(path) = p.to_str()
+                    && contains_template_syntax(path)
+                {
+                    let path = render_str(&mut tera, path, &tera_ctx)?;
+                    if !path.trim().is_empty() {
+                        rendered.push(PathBuf::from(path));
+                    }
+                } else {
+                    rendered.push(p);
+                }
+            }
+            *paths = rendered;
+            Ok(())
+        };
+        // Tilde expansion is applied later when task and CLI sandbox paths are normalized.
+        render_sandbox_paths(&mut self.allow_read)?;
+        render_sandbox_paths(&mut self.allow_write)?;
         for (_, v) in &mut self.tools {
             match v {
                 TaskToolValue::String(s) => {
@@ -2277,6 +2303,24 @@ mod tests {
             assert_eq!(t.name, name);
             assert_eq!(t.aliases, aliases);
         }
+    }
+
+    #[tokio::test]
+    async fn test_render_sandbox_allow_paths() {
+        let config = Config::get().await.unwrap();
+        let mut task = Task {
+            allow_read: vec![Path::new("{{ env.HOME }}/read").into()],
+            allow_write: vec![
+                Path::new("{{ \"\" }}").into(),
+                Path::new("{{ env.HOME }}/write").into(),
+            ],
+            ..Default::default()
+        };
+
+        task.render(&config, Path::new(".")).await.unwrap();
+
+        assert_eq!(task.allow_read, vec![crate::env::HOME.join("read")]);
+        assert_eq!(task.allow_write, vec![crate::env::HOME.join("write")]);
     }
 
     #[test]

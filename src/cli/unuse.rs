@@ -21,9 +21,11 @@ use path_absolutize::Absolutize;
 ///   - If `--global` is set, it will use the global config file.
 ///   - If `--path` is set, it will use the config file at the given path.
 ///   - If `--env` is set, it will use `mise.<env>.toml`.
-///   - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.
+///   - If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
 ///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
 ///   - Otherwise just "mise.toml" or global config if cwd is home directory.
+///
+/// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 ///
 /// Will also prune the installed version if no other configurations are using it.
 #[derive(Debug, clap::Args)]
@@ -93,7 +95,13 @@ impl Unuse {
             .await?;
             let config = Config::reset().await?;
             let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                &config,
+                ts,
+                &[],
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
         }
 
         Ok(())

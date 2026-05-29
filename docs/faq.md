@@ -73,8 +73,7 @@ While mise runs great in WSL, native Windows is also supported, though via the u
 someone adds [powershell](https://github.com/jdx/mise/discussions/6733) support.
 
 As you'll need to use shims, this means you won't have environment variables from mise.toml unless you run mise via
-[`mise x`](/cli/exec) or [`mise run`](/cli/run)—though that's actually how I use mise on my mac so
-for me that's my preferred workflow anyway.
+[`mise x`](/cli/exec) or [`mise run`](/cli/run).
 :::
 
 ## How do I use mise with http proxies?
@@ -250,9 +249,13 @@ mise requires you to trust config files that were not created by you. Common iss
   and remove the relevant symlink to un-ignore it.
 - **Symlinked configs**: If your config is symlinked (e.g., via GNU Stow), mise may track the
   symlink target path. Try `mise trust` pointing to the actual file path.
-- **Non-interactive mode**: In non-interactive shells (CI, IDE extensions, scripts), mise will
-  silently skip untrusted configs. Either run `mise trust` beforehand or set
-  [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) in your global settings.
+- **CI**: In detected CI, mise assumes configs are trusted unless paranoid mode is enabled.
+- **Non-interactive mode**: In non-interactive shells outside detected CI, such as IDE extensions or
+  scripts without a TTY, mise cannot prompt you to trust a config. Commands that directly load an
+  untrusted `mise.toml` can fail with an untrusted-config error. Commands that discover previously
+  tracked configs may skip untrusted entries instead. Either run `mise trust` beforehand or set
+  [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) in your global settings
+  for configs you trust.
 - **Global config** (`~/.config/mise/config.toml`) should be auto-trusted. If it's not, run
   `mise trust ~/.config/mise/config.toml` explicitly.
 

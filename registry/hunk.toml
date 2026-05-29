@@ -1,0 +1,12 @@
+aliases = ["hunkdiff"]
+description = "Review-first terminal diff viewer for agentic coders"
+test = { cmd = "hunk --version", expected = "{{version}}" }
+
+[[backends]]
+full = "aqua:modem-dev/hunk"
+
+[[backends]]
+full = "github:modem-dev/hunk"
+
+[backends.options]
+bin = "hunk"

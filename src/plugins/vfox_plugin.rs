@@ -126,7 +126,10 @@ impl VfoxPlugin {
     pub fn vfox(&self) -> Result<(Vfox, mpsc::Receiver<String>)> {
         let settings = Settings::get();
         let env_type = if settings.os() == "linux" {
-            settings.libc().map(str::to_string)
+            settings
+                .libc()
+                .map(str::to_string)
+                .or_else(|| crate::platform::detect_libc().map(str::to_string))
         } else {
             None
         };

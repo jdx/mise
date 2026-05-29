@@ -3,7 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
-use crate::file::{display_path, is_executable};
+use crate::file::{display_path, is_executable, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
@@ -49,6 +49,20 @@ async fn acquire_runtime_lock(interactive: bool) -> RuntimeLockGuard<'static> {
         RuntimeLockGuard::Write(TASK_RUNTIME_LOCK.write().await)
     } else {
         RuntimeLockGuard::Read(TASK_RUNTIME_LOCK.read().await)
+    }
+}
+
+fn resolve_task_sandbox_path(p: &Path, task_base: Option<&Path>) -> PathBuf {
+    if p.as_os_str().is_empty() {
+        return PathBuf::new();
+    }
+    let p = replace_path(p);
+    if p.is_absolute() {
+        p
+    } else if let Some(base) = task_base {
+        base.join(p)
+    } else {
+        p
     }
 }
 
@@ -143,15 +157,8 @@ impl TaskExecutor {
         config: &Arc<Config>,
     ) -> Result<SandboxConfig> {
         let task_base = task.dir(config).await?;
-        let resolve_task_path = |p: &PathBuf| -> PathBuf {
-            if p.is_absolute() {
-                p.clone()
-            } else if let Some(base) = &task_base {
-                base.join(p)
-            } else {
-                p.clone()
-            }
-        };
+        let resolve_task_path =
+            |p: &PathBuf| -> PathBuf { resolve_task_sandbox_path(p, task_base.as_deref()) };
         let mut sandbox = SandboxConfig {
             deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
@@ -1530,6 +1537,29 @@ mod tests {
         env.insert((*crate::env::PATH_KEY).to_string(), path.to_string());
         env.insert("OTHER".to_string(), "unchanged".to_string());
         env
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_expands_home_before_task_base() {
+        let resolved =
+            resolve_task_sandbox_path(Path::new("~/sandbox-path"), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, crate::dirs::HOME.join("sandbox-path"));
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_uses_task_base_for_relative_paths() {
+        let resolved =
+            resolve_task_sandbox_path(Path::new("sandbox-path"), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, PathBuf::from("/task/base/sandbox-path"));
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_preserves_empty_paths_for_filtering() {
+        let resolved = resolve_task_sandbox_path(Path::new(""), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, PathBuf::new());
     }
 
     #[test]

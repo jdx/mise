@@ -36,13 +36,12 @@ brew install mise
 == Windows
 ::: code-group
 
-```shell [winget]
-winget install jdx.mise
+```shell [scoop]
+scoop install mise
 ```
 
-```shell [scoop]
-# https://github.com/ScoopInstaller/Main/pull/6374
-scoop install mise
+```shell [winget]
+winget install jdx.mise
 ```
 
 ```shell [chocolatey]

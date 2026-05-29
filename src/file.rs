@@ -738,6 +738,60 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &env::PATH_NON_PRISTINE)
 }
 
+/// Canonicalize a path and cache successful resolutions for the current process.
+///
+/// Use this for repeated comparisons against stable roots or PATH entries. Failed
+/// canonicalizations are not cached because many callers handle paths that may be
+/// created later in the same process.
+pub fn canonicalize_cached(path: &Path) -> Option<PathBuf> {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
+
+    if !path.is_absolute() {
+        return path.canonicalize().ok();
+    }
+    if let Some(path) = CACHE.lock().unwrap().get(path).cloned() {
+        return Some(path);
+    }
+    let canonicalized = path.canonicalize().ok()?;
+    CACHE
+        .lock()
+        .unwrap()
+        .insert(path.to_path_buf(), canonicalized.clone());
+    Some(canonicalized)
+}
+
+/// Canonicalize a path using the process cache, falling back to the original
+/// path when canonicalization fails.
+pub fn canonicalize_or_self(path: &Path) -> PathBuf {
+    canonicalize_cached(path).unwrap_or_else(|| path.to_path_buf())
+}
+
+/// Returns true if `path` is one of mise's shim directories.
+///
+/// Two dirs qualify: the user shims dir (`dirs::SHIMS`) and the system shims
+/// dir (`$MISE_SYSTEM_DATA_DIR/shims`). Devcontainer / Docker setups built
+/// with `mise install --system` put both on PATH, so subprocess-env filters
+/// that strip "the shims dir" must consider both — otherwise the recursion
+/// these filters were added to prevent (#8475 for `dependency_env`, #8816
+/// for `which_shim`, this for the file.rs helpers) leaks back in through the
+/// remaining dir.
+///
+/// Uses `paths_eq` + `replace_path` for the fast path (expands `~`,
+/// case-insensitive on macOS/Windows), then falls back to `canonicalize_or_self`
+/// so symlinked roots (e.g. `/usr/local/share` → `/private/usr/local/share` on
+/// macOS) still match — the cached helper keeps this off the filesystem hot path.
+pub fn is_mise_shims_dir(path: &Path) -> bool {
+    let resolved = replace_path(path);
+    let sys_shims = env::MISE_SYSTEM_DATA_DIR.join("shims");
+    if paths_eq(&resolved, &dirs::SHIMS) || paths_eq(&resolved, &sys_shims) {
+        return true;
+    }
+    let canon_input = canonicalize_or_self(&resolved);
+    let canon_user = canonicalize_or_self(&dirs::SHIMS);
+    let canon_sys = canonicalize_or_self(&sys_shims);
+    paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
+}
+
 /// Build a PATH value with mise shims filtered out, suitable for passing to
 /// subprocesses via `.env("PATH", ...)`. Prevents infinite recursion when a
 /// subprocess (e.g. `gh auth token`, `git credential fill`) resolves to a
@@ -747,10 +801,9 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
 /// shims from an arbitrary PATH string (e.g. from `PRISTINE_ENV`), use
 /// `strip_shims_from_path` instead.
 pub fn path_env_without_shims() -> std::ffi::OsString {
-    let shim_dir = &*dirs::SHIMS;
     let filtered: Vec<_> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !paths_eq(&replace_path(p), shim_dir))
+        .filter(|p| !is_mise_shims_dir(p))
         .cloned()
         .collect();
     std::env::join_paths(filtered)
@@ -761,22 +814,20 @@ pub fn path_env_without_shims() -> std::ffi::OsString {
 /// subprocess receives a custom env map (e.g. `PRISTINE_ENV`) rather
 /// than inheriting the current process's PATH.
 pub fn strip_shims_from_path(path_val: &str) -> String {
-    let shim_dir = &*dirs::SHIMS;
-    let filtered = env::split_paths(path_val).filter(|p| !paths_eq(&replace_path(p), shim_dir));
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_shims_dir(p));
     std::env::join_paths(filtered)
         .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
         .to_string_lossy()
         .into_owned()
 }
 
-/// returns the first executable in PATH, excluding the mise shim directory
+/// returns the first executable in PATH, excluding the mise shim directories
 /// use this for internal tool lookups to avoid recursive shim invocations
 /// (shims call `mise exec`, which would re-enter the same code path)
 pub fn which_no_shims<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
-    let shim_dir = &*dirs::SHIMS;
     let paths: Vec<PathBuf> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !paths_eq(&replace_path(p), shim_dir))
+        .filter(|p| !is_mise_shims_dir(p))
         .cloned()
         .collect();
     _which(name, &paths)

@@ -6,6 +6,7 @@ use crate::env::TERM_WIDTH;
 use crate::lockfile::{Lockfile, lockfile_path_for_config};
 use crate::registry::REGISTRY;
 use crate::registry::tool_enabled;
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::{backend, parallel};
 pub use builder::{ConfigScope, ToolsetBuilder};
 use console::truncate_str;
@@ -171,16 +172,23 @@ impl Toolset {
     }
 
     pub async fn list_installed_versions(&self, _config: &Arc<Config>) -> Result<Vec<TVTuple>> {
-        let current_versions: HashMap<(String, String), TVTuple> = self
+        let current_versions: HashMap<(PathBuf, String), TVTuple> = self
             .list_current_versions()
             .into_iter()
-            .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
+            .map(|(p, tv)| {
+                (
+                    (p.ba().installs_path.clone(), tv.version.clone()),
+                    (p.clone(), tv),
+                )
+            })
             .collect();
         let current_versions = Arc::new(current_versions);
         let mut versions = vec![];
-        for b in backend::list().into_iter() {
+        for b in self.list_backends_for_installed_version_listing() {
             for v in b.list_installed_versions() {
-                if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
+                if let Some((p, tv)) =
+                    current_versions.get(&(b.ba().installs_path.clone(), v.clone()))
+                {
                     versions.push((p.clone(), tv.clone()));
                 } else {
                     // The version string came from an on-disk install directory,
@@ -205,6 +213,30 @@ impl Toolset {
             }
         }
         Ok(versions)
+    }
+
+    pub(crate) fn list_cached_and_current_backends(&self) -> backend::BackendList {
+        // Backends with explicit tool options intentionally bypass the global
+        // backend cache. Prefer current toolset backends so same-process
+        // rebuilds keep configured options like bin_path and asset_pattern.
+        self.list_current_versions()
+            .into_iter()
+            .map(|(backend, _)| backend)
+            .chain(backend::list())
+            .unique_by(|backend| backend.ba().installs_path.clone())
+            .collect()
+    }
+
+    fn list_backends_for_installed_version_listing(&self) -> backend::BackendList {
+        // Path-based deduping is correct for install-dir rebuilds, but installed
+        // versions are keyed by backend short name in install_state. vfox file://
+        // plugins create a generated plugin backend and a file-url backend with
+        // the same install path, and the file-url backend owns the versions.
+        self.list_cached_and_current_backends()
+            .into_iter()
+            .chain(backend::list())
+            .unique_by(|backend| backend.ba().short.clone())
+            .collect()
     }
 
     pub fn list_current_requests(&self) -> Vec<&ToolRequest> {
@@ -331,7 +363,9 @@ impl Toolset {
                     warn!("Error getting outdated info for {tv}: {e:#}");
                 }
             }
-            if t.symlink_path(&tv).is_some() {
+            if let Some(symlink_path) = t.symlink_path(&tv)
+                && !is_runtime_symlink(&symlink_path)
+            {
                 trace!("skipping symlinked version {tv}");
                 // do not consider symlinked versions to be outdated
                 return Ok(outdated);
@@ -630,21 +664,36 @@ pub async fn get_versions_needed_by_tracked_configs(
     use_locked_version: bool,
     offline: bool,
 ) -> Result<std::collections::HashSet<(String, String)>> {
-    let mut needed = std::collections::HashSet::new();
-    // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
-    // passes false because it checks what tracked configs resolve to after an
-    // upgrade, before their lockfiles have been updated.
-    // Prune also passes offline=true: it only protects installed versions, so
-    // remote resolution can never affect the outcome and just adds latency.
-    let opts = ResolveOptions {
+    get_versions_needed_by_tracked_configs_excluding_locks(
+        config,
         use_locked_version,
         offline,
-        ..Default::default()
-    };
+        &HashSet::new(),
+    )
+    .await
+}
+
+/// Like [`get_versions_needed_by_tracked_configs`], but ignores lockfile pins
+/// for the provided config paths.
+pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
+    config: &Arc<Config>,
+    use_locked_version: bool,
+    offline: bool,
+    exclude_locked_config_paths: &HashSet<PathBuf>,
+) -> Result<std::collections::HashSet<(String, String)>> {
+    let mut needed = std::collections::HashSet::new();
+    // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
+    // also protects lockfiles for other tracked projects, but excludes configs
+    // it just upgraded so stale locks there do not keep the old version alive.
+    // Prune also passes offline=true: it only protects installed versions, so
+    // remote resolution can never affect the outcome and just adds latency.
     for (path, cf) in config.get_tracked_config_files().await? {
-        // Prune should protect versions pinned by other tracked projects'
-        // lockfiles. Upgrade passes use_locked_version=false because it must
-        // decide whether old versions are still needed after upgrading.
+        let use_locked_version = use_locked_version && !exclude_locked_config_paths.contains(&path);
+        let opts = ResolveOptions {
+            use_locked_version,
+            offline,
+            ..Default::default()
+        };
         if use_locked_version && Settings::get().lockfile_enabled() {
             let (lockfile_path, _) = lockfile_path_for_config(&path);
             match Lockfile::read(&lockfile_path) {
