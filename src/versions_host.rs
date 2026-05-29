@@ -52,6 +52,8 @@ struct VersionsResponse {
     versions: indexmap::IndexMap<String, VersionEntry>,
 }
 
+const VERSION_LIST_RETRIES: i64 = 1;
+
 #[derive(serde::Deserialize)]
 struct VersionEntry {
     created_at: toml::value::Datetime,
@@ -97,7 +99,10 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
     // Use TOML format which includes created_at timestamps
     let url = format!("https://mise-versions.jdx.dev/tools/{}.toml", tool);
     let versions: Vec<VersionInfo> = match HTTP_FETCH
-        .get_text_with_headers(&url, &VERSIONS_HOST_HEADERS)
+        .get_text_request(&url)
+        .headers(&VERSIONS_HOST_HEADERS)
+        .retries(VERSION_LIST_RETRIES)
+        .send()
         .await
     {
         Ok(body) => {
