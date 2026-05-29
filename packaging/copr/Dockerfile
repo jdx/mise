@@ -1,4 +1,4 @@
-FROM fedora:45@sha256:8b838b3253cb855b1e5c3e1366fd0cda28cd1cc4c3517d625847172fd4ac6869
+FROM fedora:45@sha256:0c1f63ed8fb818fad16cf6ae091598c410a21d2e1a9adf183beb93189299bfba
 LABEL maintainer="jdx"
 
 # Install packaging dependencies
