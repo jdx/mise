@@ -1,3 +1,6 @@
-backends = ["npm:@sourcegraph/amp"]
+backends = [
+  { full = "npm:@ampcode/cli", options = { allow_builds = [
+    "@ampcode/cli",
+  ] } },
+]
 description = "An agentic coding tool built by Sourcegraph"
-test = { cmd = "amp --version", expected = "{{version}}" }
