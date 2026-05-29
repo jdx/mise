@@ -137,8 +137,8 @@ impl OutdatedInfo {
         }
         if bump {
             let old = oi.tool_version.request.version();
-            let old = old.strip_prefix(&prefix).unwrap_or_default();
-            let new = oi.latest.strip_prefix(&prefix).unwrap_or_default();
+            let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
+            let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
             if let Some(bumped_version) = check_semver_bump(old, new)
                 && bumped_version != oi.tool_version.request.version()
             {
@@ -515,6 +515,20 @@ mod tests {
         assert_eq!(prefixed_latest_query("V", "3.13.1"), None);
         assert_eq!(prefixed_latest_query("", "17.0.7"), None);
         assert_eq!(prefixed_latest_query("temurin-", ""), None);
+    }
+
+    #[test]
+    fn test_v_prefix_bump_preserves_bare_latest_version() {
+        let prefix = "v";
+        let old = "v3.12.0";
+        let latest = "3.13.1";
+
+        let old = old.strip_prefix(prefix).unwrap_or(old);
+        let new = latest.strip_prefix(prefix).unwrap_or(latest);
+        let bumped = check_semver_bump(old, new).unwrap();
+
+        assert_eq!(bumped, "3.13.1");
+        assert_eq!(format!("{prefix}{bumped}"), "v3.13.1");
     }
 
     #[tokio::test]
