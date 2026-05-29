@@ -2447,7 +2447,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--configs",
           description:
-            "Prune only tracked and trusted configuration links that point to non-existent configurations",
+            "Prune only tracked and trusted configuration links that point to nonexistent configurations",
           isRepeatable: false,
         },
         {
