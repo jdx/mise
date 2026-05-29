@@ -112,7 +112,7 @@ local function parse(text,limit) -- {{{
 		-- tpl-placeholders and attributes {{{
 		text=text
 			:gsub(
-				"(=[%s]-)".. -- only match attr.values, and not random strings between two random apostrophs
+				"(=[%s]-)".. -- only match attr.values, and not random strings between two random apostrophes
 				"(%b'')",
 				function(...)return g(2,...)end
 			)
