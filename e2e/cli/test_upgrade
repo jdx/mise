@@ -206,6 +206,34 @@ assert_contains "cat mise.lock" "3.0.1"
 assert_not_contains "cat mise.lock" "2.0.0"
 rm -f mise.toml mise.lock
 
+# Test: upgrading one tracked project should preserve versions pinned by another tracked lockfile
+rm -rf tracked-upgrade
+mkdir -p tracked-upgrade/foo tracked-upgrade/bar
+mise uninstall dummy --all || true
+for project in tracked-upgrade/foo tracked-upgrade/bar; do
+  cat <<'EOF' >"$project/mise.toml"
+[tools]
+dummy = "latest"
+EOF
+  cat <<'EOF' >"$project/mise.lock"
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+done
+mise install dummy@1.0.0
+(cd tracked-upgrade/foo && mise ls dummy >/dev/null)
+(cd tracked-upgrade/bar && mise ls dummy >/dev/null)
+(cd tracked-upgrade/bar && mise upgrade dummy@2.0.0)
+assert_contains "mise ls --installed dummy" "1.0.0"
+assert_contains "mise ls --installed dummy" "2.0.0"
+assert_contains "cd tracked-upgrade/foo && mise ls dummy" "1.0.0"
+assert_not_contains "cd tracked-upgrade/foo && mise ls dummy" "missing"
+assert_contains "cat tracked-upgrade/foo/mise.lock" "1.0.0"
+assert_contains "cat tracked-upgrade/bar/mise.lock" "2.0.0"
+assert_not_contains "cat tracked-upgrade/bar/mise.lock" "1.0.0"
+rm -rf tracked-upgrade
+
 # Test: upgrading a global fuzzy version should update the global lockfile
 cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
 [tools]

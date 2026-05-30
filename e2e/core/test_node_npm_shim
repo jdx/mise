@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Tests the node.npm_shim setting plumbing (config + MISE_NODE_NPM_SHIM env).
+# The install-time behavior is covered by test_node_npm_shim_slow.
+
+# Defaults to true (preserves the historical npm wrapper behavior).
+assert "mise settings get node.npm_shim" "true"
+
+# Configurable via `mise settings set` / mise.toml.
+mise settings set node.npm_shim false
+assert "mise settings get node.npm_shim" "false"
+mise settings unset node.npm_shim
+assert "mise settings get node.npm_shim" "true"
+
+# Overridable via the MISE_NODE_NPM_SHIM env var.
+MISE_NODE_NPM_SHIM=0 assert "mise settings get node.npm_shim" "false"
+MISE_NODE_NPM_SHIM=1 assert "mise settings get node.npm_shim" "true"

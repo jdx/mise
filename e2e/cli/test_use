@@ -34,6 +34,10 @@ mise use --pin dummy@1
 assert "cat mise.toml" '[tools]
 dummy = "1.0.0"'
 
+assert_fail "mise use dummy@--version" "must not start with '-'"
+assert "cat mise.toml" '[tools]
+dummy = "1.0.0"'
+
 MISE_PIN=1 mise use --fuzzy dummy@1
 assert "cat mise.toml" '[tools]
 dummy = "1"'

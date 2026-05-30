@@ -83,7 +83,7 @@ export MISE_NPM_PACKAGE_MANAGER=pnpm
 
 cat >.mise.toml <<EOF
 [tools]
-"npm:tiny" = { version = "latest", pnpm_args = "--loglevel=warn" }
+"npm:tiny" = { version = "latest", pnpm_args = "--loglevel=warn", allow_builds = ["tiny"] }
 EOF
 PNPM_DEBUG_LOG="$TMPDIR/pnpm_debug.log"
 if ! MISE_DEBUG=1 mise install >"$PNPM_DEBUG_LOG" 2>&1; then
@@ -93,6 +93,7 @@ if ! MISE_DEBUG=1 mise install >"$PNPM_DEBUG_LOG" 2>&1; then
 fi
 assert_contains "cat '$PNPM_DEBUG_LOG'" "--config.minimumReleaseAge="
 assert_contains "cat '$PNPM_DEBUG_LOG'" "--loglevel=warn"
+assert_contains "cat '$PNPM_DEBUG_LOG'" "--allow-build=tiny"
 echo "✓ npm backend successfully installs package using pnpm (package_manager=pnpm)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -105,7 +106,7 @@ export MISE_NPM_PACKAGE_MANAGER=aube
 # Pin to the current aube release checked for this test. Bypass
 # MISE_MINIMUM_RELEASE_AGE because the global filter is set to test the
 # package-manager flag plumbing below.
-AUBE_TEST_VERSION="1.15.0"
+AUBE_TEST_VERSION="1.16.0"
 if ! command -v aube >/dev/null 2>&1; then
   echo "aube not available in test environment, installing..."
   assert_succeed "env -u MISE_MINIMUM_RELEASE_AGE mise use aube@$AUBE_TEST_VERSION"
@@ -113,7 +114,7 @@ fi
 
 cat >.mise.toml <<EOF
 [tools]
-"npm:tiny" = { version = "latest", aube_args = "--reporter append-only" }
+"npm:tiny" = { version = "latest", aube_args = "--reporter append-only", allow_builds = "tiny" }
 EOF
 AUBE_DEBUG_LOG="$TMPDIR/aube_debug.log"
 if ! MISE_DEBUG=1 mise install >"$AUBE_DEBUG_LOG" 2>&1; then
@@ -123,6 +124,7 @@ if ! MISE_DEBUG=1 mise install >"$AUBE_DEBUG_LOG" 2>&1; then
 fi
 assert_contains "cat '$AUBE_DEBUG_LOG'" "--reporter"
 assert_contains "cat '$AUBE_DEBUG_LOG'" "append-only"
+assert_contains "cat '$AUBE_DEBUG_LOG'" "--allow-build=tiny"
 echo "✓ npm backend successfully installs package using aube (package_manager=aube)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 

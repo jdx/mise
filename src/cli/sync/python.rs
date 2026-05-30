@@ -32,7 +32,13 @@ impl SyncPython {
         }
         let config = Config::get().await?;
         let ts = config.get_toolset().await?;
-        config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
+        config::rebuild_shims_and_runtime_symlinks(
+            &config,
+            ts,
+            &[],
+            crate::lockfile::LockfileUpdateMode::Normal,
+        )
+        .await?;
         Ok(())
     }
 

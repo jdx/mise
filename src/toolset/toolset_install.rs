@@ -59,7 +59,13 @@ impl Toolset {
         let installed = self.install_all_versions(config, versions, opts).await?;
         if !installed.is_empty() {
             let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(config, ts, &installed).await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                config,
+                ts,
+                &installed,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
             // Re-check what's still missing after installation
             let still_missing = self.list_missing_versions(config).await;
             return Ok((installed, still_missing));
@@ -546,7 +552,13 @@ impl Toolset {
                     .await?;
                 if !versions.is_empty() {
                     let ts = config.get_toolset().await?;
-                    config::rebuild_shims_and_runtime_symlinks(config, ts, &versions).await?;
+                    config::rebuild_shims_and_runtime_symlinks(
+                        config,
+                        ts,
+                        &versions,
+                        crate::lockfile::LockfileUpdateMode::Normal,
+                    )
+                    .await?;
                 }
                 return Ok(Some(versions));
             }

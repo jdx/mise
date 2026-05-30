@@ -664,21 +664,36 @@ pub async fn get_versions_needed_by_tracked_configs(
     use_locked_version: bool,
     offline: bool,
 ) -> Result<std::collections::HashSet<(String, String)>> {
-    let mut needed = std::collections::HashSet::new();
-    // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
-    // passes false because it checks what tracked configs resolve to after an
-    // upgrade, before their lockfiles have been updated.
-    // Prune also passes offline=true: it only protects installed versions, so
-    // remote resolution can never affect the outcome and just adds latency.
-    let opts = ResolveOptions {
+    get_versions_needed_by_tracked_configs_excluding_locks(
+        config,
         use_locked_version,
         offline,
-        ..Default::default()
-    };
+        &HashSet::new(),
+    )
+    .await
+}
+
+/// Like [`get_versions_needed_by_tracked_configs`], but ignores lockfile pins
+/// for the provided config paths.
+pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
+    config: &Arc<Config>,
+    use_locked_version: bool,
+    offline: bool,
+    exclude_locked_config_paths: &HashSet<PathBuf>,
+) -> Result<std::collections::HashSet<(String, String)>> {
+    let mut needed = std::collections::HashSet::new();
+    // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
+    // also protects lockfiles for other tracked projects, but excludes configs
+    // it just upgraded so stale locks there do not keep the old version alive.
+    // Prune also passes offline=true: it only protects installed versions, so
+    // remote resolution can never affect the outcome and just adds latency.
     for (path, cf) in config.get_tracked_config_files().await? {
-        // Prune should protect versions pinned by other tracked projects'
-        // lockfiles. Upgrade passes use_locked_version=false because it must
-        // decide whether old versions are still needed after upgrading.
+        let use_locked_version = use_locked_version && !exclude_locked_config_paths.contains(&path);
+        let opts = ResolveOptions {
+            use_locked_version,
+            offline,
+            ..Default::default()
+        };
         if use_locked_version && Settings::get().lockfile_enabled() {
             let (lockfile_path, _) = lockfile_path_for_config(&path);
             match Lockfile::read(&lockfile_path) {

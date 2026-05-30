@@ -387,10 +387,9 @@ impl PIPXBackend {
 
     fn pip_uploaded_prior_to_args(before_date: Option<Timestamp>) -> Vec<OsString> {
         match before_date {
-            Some(before_date) => vec![
-                "--pip-args".into(),
-                format!("--uploaded-prior-to={before_date}").into(),
-            ],
+            Some(before_date) => {
+                vec![format!("--pip-args=--uploaded-prior-to={before_date}").into()]
+            }
             None => vec![],
         }
     }
@@ -898,12 +897,14 @@ mod tests {
         let before_date = "2024-01-02T03:04:05Z".parse().unwrap();
         let args = PIPXBackend::pip_uploaded_prior_to_args(Some(before_date));
 
+        // Combined into a single `--pip-args=VALUE` argv element so pipx's
+        // argparse doesn't treat the leading `--` of the value as a new flag
+        // (see discussion #9976).
         assert_eq!(
             args,
-            vec![
-                OsString::from("--pip-args"),
-                OsString::from("--uploaded-prior-to=2024-01-02T03:04:05Z"),
-            ]
+            vec![OsString::from(
+                "--pip-args=--uploaded-prior-to=2024-01-02T03:04:05Z"
+            )]
         );
     }
 

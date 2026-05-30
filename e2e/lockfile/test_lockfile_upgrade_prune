@@ -31,6 +31,16 @@ assert_not_contains "mise ls --installed dummy" "1.1.0"
 # The lockfile should now have 1.0.0 locked
 assert_contains "cat mise.lock" "1.0.0"
 
+# Enable strict mode after the lockfile has been populated. `mise upgrade`
+# still needs to install the new version and refresh mise.lock.
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1"
+
+[settings]
+locked = true
+EOF
+
 # Now upgrade - this should:
 # 1. Install 1.1.0 (the latest matching version)
 # 2. Uninstall 1.0.0 (no longer needed)

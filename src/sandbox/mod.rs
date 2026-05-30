@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::file::replace_path;
+
 #[cfg(target_os = "linux")]
 mod landlock;
 #[cfg(target_os = "macos")]
@@ -65,9 +67,11 @@ impl SandboxConfig {
     pub fn resolve_paths(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
         let resolve = |paths: &mut Vec<PathBuf>| {
+            paths.retain(|p| !p.as_os_str().is_empty());
             for p in paths.iter_mut() {
+                *p = replace_path(&*p);
                 if p.is_relative() {
-                    *p = cwd.join(&p);
+                    *p = cwd.join(&*p);
                 }
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
                 if let Ok(canonical) = p.canonicalize() {
@@ -299,5 +303,19 @@ mod tests {
         assert!(filtered.contains_key("MYAPP_BAR"));
         assert!(!filtered.contains_key("OTHER_VAR"));
         assert!(filtered.contains_key("PATH")); // default key
+    }
+
+    #[test]
+    fn test_resolve_paths_drops_empty_paths() {
+        let mut config = SandboxConfig {
+            allow_read: vec![PathBuf::new()],
+            allow_write: vec![PathBuf::from("")],
+            ..Default::default()
+        };
+
+        config.resolve_paths();
+
+        assert!(config.allow_read.is_empty());
+        assert!(config.allow_write.is_empty());
     }
 }

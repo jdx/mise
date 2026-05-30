@@ -21,6 +21,8 @@ e.g.: NODE_ENV
 
 Specify a file to use instead of `mise.toml`
 
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`. Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+
 ### `-g --global`
 
 Use the global config file
