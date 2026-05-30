@@ -22,7 +22,7 @@ env:
 
 jobs:
   check-changes:
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       registry-changed: ${{ steps.check.outputs.registry-changed }}
@@ -51,20 +51,16 @@ jobs:
 
   build:
     timeout-minutes: 20
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ubuntu-latest
     needs: check-changes
     if: needs.check-changes.outputs.registry-changed == 'true'
     env:
       GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: namespacelabs/nscloud-cache-action@15799a6b54e5765f85b2aac25b3f0df43ed571c0 # v1
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/.global-cache
-            ~/.cache/sccache
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
       - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with: { tool: sccache }
       - name: Configure sccache
@@ -88,7 +84,7 @@ jobs:
 
   list-changed-tools:
     timeout-minutes: 10
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ubuntu-latest
     needs: check-changes
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.registry-changed == 'true'
     outputs:
@@ -142,7 +138,7 @@ jobs:
           fi
 
   validate-new-tools:
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: list-changed-tools
     if: |
@@ -171,7 +167,7 @@ jobs:
   test-tool:
     name: test-tool-${{ matrix.tranche }}
     timeout-minutes: 30
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ubuntu-latest
     needs:
       - build
       - list-changed-tools
@@ -356,7 +352,7 @@ jobs:
         run: mise run test-tool-retry --check-only --grace-period ${{ steps.retry.outputs.failed_tools }}
 
   registry-ci:
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ubuntu-latest
     timeout-minutes: 1
     needs:
       - check-changes
