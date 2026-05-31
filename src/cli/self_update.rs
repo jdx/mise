@@ -93,9 +93,20 @@ impl SelfUpdate {
             let version = status.version().to_string();
             let styled_version = style(&version).bright().yellow();
             miseprintln!("Updated mise to {styled_version}");
+            // On Windows, "exe"/"hardlink" shims are copies of mise-shim.exe and
+            // go stale after an update. Refresh mise-shim.exe, and ONLY if that
+            // succeeds rebuild the shim copies from it. Reshimming on failure
+            // would re-copy the OLD mise-shim.exe yet still stamp the new version
+            // in the `.version` marker, masking the staleness from future
+            // (non-forced) reshims. Best-effort. See discussion #10022.
             #[cfg(windows)]
-            if let Err(e) = Self::update_mise_shim(&version).await {
-                warn!("Failed to update mise-shim.exe: {e}");
+            match Self::update_mise_shim(&version).await {
+                Ok(()) => {
+                    if let Err(e) = cmd!(&*env::MISE_BIN, "reshim", "--force").run() {
+                        warn!("Failed to reshim after self-update: {e}");
+                    }
+                }
+                Err(e) => warn!("Failed to update mise-shim.exe: {e}"),
             }
         } else {
             miseprintln!("mise is already up to date");
