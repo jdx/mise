@@ -2388,7 +2388,8 @@ Render completions
 The TOML file to update
 
 Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 .TP
 \fB\-\-no\-redact\fR
 Show raw values instead of redacting secrets
@@ -3238,13 +3239,11 @@ All arguments after the stub file path will be forwarded to the underlying tool.
 .SH "MISE TRUST"
 Marks a config file as trusted
 
-This means mise will parse the file with potentially dangerous
-features enabled.
-
-This includes:
-\- environment variables
-\- templates
-\- `path:` plugin versions
+This means mise is allowed to parse the file when it needs to read config
+that may execute code or affect the environment. mise checks trust before
+parsing `mise.toml`. Without trust, mise may prompt, skip the config in some
+discovery paths, fail with an untrusted\-config error when it cannot prompt,
+or assume trust in detected CI unless paranoid mode is enabled.
 .PP
 \fBUsage:\fR mise trust [OPTIONS] [<CONFIG_FILE>]
 .PP
@@ -3305,6 +3304,8 @@ By default, this command modifies `mise.toml` in the current directory.
 .TP
 \fB\-f, \-\-file\fR \fI<FILE>\fR
 Specify a file to use instead of `mise.toml`
+
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`. Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 .TP
 \fB\-g, \-\-global\fR
 Use the global config file
@@ -3336,9 +3337,11 @@ In the following order:
   \- If `\-\-global` is set, it will use the global config file.
   \- If `\-\-path` is set, it will use the config file at the given path.
   \- If `\-\-env` is set, it will use `mise.<env>.toml`.
-  \- If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.
+  \- If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
   \- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
   \- Otherwise just "mise.toml" or global config if cwd is home directory.
+
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 
 Will also prune the installed version if no other configurations are using it.
 .PP
@@ -3447,9 +3450,11 @@ In the following order:
   \- If `\-\-global` is set, it will use the global config file.
   \- If `\-\-path` is set, it will use the config file at the given path.
   \- If `\-\-env` is set, it will use `mise.<env>.toml`.
-  \- If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.
+  \- If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
   \- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
   \- Otherwise just "mise.toml" or global config if cwd is home directory.
+
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 
 Use the `\-\-global` flag to use the global config file instead.
 .PP

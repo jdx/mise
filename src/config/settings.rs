@@ -601,7 +601,7 @@ impl Settings {
             .iter()
             .filter(|p| !p.to_string_lossy().is_empty())
             .map(file::replace_path)
-            .filter_map(|p| p.canonicalize().ok())
+            .filter_map(|p| file::canonicalize_cached(&p))
     }
 
     pub fn global_tools_file(&self) -> PathBuf {
@@ -708,7 +708,7 @@ impl Settings {
         } else {
             &self.unix_default_inline_shell_args
         };
-        Ok(shell_words::split(sa)?)
+        crate::path::split_shell_command(sa)
     }
 
     pub fn default_file_shell(&self) -> Result<Vec<String>> {
@@ -717,7 +717,7 @@ impl Settings {
         } else {
             &self.unix_default_file_shell_args
         };
-        Ok(shell_words::split(sa)?)
+        crate::path::split_shell_command(sa)
     }
 
     pub fn os(&self) -> &str {

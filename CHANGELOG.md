@@ -1,5 +1,104 @@
 # Changelog
 
+## [2026.5.16](https://github.com/jdx/mise/compare/v2026.5.15..v2026.5.16) - 2026-05-28
+
+### 🚀 Features
+
+- **(github)** use versions host for release metadata by @jdx in [#10127](https://github.com/jdx/mise/pull/10127)
+- **(node)** add node.npm_shim setting to opt out of npm wrapper by @jjb in [#10082](https://github.com/jdx/mise/pull/10082)
+- **(npm)** add allow_builds option by @jdx in [#10116](https://github.com/jdx/mise/pull/10116)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** skip in-place link when src and dst alias same inode by @tvararu in [#10012](https://github.com/jdx/mise/pull/10012)
+- **(aqua)** lock github_content raw URLs by @risu729 in [#10102](https://github.com/jdx/mise/pull/10102)
+- **(backend)** strip system shims dir from dependency_env PATH by @andrewjamesbrown in [#10019](https://github.com/jdx/mise/pull/10019)
+- **(backend)** adjust libc detection for musl distros by @thespags in [#10020](https://github.com/jdx/mise/pull/10020)
+- **(copr)** increase build timeout by @jdx in [#10071](https://github.com/jdx/mise/pull/10071)
+- **(en)** preserve env profile in activated subshells by @jdx in [#10124](https://github.com/jdx/mise/pull/10124)
+- **(install)** reject disabled backends by @risu729 in [#9905](https://github.com/jdx/mise/pull/9905)
+- **(lock)** allow lock and upgrade in locked mode by @jdx in [#10111](https://github.com/jdx/mise/pull/10111)
+- **(pipx)** combine --pip-args value to avoid argparse error by @iloveitaly in [#10120](https://github.com/jdx/mise/pull/10120)
+- **(shim)** skip hidden executables by @jdx in [#10123](https://github.com/jdx/mise/pull/10123)
+- **(task)** set config_root for global config tasks by @jdx in [#10106](https://github.com/jdx/mise/pull/10106)
+- **(task)** expand sandbox allow paths by @jdx in [#10112](https://github.com/jdx/mise/pull/10112)
+- **(toolset)** avoid remote version fetches in shell hooks by @jdx in [#10098](https://github.com/jdx/mise/pull/10098)
+- **(unset)** respect global config path from home by @jdx in [#10105](https://github.com/jdx/mise/pull/10105)
+- **(upgrade)** improve current version detection by @jdx in [#9973](https://github.com/jdx/mise/pull/9973)
+- **(upgrade)** preserve versions pinned by tracked locks by @jdx in [#10114](https://github.com/jdx/mise/pull/10114)
+- **(use)** reject leading-dash tool versions by @jdx in [#10113](https://github.com/jdx/mise/pull/10113)
+- show version in friendly errors by @jdx in [#10109](https://github.com/jdx/mise/pull/10109)
+
+### 📚 Documentation
+
+- **(config)** remove outdated terraform main.tf reference by @risu729 in [#10099](https://github.com/jdx/mise/pull/10099)
+- **(trust)** clarify untrusted config behavior by @jdx in [#10097](https://github.com/jdx/mise/pull/10097)
+
+### ⚡ Performance
+
+- cache repeated path canonicalization by @jdx in [#10068](https://github.com/jdx/mise/pull/10068)
+
+### 🧪 Testing
+
+- **(backend)** replace slow go install fixture by @jdx in [#10122](https://github.com/jdx/mise/pull/10122)
+- **(http)** cover current config over install manifest opts by @risu729 in [#9915](https://github.com/jdx/mise/pull/9915)
+
+### 🛡️ Security
+
+- **(security)** apply url replacements to GitHub attestations by @SlaterByte in [#9971](https://github.com/jdx/mise/pull/9971)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#10060](https://github.com/jdx/mise/pull/10060)
+- lock file maintenance by @renovate[bot] in [#10062](https://github.com/jdx/mise/pull/10062)
+- bump aube to 1.16.0 by @jdx in [#10110](https://github.com/jdx/mise/pull/10110)
+
+### 📦 Registry
+
+- add modem-dev/hunk ([aqua:modem-dev/hunk](https://github.com/modem-dev/hunk)) by @naoki-mizuno in [#10051](https://github.com/jdx/mise/pull/10051)
+- add wacli by @dovocoder in [#10043](https://github.com/jdx/mise/pull/10043)
+- add github backend and test for Liquibase by @benberryallwood in [#10052](https://github.com/jdx/mise/pull/10052)
+- make aube more resilient (cargo:aube) by @bgeron in [#10092](https://github.com/jdx/mise/pull/10092)
+- use npm backend for npm on Windows by @risu729 in [#10101](https://github.com/jdx/mise/pull/10101)
+- allow npm dependency builds by @risu729 in [#9916](https://github.com/jdx/mise/pull/9916)
+- add longbridge-terminal ([github:longbridge/longbridge-terminal](https://github.com/longbridge/longbridge-terminal)) by @hogan-yuan in [#10073](https://github.com/jdx/mise/pull/10073)
+
+### Chore
+
+- **(ci)** disable setup-node cache for npm publish by @jdx in [#10070](https://github.com/jdx/mise/pull/10070)
+- **(ci)** quiet passing e2e logs by @jdx in [#10115](https://github.com/jdx/mise/pull/10115)
+
+### New Contributors
+
+- @jjb made their first contribution in [#10082](https://github.com/jdx/mise/pull/10082)
+- @hogan-yuan made their first contribution in [#10073](https://github.com/jdx/mise/pull/10073)
+- @thespags made their first contribution in [#10020](https://github.com/jdx/mise/pull/10020)
+- @HYP3R00T made their first contribution in [#10081](https://github.com/jdx/mise/pull/10081)
+- @SlaterByte made their first contribution in [#9971](https://github.com/jdx/mise/pull/9971)
+- @andrewjamesbrown made their first contribution in [#10019](https://github.com/jdx/mise/pull/10019)
+- @dovocoder made their first contribution in [#10043](https://github.com/jdx/mise/pull/10043)
+- @naoki-mizuno made their first contribution in [#10051](https://github.com/jdx/mise/pull/10051)
+- @ofek made their first contribution in [#10059](https://github.com/jdx/mise/pull/10059)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`databricks/cli`](https://github.com/databricks/cli)
+- [`felixgwilliams/nbwipers`](https://github.com/felixgwilliams/nbwipers)
+- [`jgm/pandoc`](https://github.com/jgm/pandoc)
+- [`ktlint/ktlint`](https://github.com/ktlint/ktlint)
+- `x.ai/cli/grok`
+
+#### Updated Packages (6)
+
+- [`betterleaks/betterleaks`](https://github.com/betterleaks/betterleaks)
+- [`coder/coder`](https://github.com/coder/coder)
+- [`gittuf/gittuf`](https://github.com/gittuf/gittuf)
+- [`jdx/mise`](https://github.com/jdx/mise)
+- [`jedisct1/minisign`](https://github.com/jedisct1/minisign)
+- [`minio/mc`](https://github.com/minio/mc)
+
 ## [2026.5.15](https://github.com/jdx/mise/compare/v2026.5.14..v2026.5.15) - 2026-05-23
 
 ### 🐛 Bug Fixes

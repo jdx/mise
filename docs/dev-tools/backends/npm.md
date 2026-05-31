@@ -79,9 +79,9 @@ installation.
 With the default `npm.package_manager = "auto"` setting, mise installs through `aube` when `aube` is
 installed. If `aube` is not installed, mise installs through `npm`. Setting
 `npm.package_manager = "aube"`, `"pnpm"`, `"bun"`, or `"npm"` chooses that package manager
-explicitly. The `aube_args`, `pnpm_args`, `bun_args`, and `npm_args` options only affect the package
-manager that is actually used; an approval option for one package manager does not change the
-behavior of another.
+explicitly. The `allow_builds`, `aube_args`, `pnpm_args`, `bun_args`, and `npm_args` options only
+affect the package manager that is actually used; an approval option for one package manager does
+not change the behavior of another.
 
 For tools that need reviewed dependency build scripts, consider using `aube` or `pnpm` because they
 support package-level build approvals.
@@ -89,33 +89,38 @@ support package-level build approvals.
 ### `aube`
 
 [`aube`](https://aube.en.dev/package-manager/lifecycle-scripts) follows the pnpm v11 build approval
-model: dependency lifecycle scripts are denied unless explicitly allowlisted. Use `aube_args` to pass
-CLI flags to `aube add --global`:
+model: dependency lifecycle scripts are denied unless explicitly allowlisted. Use `allow_builds` for
+reviewed dependency builds:
 
 ```toml
 [tools]
-"npm:some-tool" = { version = "latest", aube_args = "--allow-build=esbuild" }
+"npm:some-tool" = { version = "latest", allow_builds = ["esbuild"] }
 ```
 
-Repeat `--allow-build=<pkg>` for each reviewed dependency build.
+`allow_builds` is passed to `aube add --global` as one `--allow-build=<pkg>` flag per package.
+Use `aube_args` for other raw aube flags.
+Set `allow_builds = true` to pass `--dangerously-allow-all-builds` when you explicitly accept that
+every dependency build script may run.
 
 ### `pnpm`
 
 [`pnpm`](https://pnpm.io/cli/add#--allow-build) uses build approval settings for dependency
-lifecycle scripts. Use `pnpm_args` to pass CLI flags to `pnpm add --global`:
+lifecycle scripts. Use `allow_builds` for reviewed dependency builds:
 
 ```toml
 [tools]
-"npm:some-tool" = { version = "latest", pnpm_args = "--allow-build=esbuild" }
+"npm:some-tool" = { version = "latest", allow_builds = ["esbuild"] }
 ```
 
-Repeat `--allow-build=<pkg>` for each reviewed dependency build. `--allow-build` was added in pnpm
-v10.4.0 and is supported by pnpm v10.4.0+ and v11.x.
+`allow_builds` is passed to `pnpm add --global` as one `--allow-build=<pkg>` flag per package.
+`--allow-build` was added in pnpm v10.4.0 and is supported by pnpm v10.4.0+ and v11.x.
+Set `allow_builds = true` to pass `--dangerously-allow-all-builds` when you explicitly accept that
+every dependency build script may run.
 
 [`pnpm approve-builds`](https://pnpm.io/cli/approve-builds) was added in v10.1.0, but it is not
 recommended to run `approve-builds` from postinstall. `pnpm approve-builds -g` worked for global
 packages in pnpm v10.4.0 through v10.x and was removed in v11.0.0; use
-`pnpm_args = "--allow-build=<pkg>"` for global installs with pnpm v10.4.0+ or v11.x.
+`allow_builds = ["<pkg>"]` for global installs with pnpm v10.4.0+ or v11.x.
 
 ### `bun`
 
@@ -153,20 +158,43 @@ the install graph can run lifecycle scripts:
 The following [tool-options](/dev-tools/#tool-options) are available for the `npm` backend. These
 go in `[tools]` in `mise.toml`.
 
+### `allow_builds`
+
+Packages whose dependency lifecycle build scripts should be approved when
+`settings.npm.package_manager = "aube"` or `"pnpm"`. Use this instead of spelling out
+`--allow-build` in both `aube_args` and `pnpm_args`.
+
+For example, to allow one verified dependency build script:
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", allow_builds = ["esbuild"] }
+```
+
+For multiple reviewed dependency builds:
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", allow_builds = ["esbuild", "sharp"] }
+```
+
+To allow all dependency build scripts for the install:
+
+```toml
+[tools]
+"npm:some-tool" = { version = "latest", allow_builds = true }
+```
+
+`allow_builds` does not affect `npm` or `bun` installs because those package managers do not expose
+the same package-level build approval model for this global install path.
+
 ### `aube_args`
 
 Additional arguments to pass to `aube add --global` when
 `settings.npm.package_manager = "aube"`.
 These are raw user-supplied arguments.
 
-For example, to allow one verified dependency build script:
-
-```toml
-[tools]
-"npm:some-tool" = { version = "latest", aube_args = "--allow-build=esbuild" }
-```
-
-Or to install `npm` with aube's append-only reporter mode:
+For example, to install `npm` with aube's append-only reporter mode:
 
 ```toml
 [tools]
@@ -181,11 +209,11 @@ Or to install `npm` with aube's append-only reporter mode:
 Additional arguments to pass to `pnpm` installs when `settings.npm.package_manager = "pnpm"`.
 These are raw user-supplied arguments.
 
-For example, to allow one verified dependency build script:
+For example, to set pnpm's log level:
 
 ```toml
 [tools]
-"npm:some-tool" = { version = "latest", pnpm_args = "--allow-build=esbuild" }
+"npm:some-tool" = { version = "latest", pnpm_args = "--loglevel=warn" }
 ```
 
 ### `bun_args`

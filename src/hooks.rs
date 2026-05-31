@@ -461,7 +461,7 @@ async fn execute(
     }
     let shell = shell
         .as_ref()
-        .map(|shell| shell_words::split(shell))
+        .map(|shell| crate::path::split_shell_command(shell))
         .transpose()?
         .unwrap_or(Settings::get().default_inline_shell()?);
 

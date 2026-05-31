@@ -355,6 +355,13 @@ fn pick_best_build_revision(releases: Vec<GithubRelease>, version: &str) -> Opti
 }
 
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
+    if is_public_github_api_base(api_url)
+        && let Ok(Some(release)) = crate::versions_host::github_release(repo, tag).await
+    {
+        trace!("got GitHub release {repo}@{tag} from mise-versions");
+        return Ok(release);
+    }
+
     let url = if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
     } else {
@@ -364,6 +371,10 @@ async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRele
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
         .await
+}
+
+fn is_public_github_api_base(api_url: &str) -> bool {
+    api_url.trim_end_matches('/') == API_URL
 }
 
 fn next_page(headers: &HeaderMap) -> Option<String> {

@@ -11,7 +11,7 @@ use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBu
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
-use eyre::{Result, bail};
+use eyre::Result;
 use jiff::Timestamp;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -76,11 +76,6 @@ pub struct Lock {
 impl Lock {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::get();
-        if settings.locked {
-            bail!(
-                "mise lock is disabled in --locked mode\nhint: Remove --locked or unset MISE_LOCKED=1"
-            );
-        }
         let config = Config::get().await?;
         let before_date = self.get_before_date()?;
         let lock_resolve_options = ResolveOptions {

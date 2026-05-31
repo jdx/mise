@@ -1,3 +1,5 @@
-backends = ["github:Infisical/cli"]
+backends = [
+  { full = "github:Infisical/cli", options = { asset_pattern = "cli_{{ version }}_{{ os(macos='darwin') }}_{{ arch(x64='amd64') }}.tar.gz" } },
+]
 description = "The open source secret management platform: Sync secrets across your team/infrastructure and prevent secret leaks"
 test = { cmd = "infisical --version", expected = "infisical version {{version}}" }

@@ -1,7 +1,7 @@
 use crate::semver::{chunkify_version, split_version_prefix};
 use crate::toolset;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
-use crate::{Result, config::Config};
+use crate::{Result, backend::ABackend, config::Config};
 use serde::Serialize;
 use std::{
     collections::BTreeSet,
@@ -33,11 +33,7 @@ pub struct OutdatedInfo {
 impl OutdatedInfo {
     pub fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
         let t = tv.backend()?;
-        let current = if t.is_version_installed(config, &tv, true) {
-            Some(tv.version.clone())
-        } else {
-            None
-        };
+        let current = Self::current_version(config, &t, &tv)?;
         let oi = Self {
             source: tv.request.source().clone(),
             name: tv.ba().short.to_string(),
@@ -49,6 +45,34 @@ impl OutdatedInfo {
             latest,
         };
         Ok(oi)
+    }
+
+    fn current_version(
+        config: &Arc<Config>,
+        backend: &ABackend,
+        tv: &ToolVersion,
+    ) -> Result<Option<String>> {
+        if backend.is_version_installed(config, tv, true) {
+            return Ok(Some(tv.version.clone()));
+        }
+        if matches!(&tv.request, ToolRequest::Version { version, .. } if version == "latest") {
+            return Ok(None);
+        }
+
+        let query = match &tv.request {
+            ToolRequest::Version { version, .. } => Some(version.clone()),
+            ToolRequest::Prefix { prefix, .. } => Some(prefix.clone()),
+            _ => return Ok(None),
+        };
+        let Some(current) = backend.latest_installed_version(query)? else {
+            return Ok(None);
+        };
+        let current_tv = ToolVersion::new(tv.request.clone(), current);
+        if backend.is_version_installed(config, &current_tv, true) {
+            Ok(Some(current_tv.version))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn resolve(
@@ -113,8 +137,8 @@ impl OutdatedInfo {
         }
         if bump {
             let old = oi.tool_version.request.version();
-            let old = old.strip_prefix(&prefix).unwrap_or_default();
-            let new = oi.latest.strip_prefix(&prefix).unwrap_or_default();
+            let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
+            let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
             if let Some(bumped_version) = check_semver_bump(old, new)
                 && bumped_version != oi.tool_version.request.version()
             {
@@ -192,7 +216,14 @@ impl Display for OutdatedInfo {
 
 fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
     let prefix = prefix.trim();
-    if prefix.is_empty() || prefix_version.is_empty() || prefix.contains(':') {
+    if prefix.is_empty()
+        || prefix_version.is_empty()
+        || prefix.contains(':')
+        // A lone leading v/V is version syntax, not a backend/vendor prefix.
+        // Treat it as unprefixed so backends with normalized bare versions like
+        // 3.13.1 still resolve their latest release during --bump.
+        || matches!(prefix, "v" | "V")
+    {
         return None;
     }
 
@@ -380,9 +411,13 @@ pub fn is_outdated_version(current: &str, latest: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
+    use std::sync::Arc;
     use test_log::test;
 
-    use super::{check_semver_bump, is_outdated_version, prefixed_latest_query};
+    use super::{OutdatedInfo, check_semver_bump, is_outdated_version, prefixed_latest_query};
+    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::config::Config;
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
 
     #[test]
     fn test_is_outdated_version() {
@@ -476,7 +511,167 @@ mod tests {
             Some("corretto-2024".to_string())
         );
         assert_eq!(prefixed_latest_query("prefix:1.", "24"), None);
+        assert_eq!(prefixed_latest_query("v", "3.13.1"), None);
+        assert_eq!(prefixed_latest_query("V", "3.13.1"), None);
         assert_eq!(prefixed_latest_query("", "17.0.7"), None);
         assert_eq!(prefixed_latest_query("temurin-", ""), None);
+    }
+
+    #[test]
+    fn test_v_prefix_bump_preserves_bare_latest_version() {
+        let prefix = "v";
+        let old = "v3.12.0";
+        let latest = "3.13.1";
+
+        let old = old.strip_prefix(prefix).unwrap_or(old);
+        let new = latest.strip_prefix(prefix).unwrap_or(latest);
+        let bumped = check_semver_bump(old, new).unwrap();
+
+        assert_eq!(bumped, "3.13.1");
+        assert_eq!(format!("{prefix}{bumped}"), "v3.13.1");
+    }
+
+    #[tokio::test]
+    async fn current_version_uses_installed_version_matching_request() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.9");
+        std::fs::create_dir_all(&install_path).unwrap();
+        install_state::add_tool_version(&backend, &install_path, "1.25.9");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "1.25".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current.as_deref(), Some("1.25.9"));
+    }
+
+    #[tokio::test]
+    async fn current_version_uses_installed_version_matching_prefix_request() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-prefix-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.9");
+        std::fs::create_dir_all(&install_path).unwrap();
+        install_state::add_tool_version(&backend, &install_path, "1.25.9");
+
+        let request = ToolRequest::Prefix {
+            backend: Arc::new(backend),
+            prefix: "1.25".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current.as_deref(), Some("1.25.9"));
+    }
+
+    #[tokio::test]
+    async fn current_version_ignores_stale_install_state_matches() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-stale-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.9");
+        install_state::add_tool_version(&backend, &install_path, "1.25.9");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "1.25".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current, None);
+    }
+
+    #[tokio::test]
+    async fn current_version_does_not_infer_latest_alias() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-latest-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.9");
+        std::fs::create_dir_all(&install_path).unwrap();
+        install_state::add_tool_version(&backend, &install_path, "1.25.9");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "latest".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current, None);
+    }
+
+    #[tokio::test]
+    async fn current_version_reports_installed_resolved_latest() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = "summary-current-resolved-latest-test";
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let install_path = backend.installs_path.join("1.25.10");
+        std::fs::create_dir_all(&install_path).unwrap();
+        install_state::add_tool_version(&backend, &install_path, "1.25.10");
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "latest".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
+
+        assert_eq!(info.current.as_deref(), Some("1.25.10"));
     }
 }

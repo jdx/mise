@@ -1,6 +1,7 @@
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::{BackendOptions, bool_value};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -32,6 +33,66 @@ pub struct SPMBackend {
     ba: Arc<BackendArg>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SpmOptions<'a> {
+    values: BackendOptions<'a>,
+}
+
+impl<'a> SpmOptions<'a> {
+    fn new(raw: &'a ToolVersionOptions) -> Self {
+        Self {
+            values: BackendOptions::new(raw),
+        }
+    }
+
+    fn provider(&self) -> &'a str {
+        self.values
+            .str("provider")
+            .unwrap_or(GitProviderKind::GitHub.as_ref())
+    }
+
+    fn api_url(&self) -> Option<&'a str> {
+        self.values.str("api_url")
+    }
+
+    fn artifactbundle_asset(&self) -> Option<&'a str> {
+        self.values.str("artifactbundle_asset")
+    }
+
+    fn artifactbundle_mode(&self) -> ArtifactBundleMode {
+        let Some(value) = self.values.raw().opts.get("artifactbundle") else {
+            return ArtifactBundleMode::Auto;
+        };
+        match bool_value("artifactbundle", value) {
+            Some(true) => ArtifactBundleMode::Required,
+            Some(false) => ArtifactBundleMode::SourceOnly,
+            None => ArtifactBundleMode::Auto,
+        }
+    }
+
+    fn requires_artifactbundle(&self, mode: ArtifactBundleMode) -> bool {
+        mode.requires_artifactbundle() || self.artifactbundle_asset().is_some()
+    }
+
+    fn filter_bins(&self) -> Option<Vec<String>> {
+        let value = self.values.raw().opts.get("filter_bins")?;
+        let bins: Vec<String> = match value {
+            toml::Value::Array(arr) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect(),
+            toml::Value::String(s) => s
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+            _ => return None,
+        };
+        if bins.is_empty() { None } else { Some(bins) }
+    }
+}
+
 #[async_trait]
 impl Backend for SPMBackend {
     fn get_type(&self) -> BackendType {
@@ -55,7 +116,8 @@ impl Backend for SPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = SpmOptions::new(&raw_opts);
         let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let versions = match provider.kind {
@@ -105,7 +167,8 @@ impl Backend for SPMBackend {
         )
         .await;
         let mut tv = tv;
-        let opts = tv.request.options();
+        let raw_opts = tv.request.options();
+        let opts = SpmOptions::new(&raw_opts);
         let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let revision = if tv.version == "latest" {
@@ -116,14 +179,14 @@ impl Backend for SPMBackend {
             tv.version.clone()
         };
 
-        let artifactbundle_mode = resolve_artifactbundle_mode(&opts)?;
+        let artifactbundle_mode = opts.artifactbundle_mode();
         if artifactbundle_mode == ArtifactBundleMode::SourceOnly
             && Settings::get().spm.artifactbundle_only
         {
             bail!("artifactbundle = false conflicts with spm.artifactbundle_only");
         }
         if artifactbundle_mode != ArtifactBundleMode::SourceOnly {
-            let artifactbundle_required = requires_artifactbundle(artifactbundle_mode, &opts);
+            let artifactbundle_required = opts.requires_artifactbundle(artifactbundle_mode);
             match self
                 .try_install_artifactbundle(ctx, &mut tv, &provider, &repo, &revision, &opts)
                 .await
@@ -226,7 +289,8 @@ impl SPMBackend {
         tv: &ToolVersion,
         executables: Vec<String>,
     ) -> eyre::Result<Vec<String>> {
-        let opts = tv.request.options();
+        let raw_opts = tv.request.options();
+        let opts = SpmOptions::new(&raw_opts);
         filter_executables(&opts, executables)
     }
 
@@ -323,7 +387,7 @@ impl SPMBackend {
         provider: &GitProvider,
         repo: &SwiftPackageRepo,
         revision: &str,
-        opts: &ToolVersionOptions,
+        opts: &SpmOptions<'_>,
     ) -> eyre::Result<bool> {
         let Some(asset) = resolve_artifactbundle_asset(provider, repo, revision, opts).await?
         else {
@@ -397,37 +461,15 @@ fn with_install_env(mut command: Expression, tv: &ToolVersion) -> Expression {
     command
 }
 
-/// Parses the `filter_bins` tool option if set.
-///
-/// Accepts either a comma-separated string (`filter_bins = "foo,bar"`) or a
-/// TOML array (`filter_bins = ["foo", "bar"]`). Empty entries are ignored.
-fn parse_filter_bins(opts: &crate::toolset::ToolVersionOptions) -> Option<Vec<String>> {
-    let value = opts.opts.get("filter_bins")?;
-    let bins: Vec<String> = match value {
-        toml::Value::Array(arr) => arr
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
-            .filter(|s| !s.is_empty())
-            .collect(),
-        toml::Value::String(s) => s
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
-        _ => return None,
-    };
-    if bins.is_empty() { None } else { Some(bins) }
-}
-
 /// Restricts `executables` to those listed in `filter_bins`, preserving the
 /// original declaration order from `Package.swift` rather than the order in
 /// `filter_bins`. Returns an error if any name in `filter_bins` does not match
 /// an available executable product.
 fn filter_executables(
-    opts: &crate::toolset::ToolVersionOptions,
+    opts: &SpmOptions<'_>,
     executables: Vec<String>,
 ) -> eyre::Result<Vec<String>> {
-    let Some(filter) = parse_filter_bins(opts) else {
+    let Some(filter) = opts.filter_bins() else {
         return Ok(executables);
     };
     let missing: Vec<&str> = filter
@@ -474,14 +516,13 @@ pub enum GitProviderKind {
 impl GitProvider {
     #[cfg(test)]
     fn from_ba(ba: &BackendArg) -> Self {
-        let opts = ba.opts();
+        let raw_opts = ba.opts();
+        let opts = SpmOptions::new(&raw_opts);
         Self::from_ba_with_opts(ba, &opts)
     }
 
-    fn from_ba_with_opts(ba: &BackendArg, opts: &ToolVersionOptions) -> Self {
-        let provider = opts
-            .get("provider")
-            .unwrap_or(GitProviderKind::GitHub.as_ref());
+    fn from_ba_with_opts(ba: &BackendArg, opts: &SpmOptions<'_>) -> Self {
+        let provider = opts.provider();
         let kind = if ba.tool_name.contains("gitlab.com") {
             GitProviderKind::GitLab
         } else {
@@ -491,7 +532,7 @@ impl GitProvider {
             }
         };
 
-        let api_url = match opts.get("api_url") {
+        let api_url = match opts.api_url() {
             Some(api_url) => api_url.trim_end_matches('/').to_string(),
             None => {
                 Self::derive_api_url_from_tool_name(&ba.tool_name, &kind).unwrap_or_else(|| {
@@ -596,19 +637,6 @@ impl ArtifactBundleMode {
     }
 }
 
-fn resolve_artifactbundle_mode(opts: &ToolVersionOptions) -> eyre::Result<ArtifactBundleMode> {
-    match opts.get_string("artifactbundle").as_deref() {
-        None => Ok(ArtifactBundleMode::Auto),
-        Some("true") => Ok(ArtifactBundleMode::Required),
-        Some("false") => Ok(ArtifactBundleMode::SourceOnly),
-        Some(value) => bail!("artifactbundle must be true or false, got {value}"),
-    }
-}
-
-fn requires_artifactbundle(mode: ArtifactBundleMode, opts: &ToolVersionOptions) -> bool {
-    mode.requires_artifactbundle() || opts.get("artifactbundle_asset").is_some()
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ArtifactBundleReleaseAsset {
     name: String,
@@ -621,7 +649,7 @@ async fn resolve_artifactbundle_asset(
     provider: &GitProvider,
     repo: &SwiftPackageRepo,
     revision: &str,
-    opts: &ToolVersionOptions,
+    opts: &SpmOptions<'_>,
 ) -> eyre::Result<Option<ArtifactBundleReleaseAsset>> {
     let assets = match provider.kind {
         GitProviderKind::GitLab => {
@@ -668,9 +696,9 @@ async fn resolve_artifactbundle_asset(
 
 fn select_artifactbundle_asset(
     assets: Vec<ArtifactBundleReleaseAsset>,
-    opts: &ToolVersionOptions,
+    opts: &SpmOptions<'_>,
 ) -> eyre::Result<Option<ArtifactBundleReleaseAsset>> {
-    let artifactbundle_asset = opts.get("artifactbundle_asset");
+    let artifactbundle_asset = opts.artifactbundle_asset();
     if let Some(name) = artifactbundle_asset {
         if !is_artifactbundle_zip(name) {
             bail!("artifactbundle_asset must end with .artifactbundle.zip, got {name}");
@@ -820,7 +848,7 @@ fn is_artifactbundle_dir(path: &Path) -> bool {
 }
 
 fn filter_artifactbundle_binaries(
-    opts: &ToolVersionOptions,
+    opts: &SpmOptions<'_>,
     binaries: Vec<ArtifactBundleBinary>,
 ) -> eyre::Result<Vec<ArtifactBundleBinary>> {
     let names = binaries.iter().map(|b| b.name.clone()).collect::<Vec<_>>();
@@ -1052,111 +1080,142 @@ mod tests {
         }
     }
 
+    fn filter_bins(raw: &ToolVersionOptions) -> Option<Vec<String>> {
+        SpmOptions::new(raw).filter_bins()
+    }
+
+    fn filter_executables_with_raw(
+        raw: &ToolVersionOptions,
+        executables: Vec<String>,
+    ) -> eyre::Result<Vec<String>> {
+        let opts = SpmOptions::new(raw);
+        filter_executables(&opts, executables)
+    }
+
     #[test]
     fn test_resolve_artifactbundle_mode() {
+        let default_opts = ToolVersionOptions::default();
         assert_eq!(
-            resolve_artifactbundle_mode(&ToolVersionOptions::default()).unwrap(),
+            SpmOptions::new(&default_opts).artifactbundle_mode(),
             ArtifactBundleMode::Auto
         );
+        let required_opts = opts_with("artifactbundle", toml::Value::Boolean(true));
         assert_eq!(
-            resolve_artifactbundle_mode(&opts_with("artifactbundle", toml::Value::Boolean(true)))
-                .unwrap(),
+            SpmOptions::new(&required_opts).artifactbundle_mode(),
             ArtifactBundleMode::Required
         );
+        let source_only_opts = opts_with("artifactbundle", toml::Value::Boolean(false));
         assert_eq!(
-            resolve_artifactbundle_mode(&opts_with("artifactbundle", toml::Value::Boolean(false)))
-                .unwrap(),
+            SpmOptions::new(&source_only_opts).artifactbundle_mode(),
             ArtifactBundleMode::SourceOnly
         );
-        assert!(
-            resolve_artifactbundle_mode(&opts_with(
-                "artifactbundle",
-                toml::Value::String("sometimes".to_string())
-            ))
-            .is_err()
+        let required_opts = opts_with("artifactbundle", toml::Value::String("TRUE".to_string()));
+        assert_eq!(
+            SpmOptions::new(&required_opts).artifactbundle_mode(),
+            ArtifactBundleMode::Required
+        );
+        let required_opts = opts_with("artifactbundle", toml::Value::String("1".to_string()));
+        assert_eq!(
+            SpmOptions::new(&required_opts).artifactbundle_mode(),
+            ArtifactBundleMode::Required
+        );
+        let source_only_opts =
+            opts_with("artifactbundle", toml::Value::String("FALSE".to_string()));
+        assert_eq!(
+            SpmOptions::new(&source_only_opts).artifactbundle_mode(),
+            ArtifactBundleMode::SourceOnly
+        );
+        let source_only_opts = opts_with("artifactbundle", toml::Value::String("0".to_string()));
+        assert_eq!(
+            SpmOptions::new(&source_only_opts).artifactbundle_mode(),
+            ArtifactBundleMode::SourceOnly
+        );
+        let invalid_opts = opts_with("artifactbundle", toml::Value::String("00".to_string()));
+        assert_eq!(
+            SpmOptions::new(&invalid_opts).artifactbundle_mode(),
+            ArtifactBundleMode::Auto
+        );
+        let invalid_opts = opts_with(
+            "artifactbundle",
+            toml::Value::String("sometimes".to_string()),
+        );
+        assert_eq!(
+            SpmOptions::new(&invalid_opts).artifactbundle_mode(),
+            ArtifactBundleMode::Auto
         );
     }
 
     #[test]
     fn test_requires_artifactbundle() {
-        assert!(!requires_artifactbundle(
-            ArtifactBundleMode::Auto,
-            &ToolVersionOptions::default()
-        ));
-        assert!(requires_artifactbundle(
-            ArtifactBundleMode::Required,
-            &ToolVersionOptions::default()
-        ));
-        assert!(requires_artifactbundle(
-            ArtifactBundleMode::Auto,
-            &opts_with(
-                "artifactbundle_asset",
-                toml::Value::String("tool.artifactbundle.zip".to_string()),
-            )
-        ));
+        let default_opts = ToolVersionOptions::default();
+        let opts = SpmOptions::new(&default_opts);
+        assert!(!opts.requires_artifactbundle(ArtifactBundleMode::Auto));
+        assert!(opts.requires_artifactbundle(ArtifactBundleMode::Required));
+
+        let asset_opts = opts_with(
+            "artifactbundle_asset",
+            toml::Value::String("tool.artifactbundle.zip".to_string()),
+        );
+        let opts = SpmOptions::new(&asset_opts);
+        assert!(opts.requires_artifactbundle(ArtifactBundleMode::Auto));
     }
 
     #[test]
     fn test_select_artifactbundle_asset() {
-        let selected = select_artifactbundle_asset(
-            vec![release_asset("tool.artifactbundle.zip")],
-            &ToolVersionOptions::default(),
-        )
-        .unwrap()
-        .unwrap();
+        let default_opts = ToolVersionOptions::default();
+        let opts = SpmOptions::new(&default_opts);
+        let selected =
+            select_artifactbundle_asset(vec![release_asset("tool.artifactbundle.zip")], &opts)
+                .unwrap()
+                .unwrap();
         assert_eq!(selected.name, "tool.artifactbundle.zip");
 
+        let selected_opts = opts_with(
+            "artifactbundle_asset",
+            toml::Value::String("tool.artifactbundle.zip".to_string()),
+        );
+        let opts = SpmOptions::new(&selected_opts);
         let selected = select_artifactbundle_asset(
             vec![
                 release_asset("tool.artifactbundle.zip"),
                 release_asset("tool.tar.gz"),
             ],
-            &opts_with(
-                "artifactbundle_asset",
-                toml::Value::String("tool.artifactbundle.zip".to_string()),
-            ),
+            &opts,
         )
         .unwrap()
         .unwrap();
         assert_eq!(selected.name, "tool.artifactbundle.zip");
 
-        assert!(
-            select_artifactbundle_asset(
-                vec![release_asset("tool.tar.gz")],
-                &opts_with(
-                    "artifactbundle_asset",
-                    toml::Value::String("tool.tar.gz".to_string()),
-                ),
-            )
-            .is_err()
+        let non_bundle_opts = opts_with(
+            "artifactbundle_asset",
+            toml::Value::String("tool.tar.gz".to_string()),
         );
-        assert!(
-            select_artifactbundle_asset(
-                vec![release_asset("tool.artifactbundle.zip")],
-                &opts_with(
-                    "artifactbundle_asset",
-                    toml::Value::String("missing.artifactbundle.zip".to_string()),
-                ),
-            )
-            .is_err()
+        let opts = SpmOptions::new(&non_bundle_opts);
+        assert!(select_artifactbundle_asset(vec![release_asset("tool.tar.gz")], &opts).is_err());
+        let missing_opts = opts_with(
+            "artifactbundle_asset",
+            toml::Value::String("missing.artifactbundle.zip".to_string()),
         );
+        let opts = SpmOptions::new(&missing_opts);
+        assert!(
+            select_artifactbundle_asset(vec![release_asset("tool.artifactbundle.zip")], &opts,)
+                .is_err()
+        );
+        let opts = SpmOptions::new(&default_opts);
         assert!(
             select_artifactbundle_asset(
                 vec![
                     release_asset("a.artifactbundle.zip"),
                     release_asset("b.artifactbundle.zip"),
                 ],
-                &ToolVersionOptions::default(),
+                &opts,
             )
             .is_err()
         );
         assert!(
-            select_artifactbundle_asset(
-                vec![release_asset("tool.tar.gz")],
-                &ToolVersionOptions::default(),
-            )
-            .unwrap()
-            .is_none()
+            select_artifactbundle_asset(vec![release_asset("tool.tar.gz")], &opts,)
+                .unwrap()
+                .is_none()
         );
     }
 
@@ -1339,6 +1398,7 @@ mod tests {
             },
         ];
         let opts = opts_with_filter_bins(toml::Value::String("b".to_string()));
+        let opts = SpmOptions::new(&opts);
         let filtered = filter_artifactbundle_binaries(&opts, binaries).unwrap();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].name, "b");
@@ -1346,24 +1406,24 @@ mod tests {
 
     #[test]
     fn test_parse_filter_bins() {
-        assert_eq!(parse_filter_bins(&ToolVersionOptions::default()), None);
+        assert_eq!(filter_bins(&ToolVersionOptions::default()), None);
 
         assert_eq!(
-            parse_filter_bins(&opts_with_filter_bins(toml::Value::String(
+            filter_bins(&opts_with_filter_bins(toml::Value::String(
                 "swiftly".to_string()
             ))),
             Some(vec!["swiftly".to_string()])
         );
 
         assert_eq!(
-            parse_filter_bins(&opts_with_filter_bins(toml::Value::String(
+            filter_bins(&opts_with_filter_bins(toml::Value::String(
                 " foo , bar , ".to_string()
             ))),
             Some(vec!["foo".to_string(), "bar".to_string()])
         );
 
         assert_eq!(
-            parse_filter_bins(&opts_with_filter_bins(toml::Value::Array(vec![
+            filter_bins(&opts_with_filter_bins(toml::Value::Array(vec![
                 toml::Value::String("foo".to_string()),
                 toml::Value::String(" bar".to_string()),
                 toml::Value::String("".to_string()),
@@ -1372,7 +1432,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse_filter_bins(&opts_with_filter_bins(toml::Value::String(
+            filter_bins(&opts_with_filter_bins(toml::Value::String(
                 " , ".to_string()
             ))),
             None,
@@ -1384,7 +1444,8 @@ mod tests {
     fn test_filter_executables_passthrough_when_unset() {
         let executables = vec!["a".to_string(), "b".to_string()];
         let result =
-            filter_executables(&ToolVersionOptions::default(), executables.clone()).unwrap();
+            filter_executables_with_raw(&ToolVersionOptions::default(), executables.clone())
+                .unwrap();
         assert_eq!(result, executables);
     }
 
@@ -1399,7 +1460,7 @@ mod tests {
             toml::Value::String("helper".to_string()),
             toml::Value::String("swiftly".to_string()),
         ]));
-        let result = filter_executables(&opts, executables).unwrap();
+        let result = filter_executables_with_raw(&opts, executables).unwrap();
         assert_eq!(result, vec!["swiftly".to_string(), "helper".to_string()]);
     }
 
@@ -1407,7 +1468,7 @@ mod tests {
     fn test_filter_executables_errors_on_missing_name() {
         let executables = vec!["swiftly".to_string(), "test-swiftly".to_string()];
         let opts = opts_with_filter_bins(toml::Value::String("does-not-exist".to_string()));
-        let err = filter_executables(&opts, executables).unwrap_err();
+        let err = filter_executables_with_raw(&opts, executables).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("does-not-exist"), "got: {msg}");
         assert!(msg.contains("swiftly"), "got: {msg}");
