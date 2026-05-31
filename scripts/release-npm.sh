@@ -43,7 +43,7 @@ if [ "$PUBLISH_PLATFORM_PACKAGES" != "0" ]; then
 		mv "$RELEASE_DIR/mise" "$RELEASE_DIR/npm"
 		cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
-  "name": "$NPM_PREFIX-$os-$arch",
+  "name": "$NPM_PLATFORM_PREFIX-$os-$arch",
   "version": "$MISE_VERSION",
   "description": "Dev tools, env vars, and tasks in one CLI",
   "bin": {
@@ -85,6 +85,8 @@ else
 	rm -rf "$RELEASE_DIR/npm"
 	mkdir -p "$RELEASE_DIR/npm"
 fi
+
+cp README.md "$RELEASE_DIR/npm/README.md"
 
 cat <<EOF >"$RELEASE_DIR/npm/installArchSpecificPackage.js"
 var spawn = require('child_process').spawn;
