@@ -201,10 +201,13 @@ impl serde::Serialize for PythonUvVenvAuto {
 
 pub type SettingsPartial = <Settings as Config>::Layer;
 
+pub const DEFAULT_JAVA_SHORTHAND_VENDOR: &str = "openjdk";
+
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
+    s.java.shorthand_vendor = Some(DEFAULT_JAVA_SHORTHAND_VENDOR.to_string());
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
     if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str())
         && !cfg!(test)
@@ -277,7 +280,8 @@ impl Settings {
         // Initial pass to obtain cd option
         let mut sb = Self::builder()
             .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
-            .env();
+            .env()
+            .preloaded(DEFAULT_SETTINGS.clone());
 
         let mut settings = sb.load()?;
         if let Some(mut cd) = settings.cd {
@@ -1052,6 +1056,14 @@ mod tests {
         Settings::reset(None);
         let settings = Settings::get();
         assert!(!settings.prefer_offline);
+    }
+
+    #[test]
+    fn test_java_shorthand_vendor_default() {
+        assert_eq!(
+            DEFAULT_SETTINGS.java.shorthand_vendor.as_deref(),
+            Some(DEFAULT_JAVA_SHORTHAND_VENDOR)
+        );
     }
 
     #[test]

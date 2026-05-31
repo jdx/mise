@@ -32,8 +32,6 @@ use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 use xx::regex;
 
-const DEFAULT_JAVA_SHORTHAND_VENDOR: &str = "openjdk";
-
 static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
         r"(?i)(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|snapshot|SNAPSHOT|master)"
@@ -76,9 +74,7 @@ impl<'a> JavaOptions<'a> {
         if release_type != "ga" {
             opts.insert("release_type".to_string(), release_type.to_string());
         }
-        if is_shorthand_java_request(requested_version)
-            && shorthand_vendor != DEFAULT_JAVA_SHORTHAND_VENDOR
-        {
+        if is_shorthand_java_request(requested_version) {
             opts.insert("shorthand_vendor".to_string(), shorthand_vendor.to_string());
         }
         opts
@@ -798,6 +794,7 @@ static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::DEFAULT_JAVA_SHORTHAND_VENDOR;
 
     fn opts_with_release_type(release_type: &str) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
@@ -812,22 +809,30 @@ mod tests {
     fn java_options_reads_release_type() {
         let default_opts = ToolVersionOptions::default();
         assert_eq!(JavaOptions::new(&default_opts).release_type(), "ga");
-        assert!(
-            JavaOptions::new(&default_opts)
-                .lockfile_options("17", DEFAULT_JAVA_SHORTHAND_VENDOR)
-                .is_empty()
+        assert_eq!(
+            JavaOptions::new(&default_opts).lockfile_options("17", DEFAULT_JAVA_SHORTHAND_VENDOR),
+            BTreeMap::from([(
+                "shorthand_vendor".to_string(),
+                DEFAULT_JAVA_SHORTHAND_VENDOR.to_string()
+            )])
         );
 
         let opts = opts_with_release_type("ea");
         assert_eq!(JavaOptions::new(&opts).release_type(), "ea");
         assert_eq!(
             JavaOptions::new(&opts).lockfile_options("17", DEFAULT_JAVA_SHORTHAND_VENDOR),
-            BTreeMap::from([("release_type".to_string(), "ea".to_string())])
+            BTreeMap::from([
+                ("release_type".to_string(), "ea".to_string()),
+                (
+                    "shorthand_vendor".to_string(),
+                    DEFAULT_JAVA_SHORTHAND_VENDOR.to_string()
+                )
+            ])
         );
     }
 
     #[test]
-    fn java_lockfile_options_include_non_default_shorthand_vendor() {
+    fn java_lockfile_options_include_shorthand_vendor() {
         let opts = ToolVersionOptions::default();
 
         assert_eq!(
@@ -837,6 +842,13 @@ mod tests {
         assert_eq!(
             JavaOptions::new(&opts).lockfile_options("lts", "temurin"),
             BTreeMap::from([("shorthand_vendor".to_string(), "temurin".to_string())])
+        );
+        assert_eq!(
+            JavaOptions::new(&opts).lockfile_options("17", DEFAULT_JAVA_SHORTHAND_VENDOR),
+            BTreeMap::from([(
+                "shorthand_vendor".to_string(),
+                DEFAULT_JAVA_SHORTHAND_VENDOR.to_string()
+            )])
         );
         assert!(
             JavaOptions::new(&opts)
