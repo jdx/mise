@@ -1005,7 +1005,6 @@
           "unevaluatedProperties": false,
           "properties": {
             "shorthand_vendor": {
-              "default": "openjdk",
               "description": "Shorthand for Java. Used when installing Java without a vendor prefix.",
               "type": "string"
             }

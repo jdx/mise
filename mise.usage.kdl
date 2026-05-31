@@ -860,7 +860,6 @@ cmd registry help="List available tools to install" {
     }
     arg "[NAME]" help="Show only the specified tool's full name" required=#false
 }
-cmd render-help hide=#true help="internal command to generate markdown from help"
 cmd reshim help="Creates new shims based on bin paths from currently installed tools." {
     long_help "Creates new shims based on bin paths from currently installed tools.\n\nThis creates new shims in ~/.local/share/mise/shims for CLIs that have been added.\nmise will try to do this automatically for commands like `npm i -g` but there are\nother ways to install things (like using yarn or pnpm for node) that mise does\nnot know about and so it will be necessary to call this explicitly.\n\nIf you think mise should automatically call this for a particular command, please\nopen an issue on the mise repo. You can also setup a shell function to reshim\nautomatically (it's really fast so you don't need to worry about overhead):\n\n    npm() {\n      command npm \"$@\"\n      mise reshim\n    }\n\nNote that this creates shims for _all_ installed tools, not just the ones that are\ncurrently active in mise.toml."
     after_long_help "Examples:\n\n    $ mise reshim\n    $ ~/.local/share/mise/shims/node -v\n    v20.0.0\n"
