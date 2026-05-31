@@ -819,31 +819,18 @@ impl ConfigFile for MiseToml {
                     // when config provides its own options. This allows:
                     // - Changing url/asset_pattern/checksum without reinstall issues
                     // - Preserving post-install options like bin_path for binary discovery
-                    let mut ba_opts = ba.opts().clone();
+                    let default_opts = ba.opts().clone();
+                    let mut ba_opts = default_opts.clone();
                     let backend_type = ba.backend_type();
                     ba_opts.opts.retain(|k, _| {
                         !crate::backend::is_install_time_option_key_for_type(&backend_type, k)
                     });
                     ba_opts.merge(&options.opts);
-                    // Re-apply registry defaults for install-time keys not overridden by user.
-                    // The filtering above strips both stale install-state cache AND registry
-                    // defaults. We want to keep registry defaults while discarding stale cache.
-                    if let Some(rt) = crate::registry::REGISTRY.get(ba.short.as_str()) {
-                        let full = ba.full();
-                        // Get structured options from registry (table-format backends)
-                        let mut registry_opts = rt.backend_options(&full);
-                        // Also parse inline options from [key=val,...] in the full string
-                        if let Some(start) = full.rfind('[')
-                            && full.ends_with(']')
-                        {
-                            let inline = crate::toolset::parse_tool_options(
-                                &full[start + 1..full.len() - 1],
-                            );
-                            for (k, v) in inline.opts {
-                                registry_opts.opts.entry(k).or_insert(v);
-                            }
-                        }
-                        for (k, v) in registry_opts.opts {
+                    // Re-apply backend defaults for install-time keys not overridden by user.
+                    // The filtering above strips install-time registry and alias defaults
+                    // together with stale install-state cache; only restore the defaults.
+                    for (k, v) in default_opts.opts {
+                        if crate::backend::is_install_time_option_key_for_type(&backend_type, &k) {
                             ba_opts.opts.entry(k).or_insert(v);
                         }
                     }

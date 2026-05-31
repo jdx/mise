@@ -183,37 +183,6 @@ fn parse_backend_components_fallible(
     Ok((short, tool_name.to_string(), opts))
 }
 
-fn resolve_registry_backend_alias(alias: &str) -> Option<String> {
-    let (alias_name, alias_opts) = match split_bracketed_opts(alias) {
-        Some((name, opts)) => (name, Some(parse_tool_options(opts))),
-        None => (alias, None),
-    };
-
-    if let Some((prefix, _)) = alias_name.split_once(':')
-        && BackendType::guess(prefix) != BackendType::Unknown
-    {
-        return None;
-    }
-
-    let registry_tool = REGISTRY.get(alias_name)?;
-    let full = registry_tool.backends().first()?.to_string();
-    let mut registry_opts = registry_tool.backend_options(&full);
-    if let Some(alias_opts) = alias_opts {
-        registry_opts.apply_overrides(&alias_opts);
-    }
-    let opts = serialize_tool_options(
-        registry_opts
-            .opts
-            .iter()
-            .filter(|(key, _)| !EPHEMERAL_OPT_KEYS.contains(&key.as_str())),
-    );
-
-    Some(match opts {
-        Some(opts) => format!("{full}[{opts}]"),
-        None => full,
-    })
-}
-
 impl BackendArg {
     #[requires(!short.is_empty())]
     pub fn new(short: String, full: Option<String>) -> Self {
@@ -392,12 +361,8 @@ impl BackendArg {
         }
 
         if config::is_loaded() {
-            if let Some(full) = Config::get_()
-                .all_aliases
-                .get(short)
-                .and_then(|a| a.backend.clone())
-            {
-                return resolve_registry_backend_alias(&full).unwrap_or(full);
+            if let Some(alias) = Config::get_().resolve_backend_alias(short) {
+                return alias.full;
             }
             if let Some(url) = Config::get_().repo_urls.get(short) {
                 return match install_state::get_plugin_type(short).unwrap_or(PluginType::Asdf) {
@@ -505,6 +470,12 @@ impl BackendArg {
     }
 
     pub fn registry_opts(&self) -> ToolVersionOptions {
+        if config::is_loaded()
+            && !self.has_env_backend_override()
+            && let Some(alias) = Config::get_().resolve_backend_alias(&self.short)
+        {
+            return alias.registry_opts;
+        }
         let full = self.full_without_opts();
         REGISTRY
             .get(self.short.as_str())
@@ -525,7 +496,9 @@ impl BackendArg {
         if let Some(manifest_opts) = self.install_manifest_opts() {
             opts.apply_overrides(manifest_opts);
         }
-        if let Some(full_opts) = self.resolved_full_opts() {
+        if alias_opts.is_none()
+            && let Some(full_opts) = self.resolved_full_opts()
+        {
             opts.apply_overrides(&full_opts);
         }
         if let Some(alias_opts) = alias_opts {
@@ -573,11 +546,9 @@ impl BackendArg {
         }
         let short = unalias_backend(&self.short);
         Config::get_()
-            .all_aliases
-            .get(short)
-            .and_then(|alias| alias.backend.as_deref())
-            .and_then(|backend| split_bracketed_opts(backend).map(|(_, opts)| opts))
-            .map(parse_tool_options)
+            .resolve_backend_alias(short)
+            .map(|alias| alias.alias_opts)
+            .filter(|opts| !opts.is_empty())
     }
 
     pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {

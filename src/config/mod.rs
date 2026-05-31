@@ -15,6 +15,7 @@ use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
@@ -83,6 +84,46 @@ pub struct Config {
 pub struct Alias {
     pub backend: Option<String>,
     pub versions: IndexMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BackendAliasResolution {
+    pub full: String,
+    pub registry_opts: ToolVersionOptions,
+    pub alias_opts: ToolVersionOptions,
+}
+
+fn resolve_backend_alias(alias: &str) -> BackendAliasResolution {
+    let (alias, alias_opts) = match split_bracketed_opts(alias) {
+        Some((alias, opts)) => (alias, crate::toolset::parse_tool_options(opts)),
+        None => (alias, ToolVersionOptions::default()),
+    };
+
+    if let Some((prefix, _)) = alias.split_once(':')
+        && BackendType::guess(prefix) != BackendType::Unknown
+    {
+        return BackendAliasResolution {
+            full: alias.to_string(),
+            registry_opts: ToolVersionOptions::default(),
+            alias_opts,
+        };
+    }
+
+    if let Some(registry_tool) = registry::REGISTRY.get(alias)
+        && let Some(full) = registry_tool.backends().first()
+    {
+        return BackendAliasResolution {
+            full: full.to_string(),
+            registry_opts: registry_tool.backend_options(full),
+            alias_opts,
+        };
+    }
+
+    BackendAliasResolution {
+        full: alias.to_string(),
+        registry_opts: ToolVersionOptions::default(),
+        alias_opts,
+    }
 }
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
@@ -352,17 +393,23 @@ impl Config {
         backend_arg: &Arc<BackendArg>,
     ) -> Result<ResolvedToolOptions> {
         let config_opts = self.get_tool_opts(backend_arg).await?;
-        let alias_opts = self.get_backend_alias_opts(backend_arg);
+        let backend_alias = if backend_arg.has_env_backend_override() {
+            None
+        } else {
+            self.resolve_backend_alias(&backend_arg.short)
+        };
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
         if let Some(manifest_opts) = backend_arg.install_manifest_opts() {
             resolved.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
         }
-        if let Some(full_opts) = backend_arg.resolved_full_opts() {
+        if backend_alias.is_none()
+            && let Some(full_opts) = backend_arg.resolved_full_opts()
+        {
             resolved.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
         }
-        if let Some(alias_opts) = alias_opts {
-            resolved.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
+        if let Some(backend_alias) = backend_alias {
+            resolved.apply_overrides(&backend_alias.alias_opts, ToolOptionSource::BackendAlias);
         }
         if let Some(config_opts) = config_opts {
             resolved.apply_overrides(&config_opts, ToolOptionSource::Config);
@@ -373,16 +420,10 @@ impl Config {
         Ok(resolved)
     }
 
-    fn get_backend_alias_opts(&self, backend_arg: &BackendArg) -> Option<ToolVersionOptions> {
-        if backend_arg.has_env_backend_override() {
-            return None;
-        }
-        let short = backend::unalias_backend(&backend_arg.short);
-        self.all_aliases
-            .get(short)
-            .and_then(|alias| alias.backend.as_deref())
-            .and_then(|backend| split_bracketed_opts(backend).map(|(_, opts)| opts))
-            .map(crate::toolset::parse_tool_options)
+    pub(crate) fn resolve_backend_alias(&self, short: &str) -> Option<BackendAliasResolution> {
+        let short = backend::unalias_backend(short);
+        let alias = self.all_aliases.get(short)?.backend.as_deref()?;
+        Some(resolve_backend_alias(alias))
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
