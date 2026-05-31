@@ -233,7 +233,9 @@ async fn download_registry_source(registry_url: &str) -> aqua_registry::Result<S
                 ACCEPT,
                 HeaderValue::from_static("application/vnd.github.raw"),
             );
-            HTTP.get_text_with_headers(url.as_str(), &headers)
+            HTTP.get_text_request(url.as_str())
+                .headers(&headers)
+                .send()
                 .await
                 .map_err(|err| {
                     AquaRegistryError::RegistryNotAvailable(format!(
