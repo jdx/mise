@@ -12,7 +12,6 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::settings::SettingsRuby;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
 use crate::env::PATH_KEY;
@@ -28,6 +27,9 @@ use crate::ui::progress_report::SingleReport;
 use crate::{file, hash, plugins, timeout};
 
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
+const DEFAULT_RUBY_PRECOMPILED_URL: &str = "jdx/ruby";
+const DEFAULT_RUBY_BUILD_REPO: &str = "https://github.com/rbenv/ruby-build.git";
+const DEFAULT_RUBY_INSTALL_REPO: &str = "https://github.com/postmodern/ruby-install.git";
 const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_RUBY_GITHUB_ATTESTATIONS=false\n\
     or add `ruby.github_attestations = false` under [settings] in mise.toml";
 
@@ -1025,7 +1027,6 @@ impl Backend for RubyPlugin {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
         let ruby = &settings.ruby;
-        let default_ruby = SettingsRuby::default();
         let is_current_platform = target.is_current();
 
         if is_current_platform {
@@ -1043,7 +1044,7 @@ impl Backend for RubyPlugin {
                 if let Some(ruby_install_opts) = ruby.ruby_install_opts.clone() {
                     opts.insert("ruby_install_opts".to_string(), ruby_install_opts);
                 }
-                if ruby.ruby_install_repo != default_ruby.ruby_install_repo {
+                if ruby.ruby_install_repo != DEFAULT_RUBY_INSTALL_REPO {
                     opts.insert(
                         "ruby_install_repo".to_string(),
                         ruby.ruby_install_repo.clone(),
@@ -1053,7 +1054,7 @@ impl Backend for RubyPlugin {
                 if let Some(ruby_build_opts) = ruby.ruby_build_opts.clone() {
                     opts.insert("ruby_build_opts".to_string(), ruby_build_opts);
                 }
-                if ruby.ruby_build_repo != default_ruby.ruby_build_repo {
+                if ruby.ruby_build_repo != DEFAULT_RUBY_BUILD_REPO {
                     opts.insert("ruby_build_repo".to_string(), ruby.ruby_build_repo.clone());
                 }
             }
@@ -1064,7 +1065,7 @@ impl Backend for RubyPlugin {
         }
 
         if ruby.compile == Some(false) || (settings.experimental && ruby.compile.is_none()) {
-            if ruby.precompiled_url != default_ruby.precompiled_url {
+            if ruby.precompiled_url != DEFAULT_RUBY_PRECOMPILED_URL {
                 opts.insert("precompiled_url".to_string(), ruby.precompiled_url.clone());
             }
             if let Some(precompiled_arch) = ruby.precompiled_arch.clone() {
