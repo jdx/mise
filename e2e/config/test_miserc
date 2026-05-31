@@ -34,6 +34,19 @@ assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.test.toml  2"
 
 cd .. || exit 1
 
+# MISE_CEILING_PATHS should also limit early .miserc.toml discovery.
+rm -f .miserc.toml
+mkdir -p ceiling-parent/child/grandchild
+echo 'env = ["test"]' >ceiling-parent/.miserc.toml
+echo "tools.dummy = '1'" >ceiling-parent/child/grandchild/mise.toml
+echo "tools.dummy = '2'" >ceiling-parent/child/grandchild/mise.test.toml
+cd ceiling-parent/child/grandchild || exit 1
+export MISE_CEILING_PATHS="$HOME/workdir/ceiling-parent/child"
+assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/ceiling-parent/child/grandchild/mise.toml  1"
+unset MISE_CEILING_PATHS
+
+cd ../../.. || exit 1
+
 # Test Tera template support in .miserc.toml
 # ceiling_paths with {{ env.HOME }} should expand and stop config traversal
 rm -f .miserc.toml

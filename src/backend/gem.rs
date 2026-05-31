@@ -3,11 +3,13 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+#[cfg(unix)]
+use crate::env;
 use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
-use crate::{Result, config::Config, env};
+use crate::{Result, config::Config};
 use async_trait::async_trait;
 use indoc::formatdoc;
 use serde::Deserialize;
