@@ -236,16 +236,18 @@ mise is available on npm as a precompiled binary. This isn't a Node.js packageâ€
 via npm. This is useful for JS projects that want to setup mise via `package.json` or `npx`.
 
 ```sh
-npm install -g @jdxcode/mise
+npm install -g mise
 ```
 
 Use npx if you just want to test it out for a single command without fully installing:
 
 ```sh
-npx @jdxcode/mise exec python@3.11 -- python some_script.py
+npx mise exec python@3.11 -- python some_script.py
 ```
 
-[npm package](https://www.npmjs.com/package/@jdxcode/mise)
+[npm package](https://www.npmjs.com/package/mise)
+
+The legacy [`@jdxcode/mise`](https://www.npmjs.com/package/@jdxcode/mise) package is still published.
 
 ### GitHub Releases
 
