@@ -56,6 +56,7 @@ impl<'a> SpmOptions<'a> {
 
     fn provider(&self, target: Option<&PlatformTarget>) -> String {
         self.option_string("provider", target)
+            .map(|provider| provider.to_lowercase())
             .unwrap_or_else(|| GitProviderKind::GitHub.as_ref().to_string())
     }
 
@@ -103,7 +104,12 @@ impl<'a> SpmOptions<'a> {
             Ok(ArtifactBundleMode::SourceOnly) => {
                 opts.insert("artifactbundle".to_string(), "false".to_string());
             }
-            Ok(ArtifactBundleMode::Auto) | Err(_) => {}
+            Err(_) => {
+                if let Some(artifactbundle) = self.option_string("artifactbundle", Some(target)) {
+                    opts.insert("artifactbundle".to_string(), artifactbundle);
+                }
+            }
+            Ok(ArtifactBundleMode::Auto) => {}
         }
         if let Some(asset) = self.artifactbundle_asset(Some(target)) {
             opts.insert("artifactbundle_asset".to_string(), asset);
@@ -1132,7 +1138,7 @@ mod tests {
         let mut opts = ToolVersionOptions::default();
         opts.opts.insert(
             "provider".to_string(),
-            toml::Value::String("gitlab".to_string()),
+            toml::Value::String("GitLab".to_string()),
         );
         opts.opts.insert(
             "api_url".to_string(),
@@ -1163,6 +1169,19 @@ mod tests {
                 ),
                 ("provider".to_string(), "gitlab".to_string()),
             ])
+        );
+    }
+
+    #[test]
+    fn test_lockfile_options_include_invalid_artifactbundle_value() {
+        let opts = opts_with(
+            "artifactbundle",
+            toml::Value::String("sometimes".to_string()),
+        );
+
+        assert_eq!(
+            SpmOptions::new(&opts).lockfile_options(&PlatformTarget::from_current()),
+            BTreeMap::from([("artifactbundle".to_string(), "sometimes".to_string())])
         );
     }
 
