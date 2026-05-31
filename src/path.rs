@@ -137,9 +137,84 @@ pub fn is_posix_shell_program(program: &Path) -> bool {
     POSIX_SHELLS.iter().any(|name| *name == stem)
 }
 
+/// Split a configured shell *command string* (program + args) into argv,
+/// honoring host conventions.
+///
+/// On Windows, backslashes are ordinary path characters (NOT escapes) and only
+/// double-quoted spans group whitespace — matching how a Windows user expects
+/// `C:\path\bash.exe` or `"C:\Program Files\..\bash.exe" -c` to parse. A `""`
+/// inside a quoted span is a literal `"`; single quotes are literal characters
+/// (cmd does not use them, and they can occur in paths). On Unix, defer to
+/// `shell_words::split` for POSIX quoting/escaping.
+///
+/// Used for every configured shell string — a task's `shell`, hook and
+/// `[[watch_files]]` shells, and the `*_default_*_shell_args` settings — so an
+/// explicit shell path with spaces (when double-quoted) or with backslashes
+/// reaches the spawn verbatim instead of being mangled. Returns `Err` only on
+/// an unbalanced double quote (Windows) or a `shell_words` parse error (Unix).
+pub fn split_shell_command(s: &str) -> eyre::Result<Vec<String>> {
+    #[cfg(windows)]
+    {
+        split_shell_command_windows(s)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(shell_words::split(s)?)
+    }
+}
+
+/// Windows `CommandLineToArgvW`-style splitter, narrowed to mise's needs:
+/// double quotes group whitespace, `""` inside a quoted span is a literal `"`,
+/// and backslash is a plain character (never an escape — so Windows paths
+/// survive). Single quotes are literal. Errors only on an unterminated
+/// double-quoted span.
+#[cfg(windows)]
+fn split_shell_command_windows(s: &str) -> eyre::Result<Vec<String>> {
+    let mut args: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut in_token = false;
+    let mut in_quotes = false;
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '"' {
+            in_token = true;
+            if in_quotes {
+                if chars.peek() == Some(&'"') {
+                    // `""` inside a quoted span → a literal `"`.
+                    cur.push('"');
+                    chars.next();
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                in_quotes = true;
+            }
+        } else if c.is_whitespace() && !in_quotes {
+            if in_token {
+                args.push(std::mem::take(&mut cur));
+                in_token = false;
+            }
+        } else {
+            in_token = true;
+            cur.push(c);
+        }
+    }
+    if in_quotes {
+        return Err(eyre::eyre!("unbalanced quote in shell command: {s}"));
+    }
+    if in_token {
+        args.push(cur);
+    }
+    Ok(args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sv(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| s.to_string()).collect()
+    }
 
     #[test]
     fn test_windows_path_list_to_unix_basic() {
@@ -248,5 +323,81 @@ mod tests {
         assert!(!is_posix_shell_program(Path::new("pwsh.exe")));
         assert!(!is_posix_shell_program(Path::new("rustc")));
         assert!(!is_posix_shell_program(Path::new("")));
+    }
+
+    #[test]
+    fn test_split_shell_command_bare_names() {
+        assert_eq!(split_shell_command("bash -c").unwrap(), sv(&["bash", "-c"]));
+        assert_eq!(split_shell_command("sh -c").unwrap(), sv(&["sh", "-c"]));
+        assert_eq!(
+            split_shell_command("sh -c -o errexit").unwrap(),
+            sv(&["sh", "-c", "-o", "errexit"])
+        );
+    }
+
+    #[test]
+    fn test_split_shell_command_empty() {
+        assert_eq!(split_shell_command("").unwrap(), sv(&[]));
+        assert_eq!(split_shell_command("   ").unwrap(), sv(&[]));
+    }
+
+    #[test]
+    fn test_split_shell_command_quoted_path_with_spaces() {
+        // A double-quoted path containing spaces is one token on both platforms.
+        assert_eq!(
+            split_shell_command("\"C:/Program Files/Git/bin/bash.exe\" -c").unwrap(),
+            sv(&["C:/Program Files/Git/bin/bash.exe", "-c"])
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_split_shell_command_windows_backslash_is_literal() {
+        // Backslash is a plain path char on Windows, not an escape.
+        assert_eq!(
+            split_shell_command(r"C:\msys64\usr\bin\bash.exe -c").unwrap(),
+            sv(&[r"C:\msys64\usr\bin\bash.exe", "-c"])
+        );
+        assert_eq!(
+            split_shell_command("\"C:\\Program Files\\Git\\bin\\bash.exe\" -c").unwrap(),
+            sv(&[r"C:\Program Files\Git\bin\bash.exe", "-c"])
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_split_shell_command_windows_unquoted_space_splits() {
+        // Documented ambiguity: an unquoted space splits even inside a path.
+        assert_eq!(
+            split_shell_command(r"C:/Program Files/Git/bin/bash.exe -c").unwrap(),
+            sv(&["C:/Program", "Files/Git/bin/bash.exe", "-c"])
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_split_shell_command_windows_double_quote_is_literal() {
+        // `""` inside a quoted span → a literal `"`.
+        assert_eq!(
+            split_shell_command("\"a\"\"b\" c").unwrap(),
+            sv(&["a\"b", "c"])
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_split_shell_command_windows_unbalanced_quote_errs() {
+        assert!(split_shell_command("\"unterminated").is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_split_shell_command_unix_posix_semantics() {
+        // Unix keeps shell_words (POSIX) behavior: backslash escapes, single quotes group.
+        assert_eq!(
+            split_shell_command(r"bash\ script -c").unwrap(),
+            sv(&["bash script", "-c"])
+        );
+        assert_eq!(split_shell_command("'a b' c").unwrap(), sv(&["a b", "c"]));
     }
 }

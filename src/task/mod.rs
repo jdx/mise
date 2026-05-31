@@ -1230,19 +1230,20 @@ impl Task {
         false
     }
 
-    pub fn shell(&self) -> Option<Vec<String>> {
-        self.shell.as_ref().and_then(|shell| {
-            let shell_cmd = shell
-                .split_whitespace()
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>();
-            if shell_cmd.is_empty() || shell_cmd[0].trim().is_empty() {
-                warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c)");
-                None
-            } else {
-                Some(shell_cmd)
-            }
-        })
+    pub fn shell(&self) -> eyre::Result<Option<Vec<String>>> {
+        let Some(shell) = self.shell.as_ref() else {
+            return Ok(None);
+        };
+        // A malformed explicit shell (e.g. an unbalanced quote in a path with
+        // spaces) must fail loudly rather than silently falling back to the
+        // default shell and running the task under the wrong interpreter.
+        let shell_cmd = crate::path::split_shell_command(shell)?;
+        if shell_cmd.is_empty() || shell_cmd[0].trim().is_empty() {
+            warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c)");
+            Ok(None)
+        } else {
+            Ok(Some(shell_cmd))
+        }
     }
 
     /// Overlay metadata from a `[tasks.<name>]` TOML block onto this task.
@@ -2351,6 +2352,68 @@ mod tests {
         for (root, path) in test_cases {
             assert!(name_from_path(root, path).is_err())
         }
+    }
+
+    #[test]
+    fn test_shell_parses_and_validates() {
+        let mut task = Task {
+            shell: Some("bash -c".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            task.shell().unwrap(),
+            Some(vec!["bash".to_string(), "-c".to_string()])
+        );
+
+        // Whitespace-only is invalid → Ok(None).
+        task.shell = Some("   ".to_string());
+        assert_eq!(task.shell().unwrap(), None);
+
+        // No shell configured → Ok(None).
+        task.shell = None;
+        assert_eq!(task.shell().unwrap(), None);
+    }
+
+    #[test]
+    fn test_shell_unbalanced_quote_fails_loudly() {
+        // A malformed explicit shell (unbalanced quote) must error, not silently
+        // fall back to the default shell and run under the wrong interpreter.
+        // Codex review of #9932.
+        let task = Task {
+            shell: Some("\"unterminated".to_string()),
+            ..Default::default()
+        };
+        assert!(task.shell().is_err());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_shell_parses_explicit_windows_path() {
+        // #9932: a backslash path stays one token, and a double-quoted path with
+        // spaces is one token. (POSIX parsing is covered in path.rs tests.)
+        let task = Task {
+            shell: Some(r"C:\msys64\usr\bin\bash.exe -c".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            task.shell().unwrap(),
+            Some(vec![
+                r"C:\msys64\usr\bin\bash.exe".to_string(),
+                "-c".to_string()
+            ])
+        );
+
+        let task = Task {
+            shell: Some("\"C:\\Program Files\\Git\\bin\\bash.exe\" -c".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            task.shell().unwrap(),
+            Some(vec![
+                r"C:\Program Files\Git\bin\bash.exe".to_string(),
+                "-c".to_string()
+            ])
+        );
     }
 
     // This test verifies that resolve_depends correctly uses self.depends_post

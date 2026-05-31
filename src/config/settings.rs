@@ -708,7 +708,7 @@ impl Settings {
         } else {
             &self.unix_default_inline_shell_args
         };
-        Ok(shell_words::split(sa)?)
+        crate::path::split_shell_command(sa)
     }
 
     pub fn default_file_shell(&self) -> Result<Vec<String>> {
@@ -717,7 +717,7 @@ impl Settings {
         } else {
             &self.unix_default_file_shell_args
         };
-        Ok(shell_words::split(sa)?)
+        crate::path::split_shell_command(sa)
     }
 
     pub fn os(&self) -> &str {

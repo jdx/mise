@@ -859,7 +859,7 @@ impl TaskExecutor {
             return Ok((display, args.to_vec()));
         }
         let shell = task
-            .shell()
+            .shell()?
             .or_else(|| shell_from_shebang(file))
             .or_else(|| shell_from_extension(file))
             .unwrap_or(Settings::get().default_file_shell()?);
@@ -878,7 +878,7 @@ impl TaskExecutor {
         task: &Task,
         args: &[String],
     ) -> Result<(String, Vec<String>)> {
-        let shell = task.shell().unwrap_or(self.clone_default_inline_shell()?);
+        let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
 
@@ -901,7 +901,7 @@ impl TaskExecutor {
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
         if let Some(shell) = &self.shell {
-            Ok(shell_words::split(shell)?)
+            crate::path::split_shell_command(shell)
         } else {
             Settings::get().default_inline_shell()
         }
@@ -1360,18 +1360,28 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
 ///      entry that isn't the WSL launcher. This rescues setups where a real
 ///      POSIX bash is on PATH but appears after `C:\Windows\System32`.
 ///
-/// Returns `None` when the program is not a POSIX shell, the env has no PATH,
-/// the PATH is already in Unix form (no `;` and no `\`, so no conversion will
-/// fire), `which` finds nothing, or every PATH match for `bash` is the WSL
-/// launcher — in those cases the caller keeps the original program string and
-/// lets the stdlib spawn it (which will then fail loudly rather than silently
-/// routing into WSL).
+/// Returns `None` when the program is not a POSIX shell, the program is already
+/// an explicit path (absolute, or relative with a directory component — that is
+/// honored verbatim and never re-resolved), the env has no PATH, the PATH is
+/// already in Unix form (no `;` and no `\`, so no conversion will fire), `which`
+/// finds nothing, or every PATH match for `bash` is the WSL launcher — in those
+/// cases the caller keeps the original program string and lets the stdlib spawn
+/// it (which will then fail loudly rather than silently routing into WSL).
 #[cfg(windows)]
 fn resolve_posix_shell_program_path(
     program: &std::ffi::OsStr,
     env: &BTreeMap<String, String>,
 ) -> Option<std::ffi::OsString> {
     if !crate::path::is_posix_shell_program(Path::new(program)) {
+        return None;
+    }
+    // An explicit path (absolute, or relative with a directory component) is a
+    // deliberate choice of *which* shell binary to run — honor it verbatim
+    // rather than re-resolving via the bash candidate list or a PATH search.
+    // Only a bare command name (`bash`, `bash.exe`) flows into the WSL-avoidance
+    // resolution below. Regression fix for discussion #9932: PR #9750 over-
+    // resolved and silently swapped an explicit Cygwin bash for Git Bash.
+    if program_has_directory_component(program) {
         return None;
     }
     let path_val = env.get(&*crate::env::PATH_KEY)?;
@@ -1431,6 +1441,17 @@ fn resolve_posix_shell_program_path(
 #[cfg(windows)]
 fn is_bash_basename(program: &std::ffi::OsStr) -> bool {
     crate::path::program_stem(Path::new(program)).as_deref() == Some("bash")
+}
+
+/// Returns true if `program` carries an explicit directory component — an
+/// absolute path (`C:\x\bash.exe`, `C:/x/bash.exe`) or a relative one with a
+/// separator (`./bash`, `bin/bash`) — as opposed to a bare command name
+/// (`bash`, `bash.exe`) that must be looked up on PATH. Checks for either
+/// separator (matching `program_stem`'s basename split) and is robust to
+/// `to_string_lossy` on non-UTF-8 input (U+FFFD is neither separator).
+#[cfg(windows)]
+fn program_has_directory_component(program: &std::ffi::OsStr) -> bool {
+    program.to_string_lossy().contains(['/', '\\'])
 }
 
 /// Common real-POSIX-bash install locations on Windows (Git Bash + MSYS2), in
@@ -1761,5 +1782,82 @@ mod tests {
     fn test_resolve_posix_shell_program_path_skips_when_path_already_unix() {
         let env = env_with_path("/c/foo:/d/bar");
         assert!(resolve_posix_shell_program_path(std::ffi::OsStr::new("bash"), &env).is_none());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_honors_explicit_forward_slash_path() {
+        // #9932: an explicit absolute bash path must be kept verbatim (None here,
+        // so the caller keeps the original), NOT re-resolved to Git Bash via the
+        // candidate list — even with a Windows-form PATH that would otherwise
+        // trigger resolution.
+        let env = env_with_path(r"C:\Windows\System32;C:\Program Files\Git\bin");
+        assert!(
+            resolve_posix_shell_program_path(
+                std::ffi::OsStr::new("C:/msys64/usr/bin/bash.exe"),
+                &env
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_honors_explicit_path_backslashes() {
+        let env = env_with_path(r"C:\Windows\System32;C:\Program Files\Git\bin");
+        assert!(
+            resolve_posix_shell_program_path(
+                std::ffi::OsStr::new(r"C:\msys64\usr\bin\bash.exe"),
+                &env
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_honors_explicit_relative_path() {
+        // A relative path with a separator is still an explicit choice, not a
+        // bare name to look up on PATH.
+        let env = env_with_path(r"C:\Windows\System32;C:\Program Files\Git\bin");
+        assert!(resolve_posix_shell_program_path(std::ffi::OsStr::new("bin/bash"), &env).is_none());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_honors_explicit_non_bash_shell_path() {
+        // An explicit path to a non-bash POSIX shell is honored verbatim too.
+        let env = env_with_path(r"C:\Windows\System32;C:\msys64\usr\bin");
+        assert!(
+            resolve_posix_shell_program_path(
+                std::ffi::OsStr::new(r"C:\msys64\usr\bin\zsh.exe"),
+                &env
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_program_has_directory_component_detects_explicit_paths() {
+        use std::ffi::OsStr;
+        assert!(program_has_directory_component(OsStr::new(
+            "C:/msys64/usr/bin/bash.exe"
+        )));
+        assert!(program_has_directory_component(OsStr::new(
+            r"C:\msys64\usr\bin\bash.exe"
+        )));
+        assert!(program_has_directory_component(OsStr::new("./bash")));
+        assert!(program_has_directory_component(OsStr::new("bin/bash")));
+        assert!(program_has_directory_component(OsStr::new("/usr/bin/bash")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_program_has_directory_component_rejects_bare_names() {
+        use std::ffi::OsStr;
+        assert!(!program_has_directory_component(OsStr::new("bash")));
+        assert!(!program_has_directory_component(OsStr::new("bash.exe")));
+        assert!(!program_has_directory_component(OsStr::new("BASH.EXE")));
     }
 }
