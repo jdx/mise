@@ -84,14 +84,17 @@ impl SandboxConfig {
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn effective_deny_read(&self) -> bool {
         self.deny_read || !self.allow_read.is_empty()
     }
 
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn effective_deny_write(&self) -> bool {
         self.deny_write || !self.allow_write.is_empty()
     }
 
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn effective_deny_net(&self) -> bool {
         self.deny_net || !self.allow_net.is_empty()
     }
@@ -150,6 +153,7 @@ impl SandboxConfig {
     /// On Linux: applies Landlock rules and seccomp filters in-process (inherited across exec).
     /// On macOS: returns a modified command that wraps through sandbox-exec.
     #[cfg(not(test))]
+    #[cfg_attr(windows, allow(dead_code))]
     #[allow(unused_variables)]
     pub async fn apply(
         &self,
@@ -218,6 +222,7 @@ impl SandboxConfig {
 
 /// A command rewritten to run through a sandbox wrapper (macOS sandbox-exec).
 #[cfg(not(test))]
+#[cfg_attr(windows, allow(dead_code))]
 #[derive(Debug)]
 pub struct SandboxedCommand {
     pub program: String,
