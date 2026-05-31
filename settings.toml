@@ -291,20 +291,26 @@ type = "Bool"
 
 [color_theme]
 default = "default"
-description = "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)"
+description = "Theme for interactive prompts (auto/default, charm, base16, catppuccin, dracula)"
 docs = """
 Sets the color theme for interactive prompts like `mise run` task selection.
 Available themes:
 
-- `default` or `charm` - Default theme, works well on dark terminals
+- `auto` (or `default`) - Auto-detect the terminal background (via `COLORFGBG`) and
+  use a light-friendly theme (`base16`) on light terminals, otherwise `charm`
+- `charm` - The charm theme, works well on dark terminals (no auto-detection)
 - `base16` - Base16 theme, works well on light terminals
 - `catppuccin` - Catppuccin theme
 - `dracula` - Dracula theme
 
-If you're using a light terminal and the default theme is hard to read,
-try setting this to `base16`.
+`default` is an alias for `auto`: when left unset (or set to `auto`/`default`), mise
+auto-detects a light terminal background via `COLORFGBG` and switches to `base16` for
+readability. Set an explicit theme (e.g. `charm`) to disable auto-detection.
+
+When colors are disabled (`color=false`, `NO_COLOR`, or `CLICOLOR=0`), interactive
+prompts are rendered without any styling regardless of this setting.
 """
-enum = ["default", "charm", "base16", "catppuccin", "dracula"]
+enum = ["auto", "default", "charm", "base16", "catppuccin", "dracula"]
 env = "MISE_COLOR_THEME"
 type = "String"
 
