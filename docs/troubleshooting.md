@@ -174,6 +174,25 @@ mise run my-bash-task
 MISE_BASH_PATH = "C:/tools/msys64/usr/bin/bash.exe"
 ```
 
+mise honors an **explicit** bash path as-is. If you set `shell` (in a task) or
+`windows_default_inline_shell_args` to an absolute path such as
+`C:/msys64/usr/bin/bash.exe -c`, mise uses exactly that binary — the
+`MISE_BASH_PATH` override and the Git Bash / MSYS2 auto-detection apply only
+when the shell is the bare name `bash`.
+
+If your shell path contains spaces (e.g. `C:\Program Files\Git\bin\bash.exe`),
+wrap the program in double quotes so the space is not treated as an argument
+separator. On Windows, backslashes are treated literally, so they need no
+escaping; forward slashes work too:
+
+```toml
+[tasks.build]
+run = "echo hi"
+shell = '"C:\Program Files\Git\bin\bash.exe" -c'
+```
+
+(On macOS/Linux, `shell` follows POSIX quoting rules instead.)
+
 ## mise isn't working when calling from tmux or another shell initialization script
 
 `mise activate` will not update PATH until the shell prompt is displayed. So if you need to access a
