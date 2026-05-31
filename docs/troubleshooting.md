@@ -195,7 +195,7 @@ shell = '"C:\Program Files\Git\bin\bash.exe" -c'
 
 #### Cygwin
 
-mise also detects Cygwin bash (by a `cygwin` / `cygwin64` segment in its path) and
+mise also detects Cygwin bash (by a `cygwin` / `cygwin64` / `cygwin32` segment in its path) and
 converts PATH using Cygwin's `/cygdrive/c/...` form instead of Git Bash's `/c/...`,
 so binaries on PATH resolve correctly. Point `MISE_BASH_PATH` at your Cygwin bash so
 the intended one is used:
@@ -211,6 +211,9 @@ set `MISE_CYGDRIVE_PREFIX` to match — mise does not read `/etc/fstab`:
 # e.g. for an fstab that mounts drives under /mnt
 $env:MISE_CYGDRIVE_PREFIX = "/mnt"
 ```
+
+The prefix must be absolute (start with `/`); a relative value like `mnt` is rejected
+with a warning and the default `/cygdrive` is used instead.
 
 ## mise isn't working when calling from tmux or another shell initialization script
 

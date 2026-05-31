@@ -228,9 +228,10 @@ fn split_shell_command_windows(s: &str) -> eyre::Result<Vec<String>> {
 /// default install dirs are `C:\cygwin64` and `C:\cygwin`. Used on Windows to pick
 /// the `/cygdrive/c/` PATH form instead of MSYS2 / Git Bash's `/c/`.
 ///
-/// Normalizes `\` → `/` first so it works for both backslash paths (`MISE_BASH_PATH`,
-/// `bash_candidates`) and forward-slash paths (`which::which_in`). Matches whole path
-/// segments so a directory that merely contains "cygwin" as a substring (e.g.
+/// Splits on both `/` and `\` and compares segments case-insensitively, so it works
+/// for backslash paths (`MISE_BASH_PATH`, `bash_candidates`) and forward-slash paths
+/// (`which::which_in`) without allocating any temporaries. Matches whole path segments
+/// so a directory that merely contains "cygwin" as a substring (e.g.
 /// `my-cygwinish-tools`) does not trip it. `MSYSTEM` is deliberately not consulted —
 /// PowerShell-launched mise inherits none, so it is not a reliable signal.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -238,10 +239,11 @@ pub fn is_cygwin_shell(program: &Path) -> bool {
     let Some(s) = program.to_str() else {
         return false;
     };
-    s.to_ascii_lowercase()
-        .replace('\\', "/")
-        .split('/')
-        .any(|seg| seg == "cygwin" || seg == "cygwin64" || seg == "cygwin32")
+    s.split(['/', '\\']).any(|seg| {
+        seg.eq_ignore_ascii_case("cygwin")
+            || seg.eq_ignore_ascii_case("cygwin64")
+            || seg.eq_ignore_ascii_case("cygwin32")
+    })
 }
 
 #[cfg(test)]
@@ -306,7 +308,10 @@ mod tests {
 
     #[test]
     fn test_windows_path_list_to_unix_program_files_with_spaces() {
-        assert_eq!(msys(r"C:\Program Files\Git\bin"), "/c/Program Files/Git/bin");
+        assert_eq!(
+            msys(r"C:\Program Files\Git\bin"),
+            "/c/Program Files/Git/bin"
+        );
     }
 
     #[test]
@@ -489,7 +494,9 @@ mod tests {
     fn test_is_cygwin_shell_detects_cygwin_paths() {
         assert!(is_cygwin_shell(Path::new(r"C:\cygwin64\bin\bash.exe")));
         assert!(is_cygwin_shell(Path::new(r"C:\cygwin\bin\bash.exe")));
-        assert!(is_cygwin_shell(Path::new(r"D:\tools\cygwin64\bin\bash.exe")));
+        assert!(is_cygwin_shell(Path::new(
+            r"D:\tools\cygwin64\bin\bash.exe"
+        )));
         assert!(is_cygwin_shell(Path::new("C:/cygwin64/bin/bash.exe")));
         // Case-insensitive in both the drive and the `cygwin` segment.
         assert!(is_cygwin_shell(Path::new(r"C:\CygWin64\bin\BASH.EXE")));
