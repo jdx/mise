@@ -103,7 +103,7 @@ hero:
           <pre><code>$ curl https://mise.run | sh<br />✓ mise installed<br /><br />$ mise doctor<br />✓ mise is ready</code></pre>
         </div>
         <div class="recipe-panel recipe-panel-2">
-          <pre><code>$ mise use node@24 python@3.13 terraform@1<br />✓ wrote mise.toml<br /><br />$ mise install<br />✓ installed 3 tools</code></pre>
+          <pre><code>$ mise use node@26 python@3.14 terraform@1<br />✓ wrote mise.toml<br /><br />$ mise install<br />✓ installed 3 tools</code></pre>
         </div>
         <div class="recipe-panel recipe-panel-3">
           <pre><code>$ cat .env.local<br />DATABASE_URL=postgres://localhost/orders<br /><br />$ mise env -s bash<br />export DATABASE_URL=postgres://localhost/orders</code></pre>
