@@ -987,6 +987,48 @@ packages:
           - windows
   - type: github_release
     repo_owner: Bearer
+    repo_name: bearer
+    description: Code security scanning tool (SAST) to discover, filter and prioritize security and privacy risks
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.24.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.43.4")
+        asset: bearer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.zst
+            asset: bearer_{{trimV .Version}}_{{.OS}}-{{.Arch}}.pkg.{{.Format}}
+            files:
+              - name: bearer
+                src: usr/bin/bearer
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: bearer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.zst
+            asset: bearer_{{trimV .Version}}_{{.OS}}-{{.Arch}}.pkg.{{.Format}}
+            files:
+              - name: bearer
+                src: usr/bin/bearer
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
+    repo_owner: Bearer
     repo_name: gon
     description: Sign, notarize, and package macOS CLI tools and applications written in any language. Available as both a CLI and a Go library
     version_constraint: "false"
@@ -1082,107 +1124,93 @@ packages:
   - type: github_release
     repo_owner: Boeing
     repo_name: config-file-validator
-    description: Cross Platform tool to validate configuration files
-    asset: validator-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-    format: tar.gz
-    overrides:
-      - goos: windows
-        goarch: amd64
-        format: zip
-      - goos: windows
-        goarch: arm64
-        type: go_install
-        path: github.com/Boeing/config-file-validator/cmd/validator
+    description: Cross-platform CLI tool to validate configuration files across 17 formats. Syntax and schema validation with JSON Schema, XSD, and SchemaStore integration. Written in Go
     files:
       - name: validator
-    checksum:
-      type: github_release
-      asset: "{{.Asset}}.md5"
-      algorithm: md5
-    version_constraint: semver(">= 1.5.0")
+    version_constraint: "false"
     version_overrides:
-      - version_constraint: Version == "v1.4.0"
-        asset: validator-{{trimV .Version}}-{{.OS}}-{{.Arch}}
-        format: raw
-        checksum:
-          enabled: false
-        overrides:
-          - goos: windows
-            goarch: amd64
-            asset: validator-{{trimV .Version}}
-          - goos: linux
-            goarch: arm64
-            type: go_install
-            path: github.com/Boeing/config-file-validator/cmd/validator
-          - goos: windows
-            goarch: arm64
-            type: go_install
-            path: github.com/Boeing/config-file-validator/cmd/validator
-        files:
-          - name: validator
-        replacements:
-          darwin: macos
-        rosetta2: true
       - version_constraint: Version == "v1.3.0"
         asset: validator.{{.OS}}-{{.Arch}}
         format: raw
+        rosetta2: true
         replacements:
           darwin: macos
-        rosetta2: true
-        checksum:
-          enabled: false
         overrides:
           - goos: windows
-            goarch: amd64
             asset: validator
-          - goos: linux
-            goarch: arm64
-            type: go_install
-            path: github.com/Boeing/config-file-validator/cmd/validator
-          - goos: windows
-            goarch: arm64
-            type: go_install
-            path: github.com/Boeing/config-file-validator/cmd/validator
-      - version_constraint: semver(">= 1.0.1")
-        asset: validator.{{.OS}}-{{.Arch}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.4.0"
+        asset: validator-{{trimV .Version}}-{{.OS}}-{{.Arch}}
         format: raw
         rosetta2: true
-        replacements: {}
-        checksum:
-          enabled: false
+        replacements:
+          darwin: macos
         overrides:
           - goos: windows
-            goarch: amd64
-            asset: validator
-          - goarch: arm64
-            type: go_install
-            path: github.com/Boeing/config-file-validator/cmd/validator
-          - goos: darwin
-            type: go_install
-            path: github.com/Boeing/config-file-validator/cmd/validator
-      - version_constraint: Version == "v1.0.0"
+            asset: validator-{{trimV .Version}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.2.0")
         asset: validator.{{.OS}}-{{.Arch}}
         format: raw
-        replacements: {}
-        rosetta2: true
-        checksum:
-          enabled: false
         overrides:
           - goos: windows
-            goarch: amd64
             asset: validator
-          - goarch: arm64
-            type: go_build
-            files:
-              - name: validator
-                src: ./cmd/validator
-                dir: config-file-validator-{{trimV .Version}}
-          - goos: darwin
-            type: go_build
-            files:
-              - name: validator
-                src: ./cmd/validator
-                dir: config-file-validator-{{trimV .Version}}
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("<= 2.1.0")
+        asset: validator-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v2.2.0"
+        asset: validator-v2.2-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v2.2.1"
+        asset: validator-v2.2-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: validator-v{{(semver .Version).Major}}.{{(semver .Version).Minor}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: Builditluc
     repo_name: wiki-tui
@@ -4120,6 +4148,75 @@ packages:
             files:
               - name: redli
                 src: redli_{{.Arch}}.exe
+  - type: github_release
+    repo_owner: ImageMagick
+    repo_name: ImageMagick
+    description: ImageMagick is a free and open-source software suite for displaying, creating, converting, modifying, and editing raster images
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 7.1.2-18")
+        supported_envs:
+          - windows/amd64
+        overrides:
+          - goos: linux
+            format: raw
+            asset: ImageMagick-{{.Version}}-gcc-x86_64.AppImage
+            files:
+              - name: magick
+          - goos: windows
+            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-x64.{{.Format}}
+            format: 7z
+            files:
+              - name: compare
+              - name: composite
+              - name: conjure
+              - name: identify
+              - name: magick
+              - name: mogrify
+              - name: montage
+              - name: stream
+      - version_constraint: Version == "7.1.2-19"
+        github_artifact_attestations:
+          signer_workflow: ImageMagick/ImageMagick/.github/workflows/release.yml
+        supported_envs:
+          - windows/amd64
+        overrides:
+          - goos: windows
+            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-x64.{{.Format}}
+            format: 7z
+            files:
+              - name: compare
+              - name: composite
+              - name: conjure
+              - name: identify
+              - name: magick
+              - name: mogrify
+              - name: montage
+              - name: stream
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: ImageMagick/ImageMagick/.github/workflows/release.yml
+        supported_envs:
+          - windows/amd64
+          - linux/amd64
+        overrides:
+          - goos: linux
+            format: raw
+            asset: ImageMagick-{{.Version}}-gcc-x86_64.AppImage
+            files:
+              - name: magick
+          - goos: windows
+            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-x64.{{.Format}}
+            format: 7z
+            files:
+              - name: compare
+              - name: composite
+              - name: conjure
+              - name: identify
+              - name: magick
+              - name: mogrify
+              - name: montage
+              - name: stream
   - type: github_release
     repo_owner: IohannRabeson
     repo_name: tmignore-rs
@@ -19160,6 +19257,18 @@ packages:
       - secrets
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 1.3.0")
+        asset: betterleaks_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: betterleaks_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -19169,6 +19278,15 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/betterleaks/betterleaks/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -26493,6 +26611,16 @@ packages:
         overrides:
           - goos: linux
             format: tar
+      - version_constraint: semver("< 2.33.0")
+        asset: coder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: coder_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
       - version_constraint: "true"
         asset: coder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: zip
@@ -26503,6 +26631,8 @@ packages:
         overrides:
           - goos: linux
             format: tar.gz
+        github_artifact_attestations:
+          signer_workflow: coder/coder/\.github/workflows/release\.yaml
   - type: github_release
     repo_owner: coder3101
     repo_name: protols
@@ -29871,6 +30001,50 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: dahlia
+    repo_name: gukhanmun
+    description: Convert mixed-script Korean text into hangul-only text
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gukhanmun-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        files:
+          - name: gukhanmun
+            src: gukhanmun-{{.Version}}-{{.Arch}}-{{.OS}}/gukhanmun
+          - name: gukhanmun-mkdict
+            src: gukhanmun-{{.Version}}-{{.Arch}}-{{.OS}}/gukhanmun-mkdict
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: dahlia
+    repo_name: hongdown
+    description: A Markdown formatter that enforces Hong Minhee's Markdown style conventions
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: hongdown-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        files:
+          - name: hongdown
+            src: hongdown-{{.Arch}}-{{.OS}}/hongdown
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: daichirata
     repo_name: hammer
     description: hammer is a command-line tool to schema management for Google Cloud Spanner
@@ -30229,6 +30403,21 @@ packages:
       type: github_release
       asset: "{{.Asset}}.sha256"
       algorithm: sha256
+  - type: github_release
+    repo_owner: databricks
+    repo_name: cli
+    description: Databricks CLI
+    files:
+      - name: databricks
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: databricks_cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: databricks_cli_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
   - type: github_release
     repo_owner: databricks
     repo_name: click
@@ -36954,6 +37143,45 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: felixgwilliams
+    repo_name: nbwipers
+    description: nbwipers is a command line tool to wipe clean jupyter notebooks, written in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.6")
+        asset: nbwipers-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: nbwipers-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: ffuf
     repo_name: ffuf
     description: Fast web fuzzer written in Go
@@ -40763,6 +40991,8 @@ packages:
               - https://token.actions.githubusercontent.com
               - --certificate-identity
               - "https://github.com/gittuf/gittuf/.github/workflows/release.yml@refs/tags/{{.Version}}"
+        github_artifact_attestations:
+          signer_workflow: gittuf/gittuf/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: gitui-org
     repo_name: gitui
@@ -44751,6 +44981,26 @@ packages:
       - linux
       - darwin
     version_prefix: mimir-
+  - type: github_release
+    repo_owner: grafana
+    repo_name: oats
+    description: OpenTelemetry Acceptance Tests (OATs), or OATs for short, is a test framework for OpenTelemetry
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: oats_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        github_artifact_attestations:
+          signer_workflow: grafana/oats/.github/workflows/release.yml
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: grafana
     repo_name: tanka
@@ -50272,6 +50522,10 @@ packages:
         supported_envs:
           - linux
           - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
       - version_constraint: semver("<= 2024.0.0")
         asset: rtx-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -50287,6 +50541,29 @@ packages:
         supported_envs:
           - linux
           - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
+      - version_constraint: semver("<= 2024.12.17")
+        asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+        format: tar.gz
+        files:
+          - name: mise
+            src: mise/bin/mise
+        overrides:
+          - goos: darwin
+            asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
       - version_constraint: semver(">= 2025.7.13, <= 2025.7.15")
         no_asset: true
       - version_constraint: semver("<= 2025.8.21")
@@ -50304,6 +50581,15 @@ packages:
         supported_envs:
           - linux
           - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
+          minisign:
+            type: github_release
+            asset: SHASUMS512.txt.minisig
+            # https://github.com/jdx/mise/blob/main/minisign.pub
+            public_key: RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
       - version_constraint: "true"
         asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
         format: tar.gz
@@ -50321,6 +50607,15 @@ packages:
           - darwin
         github_immutable_release: true
         github_release_attestations: true
+        checksum:
+          type: github_release
+          asset: SHASUMS512.txt
+          algorithm: sha512
+          minisign:
+            type: github_release
+            asset: SHASUMS512.txt.minisig
+            # https://github.com/jdx/mise/blob/main/minisign.pub
+            public_key: RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
   - type: github_release
     repo_owner: jdx
     repo_name: usage
@@ -50410,6 +50705,10 @@ packages:
           darwin: osx
         supported_envs:
           - darwin
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: Version == "0.4"
         no_asset: true
       - version_constraint: semver("<= 0.8")
@@ -50420,6 +50719,10 @@ packages:
           darwin: osx
         supported_envs:
           - darwin
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: Version == "0.9"
         asset: minisign-{{.OS}}.{{.Format}}
         format: zip
@@ -50432,6 +50735,10 @@ packages:
         supported_envs:
           - darwin
           - windows/amd64
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: Version in ["0.10", "0.11"]
         asset: minisign-{{.Version}}-{{.OS}}.{{.Format}}
         format: zip
@@ -50451,11 +50758,15 @@ packages:
           - goos: windows
             files:
               - name: minisign
-                src: minisign-win64/minisign.exe
+                src: minisign-win64/minisign
         supported_envs:
           - darwin
           - windows
           - amd64
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
       - version_constraint: "true"
         asset: minisign-{{.Version}}-{{.OS}}.{{.Format}}
         format: zip
@@ -50478,6 +50789,10 @@ packages:
           - darwin/arm64
           - windows
           - linux/amd64
+        minisign:
+          type: github_release
+          asset: "{{.Asset}}.minisig"
+          public_key: RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
   - type: github_release
     repo_owner: jedisct1
     repo_name: piknik
@@ -51039,6 +51354,62 @@ packages:
         supported_envs:
           - linux/amd64
           - linux/arm64
+  - type: github_release
+    repo_owner: jgm
+    repo_name: pandoc
+    description: Universal markup converter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 3.0.0")
+        error_message: This version is too old. Please upgrade to 3.0.0 or a newer version.
+      - version_constraint: semver("<= 3.1.1")
+        asset: pandoc-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macOS
+        overrides:
+          - goos: linux
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/bin/pandoc"
+          - goos: darwin
+            format: zip
+            asset: pandoc-{{.Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/bin/pandoc"
+          - goos: windows
+            format: zip
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/pandoc"
+            replacements:
+              amd64: x86_64
+      - version_constraint: "true"
+        asset: pandoc-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macOS
+        overrides:
+          - goos: linux
+            format: tar.gz
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/bin/pandoc"
+            replacements:
+              amd64: amd64
+          - goos: darwin
+            asset: pandoc-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}-{{.Arch}}/bin/pandoc"
+          - goos: windows
+            files:
+              - name: pandoc
+                src: "pandoc-{{.Version}}/pandoc"
   - type: github_release
     repo_owner: jiro4989
     repo_name: ojosama
@@ -55939,6 +56310,23 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: ktlint
+    repo_name: ktlint
+    aliases:
+      - name: pinterest/ktlint
+    description: An anti-bikeshedding Kotlin linter with built-in formatter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.49.0")
+        complete_windows_ext: false
+        asset: ktlint
+      - version_constraint: "true"
+        asset: "ktlint-{{.Version}}.{{.Format}}"
+        format: zip
+        files:
+          - name: ktlint
+            src: "{{.AssetWithoutExt}}/bin/ktlint"
   - type: github_release
     repo_owner: ktock
     repo_name: buildg
@@ -63285,6 +63673,10 @@ packages:
       type: http
       algorithm: sha256
       url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.sha256sum
+    minisign:
+      type: http
+      url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.minisig
+      public_key: RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav
   - type: github_release
     repo_owner: miniscruff
     repo_name: changie
@@ -67451,6 +67843,9 @@ packages:
     repo_name: cli
     description: the package manager for JavaScript
     version_filter: Version matches "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+    supported_envs:
+      - darwin
+      - linux
     url: https://registry.npmjs.org/npm/-/npm-{{trimV .Version}}.tgz
     format: tar.gz
     files:
@@ -67458,13 +67853,6 @@ packages:
         src: package/bin/npm-cli.js
       - name: npx
         src: package/bin/npx-cli.js
-    overrides:
-      - goos: windows
-        files:
-          - name: npm
-            src: package/bin/npm.cmd
-          - name: npx
-            src: package/bin/npx.cmd
   - type: github_archive
     repo_owner: npryce
     repo_name: adr-tools
@@ -72207,21 +72595,6 @@ packages:
         overrides:
           - goos: windows
             replacements: {}
-  - type: github_release
-    repo_owner: pinterest
-    repo_name: ktlint
-    description: An anti-bikeshedding Kotlin linter with built-in formatter
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.49.0")
-        complete_windows_ext: false
-        asset: ktlint
-      - version_constraint: "true"
-        asset: "ktlint-{{.Version}}.{{.Format}}"
-        format: zip
-        files:
-          - name: ktlint
-            src: "{{.AssetWithoutExt}}/bin/ktlint"
   - name: pipe-cd/pipecd/pipectl
     type: github_release
     repo_owner: pipe-cd
@@ -77870,6 +78243,36 @@ packages:
       type: github_release
       asset: smap_{{.Version}}--sha256_checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: s0undt3ch
+    repo_name: ToolR
+    description: In-project CLI tooling support
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.20.0")
+        error_message: Standalone binaries are available from v0.20.0; please use v0.20.0 or later
+      - version_constraint: "true"
+        asset: toolr-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: toolr
+            src: toolr-{{trimV .Version}}-{{.Arch}}-{{.OS}}/toolr
+        windows_arm_emulation: true
+        github_artifact_attestations:
+          enabled: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: sachaos
     repo_name: go-life
@@ -92777,8 +93180,10 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
-    repo_owner: ubugeeei
+    repo_owner: ubugeeei-prod
     repo_name: vize
+    aliases:
+      - name: ubugeeei/vize
     description: Unofficial High-Performance Vue.js Toolchain in Rust
     search_words:
       - vue
@@ -96738,6 +97143,19 @@ packages:
     files:
       - name: gobump
         src: gobump_{{.Version}}_{{.OS}}_{{.Arch}}/gobump
+  - type: http
+    name: x.ai/cli/grok
+    link: https://x.ai/cli
+    description: Grok Build TUI
+    format: raw
+    url: https://storage.googleapis.com/grok-build-public-artifacts/cli/grok-{{.Version}}-{{.OS}}-{{.Arch}}
+    files:
+      - name: grok
+      - name: agent
+    replacements:
+      darwin: macos
+      amd64: x86_64
+      arm64: aarch64
   - type: github_release
     repo_owner: xataio
     repo_name: pgroll

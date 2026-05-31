@@ -5,6 +5,15 @@
 # fixes https://github.com/jdx/mise/discussions/7059
 set -euo pipefail
 export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+install_timeout="${MISE_E2E_INSTALL_TIMEOUT:-180}"
+
+cleanup_go_cache() {
+  # Required to properly cleanup as go installs read-only sources
+  if [ -d ~/go ]; then
+    chmod -R +w ~/go
+  fi
+}
+trap cleanup_go_cache EXIT
 
 cat >.mise.toml <<EOF
 [tools]
@@ -18,7 +27,7 @@ EOF
 
 # This should complete without timeout (previously would hang indefinitely)
 # The go backend tool resolution should not interfere with Python venv creation
-timeout 60 mise install
+timeout "$install_timeout" mise install
 
 # Verify Python venv was created
 assert "mise x -- python --version" "Python 3.12.3"
@@ -27,6 +36,3 @@ assert "mise x -- which python" "$HOME/my_venv/bin/python"
 
 # Verify Go backend tool was installed and can run
 assert_contains "mise x -- gum --version" "0.17.0"
-
-# Required to properly cleanup as go installs read-only sources
-chmod -R +w ~/go

@@ -1,2 +1,10 @@
-backends = ["npm:serverless", "asdf:mise-plugins/mise-serverless"]
 description = "Serverless Framework"
+
+[[backends]]
+full = "npm:serverless"
+
+[backends.options]
+allow_builds = ["serverless"]
+
+[[backends]]
+full = "asdf:mise-plugins/mise-serverless"

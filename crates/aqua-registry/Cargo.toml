@@ -20,6 +20,7 @@ default = []
 
 [dependencies]
 # Core dependencies
+blake3 = "1"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "2"
@@ -27,19 +28,14 @@ eyre = "0.6"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.14"
 rkyv = { version = "0.8", features = ["unaligned"] }
+siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
+tempfile = "3"
 
 # Template parsing and evaluation
 expr-lang = "1"
 heck = "0.5"
 versions = { version = "7", features = ["serde"] }
 
-# Async runtime
-tokio = { version = "1", features = ["sync"] }
-
 # Logging
 log = "0.4"
-
-
-[dev-dependencies]
-tokio = { version = "1", features = ["rt", "macros"] }

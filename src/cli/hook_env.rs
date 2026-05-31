@@ -3,18 +3,18 @@ use crate::direnv::DirenvDiff;
 use crate::env::{__MISE_DIFF, PATH_KEY, TERM_WIDTH};
 use crate::env::{join_paths, split_paths};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
-use crate::file::display_rel_path;
+use crate::file::{canonicalize_cached, display_rel_path};
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
 use crate::shell::{ShellType, get_shell};
 use crate::toolset::Toolset;
-use crate::{env, hook_env, hooks, watch_files};
+use crate::{dirs, env, hook_env, hooks, watch_files};
 use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashSet};
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{borrow::Cow, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -287,6 +287,14 @@ impl HookEnv {
                         continue;
                     }
 
+                    // Paths under mise's installs dir are mise-managed even if
+                    // the previous session diff did not claim them. Preserving a
+                    // stale install path as a user prefix can shadow the active
+                    // version selected by the current toolset.
+                    if is_mise_install_path(path) {
+                        continue;
+                    }
+
                     // Place in pre or post_user based on position relative to original PATH
                     if seen_orig {
                         post_user.push(path.clone());
@@ -324,12 +332,12 @@ impl HookEnv {
         // Use canonicalized paths for comparison to handle symlinks, relative paths,
         // and other path variants that refer to the same filesystem location.
         let post_canonical: HashSet<PathBuf> =
-            post.iter().filter_map(|p| p.canonicalize().ok()).collect();
+            post.iter().filter_map(|p| canonicalize_cached(p)).collect();
         let user_additions_set: HashSet<_> = pre.iter().chain(post_user.iter()).collect();
         let user_additions_canonical: HashSet<PathBuf> = pre
             .iter()
             .chain(post_user.iter())
-            .filter_map(|p| p.canonicalize().ok())
+            .filter_map(|p| canonicalize_cached(p))
             .collect();
 
         let tool_paths_filtered: Vec<PathBuf> = tool_paths
@@ -343,7 +351,7 @@ impl HookEnv {
                 if post.contains(p) {
                     return false;
                 }
-                if let Ok(canonical) = p.canonicalize()
+                if let Some(canonical) = canonicalize_cached(p)
                     && post_canonical.contains(&canonical)
                 {
                     return false;
@@ -353,7 +361,7 @@ impl HookEnv {
                 if user_additions_set.contains(p) {
                     return false;
                 }
-                if let Ok(canonical) = p.canonicalize()
+                if let Some(canonical) = canonicalize_cached(p)
                     && user_additions_canonical.contains(&canonical)
                 {
                     return false;
@@ -375,7 +383,7 @@ impl HookEnv {
                 if user_additions_set.contains(p) {
                     return false;
                 }
-                if let Ok(canonical) = p.canonicalize()
+                if let Some(canonical) = canonicalize_cached(p)
                     && user_additions_canonical.contains(&canonical)
                 {
                     return false;
@@ -495,6 +503,17 @@ impl HookEnv {
             hook_env::serialize(&session)?,
         ))
     }
+}
+
+fn is_mise_install_path(path: &Path) -> bool {
+    if path.starts_with(*dirs::INSTALLS) {
+        return true;
+    }
+
+    let Some(path) = canonicalize_cached(path) else {
+        return false;
+    };
+    canonicalize_cached(*dirs::INSTALLS).is_some_and(|installs| path.starts_with(installs))
 }
 
 fn patch_to_status(patch: EnvDiffOperation) -> String {

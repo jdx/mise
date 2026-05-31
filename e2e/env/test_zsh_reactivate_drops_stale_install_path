@@ -1,0 +1,70 @@
+#!/usr/bin/env zsh
+# shellcheck disable=SC1071
+set -euo pipefail
+
+# Reproduces https://github.com/jdx/mise/discussions/10095:
+# a non-interactive zsh inherits an inactive mise install path before the active
+# project tool path, then re-runs `mise activate zsh`.
+
+export MISE_NODE_COMPILE=0
+export MISE_OFFLINE=1
+
+mkdir -p "$MISE_DATA_DIR/installs/node/24/bin"
+mkdir -p "$MISE_DATA_DIR/installs/node/22.17.1/bin"
+
+cat >"$MISE_DATA_DIR/installs/node/24/bin/node" <<'EOF'
+#!/usr/bin/env bash
+echo v24.16.0
+EOF
+
+cat >"$MISE_DATA_DIR/installs/node/22.17.1/bin/node" <<'EOF'
+#!/usr/bin/env bash
+echo v22.17.1
+EOF
+
+chmod +x "$MISE_DATA_DIR/installs/node/24/bin/node"
+chmod +x "$MISE_DATA_DIR/installs/node/22.17.1/bin/node"
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+
+[tools]
+node = "24"
+EOF
+
+cat >package.json <<'EOF'
+{
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "22.x",
+      "onFail": "error"
+    }
+  }
+}
+EOF
+
+eval "$(mise activate zsh)"
+[[ $(node -v) == "v22.17.1" ]] || {
+  echo "initial activation should use node 22 from package.json"
+  exit 1
+}
+
+# Simulate a parent shell or editor extension that injected the global Node
+# install path ahead of the active project path before spawning a child shell.
+export PATH="$MISE_DATA_DIR/installs/node/24/bin:$PATH"
+
+output=$(zsh -f -c 'eval "$(mise activate zsh)" && node -v && print -r -- "$PATH" | tr : "\n" | grep "/installs/node/"')
+
+[[ $output == v22.17.1* ]] || {
+  echo "expected reactivation to keep node 22 first, got:"
+  echo "$output"
+  exit 1
+}
+
+first_node_path=$(echo "$output" | sed -n '2p')
+[[ $first_node_path == "$MISE_DATA_DIR/installs/node/22.17.1/bin" ]] || {
+  echo "expected first node path to be node 22, got: $first_node_path"
+  exit 1
+}

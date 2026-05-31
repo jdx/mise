@@ -80,7 +80,7 @@ EOF
 
 assert_contains "mise install --dry-run 2>&1" "would install"
 
-# --- Test 7: mise lock refuses to run in --locked mode ---
+# --- Test 7: mise lock can refresh lockfiles in locked mode ---
 export MISE_LOCKFILE=1
 
 cat <<'EOF' >mise.toml
@@ -95,8 +95,10 @@ backend = "aqua:jqlang/jq"
 "platforms.$PLATFORM" = { url = "https://example.com/jq-1.7.1.tar.gz" }
 EOF
 
-assert_fail_contains "mise lock --locked 2>&1" "mise lock is disabled in --locked mode"
-MISE_LOCKED=1 assert_fail_contains "mise lock 2>&1" "mise lock is disabled in --locked mode"
+mise lock --locked --platform "$PLATFORM"
+assert_contains "cat mise.lock" "1.7.1"
+MISE_LOCKED=1 mise lock --platform "$PLATFORM"
+assert_contains "cat mise.lock" "1.7.1"
 
 # Restore for any subsequent tests
 export MISE_LOCKFILE=1

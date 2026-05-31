@@ -72,3 +72,12 @@ assert_contains "mise en -s 'bash -c \"mise env | grep TTT_BASE_VAR\"'" "TTT_BAS
 
 # Test 16: Without -E flag, env-specific variable is not set
 assert_not_contains "mise en -s 'bash -c \"mise env\"'" "TTT_ENV_NAME"
+
+# Test 17: -E should survive when the spawned interactive shell activates mise
+zsh_bin=$(command -v zsh)
+mkdir -p zsh-home
+cat >zsh-home/.zshrc <<EOF
+eval "\$(mise activate zsh)"
+EOF
+assert_contains "ZDOTDIR=$(pwd)/zsh-home HOME=$(pwd)/zsh-home SHELL=$zsh_bin mise -E dev en -s 'zsh -i -c \"echo \$MISE_ENV\"'" "dev"
+assert_contains "ZDOTDIR=$(pwd)/zsh-home HOME=$(pwd)/zsh-home SHELL=$zsh_bin mise -E dev en -s 'zsh -i -c \"mise env | grep TTT_ENV_NAME\"'" "TTT_ENV_NAME=dev"

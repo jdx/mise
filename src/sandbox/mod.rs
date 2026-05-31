@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::file::replace_path;
+
 #[cfg(target_os = "linux")]
 mod landlock;
 #[cfg(target_os = "macos")]
@@ -65,9 +67,11 @@ impl SandboxConfig {
     pub fn resolve_paths(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
         let resolve = |paths: &mut Vec<PathBuf>| {
+            paths.retain(|p| !p.as_os_str().is_empty());
             for p in paths.iter_mut() {
+                *p = replace_path(&*p);
                 if p.is_relative() {
-                    *p = cwd.join(&p);
+                    *p = cwd.join(&*p);
                 }
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
                 if let Ok(canonical) = p.canonicalize() {
@@ -80,14 +84,17 @@ impl SandboxConfig {
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn effective_deny_read(&self) -> bool {
         self.deny_read || !self.allow_read.is_empty()
     }
 
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn effective_deny_write(&self) -> bool {
         self.deny_write || !self.allow_write.is_empty()
     }
 
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn effective_deny_net(&self) -> bool {
         self.deny_net || !self.allow_net.is_empty()
     }
@@ -146,6 +153,7 @@ impl SandboxConfig {
     /// On Linux: applies Landlock rules and seccomp filters in-process (inherited across exec).
     /// On macOS: returns a modified command that wraps through sandbox-exec.
     #[cfg(not(test))]
+    #[cfg_attr(windows, allow(dead_code))]
     #[allow(unused_variables)]
     pub async fn apply(
         &self,
@@ -214,6 +222,7 @@ impl SandboxConfig {
 
 /// A command rewritten to run through a sandbox wrapper (macOS sandbox-exec).
 #[cfg(not(test))]
+#[cfg_attr(windows, allow(dead_code))]
 #[derive(Debug)]
 pub struct SandboxedCommand {
     pub program: String,
@@ -299,5 +308,19 @@ mod tests {
         assert!(filtered.contains_key("MYAPP_BAR"));
         assert!(!filtered.contains_key("OTHER_VAR"));
         assert!(filtered.contains_key("PATH")); // default key
+    }
+
+    #[test]
+    fn test_resolve_paths_drops_empty_paths() {
+        let mut config = SandboxConfig {
+            allow_read: vec![PathBuf::new()],
+            allow_write: vec![PathBuf::from("")],
+            ..Default::default()
+        };
+
+        config.resolve_paths();
+
+        assert!(config.allow_read.is_empty());
+        assert!(config.allow_write.is_empty());
     }
 }

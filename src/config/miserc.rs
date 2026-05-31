@@ -165,6 +165,7 @@ fn merge_settings(target: &mut MisercSettings, source: MisercSettings) {
 /// Find all miserc.toml files in order of precedence (highest first).
 fn find_miserc_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
+    let ceiling_paths = env_ceiling_paths();
 
     // Local hierarchy: .miserc.toml and .config/miserc.toml in cwd and ancestors
     // Use raw std::env to avoid depending on our lazy statics
@@ -172,6 +173,9 @@ fn find_miserc_files() -> Vec<PathBuf> {
         // Walk up the directory tree, but stop at home or root
         let home: &Path = &dirs::HOME;
         for dir in cwd.ancestors() {
+            if ceiling_paths.contains(dir) {
+                break;
+            }
             let path = dir.join(".miserc.toml");
             if path.is_file() {
                 files.push(path);
@@ -201,6 +205,19 @@ fn find_miserc_files() -> Vec<PathBuf> {
     }
 
     files
+}
+
+fn env_ceiling_paths() -> BTreeSet<PathBuf> {
+    // Only the raw env var is available here; env::MISE_CEILING_PATHS also
+    // falls back to .miserc, which would recurse during .miserc discovery.
+    env::var_os("MISE_CEILING_PATHS")
+        .map(|v| {
+            std::env::split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(file::replace_path)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

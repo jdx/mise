@@ -11,7 +11,7 @@ use crate::cli::version;
 use crate::cli::version::VERSION;
 use crate::config::{Config, IGNORED_CONFIG_FILES, Settings};
 use crate::env::PATH_KEY;
-use crate::file::display_path;
+use crate::file::{canonicalize_cached, canonicalize_or_self, display_path};
 use crate::git::Git;
 use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
@@ -525,13 +525,13 @@ impl Doctor {
             return;
         }
 
-        let resolve = |p: &PathBuf| p.canonicalize().unwrap_or_else(|_| p.clone());
+        let resolve = |p: &PathBuf| canonicalize_or_self(p);
 
         // Resolve all mise-managed paths for comparison
         let mise_paths_resolved: HashSet<PathBuf> = mise_paths.iter().map(resolve).collect();
 
         // Also exclude the mise binary's own directory
-        let mise_bin_parent = env::MISE_BIN.parent().and_then(|p| p.canonicalize().ok());
+        let mise_bin_parent = env::MISE_BIN.parent().and_then(canonicalize_cached);
 
         // Find the index of the first mise-managed path in the current PATH
         // Note: mise_bin_parent is intentionally excluded here — it's a directory like

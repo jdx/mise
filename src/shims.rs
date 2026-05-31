@@ -88,25 +88,22 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
         }
     }
     // fallback for "system"
-    let mise_bin = fs::canonicalize(&*env::MISE_BIN).unwrap_or_else(|_| env::MISE_BIN.clone());
-    let user_shims = fs::canonicalize(*dirs::SHIMS).unwrap_or_default();
+    let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
+    let user_shims = file::canonicalize_cached(&dirs::SHIMS);
     let sys_shims = {
         let p = env::MISE_SYSTEM_DATA_DIR.join("shims");
-        if p.exists() {
-            fs::canonicalize(&p).unwrap_or(p)
-        } else {
-            PathBuf::new()
-        }
+        file::canonicalize_cached(&p)
     };
     for path in &*env::PATH {
-        let canon_path = fs::canonicalize(path).unwrap_or_default();
-        if canon_path == user_shims || canon_path == sys_shims {
+        if let Some(canon_path) = file::canonicalize_cached(path)
+            && (user_shims.as_ref() == Some(&canon_path) || sys_shims.as_ref() == Some(&canon_path))
+        {
             continue;
         }
         let bin = path.join(bin_name);
         if bin.exists() {
             // Skip if this binary is a mise shim (symlink pointing to the mise binary)
-            if fs::canonicalize(&bin).unwrap_or_default() == mise_bin {
+            if file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin) {
                 continue;
             }
             trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
@@ -138,7 +135,20 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
             .then(|| fs::read_to_string(&mode_file).unwrap_or_default())
             .is_some_and(|prev| prev.trim() != shim_mode)
     };
-    if force || shim_mode_changed {
+    // On Windows, "exe"/"hardlink" shims are literal copies of the mise(-shim)
+    // binary, so they go stale when mise is updated (by self-update or an
+    // external package manager) until a forced reshim. Track the mise version
+    // that generated the shims in a `.version` marker (mirroring `.mode`) and
+    // rebuild from scratch whenever it changes. The marker is written by
+    // whichever binary runs reshim, so after an update the new binary stamps
+    // the new version. See discussion #10022.
+    let shim_version = env!("CARGO_PKG_VERSION");
+    let shim_version_changed = cfg!(windows) && {
+        let version_file = dirs::SHIMS.join(".version");
+        let prev = fs::read_to_string(&version_file).ok();
+        shim_version_stale(prev.as_deref(), shim_version, &shim_mode)
+    };
+    if force || shim_mode_changed || shim_version_changed {
         // On Windows, .exe shims may be locked by processes or the shell (they
         // are on PATH).  Instead of removing the entire directory (which fails
         // with "Access is denied"), remove individual files with a rename-first
@@ -153,9 +163,15 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
     if cfg!(windows) {
         let mode_file = dirs::SHIMS.join(".mode");
         file::write(&mode_file, &shim_mode)?;
+        // Written for every shim mode (like `.mode`) even though it is only
+        // consulted for "exe"/"hardlink" modes; for "file"/"symlink" it is
+        // harmless and keeps the marker current if the mode later changes
+        // (mode transitions themselves are handled by `shim_mode_changed`).
+        let version_file = dirs::SHIMS.join(".version");
+        file::write(&version_file, shim_version)?;
     }
 
-    let (shims_to_add, shims_to_remove) = if force || shim_mode_changed {
+    let (shims_to_add, shims_to_remove) = if force || shim_mode_changed || shim_version_changed {
         // After a full wipe, all desired shims need to be re-created.
         let desired = get_desired_shims(config, &mise_bin, ts).await?;
         (
@@ -226,7 +242,7 @@ fn remove_shims_individually(shims_dir: &Path) -> Result<()> {
         let entry = entry?;
         let name = entry.file_name();
         // skip dotfiles (e.g. .mode) — these are metadata, not shims
-        if name.to_string_lossy().starts_with('.') {
+        if is_hidden_shim_name(&name) {
             continue;
         }
         let path = entry.path();
@@ -443,11 +459,15 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
         .read_dir()?
         .map(|bin| {
             let bin = bin?;
+            let name = bin.file_name();
+            if is_hidden_shim_name(&name) {
+                return Ok(None);
+            }
             // files and symlinks which are executable
             if file::is_executable(&bin.path())
                 && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
             {
-                Ok(Some(bin.file_name().into_string().unwrap()))
+                Ok(name.into_string().ok())
             } else {
                 Ok(None)
             }
@@ -465,14 +485,14 @@ fn list_shims() -> Result<HashSet<String>> {
             let bin = bin?;
             let name = bin.file_name();
             // skip dotfiles (e.g. .mode) — these are metadata, not shims
-            if name.to_string_lossy().starts_with('.') {
+            if is_hidden_shim_name(&name) {
                 return Ok(None);
             }
             // files and symlinks which are executable or extensionless files (Git Bash/Cygwin)
             if (file::is_executable(&bin.path()) || bin.path().extension().is_none())
                 && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
             {
-                Ok(Some(bin.file_name().into_string().unwrap()))
+                Ok(name.into_string().ok())
             } else {
                 Ok(None)
             }
@@ -481,6 +501,23 @@ fn list_shims() -> Result<HashSet<String>> {
         .into_iter()
         .flatten()
         .collect())
+}
+
+fn is_hidden_shim_name(name: &std::ffi::OsStr) -> bool {
+    name.to_string_lossy().starts_with('.')
+}
+
+/// Whether existing shims were generated by a different mise version AND the
+/// current shim mode produces version-dependent shim files (a literal copy of
+/// the mise/mise-shim binary). Script ("file") and "symlink" modes are never
+/// version-stale because their content does not embed the mise binary.
+/// `prev == None` (no `.version` marker yet) heals installs that predate the
+/// marker by forcing a one-time rebuild. See discussion #10022.
+fn shim_version_stale(prev: Option<&str>, current: &str, shim_mode: &str) -> bool {
+    if !matches!(shim_mode, "exe" | "hardlink") {
+        return false;
+    }
+    prev.map(|p| p.trim() != current).unwrap_or(true)
 }
 
 async fn get_desired_shims(
@@ -611,5 +648,74 @@ async fn err_no_version_set(
         }
         msg.push_str("Install all missing tools with: mise install\n");
         Err(eyre!(msg.trim().to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_executables_in_dir_skips_dotfiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let visible_name = if cfg!(windows) {
+            "ffmpeg.exe"
+        } else {
+            "ffmpeg"
+        };
+        let visible = dir.path().join(visible_name);
+        let hidden = dir.path().join(".librsvg-post-link.exe");
+
+        fs::write(&visible, "").unwrap();
+        fs::write(&hidden, "").unwrap();
+        file::make_executable(&visible).unwrap();
+        file::make_executable(&hidden).unwrap();
+
+        let bins = list_executables_in_dir(dir.path()).unwrap();
+
+        assert!(bins.contains(visible_name));
+        assert!(!bins.contains(".librsvg-post-link.exe"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn list_executables_in_dir_skips_non_utf8_names() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let non_utf8 = dir.path().join(OsString::from_vec(vec![0xff]));
+
+        fs::write(&non_utf8, "").unwrap();
+        file::make_executable(&non_utf8).unwrap();
+
+        let bins = list_executables_in_dir(dir.path()).unwrap();
+
+        assert!(bins.is_empty());
+    }
+
+    #[test]
+    fn shim_version_stale_detects_version_changes() {
+        // exe/hardlink copies embed the binary: a version change makes them stale
+        assert!(shim_version_stale(Some("2026.5.13"), "2026.5.16", "exe"));
+        assert!(shim_version_stale(
+            Some("2026.5.13"),
+            "2026.5.16",
+            "hardlink"
+        ));
+        // matching version is not stale
+        assert!(!shim_version_stale(Some("2026.5.16"), "2026.5.16", "exe"));
+        // surrounding whitespace in the marker is ignored
+        assert!(!shim_version_stale(Some("2026.5.16\n"), "2026.5.16", "exe"));
+        // no marker yet: heal once (covers installs created before this marker)
+        assert!(shim_version_stale(None, "2026.5.16", "exe"));
+        // script/symlink shims never embed the binary, so never version-stale
+        assert!(!shim_version_stale(Some("2026.5.13"), "2026.5.16", "file"));
+        assert!(!shim_version_stale(
+            Some("2026.5.13"),
+            "2026.5.16",
+            "symlink"
+        ));
+        assert!(!shim_version_stale(None, "2026.5.16", "file"));
     }
 }

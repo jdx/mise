@@ -20,6 +20,7 @@ use regex::Regex;
 use std::sync::LazyLock;
 
 use super::platform_target::PlatformTarget;
+use super::platform_tokens::is_platform_or_version_token;
 use super::static_helpers::get_filename_from_url;
 use crate::file::TarFormat;
 use crate::http::HTTP;
@@ -315,6 +316,13 @@ impl AssetPicker {
             if pattern.is_match(asset) {
                 return if arch.matches_target(&self.target_arch) {
                     50
+                } else if *arch == AssetArch::X86
+                    && AssetArch::X64.matches_target(&self.target_arch)
+                {
+                    // Some projects use "x86" for their x86-64 artifacts. Keep
+                    // this below a real x64/amd64 match so correctly named
+                    // assets win when both are present.
+                    5
                 } else {
                     // Architecture mismatch should be disqualifying - don't silently
                     // fall back to incompatible architectures (e.g., x86_64 when arm64
@@ -417,6 +425,8 @@ impl AssetPicker {
             || asset.ends_with(".intoto")
             || asset.ends_with(".attestation")
             || asset.ends_with(".pem")
+            || asset.ends_with(".cert")
+            || asset.ends_with(".cer")
             || asset.ends_with(".crt")
             || asset.ends_with(".key")
             || asset.ends_with(".pub")
@@ -482,73 +492,6 @@ fn asset_name_stem(asset: &str) -> String {
     }
 
     name
-}
-
-fn is_platform_or_version_token(token: &str) -> bool {
-    if token.is_empty() {
-        return true;
-    }
-    if token.starts_with("manylinux") || token.starts_with("musllinux") {
-        return true;
-    }
-    if token.starts_with('v')
-        && token[1..]
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_digit())
-    {
-        return true;
-    }
-    if token.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        return true;
-    }
-
-    matches!(
-        token,
-        "linux"
-            | "ubuntu"
-            | "debian"
-            | "fedora"
-            | "centos"
-            | "rhel"
-            | "alpine"
-            | "arch"
-            | "darwin"
-            | "mac"
-            | "macos"
-            | "macosx"
-            | "osx"
-            | "windows"
-            | "win"
-            | "win32"
-            | "win64"
-            | "mingw"
-            | "mingw32"
-            | "mingw64"
-            | "w64"
-            | "x86"
-            | "64"
-            | "x64"
-            | "amd64"
-            | "aarch64"
-            | "arm64"
-            | "arm"
-            | "armv6"
-            | "armv7"
-            | "i386"
-            | "i686"
-            | "ppc64"
-            | "ppc64le"
-            | "riscv64"
-            | "s390x"
-            | "gnu"
-            | "glibc"
-            | "musl"
-            | "msvc"
-            | "pc"
-            | "apple"
-            | "unknown"
-    )
 }
 
 /// Detects platform information from a URL
@@ -1342,6 +1285,31 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
     }
 
     #[test]
+    fn test_x86_asset_is_x64_fallback() {
+        let assets = vec![
+            "opengrep-core_linux_x86.tar.gz".to_string(),
+            "opengrep_manylinux_x86".to_string(),
+            "opengrep_manylinux_x86.sig".to_string(),
+            "opengrep_musllinux_x86".to_string(),
+        ];
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("opengrep");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "opengrep_manylinux_x86");
+
+        let exact_assets = vec![
+            "opengrep_manylinux_x86".to_string(),
+            "opengrep_manylinux_x86_64".to_string(),
+        ];
+        let picked = picker.pick_best_asset(&exact_assets).unwrap();
+        assert_eq!(picked, "opengrep_manylinux_x86_64");
+
+        let arm_picker = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None);
+        assert_eq!(arm_picker.pick_best_asset(&exact_assets), None);
+    }
+
+    #[test]
     fn test_preferred_name_handles_tar_and_split_platform_tokens() {
         let assets = vec!["tool-mingw-w64-x86_64.tar".to_string()];
 
@@ -1604,6 +1572,8 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         let assets = vec![
             "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
             "tool-1.0.0-linux-x86_64.tar.gz.asc".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz.cert".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz.cer".to_string(),
             "tool-1.0.0-linux-x86_64.tar.gz.sha256".to_string(),
             "release-notes.txt".to_string(),
         ];
@@ -1614,12 +1584,22 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         // Ensure penalties are applied
         let score_tar = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
         let score_asc = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.asc");
+        let score_cert = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.cert");
+        let score_cer = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.cer");
         let score_sha = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.sha256");
         let score_txt = picker.score_asset("release-notes.txt");
 
         assert!(
             score_tar > score_asc,
             "Tarball should score higher than signature"
+        );
+        assert!(
+            score_tar > score_cert,
+            "Tarball should score higher than certificate"
+        );
+        assert!(
+            score_tar > score_cer,
+            "Tarball should score higher than certificate"
         );
         assert!(
             score_tar > score_sha,

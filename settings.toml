@@ -125,14 +125,38 @@ description = "Use minisign to verify aqua tool signatures."
 env = "MISE_AQUA_MINISIGN"
 type = "Bool"
 
-[aqua.registry_url]
-description = "URL to fetch aqua registry from."
+[aqua.registry_cache_ttl]
+default_docs = "1w"
+description = "How long to cache downloaded aqua registry source files."
 docs = """
-URL to fetch aqua registry from. This is used to install tools from the aqua registry.
+How long downloaded aqua registry source files remain fresh before mise re-downloads them.
 
-If this is set, the baked-in aqua registry is not used.
+When the downloaded source changes, mise writes the new source cache atomically, compiles a new
+source-hash-scoped registry cache, and prunes older compiled caches for that registry URL after
+the new compiled cache is available.
 
-By default, the official aqua registry is used: https://github.com/aquaproj/aqua-registry
+Set to `0s` to re-download remote registries every time.
+"""
+env = "MISE_AQUA_REGISTRY_CACHE_TTL"
+optional = true
+type = "Duration"
+
+[aqua.registry_url]
+description = "URL of an aqua registry repository to fetch."
+docs = """
+URL of an aqua registry repository to fetch. mise downloads `registry.yaml` from the repository
+root and falls back to `registry.yml` if needed.
+
+Downloaded registries are cached according to `aqua.registry_cache_ttl`, which defaults to one
+week. To refresh sooner, run `mise cache clear`, set `aqua.registry_cache_ttl = "0s"`, or change
+`MISE_CACHE_DIR` to use a different cache location.
+
+If this is set, mise checks the configured registry first. When `aqua.baked_registry` is enabled,
+the baked-in aqua registry remains a fallback for packages missing from the configured registry.
+
+By default, mise uses the baked-in official aqua registry when `aqua.baked_registry` is enabled.
+If the baked registry is disabled, mise downloads the official registry:
+https://github.com/aquaproj/aqua-registry
 """
 env = "MISE_AQUA_REGISTRY_URL"
 optional = true
@@ -291,20 +315,26 @@ type = "Bool"
 
 [color_theme]
 default = "default"
-description = "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)"
+description = "Theme for interactive prompts (auto/default, charm, base16, catppuccin, dracula)"
 docs = """
 Sets the color theme for interactive prompts like `mise run` task selection.
 Available themes:
 
-- `default` or `charm` - Default theme, works well on dark terminals
+- `auto` (or `default`) - Auto-detect the terminal background (via `COLORFGBG`) and
+  use a light-friendly theme (`base16`) on light terminals, otherwise `charm`
+- `charm` - The charm theme, works well on dark terminals (no auto-detection)
 - `base16` - Base16 theme, works well on light terminals
 - `catppuccin` - Catppuccin theme
 - `dracula` - Dracula theme
 
-If you're using a light terminal and the default theme is hard to read,
-try setting this to `base16`.
+`default` is an alias for `auto`: when left unset (or set to `auto`/`default`), mise
+auto-detects a light terminal background via `COLORFGBG` and switches to `base16` for
+readability. Set an explicit theme (e.g. `charm`) to disable auto-detection.
+
+When colors are disabled (`color=false`, `NO_COLOR`, or `CLICOLOR=0`), interactive
+prompts are rendered without any styling regardless of this setting.
 """
-enum = ["default", "charm", "base16", "catppuccin", "dracula"]
+enum = ["auto", "default", "charm", "base16", "catppuccin", "dracula"]
 env = "MISE_COLOR_THEME"
 type = "String"
 
@@ -343,7 +373,7 @@ type = "String"
 
 [disable_backends]
 default = []
-description = "Backends to disable such as `asdf` or `pipx`"
+description = "Backends to disable for new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. This does not uninstall or disable tools already installed with those backends."
 env = "MISE_DISABLE_BACKENDS"
 parse_env = "list_by_comma"
 rust_type = "Vec<String>"
@@ -1510,6 +1540,12 @@ description = "Directory for nodenv."
 env = "NODENV_ROOT"
 type = "Path"
 
+[node.npm_shim]
+default = true
+description = "Install a bash wrapper at bin/npm that triggers `mise reshim` after `npm install -g`. Disable to let corepack or a global `npm install -g npm@...` manage `bin/npm` directly."
+env = "MISE_NODE_NPM_SHIM"
+type = "Bool"
+
 [node.nvm_dir]
 default = "~/.nvm"
 description = "Directory for nvm."
@@ -2507,12 +2543,24 @@ type = "Bool"
 
 [use_versions_host]
 default = true
-description = "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions."
+description = "Set to false to disable using the mise-versions API for version lists, public GitHub release metadata, and GitHub artifact attestations."
 docs = """
 Set to "false" to disable using [mise-versions](https://mise-versions.jdx.dev) as
-a quick way for mise to query for new versions. This host regularly grabs all the
-latest versions of core and community plugins. It's faster than running a plugin's
-`list-all` command and gets around GitHub rate limiting problems when using it.
+a shared cache for version lists, public GitHub release metadata, and GitHub artifact
+attestations.
+
+This host regularly grabs all the latest versions of core and community plugins.
+It's faster than running a plugin's `list-all` command and gets around GitHub
+rate limiting problems when using it. For tools distributed through public GitHub
+releases, mise also uses this host before calling GitHub's releases and artifact
+attestation APIs directly. This avoids the anonymous GitHub API rate limit in
+normal installs, including Docker builds and CI jobs that do not have a GitHub
+token configured.
+
+If the versions host does not have the requested metadata yet, mise falls back to
+GitHub's API. Private repositories, GitHub Enterprise, custom GitHub API URLs, and
+users who disable this setting still need normal GitHub authentication when they
+would otherwise exceed GitHub's rate limits.
 
 mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
 with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply

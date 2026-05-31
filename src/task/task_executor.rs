@@ -3,7 +3,9 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
-use crate::file::{display_path, is_executable};
+#[cfg(not(windows))]
+use crate::file::is_executable;
+use crate::file::{display_path, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
@@ -49,6 +51,20 @@ async fn acquire_runtime_lock(interactive: bool) -> RuntimeLockGuard<'static> {
         RuntimeLockGuard::Write(TASK_RUNTIME_LOCK.write().await)
     } else {
         RuntimeLockGuard::Read(TASK_RUNTIME_LOCK.read().await)
+    }
+}
+
+fn resolve_task_sandbox_path(p: &Path, task_base: Option<&Path>) -> PathBuf {
+    if p.as_os_str().is_empty() {
+        return PathBuf::new();
+    }
+    let p = replace_path(p);
+    if p.is_absolute() {
+        p
+    } else if let Some(base) = task_base {
+        base.join(p)
+    } else {
+        p
     }
 }
 
@@ -143,15 +159,8 @@ impl TaskExecutor {
         config: &Arc<Config>,
     ) -> Result<SandboxConfig> {
         let task_base = task.dir(config).await?;
-        let resolve_task_path = |p: &PathBuf| -> PathBuf {
-            if p.is_absolute() {
-                p.clone()
-            } else if let Some(base) = &task_base {
-                base.join(p)
-            } else {
-                p.clone()
-            }
-        };
+        let resolve_task_path =
+            |p: &PathBuf| -> PathBuf { resolve_task_sandbox_path(p, task_base.as_deref()) };
         let mut sandbox = SandboxConfig {
             deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
@@ -852,7 +861,7 @@ impl TaskExecutor {
             return Ok((display, args.to_vec()));
         }
         let shell = task
-            .shell()
+            .shell()?
             .or_else(|| shell_from_shebang(file))
             .or_else(|| shell_from_extension(file))
             .unwrap_or(Settings::get().default_file_shell()?);
@@ -871,7 +880,7 @@ impl TaskExecutor {
         task: &Task,
         args: &[String],
     ) -> Result<(String, Vec<String>)> {
-        let shell = task.shell().unwrap_or(self.clone_default_inline_shell()?);
+        let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
 
@@ -894,7 +903,7 @@ impl TaskExecutor {
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
         if let Some(shell) = &self.shell {
-            Ok(shell_words::split(shell)?)
+            crate::path::split_shell_command(shell)
         } else {
             Settings::get().default_inline_shell()
         }
@@ -1353,18 +1362,28 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
 ///      entry that isn't the WSL launcher. This rescues setups where a real
 ///      POSIX bash is on PATH but appears after `C:\Windows\System32`.
 ///
-/// Returns `None` when the program is not a POSIX shell, the env has no PATH,
-/// the PATH is already in Unix form (no `;` and no `\`, so no conversion will
-/// fire), `which` finds nothing, or every PATH match for `bash` is the WSL
-/// launcher — in those cases the caller keeps the original program string and
-/// lets the stdlib spawn it (which will then fail loudly rather than silently
-/// routing into WSL).
+/// Returns `None` when the program is not a POSIX shell, the program is already
+/// an explicit path (absolute, or relative with a directory component — that is
+/// honored verbatim and never re-resolved), the env has no PATH, the PATH is
+/// already in Unix form (no `;` and no `\`, so no conversion will fire), `which`
+/// finds nothing, or every PATH match for `bash` is the WSL launcher — in those
+/// cases the caller keeps the original program string and lets the stdlib spawn
+/// it (which will then fail loudly rather than silently routing into WSL).
 #[cfg(windows)]
 fn resolve_posix_shell_program_path(
     program: &std::ffi::OsStr,
     env: &BTreeMap<String, String>,
 ) -> Option<std::ffi::OsString> {
     if !crate::path::is_posix_shell_program(Path::new(program)) {
+        return None;
+    }
+    // An explicit path (absolute, or relative with a directory component) is a
+    // deliberate choice of *which* shell binary to run — honor it verbatim
+    // rather than re-resolving via the bash candidate list or a PATH search.
+    // Only a bare command name (`bash`, `bash.exe`) flows into the WSL-avoidance
+    // resolution below. Regression fix for discussion #9932: PR #9750 over-
+    // resolved and silently swapped an explicit Cygwin bash for Git Bash.
+    if program_has_directory_component(program) {
         return None;
     }
     let path_val = env.get(&*crate::env::PATH_KEY)?;
@@ -1426,6 +1445,17 @@ fn is_bash_basename(program: &std::ffi::OsStr) -> bool {
     crate::path::program_stem(Path::new(program)).as_deref() == Some("bash")
 }
 
+/// Returns true if `program` carries an explicit directory component — an
+/// absolute path (`C:\x\bash.exe`, `C:/x/bash.exe`) or a relative one with a
+/// separator (`./bash`, `bin/bash`) — as opposed to a bare command name
+/// (`bash`, `bash.exe`) that must be looked up on PATH. Uses `Path::components`
+/// (allocation-free, and treats both `/` and `\` as separators on Windows): a
+/// bare file name has exactly one component, anything with a directory has more.
+#[cfg(windows)]
+fn program_has_directory_component(program: &std::ffi::OsStr) -> bool {
+    Path::new(program).components().count() > 1
+}
+
 /// Common real-POSIX-bash install locations on Windows (Git Bash + MSYS2), in
 /// preference order. Pure given `env` (no filesystem access), so the caller
 /// stats each candidate. `MISE_BASH_PATH` covers anything outside this list,
@@ -1484,7 +1514,8 @@ fn maybe_convert_env_for_msys_shell<'a>(
             // mise itself runs inside Git Bash and spawns another bash subshell.
             && (path_val.contains(';') || path_val.contains('\\'))
         {
-            let converted = crate::path::windows_path_list_to_unix(path_val);
+            let drive_prefix = msys_drive_prefix_for(program, env);
+            let converted = crate::path::windows_path_list_to_unix(path_val, &drive_prefix);
             let mut new_env = env.clone();
             new_env.insert((*crate::env::PATH_KEY).to_string(), converted);
             return std::borrow::Cow::Owned(new_env);
@@ -1495,6 +1526,45 @@ fn maybe_convert_env_for_msys_shell<'a>(
         let _ = program;
     }
     std::borrow::Cow::Borrowed(env)
+}
+
+/// The cygdrive prefix inserted before drive letters when converting PATH for a
+/// POSIX shell: empty for MSYS2 / Git Bash (`/c/...`), `/cygdrive` for Cygwin
+/// (`/cygdrive/c/...`). A Cygwin user with a non-default `cygdrive` mount (configured
+/// in `/etc/fstab`) can override it via `MISE_CYGDRIVE_PREFIX` — mise does not parse
+/// fstab. A trailing `/` is trimmed since the converter emits its own separator after
+/// the prefix, so `MISE_CYGDRIVE_PREFIX=/` collapses to the MSYS `/c/...` form. A
+/// non-empty value that is not absolute (no leading `/`, e.g. `mnt`) would produce
+/// relative PATH entries that bash silently ignores, so it is rejected with a warning
+/// and the default `/cygdrive` is used instead.
+#[cfg(windows)]
+fn msys_drive_prefix_for(program: &Path, env: &BTreeMap<String, String>) -> String {
+    const DEFAULT: &str = "/cygdrive";
+    if !crate::path::is_cygwin_shell(program) {
+        return String::new();
+    }
+    let raw = env
+        .get("MISE_CYGDRIVE_PREFIX")
+        .cloned()
+        .or_else(|| std::env::var("MISE_CYGDRIVE_PREFIX").ok())
+        .filter(|s| !s.is_empty());
+    let Some(mut s) = raw else {
+        return DEFAULT.to_string();
+    };
+    // Trim trailing slashes in place — the converter appends its own separator.
+    s.truncate(s.trim_end_matches('/').len());
+    if s.is_empty() {
+        // `MISE_CYGDRIVE_PREFIX=/` → empty prefix → MSYS `/c/...` form.
+        String::new()
+    } else if s.starts_with('/') {
+        s
+    } else {
+        warn!(
+            "MISE_CYGDRIVE_PREFIX={s:?} is not absolute (must start with `/`); \
+             using the default `{DEFAULT}`"
+        );
+        DEFAULT.to_string()
+    }
 }
 
 /// Read the shebang from a file and parse it into a shell command.
@@ -1533,6 +1603,29 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_task_sandbox_path_expands_home_before_task_base() {
+        let resolved =
+            resolve_task_sandbox_path(Path::new("~/sandbox-path"), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, crate::dirs::HOME.join("sandbox-path"));
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_uses_task_base_for_relative_paths() {
+        let resolved =
+            resolve_task_sandbox_path(Path::new("sandbox-path"), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, PathBuf::from("/task/base/sandbox-path"));
+    }
+
+    #[test]
+    fn test_resolve_task_sandbox_path_preserves_empty_paths_for_filtering() {
+        let resolved = resolve_task_sandbox_path(Path::new(""), Some(Path::new("/task/base")));
+
+        assert_eq!(resolved, PathBuf::new());
+    }
+
+    #[test]
     #[cfg(windows)]
     fn test_maybe_convert_env_for_msys_shell_converts_for_bash() {
         let env = env_with_path(r"C:\Users\me\.rustup\bin;D:\tools\bin");
@@ -1561,6 +1654,57 @@ mod tests {
         let env = env_with_path(r"C:\foo;D:\bar");
         let out =
             maybe_convert_env_for_msys_shell(Path::new(r"C:\Program Files\Git\bin\bash.exe"), &env);
+        assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/c/foo:/d/bar");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_uses_cygdrive_for_cygwin_bash() {
+        // A Cygwin bash (detected by the `cygwin64` path segment) needs the
+        // `/cygdrive/c/...` form, not Git Bash's `/c/...`.
+        let env = env_with_path(r"C:\foo;D:\bar");
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/cygdrive/c/foo:/cygdrive/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_honors_cygdrive_prefix_override() {
+        // A non-default cygdrive mount (e.g. fstab `/mnt`) is supplied via
+        // MISE_CYGDRIVE_PREFIX in the task env rather than parsed from fstab.
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "/mnt".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/mnt/c/foo:/mnt/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_rejects_relative_cygdrive_prefix() {
+        // A prefix without a leading slash (e.g. `mnt`) would yield relative PATH
+        // entries bash ignores; fall back to the default `/cygdrive` instead.
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "mnt".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/cygdrive/c/foo:/cygdrive/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_cygdrive_prefix_slash_is_msys() {
+        // `MISE_CYGDRIVE_PREFIX=/` trims to empty → MSYS `/c/...` form.
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "/".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
         assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/c/foo:/d/bar");
     }
 
@@ -1731,5 +1875,82 @@ mod tests {
     fn test_resolve_posix_shell_program_path_skips_when_path_already_unix() {
         let env = env_with_path("/c/foo:/d/bar");
         assert!(resolve_posix_shell_program_path(std::ffi::OsStr::new("bash"), &env).is_none());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_honors_explicit_forward_slash_path() {
+        // #9932: an explicit absolute bash path must be kept verbatim (None here,
+        // so the caller keeps the original), NOT re-resolved to Git Bash via the
+        // candidate list — even with a Windows-form PATH that would otherwise
+        // trigger resolution.
+        let env = env_with_path(r"C:\Windows\System32;C:\Program Files\Git\bin");
+        assert!(
+            resolve_posix_shell_program_path(
+                std::ffi::OsStr::new("C:/msys64/usr/bin/bash.exe"),
+                &env
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_honors_explicit_path_backslashes() {
+        let env = env_with_path(r"C:\Windows\System32;C:\Program Files\Git\bin");
+        assert!(
+            resolve_posix_shell_program_path(
+                std::ffi::OsStr::new(r"C:\msys64\usr\bin\bash.exe"),
+                &env
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_honors_explicit_relative_path() {
+        // A relative path with a separator is still an explicit choice, not a
+        // bare name to look up on PATH.
+        let env = env_with_path(r"C:\Windows\System32;C:\Program Files\Git\bin");
+        assert!(resolve_posix_shell_program_path(std::ffi::OsStr::new("bin/bash"), &env).is_none());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_resolve_posix_shell_program_path_honors_explicit_non_bash_shell_path() {
+        // An explicit path to a non-bash POSIX shell is honored verbatim too.
+        let env = env_with_path(r"C:\Windows\System32;C:\msys64\usr\bin");
+        assert!(
+            resolve_posix_shell_program_path(
+                std::ffi::OsStr::new(r"C:\msys64\usr\bin\zsh.exe"),
+                &env
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_program_has_directory_component_detects_explicit_paths() {
+        use std::ffi::OsStr;
+        assert!(program_has_directory_component(OsStr::new(
+            "C:/msys64/usr/bin/bash.exe"
+        )));
+        assert!(program_has_directory_component(OsStr::new(
+            r"C:\msys64\usr\bin\bash.exe"
+        )));
+        assert!(program_has_directory_component(OsStr::new("./bash")));
+        assert!(program_has_directory_component(OsStr::new("bin/bash")));
+        assert!(program_has_directory_component(OsStr::new("/usr/bin/bash")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_program_has_directory_component_rejects_bare_names() {
+        use std::ffi::OsStr;
+        assert!(!program_has_directory_component(OsStr::new("bash")));
+        assert!(!program_has_directory_component(OsStr::new("bash.exe")));
+        assert!(!program_has_directory_component(OsStr::new("BASH.EXE")));
     }
 }

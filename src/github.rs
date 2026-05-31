@@ -323,6 +323,7 @@ fn should_cache_release(release: &GithubRelease) -> bool {
 /// Note: this relies on `list_releases` which may only return the first page of results
 /// when `MISE_LIST_ALL_VERSIONS` is not set. For repos with many releases, older versions
 /// may not be found, falling back to the exact version tag via `get_release`.
+#[cfg_attr(windows, allow(dead_code))]
 pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Result<GithubRelease> {
     let releases = list_releases(repo).await?;
     match pick_best_build_revision(releases, version) {
@@ -336,6 +337,7 @@ pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Resul
 /// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the one
 /// with the highest numeric `-N` suffix. The base version (no suffix) is treated as
 /// revision 0.
+#[cfg_attr(windows, allow(dead_code))]
 fn pick_best_build_revision(releases: Vec<GithubRelease>, version: &str) -> Option<GithubRelease> {
     let prefix = format!("{version}-");
     releases
@@ -355,6 +357,13 @@ fn pick_best_build_revision(releases: Vec<GithubRelease>, version: &str) -> Opti
 }
 
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
+    if is_public_github_api_base(api_url)
+        && let Ok(Some(release)) = crate::versions_host::github_release(repo, tag).await
+    {
+        trace!("got GitHub release {repo}@{tag} from mise-versions");
+        return Ok(release);
+    }
+
     let url = if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
     } else {
@@ -364,6 +373,10 @@ async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRele
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
         .await
+}
+
+fn is_public_github_api_base(api_url: &str) -> bool {
+    api_url.trim_end_matches('/') == API_URL
 }
 
 fn next_page(headers: &HeaderMap) -> Option<String> {

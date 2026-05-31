@@ -506,8 +506,12 @@
               "description": "Use minisign to verify aqua tool signatures.",
               "type": "boolean"
             },
+            "registry_cache_ttl": {
+              "description": "How long to cache downloaded aqua registry source files.",
+              "type": "string"
+            },
             "registry_url": {
-              "description": "URL to fetch aqua registry from.",
+              "description": "URL of an aqua registry repository to fetch.",
               "type": "string"
             },
             "slsa": {
@@ -587,9 +591,16 @@
         },
         "color_theme": {
           "default": "default",
-          "description": "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)",
+          "description": "Theme for interactive prompts (auto/default, charm, base16, catppuccin, dracula)",
           "type": "string",
-          "enum": ["default", "charm", "base16", "catppuccin", "dracula"]
+          "enum": [
+            "auto",
+            "default",
+            "charm",
+            "base16",
+            "catppuccin",
+            "dracula"
+          ]
         },
         "conda": {
           "type": "object",
@@ -618,7 +629,7 @@
         },
         "disable_backends": {
           "default": [],
-          "description": "Backends to disable such as `asdf` or `pipx`",
+          "description": "Backends to disable for new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. This does not uninstall or disable tools already installed with those backends.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1150,6 +1161,11 @@
               "default": "~/.nodenv",
               "description": "Directory for nodenv.",
               "type": "string"
+            },
+            "npm_shim": {
+              "default": true,
+              "description": "Install a bash wrapper at bin/npm that triggers `mise reshim` after `npm install -g`. Disable to let corepack or a global `npm install -g npm@...` manage `bin/npm` directly.",
+              "type": "boolean"
             },
             "nvm_dir": {
               "default": "~/.nvm",
@@ -1727,7 +1743,7 @@
         },
         "use_versions_host": {
           "default": true,
-          "description": "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions.",
+          "description": "Set to false to disable using the mise-versions API for version lists, public GitHub release metadata, and GitHub artifact attestations.",
           "type": "boolean"
         },
         "use_versions_host_track": {
@@ -2035,110 +2051,123 @@
       "required": ["version"],
       "type": "object"
     },
+    "hook_run_string": {
+      "description": "inline hook command to run",
+      "type": "string"
+    },
+    "hook_run_table": {
+      "unevaluatedProperties": false,
+      "properties": {
+        "run": {
+          "description": "inline hook command to run",
+          "type": "string"
+        },
+        "shell": {
+          "description": "inline shell command to use for run hooks, such as \"bash -c\"",
+          "type": "string"
+        }
+      },
+      "required": ["run"],
+      "type": "object"
+    },
+    "hook_script_value": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "hook_scripts_value": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hook_script_table": {
+      "unevaluatedProperties": false,
+      "properties": {
+        "script": {
+          "description": "current-shell script/scripts for enter/leave/cd hooks",
+          "$ref": "#/$defs/hook_script_value"
+        },
+        "shell": {
+          "description": "current shell name for script hooks, such as \"bash\"",
+          "type": "string"
+        }
+      },
+      "required": ["script"],
+      "type": "object"
+    },
+    "hook_scripts_table": {
+      "unevaluatedProperties": false,
+      "properties": {
+        "scripts": {
+          "description": "current-shell scripts for enter/leave/cd hooks",
+          "$ref": "#/$defs/hook_scripts_value"
+        },
+        "shell": {
+          "description": "current shell name for script hooks, such as \"bash\"",
+          "type": "string"
+        }
+      },
+      "required": ["scripts"],
+      "type": "object"
+    },
+    "hook_task_ref": {
+      "unevaluatedProperties": false,
+      "properties": {
+        "task": {
+          "description": "mise task to run",
+          "type": "string"
+        }
+      },
+      "required": ["task"],
+      "type": "object"
+    },
+    "hook_definition_item": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hook_run_string"
+        },
+        {
+          "$ref": "#/$defs/hook_run_table"
+        },
+        {
+          "$ref": "#/$defs/hook_script_table"
+        },
+        {
+          "$ref": "#/$defs/hook_scripts_table"
+        },
+        {
+          "$ref": "#/$defs/hook_task_ref"
+        }
+      ]
+    },
+    "hook_definition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hook_definition_item"
+        },
+        {
+          "description": "scripts/tasks to run",
+          "items": {
+            "$ref": "#/$defs/hook_definition_item"
+          },
+          "type": "array"
+        }
+      ]
+    },
     "hooks": {
       "description": "hooks to run",
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          {
-            "description": "inline hook command to run",
-            "type": "string"
-          },
-          {
-            "unevaluatedProperties": false,
-            "properties": {
-              "run": {
-                "description": "inline hook command to run",
-                "type": "string"
-              },
-              "shell": {
-                "description": "inline shell command to use for run hooks, such as \"bash -c\"",
-                "type": "string"
-              }
-            },
-            "required": ["run"],
-            "type": "object"
-          },
-          {
-            "unevaluatedProperties": false,
-            "properties": {
-              "script": {
-                "description": "current-shell script for enter/leave/cd hooks",
-                "type": "string"
-              },
-              "shell": {
-                "description": "current shell name for script hooks, such as \"bash\"",
-                "type": "string"
-              }
-            },
-            "required": ["script"],
-            "type": "object"
-          },
-          {
-            "unevaluatedProperties": false,
-            "properties": {
-              "task": {
-                "description": "mise task to run",
-                "type": "string"
-              }
-            },
-            "required": ["task"],
-            "type": "object"
-          },
-          {
-            "description": "scripts/tasks to run",
-            "items": {
-              "oneOf": [
-                {
-                  "description": "inline hook command to run",
-                  "type": "string"
-                },
-                {
-                  "unevaluatedProperties": false,
-                  "properties": {
-                    "run": {
-                      "description": "inline hook command to run",
-                      "type": "string"
-                    },
-                    "shell": {
-                      "description": "inline shell command to use for run hooks, such as \"bash -c\"",
-                      "type": "string"
-                    }
-                  },
-                  "required": ["run"],
-                  "type": "object"
-                },
-                {
-                  "unevaluatedProperties": false,
-                  "properties": {
-                    "script": {
-                      "description": "current-shell script for enter/leave/cd hooks",
-                      "type": "string"
-                    },
-                    "shell": {
-                      "description": "current shell name for script hooks, such as \"bash\"",
-                      "type": "string"
-                    }
-                  },
-                  "required": ["script"],
-                  "type": "object"
-                },
-                {
-                  "unevaluatedProperties": false,
-                  "properties": {
-                    "task": {
-                      "description": "mise task to run",
-                      "type": "string"
-                    }
-                  },
-                  "required": ["task"],
-                  "type": "object"
-                }
-              ]
-            },
-            "type": "array"
-          }
-        ]
+        "$ref": "#/$defs/hook_definition"
       }
     },
     "watch_files": {

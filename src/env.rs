@@ -414,6 +414,7 @@ pub static __MISE_ZSH_PRECMD_RUN: Lazy<bool> = Lazy::new(|| !var_is_false("__MIS
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 /// Detected glibc version on Linux as (major, minor), e.g. (2, 17).
 /// Returns None on non-Linux or if detection fails.
+#[cfg_attr(windows, allow(dead_code))]
 pub static LINUX_GLIBC_VERSION: Lazy<Option<(u32, u32)>> = Lazy::new(linux_glibc_version);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
@@ -423,13 +424,20 @@ pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars_safe().collect()));
-pub static PATH_KEY: Lazy<String> = Lazy::new(|| {
-    vars_safe()
-        .map(|(k, _)| k)
-        .find_or_first(|k| k.to_uppercase() == "PATH")
-        .map(|k| k.to_string())
+pub static PATH_KEY: Lazy<String> =
+    Lazy::new(|| path_key_from_env(vars_os().filter_map(|(k, _)| k.into_string().ok())));
+
+#[cfg(unix)]
+fn path_key_from_env(_keys: impl IntoIterator<Item = String>) -> String {
+    "PATH".into()
+}
+
+#[cfg(windows)]
+fn path_key_from_env(keys: impl IntoIterator<Item = String>) -> String {
+    keys.into_iter()
+        .find(|k| k.eq_ignore_ascii_case("PATH"))
         .unwrap_or("PATH".into())
-});
+}
 pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get(&*PATH_KEY) {
     Some(path) => split_paths(path).collect(),
     None => vec![],
@@ -754,6 +762,7 @@ fn linux_glibc_version() -> Option<(u32, u32)> {
 }
 
 #[cfg(not(target_os = "linux"))]
+#[cfg_attr(windows, allow(dead_code))]
 fn linux_glibc_version() -> Option<(u32, u32)> {
     None
 }
@@ -864,6 +873,33 @@ mod tests {
             PathBuf::from("/foo/bar")
         );
         remove_var("MISE_TEST_PATH");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_path_key_from_env_uses_uppercase_path_on_unix() {
+        assert_eq!(
+            path_key_from_env(vec!["path".into(), "HOME".into()]),
+            "PATH"
+        );
+        assert_eq!(
+            path_key_from_env(vec!["Path".into(), "HOME".into()]),
+            "PATH"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_path_key_from_env_preserves_windows_path_casing() {
+        assert_eq!(
+            path_key_from_env(vec!["Path".into(), "TEMP".into()]),
+            "Path"
+        );
+        assert_eq!(
+            path_key_from_env(vec!["TEMP".into(), "PATH".into()]),
+            "PATH"
+        );
+        assert_eq!(path_key_from_env(vec!["TEMP".into()]), "PATH");
     }
 
     #[test]

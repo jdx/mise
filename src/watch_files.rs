@@ -83,7 +83,7 @@ async fn execute(
         .map(|f| f.to_string_lossy().replace(':', "\\:"))
         .join(":");
     let shell = match shell {
-        Some(shell) => shell_words::split(shell)?,
+        Some(shell) => crate::path::split_shell_command(shell)?,
         None => Settings::get().default_inline_shell()?,
     };
     let (program, shell_args) = shell.split_first().ok_or_else(|| {
