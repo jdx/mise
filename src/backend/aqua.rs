@@ -228,7 +228,7 @@ impl Backend for AquaBackend {
             let signer_workflow = all_pkgs
                 .iter()
                 .filter_map(|p| p.github_artifact_attestations.as_ref())
-                .find_map(|a| a.signer_workflow.clone());
+                .find_map(|a| a.signer_workflow().map(String::from));
             features.push(SecurityFeature::GithubAttestations { signer_workflow });
         }
 
@@ -1154,7 +1154,7 @@ impl AquaBackend {
         let signer_workflow = pkg
             .github_artifact_attestations
             .as_ref()
-            .and_then(|att| att.signer_workflow.as_deref().map(unescape_regex_literal));
+            .and_then(|att| att.signer_workflow().map(unescape_regex_literal));
 
         match crate::github::sigstore::verify_attestation(
             artifact_path,

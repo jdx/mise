@@ -223,7 +223,9 @@ pub struct AquaMinisign {
 #[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
     pub enabled: Option<bool>,
-    pub signer_workflow: Option<String>,
+    signer_workflow: Option<String>,
+    #[serde(rename = "signer-workflow")]
+    signer_workflow_deprecated: Option<String>,
 }
 
 /// Checksum verification configuration
@@ -1194,12 +1196,19 @@ impl AquaMinisign {
 }
 
 impl AquaGithubArtifactAttestations {
+    pub fn signer_workflow(&self) -> Option<&str> {
+        self.signer_workflow
+            .as_deref()
+            .or(self.signer_workflow_deprecated.as_deref())
+    }
+
     fn merge(&mut self, other: Self) {
         if let Some(enabled) = other.enabled {
             self.enabled = Some(enabled);
         }
-        if let Some(signer_workflow) = other.signer_workflow {
+        if let Some(signer_workflow) = other.signer_workflow.or(other.signer_workflow_deprecated) {
             self.signer_workflow = Some(signer_workflow);
+            self.signer_workflow_deprecated = None;
         }
     }
 }
@@ -1258,6 +1267,41 @@ packages:
 
         assert_eq!(pkg.replacements.get("386"), Some(&"i686".to_string()));
         assert_eq!(pkg.vars[0].default.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn test_github_artifact_attestations_signer_workflow_fields() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - github_artifact_attestations:
+      signer_workflow: canonical-workflow.yml
+      signer-workflow: deprecated-workflow.yml
+"#,
+        );
+
+        let attestations = pkg.github_artifact_attestations.unwrap();
+        assert_eq!(
+            attestations.signer_workflow(),
+            Some("canonical-workflow.yml")
+        );
+    }
+
+    #[test]
+    fn test_github_artifact_attestations_deprecated_signer_workflow() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - github_artifact_attestations:
+      signer-workflow: deprecated-workflow.yml
+"#,
+        );
+
+        let attestations = pkg.github_artifact_attestations.unwrap();
+        assert_eq!(
+            attestations.signer_workflow(),
+            Some("deprecated-workflow.yml")
+        );
     }
 
     #[test]
