@@ -150,7 +150,7 @@ function ElementNode:close(closestart, closeend)
 	if closestart and closeend then
 		self._closestart, self._closeend = closestart, closeend
 	end
-	-- inform hihger level nodes about this element's existence in their branches
+	-- inform higher level nodes about this element's existence in their branches
 	local node = self
 	while true do
 		node = node.parent
