@@ -102,7 +102,7 @@ impl SelfUpdate {
             #[cfg(windows)]
             match Self::update_mise_shim(&version).await {
                 Ok(()) => {
-                    if let Err(e) = cmd!(&*env::MISE_BIN, "reshim", "--force").run() {
+                    if let Err(e) = Self::reshim_after_update().await {
                         warn!("Failed to reshim after self-update: {e}");
                     }
                 }
@@ -181,6 +181,18 @@ impl SelfUpdate {
         }
 
         Ok(status)
+    }
+
+    // Rebuild the Windows shim copies in-process instead of shelling out to
+    // `mise reshim --force`. Mirrors `cli::reshim::Reshim::run`.
+    #[cfg(windows)]
+    async fn reshim_after_update() -> Result<()> {
+        use crate::config::Config;
+        use crate::toolset::ToolsetBuilder;
+
+        let config = Config::get().await?;
+        let ts = ToolsetBuilder::new().build(&config).await?;
+        crate::shims::reshim(&config, &ts, true).await
     }
 
     #[cfg(windows)]
