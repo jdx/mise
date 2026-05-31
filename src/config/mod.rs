@@ -1747,6 +1747,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     config: &Arc<Config>,
     ts: &Toolset,
     new_versions: &[ToolVersion],
+    lockfile_update_mode: lockfile::LockfileUpdateMode,
 ) -> Result<()> {
     measure!("rebuilding runtime symlinks", {
         runtime_symlinks::rebuild_for_toolset(config, ts)
@@ -1767,14 +1768,18 @@ pub async fn rebuild_shims_and_runtime_symlinks(
         lockfile::snapshot_pre_install_platforms(new_versions)
     };
     measure!("updating lockfiles", {
-        lockfile::update_lockfiles(config, ts, new_versions)
+        lockfile::update_lockfiles(config, ts, new_versions, lockfile_update_mode)
             .wrap_err("failed to update lockfiles")?;
     });
     if !new_versions.is_empty() {
         measure!("auto-locking platforms", {
-            lockfile::auto_lock_new_versions(config, new_versions, &pre_install_platforms)
-                .await
-                .wrap_err("failed to auto-lock platforms for new versions")?;
+            lockfile::auto_lock_new_versions(
+                new_versions,
+                &pre_install_platforms,
+                lockfile_update_mode,
+            )
+            .await
+            .wrap_err("failed to auto-lock platforms for new versions")?;
         });
     }
 
@@ -2266,6 +2271,9 @@ async fn load_config_tasks(
         let mut t = t.clone();
         if is_global {
             t.global = true;
+        }
+        if t.config_root.is_none() {
+            t.config_root = Some(config_root.to_path_buf());
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;

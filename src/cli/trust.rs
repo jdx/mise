@@ -13,13 +13,11 @@ use itertools::Itertools;
 
 /// Marks a config file as trusted
 ///
-/// This means mise will parse the file with potentially dangerous
-/// features enabled.
-///
-/// This includes:
-/// - environment variables
-/// - templates
-/// - `path:` plugin versions
+/// This means mise is allowed to parse the file when it needs to read config
+/// that may execute code or affect the environment. mise checks trust before
+/// parsing `mise.toml`. Without trust, mise may prompt, skip the config in some
+/// discovery paths, fail with an untrusted-config error when it cannot prompt,
+/// or assume trust in detected CI unless paranoid mode is enabled.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Trust {

@@ -772,7 +772,7 @@ impl TaskScriptParser {
                 continue;
             }
             let shell_type = shell_from_shebang(script)
-                .or(task.shell())
+                .or(task.shell()?)
                 .unwrap_or(Settings::get().default_inline_shell()?)[0]
                 .parse()
                 .ok();

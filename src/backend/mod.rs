@@ -18,7 +18,9 @@ use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
-use crate::file::{display_path, remove_all_with_progress, remove_all_with_warning};
+use crate::file::{
+    canonicalize_cached, display_path, remove_all_with_progress, remove_all_with_warning,
+};
 use crate::install_before::resolve_before_date;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
@@ -256,11 +258,7 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
             &backend.id().to_string(),
         )
     });
-    tools.retain(|backend| {
-        !settings
-            .disable_backends
-            .contains(&backend.get_type().to_string())
-    });
+    tools.retain(|backend| !is_disabled_backend_type(&backend.get_type()));
 
     let tools: BackendMap = tools
         .into_iter()
@@ -311,6 +309,26 @@ pub fn remove(short: &str) {
         tools_.remove(short);
         *tools = Some(Arc::new(tools_));
     }
+}
+
+pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+    backend_type
+        .disable_key()
+        .is_some_and(is_disabled_backend_name)
+}
+
+pub fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
+    if is_disabled_backend_type(backend_type) {
+        bail!("backend {backend_type} is disabled by disable_backends");
+    }
+    Ok(())
+}
+
+fn is_disabled_backend_name(backend: &str) -> bool {
+    Settings::get()
+        .disable_backends
+        .iter()
+        .any(|disabled| disabled == backend)
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
@@ -1241,6 +1259,19 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Backend-specific fast path for exact version requests.
+    ///
+    /// Return `Ok(None)` when the backend cannot cheaply prove that `version`
+    /// is an exact upstream version. Callers must still fall back to normal
+    /// prefix/latest resolution in that case.
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        _version: &str,
+    ) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Backend opt-in for installing an unresolved `latest` request.
     ///
     /// Most backends must resolve `latest` to a concrete version before install.
@@ -1346,21 +1377,16 @@ pub trait Backend: Debug + Send + Sync {
             };
             // Canonicalize to resolve any ".." components before checking.
             // If target doesn't exist (canonicalize fails), don't skip - treat as needing install
-            let Ok(target) = target.canonicalize() else {
-                return None;
-            };
+            let target = canonicalize_cached(&target)?;
             // Canonicalize INSTALLS too for consistent comparison (handles symlinked data dirs)
-            let installs = dirs::INSTALLS
-                .canonicalize()
-                .unwrap_or(dirs::INSTALLS.to_path_buf());
+            let installs =
+                canonicalize_cached(&dirs::INSTALLS).unwrap_or(dirs::INSTALLS.to_path_buf());
             if target.starts_with(&installs) {
                 return Some(path);
             }
             // Also check shared install directories
             for shared_dir in env::shared_install_dirs() {
-                let shared = shared_dir
-                    .canonicalize()
-                    .unwrap_or(shared_dir.to_path_buf());
+                let shared = canonicalize_cached(&shared_dir).unwrap_or(shared_dir.to_path_buf());
                 if target.starts_with(&shared) {
                     return Some(path);
                 }
@@ -2168,16 +2194,18 @@ pub trait Backend: Debug + Send + Sync {
         // the shim for the dependency would call `mise exec` which would call the
         // shim again infinitely.
         //
-        // `paths_eq` handles case-insensitive matching on macOS/Windows: e.g. if
-        // `$HOME` is mixed-case in PATH (`/Users/Foo`) but lowercase in the
-        // resolved shims path, byte-equal comparison would miss it and the shim
-        // would survive in the child env.
+        // `is_mise_shims_dir` covers both the user shims dir (`dirs::SHIMS`) and
+        // the system shims dir (`MISE_SYSTEM_DATA_DIR/shims`). Both are typically
+        // on PATH in devcontainer/Docker setups built with `mise install --system`;
+        // filtering only one used to leak recursion through the other (#8475
+        // closed the user dir for `dependency_env`, this PR closes the system dir
+        // and aligns with the dual-dir guard already in `which_shim` (#8816)).
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
             let paths: Vec<_> = env::split_paths(path_val).collect();
             let original_len = paths.len();
             let filtered: Vec<_> = paths
                 .into_iter()
-                .filter(|p| !file::paths_eq(&file::replace_path(p), &dirs::SHIMS))
+                .filter(|p| !file::is_mise_shims_dir(p))
                 .collect();
             if filtered.len() != original_len {
                 let joined = env::join_paths(&filtered)?;

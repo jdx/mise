@@ -622,7 +622,7 @@
         },
         "disable_backends": {
           "default": [],
-          "description": "Backends to disable such as `asdf` or `pipx`",
+          "description": "Backends to disable for new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. This does not uninstall or disable tools already installed with those backends.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1154,6 +1154,11 @@
               "default": "~/.nodenv",
               "description": "Directory for nodenv.",
               "type": "string"
+            },
+            "npm_shim": {
+              "default": true,
+              "description": "Install a bash wrapper at bin/npm that triggers `mise reshim` after `npm install -g`. Disable to let corepack or a global `npm install -g npm@...` manage `bin/npm` directly.",
+              "type": "boolean"
             },
             "nvm_dir": {
               "default": "~/.nvm",
@@ -1731,7 +1736,7 @@
         },
         "use_versions_host": {
           "default": true,
-          "description": "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions.",
+          "description": "Set to false to disable using the mise-versions API for version lists, public GitHub release metadata, and GitHub artifact attestations.",
           "type": "boolean"
         },
         "use_versions_host_track": {

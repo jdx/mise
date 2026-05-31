@@ -1,0 +1,3 @@
+backends = ["github:ogulcancelik/herdr"]
+description = "Agent multiplexer that lives in your terminal"
+test = { cmd = "herdr --version", expected = "herdr {{version}}" }

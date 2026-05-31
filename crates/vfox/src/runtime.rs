@@ -1,4 +1,4 @@
-use crate::config::{arch, env_type, os};
+use crate::config::{arch, os};
 use mlua::{UserData, UserDataFields};
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
@@ -17,7 +17,7 @@ static RUNTIME: Lazy<Mutex<Runtime>> = Lazy::new(|| {
     Mutex::new(Runtime {
         os: os(),
         arch: arch(),
-        env_type: env_type(),
+        env_type: None,
         version: "0.6.0".to_string(), // https://github.com/version-fox/vfox/releases
         plugin_dir_path: PathBuf::new(),
     })
@@ -64,7 +64,7 @@ impl Runtime {
         let mut runtime = RUNTIME.lock().unwrap();
         runtime.os = os();
         runtime.arch = arch();
-        runtime.env_type = env_type();
+        runtime.env_type = None;
     }
 }
 
