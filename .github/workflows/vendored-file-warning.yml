@@ -11,7 +11,7 @@ permissions: {}
 jobs:
   warn:
     if: github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ubuntu-latest
     steps:
       - name: Fail on vendored file changes
         run: |
