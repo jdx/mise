@@ -2,6 +2,7 @@ use crate::cli::Cli;
 use clap::CommandFactory;
 use clap::builder::Resettable;
 use eyre::Result;
+use std::collections::HashSet;
 
 /// Generate a usage CLI spec
 ///
@@ -32,6 +33,51 @@ impl Usage {
             run: "mise tasks --usage".to_string(),
         });
         tasks_run.restart_token = Some(":::".to_string());
+
+        // Promote completion-spec flags that collide with a root-level global flag
+        // (e.g. `-C`/`--cd`) to global on the mounted `run`/`tasks run` subcommands.
+        //
+        // The `run` subcommand redeclares some root globals as its own non-global
+        // flags (notably `-C`/`--cd`, see `cli::run::Run::cd`). When the usage parser
+        // descends into a mounted task subcommand it keeps only `global` flags
+        // (`available_flags.retain(|_, f| f.global)`), so the non-global redeclaration
+        // causes the inherited global to be dropped. A leading `mise -C <dir> run
+        // <task> ...` then mis-parses `-C` as the task's positional arg during
+        // completion. Marking the colliding flags global here (completion-spec only,
+        // no effect on clap runtime parsing) keeps them recognized. See mise#10069.
+        let global_shorts: HashSet<char> = spec
+            .cmd
+            .flags
+            .iter()
+            .filter(|f| f.global)
+            .flat_map(|f| f.short.iter().copied())
+            .collect();
+        let global_longs: HashSet<String> = spec
+            .cmd
+            .flags
+            .iter()
+            .filter(|f| f.global)
+            .flat_map(|f| f.long.iter().cloned())
+            .collect();
+        let promote = |cmd: &mut usage::SpecCommand| {
+            for f in cmd.flags.iter_mut() {
+                if f.short.iter().any(|c| global_shorts.contains(c))
+                    || f.long.iter().any(|l| global_longs.contains(l))
+                {
+                    f.global = true;
+                }
+            }
+        };
+        promote(spec.cmd.subcommands.get_mut("run").unwrap());
+        promote(
+            spec.cmd
+                .subcommands
+                .get_mut("tasks")
+                .unwrap()
+                .subcommands
+                .get_mut("run")
+                .unwrap(),
+        );
 
         let min_version = r#"min_usage_version "2.11""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
