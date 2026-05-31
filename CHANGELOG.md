@@ -1,5 +1,84 @@
 # Changelog
 
+## [2026.5.17](https://github.com/jdx/mise/compare/v2026.5.16..v2026.5.17) - 2026-05-31
+
+### 🚀 Features
+
+- **(aqua)** add compiled custom registry cache by @risu729 in [#9583](https://github.com/jdx/mise/pull/9583)
+
+### 🐛 Bug Fixes
+
+- **(bun)** use native windows-arm64 build for Bun >= 1.3.10 by @JamBalaya56562 in [#10150](https://github.com/jdx/mise/pull/10150)
+- **(completion)** keep global -C/--cd usable in task argument completion by @JamBalaya56562 in [#10153](https://github.com/jdx/mise/pull/10153)
+- **(env)** force uppercase PATH key on unix by @risu729 in [#9927](https://github.com/jdx/mise/pull/9927)
+- **(http)** limit versions host fallback retries by @jdx in [#10142](https://github.com/jdx/mise/pull/10142)
+- **(pipx)** upgrade shared pip environment when using version constraints by @iloveitaly in [#10138](https://github.com/jdx/mise/pull/10138)
+- **(shim)** refresh stale Windows shims after a mise version update by @JamBalaya56562 in [#10152](https://github.com/jdx/mise/pull/10152)
+- **(task)** honor explicit and quoted shell paths on Windows by @JamBalaya56562 in [#10148](https://github.com/jdx/mise/pull/10148)
+- **(task)** convert PATH to /cygdrive form for Cygwin bash tasks by @JamBalaya56562 in [#10147](https://github.com/jdx/mise/pull/10147)
+- **(ui)** honor color settings in interactive prompt themes by @JamBalaya56562 in [#10151](https://github.com/jdx/mise/pull/10151)
+- **(upgrade)** handle lone v prefix in --bump latest queries by @zeitlinger in [#10130](https://github.com/jdx/mise/pull/10130)
+
+### 🚜 Refactor
+
+- **(spm)** parse tool options locally by @risu729 in [#9959](https://github.com/jdx/mise/pull/9959)
+
+### 📚 Documentation
+
+- **(glossary)** split Aliases into Tool Aliases and Shell Aliases by @thernstig in [#9983](https://github.com/jdx/mise/pull/9983)
+
+### 🧪 Testing
+
+- deflake python venv go backend e2e by @jdx in [#10156](https://github.com/jdx/mise/pull/10156)
+
+### 📦️ Dependency Updates
+
+- update rust docker digest to fb328f0 by @renovate[bot] in [#10135](https://github.com/jdx/mise/pull/10135)
+- update zizmorcore/zizmor-action action to v0.5.6 by @renovate[bot] in [#10136](https://github.com/jdx/mise/pull/10136)
+- update ghcr.io/jdx/mise:deb docker digest to b0291a9 by @renovate[bot] in [#10133](https://github.com/jdx/mise/pull/10133)
+- update fedora:45 docker digest to 0c1f63e by @renovate[bot] in [#10131](https://github.com/jdx/mise/pull/10131)
+- update ghcr.io/jdx/mise:rpm docker digest to 9e5e851 by @renovate[bot] in [#10134](https://github.com/jdx/mise/pull/10134)
+- update ghcr.io/jdx/mise:alpine docker digest to 736b665 by @renovate[bot] in [#10132](https://github.com/jdx/mise/pull/10132)
+- update rust crate sigstore-verify to 0.8.0 by @renovate[bot] in [#10137](https://github.com/jdx/mise/pull/10137)
+- bump aube to 1.16.1 by @jdx in [#10143](https://github.com/jdx/mise/pull/10143)
+
+### 📦 Registry
+
+- add herdr ([github:ogulcancelik/herdr](https://github.com/ogulcancelik/herdr)) by @ogulcancelik in [#10154](https://github.com/jdx/mise/pull/10154)
+- add databricks-cli ([aqua:databricks/cli](https://github.com/databricks/cli)) by @yigal100 in [#10072](https://github.com/jdx/mise/pull/10072)
+
+### Webpage
+
+- Use most modern tools by @cclauss in [#10170](https://github.com/jdx/mise/pull/10170)
+
+### Chore
+
+- **(ci)** switch back to github-hosted runners by @jdx in [#10144](https://github.com/jdx/mise/pull/10144)
+- **(clippy)** clean up accumulated Windows-only clippy warnings by @JamBalaya56562 in [#10149](https://github.com/jdx/mise/pull/10149)
+
+### New Contributors
+
+- @cclauss made their first contribution in [#10170](https://github.com/jdx/mise/pull/10170)
+- @yigal100 made their first contribution in [#10072](https://github.com/jdx/mise/pull/10072)
+- @ogulcancelik made their first contribution in [#10154](https://github.com/jdx/mise/pull/10154)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (7)
+
+- [`Bearer/bearer`](https://github.com/Bearer/bearer)
+- [`ImageMagick/ImageMagick`](https://github.com/ImageMagick/ImageMagick)
+- [`dahlia/gukhanmun`](https://github.com/dahlia/gukhanmun)
+- [`dahlia/hongdown`](https://github.com/dahlia/hongdown)
+- [`grafana/oats`](https://github.com/grafana/oats)
+- [`s0undt3ch/ToolR`](https://github.com/s0undt3ch/ToolR)
+- [`ubugeeei-prod/vize`](https://github.com/ubugeeei-prod/vize)
+
+#### Updated Packages (2)
+
+- [`Boeing/config-file-validator`](https://github.com/Boeing/config-file-validator)
+- [`npm/cli`](https://github.com/npm/cli)
+
 ## [2026.5.16](https://github.com/jdx/mise/compare/v2026.5.15..v2026.5.16) - 2026-05-28
 
 ### 🚀 Features
