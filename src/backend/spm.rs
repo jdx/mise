@@ -109,12 +109,7 @@ impl<'a> SpmOptions<'a> {
             Ok(ArtifactBundleMode::SourceOnly) => {
                 opts.insert("artifactbundle".to_string(), "false".to_string());
             }
-            Err(_) => {
-                if let Some(artifactbundle) = self.option_string("artifactbundle", Some(target)) {
-                    opts.insert("artifactbundle".to_string(), artifactbundle);
-                }
-            }
-            Ok(ArtifactBundleMode::Auto) => {}
+            Ok(ArtifactBundleMode::Auto) | Err(_) => {}
         }
         if let Some(asset) = self.artifactbundle_asset(Some(target)) {
             opts.insert("artifactbundle_asset".to_string(), asset);
@@ -1174,19 +1169,6 @@ mod tests {
                 ),
                 ("provider".to_string(), "gitlab".to_string()),
             ])
-        );
-    }
-
-    #[test]
-    fn test_lockfile_options_include_invalid_artifactbundle_value() {
-        let opts = opts_with(
-            "artifactbundle",
-            toml::Value::String("sometimes".to_string()),
-        );
-
-        assert_eq!(
-            SpmOptions::new(&opts).lockfile_options(&PlatformTarget::from_current()),
-            BTreeMap::from([("artifactbundle".to_string(), "sometimes".to_string())])
         );
     }
 
