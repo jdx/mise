@@ -1624,6 +1624,46 @@ pub(crate) async fn resolve_vars_from_config_files(
     .await
 }
 
+/// Resolve the `[env]` directives from an arbitrary set of config files,
+/// independent of the active config hierarchy. Used to surface a monorepo
+/// submodule's own env when a task is rendered from outside its config_root
+/// (#10126). Mirrors `resolve_vars_from_config_files` but for env (vars: false).
+///
+/// `tera_ctx` is the context used to render env value templates; callers should
+/// insert this hierarchy's own resolved `vars` into it so that `[env]` entries
+/// can reference `{{vars.*}}` defined in the same files (the active path does
+/// the same — see `Config::load`, which inserts `vars` before `load_env`).
+pub(crate) async fn resolve_env_from_config_files(
+    config: &Arc<Config>,
+    config_files: &ConfigMap,
+    tera_ctx: tera::Context,
+) -> Result<EnvResults> {
+    let entries = config_files
+        .iter()
+        .rev()
+        .map(|(source, cf)| {
+            cf.env_entries()
+                .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    EnvResults::resolve(
+        config,
+        tera_ctx,
+        &env::PRISTINE_ENV,
+        entries,
+        EnvResolveOptions {
+            vars: false,
+            tools: ToolsFilter::NonToolsOnly,
+            warn_on_missing_required: false,
+        },
+    )
+    .await
+}
+
 async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
     time!("load_vars start");
     let vars_results = resolve_vars_from_config_files(config, &config.config_files).await?;

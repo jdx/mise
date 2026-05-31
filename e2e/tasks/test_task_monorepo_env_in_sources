@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Regression for #10126: a submodule task referencing its own [env] in
+# sources/outputs/run must resolve when invoked from OUTSIDE its config_root
+# (e.g. from the monorepo root). Previously this failed with:
+#   Variable `env.MY_PATH` not found in context while rendering '__tera_one_off'
+export MISE_EXPERIMENTAL=1
+
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["foo"]
+TOML
+
+mkdir -p foo
+cat <<'TOML' >foo/mise.toml
+[vars]
+BASE = "."
+
+[env]
+MY_PATH = "."
+# env entry referencing a {{vars.*}} defined in the same submodule config
+VAR_PATH = "{{vars.BASE}}"
+
+[tasks.test]
+sources = ["{{env.MY_PATH}}/*"]
+outputs = ["{{env.MY_PATH}}/out.txt"]
+run = 'echo "MY_PATH=$MY_PATH VAR_PATH={{env.VAR_PATH}}" && ls {{env.MY_PATH}} >/dev/null && echo ok'
+TOML
+touch foo/somefile.txt
+
+echo "=== Test 1: run //foo:test from monorepo root (bug case) ==="
+assert_contains "mise run //foo:test" "ok"
+# Strict single assertion: the file-level env (MY_PATH=".") and the
+# env-references-vars value (VAR_PATH="{{vars.BASE}}") must both render to "."
+# together, so an empty/missing value cannot satisfy the substring check.
+assert_contains "mise run //foo:test" "MY_PATH=. VAR_PATH=."
+
+echo "=== Test 2: run from inside foo/ still works ==="
+cd foo || exit 1
+assert_contains "mise run test" "ok"
+
+echo "=== #10126 tests passed ==="

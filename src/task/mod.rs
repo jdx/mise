@@ -33,9 +33,15 @@ static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
     Lazy::new(|| SkimMatcherV2::default().use_cache(true).smart_case());
 static TASK_VARS_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, IndexMap<String, String>>>> =
     Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
+/// Caches the resolved `[env]` of a task's own config-file hierarchy, keyed by
+/// the task's config path. Used when a monorepo submodule task is rendered from
+/// outside its config_root (#10126).
+static TASK_ENV_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, EnvMap>>> =
+    Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
 
 pub(crate) fn reset() {
     TASK_VARS_CACHE.lock().unwrap().clear();
+    TASK_ENV_CACHE.lock().unwrap().clear();
 }
 
 /// Type alias for tracking failed tasks with their exit codes
@@ -1132,7 +1138,94 @@ impl Task {
         // with task-level values taking precedence over config-level ones.
         tera_ctx.insert("vars", &vars);
         tera_ctx.insert("config_root", &self.config_root);
+
+        // Make the task's env available to templates in sources/outputs/run/dir/
+        // usage so they can read {{env.*}} — even when the task is invoked from
+        // outside its config_root (e.g. a monorepo submodule run from the repo
+        // root, #10126). The base env includes the task's own config-file [env]
+        // (resolved from its hierarchy when it lives outside the active config),
+        // then the task-level [env] is overlaid on top. Redactions are NOT
+        // registered here — render_env (the execution path) owns that.
+        let base_env = self.resolve_base_env(config, ts).await?;
+        // Passing tera_ctx before the final merged env is inserted is fine: inside
+        // resolve_task_env, EnvResults::resolve reseeds the context's `env` key from
+        // base_env on every directive (see env_directive/mod.rs), so task-level
+        // `[env]` values that self-reference `{{env.*}}` resolve against base_env.
+        let (merged_env, _task_env) = self
+            .resolve_task_env(config, tera_ctx.clone(), false, base_env)
+            .await?;
+        tera_ctx.insert("env", &merged_env);
         Ok(tera_ctx)
+    }
+
+    /// Resolve the base env map for templating: the active toolset's full env,
+    /// plus — when this task's config file lives OUTSIDE the active config
+    /// hierarchy (a monorepo submodule invoked from elsewhere, #10126) — that
+    /// config file hierarchy's own `[env]`. Mirrors `resolve_base_vars`, but keys
+    /// off `config_source` directly because monorepo tasks loaded from outside do
+    /// not have their config file present in `config.config_files`.
+    ///
+    /// NOTE: the fast-path condition intentionally differs from `resolve_base_vars`
+    /// (which checks `task_cf.project_root() == config.project_root`). For a
+    /// submodule task invoked from outside its config_root, `self.cf` is `None` and
+    /// the config file is absent from `config.config_files`, so a project_root-based
+    /// check would wrongly skip loading the submodule env and reintroduce #10126.
+    /// Keying off `config_source` membership is what makes this case work.
+    async fn resolve_base_env(&self, config: &Arc<Config>, ts: &Toolset) -> Result<EnvMap> {
+        let global = ts.full_env(config).await?;
+        let config_path = &self.config_source;
+
+        // Already part of the active config hierarchy: its env is in `global`.
+        // Also bail for tasks without a real backing file (empty source, etc.).
+        if config_path.as_os_str().is_empty()
+            || config.config_files.contains_key(config_path)
+            || !config_path.exists()
+        {
+            return Ok(global);
+        }
+
+        if let Some(submodule_env) = TASK_ENV_CACHE.lock().unwrap().get(config_path) {
+            let mut env = global;
+            env.extend(submodule_env.clone());
+            return Ok(env);
+        }
+
+        let task_dir = config_path.parent().unwrap_or(config_path);
+        let (config_paths, idiomatic_filenames) =
+            crate::config::load_config_hierarchy_from_dir(task_dir).await?;
+        let task_config_files =
+            crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                .await?;
+        // Resolve this hierarchy's own vars first and seed them into the tera
+        // context so submodule `[env]` entries can reference `{{vars.*}}` defined
+        // in the same files (mirrors the active path in `Config::load`, which
+        // inserts `vars` before resolving env). Without this, a submodule
+        // `MY_PATH = "{{vars.BASE}}"` fails with `vars.BASE not found`.
+        let vars_results =
+            crate::config::resolve_vars_from_config_files(config, &task_config_files).await?;
+        let submodule_vars: IndexMap<String, String> = vars_results
+            .vars
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        let mut env_tera_ctx = config.tera_ctx.clone();
+        env_tera_ctx.insert("vars", &submodule_vars);
+        let env_results =
+            crate::config::resolve_env_from_config_files(config, &task_config_files, env_tera_ctx)
+                .await?;
+        let submodule_env: EnvMap = env_results
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        TASK_ENV_CACHE
+            .lock()
+            .unwrap()
+            .insert(config_path.clone(), submodule_env.clone());
+
+        let mut env = global;
+        env.extend(submodule_env);
+        Ok(env)
     }
 
     async fn resolve_base_vars(&self, config: &Arc<Config>) -> Result<IndexMap<String, String>> {
@@ -1593,20 +1686,32 @@ impl Task {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
-    pub async fn render_env(
+    /// Resolve this task's own `[env]` (inherited + own + TOML overlay) on top of
+    /// the toolset's full env, returning the merged map plus the task-only subset.
+    ///
+    /// `tera_ctx` is the context used to render env-value templates and must carry
+    /// the correct `config_root`. `register_redactions` controls whether resolved
+    /// redaction patterns are pushed to the global redactor — true only for the
+    /// execution path (`render_env`); false for the render/template path so the
+    /// same redactions are not registered twice.
+    async fn resolve_task_env(
         &self,
         config: &Arc<Config>,
-        ts: &Toolset,
+        tera_ctx: tera::Context,
+        register_redactions: bool,
+        base_env: EnvMap,
     ) -> Result<(EnvMap, Vec<(String, String)>)> {
-        let mut tera_ctx = ts.tera_ctx(config).await?.clone();
-        let mut env = ts.full_env(config).await?;
-        if let Some(root) = &config.project_root {
-            tera_ctx.insert("config_root", &root);
+        let mut env = base_env;
+
+        // Fast path: no task-level env directives -> return the base env
+        // untouched, avoiding EnvResults::resolve (perf) and any file re-sourcing.
+        if self.env.0.is_empty() && self.inherited_env.0.is_empty() && self.overlay_env.is_empty() {
+            return Ok((env, Vec::new()));
         }
 
-        // Convert task env directives to (EnvDirective, PathBuf) pairs
-        // Use the config file path as source for proper path resolution
-        // Include inherited_env first (so task's own env can override it)
+        // Convert task env directives to (EnvDirective, PathBuf) pairs.
+        // Use the config file path as source for proper path resolution.
+        // Include inherited_env first (so task's own env can override it).
         let mut env_directives: Vec<_> = self
             .inherited_env
             .0
@@ -1622,7 +1727,7 @@ impl Task {
         // Resolve environment directives using the same system as global env
         let env_results = EnvResults::resolve(
             config,
-            tera_ctx.clone(),
+            tera_ctx,
             &env,
             env_directives,
             EnvResolveOptions {
@@ -1632,22 +1737,29 @@ impl Task {
             },
         )
         .await?;
-        // Register task-specific redactions with the global redactor
-        // Include config-level redaction patterns so they also cover task-specific env vars
-        let redact_keys = config
-            .redaction_keys()
-            .into_iter()
-            .chain(env_results.redactions.iter().cloned());
-        let task_env_map: EnvMap = env_results
-            .env
-            .iter()
-            .map(|(k, (v, _))| (k.clone(), v.clone()))
-            .collect();
-        config.add_redactions(redact_keys, &task_env_map);
+        if register_redactions {
+            // Register task-specific redactions with the global redactor.
+            // Include config-level redaction patterns so they also cover
+            // task-specific env vars.
+            let redact_keys = config
+                .redaction_keys()
+                .into_iter()
+                .chain(env_results.redactions.iter().cloned());
+            let task_env_map: EnvMap = env_results
+                .env
+                .iter()
+                .map(|(k, (v, _))| (k.clone(), v.clone()))
+                .collect();
+            config.add_redactions(redact_keys, &task_env_map);
+        }
 
-        let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
+        let task_env: Vec<(String, String)> = env_results
+            .env
+            .into_iter()
+            .map(|(k, (v, _))| (k, v))
+            .collect();
         // Apply the resolved environment variables
-        env.extend(task_env.clone());
+        env.extend(task_env.iter().cloned());
 
         // Remove environment variables that were explicitly unset
         for key in &env_results.env_remove {
@@ -1665,7 +1777,21 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
-        Ok((env, task_env.collect()))
+        Ok((env, task_env))
+    }
+
+    pub async fn render_env(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+    ) -> Result<(EnvMap, Vec<(String, String)>)> {
+        let mut tera_ctx = ts.tera_ctx(config).await?.clone();
+        if let Some(root) = &config.project_root {
+            tera_ctx.insert("config_root", &root);
+        }
+        let base_env = ts.full_env(config).await?;
+        self.resolve_task_env(config, tera_ctx, true, base_env)
+            .await
     }
 }
 
