@@ -19,21 +19,6 @@ impl Usage {
         // Enable "naked" task completions: `mise foo` completes like `mise run foo`
         spec.default_subcommand = Some("run".to_string());
 
-        let run = spec.cmd.subcommands.get_mut("run").unwrap();
-        run.args = vec![];
-        run.mounts.push(usage::SpecMount {
-            run: "mise tasks --usage".to_string(),
-        });
-        // Enable completions after ::: separator for multi-task invocations
-        run.restart_token = Some(":::".to_string());
-
-        let tasks = spec.cmd.subcommands.get_mut("tasks").unwrap();
-        let tasks_run = tasks.subcommands.get_mut("run").unwrap();
-        tasks_run.mounts.push(usage::SpecMount {
-            run: "mise tasks --usage".to_string(),
-        });
-        tasks_run.restart_token = Some(":::".to_string());
-
         // Promote completion-spec flags that collide with a root-level global flag
         // (e.g. `-C`/`--cd`) to global on the mounted `run`/`tasks run` subcommands.
         //
@@ -45,6 +30,9 @@ impl Usage {
         // <task> ...` then mis-parses `-C` as the task's positional arg during
         // completion. Marking the colliding flags global here (completion-spec only,
         // no effect on clap runtime parsing) keeps them recognized. See mise#10069.
+        //
+        // Collect the root global flag identifiers up front so the immutable borrow
+        // of `spec.cmd.flags` is released before the subcommands are borrowed mutably.
         let global_shorts: HashSet<char> = spec
             .cmd
             .flags
@@ -68,16 +56,29 @@ impl Usage {
                 }
             }
         };
-        promote(spec.cmd.subcommands.get_mut("run").unwrap());
-        promote(
-            spec.cmd
-                .subcommands
-                .get_mut("tasks")
-                .unwrap()
-                .subcommands
-                .get_mut("run")
-                .unwrap(),
-        );
+
+        if let Some(run) = spec.cmd.subcommands.get_mut("run") {
+            run.args = vec![];
+            run.mounts.push(usage::SpecMount {
+                run: "mise tasks --usage".to_string(),
+            });
+            // Enable completions after ::: separator for multi-task invocations
+            run.restart_token = Some(":::".to_string());
+            promote(run);
+        }
+
+        if let Some(tasks_run) = spec
+            .cmd
+            .subcommands
+            .get_mut("tasks")
+            .and_then(|tasks| tasks.subcommands.get_mut("run"))
+        {
+            tasks_run.mounts.push(usage::SpecMount {
+                run: "mise tasks --usage".to_string(),
+            });
+            tasks_run.restart_token = Some(":::".to_string());
+            promote(tasks_run);
+        }
 
         let min_version = r#"min_usage_version "2.11""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();

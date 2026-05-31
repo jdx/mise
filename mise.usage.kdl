@@ -873,11 +873,11 @@ cmd run restart_token=::: help="Run task(s)" {
     long_help "Run task(s)\n\nThis command will run a task, or multiple tasks in parallel.\nTasks may have dependencies on other tasks or on source files.\nIf source is configured on a task, it will only run if the source\nfiles have changed.\n\nTasks can be defined in mise.toml or as standalone scripts.\nIn mise.toml, tasks take this form:\n\n    [tasks.build]\n    run = \"npm run build\"\n    sources = [\"src/**/*.ts\"]\n    outputs = [\"dist/**/*.js\"]\n\nAlternatively, tasks can be defined as standalone scripts.\nThese must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or\n`.config/mise/tasks`.\nThe name of the script will be the name of the tasks.\n\n    $ cat .mise/tasks/build<<EOF\n    #!/usr/bin/env bash\n    npm run build\n    EOF\n    $ mise run build"
     after_long_help "Examples:\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ mise run lint\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ mise run --force build\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ mise run --raw test\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ mise run lint ::: test ::: check\n\n    # Execute multiple tasks each with their own arguments.\n    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\n"
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
-    flag "-C --cd" help="Change to this directory before executing the command" {
+    flag "-C --cd" help="Change to this directory before executing the command" global=#true {
         arg <CD>
     }
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
-    flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
+    flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" global=#true {
         arg <JOBS>
     }
     flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
@@ -885,13 +885,13 @@ cmd run restart_token=::: help="Run task(s)" {
         long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
         arg <OUTPUT>
     }
-    flag "-q --quiet" help="Don't show extra output"
-    flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
+    flag "-q --quiet" help="Don't show extra output" global=#true
+    flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var" global=#true
     flag "-s --shell" help="Shell to use to run toml tasks" {
         long_help "Shell to use to run toml tasks\n\nDefaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows\nCan also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`\nOr it can be overridden with the `shell` property on a task."
         arg <SHELL>
     }
-    flag "-S --silent" help="Don't show any output except for errors"
+    flag "-S --silent" help="Don't show any output except for errors" global=#true
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
         arg <TOOL@VERSION>
     }
@@ -1206,11 +1206,11 @@ cmd tasks help="Manage tasks" {
         long_help "Run task(s)\n\nThis command will run a task, or multiple tasks in parallel.\nTasks may have dependencies on other tasks or on source files.\nIf source is configured on a task, it will only run if the source\nfiles have changed.\n\nTasks can be defined in mise.toml or as standalone scripts.\nIn mise.toml, tasks take this form:\n\n    [tasks.build]\n    run = \"npm run build\"\n    sources = [\"src/**/*.ts\"]\n    outputs = [\"dist/**/*.js\"]\n\nAlternatively, tasks can be defined as standalone scripts.\nThese must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or\n`.config/mise/tasks`.\nThe name of the script will be the name of the tasks.\n\n    $ cat .mise/tasks/build<<EOF\n    #!/usr/bin/env bash\n    npm run build\n    EOF\n    $ mise run build"
         after_long_help "Examples:\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ mise run lint\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ mise run --force build\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ mise run --raw test\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ mise run lint ::: test ::: check\n\n    # Execute multiple tasks each with their own arguments.\n    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\n"
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
-        flag "-C --cd" help="Change to this directory before executing the command" {
+        flag "-C --cd" help="Change to this directory before executing the command" global=#true {
             arg <CD>
         }
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
-        flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
+        flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" global=#true {
             arg <JOBS>
         }
         flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
@@ -1218,13 +1218,13 @@ cmd tasks help="Manage tasks" {
             long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
             arg <OUTPUT>
         }
-        flag "-q --quiet" help="Don't show extra output"
-        flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
+        flag "-q --quiet" help="Don't show extra output" global=#true
+        flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var" global=#true
         flag "-s --shell" help="Shell to use to run toml tasks" {
             long_help "Shell to use to run toml tasks\n\nDefaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows\nCan also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`\nOr it can be overridden with the `shell` property on a task."
             arg <SHELL>
         }
-        flag "-S --silent" help="Don't show any output except for errors"
+        flag "-S --silent" help="Don't show any output except for errors" global=#true
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
             arg <TOOL@VERSION>
         }
