@@ -1022,8 +1022,60 @@ impl Backend for RubyPlugin {
         _request: &ToolRequest,
         target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
         let settings = Settings::get();
-        ruby_lockfile_options(&settings.ruby, settings.experimental, target.is_current())
+        let ruby = &settings.ruby;
+        let default_ruby = SettingsRuby::default();
+        let is_current_platform = target.is_current();
+
+        if is_current_platform {
+            if let Some(compile) = ruby.compile {
+                opts.insert("compile".to_string(), compile.to_string());
+            } else if settings.experimental {
+                opts.insert("compile".to_string(), "false".to_string());
+            }
+
+            // Ruby uses ruby-install vs ruby-build. The installer and its options
+            // can affect the source-built output, including fallback after a
+            // missing precompiled binary.
+            if ruby.ruby_install {
+                opts.insert("ruby_install".to_string(), "true".to_string());
+                if let Some(ruby_install_opts) = ruby.ruby_install_opts.clone() {
+                    opts.insert("ruby_install_opts".to_string(), ruby_install_opts);
+                }
+                if ruby.ruby_install_repo != default_ruby.ruby_install_repo {
+                    opts.insert(
+                        "ruby_install_repo".to_string(),
+                        ruby.ruby_install_repo.clone(),
+                    );
+                }
+            } else {
+                if let Some(ruby_build_opts) = ruby.ruby_build_opts.clone() {
+                    opts.insert("ruby_build_opts".to_string(), ruby_build_opts);
+                }
+                if ruby.ruby_build_repo != default_ruby.ruby_build_repo {
+                    opts.insert("ruby_build_repo".to_string(), ruby.ruby_build_repo.clone());
+                }
+            }
+
+            if let Some(apply_patches) = ruby.apply_patches.clone() {
+                opts.insert("apply_patches".to_string(), apply_patches);
+            }
+        }
+
+        if ruby.compile == Some(false) || (settings.experimental && ruby.compile.is_none()) {
+            if ruby.precompiled_url != default_ruby.precompiled_url {
+                opts.insert("precompiled_url".to_string(), ruby.precompiled_url.clone());
+            }
+            if let Some(precompiled_arch) = ruby.precompiled_arch.clone() {
+                opts.insert("precompiled_arch".to_string(), precompiled_arch);
+            }
+            if let Some(precompiled_os) = ruby.precompiled_os.clone() {
+                opts.insert("precompiled_os".to_string(), precompiled_os);
+            }
+        }
+
+        opts
     }
 
     async fn resolve_lock_info(
@@ -1103,68 +1155,40 @@ fn parse_gemfile(body: &str) -> String {
     v
 }
 
-fn ruby_lockfile_options(
-    ruby: &SettingsRuby,
-    experimental: bool,
-    is_current_platform: bool,
-) -> BTreeMap<String, String> {
-    let mut opts = BTreeMap::new();
-
-    if is_current_platform {
-        if let Some(compile) = ruby.compile {
-            opts.insert("compile".to_string(), compile.to_string());
-        } else if experimental {
-            opts.insert("compile".to_string(), "false".to_string());
-        }
-
-        // Ruby uses ruby-install vs ruby-build. The installer and its options
-        // can affect the source-built output, including fallback after a
-        // missing precompiled binary.
-        if ruby.ruby_install {
-            opts.insert("ruby_install".to_string(), "true".to_string());
-            if let Some(ruby_install_opts) = ruby.ruby_install_opts.clone() {
-                opts.insert("ruby_install_opts".to_string(), ruby_install_opts);
-            }
-            if ruby.ruby_install_repo != SettingsRuby::default().ruby_install_repo {
-                opts.insert(
-                    "ruby_install_repo".to_string(),
-                    ruby.ruby_install_repo.clone(),
-                );
-            }
-        } else {
-            if let Some(ruby_build_opts) = ruby.ruby_build_opts.clone() {
-                opts.insert("ruby_build_opts".to_string(), ruby_build_opts);
-            }
-            if ruby.ruby_build_repo != SettingsRuby::default().ruby_build_repo {
-                opts.insert("ruby_build_repo".to_string(), ruby.ruby_build_repo.clone());
-            }
-        }
-
-        if let Some(apply_patches) = ruby.apply_patches.clone() {
-            opts.insert("apply_patches".to_string(), apply_patches);
-        }
-    }
-
-    if ruby.compile == Some(false) || (experimental && ruby.compile.is_none()) {
-        if ruby.precompiled_url != SettingsRuby::default().precompiled_url {
-            opts.insert("precompiled_url".to_string(), ruby.precompiled_url.clone());
-        }
-        if let Some(precompiled_arch) = ruby.precompiled_arch.clone() {
-            opts.insert("precompiled_arch".to_string(), precompiled_arch);
-        }
-        if let Some(precompiled_os) = ruby.precompiled_os.clone() {
-            opts.insert("precompiled_os".to_string(), precompiled_os);
-        }
-    }
-
-    opts
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::SettingsPartial;
+    use crate::toolset::ToolSource;
+    use confique::Layer;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct SettingsResetGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for SettingsResetGuard {
+        fn drop(&mut self) {
+            Settings::reset(None);
+        }
+    }
+
+    fn resolve_ruby_lockfile_options(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> BTreeMap<String, String> {
+        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let mut settings = SettingsPartial::empty();
+        configure_settings(&mut settings);
+        Settings::reset(Some(settings));
+        let _guard = SettingsResetGuard { _lock: lock };
+
+        let backend = RubyPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
+        backend.resolve_lockfile_options(&request, &PlatformTarget::from_current())
+    }
 
     #[test]
     fn test_tag_to_version() {
@@ -1235,16 +1259,15 @@ mod tests {
 
     #[test]
     fn test_ruby_lockfile_options_include_precompiled_inputs() {
-        let ruby = SettingsRuby {
-            compile: Some(false),
-            precompiled_url: "acme/ruby".to_string(),
-            precompiled_arch: Some("arm64".to_string()),
-            precompiled_os: Some("linux".to_string()),
-            ..Default::default()
-        };
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+            settings.ruby.precompiled_arch = Some("arm64".to_string());
+            settings.ruby.precompiled_os = Some("linux".to_string());
+        });
 
         assert_eq!(
-            ruby_lockfile_options(&ruby, false, true),
+            opts,
             BTreeMap::from([
                 ("compile".to_string(), "false".to_string()),
                 ("precompiled_arch".to_string(), "arm64".to_string()),
@@ -1256,15 +1279,14 @@ mod tests {
 
     #[test]
     fn test_ruby_lockfile_options_include_source_build_inputs() {
-        let ruby = SettingsRuby {
-            compile: Some(true),
-            ruby_build_opts: Some("--enable-yjit".to_string()),
-            apply_patches: Some("https://example.com/ruby.patch".to_string()),
-            ..Default::default()
-        };
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(true);
+            settings.ruby.ruby_build_opts = Some("--enable-yjit".to_string());
+            settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+        });
 
         assert_eq!(
-            ruby_lockfile_options(&ruby, false, true),
+            opts,
             BTreeMap::from([
                 (
                     "apply_patches".to_string(),
@@ -1278,15 +1300,14 @@ mod tests {
 
     #[test]
     fn test_ruby_lockfile_options_include_experimental_precompiled_default() {
-        let ruby = SettingsRuby {
-            precompiled_url: "acme/ruby".to_string(),
-            precompiled_arch: Some("arm64".to_string()),
-            precompiled_os: Some("linux".to_string()),
-            ..Default::default()
-        };
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+            settings.ruby.precompiled_arch = Some("arm64".to_string());
+            settings.ruby.precompiled_os = Some("linux".to_string());
+        });
 
         assert_eq!(
-            ruby_lockfile_options(&ruby, true, true),
+            opts,
             BTreeMap::from([
                 ("compile".to_string(), "false".to_string()),
                 ("precompiled_arch".to_string(), "arm64".to_string()),
@@ -1298,15 +1319,14 @@ mod tests {
 
     #[test]
     fn test_ruby_lockfile_options_include_source_fallback_inputs() {
-        let ruby = SettingsRuby {
-            compile: Some(false),
-            ruby_build_opts: Some("--enable-yjit".to_string()),
-            apply_patches: Some("https://example.com/ruby.patch".to_string()),
-            ..Default::default()
-        };
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.ruby_build_opts = Some("--enable-yjit".to_string());
+            settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+        });
 
         assert_eq!(
-            ruby_lockfile_options(&ruby, false, true),
+            opts,
             BTreeMap::from([
                 (
                     "apply_patches".to_string(),
@@ -1320,15 +1340,16 @@ mod tests {
 
     #[test]
     fn test_ruby_lockfile_options_include_ruby_install_inputs() {
-        let ruby = SettingsRuby {
-            ruby_install: true,
-            ruby_install_opts: Some("--no-reinstall".to_string()),
-            ..Default::default()
-        };
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(true);
+            settings.ruby.ruby_install = Some(true);
+            settings.ruby.ruby_install_opts = Some("--no-reinstall".to_string());
+        });
 
         assert_eq!(
-            ruby_lockfile_options(&ruby, false, true),
+            opts,
             BTreeMap::from([
+                ("compile".to_string(), "true".to_string()),
                 ("ruby_install".to_string(), "true".to_string()),
                 (
                     "ruby_install_opts".to_string(),
