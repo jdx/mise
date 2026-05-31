@@ -1,5 +1,28 @@
 # Changelog
 
+## [2026.5.18](https://github.com/jdx/mise/compare/v2026.5.17..v2026.5.18) - 2026-05-31
+
+### 🚀 Features
+
+- **(config)** add script arrays for hooks by @risu729 in [#9836](https://github.com/jdx/mise/pull/9836)
+
+### 🐛 Bug Fixes
+
+- **(conda)** include channel in lock identity by @risu729 in [#9984](https://github.com/jdx/mise/pull/9984)
+- **(config)** honor ceiling paths during miserc discovery by @risu729 in [#10165](https://github.com/jdx/mise/pull/10165)
+- **(env)** drop stale install paths during reactivation by @risu729 in [#10162](https://github.com/jdx/mise/pull/10162)
+- **(github)** include target artifact options in lock identity by @risu729 in [#9985](https://github.com/jdx/mise/pull/9985)
+- **(installer)** add missing warn helper by @risu729 in [#10157](https://github.com/jdx/mise/pull/10157)
+- **(python)** include sysconfig patch option in lock identity by @risu729 in [#10161](https://github.com/jdx/mise/pull/10161)
+- **(rust)** include toolchain install options in lock identity by @risu729 in [#9988](https://github.com/jdx/mise/pull/9988)
+- **(task)** include task refs in json run output by @risu729 in [#10163](https://github.com/jdx/mise/pull/10163)
+- **(task)** bump usage for completions by @jdx in [#10181](https://github.com/jdx/mise/pull/10181)
+
+### Chore
+
+- **(ci)** revert switch back to github-hosted runners by @jdx in [#10184](https://github.com/jdx/mise/pull/10184)
+- **(npm)** publish mise package by @jdx in [#10183](https://github.com/jdx/mise/pull/10183)
+
 ## [2026.5.17](https://github.com/jdx/mise/compare/v2026.5.16..v2026.5.17) - 2026-05-31
 
 ### 🚀 Features
