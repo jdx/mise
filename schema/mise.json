@@ -506,8 +506,12 @@
               "description": "Use minisign to verify aqua tool signatures.",
               "type": "boolean"
             },
+            "registry_cache_ttl": {
+              "description": "How long to cache downloaded aqua registry source files.",
+              "type": "string"
+            },
             "registry_url": {
-              "description": "URL to fetch aqua registry from.",
+              "description": "URL of an aqua registry repository to fetch.",
               "type": "string"
             },
             "slsa": {

@@ -21,11 +21,12 @@ TARGET_PLATFORM="windows-x64"
 TARGET_AQUA_OS="windows"
 
 REGISTRY_DIR="$PWD/aqua-registry-local"
-mkdir -p "$REGISTRY_DIR/pkgs/example/testtool"
+mkdir -p "$REGISTRY_DIR"
 
-cat <<EOF_REGISTRY >"$REGISTRY_DIR/pkgs/example/testtool/registry.yaml"
+cat <<EOF_REGISTRY >"$REGISTRY_DIR/registry.yaml"
 packages:
   - type: http
+    name: example/testtool
     supported_envs:
       - linux
       - darwin
@@ -37,13 +38,6 @@ packages:
         format: pkg
 EOF_REGISTRY
 
-(
-  cd "$REGISTRY_DIR"
-  git init -q
-  git add pkgs/example/testtool/registry.yaml
-  git commit -qm "init local aqua registry"
-)
-
 export MISE_AQUA_BAKED_REGISTRY=0
 export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
 
@@ -52,7 +46,8 @@ cat <<'EOF_MISE' >mise.toml
 "aqua:example/testtool" = "1.0.0"
 EOF_MISE
 
-output=$(mise lock --platform "$TARGET_PLATFORM" 2>&1)
+output=$(MISE_TIMINGS=1 mise lock --platform "$TARGET_PLATFORM" 2>&1)
+printf '%s\n' "$output"
 assert_contains "echo '$output'" "Targeting 1 platform(s)"
 assert_contains "echo '$output'" "$TARGET_PLATFORM"
 
