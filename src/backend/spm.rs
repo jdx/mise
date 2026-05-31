@@ -47,6 +47,10 @@ impl<'a> SpmOptions<'a> {
         }
     }
 
+    /// Resolves an SPM option for either install-time host use or lockfile target use.
+    ///
+    /// Lockfiles can be generated for platforms other than the current host, so callers
+    /// that are building lock identity must not fall back to the host-specific option.
     fn option_string(&self, key: &str, target: Option<&PlatformTarget>) -> Option<String> {
         match target {
             Some(target) => self.values.platform_string_for_target(key, target),
@@ -62,6 +66,7 @@ impl<'a> SpmOptions<'a> {
 
     fn api_url(&self, target: Option<&PlatformTarget>) -> Option<String> {
         self.option_string("api_url", target)
+            .map(|api_url| api_url.trim_end_matches('/').to_string())
     }
 
     fn artifactbundle_asset(&self, target: Option<&PlatformTarget>) -> Option<String> {
@@ -1142,7 +1147,7 @@ mod tests {
         );
         opts.opts.insert(
             "api_url".to_string(),
-            toml::Value::String("https://gitlab.example.com/api/v4".to_string()),
+            toml::Value::String("https://gitlab.example.com/api/v4/".to_string()),
         );
         opts.opts
             .insert("artifactbundle".to_string(), toml::Value::Boolean(true));
