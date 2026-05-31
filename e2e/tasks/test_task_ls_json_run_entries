@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# `mise tasks ls --json` should preserve non-script run entries.
+# Previously `run` was serialized via `run_script_strings()`, which
+# dropped object entries like `{ task = "..." }` and emitted `[]`.
+
+cat <<EOF >mise.toml
+[tasks.test]
+run = 'echo "ok"'
+
+[tasks.multiple]
+run = [{ task = 'tasks.test' }]
+EOF
+
+assert_contains "mise tasks ls --json" '"name": "multiple"'
+assert_contains "mise tasks ls --json" '"task": "tasks.test"'

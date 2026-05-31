@@ -264,7 +264,7 @@ impl TasksLs {
                 "tools": task.tools,
                 "usage": task.usage,
                 "timeout": task.timeout,
-                "run": task.run_script_strings(),
+                "run": task.run(),
                 "args": task.args,
                 "file": task.file,
             }));
