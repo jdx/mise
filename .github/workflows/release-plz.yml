@@ -22,7 +22,7 @@ jobs:
   release-plz:
     if: github.repository == 'jdx/mise'
     timeout-minutes: 20
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-release-plz-rust-linux
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       contents: write
