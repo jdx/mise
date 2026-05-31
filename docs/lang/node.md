@@ -25,6 +25,29 @@ See the [Node.JS Cookbook](/mise-cookbook/nodejs.html) for common tasks and exam
 The following [tool-options](/dev-tools/#tool-options) are available for the `node` backend.
 These options go in the `[tools]` section in `mise.toml`.
 
+### Node install options
+
+Most Node install settings can also be set as tool options for a single `node` entry.
+Tool options take precedence over `node.*` settings for that tool request.
+
+| Tool option         | Equivalent setting       | Description                                       |
+| ------------------- | ------------------------ | ------------------------------------------------- |
+| `compile`           | `node.compile`           | Compile Node from source.                         |
+| `mirror_url`        | `node.mirror_url`        | Mirror to download Node tarballs from.            |
+| `flavor`            | `node.flavor`            | Node binary flavor such as `musl` or `glibc-217`. |
+| `cflags`            | `node.cflags`            | Additional `CFLAGS` used for source builds.       |
+| `configure_opts`    | `node.configure_opts`    | Additional `./configure` options.                 |
+| `make`              | `node.make`              | Make command to use for source builds.            |
+| `make_opts`         | `node.make_opts`         | Additional make options.                          |
+| `make_install_opts` | `node.make_install_opts` | Additional `make install` options.                |
+| `ninja`             | `node.ninja`             | Use ninja instead of make for source builds.      |
+| `concurrency`       | `node.concurrency`       | Number of parallel make jobs.                     |
+
+```toml
+[tools]
+node = { version = "22", compile = true, configure_opts = "--openssl-no-asm", make = "gmake" }
+```
+
 ### `install_env`
 
 Set environment variables for source builds, default package installation, Corepack setup, and
