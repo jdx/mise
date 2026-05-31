@@ -22,6 +22,28 @@ always require plugins like asdf/vfox.
 
 The code for this is inside the mise repository at [`./src/backend/aqua.rs`](https://github.com/jdx/mise/blob/main/src/backend/aqua.rs).
 
+## Custom Registry
+
+Set [`aqua.registry_url`](/configuration/settings.html#aqua-registry_url) to use a custom aqua
+registry repository:
+
+```toml
+[settings]
+aqua.registry_url = "https://github.com/my-org/aqua-registry"
+```
+
+mise downloads `registry.yaml` from the repository root, falling back to `registry.yml` if needed.
+Downloaded registry source is cached under `MISE_CACHE_DIR` for
+[`aqua.registry_cache_ttl`](/configuration/settings.html#aqua-registry_cache_ttl), which defaults
+to one week.
+
+After a refreshed registry source is downloaded, mise hashes the source and uses that hash in the
+compiled registry cache path. When a new compiled cache is successfully loaded or written, older
+compiled caches for the same registry URL are pruned.
+
+When `aqua.baked_registry` is enabled, the baked-in registry remains a fallback for packages missing
+from the custom registry.
+
 ## Usage
 
 The following installs the latest version of ripgrep and sets it as the active version on PATH:

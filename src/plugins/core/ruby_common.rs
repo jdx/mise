@@ -31,6 +31,7 @@ pub fn rubyinstaller_url(version: &str) -> String {
 /// Resolve RubyInstaller2 binary URL and checksum from GitHub releases.
 /// Returns `Ok(PlatformInfo::default())` for non-MRI versions since
 /// RubyInstaller2 only distributes standard MRI Ruby.
+#[cfg_attr(windows, allow(dead_code))]
 pub async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<PlatformInfo> {
     if !is_mri_version(version) {
         return Ok(PlatformInfo::default());

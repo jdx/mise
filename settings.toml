@@ -125,14 +125,38 @@ description = "Use minisign to verify aqua tool signatures."
 env = "MISE_AQUA_MINISIGN"
 type = "Bool"
 
-[aqua.registry_url]
-description = "URL to fetch aqua registry from."
+[aqua.registry_cache_ttl]
+default_docs = "1w"
+description = "How long to cache downloaded aqua registry source files."
 docs = """
-URL to fetch aqua registry from. This is used to install tools from the aqua registry.
+How long downloaded aqua registry source files remain fresh before mise re-downloads them.
 
-If this is set, the baked-in aqua registry is not used.
+When the downloaded source changes, mise writes the new source cache atomically, compiles a new
+source-hash-scoped registry cache, and prunes older compiled caches for that registry URL after
+the new compiled cache is available.
 
-By default, the official aqua registry is used: https://github.com/aquaproj/aqua-registry
+Set to `0s` to re-download remote registries every time.
+"""
+env = "MISE_AQUA_REGISTRY_CACHE_TTL"
+optional = true
+type = "Duration"
+
+[aqua.registry_url]
+description = "URL of an aqua registry repository to fetch."
+docs = """
+URL of an aqua registry repository to fetch. mise downloads `registry.yaml` from the repository
+root and falls back to `registry.yml` if needed.
+
+Downloaded registries are cached according to `aqua.registry_cache_ttl`, which defaults to one
+week. To refresh sooner, run `mise cache clear`, set `aqua.registry_cache_ttl = "0s"`, or change
+`MISE_CACHE_DIR` to use a different cache location.
+
+If this is set, mise checks the configured registry first. When `aqua.baked_registry` is enabled,
+the baked-in aqua registry remains a fallback for packages missing from the configured registry.
+
+By default, mise uses the baked-in official aqua registry when `aqua.baked_registry` is enabled.
+If the baked registry is disabled, mise downloads the official registry:
+https://github.com/aquaproj/aqua-registry
 """
 env = "MISE_AQUA_REGISTRY_URL"
 optional = true
@@ -291,20 +315,26 @@ type = "Bool"
 
 [color_theme]
 default = "default"
-description = "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)"
+description = "Theme for interactive prompts (auto/default, charm, base16, catppuccin, dracula)"
 docs = """
 Sets the color theme for interactive prompts like `mise run` task selection.
 Available themes:
 
-- `default` or `charm` - Default theme, works well on dark terminals
+- `auto` (or `default`) - Auto-detect the terminal background (via `COLORFGBG`) and
+  use a light-friendly theme (`base16`) on light terminals, otherwise `charm`
+- `charm` - The charm theme, works well on dark terminals (no auto-detection)
 - `base16` - Base16 theme, works well on light terminals
 - `catppuccin` - Catppuccin theme
 - `dracula` - Dracula theme
 
-If you're using a light terminal and the default theme is hard to read,
-try setting this to `base16`.
+`default` is an alias for `auto`: when left unset (or set to `auto`/`default`), mise
+auto-detects a light terminal background via `COLORFGBG` and switches to `base16` for
+readability. Set an explicit theme (e.g. `charm`) to disable auto-detection.
+
+When colors are disabled (`color=false`, `NO_COLOR`, or `CLICOLOR=0`), interactive
+prompts are rendered without any styling regardless of this setting.
 """
-enum = ["default", "charm", "base16", "catppuccin", "dracula"]
+enum = ["auto", "default", "charm", "base16", "catppuccin", "dracula"]
 env = "MISE_COLOR_THEME"
 type = "String"
 

@@ -108,4 +108,66 @@ esac
             Remove-Item -Path "$TestDrive\mise.path_repro.toml" -ErrorAction SilentlyContinue
         }
     }
+
+    It 'converts PATH to /cygdrive form for a Cygwin bash subshell task' {
+        # Cygwin resolves drives via `/cygdrive/c/...`, not Git Bash's `/c/...`.
+        # When mise detects a Cygwin bash (here pinned via MISE_BASH_PATH), the
+        # task's PATH must use the `/cygdrive/` form or commands won't resolve.
+        # Skipped unless Cygwin is actually installed, since CI runners lack it.
+
+        $cygwinBash = "C:\cygwin64\bin\bash.exe"
+        if (-not (Test-Path $cygwinBash)) {
+            Set-ItResult -Skipped -Because "Cygwin bash not installed at $cygwinBash"
+            return
+        }
+
+        @'
+[tasks.cygdrive_repro]
+shell = "bash -c"
+run = '''
+case "$PATH" in
+  */cygdrive/*)
+    echo "PATH-cygdrive-style"
+    ;;
+  *)
+    echo "PATH-not-cygdrive"
+    ;;
+esac
+'''
+'@ | Out-File -FilePath "mise.cygdrive_repro.toml" -Encoding utf8NoBOM
+
+        # Save and restore the env vars we override so a dev machine's real
+        # settings (a developer may export MISE_BASH_PATH / MISE_CYGDRIVE_PREFIX)
+        # and later tests are not disturbed. Pin MISE_CYGDRIVE_PREFIX to the
+        # default so the `/cygdrive` assertion holds even when the caller has
+        # exported a custom prefix such as `/mnt` (which the feature honors).
+        $oldConfig = $env:MISE_CONFIG_FILE
+        $oldBashPath = $env:MISE_BASH_PATH
+        $oldCygPrefix = $env:MISE_CYGDRIVE_PREFIX
+        $env:MISE_CONFIG_FILE = "$TestDrive\mise.cygdrive_repro.toml"
+        $env:MISE_BASH_PATH = $cygwinBash
+        $env:MISE_CYGDRIVE_PREFIX = "/cygdrive"
+        try {
+            $output = mise run cygdrive_repro 2>&1 | Select -Last 1
+            $output | Should -Be 'PATH-cygdrive-style'
+        }
+        finally {
+            if ($null -eq $oldConfig) {
+                Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
+            } else {
+                $env:MISE_CONFIG_FILE = $oldConfig
+            }
+            if ($null -eq $oldBashPath) {
+                Remove-Item -Path Env:\MISE_BASH_PATH -ErrorAction SilentlyContinue
+            } else {
+                $env:MISE_BASH_PATH = $oldBashPath
+            }
+            if ($null -eq $oldCygPrefix) {
+                Remove-Item -Path Env:\MISE_CYGDRIVE_PREFIX -ErrorAction SilentlyContinue
+            } else {
+                $env:MISE_CYGDRIVE_PREFIX = $oldCygPrefix
+            }
+            Remove-Item -Path "$TestDrive\mise.cygdrive_repro.toml" -ErrorAction SilentlyContinue
+        }
+    }
 }

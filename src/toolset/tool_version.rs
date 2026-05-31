@@ -154,15 +154,15 @@ impl ToolVersion {
         // handle non-symlinks on windows
         // TODO: make this a utility function in xx
         #[cfg(windows)]
-        if path.is_file() {
-            if let Ok(p) = file::read_to_string(&path).map(PathBuf::from) {
-                let path = self.ba().installs_path.join(p);
-                if path.exists() {
-                    return path
-                        .absolutize()
-                        .expect("failed to absolutize path")
-                        .to_path_buf();
-                }
+        if path.is_file()
+            && let Ok(p) = file::read_to_string(&path).map(PathBuf::from)
+        {
+            let path = self.ba().installs_path.join(p);
+            if path.exists() {
+                return path
+                    .absolutize()
+                    .expect("failed to absolutize path")
+                    .to_path_buf();
             }
         }
 

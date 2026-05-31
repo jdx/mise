@@ -48,7 +48,7 @@ String hooks are shorthand for `run` hooks. Use a hook table when you need to se
 postinstall = { run = "echo 'installed'", shell = "bash -c" }
 ```
 
-For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` alias for install hooks is deprecated.
+For `preinstall` and `postinstall`, `script = ...` is a legacy alias for `run = ...`. If a `shell` is also set on a `script`/`scripts` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` alias for install hooks is deprecated.
 
 The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed:
 
@@ -149,6 +149,30 @@ Hooks are executed with the following environment variables set:
 Inline `run` hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
 (`enter = "echo hi"`) is equivalent to `{ run = "echo hi" }`.
 
+`run` must be a string. `run = ["echo one", "echo two"]` is not supported.
+
+To run separate spawned inline commands, define multiple hooks. Each hook entry is a separate
+execution, so mise starts one subprocess per `run` entry:
+
+```toml
+[hooks]
+enter = [
+  { run = "echo one" },
+  { run = "echo two" },
+]
+```
+
+To run multiple shell lines in one spawned command, use one multiline `run` string. This is one hook
+execution and one subprocess:
+
+```toml
+[hooks.enter]
+run = """
+echo one
+echo two
+"""
+```
+
 `run` hooks execute in a subprocess using the default inline shell:
 [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
 or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args).
@@ -166,13 +190,30 @@ shell = "bash"
 script = "source completions.sh"
 ```
 
+Current-shell hooks may use `script`/`scripts` arrays:
+
+```toml
+[hooks.enter]
+shell = "bash"
+script = [
+  "source completions.sh",
+  "export PROJECT_READY=1",
+]
+
+[hooks.leave]
+shell = "bash"
+scripts = [
+  "unset PROJECT_READY",
+]
+```
+
 `script` with `shell` is for current-shell hooks. Here, `shell` is a shell-name selector such as
 `bash`, `zsh`, or `fish`, not an inline shell command like `bash -c`. mise only prints the script
 when the active `mise activate` shell matches.
 
 Use `run` when the hook should execute as an inline command in a subprocess. `preinstall` and
 `postinstall` do not have a current shell, so `script` is only kept there as a legacy alias for `run`;
-if `shell` is set with `script` on those hooks, it is ignored.
+if `shell` is set with `script`/`scripts` on those hooks, it is ignored.
 
 ::: warning
 I feel this should be obvious but in case it's not, this isn't going to do any sort of cleanup

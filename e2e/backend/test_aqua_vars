@@ -7,11 +7,12 @@ export MISE_AQUA_BAKED_REGISTRY=0
 detect_platform
 
 REGISTRY_DIR="$PWD/aqua-registry-local"
-mkdir -p "$REGISTRY_DIR/pkgs/example/vars-tool"
+mkdir -p "$REGISTRY_DIR"
 
-cat <<'EOF_REGISTRY' >"$REGISTRY_DIR/pkgs/example/vars-tool/registry.yaml"
+cat <<'EOF_REGISTRY' >"$REGISTRY_DIR/registry.yml"
 packages:
   - type: http
+    name: example/vars-tool
     supported_envs:
       - darwin
       - linux
@@ -25,13 +26,6 @@ packages:
         required: true
 EOF_REGISTRY
 
-(
-  cd "$REGISTRY_DIR"
-  git init -q
-  git add pkgs/example/vars-tool/registry.yaml
-  git commit -qm "init local aqua registry"
-)
-
 export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
 
 cat <<'EOF_MISE' >mise.toml
@@ -39,7 +33,7 @@ cat <<'EOF_MISE' >mise.toml
 "aqua:example/vars-tool" = { version = "1.0.0", fixture_version = "1.0.0" }
 EOF_MISE
 
-mise install
+MISE_TIMINGS=1 mise install
 assert_contains "mise x -- hello-world" "hello world"
 
 cat <<'EOF_MISE' >mise.toml
@@ -47,7 +41,7 @@ cat <<'EOF_MISE' >mise.toml
 "aqua:example/vars-tool" = { version = "1.0.0", fixture_version = "2.0.0" }
 EOF_MISE
 
-mise install --force aqua:example/vars-tool@1.0.0
+MISE_TIMINGS=1 mise install --force aqua:example/vars-tool@1.0.0
 assert_contains "mise x -- hello-world" "hello world 2.0.0"
 
 rm -f mise.lock
@@ -56,7 +50,7 @@ cat <<'EOF_MISE' >mise.toml
 "aqua:example/vars-tool" = { version = "1.0.0", vars = { fixture_version = "2.0.0" } }
 EOF_MISE
 
-mise lock --platform "$MISE_PLATFORM"
+MISE_TIMINGS=1 mise lock --platform "$MISE_PLATFORM"
 assert_contains "cat mise.lock" '"vars.fixture_version" = "2.0.0"'
 assert_contains "cat mise.lock" 'url = "https://mise.en.dev/test-fixtures/hello-world-2.0.0.tar.gz"'
 cp mise.lock nested-vars.lock
@@ -66,7 +60,7 @@ cat <<'EOF_MISE' >mise.toml
 "aqua:example/vars-tool" = { version = "1.0.0", fixture_version = "2.0.0" }
 EOF_MISE
 
-mise lock --platform "$MISE_PLATFORM"
+MISE_TIMINGS=1 mise lock --platform "$MISE_PLATFORM"
 assert_succeed "cmp mise.lock nested-vars.lock"
 
 cat <<'EOF_MISE' >mise.toml

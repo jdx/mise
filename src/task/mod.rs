@@ -2255,7 +2255,9 @@ mod tests {
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
-    use super::{TaskConfirm, name_from_path, tera_tag_has_usage_ref, tera_template_has_usage_ref};
+    #[cfg(unix)]
+    use super::TaskConfirm;
+    use super::{name_from_path, tera_tag_has_usage_ref, tera_template_has_usage_ref};
 
     // Thread-local storage to capture parser state during tests
     thread_local! {
@@ -2268,6 +2270,7 @@ mod tests {
         });
     }
 
+    #[cfg(unix)]
     fn take_captured_fields() -> Option<Vec<String>> {
         CAPTURED_PARSER_FIELDS.with(|captured| captured.lock().unwrap().take())
     }

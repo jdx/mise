@@ -28,7 +28,9 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
+    #[cfg(unix)]
     use crate::config::Config;
+    #[cfg(unix)]
     use crate::task::{Task, TaskConfirm};
 
     #[tokio::test]

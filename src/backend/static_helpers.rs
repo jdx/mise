@@ -12,6 +12,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
+use super::platform_tokens::{BINARY_ARCH_TOKENS, BINARY_OS_TOKENS};
+
 /// Regex pattern for matching version suffixes like -v1.2.3, _1.2.3, etc.
 static VERSION_PATTERN: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"[-_]v?\d+(\.\d+)*(-[a-zA-Z0-9]+(\.\d+)?)?$").unwrap());
@@ -66,19 +68,6 @@ pub async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<
         }
     }
 }
-
-// ========== Platform Patterns ==========
-
-// Shared OS/arch patterns used across helpers
-const OS_PATTERNS: &[&str] = &[
-    "linux", "darwin", "macos", "windows", "win", "freebsd", "openbsd", "netbsd", "android",
-    "unknown",
-];
-// Longer arch patterns first to avoid partial matches
-const ARCH_PATTERNS: &[&str] = &[
-    "x86_64", "aarch64", "ppc64le", "ppc64", "armv7", "armv6", "arm64", "amd64", "mipsel",
-    "riscv64", "s390x", "i686", "i386", "x64", "mips", "arm", "x86",
-];
 
 pub trait VerifiableError: Sized + Send + Sync + 'static {
     fn is_not_found(&self) -> bool;
@@ -330,8 +319,8 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
     }
 
     // Probe nested keys using shared patterns
-    for os in OS_PATTERNS {
-        for arch in ARCH_PATTERNS {
+    for os in BINARY_OS_TOKENS {
+        for arch in BINARY_ARCH_TOKENS {
             for prefix in ["platforms", "platform"] {
                 let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
                 if opts.contains_key(&nested_key) {
@@ -889,8 +878,14 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     let mut cleaned = name_without_ext.to_string();
 
     // First try combined OS-arch patterns
-    for os in OS_PATTERNS {
-        for arch in ARCH_PATTERNS {
+    for os in BINARY_OS_TOKENS {
+        if !cleaned.contains(os) {
+            continue;
+        }
+        for arch in BINARY_ARCH_TOKENS {
+            if !cleaned.contains(arch) {
+                continue;
+            }
             // Try different separator combinations
             let patterns = [
                 format!("-{os}-{arch}"),
@@ -913,7 +908,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     }
 
     // Try just OS suffix (sometimes arch is omitted)
-    for os in OS_PATTERNS {
+    for os in BINARY_OS_TOKENS {
         let patterns = [format!("-{os}"), format!("_{os}")];
         for pattern in &patterns {
             if let Some(pos) = cleaned.rfind(pattern.as_str()) {
@@ -934,7 +929,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     }
 
     // Try just arch suffix (sometimes OS is omitted)
-    for arch in ARCH_PATTERNS {
+    for arch in BINARY_ARCH_TOKENS {
         let patterns = [format!("-{arch}"), format!("_{arch}")];
         for pattern in &patterns {
             if let Some(pos) = cleaned.rfind(pattern.as_str()) {
@@ -1080,6 +1075,18 @@ mod tests {
         assert_eq!(
             clean_binary_name("app-linux.AppImage", None),
             "app.AppImage"
+        );
+        assert_eq!(
+            clean_binary_name("opengrep_osx_arm64", Some("opengrep/opengrep")),
+            "opengrep"
+        );
+        assert_eq!(
+            clean_binary_name("opengrep_manylinux_x86", Some("opengrep/opengrep")),
+            "opengrep"
+        );
+        assert_eq!(
+            clean_binary_name("opengrep_musllinux_x86", Some("opengrep/opengrep")),
+            "opengrep"
         );
 
         // Test edge cases
