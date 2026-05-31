@@ -1512,7 +1512,8 @@ fn maybe_convert_env_for_msys_shell<'a>(
             // mise itself runs inside Git Bash and spawns another bash subshell.
             && (path_val.contains(';') || path_val.contains('\\'))
         {
-            let converted = crate::path::windows_path_list_to_unix(path_val);
+            let drive_prefix = msys_drive_prefix_for(program, env);
+            let converted = crate::path::windows_path_list_to_unix(path_val, &drive_prefix);
             let mut new_env = env.clone();
             new_env.insert((*crate::env::PATH_KEY).to_string(), converted);
             return std::borrow::Cow::Owned(new_env);
@@ -1523,6 +1524,45 @@ fn maybe_convert_env_for_msys_shell<'a>(
         let _ = program;
     }
     std::borrow::Cow::Borrowed(env)
+}
+
+/// The cygdrive prefix inserted before drive letters when converting PATH for a
+/// POSIX shell: empty for MSYS2 / Git Bash (`/c/...`), `/cygdrive` for Cygwin
+/// (`/cygdrive/c/...`). A Cygwin user with a non-default `cygdrive` mount (configured
+/// in `/etc/fstab`) can override it via `MISE_CYGDRIVE_PREFIX` — mise does not parse
+/// fstab. A trailing `/` is trimmed since the converter emits its own separator after
+/// the prefix, so `MISE_CYGDRIVE_PREFIX=/` collapses to the MSYS `/c/...` form. A
+/// non-empty value that is not absolute (no leading `/`, e.g. `mnt`) would produce
+/// relative PATH entries that bash silently ignores, so it is rejected with a warning
+/// and the default `/cygdrive` is used instead.
+#[cfg(windows)]
+fn msys_drive_prefix_for(program: &Path, env: &BTreeMap<String, String>) -> String {
+    const DEFAULT: &str = "/cygdrive";
+    if !crate::path::is_cygwin_shell(program) {
+        return String::new();
+    }
+    let raw = env
+        .get("MISE_CYGDRIVE_PREFIX")
+        .cloned()
+        .or_else(|| std::env::var("MISE_CYGDRIVE_PREFIX").ok())
+        .filter(|s| !s.is_empty());
+    let Some(mut s) = raw else {
+        return DEFAULT.to_string();
+    };
+    // Trim trailing slashes in place — the converter appends its own separator.
+    s.truncate(s.trim_end_matches('/').len());
+    if s.is_empty() {
+        // `MISE_CYGDRIVE_PREFIX=/` → empty prefix → MSYS `/c/...` form.
+        String::new()
+    } else if s.starts_with('/') {
+        s
+    } else {
+        warn!(
+            "MISE_CYGDRIVE_PREFIX={s:?} is not absolute (must start with `/`); \
+             using the default `{DEFAULT}`"
+        );
+        DEFAULT.to_string()
+    }
 }
 
 /// Read the shebang from a file and parse it into a shell command.
@@ -1612,6 +1652,57 @@ mod tests {
         let env = env_with_path(r"C:\foo;D:\bar");
         let out =
             maybe_convert_env_for_msys_shell(Path::new(r"C:\Program Files\Git\bin\bash.exe"), &env);
+        assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/c/foo:/d/bar");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_uses_cygdrive_for_cygwin_bash() {
+        // A Cygwin bash (detected by the `cygwin64` path segment) needs the
+        // `/cygdrive/c/...` form, not Git Bash's `/c/...`.
+        let env = env_with_path(r"C:\foo;D:\bar");
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/cygdrive/c/foo:/cygdrive/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_honors_cygdrive_prefix_override() {
+        // A non-default cygdrive mount (e.g. fstab `/mnt`) is supplied via
+        // MISE_CYGDRIVE_PREFIX in the task env rather than parsed from fstab.
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "/mnt".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/mnt/c/foo:/mnt/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_rejects_relative_cygdrive_prefix() {
+        // A prefix without a leading slash (e.g. `mnt`) would yield relative PATH
+        // entries bash ignores; fall back to the default `/cygdrive` instead.
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "mnt".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
+        assert_eq!(
+            out.get(&*crate::env::PATH_KEY).unwrap(),
+            "/cygdrive/c/foo:/cygdrive/d/bar"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_maybe_convert_env_for_msys_shell_cygdrive_prefix_slash_is_msys() {
+        // `MISE_CYGDRIVE_PREFIX=/` trims to empty → MSYS `/c/...` form.
+        let mut env = env_with_path(r"C:\foo;D:\bar");
+        env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "/".to_string());
+        let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
         assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/c/foo:/d/bar");
     }
 
