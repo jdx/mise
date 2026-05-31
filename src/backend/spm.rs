@@ -600,7 +600,7 @@ impl GitProvider {
         };
 
         let api_url = match opts.api_url(None) {
-            Some(api_url) => api_url.trim_end_matches('/').to_string(),
+            Some(api_url) => api_url,
             None => {
                 Self::derive_api_url_from_tool_name(&ba.tool_name, &kind).unwrap_or_else(|| {
                     match kind {
