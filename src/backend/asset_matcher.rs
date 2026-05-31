@@ -417,6 +417,7 @@ impl AssetPicker {
             || asset.ends_with(".intoto")
             || asset.ends_with(".attestation")
             || asset.ends_with(".pem")
+            || asset.ends_with(".cert")
             || asset.ends_with(".crt")
             || asset.ends_with(".key")
             || asset.ends_with(".pub")
@@ -1604,6 +1605,7 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         let assets = vec![
             "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
             "tool-1.0.0-linux-x86_64.tar.gz.asc".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz.cert".to_string(),
             "tool-1.0.0-linux-x86_64.tar.gz.sha256".to_string(),
             "release-notes.txt".to_string(),
         ];
@@ -1614,12 +1616,17 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         // Ensure penalties are applied
         let score_tar = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
         let score_asc = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.asc");
+        let score_cert = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.cert");
         let score_sha = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.sha256");
         let score_txt = picker.score_asset("release-notes.txt");
 
         assert!(
             score_tar > score_asc,
             "Tarball should score higher than signature"
+        );
+        assert!(
+            score_tar > score_cert,
+            "Tarball should score higher than certificate"
         );
         assert!(
             score_tar > score_sha,
