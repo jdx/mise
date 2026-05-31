@@ -33,8 +33,16 @@ impl PathExt for Path {
 }
 
 /// Convert a Windows-style path list (`;`-separated, drive-letter prefix, `\` or `/`
-/// separator) into a Git Bash / MSYS Unix-style path list (`:`-separated, `/c/...`
-/// prefix, `/` separator).
+/// separator) into a POSIX Unix-style path list (`:`-separated, `/` separator) for a
+/// shell that resolves commands from PATH itself.
+///
+/// `drive_prefix` selects the cygdrive mount style inserted before the drive letter
+/// (no trailing slash):
+///
+/// - `""` → `/c/foo` — MSYS2 / Git Bash (the dominant case, and the default).
+/// - `"/cygdrive"` → `/cygdrive/c/foo` — Cygwin's default mount.
+/// - any other value (e.g. from `MISE_CYGDRIVE_PREFIX`) → a custom Cygwin `cygdrive`
+///   prefix configured via `/etc/fstab`.
 ///
 /// Pure Rust, no subprocess. Designed for the case where mise on Windows spawns a
 /// POSIX shell (`bash -c`, `sh -c`, ...) for a task — that shell uses PATH itself to
@@ -42,7 +50,7 @@ impl PathExt for Path {
 ///
 /// Conversion rules per entry, applied independently:
 ///
-/// - `<drive>:[\\/]...` (canonical Windows drive path) → `/<drive lowercase>/<rest with `/` separator>`
+/// - `<drive>:[\\/]...` (canonical Windows drive path) → `<drive_prefix>/<drive lowercase>/<rest with `/` separator>`
 /// - already-Unix entries (start with `/`) → pass through unchanged
 /// - empty entries (e.g. trailing `;`) → preserved as empty
 /// - UNC (`\\?\...`, `\\server\share\...`) → pass through unchanged. bash will fail
@@ -51,22 +59,26 @@ impl PathExt for Path {
 ///   `\` is replaced with `/` so that bash can resolve entries like
 ///   `node_modules\.bin` or `.\bin` injected by tools that emit Windows separators.
 ///
-/// Out of scope (kept narrow per maintainer guidance — see PR description / `_context/`):
+/// `drive_prefix` only affects canonical drive entries; every other shape above is
+/// prefix-independent.
 ///
-/// - Cygwin's `/etc/fstab` mount table
-/// - Cygwin's `/cygdrive/c/` prefix (Git Bash uses `/c/`, which is the dominant case)
+/// Out of scope (kept narrow per maintainer guidance):
+///
+/// - Cygwin's `/etc/fstab` mount table is not parsed. A non-default `cygdrive` prefix
+///   is supplied explicitly via `MISE_CYGDRIVE_PREFIX` (resolved by the caller) rather
+///   than discovered from fstab.
 /// - Git Bash's "magic" mount of `/usr` to its install dir — `/c/Program Files/Git/usr/bin`
 ///   is resolved by bash to the same executable as `/usr/bin`, so no remapping is needed
 ///   for PATH-resolution to succeed.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn windows_path_list_to_unix(path_list: &str) -> String {
+pub fn windows_path_list_to_unix(path_list: &str, drive_prefix: &str) -> String {
     let mut out = String::with_capacity(path_list.len());
     let mut first = true;
     for entry in path_list.split(WINDOWS_PATH_SEP) {
         if !first {
             out.push(':');
         }
-        append_single_windows_path_to_unix(&mut out, entry);
+        append_single_windows_path_to_unix(&mut out, entry, drive_prefix);
         first = false;
     }
     out
@@ -76,7 +88,7 @@ pub fn windows_path_list_to_unix(path_list: &str) -> String {
 const WINDOWS_PATH_SEP: char = ';';
 
 #[cfg_attr(not(windows), allow(dead_code))]
-fn append_single_windows_path_to_unix(out: &mut String, entry: &str) {
+fn append_single_windows_path_to_unix(out: &mut String, entry: &str, drive_prefix: &str) {
     if entry.is_empty() {
         return;
     }
@@ -93,7 +105,10 @@ fn append_single_windows_path_to_unix(out: &mut String, entry: &str) {
         && (bytes[2] == b'\\' || bytes[2] == b'/');
 
     let rest = if is_canonical_drive {
-        // C:\foo → /c/foo : emit `/<drive lowercase>` then the tail with `\` → `/`.
+        // C:\foo → <prefix>/c/foo : emit the cygdrive prefix (empty for MSYS/Git
+        // Bash, `/cygdrive` for Cygwin), then `/<drive lowercase>`, then the tail
+        // with `\` → `/`.
+        out.push_str(drive_prefix);
         out.push('/');
         out.push((bytes[0] as char).to_ascii_lowercase());
         &entry[2..]
@@ -208,6 +223,27 @@ fn split_shell_command_windows(s: &str) -> eyre::Result<Vec<String>> {
     Ok(args)
 }
 
+/// Returns true if `program` (typically a resolved absolute bash path) is a Cygwin
+/// shell, detected by a `cygwin` / `cygwin64` / `cygwin32` path segment — Cygwin's
+/// default install dirs are `C:\cygwin64` and `C:\cygwin`. Used on Windows to pick
+/// the `/cygdrive/c/` PATH form instead of MSYS2 / Git Bash's `/c/`.
+///
+/// Normalizes `\` → `/` first so it works for both backslash paths (`MISE_BASH_PATH`,
+/// `bash_candidates`) and forward-slash paths (`which::which_in`). Matches whole path
+/// segments so a directory that merely contains "cygwin" as a substring (e.g.
+/// `my-cygwinish-tools`) does not trip it. `MSYSTEM` is deliberately not consulted —
+/// PowerShell-launched mise inherits none, so it is not a reliable signal.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn is_cygwin_shell(program: &Path) -> bool {
+    let Some(s) = program.to_str() else {
+        return false;
+    };
+    s.to_ascii_lowercase()
+        .replace('\\', "/")
+        .split('/')
+        .any(|seg| seg == "cygwin" || seg == "cygwin64" || seg == "cygwin32")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,30 +252,34 @@ mod tests {
         parts.iter().map(|s| s.to_string()).collect()
     }
 
+    /// MSYS2 / Git Bash style (`/c/...`) — the empty cygdrive prefix (the default).
+    fn msys(s: &str) -> String {
+        windows_path_list_to_unix(s, "")
+    }
+
+    /// Cygwin default style (`/cygdrive/c/...`).
+    fn cygwin(s: &str) -> String {
+        windows_path_list_to_unix(s, "/cygdrive")
+    }
+
     #[test]
     fn test_windows_path_list_to_unix_basic() {
-        assert_eq!(windows_path_list_to_unix(r"C:\foo;D:\bar"), "/c/foo:/d/bar");
+        assert_eq!(msys(r"C:\foo;D:\bar"), "/c/foo:/d/bar");
     }
 
     #[test]
     fn test_windows_path_list_to_unix_forward_slash() {
-        assert_eq!(windows_path_list_to_unix("C:/foo;D:/bar"), "/c/foo:/d/bar");
+        assert_eq!(msys("C:/foo;D:/bar"), "/c/foo:/d/bar");
     }
 
     #[test]
     fn test_windows_path_list_to_unix_mixed_separators() {
-        assert_eq!(
-            windows_path_list_to_unix(r"C:\foo\bar;D:/baz/qux"),
-            "/c/foo/bar:/d/baz/qux"
-        );
+        assert_eq!(msys(r"C:\foo\bar;D:/baz/qux"), "/c/foo/bar:/d/baz/qux");
     }
 
     #[test]
     fn test_windows_path_list_to_unix_passthrough_unix_entries() {
-        assert_eq!(
-            windows_path_list_to_unix("/usr/bin;C:\\foo;/c/bar"),
-            "/usr/bin:/c/foo:/c/bar"
-        );
+        assert_eq!(msys("/usr/bin;C:\\foo;/c/bar"), "/usr/bin:/c/foo:/c/bar");
     }
 
     #[test]
@@ -248,38 +288,32 @@ mod tests {
         // so we cannot split the result on `:` to inspect entries — bash receives
         // the whole string and will fail to use the UNC entry, which matches what
         // would happen without conversion).
-        assert_eq!(
-            windows_path_list_to_unix(r"\\?\C:\foo;C:\bar"),
-            r"\\?\C:\foo:/c/bar"
-        );
+        assert_eq!(msys(r"\\?\C:\foo;C:\bar"), r"\\?\C:\foo:/c/bar");
     }
 
     #[test]
     fn test_windows_path_list_to_unix_empty_entries() {
-        assert_eq!(windows_path_list_to_unix("C:\\foo;"), "/c/foo:");
-        assert_eq!(windows_path_list_to_unix(";C:\\foo"), ":/c/foo");
-        assert_eq!(windows_path_list_to_unix(""), "");
+        assert_eq!(msys("C:\\foo;"), "/c/foo:");
+        assert_eq!(msys(";C:\\foo"), ":/c/foo");
+        assert_eq!(msys(""), "");
     }
 
     #[test]
     fn test_windows_path_list_to_unix_drive_letter_case() {
-        assert_eq!(windows_path_list_to_unix(r"C:\foo"), "/c/foo");
-        assert_eq!(windows_path_list_to_unix(r"c:\foo"), "/c/foo");
+        assert_eq!(msys(r"C:\foo"), "/c/foo");
+        assert_eq!(msys(r"c:\foo"), "/c/foo");
     }
 
     #[test]
     fn test_windows_path_list_to_unix_program_files_with_spaces() {
-        assert_eq!(
-            windows_path_list_to_unix(r"C:\Program Files\Git\bin"),
-            "/c/Program Files/Git/bin"
-        );
+        assert_eq!(msys(r"C:\Program Files\Git\bin"), "/c/Program Files/Git/bin");
     }
 
     #[test]
     fn test_windows_path_list_to_unix_bare_drive_letter_passthrough() {
         // Bare "C:" or "C:foo" (relative-to-drive) is unrecognized — pass through.
-        assert_eq!(windows_path_list_to_unix("C:"), "C:");
-        assert_eq!(windows_path_list_to_unix("C:foo"), "C:foo");
+        assert_eq!(msys("C:"), "C:");
+        assert_eq!(msys("C:foo"), "C:foo");
     }
 
     #[test]
@@ -288,20 +322,70 @@ mod tests {
         // and tools that emit Windows separators may produce backslash forms. bash
         // does not treat `\` as a separator, so we translate `\` → `/` for non-UNC,
         // non-canonical-drive entries too.
+        assert_eq!(msys(r"node_modules\.bin"), "node_modules/.bin");
+        assert_eq!(msys(r".\bin"), "./bin");
         assert_eq!(
-            windows_path_list_to_unix(r"node_modules\.bin"),
-            "node_modules/.bin"
-        );
-        assert_eq!(windows_path_list_to_unix(r".\bin"), "./bin");
-        assert_eq!(
-            windows_path_list_to_unix(r"node_modules\.bin;C:\tools\bin"),
+            msys(r"node_modules\.bin;C:\tools\bin"),
             "node_modules/.bin:/c/tools/bin"
         );
     }
 
     #[test]
     fn test_windows_path_list_to_unix_single_entry() {
-        assert_eq!(windows_path_list_to_unix(r"C:\foo"), "/c/foo");
+        assert_eq!(msys(r"C:\foo"), "/c/foo");
+    }
+
+    #[test]
+    fn test_windows_path_list_to_unix_cygwin_basic() {
+        assert_eq!(cygwin(r"C:\foo;D:\bar"), "/cygdrive/c/foo:/cygdrive/d/bar");
+    }
+
+    #[test]
+    fn test_windows_path_list_to_unix_cygwin_forward_slash() {
+        assert_eq!(cygwin("C:/foo;D:/bar"), "/cygdrive/c/foo:/cygdrive/d/bar");
+    }
+
+    #[test]
+    fn test_windows_path_list_to_unix_cygwin_drive_letter_case() {
+        assert_eq!(cygwin(r"c:\foo"), "/cygdrive/c/foo");
+    }
+
+    #[test]
+    fn test_windows_path_list_to_unix_cygwin_program_files_with_spaces() {
+        assert_eq!(
+            cygwin(r"C:\Program Files\Git\bin"),
+            "/cygdrive/c/Program Files/Git/bin"
+        );
+    }
+
+    #[test]
+    fn test_windows_path_list_to_unix_cygwin_passthrough_unix_and_unc() {
+        // The cygdrive prefix only affects canonical drive entries; already-Unix
+        // and UNC entries are still passed through verbatim.
+        assert_eq!(
+            cygwin(r"/usr/bin;\\?\C:\x;C:\y"),
+            r"/usr/bin:\\?\C:\x:/cygdrive/c/y"
+        );
+    }
+
+    #[test]
+    fn test_windows_path_list_to_unix_cygwin_empty_entries() {
+        assert_eq!(cygwin("C:\\foo;"), "/cygdrive/c/foo:");
+    }
+
+    #[test]
+    fn test_windows_path_list_to_unix_cygwin_relative_paths_unprefixed() {
+        // Non-drive entries get no cygdrive prefix — only `\` → `/`.
+        assert_eq!(cygwin(r"node_modules\.bin"), "node_modules/.bin");
+    }
+
+    #[test]
+    fn test_windows_path_list_to_unix_custom_cygdrive_prefix() {
+        // A custom prefix such as `MISE_CYGDRIVE_PREFIX=/mnt` (fstab-configured).
+        assert_eq!(
+            windows_path_list_to_unix(r"C:\foo;D:\bar", "/mnt"),
+            "/mnt/c/foo:/mnt/d/bar"
+        );
     }
 
     #[test]
@@ -399,5 +483,31 @@ mod tests {
             sv(&["bash script", "-c"])
         );
         assert_eq!(split_shell_command("'a b' c").unwrap(), sv(&["a b", "c"]));
+    }
+
+    #[test]
+    fn test_is_cygwin_shell_detects_cygwin_paths() {
+        assert!(is_cygwin_shell(Path::new(r"C:\cygwin64\bin\bash.exe")));
+        assert!(is_cygwin_shell(Path::new(r"C:\cygwin\bin\bash.exe")));
+        assert!(is_cygwin_shell(Path::new(r"D:\tools\cygwin64\bin\bash.exe")));
+        assert!(is_cygwin_shell(Path::new("C:/cygwin64/bin/bash.exe")));
+        // Case-insensitive in both the drive and the `cygwin` segment.
+        assert!(is_cygwin_shell(Path::new(r"C:\CygWin64\bin\BASH.EXE")));
+    }
+
+    #[test]
+    fn test_is_cygwin_shell_rejects_non_cygwin() {
+        assert!(!is_cygwin_shell(Path::new(
+            r"C:\Program Files\Git\bin\bash.exe"
+        )));
+        assert!(!is_cygwin_shell(Path::new(r"C:\msys64\usr\bin\bash.exe")));
+        assert!(!is_cygwin_shell(Path::new("bash")));
+        assert!(!is_cygwin_shell(Path::new(
+            r"C:\Users\me\scoop\apps\git\current\bin\bash.exe"
+        )));
+        // A substring that is not a whole path segment must not match.
+        assert!(!is_cygwin_shell(Path::new(
+            r"C:\my-cygwinish-tools\bash.exe"
+        )));
     }
 }
