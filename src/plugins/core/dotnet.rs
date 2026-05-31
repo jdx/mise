@@ -486,5 +486,18 @@ mod tests {
             backend.resolve_lockfile_options(&request, &PlatformTarget::from_current()),
             BTreeMap::from([("runtime".to_string(), "aspnetcore".to_string())])
         );
+
+        let request_no_runtime = ToolRequest::new_opts(
+            backend.ba().clone(),
+            "8.0.14",
+            ToolVersionOptions::default(),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        assert!(
+            backend
+                .resolve_lockfile_options(&request_no_runtime, &PlatformTarget::from_current())
+                .is_empty()
+        );
     }
 }
