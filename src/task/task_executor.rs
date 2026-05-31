@@ -1446,12 +1446,12 @@ fn is_bash_basename(program: &std::ffi::OsStr) -> bool {
 /// Returns true if `program` carries an explicit directory component — an
 /// absolute path (`C:\x\bash.exe`, `C:/x/bash.exe`) or a relative one with a
 /// separator (`./bash`, `bin/bash`) — as opposed to a bare command name
-/// (`bash`, `bash.exe`) that must be looked up on PATH. Checks for either
-/// separator (matching `program_stem`'s basename split) and is robust to
-/// `to_string_lossy` on non-UTF-8 input (U+FFFD is neither separator).
+/// (`bash`, `bash.exe`) that must be looked up on PATH. Uses `Path::components`
+/// (allocation-free, and treats both `/` and `\` as separators on Windows): a
+/// bare file name has exactly one component, anything with a directory has more.
 #[cfg(windows)]
 fn program_has_directory_component(program: &std::ffi::OsStr) -> bool {
-    program.to_string_lossy().contains(['/', '\\'])
+    Path::new(program).components().count() > 1
 }
 
 /// Common real-POSIX-bash install locations on Windows (Git Bash + MSYS2), in
