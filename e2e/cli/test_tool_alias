@@ -32,3 +32,12 @@ EOF
 mise i tiny@both
 # tool_alias should take precedence - should install 1.1.0
 assert_contains "mise ls tiny" "1.1.0"
+
+# Test 4: backend aliases can point at registry shorthands and keep registry options
+cat >mise.toml <<'EOF'
+[tool_alias]
+llama = "llama.cpp"
+EOF
+
+assert "mise tool llama --backend" "github:ggml-org/llama.cpp[version_prefix=b]"
+assert "mise tool llama --tool-options --json | jq -r .version_prefix" "b"
