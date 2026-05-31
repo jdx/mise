@@ -358,9 +358,7 @@ impl Config {
         if let Some(manifest_opts) = backend_arg.install_manifest_opts() {
             resolved.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
         }
-        if alias_opts.is_none()
-            && let Some(full_opts) = backend_arg.resolved_full_opts()
-        {
+        if let Some(full_opts) = backend_arg.resolved_full_opts() {
             resolved.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
         }
         if let Some(alias_opts) = alias_opts {

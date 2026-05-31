@@ -37,7 +37,11 @@ assert_contains "mise ls tiny" "1.1.0"
 cat >mise.toml <<'EOF'
 [tool_alias]
 llama = "llama.cpp"
+llama-custom = "llama.cpp[asset_pattern=llama-b{{version}}]"
 EOF
 
 assert "mise tool llama --backend" "github:ggml-org/llama.cpp[version_prefix=b]"
 assert "mise tool llama --tool-options --json | jq -r .version_prefix" "b"
+assert "mise tool llama-custom --backend" "github:ggml-org/llama.cpp[version_prefix=b,asset_pattern=llama-b{{version}}]"
+assert "mise tool llama-custom --tool-options --json | jq -r .version_prefix" "b"
+assert "mise tool llama-custom --tool-options --json | jq -r .asset_pattern" "llama-b{{version}}"

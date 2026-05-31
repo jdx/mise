@@ -184,9 +184,10 @@ fn parse_backend_components_fallible(
 }
 
 fn resolve_registry_backend_alias(alias: &str) -> Option<String> {
-    let alias_name = split_bracketed_opts(alias)
-        .map(|(name, _)| name)
-        .unwrap_or(alias);
+    let (alias_name, alias_opts) = match split_bracketed_opts(alias) {
+        Some((name, opts)) => (name, Some(parse_tool_options(opts))),
+        None => (alias, None),
+    };
 
     if let Some((prefix, _)) = alias_name.split_once(':')
         && BackendType::guess(prefix) != BackendType::Unknown
@@ -196,7 +197,10 @@ fn resolve_registry_backend_alias(alias: &str) -> Option<String> {
 
     let registry_tool = REGISTRY.get(alias_name)?;
     let full = registry_tool.backends().first()?.to_string();
-    let registry_opts = registry_tool.backend_options(&full);
+    let mut registry_opts = registry_tool.backend_options(&full);
+    if let Some(alias_opts) = alias_opts {
+        registry_opts.apply_overrides(&alias_opts);
+    }
     let opts = serialize_tool_options(
         registry_opts
             .opts
@@ -521,9 +525,7 @@ impl BackendArg {
         if let Some(manifest_opts) = self.install_manifest_opts() {
             opts.apply_overrides(manifest_opts);
         }
-        if alias_opts.is_none()
-            && let Some(full_opts) = self.resolved_full_opts()
-        {
+        if let Some(full_opts) = self.resolved_full_opts() {
             opts.apply_overrides(&full_opts);
         }
         if let Some(alias_opts) = alias_opts {
