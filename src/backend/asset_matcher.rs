@@ -424,7 +424,6 @@ impl AssetPicker {
             || asset.ends_with(".intoto")
             || asset.ends_with(".attestation")
             || asset.ends_with(".pem")
-            || asset.ends_with(".cert")
             || asset.ends_with(".crt")
             || asset.ends_with(".key")
             || asset.ends_with(".pub")
@@ -1354,7 +1353,6 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
         let assets = vec![
             "opengrep-core_linux_x86.tar.gz".to_string(),
             "opengrep_manylinux_x86".to_string(),
-            "opengrep_manylinux_x86.cert".to_string(),
             "opengrep_manylinux_x86.sig".to_string(),
             "opengrep_musllinux_x86".to_string(),
         ];

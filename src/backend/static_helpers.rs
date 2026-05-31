@@ -71,18 +71,7 @@ pub async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<
 
 // Shared OS/arch patterns used across helpers
 const OS_PATTERNS: &[&str] = &[
-    "linux",
-    "manylinux",
-    "musllinux",
-    "darwin",
-    "macos",
-    "osx",
-    "windows",
-    "win",
-    "freebsd",
-    "openbsd",
-    "netbsd",
-    "android",
+    "linux", "darwin", "macos", "windows", "win", "freebsd", "openbsd", "netbsd", "android",
     "unknown",
 ];
 // Longer arch patterns first to avoid partial matches
@@ -1091,18 +1080,6 @@ mod tests {
         assert_eq!(
             clean_binary_name("app-linux.AppImage", None),
             "app.AppImage"
-        );
-        assert_eq!(
-            clean_binary_name("opengrep_osx_arm64", Some("opengrep/opengrep")),
-            "opengrep"
-        );
-        assert_eq!(
-            clean_binary_name("opengrep_manylinux_x86", Some("opengrep/opengrep")),
-            "opengrep"
-        );
-        assert_eq!(
-            clean_binary_name("opengrep_musllinux_x86", Some("opengrep/opengrep")),
-            "opengrep"
         );
 
         // Test edge cases
