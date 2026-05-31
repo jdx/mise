@@ -414,6 +414,7 @@ pub static __MISE_ZSH_PRECMD_RUN: Lazy<bool> = Lazy::new(|| !var_is_false("__MIS
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 /// Detected glibc version on Linux as (major, minor), e.g. (2, 17).
 /// Returns None on non-Linux or if detection fails.
+#[cfg_attr(windows, allow(dead_code))]
 pub static LINUX_GLIBC_VERSION: Lazy<Option<(u32, u32)>> = Lazy::new(linux_glibc_version);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
@@ -761,6 +762,7 @@ fn linux_glibc_version() -> Option<(u32, u32)> {
 }
 
 #[cfg(not(target_os = "linux"))]
+#[cfg_attr(windows, allow(dead_code))]
 fn linux_glibc_version() -> Option<(u32, u32)> {
     None
 }

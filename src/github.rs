@@ -323,6 +323,7 @@ fn should_cache_release(release: &GithubRelease) -> bool {
 /// Note: this relies on `list_releases` which may only return the first page of results
 /// when `MISE_LIST_ALL_VERSIONS` is not set. For repos with many releases, older versions
 /// may not be found, falling back to the exact version tag via `get_release`.
+#[cfg_attr(windows, allow(dead_code))]
 pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Result<GithubRelease> {
     let releases = list_releases(repo).await?;
     match pick_best_build_revision(releases, version) {
@@ -336,6 +337,7 @@ pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Resul
 /// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the one
 /// with the highest numeric `-N` suffix. The base version (no suffix) is treated as
 /// revision 0.
+#[cfg_attr(windows, allow(dead_code))]
 fn pick_best_build_revision(releases: Vec<GithubRelease>, version: &str) -> Option<GithubRelease> {
     let prefix = format!("{version}-");
     releases

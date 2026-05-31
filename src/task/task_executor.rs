@@ -3,7 +3,9 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
-use crate::file::{display_path, is_executable, replace_path};
+#[cfg(not(windows))]
+use crate::file::is_executable;
+use crate::file::{display_path, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
