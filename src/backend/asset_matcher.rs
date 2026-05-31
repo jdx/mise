@@ -20,6 +20,7 @@ use regex::Regex;
 use std::sync::LazyLock;
 
 use super::platform_target::PlatformTarget;
+use super::platform_tokens::is_platform_or_version_token;
 use super::static_helpers::get_filename_from_url;
 use crate::file::TarFormat;
 use crate::http::HTTP;
@@ -482,73 +483,6 @@ fn asset_name_stem(asset: &str) -> String {
     }
 
     name
-}
-
-fn is_platform_or_version_token(token: &str) -> bool {
-    if token.is_empty() {
-        return true;
-    }
-    if token.starts_with("manylinux") || token.starts_with("musllinux") {
-        return true;
-    }
-    if token.starts_with('v')
-        && token[1..]
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_digit())
-    {
-        return true;
-    }
-    if token.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        return true;
-    }
-
-    matches!(
-        token,
-        "linux"
-            | "ubuntu"
-            | "debian"
-            | "fedora"
-            | "centos"
-            | "rhel"
-            | "alpine"
-            | "arch"
-            | "darwin"
-            | "mac"
-            | "macos"
-            | "macosx"
-            | "osx"
-            | "windows"
-            | "win"
-            | "win32"
-            | "win64"
-            | "mingw"
-            | "mingw32"
-            | "mingw64"
-            | "w64"
-            | "x86"
-            | "64"
-            | "x64"
-            | "amd64"
-            | "aarch64"
-            | "arm64"
-            | "arm"
-            | "armv6"
-            | "armv7"
-            | "i386"
-            | "i686"
-            | "ppc64"
-            | "ppc64le"
-            | "riscv64"
-            | "s390x"
-            | "gnu"
-            | "glibc"
-            | "musl"
-            | "msvc"
-            | "pc"
-            | "apple"
-            | "unknown"
-    )
 }
 
 /// Detects platform information from a URL
