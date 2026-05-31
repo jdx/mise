@@ -794,7 +794,6 @@ static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::settings::DEFAULT_JAVA_SHORTHAND_VENDOR;
 
     fn opts_with_release_type(release_type: &str) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
@@ -807,26 +806,21 @@ mod tests {
 
     #[test]
     fn java_options_reads_release_type() {
+        let default_vendor = Settings::get().java.shorthand_vendor.clone();
         let default_opts = ToolVersionOptions::default();
         assert_eq!(JavaOptions::new(&default_opts).release_type(), "ga");
         assert_eq!(
-            JavaOptions::new(&default_opts).lockfile_options("17", DEFAULT_JAVA_SHORTHAND_VENDOR),
-            BTreeMap::from([(
-                "shorthand_vendor".to_string(),
-                DEFAULT_JAVA_SHORTHAND_VENDOR.to_string()
-            )])
+            JavaOptions::new(&default_opts).lockfile_options("17", &default_vendor),
+            BTreeMap::from([("shorthand_vendor".to_string(), default_vendor.clone())])
         );
 
         let opts = opts_with_release_type("ea");
         assert_eq!(JavaOptions::new(&opts).release_type(), "ea");
         assert_eq!(
-            JavaOptions::new(&opts).lockfile_options("17", DEFAULT_JAVA_SHORTHAND_VENDOR),
+            JavaOptions::new(&opts).lockfile_options("17", &default_vendor),
             BTreeMap::from([
                 ("release_type".to_string(), "ea".to_string()),
-                (
-                    "shorthand_vendor".to_string(),
-                    DEFAULT_JAVA_SHORTHAND_VENDOR.to_string()
-                )
+                ("shorthand_vendor".to_string(), default_vendor.clone())
             ])
         );
     }
@@ -844,11 +838,8 @@ mod tests {
             BTreeMap::from([("shorthand_vendor".to_string(), "temurin".to_string())])
         );
         assert_eq!(
-            JavaOptions::new(&opts).lockfile_options("17", DEFAULT_JAVA_SHORTHAND_VENDOR),
-            BTreeMap::from([(
-                "shorthand_vendor".to_string(),
-                DEFAULT_JAVA_SHORTHAND_VENDOR.to_string()
-            )])
+            JavaOptions::new(&opts).lockfile_options("17", "openjdk"),
+            BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())])
         );
         assert!(
             JavaOptions::new(&opts)
