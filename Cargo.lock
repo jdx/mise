@@ -245,6 +245,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "aqua-registry"
 version = "2026.5.3"
 dependencies = [
+ "blake3",
  "expr-lang",
  "eyre",
  "heck",
@@ -254,9 +255,10 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_yaml",
+ "siphasher",
  "strum 0.28.0",
+ "tempfile",
  "thiserror 2.0.18",
- "tokio",
  "versions",
 ]
 
@@ -5328,7 +5330,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.5.16"
+version = "2026.5.17"
 dependencies = [
  "age",
  "aho-corasick",
@@ -9631,9 +9633,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "3.3.0"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5be04c595c37441c24fa5575cd89869f4a7547264f5e3a8be81b73f1c71a66e"
+checksum = "188a4fb4ad9e81729867ebb83ccbc06f850a06362c2467eea0f268fe4f6df609"
 dependencies = [
  "clap",
  "heck",

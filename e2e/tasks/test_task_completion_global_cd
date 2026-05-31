@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/10069
+# Completion must work when the global -C/--cd flag precedes `run` and the
+# task has a positional arg with choices.
+
+cat <<'EOF' >mise.toml
+[tools]
+"usage" = { version = "latest", os = ["linux", "macos"] }
+
+[tasks."sample:run"]
+usage = 'arg "<profile>" { choices "alpha" "beta" "gamma" }'
+run = 'printf "%s" "$usage_profile"'
+EOF
+
+mise usage >./mise.usage.kdl
+
+# baseline: completion of the profile arg works without the global flag
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run sample:run -- ''" "alpha	alpha
+beta	beta
+gamma	gamma"
+
+# regression: with the global -C <dir> flag before `run`, completion must still
+# offer the choices (previously errored: Invalid choice for arg profile: -C)
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise -C . run sample:run -- ''" "alpha	alpha
+beta	beta
+gamma	gamma"
+
+# also cover the `tasks run` path, which shares the same flags/mount
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise -C . tasks run sample:run -- ''" "alpha	alpha
+beta	beta
+gamma	gamma"

@@ -69,6 +69,7 @@ pub mod npm;
 pub(crate) mod options;
 pub mod pipx;
 pub mod platform_target;
+mod platform_tokens;
 pub mod s3;
 pub mod spm;
 pub mod static_helpers;

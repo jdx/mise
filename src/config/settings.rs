@@ -677,6 +677,16 @@ impl Settings {
         duration::parse_duration(&self.env_cache_ttl).unwrap()
     }
 
+    pub fn aqua_registry_cache_ttl(&self) -> Duration {
+        self.aqua
+            .registry_cache_ttl
+            .as_deref()
+            .map(duration::parse_duration)
+            .transpose()
+            .unwrap()
+            .unwrap_or(crate::aqua::aqua_registry_wrapper::DEFAULT_AQUA_REGISTRY_CACHE_TTL)
+    }
+
     pub fn task_timeout_duration(&self) -> Option<Duration> {
         self.task
             .timeout
