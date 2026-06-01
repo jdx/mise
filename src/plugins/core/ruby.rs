@@ -27,9 +27,6 @@ use crate::ui::progress_report::SingleReport;
 use crate::{file, hash, plugins, timeout};
 
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
-const DEFAULT_RUBY_PRECOMPILED_URL: &str = "jdx/ruby";
-const DEFAULT_RUBY_BUILD_REPO: &str = "https://github.com/rbenv/ruby-build.git";
-const DEFAULT_RUBY_INSTALL_REPO: &str = "https://github.com/postmodern/ruby-install.git";
 const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_RUBY_GITHUB_ATTESTATIONS=false\n\
     or add `ruby.github_attestations = false` under [settings] in mise.toml";
 
@@ -1028,35 +1025,29 @@ impl Backend for RubyPlugin {
         let settings = Settings::get();
         let ruby = &settings.ruby;
         let is_current_platform = target.is_current();
+        let try_precompiled =
+            ruby.compile == Some(false) || (settings.experimental && ruby.compile.is_none());
 
         if is_current_platform {
-            if let Some(compile) = ruby.compile {
-                opts.insert("compile".to_string(), compile.to_string());
-            } else if settings.experimental {
-                opts.insert("compile".to_string(), "false".to_string());
-            }
+            opts.insert("compile".to_string(), (!try_precompiled).to_string());
 
             // Ruby uses ruby-install vs ruby-build. The installer and its options
             // can affect the source-built output, including fallback after a
             // missing precompiled binary.
+            opts.insert("ruby_install".to_string(), ruby.ruby_install.to_string());
             if ruby.ruby_install {
-                opts.insert("ruby_install".to_string(), "true".to_string());
                 if let Some(ruby_install_opts) = ruby.ruby_install_opts.clone() {
                     opts.insert("ruby_install_opts".to_string(), ruby_install_opts);
                 }
-                if ruby.ruby_install_repo != DEFAULT_RUBY_INSTALL_REPO {
-                    opts.insert(
-                        "ruby_install_repo".to_string(),
-                        ruby.ruby_install_repo.clone(),
-                    );
-                }
+                opts.insert(
+                    "ruby_install_repo".to_string(),
+                    ruby.ruby_install_repo.clone(),
+                );
             } else {
                 if let Some(ruby_build_opts) = ruby.ruby_build_opts.clone() {
                     opts.insert("ruby_build_opts".to_string(), ruby_build_opts);
                 }
-                if ruby.ruby_build_repo != DEFAULT_RUBY_BUILD_REPO {
-                    opts.insert("ruby_build_repo".to_string(), ruby.ruby_build_repo.clone());
-                }
+                opts.insert("ruby_build_repo".to_string(), ruby.ruby_build_repo.clone());
             }
 
             if let Some(apply_patches) = ruby.apply_patches.clone() {
@@ -1064,10 +1055,8 @@ impl Backend for RubyPlugin {
             }
         }
 
-        if ruby.compile == Some(false) || (settings.experimental && ruby.compile.is_none()) {
-            if ruby.precompiled_url != DEFAULT_RUBY_PRECOMPILED_URL {
-                opts.insert("precompiled_url".to_string(), ruby.precompiled_url.clone());
-            }
+        if try_precompiled {
+            opts.insert("precompiled_url".to_string(), ruby.precompiled_url.clone());
             if let Some(precompiled_arch) = ruby.precompiled_arch.clone() {
                 opts.insert("precompiled_arch".to_string(), precompiled_arch);
             }
@@ -1166,6 +1155,9 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    const DEFAULT_RUBY_BUILD_REPO: &str = "https://github.com/rbenv/ruby-build.git";
+    const DEFAULT_RUBY_INSTALL_REPO: &str = "https://github.com/postmodern/ruby-install.git";
+    const DEFAULT_RUBY_PRECOMPILED_URL: &str = "jdx/ruby";
 
     struct SettingsResetGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -1274,6 +1266,11 @@ mod tests {
                 ("precompiled_arch".to_string(), "arm64".to_string()),
                 ("precompiled_os".to_string(), "linux".to_string()),
                 ("precompiled_url".to_string(), "acme/ruby".to_string()),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_install".to_string(), "false".to_string()),
             ])
         );
     }
@@ -1294,7 +1291,12 @@ mod tests {
                     "https://example.com/ruby.patch".to_string(),
                 ),
                 ("compile".to_string(), "true".to_string()),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
                 ("ruby_build_opts".to_string(), "--enable-yjit".to_string()),
+                ("ruby_install".to_string(), "false".to_string()),
             ])
         );
     }
@@ -1314,6 +1316,32 @@ mod tests {
                 ("precompiled_arch".to_string(), "arm64".to_string()),
                 ("precompiled_os".to_string(), "linux".to_string()),
                 ("precompiled_url".to_string(), "acme/ruby".to_string()),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_install".to_string(), "false".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_resolved_defaults() {
+        let opts = resolve_ruby_lockfile_options(|_| {});
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("compile".to_string(), "false".to_string()),
+                (
+                    "precompiled_url".to_string(),
+                    DEFAULT_RUBY_PRECOMPILED_URL.to_string(),
+                ),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_install".to_string(), "false".to_string()),
             ])
         );
     }
@@ -1334,7 +1362,16 @@ mod tests {
                     "https://example.com/ruby.patch".to_string(),
                 ),
                 ("compile".to_string(), "false".to_string()),
+                (
+                    "precompiled_url".to_string(),
+                    DEFAULT_RUBY_PRECOMPILED_URL.to_string(),
+                ),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
                 ("ruby_build_opts".to_string(), "--enable-yjit".to_string()),
+                ("ruby_install".to_string(), "false".to_string()),
             ])
         );
     }
@@ -1355,6 +1392,10 @@ mod tests {
                 (
                     "ruby_install_opts".to_string(),
                     "--no-reinstall".to_string()
+                ),
+                (
+                    "ruby_install_repo".to_string(),
+                    DEFAULT_RUBY_INSTALL_REPO.to_string(),
                 ),
             ])
         );
