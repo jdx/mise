@@ -226,7 +226,7 @@ across task definition(s).
 - `os_family() -> String` – Returns the operating system family, e.g. `unix`, `windows`.
 - `num_cpus() -> usize` – Gets the number of CPUs available on the system.
 - `choice(n, alphabet)` - Generate a string of `n` with random sample with replacement
-  of `alphabet`. For example, `choice(64, HEX)` will generate a random
+  of `alphabet`. For example, `choice(n=64, alphabet='0123456789abcdef')` will generate a random
   64-character lowercase hex string.
 - `read_file(path) -> String` – Reads the contents of a file at the given path and returns
   it as a string.
