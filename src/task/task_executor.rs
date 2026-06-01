@@ -1717,7 +1717,9 @@ mod tests {
     #[cfg(windows)]
     fn test_maybe_convert_env_for_msys_shell_rejects_relative_cygdrive_prefix() {
         // A prefix without a leading slash (e.g. `mnt`) would yield relative PATH
-        // entries bash ignores; fall back to the default `/cygdrive` instead.
+        // entries bash ignores; fall back to the shell's default instead. For the
+        // Cygwin binary used here that default is `/cygdrive` (Git Bash would fall
+        // back to an empty prefix, i.e. the `/c/...` form).
         let mut env = env_with_path(r"C:\foo;D:\bar");
         env.insert("MISE_CYGDRIVE_PREFIX".to_string(), "mnt".to_string());
         let out = maybe_convert_env_for_msys_shell(Path::new(r"C:\cygwin64\bin\bash.exe"), &env);
