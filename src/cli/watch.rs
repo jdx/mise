@@ -247,8 +247,21 @@ impl Watch {
                             .collect()
                     })
                     .collect();
-                let watch_dirs: Vec<PathBuf> =
-                    task_cwds.into_iter().map(|(_, c)| c).unique().collect();
+                let cwds: Vec<PathBuf> =
+                    task_cwds.iter().map(|(_, c)| c.clone()).unique().collect();
+                let mut watch_dirs = cwds.clone();
+                for (kind, abs) in parsed.iter().flatten() {
+                    if matches!(kind, SourceKind::Negation) {
+                        continue;
+                    }
+                    let dir = source_watch_dir(abs);
+                    // Already covered by a recursively-watched cwd.
+                    if cwds.iter().any(|c| dir.starts_with(c)) {
+                        continue;
+                    }
+                    watch_dirs.push(dir);
+                }
+                let watch_dirs: Vec<PathBuf> = watch_dirs.into_iter().unique().collect();
                 let (i, e) = merge_watch_patterns(resolved.iter().map(|v| v.as_slice()));
                 (i, e, watch_dirs, Some(anchor))
             }
@@ -400,6 +413,29 @@ fn normalize_path(p: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// Extracts the directory that should be watched for a source pattern.
+/// Basically slices up to the first glob-like character.
+fn source_watch_dir(absolute: &Path) -> PathBuf {
+    use std::path::Component;
+    let is_glob = |s: &std::ffi::OsStr| s.to_string_lossy().contains(['*', '?', '[', '{']);
+    let mut dir = PathBuf::new();
+    let mut found_glob = false;
+    for c in absolute.components() {
+        if let Component::Normal(part) = c {
+            if is_glob(part) {
+                found_glob = true;
+                break;
+            }
+        }
+        dir.push(c.as_os_str());
+    }
+    if found_glob {
+        dir
+    } else {
+        dir.parent().map(|p| p.to_path_buf()).unwrap_or(dir)
+    }
 }
 
 /// Express an already-absolute source path relative to the filter anchor,
@@ -1434,6 +1470,7 @@ pub enum ColourMode {
 mod tests {
     use super::{
         common_ancestor, merge_watch_patterns, normalize_path, parse_source, relativize_source,
+        source_watch_dir,
     };
     use std::path::{Path, PathBuf};
 
@@ -1558,6 +1595,30 @@ mod tests {
         assert_eq!(common, Some(pb("/repo")));
         let rel = relativize_source(super::SourceKind::Plain, &abs, &common.unwrap());
         assert_eq!(rel, "shared/src/*.ts");
+    }
+
+    #[test]
+    fn source_watch_dir_stops_at_first_glob() {
+        assert_eq!(
+            source_watch_dir(Path::new("/root/shared/src/*.ts")),
+            pb("/root/shared/src"),
+        );
+    }
+
+    #[test]
+    fn source_watch_dir_stops_at_double_star() {
+        assert_eq!(
+            source_watch_dir(Path::new("/root/shared/**/*.ts")),
+            pb("/root/shared"),
+        );
+    }
+
+    #[test]
+    fn source_watch_dir_of_literal_file_is_parent() {
+        assert_eq!(
+            source_watch_dir(Path::new("/root/shared/src/index.ts")),
+            pb("/root/shared/src"),
+        );
     }
 
     #[test]
