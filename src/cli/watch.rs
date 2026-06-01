@@ -423,11 +423,11 @@ fn source_watch_dir(absolute: &Path) -> PathBuf {
     let mut dir = PathBuf::new();
     let mut found_glob = false;
     for c in absolute.components() {
-        if let Component::Normal(part) = c {
-            if is_glob(part) {
-                found_glob = true;
-                break;
-            }
+        if let Component::Normal(part) = c
+            && is_glob(part)
+        {
+            found_glob = true;
+            break;
         }
         dir.push(c.as_os_str());
     }
