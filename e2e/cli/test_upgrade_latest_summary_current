@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+cat <<'TOML' >mise.toml
+[tools]
+dummy = "latest"
+TOML
+
+mise uninstall dummy --all
+mkdir -p "$MISE_DATA_DIR/installs/dummy/latest"
+
+output="$(mise upgrade 2>&1)"
+summary_line="  dummy latest → 2.0.0"
+
+if [[ $output != *"$summary_line"* ]]; then
+  fail "upgrade summary did not include '$summary_line': $output"
+fi
+
+assert_not_contains "echo '$output'" "  dummy (none) → 2.0.0"
