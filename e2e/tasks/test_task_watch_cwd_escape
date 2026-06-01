@@ -37,7 +37,10 @@ echo "" >"$LOG_FILE" # clear so we only capture the re-run
 
 # Touch the source that lives *outside* the task's cwd.
 touch shared/src/index.ts
-sleep 2
+for _ in $(seq 1 40); do
+  grep -q "built" "$LOG_FILE" && break
+  sleep 0.5
+done
 
 if ! grep -q "built" "$LOG_FILE"; then
   fail "Expected re-run after changing ../../shared/src source, got: $(tr -d '\0' <"$LOG_FILE")"
