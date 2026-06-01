@@ -1352,7 +1352,7 @@ durations and absolute cutoff dates.
 
 Supports:
 
-- Relative durations: `7d` (7 days ago), `90d` (90 days ago), `6m` (6 months ago), `1y` (1 year ago)
+- Relative durations: `7d` (7 days ago), `90d` (90 days ago), `6mo` (6 months ago), `1y` (1 year ago)
 - Absolute dates: `2024-06-01`, `2024-06-01T12:00:00Z`
 
 Example:
