@@ -690,6 +690,17 @@ For local and monorepo task discovery, mise uses the nearest config file that de
 That means a child config's `includes` replaces both the defaults and any `includes` defined by parent configs for that directory.
 Global config files are loaded independently, so each global config file uses its own `task_config.includes` or the default directories if `includes` is unset.
 
+Entries are evaluated in order, and when more than one include defines a task with the same name the **last** entry in the list wins.
+This applies uniformly to directory, toml-file, and `git::` includes, so to override a task coming from a `git::` include with a local one, list the local directory after the `git::` entry:
+
+```toml
+[task_config]
+includes = [
+    "git::https://github.com/myorg/shared-tasks.git//tasks", # remote task…
+    ".mise/tasks",                                           # …is overridden by the local one with the same name
+]
+```
+
 If using included task toml files, note that they have a different format than the `mise.toml` file. They are just a list of tasks.
 The file should be the same format as the `[tasks]` section of `mise.toml` but without the `[task]` prefix:
 
