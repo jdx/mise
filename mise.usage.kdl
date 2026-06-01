@@ -1,4 +1,4 @@
-min_usage_version "2.11"
+min_usage_version "3.4"
 name mise
 bin mise
 about "Dev tools, env vars, and tasks in one CLI"
@@ -2279,7 +2279,7 @@ Examples:
 
 """#
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
-    flag "-C --cd" help="Change to this directory before executing the command" global=#true {
+    flag "-C --cd" help="Change to this directory before executing the command" {
         arg <CD>
     }
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
@@ -2287,7 +2287,7 @@ Examples:
 Number of tasks to run in parallel
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
-"""# global=#true {
+"""# {
         arg <JOBS>
     }
     flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
@@ -2305,7 +2305,7 @@ Change how tasks information is output when running tasks
 """#
         arg <OUTPUT>
     }
-    flag "-q --quiet" help="Don't show extra output" global=#true
+    flag "-q --quiet" help="Don't show extra output"
     flag "-r --raw" help=#"""
 Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
@@ -3074,7 +3074,7 @@ Examples:
 
 """#
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
-        flag "-C --cd" help="Change to this directory before executing the command" global=#true {
+        flag "-C --cd" help="Change to this directory before executing the command" {
             arg <CD>
         }
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
@@ -3082,7 +3082,7 @@ Examples:
 Number of tasks to run in parallel
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
-"""# global=#true {
+"""# {
             arg <JOBS>
         }
         flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
@@ -3100,7 +3100,7 @@ Change how tasks information is output when running tasks
 """#
             arg <OUTPUT>
         }
-        flag "-q --quiet" help="Don't show extra output" global=#true
+        flag "-q --quiet" help="Don't show extra output"
         flag "-r --raw" help=#"""
 Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
