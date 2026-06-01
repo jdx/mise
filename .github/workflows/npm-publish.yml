@@ -112,6 +112,7 @@ jobs:
             export MISE_VERSION
             export RELEASE_DIR="releases"
             NPM_PREFIX=@jdxcode/mise mise x aube -- ./scripts/release-npm.sh
+            NPM_PREFIX=mise NPM_PLATFORM_PREFIX=@jdxcode/mise PUBLISH_PLATFORM_PACKAGES=0 mise x aube -- ./scripts/release-npm.sh
           else
             echo "DRY RUN: Would publish npm packages"
           fi

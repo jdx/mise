@@ -104,12 +104,22 @@ impl<'a> GitBackendOptions<'a> {
             })
     }
 
-    fn lockfile_options(&self) -> BTreeMap<String, String> {
+    fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
-        for key in ["asset_pattern", "url", "version_prefix"] {
-            if let Some(value) = self.values.str(key) {
-                result.insert(key.to_string(), value.to_string());
-            }
+        if self.api_url() != self.default_api_url {
+            result.insert("api_url".to_string(), self.api_url());
+        }
+        if let Some(value) = self.version_prefix() {
+            result.insert("version_prefix".to_string(), value.to_string());
+        }
+        if let Some(value) = self.asset_pattern_for_target(target) {
+            result.insert("asset_pattern".to_string(), value);
+        }
+        if let Some(value) = self.direct_url_for_target(target) {
+            result.insert("url".to_string(), value);
+        }
+        if self.no_app_for_target(target) {
+            result.insert("no_app".to_string(), "true".to_string());
         }
         result
     }
@@ -492,10 +502,10 @@ impl Backend for UnifiedGitBackend {
     fn resolve_lockfile_options(
         &self,
         request: &ToolRequest,
-        _target: &PlatformTarget,
+        target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         let raw_opts = request.options();
-        self.options(&raw_opts).lockfile_options()
+        self.options(&raw_opts).lockfile_options(target)
     }
 
     /// Resolve platform-specific lock information for cross-platform lockfile generation.
@@ -2194,6 +2204,69 @@ mod tests {
             "1.0.0"
         );
         assert_eq!(backend.strip_version_prefix("1.0.0", &opts), "1.0.0");
+    }
+
+    #[test]
+    fn test_lockfile_options_use_target_artifact_inputs() {
+        let backend = create_test_backend();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "api_url".to_string(),
+            toml::Value::String("https://github.example.com/api/v3".to_string()),
+        );
+        opts.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("release-".to_string()),
+        );
+        let mut platforms = toml::Table::new();
+        let mut linux = toml::Table::new();
+        linux.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("tool-*-linux.tar.gz".to_string()),
+        );
+        let mut windows = toml::Table::new();
+        windows.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("tool-*-windows.zip".to_string()),
+        );
+        windows.insert("no_app".to_string(), toml::Value::Boolean(true));
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(linux));
+        platforms.insert("windows-x64".to_string(), toml::Value::Table(windows));
+        opts.opts
+            .insert("platforms".to_string(), toml::Value::Table(platforms));
+
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let windows = PlatformTarget::new(crate::platform::Platform::parse("windows-x64").unwrap());
+
+        assert_eq!(
+            backend.options(&opts).lockfile_options(&linux),
+            BTreeMap::from([
+                (
+                    "api_url".to_string(),
+                    "https://github.example.com/api/v3".to_string()
+                ),
+                (
+                    "asset_pattern".to_string(),
+                    "tool-*-linux.tar.gz".to_string()
+                ),
+                ("version_prefix".to_string(), "release-".to_string()),
+            ])
+        );
+        assert_eq!(
+            backend.options(&opts).lockfile_options(&windows),
+            BTreeMap::from([
+                (
+                    "api_url".to_string(),
+                    "https://github.example.com/api/v3".to_string()
+                ),
+                (
+                    "asset_pattern".to_string(),
+                    "tool-*-windows.zip".to_string()
+                ),
+                ("no_app".to_string(), "true".to_string()),
+                ("version_prefix".to_string(), "release-".to_string()),
+            ])
+        );
     }
 
     #[test]

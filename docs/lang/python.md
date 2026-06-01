@@ -52,6 +52,21 @@ verification commands run by the core `python` backend:
 python = { version = "latest", install_env = { CONFIGURE_OPTS = "--enable-optimizations" } }
 ```
 
+### `patch_sysconfig`
+
+When installing precompiled Python binaries on Unix, mise patches the Python `sysconfig` data by
+default so build-time paths from `python-build-standalone` point at the final mise install path. If
+that patching causes an install problem for a specific Python build, disable it with
+`patch_sysconfig = false`:
+
+```toml
+[tools]
+python = { version = "3.14", patch_sysconfig = false }
+```
+
+Disabling this patch can leave stale build-time paths in the installed Python's `sysconfig` data, so
+prefer the default unless you need this as an install workaround.
+
 ## `.python-version` support
 
 `.python-version`/`.python-versions` files are supported by mise. See [idiomatic version files](/configuration.html#idiomatic-version-files).

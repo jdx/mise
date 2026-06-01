@@ -370,9 +370,11 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     }
 }
 
-/// Returns install-time-only option keys for a backend type.
-/// These are options that only affect installation/download, not post-install behavior.
-/// Used to filter cached options when config provides its own options.
+/// Returns backend option keys whose cached values should be replaced by current config.
+///
+/// Most keys affect installation/download identity, but backend-specific lists may also
+/// include layout options that are stored in the install manifest and should not be
+/// reused from stale cached options when config provides its own options.
 pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<String> {
     match backend_type {
         BackendType::Http => http::install_time_option_keys(),
@@ -386,12 +388,12 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Npm => npm::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),
+        BackendType::Spm => spm::install_time_option_keys(),
         _ => vec![],
     }
 }
 
-/// Returns true if a backend option only affects installation/download.
-/// Used to filter cached options when config provides its own options.
+/// Returns true if a backend option's cached value should be replaced by current config.
 pub fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str) -> bool {
     if matches!(backend_type, BackendType::Aqua) {
         return aqua::is_install_time_option_key(key);
