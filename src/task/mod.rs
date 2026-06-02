@@ -928,8 +928,23 @@ impl Task {
     }
 
     fn populate_spec_metadata(&self, spec: &mut usage::Spec) {
+        let has_usage_spec = has_any_usage_spec(spec);
         spec.name = self.display_name.clone();
         spec.bin = self.display_name.clone();
+        if has_usage_spec && !self.description.is_empty() {
+            if spec.about.is_none() {
+                spec.about = Some(
+                    self.description
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+            }
+            if spec.about_long.is_none() && self.description.contains('\n') {
+                spec.about_long = Some(self.description.clone());
+            }
+        }
         if spec.cmd.help.is_none() {
             spec.cmd.help = Some(self.description.clone());
         }
