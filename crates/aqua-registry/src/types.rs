@@ -1965,6 +1965,7 @@ packages:
 packages:
   - url: https://example.com/tool-default
     format: raw
+    complete_windows_ext: false
     overrides:
       - envs:
           - darwin
