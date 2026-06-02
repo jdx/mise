@@ -1895,6 +1895,15 @@ const completionSpec: Fig.Spec = {
                 "Do not embed the currently-running mise binary at /usr/local/bin/mise",
               isRepeatable: false,
             },
+            {
+              name: "--owner",
+              description:
+                "UID[:GID] to assign to every tar entry in generated layers",
+              isRepeatable: false,
+              args: {
+                name: "uid:gid",
+              },
+            },
           ],
         },
         {
@@ -1941,6 +1950,15 @@ const completionSpec: Fig.Spec = {
               description:
                 "Don't embed the mise binary (ignored with --image-dir)",
               isRepeatable: false,
+            },
+            {
+              name: "--owner",
+              description:
+                "UID[:GID] to assign to every tar entry when building (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "uid:gid",
+              },
             },
             {
               name: "--tool",
@@ -2023,6 +2041,15 @@ const completionSpec: Fig.Spec = {
               description:
                 "Don't embed the mise binary (ignored with --image-dir)",
               isRepeatable: false,
+            },
+            {
+              name: "--owner",
+              description:
+                "UID[:GID] to assign to every tar entry when building (ignored with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "uid:gid",
+              },
             },
             {
               name: "--volume",

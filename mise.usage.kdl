@@ -1623,7 +1623,11 @@ By default `mise oci build` only packages tools declared in the project's mise c
         }
         flag --no-mise help="Do not embed the currently-running mise binary at /usr/local/bin/mise"
         flag --owner help="UID[:GID] to assign to every tar entry in generated layers" {
-            long_help "UID[:GID] to assign to every tar entry in generated layers\n\nOverrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive."
+            long_help #"""
+UID[:GID] to assign to every tar entry in generated layers
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+"""#
             arg "<UID[:GID]>"
         }
     }
