@@ -2062,12 +2062,23 @@
           "description": "inline hook command to run",
           "type": "string"
         },
+        "run_windows": {
+          "description": "inline hook command to run on Windows",
+          "type": "string"
+        },
         "shell": {
           "description": "inline shell command to use for run hooks, such as \"bash -c\"",
           "type": "string"
         }
       },
-      "required": ["run"],
+      "anyOf": [
+        {
+          "required": ["run"]
+        },
+        {
+          "required": ["run_windows"]
+        }
+      ],
       "type": "object"
     },
     "hook_script_value": {

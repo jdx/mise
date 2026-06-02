@@ -73,7 +73,7 @@ pub enum HookDef {
     /// Simple run string: `enter = "echo hello"`
     RunString(String),
     /// Table with run: `enter = { run = "echo hello" }`
-    Run { run: String, shell: Option<String> },
+    Run(HookRunTable),
     /// Table with script and optional shell: `enter = { script = "echo hello", shell = "bash" }`
     ScriptTable {
         script: HookScripts,
@@ -90,6 +90,40 @@ pub enum HookDef {
     Array(Vec<HookDef>),
 }
 
+#[derive(Debug, Clone)]
+pub struct HookRunTable {
+    run: Option<String>,
+    run_windows: Option<String>,
+    shell: Option<String>,
+}
+
+impl<'de> serde::Deserialize<'de> for HookRunTable {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Helper {
+            run: Option<String>,
+            run_windows: Option<String>,
+            shell: Option<String>,
+        }
+
+        let helper = <Helper as serde::Deserialize>::deserialize(deserializer)?;
+        if helper.run.is_none() && helper.run_windows.is_none() {
+            return Err(serde::de::Error::custom(
+                "hook run table must define `run` or `run_windows`",
+            ));
+        }
+        Ok(Self {
+            run: helper.run,
+            run_windows: helper.run_windows,
+            shell: helper.shell,
+        })
+    }
+}
+
 impl HookDef {
     /// Convert to a list of Hook structs with the given hook type
     pub fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
@@ -97,18 +131,20 @@ impl HookDef {
             HookDef::RunString(script) => vec![Hook {
                 hook: hook_type,
                 action: HookAction::Run {
-                    run: script,
+                    run: Some(script),
+                    run_windows: None,
                     shell: None,
                     legacy_script: false,
                     ignored_shell: None,
                 },
                 global: false,
             }],
-            HookDef::Run { run, shell } => vec![Hook {
+            HookDef::Run(table) => vec![Hook {
                 hook: hook_type,
                 action: HookAction::Run {
-                    run,
-                    shell,
+                    run: table.run,
+                    run_windows: table.run_windows,
+                    shell: table.shell,
                     legacy_script: false,
                     ignored_shell: None,
                 },
@@ -148,7 +184,8 @@ fn script_hook_action(
             HookAction::CurrentShell { script, shell }
         }
         (_, shell) => HookAction::Run {
-            run: script,
+            run: Some(script),
+            run_windows: None,
             shell: None,
             legacy_script,
             ignored_shell: shell,
@@ -167,7 +204,8 @@ pub struct Hook {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum HookAction {
     Run {
-        run: String,
+        run: Option<String>,
+        run_windows: Option<String>,
         shell: Option<String>,
         legacy_script: bool,
         ignored_shell: Option<String>,
@@ -189,11 +227,17 @@ impl Hook {
         match &mut self.action {
             HookAction::Run {
                 run,
+                run_windows,
                 shell,
                 ignored_shell,
                 ..
             } => {
-                *run = render(run)?;
+                if let Some(s) = run {
+                    *s = render(s)?;
+                }
+                if let Some(s) = run_windows {
+                    *s = render(s)?;
+                }
                 if let Some(s) = shell {
                     *s = render(s)?;
                 }
@@ -437,6 +481,7 @@ async fn execute(
     Settings::get().ensure_experimental("hooks")?;
     let HookAction::Run {
         run,
+        run_windows,
         shell,
         legacy_script,
         ignored_shell,
@@ -459,6 +504,9 @@ async fn execute(
             hook_name
         );
     }
+    let Some(run) = select_run(run, run_windows, cfg!(windows)) else {
+        return Ok(());
+    };
     let shell = shell
         .as_ref()
         .map(|shell| crate::path::split_shell_command(shell))
@@ -536,6 +584,18 @@ async fn execute(
     Ok(())
 }
 
+fn select_run<'a>(
+    run: &'a Option<String>,
+    run_windows: &'a Option<String>,
+    windows: bool,
+) -> Option<&'a str> {
+    if windows {
+        run_windows.as_deref().or(run.as_deref())
+    } else {
+        run.as_deref()
+    }
+}
+
 async fn execute_task(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -588,4 +648,59 @@ async fn execute_task(
     .full_env(env)
     .run()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct TestHook {
+        hook: HookDef,
+    }
+
+    #[test]
+    fn run_table_supports_run_windows() {
+        let parsed: TestHook = toml::from_str(
+            r#"
+            hook = { run = "echo unix", run_windows = "echo windows", shell = "bash -c" }
+            "#,
+        )
+        .unwrap();
+        let hooks = parsed.hook.into_hooks(Hooks::Postinstall);
+
+        assert_eq!(hooks.len(), 1);
+        match &hooks[0].action {
+            HookAction::Run {
+                run,
+                run_windows,
+                shell,
+                ..
+            } => {
+                assert_eq!(run.as_deref(), Some("echo unix"));
+                assert_eq!(run_windows.as_deref(), Some("echo windows"));
+                assert_eq!(shell.as_deref(), Some("bash -c"));
+            }
+            action => panic!("expected run hook, got {action:?}"),
+        }
+    }
+
+    #[test]
+    fn select_run_uses_windows_override_only_on_windows() {
+        let run = Some("echo unix".to_string());
+        let run_windows = Some("echo windows".to_string());
+
+        assert_eq!(select_run(&run, &run_windows, false), Some("echo unix"));
+        assert_eq!(select_run(&run, &run_windows, true), Some("echo windows"));
+    }
+
+    #[test]
+    fn select_run_skips_windows_only_hook_on_unix() {
+        let run = None;
+        let run_windows = Some("echo windows".to_string());
+
+        assert_eq!(select_run(&run, &run_windows, false), None);
+        assert_eq!(select_run(&run, &run_windows, true), Some("echo windows"));
+    }
 }
