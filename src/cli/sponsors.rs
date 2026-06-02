@@ -7,7 +7,7 @@ pub struct Sponsors;
 impl Sponsors {
     pub fn run(&self) -> Result<()> {
         println!(
-            "mise and the en.dev project family are sponsored by:\n\n  37signals - https://37signals.com\n\nView all sponsors: https://en.dev/sponsors.html\nSponsor en.dev: https://en.dev/sponsor.html"
+            "mise and the en.dev project family are sponsored by:\n\n  37signals - https://37signals.com\n\nView all sponsors: https://en.dev/sponsors.html"
         );
         Ok(())
     }
