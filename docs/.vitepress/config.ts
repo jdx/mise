@@ -214,7 +214,6 @@ export default withMermaid(
               ],
             },
             { text: "Team", link: "/team" },
-            { text: "Sponsors", link: "https://en.dev/sponsors.html" },
             { text: "Contributing", link: "/contributing" },
             { text: "External Resources", link: "/external-resources" },
           ],
