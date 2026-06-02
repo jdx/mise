@@ -88,6 +88,7 @@
     </template>
 
     <template #layout-bottom>
+      <EndevSponsors />
       <EndevFooter />
     </template>
   </DefaultTheme.Layout>
@@ -97,6 +98,7 @@
 import DefaultTheme from "vitepress/theme";
 import { ref } from "vue";
 import EndevFooter from "./EndevFooter.vue";
+import EndevSponsors from "./EndevSponsors.vue";
 
 const copied = ref(false);
 const installCommand = "curl https://mise.run | sh";
