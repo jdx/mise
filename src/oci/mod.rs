@@ -109,10 +109,13 @@ impl OciConfig {
         if self.user.is_none() {
             self.user = other.user;
         }
+        let had_user_id = self.user_id.is_some();
         if self.user_id.is_none() {
             self.user_id = other.user_id;
         }
-        if self.group_id.is_none() {
+        // If a more-specific layer selected a UID but omitted GID, leave GID
+        // unset so owner resolution can apply the documented gid = uid fallback.
+        if self.group_id.is_none() && !had_user_id {
             self.group_id = other.group_id;
         }
         if self.mount_point.is_none() {

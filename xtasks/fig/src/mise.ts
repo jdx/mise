@@ -1901,7 +1901,7 @@ const completionSpec: Fig.Spec = {
                 "UID[:GID] to assign to every tar entry in generated layers",
               isRepeatable: false,
               args: {
-                name: "uid:gid",
+                name: "uid[:gid]",
               },
             },
           ],
@@ -1954,10 +1954,10 @@ const completionSpec: Fig.Spec = {
             {
               name: "--owner",
               description:
-                "UID[:GID] to assign to every tar entry when building (ignored with --image-dir)",
+                "UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)",
               isRepeatable: false,
               args: {
-                name: "uid:gid",
+                name: "uid[:gid]",
               },
             },
             {
@@ -2045,10 +2045,10 @@ const completionSpec: Fig.Spec = {
             {
               name: "--owner",
               description:
-                "UID[:GID] to assign to every tar entry when building (ignored with --image-dir)",
+                "UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)",
               isRepeatable: false,
               args: {
-                name: "uid:gid",
+                name: "uid[:gid]",
               },
             },
             {

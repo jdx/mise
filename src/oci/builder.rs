@@ -762,6 +762,32 @@ mod tests {
     }
 
     #[test]
+    fn resolve_layer_owner_uses_merged_config_group_id_from_same_layer() {
+        let mut oci = OciConfig::default();
+        oci.fill_defaults_from(OciConfig {
+            user_id: Some(1000),
+            group_id: Some(1001),
+            ..Default::default()
+        });
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1001));
+    }
+
+    #[test]
+    fn resolve_layer_owner_does_not_inherit_less_specific_group_after_user_override() {
+        let mut oci = OciConfig {
+            user_id: Some(1000),
+            ..Default::default()
+        };
+        oci.fill_defaults_from(OciConfig {
+            group_id: Some(2000),
+            ..Default::default()
+        });
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1000));
+    }
+
+    #[test]
     fn resolve_layer_owner_cli_value_wins_over_config() {
         let oci = OciConfig {
             user_id: Some(1000),

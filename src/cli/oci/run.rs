@@ -60,7 +60,11 @@ pub struct Run {
     #[clap(long)]
     no_mise: bool,
 
-    /// UID[:GID] to assign to every tar entry when building (ignored with --image-dir)
+    /// UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+    ///
+    /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+    /// omitted, it defaults to UID. This affects file ownership only; [oci].user
+    /// controls the image USER directive.
     #[clap(long, value_name = "UID[:GID]")]
     owner: Option<LayerOwner>,
 

@@ -115,7 +115,7 @@ mise oci run [--engine ENGINE] [--image-dir DIR]
 - `--engine` — `auto` (default, prefers podman), `podman`, or `docker`.
 - `--image-dir` — skip the build and use an existing OCI layout.
 - `--owner UID[:GID]` — numeric owner for generated layer entries when
-  building fresh. Conflicts with `--image-dir`.
+  building fresh; it cannot be combined with `--image-dir`.
 - `-i`, `-t`, `-e`, `--volume`, `-w`, `--keep` — pass through to the
   underlying engine the same way `docker run` uses them. (There's no
   `-v` short flag for `--volume` because mise reserves `-v` for
@@ -158,7 +158,7 @@ mise oci push [--tool TOOL] [--image-dir DIR]
 - `--image-dir` — push an existing OCI layout instead of building.
 
 - `--owner UID[:GID]` — numeric owner for generated layer entries when
-  building fresh. Conflicts with `--image-dir`.
+  building fresh; it cannot be combined with `--image-dir`.
 
 Examples:
 
