@@ -261,16 +261,16 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "type": "array",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "dotenv file to load",
+                        "description": "environment file to load (dotenv, json, yaml, or toml)",
                         "type": "string"
                       },
                       {
@@ -1887,13 +1887,13 @@
             "file": {
               "oneOf": [
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "items": {
-                    "description": "dotenv file to load",
+                    "description": "environment file to load (dotenv, json, yaml, or toml)",
                     "type": "string"
                   },
                   "type": "array"
