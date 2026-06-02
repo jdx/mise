@@ -102,6 +102,8 @@ struct AquaOverride {
     goos: Option<String>,
     goarch: Option<String>,
     #[serde(default)]
+    envs: Vec<String>,
+    #[serde(default)]
     variants: Vec<AquaVariant>,
 }
 
@@ -812,22 +814,20 @@ impl AquaPackage {
 
 impl AquaOverride {
     fn matches(&self, os: &str, arch: &str, runtime: AquaRuntime<'_>) -> bool {
-        let platform_matches = if let (Some(goos), Some(goarch)) = (&self.goos, &self.goarch) {
-            goos == os && goarch == arch
-        } else if let Some(goos) = &self.goos {
-            goos == os
-        } else if let Some(goarch) = &self.goarch {
-            goarch == arch
-        } else {
-            false
-        };
-
-        platform_matches
+        self.goos.as_ref().is_none_or(|goos| goos == os)
+            && self.goarch.as_ref().is_none_or(|goarch| goarch == arch)
+            && (self.envs.is_empty() || envs_match(&self.envs, os, arch))
             && self
                 .variants
                 .iter()
                 .all(|variant| variant.matches(os, runtime))
     }
+}
+
+fn envs_match(envs: &[String], os: &str, arch: &str) -> bool {
+    let os_arch = format!("{os}/{arch}");
+    envs.iter()
+        .any(|env| matches!(env.as_str(), "all") || env == os || env == arch || env == &os_arch)
 }
 
 impl AquaVariant {
@@ -1933,6 +1933,93 @@ packages:
         assert_eq!(
             musl.url("1.0.0", "linux", "amd64").unwrap(),
             "https://example.com/tool-1.0.0-linux-amd64-musl"
+        );
+    }
+
+    #[test]
+    fn test_override_envs_match_os() {
+        let yml = r#"
+packages:
+  - files:
+      - name: catalina.sh
+        src: apache-tomcat-{{.SemVer}}/bin/catalina.sh
+    overrides:
+      - envs:
+          - windows
+        files:
+          - name: catalina.bat
+            src: apache-tomcat-{{.SemVer}}/bin/catalina.bat
+"#;
+        let pkg = first_registry_package(yml);
+
+        let linux = pkg.clone().with_version(&["10.1.0"], "linux", "amd64");
+        let windows = pkg.with_version(&["10.1.0"], "windows", "amd64");
+
+        assert_eq!(linux.files[0].name, "catalina.sh");
+        assert_eq!(windows.files[0].name, "catalina.bat");
+    }
+
+    #[test]
+    fn test_override_envs_match_os_arch() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - envs:
+          - darwin
+          - windows/arm64
+        url: https://example.com/tool-cargo
+"#;
+        let pkg = first_registry_package(yml);
+
+        let darwin = pkg.clone().with_version(&["1.0.0"], "darwin", "amd64");
+        let windows_arm64 = pkg.clone().with_version(&["1.0.0"], "windows", "arm64");
+        let windows_amd64 = pkg.with_version(&["1.0.0"], "windows", "amd64");
+
+        assert_eq!(
+            darwin.url("1.0.0", "darwin", "amd64").unwrap(),
+            "https://example.com/tool-cargo"
+        );
+        assert_eq!(
+            windows_arm64.url("1.0.0", "windows", "arm64").unwrap(),
+            "https://example.com/tool-cargo"
+        );
+        assert_eq!(
+            windows_amd64.url("1.0.0", "windows", "amd64").unwrap(),
+            "https://example.com/tool-default"
+        );
+    }
+
+    #[test]
+    fn test_override_envs_combine_with_goarch() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - goarch: arm64
+        envs:
+          - linux
+        url: https://example.com/tool-linux-arm64
+"#;
+        let pkg = first_registry_package(yml);
+
+        let linux_amd64 = pkg.clone().with_version(&["1.0.0"], "linux", "amd64");
+        let linux_arm64 = pkg.clone().with_version(&["1.0.0"], "linux", "arm64");
+        let darwin_arm64 = pkg.with_version(&["1.0.0"], "darwin", "arm64");
+
+        assert_eq!(
+            linux_amd64.url("1.0.0", "linux", "amd64").unwrap(),
+            "https://example.com/tool-default"
+        );
+        assert_eq!(
+            linux_arm64.url("1.0.0", "linux", "arm64").unwrap(),
+            "https://example.com/tool-linux-arm64"
+        );
+        assert_eq!(
+            darwin_arm64.url("1.0.0", "darwin", "arm64").unwrap(),
+            "https://example.com/tool-default"
         );
     }
 
