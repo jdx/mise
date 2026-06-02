@@ -171,8 +171,11 @@ impl ToolRequestSetBuilder {
 
         for ba in trs.tools.keys().cloned().collect_vec() {
             if self.is_disabled(&ba) {
-                // Track tools that don't exist in the registry
-                if ba.backend_type() == BackendType::Unknown {
+                if trs
+                    .tools
+                    .get(&ba)
+                    .is_some_and(|requests| self.should_report_unknown_tool(&ba, requests))
+                {
                     trs.unknown_tools.push(ba.clone());
                 }
                 trs.tools.shift_remove(&ba);
@@ -190,6 +193,12 @@ impl ToolRequestSetBuilder {
             || (cfg!(windows) && backend_type == BackendType::Asdf)
             || !ba.is_os_supported()
             || !tool_enabled(self.enable_tools.as_ref(), &self.disable_tools, ba)
+    }
+
+    fn should_report_unknown_tool(&self, ba: &BackendArg, requests: &[ToolRequest]) -> bool {
+        ba.backend_type() == BackendType::Unknown
+            && tool_enabled(self.enable_tools.as_ref(), &self.disable_tools, ba)
+            && requests.iter().any(ToolRequest::is_os_supported)
     }
 
     async fn load_config_files(
@@ -299,6 +308,7 @@ pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::toolset::{CoreToolOptions, ToolVersionOptions};
 
     #[test]
     fn test_load_runtime_env_with_valid_utf8() {
@@ -392,5 +402,67 @@ mod tests {
             std::env::remove_var("HOMEBREW_INSTALL_BADGE");
             std::env::remove_var("SOME_OTHER_VAR");
         }
+    }
+
+    fn unknown_tool_request(os: Option<Vec<String>>) -> (Arc<BackendArg>, Vec<ToolRequest>) {
+        let ba = Arc::new(BackendArg::from("unknown-os-filtered-tool"));
+        let options = ToolVersionOptions {
+            core: CoreToolOptions {
+                os,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let request =
+            ToolRequest::new_opts(ba.clone(), "latest", options, ToolSource::Unknown).unwrap();
+        (ba, vec![request])
+    }
+
+    fn inactive_os() -> String {
+        match crate::cli::version::OS.as_str() {
+            "linux" => "macos",
+            _ => "linux",
+        }
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_should_not_report_unknown_tool_when_all_requests_are_os_inactive() {
+        crate::toolset::install_state::init().await.unwrap();
+        let builder = ToolRequestSetBuilder::default();
+        let (ba, requests) = unknown_tool_request(Some(vec![inactive_os()]));
+
+        assert!(!builder.should_report_unknown_tool(&ba, &requests));
+    }
+
+    #[tokio::test]
+    async fn test_should_report_unknown_tool_when_any_request_is_os_active() {
+        crate::toolset::install_state::init().await.unwrap();
+        let builder = ToolRequestSetBuilder::default();
+        let (ba, mut requests) = unknown_tool_request(Some(vec![inactive_os()]));
+        let options = ToolVersionOptions {
+            core: CoreToolOptions {
+                os: Some(vec![crate::cli::version::OS.to_string()]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        requests.push(
+            ToolRequest::new_opts(ba.clone(), "latest", options, ToolSource::Unknown).unwrap(),
+        );
+
+        assert!(builder.should_report_unknown_tool(&ba, &requests));
+    }
+
+    #[tokio::test]
+    async fn test_should_not_report_unknown_tool_when_tool_is_disabled() {
+        crate::toolset::install_state::init().await.unwrap();
+        let (ba, requests) = unknown_tool_request(None);
+        let builder = ToolRequestSetBuilder {
+            disable_tools: BTreeSet::from([BackendArg::from("unknown-os-filtered-tool")]),
+            ..Default::default()
+        };
+
+        assert!(!builder.should_report_unknown_tool(&ba, &requests));
     }
 }
