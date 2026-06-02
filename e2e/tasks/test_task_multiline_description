@@ -16,5 +16,7 @@ EOF
 assert_contains "mise tasks ls --local" "format  Format the changed files..."
 assert_not_contains "mise tasks ls --local" "If you just want to check the files"
 
+assert_contains "mise format --help 2>&1 || true" "Format the changed files"
+assert_contains "mise format --help 2>&1 || true" "If you just want to check the files without automatically fixing them, use the check task."
 assert_contains "mise run format --help 2>&1 || true" "Format the changed files"
 assert_contains "mise run format --help 2>&1 || true" "If you just want to check the files without automatically fixing them, use the check task."
