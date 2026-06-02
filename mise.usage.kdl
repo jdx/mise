@@ -1075,6 +1075,7 @@ cmd shell-alias help="Manage shell aliases." {
         arg <shell_alias> help="The alias to remove"
     }
 }
+cmd sponsors help="Show the companies sponsoring mise and the en.dev project family"
 cmd sync subcommand_required=#true help="Synchronize tools from other version managers with mise" {
     cmd node help="Symlinks all tool versions from an external tool into mise" {
         long_help "Symlinks all tool versions from an external tool into mise\n\nFor example, use this to import all Homebrew node installs into mise\n\nThis won't overwrite any existing installs but will overwrite any existing symlinks"

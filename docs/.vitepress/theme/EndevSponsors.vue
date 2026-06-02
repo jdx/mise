@@ -5,12 +5,8 @@
     class="EndevSponsors"
   >
     <div class="EndevSponsorsInner">
-      <p id="endev-sponsors-title" class="EndevSponsorsTitle">
-        sponsors
-      </p>
-      <p v-if="error" class="EndevSponsorsError">
-        Sponsor feed unavailable.
-      </p>
+      <p id="endev-sponsors-title" class="EndevSponsorsTitle">sponsors</p>
+      <p v-if="error" class="EndevSponsorsError">Sponsor feed unavailable.</p>
       <div v-else class="EndevSponsorsLogos">
         <a
           v-for="(sponsor, index) in sponsors"
@@ -20,7 +16,12 @@
           rel="noopener noreferrer sponsored"
           target="_blank"
         >
-          <img :alt="sponsor.name" :src="sponsor.logo" loading="lazy" decoding="async" />
+          <img
+            :alt="sponsor.name"
+            :src="sponsor.logo"
+            loading="lazy"
+            decoding="async"
+          />
         </a>
       </div>
       <a class="EndevSponsorsCta" href="https://en.dev/sponsors.html">
@@ -69,7 +70,10 @@ const isSponsor = (sponsor) =>
 
 onMounted(async () => {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), sponsorFeedTimeoutMs);
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    sponsorFeedTimeoutMs,
+  );
 
   try {
     const res = await fetch("https://en.dev/sponsors.json", {
@@ -79,8 +83,8 @@ onMounted(async () => {
     if (!res.ok) throw new Error(`Sponsor feed returned ${res.status}`);
 
     const payload = await res.json();
-    sponsors.value = sponsorFeedItems(payload).filter((sponsor) =>
-      isSponsor(sponsor) && footerTiers.has(sponsor.tier),
+    sponsors.value = sponsorFeedItems(payload).filter(
+      (sponsor) => isSponsor(sponsor) && footerTiers.has(sponsor.tier),
     );
   } catch {
     error.value = true;
@@ -137,7 +141,9 @@ onMounted(async () => {
   height: 40px;
   justify-content: center;
   padding: 8px 12px;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .EndevSponsorsLogo:hover {
