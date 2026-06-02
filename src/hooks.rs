@@ -232,17 +232,14 @@ impl Hook {
                 ignored_shell,
                 ..
             } => {
-                if let Some(s) = run {
+                if let Some(s) = select_run_mut(run, run_windows, cfg!(windows)) {
                     *s = render(s)?;
-                }
-                if let Some(s) = run_windows {
-                    *s = render(s)?;
-                }
-                if let Some(s) = shell {
-                    *s = render(s)?;
-                }
-                if let Some(s) = ignored_shell {
-                    *s = render(s)?;
+                    if let Some(s) = shell {
+                        *s = render(s)?;
+                    }
+                    if let Some(s) = ignored_shell {
+                        *s = render(s)?;
+                    }
                 }
             }
             HookAction::CurrentShell { script, shell } => {
@@ -596,6 +593,18 @@ fn select_run<'a>(
     }
 }
 
+fn select_run_mut<'a>(
+    run: &'a mut Option<String>,
+    run_windows: &'a mut Option<String>,
+    windows: bool,
+) -> Option<&'a mut String> {
+    if windows {
+        run_windows.as_mut().or(run.as_mut())
+    } else {
+        run.as_mut()
+    }
+}
+
 async fn execute_task(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -702,5 +711,20 @@ mod tests {
 
         assert_eq!(select_run(&run, &run_windows, false), None);
         assert_eq!(select_run(&run, &run_windows, true), Some("echo windows"));
+    }
+
+    #[test]
+    fn select_run_mut_leaves_inactive_windows_template_unrendered() {
+        let mut run = Some("echo unix".to_string());
+        let mut run_windows = Some("{{ exec(command='windows-only') }}".to_string());
+
+        let selected = select_run_mut(&mut run, &mut run_windows, false).unwrap();
+        *selected = "rendered unix".to_string();
+
+        assert_eq!(run.as_deref(), Some("rendered unix"));
+        assert_eq!(
+            run_windows.as_deref(),
+            Some("{{ exec(command='windows-only') }}")
+        );
     }
 }
