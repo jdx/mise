@@ -945,7 +945,7 @@ impl Task {
         spec.cmd.usage = spec.cmd.usage();
     }
 
-    fn promote_description_to_usage_about(&self, spec: &mut usage::Spec) {
+    fn populate_usage_about(&self, spec: &mut usage::Spec) {
         let has_usage_spec = has_any_args_defined(spec)
             || has_any_usage_spec(spec)
             || !self.usage.trim().is_empty()
@@ -966,7 +966,6 @@ impl Task {
             if spec.about_long.is_none() && self.description.contains('\n') {
                 spec.about_long = Some(self.description.clone());
             }
-            spec.cmd.help = None;
         }
     }
     pub async fn parse_usage_spec_with_vars(
@@ -994,7 +993,7 @@ impl Task {
             (spec, scripts)
         };
         self.populate_spec_metadata(&mut spec);
-        self.promote_description_to_usage_about(&mut spec);
+        self.populate_usage_about(&mut spec);
         Ok((spec, scripts))
     }
 
@@ -1028,7 +1027,7 @@ impl Task {
                 .await?
         };
         self.populate_spec_metadata(&mut spec);
-        self.promote_description_to_usage_about(&mut spec);
+        self.populate_usage_about(&mut spec);
         Ok(spec)
     }
 
@@ -1071,7 +1070,10 @@ impl Task {
     }
 
     pub async fn render_markdown(&self, config: &Arc<Config>) -> Result<String> {
-        let spec = self.parse_usage_spec_for_display(config).await?;
+        let mut spec = self.parse_usage_spec_for_display(config).await?;
+        if spec.about.is_some() && spec.cmd.help.as_deref() == Some(self.description.as_str()) {
+            spec.cmd.help = None;
+        }
         let ctx = usage::docs::markdown::MarkdownRenderer::new(spec)
             .with_replace_pre_with_code_fences(true)
             .with_header_level(2);
@@ -2377,7 +2379,7 @@ mod tests {
 
         assert_eq!(spec.about.as_deref(), Some("Format the changed files"));
         assert_eq!(spec.about_long.as_deref(), Some(description.as_str()));
-        assert_eq!(spec.cmd.help, None);
+        assert_eq!(spec.cmd.help.as_deref(), Some(description.as_str()));
 
         let help = usage::docs::cli::render_help(&spec, &spec.cmd, true);
         assert!(help.contains("Format the changed files"));
