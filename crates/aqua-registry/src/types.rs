@@ -827,7 +827,7 @@ impl AquaOverride {
 fn envs_match(envs: &[String], os: &str, arch: &str) -> bool {
     let os_arch = format!("{os}/{arch}");
     envs.iter()
-        .any(|env| matches!(env.as_str(), "all") || env == os || env == arch || env == &os_arch)
+        .any(|env| env == "all" || env == os || env == arch || env == &os_arch)
 }
 
 impl AquaVariant {
