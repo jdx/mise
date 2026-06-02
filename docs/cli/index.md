@@ -159,6 +159,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise shell-alias ls [--no-header]`](/cli/shell-alias/ls.md)
 - [`mise shell-alias set <shell_alias> [COMMAND]`](/cli/shell-alias/set.md)
 - [`mise shell-alias unset <shell_alias>`](/cli/shell-alias/unset.md)
+- [`mise sponsors`](/cli/sponsors.md)
 - [`mise sync <SUBCOMMAND>`](/cli/sync.md)
 - [`mise sync node [FLAGS]`](/cli/sync/node.md)
 - [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)

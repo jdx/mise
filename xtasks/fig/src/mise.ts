@@ -3122,6 +3122,11 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
+      name: "sponsors",
+      description:
+        "Show the companies sponsoring mise and the en.dev project family",
+    },
+    {
       name: "sync",
       description: "Synchronize tools from other version managers with mise",
       subcommands: [

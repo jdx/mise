@@ -28,6 +28,10 @@
   <a href="https://mise.en.dev/tasks/">Tasks</a>
 </p>
 
+<p align="center">
+  Sponsored by <a href="https://37signals.com">37signals</a>.
+</p>
+
 <hr />
 
 </div>
