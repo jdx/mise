@@ -55,10 +55,10 @@ impl OutdatedInfo {
         if backend.is_version_installed(config, tv, true) {
             return Ok(Some(tv.version.clone()));
         }
+        let is_latest_request =
+            matches!(&tv.request, ToolRequest::Version { version, .. } if version == "latest");
         let queries = match &tv.request {
-            ToolRequest::Version { version, .. } if version == "latest" => {
-                vec![None, Some(version.clone())]
-            }
+            ToolRequest::Version { version, .. } if version == "latest" => vec![None],
             ToolRequest::Version { version, .. } => vec![Some(version.clone())],
             ToolRequest::Prefix { prefix, .. } => vec![Some(prefix.clone())],
             _ => return Ok(None),
@@ -71,6 +71,13 @@ impl OutdatedInfo {
             let current_tv = ToolVersion::new(tv.request.clone(), current);
             if backend.is_version_installed(config, &current_tv, true) {
                 return Ok(Some(current_tv.version));
+            }
+        }
+
+        if is_latest_request {
+            let latest_tv = ToolVersion::new(tv.request.clone(), "latest".into());
+            if backend.is_version_installed(config, &latest_tv, true) {
+                return Ok(Some("latest".into()));
             }
         }
 
@@ -663,7 +670,6 @@ mod tests {
         backend.installs_path = temp_dir.path().join("installs").join(short);
         let install_path = backend.installs_path.join("latest");
         std::fs::create_dir_all(&install_path).unwrap();
-        install_state::add_tool_version(&backend, &install_path, "latest");
 
         let request = ToolRequest::Version {
             backend: Arc::new(backend),

@@ -15,4 +15,7 @@ if [[ $output != *"$summary_line"* ]]; then
   fail "upgrade summary did not include '$summary_line': $output"
 fi
 
-assert_not_contains "echo '$output'" "  dummy (none) → 2.0.0"
+none_line="  dummy (none) → 2.0.0"
+if [[ $output == *"$none_line"* ]]; then
+  fail "upgrade summary unexpectedly included '$none_line': $output"
+fi
