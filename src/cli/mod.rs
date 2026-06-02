@@ -63,6 +63,7 @@ mod set;
 mod settings;
 mod shell;
 mod shell_alias;
+mod sponsors;
 mod sync;
 mod tasks;
 mod test_tool;
@@ -251,6 +252,7 @@ pub enum Commands {
     Settings(settings::Settings),
     Shell(shell::Shell),
     ShellAlias(shell_alias::ShellAlias),
+    Sponsors(sponsors::Sponsors),
     Sync(sync::Sync),
     Tasks(tasks::Tasks),
     TestTool(test_tool::TestTool),
@@ -323,6 +325,7 @@ impl Commands {
             Self::Settings(cmd) => cmd.run().await,
             Self::Shell(cmd) => cmd.run().await,
             Self::ShellAlias(cmd) => cmd.run().await,
+            Self::Sponsors(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run().await,
             Self::Tasks(cmd) => cmd.run().await,
             Self::TestTool(cmd) => cmd.run().await,
