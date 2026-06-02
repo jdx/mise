@@ -13,8 +13,8 @@
       </p>
       <div v-else class="EndevSponsorsLogos">
         <a
-          v-for="sponsor in sponsors"
-          :key="sponsor.url"
+          v-for="(sponsor, index) in sponsors"
+          :key="`${sponsor.name}-${sponsor.url}-${index}`"
           class="EndevSponsorsLogo"
           :href="sponsor.url"
           rel="noopener noreferrer sponsored"
@@ -39,10 +39,21 @@ const footerTiers = new Set(["anchor", "premier", "partner"]);
 const sponsorFeedTimeoutMs = 5000;
 
 const sponsorItems = (items) => (Array.isArray(items) ? items : []);
+const sponsorFeedItems = (payload) => {
+  const paid = sponsorItems(payload?.paid);
+  return paid.length ? paid : sponsorItems(payload?.sponsors);
+};
 const isSafeUrl = (url) => {
   try {
     const { protocol } = new URL(url);
     return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+};
+const isSafeImageUrl = (url) => {
+  try {
+    return new URL(url).protocol === "https:";
   } catch {
     return false;
   }
@@ -54,7 +65,7 @@ const isSponsor = (sponsor) =>
   typeof sponsor.url === "string" &&
   typeof sponsor.logo === "string" &&
   isSafeUrl(sponsor.url) &&
-  isSafeUrl(sponsor.logo);
+  isSafeImageUrl(sponsor.logo);
 
 onMounted(async () => {
   const controller = new AbortController();
@@ -68,7 +79,7 @@ onMounted(async () => {
     if (!res.ok) throw new Error(`Sponsor feed returned ${res.status}`);
 
     const payload = await res.json();
-    sponsors.value = sponsorItems(payload?.sponsors).filter((sponsor) =>
+    sponsors.value = sponsorFeedItems(payload).filter((sponsor) =>
       isSponsor(sponsor) && footerTiers.has(sponsor.tier),
     );
   } catch {
