@@ -826,6 +826,7 @@ impl AquaOverride {
 
 fn envs_match(envs: &[String], os: &str, arch: &str) -> bool {
     let os_arch = format!("{os}/{arch}");
+    // Aqua env selectors accept GOOS, GOARCH, GOOS/GOARCH, or the wildcard "all".
     envs.iter()
         .any(|env| env == "all" || env == os || env == arch || env == &os_arch)
 }
@@ -1990,6 +1991,29 @@ packages:
             windows_amd64.url("1.0.0", "windows", "amd64").unwrap(),
             "https://example.com/tool-default"
         );
+    }
+
+    #[test]
+    fn test_override_envs_all_matches_any_platform() {
+        let yml = r#"
+packages:
+  - url: https://example.com/tool-default
+    format: raw
+    overrides:
+      - envs:
+          - all
+        url: https://example.com/tool-all
+"#;
+        let pkg = first_registry_package(yml);
+
+        for (os, arch) in [("linux", "amd64"), ("darwin", "arm64"), ("windows", "amd64")] {
+            let resolved = pkg.clone().with_version(&["1.0.0"], os, arch);
+
+            assert_eq!(
+                resolved.url("1.0.0", os, arch).unwrap(),
+                "https://example.com/tool-all"
+            );
+        }
     }
 
     #[test]
