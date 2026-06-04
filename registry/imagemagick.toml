@@ -1,5 +1,5 @@
 backends = [
-  "aqua:ImageMagick/ImageMagick",
+  { full = "aqua:ImageMagick/ImageMagick", platforms = ["linux", "windows"] },
   "conda:imagemagick",
   "asdf:mise-plugins/mise-imagemagick",
 ]
