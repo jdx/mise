@@ -269,8 +269,23 @@ impl Toolset {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
+        // Include the auto-sourced uv venv (uv.lock + .venv) in the key so a venv
+        // dir and a sibling sharing the same config files don't collide on one
+        // cache entry, which would leak the venv across directories.
+        let mut uv_venv_inputs: Vec<(PathBuf, u64)> = Vec::new();
+        if Settings::get().python.uv_venv_auto.should_source()
+            && let Some(uv_root) = uv::uv_root()
+        {
+            let lock = uv_root.join("uv.lock");
+            let venv = uv_root.join(".venv");
+            let lock_mtime = get_file_mtime(&lock).unwrap_or(0);
+            let venv_mtime = get_file_mtime(&venv).unwrap_or(0);
+            uv_venv_inputs.push((lock, lock_mtime));
+            uv_venv_inputs.push((venv, venv_mtime));
+        }
+
         Ok(CachedEnv::compute_cache_key(
-            &[config_files, config_lockfiles].concat(),
+            &[config_files, config_lockfiles, uv_venv_inputs].concat(),
             &tool_versions,
             &settings_hash,
             &base_path,
