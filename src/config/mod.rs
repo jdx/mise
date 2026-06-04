@@ -2393,7 +2393,7 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         }
     } else {
         // Literal path
-        let path = PathBuf::from(pattern.as_ref());
+        let path = PathBuf::from(&*pattern);
         let resolved = if path.is_absolute() {
             path
         } else {
