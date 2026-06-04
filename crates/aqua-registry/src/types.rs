@@ -617,7 +617,10 @@ impl AquaPackage {
             return Ok(s.to_string());
         }
         if self.format == "raw" {
-            return Ok(self.complete_windows_ext(s));
+            if self.os_file_ext_is_empty(s, v) {
+                return Ok(self.complete_windows_ext(s));
+            }
+            return Ok(s.to_string());
         }
         if !self.format.is_empty() {
             return Ok(s.to_string());
@@ -1502,6 +1505,20 @@ packages:
     }
 
     #[test]
+    fn test_url_raw_preserves_custom_windows_ext() {
+        let pkg = AquaPackage {
+            url: "https://example.com/tool/{{.Version}}/tool.bat".to_string(),
+            format: "raw".to_string(),
+            windows_ext: ".bat".to_string(),
+            ..Default::default()
+        };
+
+        let url = pkg.url("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(url, "https://example.com/tool/1.0.0/tool.bat");
+    }
+
+    #[test]
     fn test_asset_appends_format_ext_by_default() {
         let pkg = AquaPackage {
             asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}".to_string(),
@@ -1532,6 +1549,20 @@ packages:
     fn test_asset_uses_custom_windows_ext() {
         let pkg = AquaPackage {
             asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}".to_string(),
+            format: "raw".to_string(),
+            windows_ext: ".bat".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "tool-1.0.0-windows-amd64.bat");
+    }
+
+    #[test]
+    fn test_asset_raw_preserves_custom_windows_ext() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}.bat".to_string(),
             format: "raw".to_string(),
             windows_ext: ".bat".to_string(),
             ..Default::default()
