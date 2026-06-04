@@ -206,7 +206,7 @@ mod tests {
             .to_string();
         file::write(&p, encrypted).unwrap();
 
-        let env = EnvResults::toml(&config, &p, |s| Ok(s)).await.unwrap();
+        let env = EnvResults::toml(&config, &p, Ok).await.unwrap();
         assert_eq!(env.get("SECRET").unwrap(), "mysecret");
     }
 }
