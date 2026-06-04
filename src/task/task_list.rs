@@ -415,7 +415,7 @@ pub async fn get_task_lists(
 
         // A path starting with "//" on Windows will be treated as a UNC path by
         // PathBuf, but "//" in UNIX will be collapsed to "/" by PathBuf.
-        // Checking a non-existent UNC path for Windows will incur a large
+        // Checking a nonexistent UNC path for Windows will incur a large
         // hiccup (~2.8s) due to Windows trying to resolve the UNC path.
         let t_for_path_check = t
             .strip_prefix("//")

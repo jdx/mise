@@ -55,7 +55,7 @@ assert_succeed "mise generate tool-stub bin/tiny --lock"
 # Version should be the same after re-locking
 assert_contains "cat bin/tiny" "version = \"$locked_version\""
 
-# Test 4: Lock fails on non-existent file
+# Test 4: Lock fails on nonexistent file
 assert_fail "mise generate tool-stub bin/nonexistent --lock"
 
 # Test 5: Execute the locked stub to verify it works

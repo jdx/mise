@@ -25,7 +25,7 @@ fn init() {
     env::set_var("MISE_ENV", "");
     env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
     env::set_var("MISE_GLOBAL_CONFIG_FILE", "~/config/config.toml");
-    env::set_var("MISE_SYSTEM_CONFIG_FILE", "doesntexist");
+    env::set_var("MISE_SYSTEM_CONFIG_FILE", "nonexistent");
     env::set_var(
         "MISE_OVERRIDE_CONFIG_FILENAMES",
         ".test.mise.toml:test.config.toml",

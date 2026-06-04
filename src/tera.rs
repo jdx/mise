@@ -146,7 +146,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                                 (0..n).map(|_| alphabet.choose(&mut rng).unwrap()).collect();
                             Ok(Value::String(result))
                         }
-                        _ => Err("choice alphabet must be an string".into()),
+                        _ => Err("choice alphabet must be a string".into()),
                     }
                 }
                 _ => Err("choice n must be an integer".into()),
