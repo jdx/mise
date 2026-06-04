@@ -74,7 +74,7 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
         .await
 }
 
-fn uv_root() -> Option<PathBuf> {
+pub(crate) fn uv_root() -> Option<PathBuf> {
     file::find_up(dirs::CWD.as_ref()?, &["uv.lock"]).map(|p| p.parent().unwrap().to_path_buf())
 }
 
