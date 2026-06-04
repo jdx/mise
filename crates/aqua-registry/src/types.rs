@@ -2006,7 +2006,11 @@ packages:
 "#;
         let pkg = first_registry_package(yml);
 
-        for (os, arch) in [("linux", "amd64"), ("darwin", "arm64"), ("windows", "amd64")] {
+        for (os, arch) in [
+            ("linux", "amd64"),
+            ("darwin", "arm64"),
+            ("windows", "amd64"),
+        ] {
             let resolved = pkg.clone().with_version(&["1.0.0"], os, arch);
 
             assert_eq!(
