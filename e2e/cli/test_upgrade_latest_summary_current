@@ -6,16 +6,63 @@ dummy = "latest"
 TOML
 
 mise uninstall dummy --all
+mise install dummy@1.0.0
+mise upgrade >upgrade.out 2>&1
+assert_contains "cat upgrade.out" "  dummy 1.0.0 → 2.0.0"
+assert_not_contains "cat upgrade.out" "  dummy latest → 2.0.0"
+assert_not_contains "cat upgrade.out" "  dummy (none) → 2.0.0"
+assert_contains "mise ls --installed dummy" "2.0.0"
+
+mise uninstall dummy --all
 mkdir -p "$MISE_DATA_DIR/installs/dummy/latest"
+mise upgrade >upgrade.out 2>&1
+assert_contains "cat upgrade.out" "  dummy latest → 2.0.0"
+assert_not_contains "cat upgrade.out" "  dummy (none) → 2.0.0"
+assert_contains "mise ls --installed dummy" "2.0.0"
+assert_succeed "test -L $MISE_DATA_DIR/installs/dummy/latest"
 
-output="$(mise upgrade 2>&1)"
-summary_line="  dummy latest → 2.0.0"
+mise uninstall dummy --all
+mkdir -p "$MISE_DATA_DIR/installs/dummy/latest"
+cat <<'TOML' >mise.lock
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+TOML
+MISE_LOCKFILE=1 mise upgrade >upgrade.out 2>&1
+assert_contains "cat upgrade.out" "  dummy latest → 2.0.0"
+assert_not_contains "cat upgrade.out" "  dummy 1.0.0 → 2.0.0"
+assert_not_contains "cat upgrade.out" "  dummy (none) → 2.0.0"
+assert_contains "mise ls --installed dummy" "2.0.0"
 
-if [[ $output != *"$summary_line"* ]]; then
-  fail "upgrade summary did not include '$summary_line': $output"
-fi
+mise uninstall dummy --all
+mkdir -p "$MISE_DATA_DIR/installs/dummy/latest"
+mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0.0"
+cat <<'TOML' >mise.lock
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+TOML
+MISE_LOCKFILE=1 mise upgrade >upgrade.out 2>&1
+assert_contains "cat upgrade.out" "  dummy 1.0.0 → 2.0.0"
+assert_not_contains "cat upgrade.out" "  dummy latest → 2.0.0"
+assert_not_contains "cat upgrade.out" "  dummy (none) → 2.0.0"
+assert_contains "mise ls --installed dummy" "2.0.0"
 
-none_line="  dummy (none) → 2.0.0"
-if [[ $output == *"$none_line"* ]]; then
-  fail "upgrade summary unexpectedly included '$none_line': $output"
-fi
+mise uninstall dummy --all
+rm -f mise.lock
+mise install dummy@2.0.0
+mise upgrade >upgrade.out 2>&1
+assert_contains "cat upgrade.out" "All tools are up to date"
+assert_not_contains "cat upgrade.out" "Upgraded"
+assert_not_contains "cat upgrade.out" "  dummy"
+
+cat <<'TOML' >mise.toml
+[tools]
+tiny = "2"
+TOML
+mise uninstall tiny --all
+mise install tiny@2.0.0
+mise upgrade >upgrade.out 2>&1
+assert_contains "cat upgrade.out" "  tiny 2.0.0 → 2.1.0"
+assert_not_contains "cat upgrade.out" "  tiny (none) → 2.1.0"
+assert_contains "mise ls --installed tiny" "2.1.0"
