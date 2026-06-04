@@ -661,6 +661,9 @@ includes = [
 ]
 ```
 
+Entries support Tera templates from the config-file context, such as <span v-pre>`{{ config_root }}`</span> or
+<span v-pre>`{{ env.HOME }}`</span>. Local paths also support `~/` home expansion.
+
 When `task_config.includes` is set, it replaces the default file-task directories for that config scope instead of adding to them.
 
 The default file-task directories are:

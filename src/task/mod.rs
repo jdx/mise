@@ -741,7 +741,9 @@ impl Task {
         let config = Config::get().await.unwrap();
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        for dir in config::task_includes_for_dir(&project_root, &config.config_files) {
+        for dir in
+            config::task_includes_for_dir(&project_root, &config.config_files).unwrap_or_default()
+        {
             if dir.is_dir() && project_root.join(&dir).exists() {
                 return project_root.join(dir);
             }

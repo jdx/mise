@@ -113,6 +113,10 @@ pub trait ConfigFile: Debug + Send + Sync {
         &DEFAULT_TASK_CONFIG
     }
 
+    fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
+        Ok(self.task_config().includes.clone())
+    }
+
     fn task_templates(&self) -> IndexMap<String, TaskTemplate> {
         IndexMap::new()
     }

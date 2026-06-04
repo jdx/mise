@@ -1928,7 +1928,7 @@ async fn load_local_tasks_with_context(
 
                     // If no config file exists, still load default task include dirs
                     if !found_config {
-                        let includes = task_includes_for_dir(&subdir, &config.config_files);
+                        let includes = task_includes_for_dir(&subdir, &config.config_files)?;
                         for include in includes {
                             let mut subdir_tasks =
                                 load_tasks_includes(&config, &include, &subdir, &None).await?;
@@ -2376,8 +2376,10 @@ fn is_glob_pattern(pattern: &str) -> bool {
 
 /// Expand a task include pattern (which may be a glob) to a list of paths
 fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
-    if is_glob_pattern(pattern) {
-        match glob(dir, pattern) {
+    let pattern = file::replace_path(pattern);
+    let pattern = pattern.to_string_lossy();
+    if is_glob_pattern(&pattern) {
+        match glob(dir, &pattern) {
             Ok(paths) => paths,
             Err(err) => {
                 warn!(
@@ -2391,7 +2393,7 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         }
     } else {
         // Literal path
-        let path = PathBuf::from(pattern);
+        let path = PathBuf::from(pattern.as_ref());
         let resolved = if path.is_absolute() {
             path
         } else {
@@ -2411,9 +2413,7 @@ async fn load_file_tasks(
     config_root: &Path,
 ) -> Result<Vec<Task>> {
     let includes = cf
-        .task_config()
-        .includes
-        .clone()
+        .task_config_includes()?
         .unwrap_or_else(default_task_includes);
 
     let mut tasks = vec![];
@@ -2439,25 +2439,28 @@ async fn load_file_tasks(
     Ok(tasks)
 }
 
-pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
+pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
     let configs = configs_at_root(dir, config_files);
 
     // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
     let (includes, resolve_dir) = configs
         .iter()
-        .find_map(|cf| {
-            cf.task_config().includes.clone().map(|includes| {
+        .find_map(|cf| match cf.task_config_includes() {
+            Ok(Some(includes)) => Some(Ok({
                 // Resolve relative paths from the config root, not the config file's directory
                 (includes, cf.config_root())
-            })
+            })),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
         })
+        .transpose()?
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
             (default_task_includes(), dir.to_path_buf())
         });
 
-    includes
+    Ok(includes
         .into_iter()
         .flat_map(|p| {
             // Git URLs are handled by load_file_tasks, not here
@@ -2467,7 +2470,7 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
             expand_task_include(&resolve_dir, &p)
         })
         .unique()
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>())
 }
 
 pub async fn load_tasks_in_dir(
@@ -2480,12 +2483,12 @@ pub async fn load_tasks_in_dir(
 
     let (includes, resolve_dir) = configs
         .iter()
-        .find_map(|cf| {
-            cf.task_config()
-                .includes
-                .clone()
-                .map(|includes| (includes, cf.config_root()))
+        .find_map(|cf| match cf.task_config_includes() {
+            Ok(Some(includes)) => Some(Ok((includes, cf.config_root()))),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
         })
+        .transpose()?
         .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf()));
 
     let mut config_tasks = vec![];
