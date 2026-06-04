@@ -278,8 +278,10 @@ impl Toolset {
         {
             let lock = uv_root.join("uv.lock");
             let venv = uv_root.join(".venv");
-            uv_venv_inputs.push((lock.clone(), get_file_mtime(&lock).unwrap_or(0)));
-            uv_venv_inputs.push((venv.clone(), get_file_mtime(&venv).unwrap_or(0)));
+            let lock_mtime = get_file_mtime(&lock).unwrap_or(0);
+            let venv_mtime = get_file_mtime(&venv).unwrap_or(0);
+            uv_venv_inputs.push((lock, lock_mtime));
+            uv_venv_inputs.push((venv, venv_mtime));
         }
 
         Ok(CachedEnv::compute_cache_key(
