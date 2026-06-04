@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# Test that core:elixir resolves lockfile URLs without installing first.
+export MISE_LOCKFILE=1
+
+detect_platform
+CURRENT_PLATFORM="$MISE_PLATFORM"
+
+cat <<'EOF' >mise.toml
+[tools]
+elixir = "1.19.5-otp-28"
+EOF
+
+rm -f mise.lock
+mise uninstall elixir@1.19.5-otp-28 2>/dev/null || true
+
+mise lock --platform "$CURRENT_PLATFORM"
+
+assert_contains "cat mise.lock" '[[tools.elixir]]'
+assert_contains "cat mise.lock" 'version = "1.19.5-otp-28"'
+assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+assert_contains "cat mise.lock" 'url = "https://builds.hex.pm/builds/elixir/v1.19.5-otp-28.zip"'
+assert_contains "cat mise.lock" 'checksum = "sha256:'
+
+assert "mise install --locked --dry-run"
