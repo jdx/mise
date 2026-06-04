@@ -2295,7 +2295,7 @@ impl AquaBackend {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;
-        } else if uses_untar_extractor(format) {
+        } else if format.starts_with("tar") || (format == "7z" && cfg!(windows)) {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
             make_executable = true;
         } else if format == "zip" {
@@ -3013,15 +3013,6 @@ mod tests {
     }
 
     #[test]
-    fn test_uses_untar_extractor_supports_7z() {
-        assert!(uses_untar_extractor("tar.gz"));
-        assert!(uses_untar_extractor("tar.xz"));
-        assert!(uses_untar_extractor("7z"));
-        assert!(!uses_untar_extractor("zip"));
-        assert!(!uses_untar_extractor("raw"));
-    }
-
-    #[test]
     fn test_srcs_support_file_link_with_default_src() {
         let mut pkg = AquaPackage::default();
         pkg.files = vec![AquaFile {
@@ -3415,10 +3406,6 @@ fn needs_extraction(format: &str, pkg_type: &AquaPackageType) -> bool {
             pkg_type,
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent
         )
-}
-
-fn uses_untar_extractor(format: &str) -> bool {
-    format.starts_with("tar") || format == "7z"
 }
 
 /// Check if a platform is supported by the package's supported_envs.
