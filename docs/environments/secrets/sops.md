@@ -2,11 +2,8 @@
 
 mise reads encrypted secret files and makes values available as environment variables via `env._.file`.
 
-- **Formats**: `.env.json`, `.env.yaml`
+- **Formats**: `.env.json`, `.env.yaml`, `.env.toml`
 - **Encryption**: [sops](https://getsops.io) backed by [age](https://github.com/FiloSottile/age)
-
-Plain `.env.toml` files are supported by `env._.file`, but mise does not decrypt SOPS-encrypted
-TOML files.
 
 ## Example
 

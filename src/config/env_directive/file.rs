@@ -4,7 +4,7 @@ use crate::file::display_path;
 use crate::{Result, file, sops};
 use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
-use rops::file::format::{JsonFileFormat, YamlFileFormat};
+use rops::file::format::{JsonFileFormat, TomlFileFormat, YamlFileFormat};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -46,7 +46,7 @@ impl EnvResults {
             *env = match ext.as_str() {
                 "json" => Self::json(config, &p, parse_template).await?,
                 "yaml" => Self::yaml(config, &p, parse_template).await?,
-                "toml" => Self::toml(&p).await?,
+                "toml" => Self::toml(config, &p, parse_template).await?,
                 _ => Self::dotenv(&p).await?,
             };
         }
@@ -125,13 +125,24 @@ impl EnvResults {
         }
     }
 
-    async fn toml(p: &Path) -> Result<EnvMap> {
+    async fn toml<PT>(config: &Arc<Config>, p: &Path, parse_template: PT) -> Result<EnvMap>
+    where
+        PT: FnMut(String) -> Result<String>,
+    {
         let errfn = || eyre!("failed to parse toml file: {}", display_path(p));
-        // sops does not support toml yet, so no need to parse sops
         if let Ok(raw) = file::read_to_string(p) {
-            toml::from_str::<Env<toml::Value>>(&raw)
-                .wrap_err_with(errfn)?
-                .env
+            let mut f: Env<toml::Value> = toml::from_str(&raw).wrap_err_with(errfn)?;
+            if !f.sops.is_empty() {
+                let decrypted =
+                    sops::decrypt::<_, TomlFileFormat>(config, &raw, parse_template, "toml")
+                        .await?;
+                if !decrypted.is_empty() {
+                    f = toml::from_str(&decrypted).wrap_err_with(errfn)?;
+                } else {
+                    return Ok(EnvMap::new());
+                }
+            }
+            f.env
                 .into_iter()
                 .map(|(k, v)| {
                     Ok((
