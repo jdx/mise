@@ -126,11 +126,9 @@ where
     }
 
     let _lock = MUTEX.lock().await; // prevent multiple threads from using the same age key
-    let age_env_key = if Settings::get().sops.rops {
-        "ROPS_AGE"
-    } else {
-        "SOPS_AGE_KEY"
-    };
+    // getsops/sops does not support TOML yet, so keep TOML on the rops path.
+    let use_rops = Settings::get().sops.rops || format == "toml";
+    let age_env_key = if use_rops { "ROPS_AGE" } else { "SOPS_AGE_KEY" };
     let prev_age = env::var(age_env_key).ok();
     let prev_age_key_file = env::var("SOPS_AGE_KEY_FILE").ok();
 
@@ -145,7 +143,7 @@ where
     if let Some(age) = &age {
         env::set_var(age_env_key, age.trim());
     }
-    let output = if Settings::get().sops.rops {
+    let output = if use_rops {
         match input
             .parse::<RopsFile<EncryptedFile<AES256GCM, SHA512>, F>>()
             .wrap_err("failed to parse sops file")

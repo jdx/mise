@@ -173,3 +173,40 @@ impl EnvResults {
         Ok(env)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Settings;
+    use rops::{
+        cryptography::{cipher::AES256GCM, hasher::SHA512},
+        file::builder::RopsFileBuilder,
+        integration::{AgeIntegration, Integration},
+    };
+
+    const AGE_PUBLIC_KEY: &str = "age1se5ghfycr4n8kcwc3qwf234ymvmr2lex2a99wh8gpfx97glwt9hqch4569";
+    const AGE_PRIVATE_KEY: &str =
+        "AGE-SECRET-KEY-1EQUCGFZH8UZKSZ0Z5N5T234YRNDT4U9H7QNYXWRRNJYDDVXE6FWSCPGNJ7";
+
+    #[tokio::test]
+    async fn decrypts_sops_toml_file() {
+        crate::env::set_var("MISE_SOPS_AGE_KEY", AGE_PRIVATE_KEY);
+        Settings::reset(None);
+        let config = Config::reset().await.unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join(".env.toml");
+
+        let encrypted = RopsFileBuilder::<TomlFileFormat>::new(r#"SECRET = "mysecret""#)
+            .unwrap()
+            .add_integration_key::<AgeIntegration>(
+                AgeIntegration::parse_key_id(AGE_PUBLIC_KEY).unwrap(),
+            )
+            .encrypt::<AES256GCM, SHA512>()
+            .unwrap()
+            .to_string();
+        file::write(&p, encrypted).unwrap();
+
+        let env = EnvResults::toml(&config, &p, |s| Ok(s)).await.unwrap();
+        assert_eq!(env.get("SECRET").unwrap(), "mysecret");
+    }
+}
