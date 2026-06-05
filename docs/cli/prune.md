@@ -27,7 +27,7 @@ Do not actually delete anything
 
 ### `--configs`
 
-Prune only tracked and trusted configuration links that point to non-existent configurations
+Prune only tracked and trusted configuration links that point to nonexistent configurations
 
 ### `--dry-run-code`
 

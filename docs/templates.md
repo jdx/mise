@@ -91,8 +91,8 @@ Tera also supports powerful [expressions](https://keats.github.io/tera/docs/#exp
 - concatenation `~`, e.g. <code v-pre>{{ "hello " ~ 'world' ~ \`!\` }}</code>
 - in checking, e.g. <span v-pre>`{{ some_var in [1, 2, 3] }}`</span>
 
-Tera also supports control structures such as <span v-pre>`if`</span> and
-<span v-pre>`for`</span>. [Read more](https://keats.github.io/tera/docs/#control-structures).
+Tera also supports [control structures such as <span v-pre>`if`</span> and
+<span v-pre>`for`</span>](https://keats.github.io/tera/docs/#control-structures).
 
 ### Tera Filters
 

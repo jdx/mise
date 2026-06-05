@@ -150,7 +150,7 @@ function ElementNode:close(closestart, closeend)
 	if closestart and closeend then
 		self._closestart, self._closeend = closestart, closeend
 	end
-	-- inform hihger level nodes about this element's existence in their branches
+	-- inform higher level nodes about this element's existence in their branches
 	local node = self
 	while true do
 		node = node.parent
@@ -237,7 +237,7 @@ local function select(self, s)
 			start, pos, switch, stype, name, eq, quote = string.find(part,
 				"(%(?%)?)" ..         -- switch = a possible ( or ) switching the filter on or off
 				"([:%[#.]?)" ..       -- stype = a possible :, [, #, or .
-				"([%w-_\\]+)" ..      -- name = 1 or more alfanumeric chars (+ hyphen, reverse slash and uderscore)
+				"([%w-_\\]+)" ..      -- name = 1 or more alphanumeric chars (+ hyphen, reverse slash and underscore)
 				"([|%*~%$!%^]?=?)" .. -- eq = a possible |=, *=, ~=, $=, !=, ^=, or =
 				"(['\"]?)",           -- quote = a ' or " delimiting a possible attribute value
 				pos + 1

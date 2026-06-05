@@ -12,7 +12,7 @@ use crate::toolset::ToolsetBuilder;
 /// not know about and so it will be necessary to call this explicitly.
 ///
 /// If you think mise should automatically call this for a particular command, please
-/// open an issue on the mise repo. You can also setup a shell function to reshim
+/// open an issue on the mise repo. You can also set up a shell function to reshim
 /// automatically (it's really fast so you don't need to worry about overhead):
 ///
 ///     npm() {

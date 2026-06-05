@@ -33,7 +33,7 @@ assert_not_contains "mise ls --installed dummy" "other-dummy"
 # Test 2: Install with missing plugin that would cause early return
 # This tests the plugin installation error handling
 
-# Try to install a non-existent plugin
+# Try to install a nonexistent plugin
 assert_fail "mise install nonexistent@latest" "nonexistent not found in mise tool registry"
 
 # Test 3: Install multiple tools with mixed success/failure

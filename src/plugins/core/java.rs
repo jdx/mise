@@ -584,7 +584,7 @@ impl Backend for JavaPlugin {
                     let metadata = self.tv_to_metadata(&tv).await?;
                     (metadata, tarball_path)
                 } else {
-                    // No URL in lockfile, fallback to metadata
+                    // No URL in lockfile, fall back to metadata
                     let metadata = self.tv_to_metadata(&tv).await?;
                     let tarball_path = self
                         .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)

@@ -6,7 +6,7 @@ The configuration goes into `mise.toml`.
 
 ## CD hook
 
-This hook is run anytimes the directory is changed.
+This hook is run anytime the directory is changed.
 
 ```toml
 [hooks]

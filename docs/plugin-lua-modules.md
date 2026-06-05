@@ -94,7 +94,7 @@ local resp, err = http.try_get({
     url = "https://primary.example.com/index"
 })
 if err ~= nil then
-    -- fallback to another source
+    -- fall back to another source
     resp, err = http.try_get({ url = "https://fallback.example.com/index" })
 end
 
