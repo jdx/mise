@@ -206,6 +206,8 @@ run_in_docker() {
 
   local docker_args=(
     docker run --rm
+    --device /dev/fuse
+    --cap-add SYS_ADMIN
     --read-only
     -v "$host_root:/root"
     -v "$host_tmp:/tmp"

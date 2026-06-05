@@ -238,6 +238,8 @@ jobs:
 
           set +e
           docker run --rm \
+            --device /dev/fuse \
+            --cap-add SYS_ADMIN \
             --read-only \
             -w /tmp \
             -v "$container_tmp_dir:/tmp" \
@@ -301,6 +303,8 @@ jobs:
 
           set +e
           docker run --rm \
+            --device /dev/fuse \
+            --cap-add SYS_ADMIN \
             --read-only \
             -w /tmp \
             -v "$container_tmp_dir:/tmp" \

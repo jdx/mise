@@ -44,6 +44,7 @@ apt-get update && apt-get install -y --no-install-recommends \
     libxkbcommon0 \
     libxml2-dev \
     libyaml-dev \
+    libfuse2t64 \
     pipx \
     pkg-config \
     openssh-client \
@@ -56,6 +57,9 @@ apt-get update && apt-get install -y --no-install-recommends \
     zsh
 
 ln -sf /usr/bin/fdfind /usr/bin/fd
+if [ -x /usr/bin/fusermount3 ] && [ ! -x /usr/bin/fusermount ]; then
+    ln -sf /usr/bin/fusermount3 /usr/bin/fusermount
+fi
 
 # Install Node.js to /opt/node (not /usr/bin) so test_backend_missing_deps
 # can verify missing-npm behavior with its restricted PATH=/usr/bin:/bin
