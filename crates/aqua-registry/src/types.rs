@@ -464,8 +464,8 @@ impl AquaPackage {
     fn detect_format(&self, asset_name: &str) -> &'static str {
         let formats = [
             "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2",
-            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "gz", "bz2", "lz4", "sz", "xz", "zst",
-            "dmg", "pkg", "rar", "tar",
+            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "7z", "gz", "bz2", "lz4", "sz", "xz",
+            "zst", "dmg", "pkg", "rar", "tar",
         ];
 
         for format in formats {
@@ -1566,6 +1566,18 @@ packages:
         let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
 
         assert_eq!(asset, "tool-1.0.0.ps1");
+    }
+
+    #[test]
+    fn test_format_detects_7z_asset() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}.7z".to_string(),
+            ..Default::default()
+        };
+
+        let format = pkg.format("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(format, "7z");
     }
 
     #[test]

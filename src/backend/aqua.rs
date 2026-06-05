@@ -2295,7 +2295,7 @@ impl AquaBackend {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;
-        } else if format.starts_with("tar") {
+        } else if format.starts_with("tar") || (format == "7z" && cfg!(windows)) {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
             make_executable = true;
         } else if format == "zip" {
