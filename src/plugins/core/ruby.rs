@@ -484,6 +484,16 @@ impl RubyPlugin {
     /// Get platform identifier for a specific target (used for lockfiles)
     /// Returns platform in jdx/ruby format: "macos", "arm64_linux", or "x86_64_linux"
     fn precompiled_platform_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        let settings = Settings::get();
+
+        // Check for user overrides first
+        if let (Some(arch), Some(os)) = (
+            settings.ruby.precompiled_arch.as_deref(),
+            settings.ruby.precompiled_os.as_deref(),
+        ) {
+            return Some(format!("{}_{}", arch, os));
+        }
+
         match target.os_name() {
             "macos" => {
                 // macOS only supports arm64 and uses "macos" without arch prefix
@@ -1292,6 +1302,46 @@ mod tests {
                 ),
                 ("ruby_install".to_string(), "false".to_string()),
             ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lock_info_url_uses_precompiled_overrides() {
+        let lock = TEST_SETTINGS_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut settings = SettingsPartial::empty();
+        settings.ruby.compile = Some(false);
+        settings.ruby.precompiled_url =
+            Some("https://example.com/ruby-{version}-{platform}.tar.gz".to_string());
+        settings.ruby.precompiled_arch = Some("arm64".to_string());
+        settings.ruby.precompiled_os = Some("linux".to_string());
+        Settings::reset(Some(settings));
+        let _guard = SettingsResetGuard { _lock: lock };
+
+        let backend = RubyPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
+        let target = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
+        let opts = backend.resolve_lockfile_options(&request, &target);
+        let tv = ToolVersion::new(request, "3.3.0".to_string());
+        let info = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(backend.resolve_lock_info(&tv, &target))
+            .unwrap();
+
+        assert_eq!(
+            opts.get("precompiled_arch").map(String::as_str),
+            Some("arm64")
+        );
+        assert_eq!(
+            opts.get("precompiled_os").map(String::as_str),
+            Some("linux")
+        );
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://example.com/ruby-3.3.0-arm64_linux.tar.gz")
         );
     }
 
