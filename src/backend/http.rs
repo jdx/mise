@@ -506,6 +506,14 @@ impl HttpBackend {
     // Symlink creation
     // -------------------------------------------------------------------------
 
+    fn install_version_name(tv: &ToolVersion, cache_key: &str) -> String {
+        if tv.version == "latest" || tv.version.is_empty() {
+            cache_key[..7.min(cache_key.len())].to_string()
+        } else {
+            tv.tv_pathname()
+        }
+    }
+
     /// Create install symlink(s) from install directory to cache
     fn create_install_symlink(
         &self,
@@ -517,13 +525,8 @@ impl HttpBackend {
         let cache_path = self.cache_path(cache_key);
 
         // Determine version name for install path
-        let version_name = if tv.version == "latest" || tv.version.is_empty() {
-            &cache_key[..7.min(cache_key.len())] // Content-based versioning
-        } else {
-            &tv.version
-        };
-
-        let install_path = tv.ba().installs_path.join(version_name);
+        let version_name = Self::install_version_name(tv, cache_key);
+        let install_path = tv.ba().installs_path.join(&version_name);
 
         // Clean up existing install
         if install_path.exists() {
@@ -639,6 +642,50 @@ impl HttpBackend {
         let version_expr = opts.version_expr();
 
         version_list::fetch_versions(&url, regex, json_path, version_expr).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendResolution;
+    use crate::toolset::{ToolRequest, ToolSource};
+
+    fn http_test_tv(version: &str) -> ToolVersion {
+        let backend = Arc::new(BackendArg::new_raw(
+            "http-absolute-version".to_string(),
+            Some("http:absolute-version".to_string()),
+            "absolute-version".to_string(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let request = ToolRequest::Version {
+            backend,
+            version: version.to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        ToolVersion::new(request, version.to_string())
+    }
+
+    #[test]
+    fn install_symlink_path_uses_sanitized_version_pathname() {
+        let tv = http_test_tv("/outside-root/mise-http-version-out/selected-prefix");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(
+            version_name,
+            "-outside-root-mise-http-version-out-selected-prefix"
+        );
+        assert!(!Path::new(&version_name).is_absolute());
+    }
+
+    #[test]
+    fn latest_install_symlink_still_uses_content_version() {
+        let tv = http_test_tv("latest");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, "abcdef1");
     }
 }
 
