@@ -232,7 +232,12 @@ impl Hook {
                 ignored_shell,
                 ..
             } => {
-                if let Some(s) = select_run_mut(run, run_windows, cfg!(windows)) {
+                let run = if cfg!(windows) {
+                    run_windows.as_mut().or(run.as_mut())
+                } else {
+                    run.as_mut()
+                };
+                if let Some(s) = run {
                     *s = render(s)?;
                     if let Some(s) = shell {
                         *s = render(s)?;
@@ -501,7 +506,12 @@ async fn execute(
             hook_name
         );
     }
-    let Some(run) = select_run(run, run_windows, cfg!(windows)) else {
+    let run = if cfg!(windows) {
+        run_windows.as_deref().or(run.as_deref())
+    } else {
+        run.as_deref()
+    };
+    let Some(run) = run else {
         return Ok(());
     };
     let shell = shell
@@ -579,30 +589,6 @@ async fn execute(
         .full_env(env)
         .run()?;
     Ok(())
-}
-
-fn select_run<'a>(
-    run: &'a Option<String>,
-    run_windows: &'a Option<String>,
-    windows: bool,
-) -> Option<&'a str> {
-    if windows {
-        run_windows.as_deref().or(run.as_deref())
-    } else {
-        run.as_deref()
-    }
-}
-
-fn select_run_mut<'a>(
-    run: &'a mut Option<String>,
-    run_windows: &'a mut Option<String>,
-    windows: bool,
-) -> Option<&'a mut String> {
-    if windows {
-        run_windows.as_mut().or(run.as_mut())
-    } else {
-        run.as_mut()
-    }
 }
 
 async fn execute_task(
@@ -693,38 +679,5 @@ mod tests {
             }
             action => panic!("expected run hook, got {action:?}"),
         }
-    }
-
-    #[test]
-    fn select_run_uses_windows_override_only_on_windows() {
-        let run = Some("echo unix".to_string());
-        let run_windows = Some("echo windows".to_string());
-
-        assert_eq!(select_run(&run, &run_windows, false), Some("echo unix"));
-        assert_eq!(select_run(&run, &run_windows, true), Some("echo windows"));
-    }
-
-    #[test]
-    fn select_run_skips_windows_only_hook_on_unix() {
-        let run = None;
-        let run_windows = Some("echo windows".to_string());
-
-        assert_eq!(select_run(&run, &run_windows, false), None);
-        assert_eq!(select_run(&run, &run_windows, true), Some("echo windows"));
-    }
-
-    #[test]
-    fn select_run_mut_leaves_inactive_windows_template_unrendered() {
-        let mut run = Some("echo unix".to_string());
-        let mut run_windows = Some("{{ exec(command='windows-only') }}".to_string());
-
-        let selected = select_run_mut(&mut run, &mut run_windows, false).unwrap();
-        *selected = "rendered unix".to_string();
-
-        assert_eq!(run.as_deref(), Some("rendered unix"));
-        assert_eq!(
-            run_windows.as_deref(),
-            Some("{{ exec(command='windows-only') }}")
-        );
     }
 }

@@ -53,10 +53,6 @@ On Windows, mise uses `run_windows` when it is set; otherwise it uses `run`. On 
 platforms, a hook with only `run_windows` is skipped.
 
 ```toml
-[settings]
-unix_default_inline_shell_args = "bash -c"
-windows_default_inline_shell_args = "pwsh -Command"
-
 [hooks]
 postinstall = { run = "echo installed", run_windows = "Write-Output installed" }
 ```
