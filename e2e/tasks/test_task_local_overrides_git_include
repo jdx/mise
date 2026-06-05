@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Regression test for #9147: task_config.includes precedence.
+#
+# Includes are loaded in their declared order and the LAST include that
+# defines a given task name wins, uniformly for local and git:: includes.
+# #9147 added an early dedup combined with loading all local includes before
+# all git:: includes, which ignored the declared order and stopped a later
+# local include from overriding a same-named remote task. This test pins down
+# the fixed behavior.
+
+#################################################################################
+# Setup: local git HTTP server serving repo.git with xtasks/lint/ripgrep
+#################################################################################
+
+TMP_BASE="${TMPDIR:-/tmp}"
+PORT_FILE="$TMP_BASE/mise_git_http_port"
+READY_FILE="$TMP_BASE/mise_git_http_ready"
+INFO_FILE="$TMP_BASE/mise_git_http_info"
+
+rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+
+cleanup() {
+  if [ -n "${SERVER_PID:-}" ]; then
+    kill "$SERVER_PID" 2>/dev/null || true
+  fi
+  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+}
+
+MISE_GIT_HTTP_PORT_FILE="$PORT_FILE" \
+  MISE_GIT_HTTP_READY_FILE="$READY_FILE" \
+  MISE_GIT_HTTP_INFO_FILE="$INFO_FILE" \
+  python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
+SERVER_PID=$!
+trap cleanup EXIT
+
+wait_for_server() {
+  local max_attempts=30
+  local attempt=1
+  while [ $attempt -le $max_attempts ]; do
+    if [ -f "$READY_FILE" ] && [ -f "$PORT_FILE" ]; then
+      return 0
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+  echo "ERROR: Git HTTP server failed to start within 30 seconds"
+  kill "$SERVER_PID" 2>/dev/null || true
+  exit 1
+}
+
+wait_for_server
+
+SERVER_PORT=$(cat "$PORT_FILE")
+LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
+
+git init
+
+# The remote repo's ripgrep task prints "ripgrep task executed".
+# Create a local task of the same name that prints something distinct.
+mkdir -p .mise/tasks
+cat <<'EOF' >.mise/tasks/ripgrep
+#!/usr/bin/env bash
+echo "local ripgrep wins"
+EOF
+chmod +x .mise/tasks/ripgrep
+
+#################################################################################
+# Local include listed LAST -> the local task wins over the remote one.
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "git::${LOCAL_GIT_URL}//xtasks/lint",
+    ".mise/tasks",
+]
+EOF
+
+assert "mise run ripgrep" "local ripgrep wins"
+assert_contains "mise tasks info ripgrep" ".mise/tasks/ripgrep"
+
+mise cache clear
+
+#################################################################################
+# git include listed LAST -> the remote task wins (order is respected).
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    ".mise/tasks",
+    "git::${LOCAL_GIT_URL}//xtasks/lint",
+]
+EOF
+
+assert "mise run ripgrep" "ripgrep task executed"
+
+mise cache clear
+
+#################################################################################
+# Two local includes: the LAST one defining the name wins.
+#################################################################################
+
+mkdir -p first second
+cat <<'EOF' >first/greet
+#!/usr/bin/env bash
+echo "first loses"
+EOF
+cat <<'EOF' >second/greet
+#!/usr/bin/env bash
+echo "second wins"
+EOF
+chmod +x first/greet second/greet
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "first",
+    "second",
+]
+EOF
+
+assert "mise run greet" "second wins"
+
+echo "All tests passed!"

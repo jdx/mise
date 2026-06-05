@@ -33,7 +33,7 @@ export PATH="$MISE_SYSTEM_DATA_DIR/shims:$PATH"
 # _list_remote_versions runs `npm view ... --json` and the only `npm` on
 # PATH is the system shim we just planted. Use a real-but-uninstalled node
 # version (matches the pattern in test_go_shim_recursion using
-# `go = "1.23.3"`) — picking a non-existent version like `99.0.0` would risk
+# `go = "1.23.3"`) — picking a nonexistent version like `99.0.0` would risk
 # `mise ls` failing on version resolution and masking a fork-bomb regression.
 cat >>mise.toml <<'EOF'
 [tools]

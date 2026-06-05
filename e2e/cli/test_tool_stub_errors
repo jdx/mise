@@ -78,7 +78,7 @@ fi
 # Clean up
 rm test_bin_path
 
-# Test 4: Actual tool not found (non-existent tool)
+# Test 4: Actual tool not found (nonexistent tool)
 cat >test_tool_notfound <<'EOF'
 #!/usr/bin/env -S mise tool-stub
 tool = "nonexistent-tool-that-doesnt-exist"
@@ -86,7 +86,7 @@ EOF
 chmod +x test_tool_notfound
 
 output=$(mise tool-stub ./test_tool_notfound 2>&1 || true)
-# The error for non-existent tools shows up as a toolset resolution error
+# The error for nonexistent tools shows up as a toolset resolution error
 if [[ $output == *"No current versions found after resolving toolset"* ]]; then
   echo "✓ Test 4 passed: Non-existent tool error handled correctly"
 else

@@ -10,7 +10,7 @@ For non-interactive setups, consider using shims instead which will route calls 
 directory by looking at `PWD` every time they're executed. You can also call `mise exec` instead of
 expecting things to be directly on PATH. You can also run `mise env` in a non-interactive shell,
 however that
-will only setup the global tools. It won't modify the environment variables when entering into a
+will only set up the global tools. It won't modify the environment variables when entering into a
 different project.
 
 ::: warning
@@ -204,8 +204,12 @@ the intended one is used:
 $env:MISE_BASH_PATH = "C:\cygwin64\bin\bash.exe"
 ```
 
-If you changed the `cygdrive` prefix in `/etc/fstab` (the default is `/cygdrive`),
-set `MISE_CYGDRIVE_PREFIX` to match — mise does not read `/etc/fstab`:
+#### Custom `cygdrive` mount root (Cygwin **and** Git Bash / MSYS2)
+
+The `cygdrive` automount mechanism is shared by Cygwin and MSYS2 / Git Bash — both let
+you change the mount root in `/etc/fstab` (Cygwin's default is `/cygdrive`, Git Bash /
+MSYS2's is `/`, i.e. `/c/...`). mise does not read `/etc/fstab`, so if you changed it,
+set `MISE_CYGDRIVE_PREFIX` to match — this works for **either** shell:
 
 ```powershell
 # e.g. for an fstab that mounts drives under /mnt
@@ -213,7 +217,8 @@ $env:MISE_CYGDRIVE_PREFIX = "/mnt"
 ```
 
 The prefix must be absolute (start with `/`); a relative value like `mnt` is rejected
-with a warning and the default `/cygdrive` is used instead.
+with a warning and the shell's default is used instead. `MISE_CYGDRIVE_PREFIX=/`
+collapses to the Git Bash `/c/...` form.
 
 ## mise isn't working when calling from tmux or another shell initialization script
 

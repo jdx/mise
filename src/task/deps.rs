@@ -19,7 +19,7 @@ pub type TaskKey = (String, Vec<String>, Vec<(String, String)>);
 pub struct Deps {
     pub graph: DiGraph<Task, ()>,
     sent: HashSet<TaskKey>, // tasks that have already started so should not run again
-    removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinitve loop
+    removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinite loop
     executed: HashSet<TaskKey>, // tasks that actually began executing (not just scheduled)
     ran: HashSet<TaskKey>, // tasks that actually ran their commands (not skipped due to fresh sources)
     dep_edges: HashMap<TaskKey, HashSet<TaskKey>>, // maps each task to its direct dependency task keys

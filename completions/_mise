@@ -23,15 +23,19 @@ _mise() {
       return 1
   fi
 
-  local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2026_5_17.spec"
+  local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2026_6_0.spec"
   if [[ ! -f "$spec_file" ]]; then
     mise usage >| "$spec_file"
   fi
-  local -a completions=()
-  while IFS= read -r line; do
-    completions+=("$line")
-  done < <(command usage complete-word --shell zsh -f "$spec_file" -- "${words[@]}")
-  _describe 'completions' completions -S ''
+  local -a completions=() inserts=()
+  local needs_menu=0 display insert
+  while IFS=$'\t' read -r display insert; do
+    completions+=("$display")
+    inserts+=("$insert")
+    [[ "$insert" == "'"* ]] && needs_menu=1
+  done < <(command usage complete-word --shell zsh -f "$spec_file" -- "${(Q)words[@]}")
+  (( needs_menu )) && compstate[insert]=menu
+  _describe 'completions' completions inserts -U -Q -S ''
   return 0
 }
 

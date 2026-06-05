@@ -1,7 +1,8 @@
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::{BackendOptions, bool_value};
+use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -16,6 +17,7 @@ use eyre::{WrapErr, bail};
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::de::{MapAccess, Visitor};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::{
     fmt::{self, Debug},
@@ -45,33 +47,74 @@ impl<'a> SpmOptions<'a> {
         }
     }
 
-    fn provider(&self) -> &'a str {
-        self.values
-            .str("provider")
-            .unwrap_or(GitProviderKind::GitHub.as_ref())
+    /// Resolves an SPM option for either install-time host use or lockfile target use.
+    ///
+    /// Lockfiles can be generated for platforms other than the current host, so callers
+    /// that are building lock identity must not fall back to the host-specific option.
+    fn option_string(&self, key: &str, target: Option<&PlatformTarget>) -> Option<String> {
+        match target {
+            Some(target) => self.values.platform_string_for_target(key, target),
+            None => self.values.platform_string(key),
+        }
     }
 
-    fn api_url(&self) -> Option<&'a str> {
-        self.values.str("api_url")
+    fn provider(&self, target: Option<&PlatformTarget>) -> String {
+        self.option_string("provider", target)
+            .map(|provider| provider.to_lowercase())
+            .unwrap_or_else(|| GitProviderKind::GitHub.as_ref().to_string())
     }
 
-    fn artifactbundle_asset(&self) -> Option<&'a str> {
-        self.values.str("artifactbundle_asset")
+    fn api_url(&self, target: Option<&PlatformTarget>) -> Option<String> {
+        self.option_string("api_url", target)
+            .map(|api_url| api_url.trim_end_matches('/').to_string())
     }
 
-    fn artifactbundle_mode(&self) -> ArtifactBundleMode {
-        let Some(value) = self.values.raw().opts.get("artifactbundle") else {
-            return ArtifactBundleMode::Auto;
+    fn artifactbundle_asset(&self, target: Option<&PlatformTarget>) -> Option<String> {
+        self.option_string("artifactbundle_asset", target)
+    }
+
+    fn artifactbundle_mode(
+        &self,
+        target: Option<&PlatformTarget>,
+    ) -> eyre::Result<ArtifactBundleMode> {
+        let Some(value) = self.option_string("artifactbundle", target) else {
+            return Ok(ArtifactBundleMode::Auto);
         };
-        match bool_value("artifactbundle", value) {
-            Some(true) => ArtifactBundleMode::Required,
-            Some(false) => ArtifactBundleMode::SourceOnly,
-            None => ArtifactBundleMode::Auto,
+        if is_truthy(&value) {
+            Ok(ArtifactBundleMode::Required)
+        } else if is_falsey(&value) {
+            Ok(ArtifactBundleMode::SourceOnly)
+        } else {
+            bail!("artifactbundle must be true, false, 1, or 0, got {value}");
         }
     }
 
     fn requires_artifactbundle(&self, mode: ArtifactBundleMode) -> bool {
-        mode.requires_artifactbundle() || self.artifactbundle_asset().is_some()
+        mode.requires_artifactbundle() || self.artifactbundle_asset(None).is_some()
+    }
+
+    fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        let provider = self.provider(Some(target));
+        if provider != GitProviderKind::GitHub.as_ref() {
+            opts.insert("provider".to_string(), provider);
+        }
+        if let Some(api_url) = self.api_url(Some(target)) {
+            opts.insert("api_url".to_string(), api_url);
+        }
+        match self.artifactbundle_mode(Some(target)) {
+            Ok(ArtifactBundleMode::Required) => {
+                opts.insert("artifactbundle".to_string(), "true".to_string());
+            }
+            Ok(ArtifactBundleMode::SourceOnly) => {
+                opts.insert("artifactbundle".to_string(), "false".to_string());
+            }
+            Ok(ArtifactBundleMode::Auto) | Err(_) => {}
+        }
+        if let Some(asset) = self.artifactbundle_asset(Some(target)) {
+            opts.insert("artifactbundle_asset".to_string(), asset);
+        }
+        opts
     }
 
     fn filter_bins(&self) -> Option<Vec<String>> {
@@ -113,6 +156,15 @@ impl Backend for SPMBackend {
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
         &["provider", "api_url", "artifactbundle_asset"]
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &crate::toolset::ToolRequest,
+        target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let raw_opts = request.options();
+        SpmOptions::new(&raw_opts).lockfile_options(target)
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -179,7 +231,7 @@ impl Backend for SPMBackend {
             tv.version.clone()
         };
 
-        let artifactbundle_mode = opts.artifactbundle_mode();
+        let artifactbundle_mode = opts.artifactbundle_mode(None)?;
         if artifactbundle_mode == ArtifactBundleMode::SourceOnly
             && Settings::get().spm.artifactbundle_only
         {
@@ -219,6 +271,16 @@ impl Backend for SPMBackend {
 
         Ok(tv)
     }
+}
+
+pub fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "provider".into(),
+        "api_url".into(),
+        "artifactbundle".into(),
+        "artifactbundle_asset".into(),
+        "filter_bins".into(),
+    ]
 }
 
 impl SPMBackend {
@@ -522,7 +584,7 @@ impl GitProvider {
     }
 
     fn from_ba_with_opts(ba: &BackendArg, opts: &SpmOptions<'_>) -> Self {
-        let provider = opts.provider();
+        let provider = opts.provider(None);
         let kind = if ba.tool_name.contains("gitlab.com") {
             GitProviderKind::GitLab
         } else {
@@ -532,8 +594,8 @@ impl GitProvider {
             }
         };
 
-        let api_url = match opts.api_url() {
-            Some(api_url) => api_url.trim_end_matches('/').to_string(),
+        let api_url = match opts.api_url(None) {
+            Some(api_url) => api_url,
             None => {
                 Self::derive_api_url_from_tool_name(&ba.tool_name, &kind).unwrap_or_else(|| {
                     match kind {
@@ -698,9 +760,9 @@ fn select_artifactbundle_asset(
     assets: Vec<ArtifactBundleReleaseAsset>,
     opts: &SpmOptions<'_>,
 ) -> eyre::Result<Option<ArtifactBundleReleaseAsset>> {
-    let artifactbundle_asset = opts.artifactbundle_asset();
+    let artifactbundle_asset = opts.artifactbundle_asset(None);
     if let Some(name) = artifactbundle_asset {
-        if !is_artifactbundle_zip(name) {
+        if !is_artifactbundle_zip(&name) {
             bail!("artifactbundle_asset must end with .artifactbundle.zip, got {name}");
         }
         return assets
@@ -1071,6 +1133,115 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_lockfile_options_include_artifact_inputs_not_filter_bins() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "provider".to_string(),
+            toml::Value::String("GitLab".to_string()),
+        );
+        opts.opts.insert(
+            "api_url".to_string(),
+            toml::Value::String("https://gitlab.example.com/api/v4/".to_string()),
+        );
+        opts.opts
+            .insert("artifactbundle".to_string(), toml::Value::Boolean(true));
+        opts.opts.insert(
+            "artifactbundle_asset".to_string(),
+            toml::Value::String("tool.artifactbundle.zip".to_string()),
+        );
+        opts.opts.insert(
+            "filter_bins".to_string(),
+            toml::Value::String("tool".to_string()),
+        );
+
+        assert_eq!(
+            SpmOptions::new(&opts).lockfile_options(&PlatformTarget::from_current()),
+            BTreeMap::from([
+                (
+                    "api_url".to_string(),
+                    "https://gitlab.example.com/api/v4".to_string()
+                ),
+                ("artifactbundle".to_string(), "true".to_string()),
+                (
+                    "artifactbundle_asset".to_string(),
+                    "tool.artifactbundle.zip".to_string()
+                ),
+                ("provider".to_string(), "gitlab".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_lockfile_options_use_target_platform_artifact_inputs() {
+        let mut opts = ToolVersionOptions::default();
+        let mut platforms = toml::Table::new();
+        let mut linux = toml::Table::new();
+        let mut windows = toml::Table::new();
+        linux.insert(
+            "artifactbundle_asset".to_string(),
+            toml::Value::String("linux.artifactbundle.zip".to_string()),
+        );
+        windows.insert(
+            "artifactbundle_asset".to_string(),
+            toml::Value::String("windows.artifactbundle.zip".to_string()),
+        );
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(linux));
+        platforms.insert("windows-x64".to_string(), toml::Value::Table(windows));
+        opts.opts
+            .insert("platforms".to_string(), toml::Value::Table(platforms));
+
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let windows = PlatformTarget::new(crate::platform::Platform::parse("windows-x64").unwrap());
+
+        assert_eq!(
+            SpmOptions::new(&opts).lockfile_options(&linux),
+            BTreeMap::from([(
+                "artifactbundle_asset".to_string(),
+                "linux.artifactbundle.zip".to_string()
+            )])
+        );
+        assert_eq!(
+            SpmOptions::new(&opts).lockfile_options(&windows),
+            BTreeMap::from([(
+                "artifactbundle_asset".to_string(),
+                "windows.artifactbundle.zip".to_string()
+            )])
+        );
+
+        let mut current_host_only_opts = ToolVersionOptions::default();
+        let mut platforms = toml::Table::new();
+        let mut linux = toml::Table::new();
+        linux.insert(
+            "artifactbundle_asset".to_string(),
+            toml::Value::String("linux.artifactbundle.zip".to_string()),
+        );
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(linux));
+        current_host_only_opts
+            .opts
+            .insert("platforms".to_string(), toml::Value::Table(platforms));
+
+        assert!(
+            SpmOptions::new(&current_host_only_opts)
+                .lockfile_options(&windows)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_install_time_options_include_layout_and_artifact_inputs() {
+        assert_eq!(
+            install_time_option_keys(),
+            vec![
+                "provider".to_string(),
+                "api_url".to_string(),
+                "artifactbundle".to_string(),
+                "artifactbundle_asset".to_string(),
+                "filter_bins".to_string(),
+            ]
+        );
+    }
+
     fn release_asset(name: &str) -> ArtifactBundleReleaseAsset {
         ArtifactBundleReleaseAsset {
             name: name.to_string(),
@@ -1096,52 +1267,68 @@ mod tests {
     fn test_resolve_artifactbundle_mode() {
         let default_opts = ToolVersionOptions::default();
         assert_eq!(
-            SpmOptions::new(&default_opts).artifactbundle_mode(),
+            SpmOptions::new(&default_opts)
+                .artifactbundle_mode(None)
+                .unwrap(),
             ArtifactBundleMode::Auto
         );
         let required_opts = opts_with("artifactbundle", toml::Value::Boolean(true));
         assert_eq!(
-            SpmOptions::new(&required_opts).artifactbundle_mode(),
+            SpmOptions::new(&required_opts)
+                .artifactbundle_mode(None)
+                .unwrap(),
             ArtifactBundleMode::Required
         );
         let source_only_opts = opts_with("artifactbundle", toml::Value::Boolean(false));
         assert_eq!(
-            SpmOptions::new(&source_only_opts).artifactbundle_mode(),
+            SpmOptions::new(&source_only_opts)
+                .artifactbundle_mode(None)
+                .unwrap(),
             ArtifactBundleMode::SourceOnly
         );
         let required_opts = opts_with("artifactbundle", toml::Value::String("TRUE".to_string()));
         assert_eq!(
-            SpmOptions::new(&required_opts).artifactbundle_mode(),
+            SpmOptions::new(&required_opts)
+                .artifactbundle_mode(None)
+                .unwrap(),
             ArtifactBundleMode::Required
         );
         let required_opts = opts_with("artifactbundle", toml::Value::String("1".to_string()));
         assert_eq!(
-            SpmOptions::new(&required_opts).artifactbundle_mode(),
+            SpmOptions::new(&required_opts)
+                .artifactbundle_mode(None)
+                .unwrap(),
             ArtifactBundleMode::Required
         );
         let source_only_opts =
             opts_with("artifactbundle", toml::Value::String("FALSE".to_string()));
         assert_eq!(
-            SpmOptions::new(&source_only_opts).artifactbundle_mode(),
+            SpmOptions::new(&source_only_opts)
+                .artifactbundle_mode(None)
+                .unwrap(),
             ArtifactBundleMode::SourceOnly
         );
         let source_only_opts = opts_with("artifactbundle", toml::Value::String("0".to_string()));
         assert_eq!(
-            SpmOptions::new(&source_only_opts).artifactbundle_mode(),
+            SpmOptions::new(&source_only_opts)
+                .artifactbundle_mode(None)
+                .unwrap(),
             ArtifactBundleMode::SourceOnly
         );
         let invalid_opts = opts_with("artifactbundle", toml::Value::String("00".to_string()));
-        assert_eq!(
-            SpmOptions::new(&invalid_opts).artifactbundle_mode(),
-            ArtifactBundleMode::Auto
+        assert!(
+            SpmOptions::new(&invalid_opts)
+                .artifactbundle_mode(None)
+                .is_err()
         );
         let invalid_opts = opts_with(
             "artifactbundle",
             toml::Value::String("sometimes".to_string()),
         );
-        assert_eq!(
-            SpmOptions::new(&invalid_opts).artifactbundle_mode(),
-            ArtifactBundleMode::Auto
+        assert!(
+            SpmOptions::new(&invalid_opts)
+                .artifactbundle_mode(None)
+                .is_err()
         );
     }
 

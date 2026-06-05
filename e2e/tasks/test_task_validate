@@ -33,10 +33,10 @@ run = "echo valid"
 
 [tasks.invalid]
 run = "echo invalid"
-depends = ["non-existent"]
+depends = ["nonexistent"]
 EOF
 
-assert_contains "mise tasks validate 2>&1 || true" "Dependency 'non-existent' not found"
+assert_contains "mise tasks validate 2>&1 || true" "Dependency 'nonexistent' not found"
 assert_contains "mise tasks validate 2>&1 || true" "missing-dependency"
 
 # Test invalid timeout

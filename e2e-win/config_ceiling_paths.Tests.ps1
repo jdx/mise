@@ -75,7 +75,7 @@ GRANDCHILD = "true"
         $output | Should -Not -Match "export PARENT=true"
     }
 
-    It 'handles non-existent ceiling path' {
+    It 'handles nonexistent ceiling path' {
         $env:MISE_CEILING_PATHS = Join-Path $TestRoot "nonexistent"
         $output = mise env | Out-String
         $output | Should -Match "export GRANDCHILD=true"

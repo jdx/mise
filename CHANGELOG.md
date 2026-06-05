@@ -1,5 +1,64 @@
 # Changelog
 
+## [2026.6.0](https://github.com/jdx/mise/compare/v2026.5.18..v2026.6.0) - 2026-06-03
+
+### 🚀 Features
+
+- **(npm)** ensure npm is managed by corepack when node.corepack=true and node.npm_shim=false by @roele in [#10196](https://github.com/jdx/mise/pull/10196)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** mirror aqua windows extension semantics by @risu729 in [#10167](https://github.com/jdx/mise/pull/10167)
+- **(bun)** improve musl detection logic using runtime detection by @roele in [#10195](https://github.com/jdx/mise/pull/10195)
+- **(completion)** rely on usage#649 for global flags, keep -r/-S promotion by @JamBalaya56562 in [#10176](https://github.com/jdx/mise/pull/10176)
+- **(spm)** track artifact bundle options in lock identity by @risu729 in [#10160](https://github.com/jdx/mise/pull/10160)
+- **(task)** honor task_config.includes order so a local task can override a git::include by @vmaleze in [#10191](https://github.com/jdx/mise/pull/10191)
+- **(task)** honor MISE_CYGDRIVE_PREFIX for Git Bash, not only Cygwin by @JamBalaya56562 in [#10190](https://github.com/jdx/mise/pull/10190)
+
+### 📚 Documentation
+
+- Fix example syntax for choice function in templates by @joekrill in [#10197](https://github.com/jdx/mise/pull/10197)
+- add sponsor footer by @jdx in [#10182](https://github.com/jdx/mise/pull/10182)
+
+### New Contributors
+
+- @joekrill made their first contribution in [#10197](https://github.com/jdx/mise/pull/10197)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`cliwright/whoiam`](https://github.com/cliwright/whoiam)
+- [`google-antigravity/antigravity-cli`](https://github.com/google-antigravity/antigravity-cli)
+- [`tidewave-ai/tidewave_app`](https://github.com/tidewave-ai/tidewave_app)
+
+#### Updated Packages (1)
+
+- [`endevco/aube`](https://github.com/endevco/aube)
+
+## [2026.5.18](https://github.com/jdx/mise/compare/v2026.5.17..v2026.5.18) - 2026-05-31
+
+### 🚀 Features
+
+- **(config)** add script arrays for hooks by @risu729 in [#9836](https://github.com/jdx/mise/pull/9836)
+
+### 🐛 Bug Fixes
+
+- **(conda)** include channel in lock identity by @risu729 in [#9984](https://github.com/jdx/mise/pull/9984)
+- **(config)** honor ceiling paths during miserc discovery by @risu729 in [#10165](https://github.com/jdx/mise/pull/10165)
+- **(env)** drop stale install paths during reactivation by @risu729 in [#10162](https://github.com/jdx/mise/pull/10162)
+- **(github)** include target artifact options in lock identity by @risu729 in [#9985](https://github.com/jdx/mise/pull/9985)
+- **(installer)** add missing warn helper by @risu729 in [#10157](https://github.com/jdx/mise/pull/10157)
+- **(python)** include sysconfig patch option in lock identity by @risu729 in [#10161](https://github.com/jdx/mise/pull/10161)
+- **(rust)** include toolchain install options in lock identity by @risu729 in [#9988](https://github.com/jdx/mise/pull/9988)
+- **(task)** include task refs in json run output by @risu729 in [#10163](https://github.com/jdx/mise/pull/10163)
+- **(task)** bump usage for completions by @jdx in [#10181](https://github.com/jdx/mise/pull/10181)
+
+### Chore
+
+- **(ci)** revert switch back to github-hosted runners by @jdx in [#10184](https://github.com/jdx/mise/pull/10184)
+- **(npm)** publish mise package by @jdx in [#10183](https://github.com/jdx/mise/pull/10183)
+
 ## [2026.5.17](https://github.com/jdx/mise/compare/v2026.5.16..v2026.5.17) - 2026-05-31
 
 ### 🚀 Features

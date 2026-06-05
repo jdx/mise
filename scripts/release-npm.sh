@@ -8,6 +8,9 @@ error() {
 
 mkdir -p "$RELEASE_DIR/npm"
 
+NPM_PLATFORM_PREFIX="${NPM_PLATFORM_PREFIX:-$NPM_PREFIX}"
+PUBLISH_PLATFORM_PACKAGES="${PUBLISH_PLATFORM_PACKAGES:-1}"
+
 dist_tag_from_version() {
 	IFS="-" read -r -a version_split <<<"$1"
 	IFS="." read -r -a version_split <<<"${version_split[1]:-latest}"
@@ -15,31 +18,32 @@ dist_tag_from_version() {
 }
 dist_tag="$(dist_tag_from_version "$MISE_VERSION")"
 
-platforms=(
-	linux-x64
-	linux-arm64
-	linux-armv7
-	macos-x64
-	macos-arm64
-)
-for platform in "${platforms[@]}"; do
-	# shellcheck disable=SC2206
-	platform_split=(${platform//-/ })
-	os="${platform_split[0]}"
-	arch="${platform_split[1]}"
+if [ "$PUBLISH_PLATFORM_PACKAGES" != "0" ]; then
+	platforms=(
+		linux-x64
+		linux-arm64
+		linux-armv7
+		macos-x64
+		macos-arm64
+	)
+	for platform in "${platforms[@]}"; do
+		# shellcheck disable=SC2206
+		platform_split=(${platform//-/ })
+		os="${platform_split[0]}"
+		arch="${platform_split[1]}"
 
-	if [[ $os == "macos" ]]; then
-		os="darwin"
-	fi
+		if [[ $os == "macos" ]]; then
+			os="darwin"
+		fi
 
-	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
-	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
-	tar -xzvf "$RELEASE_DIR/mise-latest-$platform.tar.gz" -C "$RELEASE_DIR"
-	rm -rf "$RELEASE_DIR/npm"
-	mv "$RELEASE_DIR/mise" "$RELEASE_DIR/npm"
-	cat <<EOF >"$RELEASE_DIR/npm/package.json"
+		cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
+		cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
+		tar -xzvf "$RELEASE_DIR/mise-latest-$platform.tar.gz" -C "$RELEASE_DIR"
+		rm -rf "$RELEASE_DIR/npm"
+		mv "$RELEASE_DIR/mise" "$RELEASE_DIR/npm"
+		cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
-  "name": "$NPM_PREFIX-$os-$arch",
+  "name": "$NPM_PLATFORM_PREFIX-$os-$arch",
   "version": "$MISE_VERSION",
   "description": "Dev tools, env vars, and tasks in one CLI",
   "bin": {
@@ -58,25 +62,31 @@ for platform in "${platforms[@]}"; do
   "cpu": "$arch"
 }
 EOF
-	pushd "$RELEASE_DIR/npm"
-	tree || true
-	aube_publish_args=(--access public --tag "$dist_tag" --provenance --no-git-checks)
-	if [ "${DRY_RUN:-1}" != "0" ]; then
-		echo DRY_RUN
-		echo aube publish "${aube_publish_args[@]}"
-		echo DRY_RUN
-	else
-		if ! aube publish "${aube_publish_args[@]}" 2>&1 | tee /tmp/npm-publish.log; then
-			if grep -qE "already (on|published)|previously published" /tmp/npm-publish.log; then
-				echo "Version already published, skipping..."
-			else
-				cat /tmp/npm-publish.log
-				exit 1
+		pushd "$RELEASE_DIR/npm"
+		tree || true
+		aube_publish_args=(--access public --tag "$dist_tag" --provenance --no-git-checks)
+		if [ "${DRY_RUN:-1}" != "0" ]; then
+			echo DRY_RUN
+			echo aube publish "${aube_publish_args[@]}"
+			echo DRY_RUN
+		else
+			if ! aube publish "${aube_publish_args[@]}" 2>&1 | tee /tmp/npm-publish.log; then
+				if grep -qE "already (on|published)|previously published" /tmp/npm-publish.log; then
+					echo "Version already published, skipping..."
+				else
+					cat /tmp/npm-publish.log
+					exit 1
+				fi
 			fi
 		fi
-	fi
-	popd
-done
+		popd
+	done
+else
+	rm -rf "$RELEASE_DIR/npm"
+	mkdir -p "$RELEASE_DIR/npm"
+fi
+
+cp README.md "$RELEASE_DIR/npm/README.md"
 
 cat <<EOF >"$RELEASE_DIR/npm/installArchSpecificPackage.js"
 var spawn = require('child_process').spawn;
@@ -90,13 +100,13 @@ function installArchSpecificPackage(version) {
     var platform = process.platform == 'win32' ? 'windows' : process.platform;
     var arch = platform == 'windows' && process.arch == 'ia32' ? 'x86' : process.arch;
 
-    var cp = spawn(platform == 'windows' ? 'npm.cmd' : 'npm', ['install', '--no-save', ['$NPM_PREFIX', platform, arch].join('-') + '@' + version], {
+    var cp = spawn(platform == 'windows' ? 'npm.cmd' : 'npm', ['install', '--no-save', ['$NPM_PLATFORM_PREFIX', platform, arch].join('-') + '@' + version], {
         stdio: 'inherit',
         shell: true
     });
 
     cp.on('close', function(code) {
-        var pkgJson = require.resolve(['$NPM_PREFIX', platform, arch].join('-') + '/package.json');
+        var pkgJson = require.resolve(['$NPM_PLATFORM_PREFIX', platform, arch].join('-') + '/package.json');
         var subpkg = JSON.parse(fs.readFileSync(pkgJson, 'utf8'));
         var executable = subpkg.bin.mise;
         var bin = path.resolve(path.dirname(pkgJson), executable);

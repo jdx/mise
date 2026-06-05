@@ -561,7 +561,7 @@ async fn get_desired_shims(
                 }
             }));
         } else if cfg!(macos) {
-            // some bins might be uppercased but on mac APFS is case insensitive
+            // some bins might be uppercased but on mac APFS is case-insensitive
             shims.extend(bins.into_iter().map(|b| b.to_lowercase()));
         } else {
             shims.extend(bins);

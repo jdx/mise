@@ -13,7 +13,7 @@ assert "mise generate bootstrap -l -w"
 # shellcheck disable=SC2016
 assert_contains "cat ./bin/mise" 'exec -a "$0" "$MISE_INSTALL_PATH" "$@"'
 
-# ensure that that the commands don't rely on the global mise bin
+# ensure that the commands don't rely on the global mise bin
 original_mise="$(which mise)"
 mise_dir="$(dirname "$original_mise")"
 OLD_PATH="$PATH"

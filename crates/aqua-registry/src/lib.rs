@@ -8,6 +8,7 @@
 mod cache;
 mod codec;
 mod compiled;
+mod file_ext;
 mod template;
 pub mod types;
 

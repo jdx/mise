@@ -43,12 +43,12 @@ env:
 jobs:
   docs:
     if: github.repository == 'jdx/mise'
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0 # for lastUpdated
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
         with:
           install_args: bun
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit

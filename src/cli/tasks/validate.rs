@@ -722,7 +722,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 The validate command performs the following checks:
 
   • <bold>Circular Dependencies</bold>: Detects dependency cycles
-  • <bold>Missing References</bold>: Finds references to non-existent tasks
+  • <bold>Missing References</bold>: Finds references to nonexistent tasks
   • <bold>Usage Spec Parsing</bold>: Validates #USAGE directives and specs
   • <bold>Timeout Format</bold>: Checks timeout values are valid durations
   • <bold>Alias Conflicts</bold>: Detects duplicate aliases across tasks
