@@ -1,4 +1,3 @@
-use std::fmt;
 use versions::Versioning;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MinVersionSpec {
@@ -15,11 +14,11 @@ impl MinVersionSpec {
         }
     }
 
-    pub fn hard(&self) -> Option<&Versioning> {
+    fn hard(&self) -> Option<&Versioning> {
         self.hard.as_ref()
     }
 
-    pub fn soft(&self) -> Option<&Versioning> {
+    fn soft(&self) -> Option<&Versioning> {
         self.soft.as_ref()
     }
 
@@ -29,16 +28,5 @@ impl MinVersionSpec {
 
     pub fn soft_violation(&self, current: &Versioning) -> Option<&Versioning> {
         self.soft().filter(|recommended| current < *recommended)
-    }
-}
-
-impl fmt::Display for MinVersionSpec {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match (self.hard.as_ref(), self.soft.as_ref()) {
-            (Some(h), None) => write!(f, "{}", h),
-            (None, Some(s)) => write!(f, "{}", s),
-            (Some(h), Some(s)) => write!(f, "hard={}, soft={}", h, s),
-            (None, None) => write!(f, ""),
-        }
     }
 }

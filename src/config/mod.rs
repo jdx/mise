@@ -297,23 +297,6 @@ impl Config {
             .await
     }
 
-    pub async fn get_tool_opts(
-        self: &Arc<Self>,
-        backend_arg: &Arc<BackendArg>,
-    ) -> Result<Option<ToolOptions>> {
-        let trs = self.get_tool_request_set().await?;
-        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
-        let tool_request = short_match.or_else(|| {
-            if !self.has_tool_alias(&backend_arg.short) {
-                return None;
-            }
-
-            let resolved_ba = BackendArg::new(backend_arg.full(), None);
-            trs.iter().find(|tr| tr.0.short == resolved_ba.short)
-        });
-        Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
-    }
-
     fn has_tool_alias(&self, short: &str) -> bool {
         self.all_aliases
             .get(short)
@@ -335,7 +318,17 @@ impl Config {
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
     ) -> Result<ResolvedToolOptions> {
-        let config_opts = self.get_tool_opts(backend_arg).await?;
+        let trs = self.get_tool_request_set().await?;
+        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
+        let tool_request = short_match.or_else(|| {
+            if !self.has_tool_alias(&backend_arg.short) {
+                return None;
+            }
+
+            let resolved_ba = BackendArg::new(backend_arg.full(), None);
+            trs.iter().find(|tr| tr.0.short == resolved_ba.short)
+        });
+        let config_opts = tool_request.and_then(|tr| tr.1.first().map(|req| req.options()));
         let alias_opts = self.get_backend_alias_opts(backend_arg);
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);

@@ -16,15 +16,6 @@ pub struct IdiomaticVersionFile {
 }
 
 impl IdiomaticVersionFile {
-    #[allow(dead_code)]
-    #[cfg(test)]
-    pub fn init(path: PathBuf) -> Self {
-        Self {
-            path,
-            tools: ToolRequestSet::new(),
-        }
-    }
-
     pub async fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
         let source = ToolSource::IdiomaticVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();

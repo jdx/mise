@@ -52,12 +52,6 @@ impl Redactor {
         Self::new(patterns)
     }
 
-    /// Returns the patterns being redacted.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn patterns(&self) -> &IndexSet<String> {
-        &self.patterns
-    }
-
     /// Returns the patterns as an Arc for efficient sharing.
     pub fn patterns_arc(&self) -> Arc<IndexSet<String>> {
         Arc::clone(&self.patterns)
@@ -138,7 +132,7 @@ mod tests {
     #[test]
     fn test_empty_patterns_filtered() {
         let r = Redactor::new(["".to_string(), "secret".to_string(), "".to_string()]);
-        assert_eq!(r.patterns().len(), 1);
+        assert_eq!(r.patterns_arc().len(), 1);
         assert_eq!(r.redact("my secret"), "my [redacted]");
     }
 }
