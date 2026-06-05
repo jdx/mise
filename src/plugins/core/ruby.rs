@@ -1019,13 +1019,16 @@ impl Backend for RubyPlugin {
     fn resolve_lockfile_options(
         &self,
         _request: &ToolRequest,
-        _target: &PlatformTarget,
+        target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
+        if target.os_name() == "windows" {
+            return BTreeMap::new();
+        }
+
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
         let ruby = &settings.ruby;
-        let try_precompiled =
-            ruby.compile == Some(false) || (settings.experimental && ruby.compile.is_none());
+        let try_precompiled = self.should_try_precompiled();
 
         opts.insert("compile".to_string(), (!try_precompiled).to_string());
 
@@ -1392,6 +1395,23 @@ mod tests {
                 ("ruby_install".to_string(), "false".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_skip_build_inputs_for_windows_targets() {
+        let opts = resolve_ruby_lockfile_options_for_target(
+            |settings| {
+                settings.ruby.compile = Some(false);
+                settings.ruby.ruby_build_opts = Some("--enable-yjit".to_string());
+                settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+                settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+                settings.ruby.precompiled_arch = Some("arm64".to_string());
+                settings.ruby.precompiled_os = Some("linux".to_string());
+            },
+            PlatformTarget::new(Platform::parse("windows-x64").unwrap()),
+        );
+
+        assert_eq!(opts, BTreeMap::new());
     }
 
     #[test]
