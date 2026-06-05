@@ -537,7 +537,7 @@ It's a useful command to get the current state of your tools."#
         arg "<PLUGIN_FLAG>"
     }
     flag "-c --current" help="Only show tool versions currently specified in a .tool-versions/.mise.toml"
-    flag "-g --global" help="Only show tool versions currently specified in a the global .tool-versions/.mise.toml"
+    flag "-g --global" help="Only show tool versions currently specified in the global .tool-versions/.mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)"
     flag "--parseable" help="Output in an easily parseable format" hide=true
     flag "-J --json" help="Output in JSON format"
@@ -606,7 +606,7 @@ cmd "plugins" help="Manage plugins" {
         alias "i" "a" "add"
         long_help r"Install a plugin
 
-note that mise automatically can install plugins when you install a tool
+note that mise can automatically install plugins when you install a tool
 e.g.: `mise install node@20` will autoinstall the node plugin
 
 This behavior can be modified in ~/.config/mise/config.toml"
@@ -724,7 +724,7 @@ as will versions only referenced on the command line (`mise exec <TOOL>@<VERSION
     rm -rf ~/.local/share/mise/versions/node/20.0.1
 "
     flag "-n --dry-run" help="Do not actually delete anything"
-    flag "--configs" help="Prune only tracked and trusted configuration links that point to non-existent configurations"
+    flag "--configs" help="Prune only tracked and trusted configuration links that point to nonexistent configurations"
     flag "--tools" help="Prune only unused versions of tools"
     arg "[PLUGIN]..." help="Prune only versions from this plugin(s)" var=true
 }
@@ -746,7 +746,7 @@ other ways to install things (like using yarn or pnpm for node) that mise does
 not know about and so it will be necessary to call this explicitly.
 
 If you think mise should automatically call this for a particular command, please
-open an issue on the mise repo. You can also setup a shell function to reshim
+open an issue on the mise repo. You can also set up a shell function to reshim
 automatically (it's really fast so you don't need to worry about overhead):
 
 npm() {

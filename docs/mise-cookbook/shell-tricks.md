@@ -1,6 +1,6 @@
 # Shell tricks
 
-A collection of shell utities leveraging mise.
+A collection of shell utilities leveraging mise.
 
 ## Prompt colouring
 

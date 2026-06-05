@@ -84,7 +84,7 @@ Write-Output "grandchild"
         $output | Should -Not -Match "task-parent"
     }
 
-    It 'handles non-existent ceiling path' {
+    It 'handles nonexistent ceiling path' {
         $env:MISE_CEILING_PATHS = Join-Path $TestRoot "nonexistent"
         $output = mise tasks | Out-String
         $output | Should -Match "task-grandchild"

@@ -33,7 +33,7 @@ pub struct Prune {
     #[clap(long, short = 'n')]
     pub dry_run: bool,
 
-    /// Prune only tracked and trusted configuration links that point to non-existent configurations
+    /// Prune only tracked and trusted configuration links that point to nonexistent configurations
     #[clap(long)]
     pub configs: bool,
 

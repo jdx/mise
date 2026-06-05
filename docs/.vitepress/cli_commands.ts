@@ -296,6 +296,9 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  sponsors: {
+    hide: false,
+  },
   sync: {
     hide: false,
     subcommands: {

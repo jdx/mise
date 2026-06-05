@@ -2241,6 +2241,12 @@ async fn load_config_and_file_tasks(
 ///
 /// When a name appears in both: the file task stays as the base and the TOML
 /// block is overlaid via [`Task::merge_toml_overlay`]. Otherwise both are kept.
+///
+/// When the same name appears in more than one file task (e.g. a local
+/// `.mise/tasks` script and a same-named task from a `git::` include), the
+/// last one wins. Callers load `file_tasks` in declared `task_config.includes`
+/// order, so the later include in the list takes precedence — see
+/// `load_tasks_in_dir`.
 fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
     let mut by_name: IndexMap<String, Task> = IndexMap::new();
     for t in file_tasks {
@@ -2472,13 +2478,15 @@ pub async fn load_tasks_in_dir(
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
 
-    let git_includes: Vec<String> = configs
+    let (includes, resolve_dir) = configs
         .iter()
-        .find_map(|cf| cf.task_config().includes.clone())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|p| p.starts_with("git::"))
-        .collect();
+        .find_map(|cf| {
+            cf.task_config()
+                .includes
+                .clone()
+                .map(|includes| (includes, cf.config_root()))
+        })
+        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf()));
 
     let mut config_tasks = vec![];
     for cf in &configs {
@@ -2490,18 +2498,19 @@ pub async fn load_tasks_in_dir(
     let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
 
     let mut file_tasks = vec![];
-    for p in task_includes_for_dir(dir, config_files) {
-        let mut loaded = load_tasks_includes(config, &p, dir, &task_config_dir).await?;
-        if is_global_task_include_path(&p) {
-            mark_tasks_as_global(&mut loaded);
+    for include in &includes {
+        let paths = if include.starts_with("git::") {
+            vec![resolve_git_url_to_path(include).await?]
+        } else {
+            expand_task_include(&resolve_dir, include)
+        };
+        for p in paths {
+            let mut loaded = load_tasks_includes(config, &p, dir, &task_config_dir).await?;
+            if is_global_task_include_path(&p) {
+                mark_tasks_as_global(&mut loaded);
+            }
+            file_tasks.extend(loaded);
         }
-        file_tasks.extend(loaded);
-    }
-
-    for include in git_includes {
-        let resolved = resolve_git_url_to_path(&include).await?;
-        let loaded = load_tasks_includes(config, &resolved, dir, &task_config_dir).await?;
-        file_tasks.extend(loaded);
     }
 
     let mut tasks = merge_file_and_config_tasks(file_tasks, config_tasks)

@@ -1,5 +1,41 @@
 # Changelog
 
+## [2026.6.0](https://github.com/jdx/mise/compare/v2026.5.18..v2026.6.0) - 2026-06-03
+
+### 🚀 Features
+
+- **(npm)** ensure npm is managed by corepack when node.corepack=true and node.npm_shim=false by @roele in [#10196](https://github.com/jdx/mise/pull/10196)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** mirror aqua windows extension semantics by @risu729 in [#10167](https://github.com/jdx/mise/pull/10167)
+- **(bun)** improve musl detection logic using runtime detection by @roele in [#10195](https://github.com/jdx/mise/pull/10195)
+- **(completion)** rely on usage#649 for global flags, keep -r/-S promotion by @JamBalaya56562 in [#10176](https://github.com/jdx/mise/pull/10176)
+- **(spm)** track artifact bundle options in lock identity by @risu729 in [#10160](https://github.com/jdx/mise/pull/10160)
+- **(task)** honor task_config.includes order so a local task can override a git::include by @vmaleze in [#10191](https://github.com/jdx/mise/pull/10191)
+- **(task)** honor MISE_CYGDRIVE_PREFIX for Git Bash, not only Cygwin by @JamBalaya56562 in [#10190](https://github.com/jdx/mise/pull/10190)
+
+### 📚 Documentation
+
+- Fix example syntax for choice function in templates by @joekrill in [#10197](https://github.com/jdx/mise/pull/10197)
+- add sponsor footer by @jdx in [#10182](https://github.com/jdx/mise/pull/10182)
+
+### New Contributors
+
+- @joekrill made their first contribution in [#10197](https://github.com/jdx/mise/pull/10197)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`cliwright/whoiam`](https://github.com/cliwright/whoiam)
+- [`google-antigravity/antigravity-cli`](https://github.com/google-antigravity/antigravity-cli)
+- [`tidewave-ai/tidewave_app`](https://github.com/tidewave-ai/tidewave_app)
+
+#### Updated Packages (1)
+
+- [`endevco/aube`](https://github.com/endevco/aube)
+
 ## [2026.5.18](https://github.com/jdx/mise/compare/v2026.5.17..v2026.5.18) - 2026-05-31
 
 ### 🚀 Features

@@ -66,8 +66,8 @@ assert_not_contains "mise tasks" "task-child"
 assert_not_contains "mise tasks" "task-parent"
 echo "Test 4: Passed"
 
-# Test 5: Ceiling path with non-existent directory
-echo "Test 5: With non-existent ceiling path, should find all tasks"
+# Test 5: Ceiling path with nonexistent directory
+echo "Test 5: With nonexistent ceiling path, should find all tasks"
 export MISE_CEILING_PATHS="$TEST_ROOT/nonexistent"
 assert_contains "mise tasks" "task-grandchild"
 assert_contains "mise tasks" "task-child"

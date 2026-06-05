@@ -78,7 +78,7 @@ impl ConfigSet {
                     t.set_implicit(true);
                     toml_edit::Item::Table(t)
                 });
-            // if the key is a tool with a simple value, we want to convert it to a inline table preserving the version
+            // if the key is a tool with a simple value, we want to convert it to an inline table preserving the version
             let is_simple_tool_version =
                 full_key.starts_with("tools.") && idx == 1 && !container.is_table_like();
             if is_simple_tool_version {
