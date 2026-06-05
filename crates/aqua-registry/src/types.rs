@@ -1,3 +1,4 @@
+use crate::file_ext::{append_str_ext, file_ext, file_ext_is_empty};
 use expr::{Context, Environment, Program, Value};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
@@ -61,7 +62,9 @@ pub struct AquaPackage {
     pub format: String,
     pub rosetta2: bool,
     pub windows_arm_emulation: bool,
-    pub complete_windows_ext: bool,
+    pub complete_windows_ext: Option<bool>,
+    pub windows_ext: String,
+    pub append_ext: Option<bool>,
     pub supported_envs: Vec<String>,
     pub files: Vec<AquaFile>,
     pub vars: Vec<AquaVar>,
@@ -352,7 +355,9 @@ impl Default for AquaPackage {
             format: String::new(),
             rosetta2: false,
             windows_arm_emulation: false,
-            complete_windows_ext: true,
+            complete_windows_ext: None,
+            windows_ext: String::new(),
+            append_ext: None,
             supported_envs: Vec::new(),
             files: Vec::new(),
             vars: Vec::new(),
@@ -459,8 +464,8 @@ impl AquaPackage {
     fn detect_format(&self, asset_name: &str) -> &'static str {
         let formats = [
             "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2",
-            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "gz", "bz2", "lz4", "sz", "xz", "zst",
-            "dmg", "pkg", "rar", "tar",
+            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "7z", "gz", "bz2", "lz4", "sz", "xz",
+            "zst", "dmg", "pkg", "rar", "tar",
         ];
 
         for format in formats {
@@ -476,6 +481,79 @@ impl AquaPackage {
         "raw"
     }
 
+    fn append_ext_enabled(&self) -> bool {
+        self.append_ext.unwrap_or(true)
+    }
+
+    pub fn windows_ext(&self) -> &str {
+        if self.windows_ext.is_empty() {
+            match self.r#type {
+                AquaPackageType::GithubArchive | AquaPackageType::GithubContent => ".sh",
+                _ => ".exe",
+            }
+        } else {
+            &self.windows_ext
+        }
+    }
+
+    pub fn complete_windows_ext_enabled(&self) -> bool {
+        match self.complete_windows_ext {
+            Some(complete) => complete,
+            None => !matches!(
+                self.r#type,
+                AquaPackageType::GithubArchive | AquaPackageType::GithubContent
+            ),
+        }
+    }
+
+    fn complete_windows_ext(&self, s: &str) -> String {
+        if self.complete_windows_ext_enabled() {
+            append_str_ext(s, self.windows_ext())
+        } else {
+            s.to_string()
+        }
+    }
+
+    fn os_file_ext_is_empty(&self, s: &str, version: &str) -> bool {
+        let filename = s.rsplit('/').next().unwrap_or_default();
+        file_ext_is_empty(filename, version)
+    }
+
+    fn os_file_ext(&self, s: &str, version: &str) -> Option<String> {
+        let filename = s.rsplit('/').next().unwrap_or_default();
+        file_ext(filename, version)
+    }
+
+    fn append_ext(&self, s: String) -> String {
+        if !self.append_ext_enabled() || self.format.is_empty() || self.format == "raw" {
+            return s;
+        }
+        if self.detect_format(&s) != "raw" || s.ends_with(&format!(".{}", self.format)) {
+            return s;
+        }
+        format!("{}.{}", s, self.format)
+    }
+
+    fn asset_without_appended_ext(
+        &self,
+        v: &str,
+        overrides: &HashMap<String, String>,
+        os: &str,
+        arch: &str,
+    ) -> Result<String> {
+        if self.asset.is_empty() && self.url.split('/').count() > "//".len() {
+            let asset = self.url.rsplit('/').next().unwrap_or("");
+            self.parse_aqua_str(asset, v, overrides, os, arch)
+        } else {
+            self.parse_aqua_str(&self.asset, v, overrides, os, arch)
+        }
+    }
+
+    fn finish_asset(&self, asset: String, v: &str, os: &str) -> Result<String> {
+        let asset = self.append_ext(asset);
+        self.complete_windows_ext_to_asset(&asset, v, os)
+    }
+
     /// Get the format for this package and version
     pub fn format(&self, v: &str, os: &str, arch: &str) -> Result<&str> {
         if self.r#type == AquaPackageType::GithubArchive {
@@ -483,9 +561,9 @@ impl AquaPackage {
         }
         let format = if self.format.is_empty() {
             let asset = if !self.asset.is_empty() {
-                self.asset(v, os, arch)?
+                self.asset_without_appended_ext(v, &Default::default(), os, arch)?
             } else if !self.url.is_empty() {
-                self.url.to_string()
+                self.parse_aqua_str(&self.url, v, &Default::default(), os, arch)?
             } else {
                 log::debug!("no asset or url for {}/{}", self.repo_owner, self.repo_name);
                 String::new()
@@ -504,58 +582,91 @@ impl AquaPackage {
 
     /// Get the asset name for this package and version
     pub fn asset(&self, v: &str, os: &str, arch: &str) -> Result<String> {
-        if self.asset.is_empty() && self.url.split("/").count() > "//".len() {
-            let asset = self.url.rsplit("/").next().unwrap_or("");
-            self.parse_aqua_str(asset, v, &Default::default(), os, arch)
-        } else {
-            self.parse_aqua_str(&self.asset, v, &Default::default(), os, arch)
-        }
+        let asset = self.asset_without_appended_ext(v, &Default::default(), os, arch)?;
+        self.finish_asset(asset, v, os)
     }
 
     /// Get all possible asset strings for this package, version and platform
     pub fn asset_strs(&self, v: &str, os: &str, arch: &str) -> Result<IndexSet<String>> {
-        let mut strs =
-            IndexSet::from([self.parse_aqua_str(&self.asset, v, &Default::default(), os, arch)?]);
+        let mut strs = IndexSet::new();
+        let asset = self.asset_without_appended_ext(v, &Default::default(), os, arch)?;
+        strs.insert(self.finish_asset(asset.clone(), v, os)?);
+        strs.insert(asset);
         if os == "darwin" {
             let mut ctx = HashMap::default();
             ctx.insert("Arch".to_string(), "universal".to_string());
-            strs.insert(self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?);
+            let asset = self.asset_without_appended_ext(v, &ctx, os, arch)?;
+            strs.insert(self.finish_asset(asset.clone(), v, os)?);
+            strs.insert(asset);
         } else if os == "windows" {
             let mut ctx = HashMap::default();
-            let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
-            strs.insert(self.complete_windows_ext_to_asset(&asset, v, os, arch)?);
             if arch == "arm64" {
                 ctx.insert("Arch".to_string(), "amd64".to_string());
-                strs.insert(self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?);
-                let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
-                strs.insert(self.complete_windows_ext_to_asset(&asset, v, os, arch)?);
+                let asset = self.asset_without_appended_ext(v, &ctx, os, arch)?;
+                strs.insert(self.finish_asset(asset.clone(), v, os)?);
+                strs.insert(asset);
             }
         }
         Ok(strs)
     }
 
-    /// Apply Windows .exe extension to an asset or URL string if appropriate.
+    /// Apply Windows executable extension to an asset or URL string if appropriate.
     /// Mirrors upstream aqua's `completeWindowsExtToAsset` decision tree.
-    fn complete_windows_ext_to_asset(
-        &self,
-        s: &str,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
-        if os != "windows" || s.ends_with(".exe") {
+    fn complete_windows_ext_to_asset(&self, s: &str, v: &str, os: &str) -> Result<String> {
+        if os != "windows" || s.ends_with(".exe") || s.ends_with(".jar") {
             return Ok(s.to_string());
         }
-        if self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
-            return Ok(format!("{s}.exe"));
+        if self.format == "raw" {
+            return Ok(self.complete_windows_ext(s));
+        }
+        if !self.format.is_empty() {
+            return Ok(s.to_string());
+        }
+        if self.os_file_ext_is_empty(s, v) {
+            return Ok(self.complete_windows_ext(s));
         }
         Ok(s.to_string())
+    }
+
+    /// Apply Windows executable completion to install file source paths.
+    /// Mirrors upstream aqua's `completeWindowsExtToFileSrc`.
+    pub fn complete_windows_ext_to_file_src(&self, src: &str, v: &str, os: &str) -> String {
+        if os != "windows" || !self.complete_windows_ext_enabled() {
+            return src.to_string();
+        }
+        if self.os_file_ext_is_empty(src, v) {
+            self.complete_windows_ext(src)
+        } else {
+            src.to_string()
+        }
+    }
+
+    /// Apply Windows executable completion to link destinations, preserving an
+    /// explicit source extension when the destination omits one.
+    pub fn complete_windows_ext_to_file_dst(
+        &self,
+        src: &str,
+        dst: &str,
+        v: &str,
+        os: &str,
+    ) -> String {
+        if os != "windows"
+            || !self.complete_windows_ext_enabled()
+            || !self.os_file_ext_is_empty(dst, v)
+        {
+            return dst.to_string();
+        }
+        match self.os_file_ext(src, v) {
+            Some(ext) => append_str_ext(dst, &ext),
+            None => self.complete_windows_ext(dst),
+        }
     }
 
     /// Get the URL for this package and version
     pub fn url(&self, v: &str, os: &str, arch: &str) -> Result<String> {
         let url = self.parse_aqua_str(&self.url, v, &Default::default(), os, arch)?;
-        self.complete_windows_ext_to_asset(&url, v, os, arch)
+        let url = self.append_ext(url);
+        self.complete_windows_ext_to_asset(&url, v, os)
     }
 
     /// Parse an Aqua template string with variable substitution and platform info
@@ -842,8 +953,14 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     if avo.windows_arm_emulation {
         orig.windows_arm_emulation = true;
     }
-    if !avo.complete_windows_ext {
-        orig.complete_windows_ext = false;
+    if avo.complete_windows_ext.is_some() {
+        orig.complete_windows_ext = avo.complete_windows_ext;
+    }
+    if !avo.windows_ext.is_empty() {
+        orig.windows_ext = avo.windows_ext.clone();
+    }
+    if avo.append_ext.is_some() {
+        orig.append_ext = avo.append_ext;
     }
     if !avo.supported_envs.is_empty() {
         orig.supported_envs = avo.supported_envs.clone();
@@ -1340,7 +1457,7 @@ packages:
         let pkg = AquaPackage {
             url: "https://example.com/tool/{{.Version}}/tool.exe".to_string(),
             format: "raw".to_string(),
-            complete_windows_ext: true,
+            complete_windows_ext: Some(true),
             ..Default::default()
         };
 
@@ -1359,7 +1476,7 @@ packages:
         let pkg = AquaPackage {
             url: "https://example.com/tool/{{.Version}}/tool".to_string(),
             format: "raw".to_string(),
-            complete_windows_ext: true,
+            complete_windows_ext: Some(true),
             ..Default::default()
         };
 
@@ -1371,12 +1488,215 @@ packages:
     }
 
     #[test]
+    fn test_url_preserves_jar_when_completing_windows_ext() {
+        let pkg = AquaPackage {
+            url: "https://example.com/tool/{{.Version}}/tool.jar".to_string(),
+            format: "raw".to_string(),
+            complete_windows_ext: Some(true),
+            ..Default::default()
+        };
+
+        let url = pkg.url("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(url, "https://example.com/tool/1.0.0/tool.jar");
+    }
+
+    #[test]
+    fn test_asset_appends_format_ext_by_default() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}".to_string(),
+            format: "tar.gz".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+
+        assert_eq!(asset, "tool-1.0.0-linux-amd64.tar.gz");
+    }
+
+    #[test]
+    fn test_asset_respects_append_ext_false() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}".to_string(),
+            format: "tar.gz".to_string(),
+            append_ext: Some(false),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+
+        assert_eq!(asset, "tool-1.0.0-linux-amd64");
+    }
+
+    #[test]
+    fn test_asset_uses_custom_windows_ext() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}".to_string(),
+            format: "raw".to_string(),
+            windows_ext: ".bat".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "tool-1.0.0-windows-amd64.bat");
+    }
+
+    #[test]
+    fn test_asset_normalizes_custom_windows_ext() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}".to_string(),
+            format: "raw".to_string(),
+            windows_ext: "bat".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "tool-1.0.0-windows-amd64.bat");
+    }
+
+    #[test]
+    fn test_asset_omitted_format_preserves_existing_extension() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Version}}.ps1".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "tool-1.0.0.ps1");
+    }
+
+    #[test]
+    fn test_format_detects_7z_asset() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Version}}-{{.OS}}-{{.Arch}}.7z".to_string(),
+            ..Default::default()
+        };
+
+        let format = pkg.format("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(format, "7z");
+    }
+
+    #[test]
+    fn test_asset_completion_strips_version_from_filename_only() {
+        let pkg = AquaPackage {
+            asset: "https://example.com/1.0.0/tool-{{.Version}}".to_string(),
+            format: "raw".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "https://example.com/1.0.0/tool-1.0.0.exe");
+    }
+
+    #[test]
+    fn test_asset_completion_preserves_prefix_before_non_boundary_version() {
+        let pkg = AquaPackage {
+            asset: "x1.8atool_{{.Version}}_win".to_string(),
+            format: "raw".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.8", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "x1.8atool_1.8_win.exe");
+    }
+
+    #[test]
+    fn test_asset_completion_treats_version_dot_as_empty_extension() {
+        let pkg = AquaPackage {
+            asset: "tool.{{.Version}}".to_string(),
+            format: "raw".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "tool.1.0.0.exe");
+    }
+
+    #[test]
+    fn test_asset_completion_does_not_corrupt_version_prefixes() {
+        let pkg = AquaPackage {
+            asset: "tool-1.1.1".to_string(),
+            format: "raw".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.1", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "tool-1.1.1.exe");
+    }
+
+    #[test]
+    fn test_github_content_does_not_complete_windows_ext_by_default() {
+        let pkg = AquaPackage {
+            r#type: AquaPackageType::GithubContent,
+            path: Some("install".to_string()),
+            asset: "install".to_string(),
+            format: "raw".to_string(),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "install");
+    }
+
+    #[test]
+    fn test_github_content_complete_windows_ext_defaults_to_sh() {
+        let pkg = AquaPackage {
+            r#type: AquaPackageType::GithubContent,
+            path: Some("install".to_string()),
+            asset: "install".to_string(),
+            format: "raw".to_string(),
+            complete_windows_ext: Some(true),
+            ..Default::default()
+        };
+
+        let asset = pkg.asset("1.0.0", "windows", "amd64").unwrap();
+
+        assert_eq!(asset, "install.sh");
+    }
+
+    #[test]
+    fn test_file_src_and_dst_complete_windows_ext() {
+        let pkg = AquaPackage::default();
+
+        assert_eq!(
+            pkg.complete_windows_ext_to_file_src("tool_1.0.0", "v1.0.0", "windows"),
+            "tool_1.0.0.exe"
+        );
+        assert_eq!(
+            pkg.complete_windows_ext_to_file_src("tool_1.0.0.bat", "v1.0.0", "windows"),
+            "tool_1.0.0.bat"
+        );
+        assert_eq!(
+            pkg.complete_windows_ext_to_file_dst(
+                "tool_1.0.0.bat",
+                "tool_1.0.0",
+                "v1.0.0",
+                "windows"
+            ),
+            "tool_1.0.0.bat"
+        );
+        assert_eq!(
+            pkg.complete_windows_ext_to_file_dst("tool_1.0.0", "tool_1.0.0", "v1.0.0", "windows"),
+            "tool_1.0.0.exe"
+        );
+    }
+
+    #[test]
     fn test_asset_strs_no_double_exe_extension() {
         // asset_strs should also not double .exe when asset already ends in .exe.
         let pkg = AquaPackage {
             asset: "tool.exe".to_string(),
             format: "raw".to_string(),
-            complete_windows_ext: true,
+            complete_windows_ext: Some(true),
             ..Default::default()
         };
 

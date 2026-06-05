@@ -419,6 +419,20 @@ impl NodePlugin {
         Ok(())
     }
 
+    fn enable_npm_corepack_shim(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        pr.set_message("enable corepack npm shim".into());
+        let corepack = self.corepack_path(tv);
+        CmdLineRunner::new(corepack)
+            .with_pr(pr)
+            .arg("enable")
+            .arg("npm")
+            .env("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
+            .envs(tv.install_env())
+            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
+            .execute()?;
+        Ok(())
+    }
+
     async fn test_node(
         &self,
         config: &Arc<Config>,
@@ -660,6 +674,9 @@ impl Backend for NodePlugin {
         }
         if settings.node.corepack && self.corepack_path(&tv).exists() {
             self.enable_default_corepack_shims(&tv, ctx.pr.as_ref())?;
+            if !settings.node.npm_shim {
+                self.enable_npm_corepack_shim(&tv, ctx.pr.as_ref())?;
+            }
         }
 
         Ok(tv)

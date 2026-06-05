@@ -2,18 +2,18 @@
 
 set -euo pipefail
 
-# Test that mise shows a friendly error when --cd is set to a non-existent path
+# Test that mise shows a friendly error when --cd is set to a nonexistent path
 # This validates that the error message is clear and helpful to users
 
-echo "Testing --cd with non-existent directory..."
+echo "Testing --cd with nonexistent directory..."
 
-# Test 1: --cd with non-existent absolute path
-echo "Test 1: --cd with non-existent absolute path"
+# Test 1: --cd with nonexistent absolute path
+echo "Test 1: --cd with nonexistent absolute path"
 assert_fail "mise --cd /nonexistent/path/that/does/not/exist config ls" \
   "Directory specified with --cd does not exist"
 
-# Test 2: --cd with non-existent relative path
-echo "Test 2: --cd with non-existent relative path"
+# Test 2: --cd with nonexistent relative path
+echo "Test 2: --cd with nonexistent relative path"
 assert_fail "mise --cd ./nonexistent config ls" \
   "Directory specified with --cd does not exist"
 
@@ -45,15 +45,15 @@ else
   fail "Error message missing expected text: ${output:0:200}..."
 fi
 
-# Test 6: Test with run command and non-existent --cd path
-echo "Test 6: --cd with run command and non-existent path"
+# Test 6: Test with run command and nonexistent --cd path
+echo "Test 6: --cd with run command and nonexistent path"
 assert_fail "mise run --cd /nonexistent/path hello" \
   "Directory specified with --cd does not exist"
 
-# Test 7: Test with other commands and non-existent --cd path
-echo "Test 7: --cd with various commands and non-existent path"
+# Test 7: Test with other commands and nonexistent --cd path
+echo "Test 7: --cd with various commands and nonexistent path"
 assert_fail "mise --cd /nonexistent ls" \
   "Directory specified with --cd does not exist"
 
 echo ""
-echo "All --cd non-existent directory tests passed!"
+echo "All --cd nonexistent directory tests passed!"

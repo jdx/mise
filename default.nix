@@ -2,7 +2,7 @@
 
 rustPlatform.buildRustPackage {
   pname = "mise";
-  version = "2026.5.18";
+  version = "2026.6.0";
 
   src = lib.cleanSource ./.;
 
@@ -16,6 +16,9 @@ rustPlatform.buildRustPackage {
     llvmPackages.libclang
     pkg-config
     rustPlatform.bindgenHook
+  ];
+  nativeCheckInputs = with pkgs; [
+    git
   ];
   buildInputs = with pkgs; [
     bash

@@ -21,3 +21,14 @@ node_path="$(mise where "node@$node_version")"
 assert_fail "grep -q 'mise reshim' '$node_path/bin/npm'"
 assert_succeed "test -L '$node_path/bin/npm'"
 assert_contains "mise x node@$node_version -- npm --version" "."
+
+# Corepack: ensure npm is managed by corepack, when node.corepack=true and node.npm_shim=false.
+export MISE_NODE_NPM_SHIM=0
+export MISE_NODE_COREPACK=1
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+mise i -y -f "node@$node_version"
+node_path="$(mise where "node@$node_version")"
+assert_fail "grep -q 'mise reshim' '$node_path/bin/npm'"
+assert_succeed "test -L '$node_path/bin/npm'"
+assert_contains "realpath '$node_path/bin/npm'" "/corepack/"
+assert_contains "mise x node@$node_version -- npm --version" "."

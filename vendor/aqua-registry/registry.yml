@@ -25070,6 +25070,27 @@ packages:
       asset: checksums.txt
       algorithm: sha256
   - type: github_release
+    repo_owner: cliwright
+    repo_name: whoiam
+    description: CLI tool for checking and validating your current AWS IAM identity
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: whoiam_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: clog-tool
     repo_name: clog-cli
     description: Generate beautiful changelogs from your Git commit history
@@ -35305,9 +35326,19 @@ packages:
           amd64: x86_64
           arm64: aarch64
           darwin: apple-darwin
-          linux: unknown-linux-musl
+          linux: unknown-linux-gnu
           windows: pc-windows-msvc
         overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            replacements:
+              linux: unknown-linux-musl
+            variants:
+              - key: libc
+                value: musl
           - goos: darwin
             replacements:
               amd64: amd64
@@ -43528,46 +43559,30 @@ packages:
         supported_envs:
           - linux
           - darwin
-  - type: http
-    name: google.com/antigravity-cli
-    description: Google's agentic development platform CLI companion
-    link: https://antigravity.google/download
-    format: tar.gz
+  - type: github_release
+    repo_owner: google-antigravity
+    repo_name: antigravity-cli
+    aliases:
+      - name: google.com/antigravity-cli
+    description: Google Antigravity CLI companion
     files:
       - name: agy
-        src: antigravity
-    checksum:
-      type: http
-      url: https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/{{.OS}}_{{.Arch}}.json
-      file_format: regexp
-      algorithm: sha512
-      pattern:
-        checksum: '"sha512": "([0-9a-f]{128})"'
-    overrides:
-      - goos: linux
-        goarch: amd64
-        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/linux-x64/cli_linux_x64.tar.gz
-      - goos: linux
-        goarch: arm64
-        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/linux-arm/cli_linux_arm64.tar.gz
-      - goos: darwin
-        goarch: amd64
-        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/darwin-x64/cli_mac_x64.tar.gz
-      - goos: darwin
-        goarch: arm64
-        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/darwin-arm/cli_mac_arm64.tar.gz
-      - goos: windows
-        goarch: amd64
-        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/windows-x64/cli_windows_x64.exe
-        format: raw
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 1.0.4")
+        error_message: The version is old. Please upgrade to 1.0.4 or later.
+      - version_constraint: "true"
+        asset: agy_cli_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
         files:
           - name: agy
-      - goos: windows
-        goarch: arm64
-        url: https://storage.googleapis.com/antigravity-public/antigravity-cli/{{.Version}}/windows-arm/cli_windows_arm64.exe
-        format: raw
-        files:
-          - name: agy
+            src: antigravity
+        replacements:
+          amd64: x64
+          darwin: mac
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: google
     repo_name: addlicense
@@ -90468,6 +90483,24 @@ packages:
       type: github_release
       asset: "{{.Asset}}.sha256"
       algorithm: sha256
+  - type: github_release
+    repo_owner: tidewave-ai
+    repo_name: tidewave_app
+    description: Tidewave is the coding agent for full-stack web app development
+    files:
+      - name: tidewave
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tidewave-cli-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
   - type: github_release
     repo_owner: tilt-dev
     repo_name: ctlptl

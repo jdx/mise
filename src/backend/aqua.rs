@@ -139,7 +139,7 @@ impl Backend for AquaBackend {
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let pkg = match self.package_with_options(tv, &[&tv.version]).await {
             Ok(pkg) => pkg,
-            Err(_) => return 3, // fallback to default
+            Err(_) => return 3, // fall back to default
         };
         let format = pkg.format(&tv.version, os(), arch()).unwrap_or_default();
 
@@ -2275,7 +2275,7 @@ impl AquaBackend {
                 let name_str: &str = name.as_ref();
                 install_path.join(name_str)
             })
-            .map(|path| complete_windows_ext(path, pkg.complete_windows_ext, os()))
+            .map(|path| complete_windows_ext(path, pkg, os(), v))
             .collect();
         let first_bin_path = bin_paths
             .first()
@@ -2295,7 +2295,7 @@ impl AquaBackend {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;
-        } else if format.starts_with("tar") {
+        } else if format.starts_with("tar") || (format == "7z" && cfg!(windows)) {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
             make_executable = true;
         } else if format == "zip" {
@@ -2388,7 +2388,7 @@ impl AquaBackend {
                 .unwrap_or(&pkg.repo_name);
 
             let mut path = install_path.join(fallback_name);
-            path = complete_windows_ext(path, pkg.complete_windows_ext, os);
+            path = complete_windows_ext(path, pkg, os, version);
 
             return Ok(vec![AquaFileLink {
                 src: path.clone(),
@@ -2447,8 +2447,8 @@ impl AquaBackend {
             .parent()
             .wrap_err_with(|| format!("file source has no parent: {}", src.display()))?
             .join(link.as_deref().unwrap_or(f.name.as_str()));
-        src = complete_windows_ext(src, pkg.complete_windows_ext, os);
-        dst = complete_windows_dst_ext(&src, dst, pkg.complete_windows_ext, os);
+        src = complete_windows_ext(src, pkg, os, version);
+        dst = complete_windows_dst_ext(&src, dst, pkg, os, version);
 
         Ok(Some(AquaFileLink {
             src,
@@ -2649,22 +2649,50 @@ fn ends_with_v(s: &str) -> bool {
     s.ends_with('v') || s.ends_with('V')
 }
 
-fn complete_windows_ext(path: PathBuf, complete: bool, target_os: &str) -> PathBuf {
-    if target_os == "windows" && complete && path.extension().is_none() {
-        path.with_extension("exe")
-    } else {
-        path
+fn complete_windows_ext(
+    mut path: PathBuf,
+    pkg: &AquaPackage,
+    target_os: &str,
+    version: &str,
+) -> PathBuf {
+    let Some(file_name) = path
+        .file_name()
+        .map(|file_name| file_name.to_string_lossy().into_owned())
+    else {
+        return path;
+    };
+    let completed = pkg.complete_windows_ext_to_file_src(&file_name, version, target_os);
+    if completed != file_name {
+        path.set_file_name(completed);
     }
+    path
 }
 
-fn complete_windows_dst_ext(src: &Path, dst: PathBuf, complete: bool, target_os: &str) -> PathBuf {
-    if target_os != "windows" || !complete || dst.extension().is_some() {
+fn complete_windows_dst_ext(
+    src: &Path,
+    mut dst: PathBuf,
+    pkg: &AquaPackage,
+    target_os: &str,
+    version: &str,
+) -> PathBuf {
+    let Some(src_file_name) = src
+        .file_name()
+        .map(|file_name| file_name.to_string_lossy().into_owned())
+    else {
         return dst;
+    };
+    let Some(dst_file_name) = dst
+        .file_name()
+        .map(|file_name| file_name.to_string_lossy().into_owned())
+    else {
+        return dst;
+    };
+    let completed =
+        pkg.complete_windows_ext_to_file_dst(&src_file_name, &dst_file_name, version, target_os);
+    if completed != dst_file_name {
+        dst.set_file_name(completed);
     }
-    match src.extension() {
-        Some(ext) => dst.with_extension(ext),
-        None => dst.with_extension("exe"),
-    }
+    dst
 }
 
 /// Returns install-time-only option keys for the Aqua backend.
@@ -2735,24 +2763,75 @@ mod tests {
 
     #[test]
     fn test_complete_windows_ext_preserves_existing_extension() {
+        let pkg = AquaPackage::default();
         assert_eq!(
-            complete_windows_ext(PathBuf::from("bat/arq.bat"), true, "windows"),
+            complete_windows_ext(PathBuf::from("bat/arq.bat"), &pkg, "windows", "1.0.0"),
             PathBuf::from("bat/arq.bat")
         );
         assert_eq!(
-            complete_windows_ext(PathBuf::from("bin/tool"), true, "windows"),
+            complete_windows_ext(PathBuf::from("lib/tool.jar"), &pkg, "windows", "1.0.0"),
+            PathBuf::from("lib/tool.jar")
+        );
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("bin/tool"), &pkg, "windows", "1.0.0"),
             PathBuf::from("bin/tool.exe")
+        );
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("bin/tool_1.0.0"), &pkg, "windows", "v1.0.0"),
+            PathBuf::from("bin/tool_1.0.0.exe")
+        );
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("bin/tool.1.0.0"), &pkg, "windows", "v1.0.0"),
+            PathBuf::from("bin/tool.1.0.0.exe")
+        );
+        assert_eq!(
+            complete_windows_ext(
+                PathBuf::from("bin/x1.8atool_1.8_win"),
+                &pkg,
+                "windows",
+                "1.8"
+            ),
+            PathBuf::from("bin/x1.8atool_1.8_win.exe")
+        );
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("bin/tool-1.1.1"), &pkg, "windows", "1.1"),
+            PathBuf::from("bin/tool-1.1.1.exe")
+        );
+    }
+
+    #[test]
+    fn test_complete_windows_ext_uses_custom_windows_ext() {
+        let mut pkg = AquaPackage::default();
+        pkg.windows_ext = ".bat".to_string();
+
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("dart-sass/sass"), &pkg, "windows", "1.0.0"),
+            PathBuf::from("dart-sass/sass.bat")
+        );
+    }
+
+    #[test]
+    fn test_complete_windows_ext_can_default_to_sh() {
+        let mut pkg = AquaPackage::default();
+        pkg.r#type = AquaPackageType::GithubContent;
+        pkg.complete_windows_ext = Some(true);
+
+        assert_eq!(
+            complete_windows_ext(PathBuf::from("install"), &pkg, "windows", "1.0.0"),
+            PathBuf::from("install.sh")
         );
     }
 
     #[test]
     fn test_complete_windows_dst_ext_uses_source_extension() {
+        let pkg = AquaPackage::default();
         assert_eq!(
             complete_windows_dst_ext(
                 Path::new("bat/arq.bat"),
                 PathBuf::from("bat/arq"),
-                true,
+                &pkg,
                 "windows",
+                "1.0.0",
             ),
             PathBuf::from("bat/arq.bat")
         );
@@ -2760,10 +2839,31 @@ mod tests {
             complete_windows_dst_ext(
                 Path::new("bin/tool"),
                 PathBuf::from("bin/tool"),
-                true,
-                "windows"
+                &pkg,
+                "windows",
+                "1.0.0"
             ),
             PathBuf::from("bin/tool.exe")
+        );
+        assert_eq!(
+            complete_windows_dst_ext(
+                Path::new("bin/tool_1.0.0.bat"),
+                PathBuf::from("bin/tool_1.0.0"),
+                &pkg,
+                "windows",
+                "v1.0.0"
+            ),
+            PathBuf::from("bin/tool_1.0.0.bat")
+        );
+        assert_eq!(
+            complete_windows_dst_ext(
+                Path::new("bin/tool_1.0.0"),
+                PathBuf::from("bin/tool_1.0.0"),
+                &pkg,
+                "windows",
+                "v1.0.0"
+            ),
+            PathBuf::from("bin/tool_1.0.0.exe")
         );
     }
 
@@ -2920,7 +3020,7 @@ mod tests {
             link: Some("mc.exe".to_string()),
             ..Default::default()
         }];
-        pkg.complete_windows_ext = false;
+        pkg.complete_windows_ext = Some(false);
 
         let links = AquaBackend::srcs_for_platform(
             &pkg,
@@ -2938,6 +3038,31 @@ mod tests {
                 dst: PathBuf::from("install").join("mc.exe"),
                 hard: false,
                 explicit_link: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_srcs_support_custom_windows_ext() {
+        let mut pkg = AquaPackage::default();
+        pkg.windows_ext = ".bat".to_string();
+        pkg.files = vec![AquaFile {
+            name: "sass".to_string(),
+            src: Some("dart-sass/sass".to_string()),
+            ..Default::default()
+        }];
+
+        let links =
+            AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "windows", "amd64")
+                .unwrap();
+
+        assert_eq!(
+            links,
+            vec![AquaFileLink {
+                src: PathBuf::from("install").join("dart-sass/sass.bat"),
+                dst: PathBuf::from("install").join("dart-sass/sass.bat"),
+                hard: false,
+                explicit_link: false,
             }]
         );
     }

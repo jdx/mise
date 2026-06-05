@@ -51,18 +51,6 @@ pub fn contains_template_syntax(input: &str) -> bool {
     input.contains("{{") || input.contains("{%") || input.contains("{#")
 }
 
-pub fn render_str_if_template(
-    tera: &mut Tera,
-    input: &str,
-    context: &Context,
-) -> tera::Result<String> {
-    if contains_template_syntax(input) {
-        render_str(tera, input, context)
-    } else {
-        Ok(input.to_string())
-    }
-}
-
 pub fn render_str(tera: &mut Tera, input: &str, context: &Context) -> tera::Result<String> {
     tera.render_str(input, context)
 }
@@ -146,7 +134,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                                 (0..n).map(|_| alphabet.choose(&mut rng).unwrap()).collect();
                             Ok(Value::String(result))
                         }
-                        _ => Err("choice alphabet must be an string".into()),
+                        _ => Err("choice alphabet must be a string".into()),
                     }
                 }
                 _ => Err("choice n must be an integer".into()),
@@ -854,27 +842,6 @@ mod tests {
         assert!(!contains_template_syntax("plain text"));
     }
 
-    #[test]
-    fn test_render_str_if_template_skips_plain_text() {
-        let mut tera = Tera::default();
-        let ctx = Context::new();
-        assert_eq!(
-            render_str_if_template(&mut tera, "plain text", &ctx).unwrap(),
-            "plain text"
-        );
-    }
-
-    #[test]
-    fn test_render_str_if_template_renders_template() {
-        let mut tera = Tera::default();
-        let mut ctx = Context::new();
-        ctx.insert("name", "world");
-        assert_eq!(
-            render_str_if_template(&mut tera, "hello {{ name }}", &ctx).unwrap(),
-            "hello world"
-        );
-    }
-
     #[tokio::test]
     #[cfg(unix)]
     async fn test_read_file() {
@@ -894,12 +861,11 @@ mod tests {
         tera_ctx.insert("cwd", temp_dir.path().to_str().unwrap());
         let mut tera = get_tera(Some(temp_dir.path()));
 
-        let s = render_str_if_template(&mut tera, r#"{{ read_file(path="test.txt") }}"#, &tera_ctx)
-            .unwrap();
+        let s = render_str(&mut tera, r#"{{ read_file(path="test.txt") }}"#, &tera_ctx).unwrap();
         assert_eq!(s, "test content\nwith multiple lines");
 
         // Test with trim filter
-        let s = render_str_if_template(
+        let s = render_str(
             &mut tera,
             r#"{{ read_file(path="test.txt") | trim }}"#,
             &tera_ctx,
@@ -914,6 +880,6 @@ mod tests {
         tera_ctx.insert("config_root", &config_root);
         tera_ctx.insert("cwd", "/");
         let mut tera = get_tera(Option::from(config_root));
-        render_str_if_template(&mut tera, s, &tera_ctx).unwrap()
+        render_str(&mut tera, s, &tera_ctx).unwrap()
     }
 }

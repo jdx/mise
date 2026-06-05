@@ -8,7 +8,6 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
-use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
@@ -16,10 +15,9 @@ use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::static_helpers::fetch_checksum_from_shasums, platform::detect_libc};
 use crate::{
-    backend::{
-        Backend, GitHubReleaseInfo, ReleaseType, VersionInfo, platform_target::PlatformTarget,
-    },
+    backend::{Backend, GitHubReleaseInfo, VersionInfo, platform_target::PlatformTarget},
     config::{Config, Settings},
     platform::Platform,
 };
@@ -230,12 +228,10 @@ impl Backend for BunPlugin {
         let asset_pattern = Self::bun_asset_filename(target, version);
 
         Ok(Some(GitHubReleaseInfo {
-            repo: "oven-sh/bun".to_string(),
             asset_pattern: Some(asset_pattern),
             api_url: Some(format!(
                 "https://github.com/oven-sh/bun/releases/download/bun-v{version}"
             )),
-            release_type: ReleaseType::GitHub,
         }))
     }
 
@@ -423,12 +419,12 @@ impl BunPlugin {
 
     /// Check if we're running on a musl-based system
     /// Respects the global libc setting when configured, otherwise falls back
-    /// to the binary's compile-time target.
+    /// to runtime detection (e.g. via `detect_libc`) for best effort accuracy.
     fn is_musl() -> bool {
         match Settings::get().libc() {
             Some("musl") => true,
             Some("gnu") => false,
-            _ => cfg!(target_env = "musl"),
+            _ => detect_libc() == Some("musl"),
         }
     }
 

@@ -141,14 +141,6 @@ impl PluginEnum {
         }
     }
 
-    pub async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
-        match self {
-            PluginEnum::Asdf(plugin) => plugin.install(config, pr).await,
-            PluginEnum::Vfox(plugin) => plugin.install(config, pr).await,
-            PluginEnum::VfoxBackend(plugin) => plugin.install(config, pr).await,
-        }
-    }
-
     pub fn is_installed(&self) -> bool {
         match self {
             PluginEnum::Asdf(plugin) => plugin.is_installed(),

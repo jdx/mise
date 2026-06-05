@@ -1065,7 +1065,7 @@ fn python_arch_for_target(target: &PlatformTarget) -> &'static str {
 fn ensure_not_windows() -> eyre::Result<()> {
     if cfg!(windows) {
         bail!(
-            "python can not currently be compiled on windows with core:python, use vfox:python instead"
+            "python cannot currently be compiled on windows with core:python, use vfox:python instead"
         );
     }
     Ok(())

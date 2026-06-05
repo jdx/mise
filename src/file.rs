@@ -1711,11 +1711,11 @@ mod tests {
         // Test that the function correctly identifies when to strip components
         // This is a basic test to ensure the logic works correctly
 
-        // For now, we'll test with a non-existent file to ensure the function
+        // For now, we'll test with a nonexistent file to ensure the function
         // returns false when it can't read the archive
         let non_existent_path = Path::new("/non/existent/archive.tar.gz");
         let result = should_strip_components(non_existent_path, TarFormat::TarGz);
-        assert!(result.is_err()); // Should fail to open non-existent file
+        assert!(result.is_err()); // Should fail to open nonexistent file
 
         // Note: To properly test this function, we would need actual tar archives
         // with different structures (single file, single directory, multiple entries)

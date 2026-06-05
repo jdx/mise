@@ -75,7 +75,6 @@ pub struct Config {
     tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
-    vars_loader: Option<Arc<Config>>,
     vars_results: OnceCell<EnvResults>,
 }
 
@@ -158,7 +157,6 @@ impl Config {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         let vars_config = Arc::new(Self {
@@ -178,14 +176,11 @@ impl Config {
             shell_aliases: config.shell_aliases.clone(),
             tera_files: config.tera_files.clone(),
             vars: config.vars.clone(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         });
         let vars_results = measure!("config::load vars_results", {
             let results = load_vars(&vars_config).await?;
-            vars_config.vars_results.set(results.clone()).ok();
             config.vars_results.set(results.clone()).ok();
-            config.vars_loader = Some(vars_config.clone());
             results
         });
         let vars: IndexMap<String, String> = vars_results
@@ -277,17 +272,6 @@ impl Config {
             .await
     }
 
-    pub async fn vars_results(self: &Arc<Self>) -> Result<&EnvResults> {
-        if let Some(loader) = &self.vars_loader
-            && let Some(results) = loader.vars_results.get()
-        {
-            return Ok(results);
-        }
-        self.vars_results
-            .get_or_try_init(|| async move { load_vars(self).await })
-            .await
-    }
-
     pub fn env_results_cached(&self) -> Option<&EnvResults> {
         self.env.get()
     }
@@ -313,23 +297,6 @@ impl Config {
             .await
     }
 
-    pub async fn get_tool_opts(
-        self: &Arc<Self>,
-        backend_arg: &Arc<BackendArg>,
-    ) -> Result<Option<ToolOptions>> {
-        let trs = self.get_tool_request_set().await?;
-        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
-        let tool_request = short_match.or_else(|| {
-            if !self.has_tool_alias(&backend_arg.short) {
-                return None;
-            }
-
-            let resolved_ba = BackendArg::new(backend_arg.full(), None);
-            trs.iter().find(|tr| tr.0.short == resolved_ba.short)
-        });
-        Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
-    }
-
     fn has_tool_alias(&self, short: &str) -> bool {
         self.all_aliases
             .get(short)
@@ -351,7 +318,17 @@ impl Config {
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
     ) -> Result<ResolvedToolOptions> {
-        let config_opts = self.get_tool_opts(backend_arg).await?;
+        let trs = self.get_tool_request_set().await?;
+        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
+        let tool_request = short_match.or_else(|| {
+            if !self.has_tool_alias(&backend_arg.short) {
+                return None;
+            }
+
+            let resolved_ba = BackendArg::new(backend_arg.full(), None);
+            trs.iter().find(|tr| tr.0.short == resolved_ba.short)
+        });
+        let config_opts = tool_request.and_then(|tr| tr.1.first().map(|req| req.options()));
         let alias_opts = self.get_backend_alias_opts(backend_arg);
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
@@ -2241,6 +2218,12 @@ async fn load_config_and_file_tasks(
 ///
 /// When a name appears in both: the file task stays as the base and the TOML
 /// block is overlaid via [`Task::merge_toml_overlay`]. Otherwise both are kept.
+///
+/// When the same name appears in more than one file task (e.g. a local
+/// `.mise/tasks` script and a same-named task from a `git::` include), the
+/// last one wins. Callers load `file_tasks` in declared `task_config.includes`
+/// order, so the later include in the list takes precedence — see
+/// `load_tasks_in_dir`.
 fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
     let mut by_name: IndexMap<String, Task> = IndexMap::new();
     for t in file_tasks {
@@ -2472,13 +2455,15 @@ pub async fn load_tasks_in_dir(
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
 
-    let git_includes: Vec<String> = configs
+    let (includes, resolve_dir) = configs
         .iter()
-        .find_map(|cf| cf.task_config().includes.clone())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|p| p.starts_with("git::"))
-        .collect();
+        .find_map(|cf| {
+            cf.task_config()
+                .includes
+                .clone()
+                .map(|includes| (includes, cf.config_root()))
+        })
+        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf()));
 
     let mut config_tasks = vec![];
     for cf in &configs {
@@ -2490,18 +2475,19 @@ pub async fn load_tasks_in_dir(
     let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
 
     let mut file_tasks = vec![];
-    for p in task_includes_for_dir(dir, config_files) {
-        let mut loaded = load_tasks_includes(config, &p, dir, &task_config_dir).await?;
-        if is_global_task_include_path(&p) {
-            mark_tasks_as_global(&mut loaded);
+    for include in &includes {
+        let paths = if include.starts_with("git::") {
+            vec![resolve_git_url_to_path(include).await?]
+        } else {
+            expand_task_include(&resolve_dir, include)
+        };
+        for p in paths {
+            let mut loaded = load_tasks_includes(config, &p, dir, &task_config_dir).await?;
+            if is_global_task_include_path(&p) {
+                mark_tasks_as_global(&mut loaded);
+            }
+            file_tasks.extend(loaded);
         }
-        file_tasks.extend(loaded);
-    }
-
-    for include in git_includes {
-        let resolved = resolve_git_url_to_path(&include).await?;
-        let loaded = load_tasks_includes(config, &resolved, dir, &task_config_dir).await?;
-        file_tasks.extend(loaded);
     }
 
     let mut tasks = merge_file_and_config_tasks(file_tasks, config_tasks)
@@ -2609,7 +2595,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2687,7 +2672,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2769,7 +2753,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2853,7 +2836,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2912,7 +2894,6 @@ mod tests {
                 shell_aliases: Default::default(),
                 tera_files: Default::default(),
                 vars: Default::default(),
-                vars_loader: None,
                 vars_results: OnceCell::new(),
             };
             config.tool_request_set.set(ToolRequestSet::new()).ok();

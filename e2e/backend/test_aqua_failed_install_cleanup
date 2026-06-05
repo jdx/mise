@@ -5,7 +5,7 @@
 # subdirectory (e.g. installs/tilt/9999.9999.9999) but left the parent
 # (installs/tilt/) as an empty directory behind.
 
-# Trigger a failed install using a non-existent version number.
+# Trigger a failed install using a nonexistent version number.
 # This causes the GitHub API to return 404 after create_install_dirs() has
 # already created installs/tilt/9999.9999.9999.
 assert_fail "mise x tilt@9999.9999.9999 -- tilt version"

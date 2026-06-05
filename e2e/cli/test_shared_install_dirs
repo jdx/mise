@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Test that MISE_SHARED_INSTALL_DIRS allows fallback to shared directories
+# Test that MISE_SHARED_INSTALL_DIRS allows falling back to shared directories
 
 # Install tiny into the primary directory
 mise install tiny@1.0.1

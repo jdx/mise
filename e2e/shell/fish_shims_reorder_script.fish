@@ -6,7 +6,7 @@
 # Get the mise binary path from argv (passed by the wrapper)
 set -l mise_dir $argv[1]
 
-# Ensure shims directory exists (fish_add_path skips non-existent dirs)
+# Ensure shims directory exists (fish_add_path skips nonexistent dirs)
 mkdir -p $HOME/.local/share/mise/shims
 
 # Clear any pre-existing __MISE_BIN so the debug binary uses current_exe()

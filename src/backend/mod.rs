@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -131,16 +131,8 @@ pub fn strict_metadata() -> bool {
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
 pub struct GitHubReleaseInfo {
-    pub repo: String,
     pub asset_pattern: Option<String>,
     pub api_url: Option<String>,
-    pub release_type: ReleaseType,
-}
-
-#[derive(Debug, Clone)]
-pub enum ReleaseType {
-    GitHub,
-    GitLab,
 }
 
 /// Information about a tool version including optional metadata like creation time
@@ -370,9 +362,11 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     }
 }
 
-/// Returns install-time-only option keys for a backend type.
-/// These are options that only affect installation/download, not post-install behavior.
-/// Used to filter cached options when config provides its own options.
+/// Returns backend option keys whose cached values should be replaced by current config.
+///
+/// Most keys affect installation/download identity, but backend-specific lists may also
+/// include layout options that are stored in the install manifest and should not be
+/// reused from stale cached options when config provides its own options.
 pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<String> {
     match backend_type {
         BackendType::Http => http::install_time_option_keys(),
@@ -386,12 +380,12 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Npm => npm::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),
+        BackendType::Spm => spm::install_time_option_keys(),
         _ => vec![],
     }
 }
 
-/// Returns true if a backend option only affects installation/download.
-/// Used to filter cached options when config provides its own options.
+/// Returns true if a backend option's cached value should be replaced by current config.
 pub fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str) -> bool {
     if matches!(backend_type, BackendType::Aqua) {
         return aqua::is_install_time_option_key(key);
@@ -1628,26 +1622,6 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
 
-    async fn warn_if_dependencies_missing(&self, config: &Arc<Config>) -> eyre::Result<()> {
-        let deps = self
-            .get_all_dependencies(false)?
-            .into_iter()
-            .filter(|ba| &**self.ba() != ba)
-            .map(|ba| ba.short)
-            .collect::<HashSet<_>>();
-        if !deps.is_empty() {
-            trace!("Ensuring dependencies installed for {}", self.id());
-            let ts = config.get_tool_request_set().await?.filter_by_tool(deps);
-            let missing = ts.missing_tools(config).await;
-            if !missing.is_empty() {
-                warn_once!(
-                    "missing dependency: {}",
-                    missing.iter().map(|d| d.to_string()).join(", "),
-                );
-            }
-        }
-        Ok(())
-    }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         remove_all_with_progress(&self.ba().installs_path, pr)?;
         remove_all_with_progress(&self.ba().cache_path, pr)?;

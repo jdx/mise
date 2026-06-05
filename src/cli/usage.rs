@@ -19,20 +19,24 @@ impl Usage {
         // Enable "naked" task completions: `mise foo` completes like `mise run foo`
         spec.default_subcommand = Some("run".to_string());
 
-        // Promote completion-spec flags that collide with a root-level global flag
-        // (e.g. `-C`/`--cd`) to global on the mounted `run`/`tasks run` subcommands.
+        // The `run`/`tasks run` subcommands redeclare some root globals as their own
+        // non-global flags (see `cli::run::Run`). When the usage parser descends into
+        // a mounted task subcommand it keeps only inherited global flags, so a leading
+        // `mise -C <dir> run <task>` (or `mise run <flag> <task>`) used to mis-parse
+        // the redeclared flag during completion. See mise#10069.
         //
-        // The `run` subcommand redeclares some root globals as its own non-global
-        // flags (notably `-C`/`--cd`, see `cli::run::Run::cd`). When the usage parser
-        // descends into a mounted task subcommand it keeps only `global` flags
-        // (`available_flags.retain(|_, f| f.global)`), so the non-global redeclaration
-        // causes the inherited global to be dropped. A leading `mise -C <dir> run
-        // <task> ...` then mis-parses `-C` as the task's positional arg during
-        // completion. Marking the colliding flags global here (completion-spec only,
-        // no effect on clap runtime parsing) keeps them recognized. See mise#10069.
+        // jdx/usage#649 fixes the common case in the parser: when a subcommand
+        // redeclares an inherited global as non-global, the inherited global (with all
+        // its aliases) is now preserved. That covers `-C`/`--cd`, `-j`/`--jobs`, and
+        // `-q`/`--quiet`, whose short *is* a root global short, so no spec workaround
+        // is needed for them anymore.
         //
-        // Collect the root global flag identifiers up front so the immutable borrow
-        // of `spec.cmd.flags` is released before the subcommands are borrowed mutably.
+        // It cannot cover `-r`/`--raw` and `-S`/`--silent`: the root globals are
+        // long-only (`--raw`/`--silent` have no short, see `cli::Cli`), and the `-r`/
+        // `-S` shorts live only on the non-global `run` redeclarations. The parser
+        // preserves the short-less root global and drops the redeclaration, losing the
+        // short. So we still promote just those "orphan short" flags to global in the
+        // completion spec (spec-only; clap runtime parsing is unchanged).
         let global_shorts: HashSet<char> = spec
             .cmd
             .flags
@@ -47,11 +51,13 @@ impl Usage {
             .filter(|f| f.global)
             .flat_map(|f| f.long.iter().cloned())
             .collect();
-        let promote = |cmd: &mut usage::SpecCommand| {
+        // Promote a redeclared flag only when it carries a short alias that the
+        // matching root global lacks (so jdx/usage#649 would otherwise drop it).
+        let promote_orphan_shorts = |cmd: &mut usage::SpecCommand| {
             for f in cmd.flags.iter_mut() {
-                if f.short.iter().any(|c| global_shorts.contains(c))
-                    || f.long.iter().any(|l| global_longs.contains(l))
-                {
+                let long_is_root_global = f.long.iter().any(|l| global_longs.contains(l));
+                let has_orphan_short = f.short.iter().any(|c| !global_shorts.contains(c));
+                if long_is_root_global && has_orphan_short {
                     f.global = true;
                 }
             }
@@ -64,7 +70,7 @@ impl Usage {
             });
             // Enable completions after ::: separator for multi-task invocations
             run.restart_token = Some(":::".to_string());
-            promote(run);
+            promote_orphan_shorts(run);
         }
 
         if let Some(tasks_run) = spec
@@ -77,10 +83,13 @@ impl Usage {
                 run: "mise tasks --usage".to_string(),
             });
             tasks_run.restart_token = Some(":::".to_string());
-            promote(tasks_run);
+            promote_orphan_shorts(tasks_run);
         }
 
-        let min_version = r#"min_usage_version "2.11""#;
+        // Require usage >= 3.4, the release that ships the jdx/usage#649 parser fix
+        // (see jdx/usage#652). This guards old `usage` CLIs from silently
+        // re-triggering the mise#10069 mis-parse without the fix.
+        let min_version = r#"min_usage_version "3.4""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
         println!("{min_version}\n{}\n{extra}", spec.to_string().trim());
         Ok(())

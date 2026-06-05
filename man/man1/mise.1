@@ -442,6 +442,9 @@ Removes a shell alias
 \fIAliases: \fRrm, remove, delete, del
 .RE
 .TP
+\fBsponsors\fR
+Show the companies sponsoring mise and the en.dev project family
+.TP
 \fBsync\fR
 Synchronize tools from other version managers with mise
 .TP
@@ -1807,7 +1810,7 @@ to show core and user plugins
 .SH "MISE PLUGINS INSTALL"
 Install a plugin
 
-note that mise automatically can install plugins when you install a tool
+note that mise can automatically install plugins when you install a tool
 e.g.: `mise install cmake@3.30` will autoinstall the cmake plugin
 
 This behavior can be modified in ~/.config/mise/config.toml
@@ -2072,7 +2075,7 @@ You can list prunable tools with `mise ls \-\-prunable`
 Do not actually delete anything
 .TP
 \fB\-\-configs\fR
-Prune only tracked and trusted configuration links that point to non\-existent configurations
+Prune only tracked and trusted configuration links that point to nonexistent configurations
 .TP
 \fB\-\-dry\-run\-code\fR
 Like \-\-dry\-run but exits with code 1 if there are tools to prune
@@ -2128,7 +2131,7 @@ other ways to install things (like using yarn or pnpm for node) that mise does
 not know about and so it will be necessary to call this explicitly.
 
 If you think mise should automatically call this for a particular command, please
-open an issue on the mise repo. You can also setup a shell function to reshim
+open an issue on the mise repo. You can also set up a shell function to reshim
 automatically (it's really fast so you don't need to worry about overhead):
 
     npm() {
@@ -3708,14 +3711,14 @@ repository will be discarded.
 Don't load global ignores
 
 This disables loading of global or user ignore files, like '~/.gitignore',
-\&'~/.config/watchexec/ignore', or '%APPDATA%\\Bazzar\\2.0\\ignore'. Contrast with
+\&'~/.config/watchexec/ignore', or '%APPDATA%\\Bazaar\\2.0\\ignore'. Contrast with
 \&'\-\-no\-vcs\-ignore' and '\-\-no\-project\-ignore'.
 
 Supported global ignore files
 
   \- Git (if core.excludesFile is set): the file at that path
   \- Git (otherwise): the first found of $XDG_CONFIG_HOME/git/ignore, %APPDATA%/.gitignore, %USERPROFILE%/.gitignore, $HOME/.config/git/ignore, $HOME/.gitignore.
-  \- Bazaar: the first found of %APPDATA%/Bazzar/2.0/ignore, $HOME/.bazaar/ignore.
+  \- Bazaar: the first found of %APPDATA%/Bazaar/2.0/ignore, $HOME/.bazaar/ignore.
   \- Watchexec: the first found of $XDG_CONFIG_HOME/watchexec/ignore, %APPDATA%/watchexec/ignore, %USERPROFILE%/.watchexec/ignore, $HOME/.watchexec/ignore.
 
 Like for project files, Git and Bazaar global files will only be used for the corresponding

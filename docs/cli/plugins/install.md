@@ -7,7 +7,7 @@
 
 Install a plugin
 
-note that mise automatically can install plugins when you install a tool
+note that mise can automatically install plugins when you install a tool
 e.g.: `mise install cmake@3.30` will autoinstall the cmake plugin
 
 This behavior can be modified in ~/.config/mise/config.toml

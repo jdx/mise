@@ -373,7 +373,7 @@ export default withMermaid(
       gtag('js', new Date());
       gtag('config', 'G-B69G389C8T');`,
       ],
-      // OpenGraph
+      // Open Graph
       ["meta", { property: "og:site_name", content: "mise-en-place" }],
       ["meta", { property: "og:type", content: "website" }],
       [
