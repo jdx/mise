@@ -45,6 +45,7 @@ apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libyaml-dev \
     libfuse2t64 \
+    fuse3 \
     pipx \
     pkg-config \
     openssh-client \

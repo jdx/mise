@@ -43,7 +43,7 @@ jobs:
           diff_base_sha="$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")"
           echo "diff-base-sha=$diff_base_sha" >> "$GITHUB_OUTPUT"
           # Check if relevant files changed
-          if git diff --name-only "$diff_base_sha" "$PR_HEAD_SHA" | grep -qE '^(registry/.*\.toml|\.github/workflows/registry\.yml|src/cli/test_tool\.rs)$'; then
+          if git diff --name-only "$diff_base_sha" "$PR_HEAD_SHA" | grep -qE '^(registry/.*\.toml|\.github/workflows/registry\.yml|src/cli/test_tool\.rs|e2e/run_test|packaging/e2e/Dockerfile)$'; then
             echo "registry-changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "registry-changed=false" >> "$GITHUB_OUTPUT"
@@ -105,7 +105,7 @@ jobs:
           DIFF_BASE_SHA: ${{ needs.check-changes.outputs.diff-base-sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if git diff --name-only "$DIFF_BASE_SHA" "$PR_HEAD_SHA" | grep -q ".github/workflows/registry.yml"; then
+          if git diff --name-only "$DIFF_BASE_SHA" "$PR_HEAD_SHA" | grep -qE '^(\.github/workflows/registry\.yml|e2e/run_test|packaging/e2e/Dockerfile)$'; then
             echo "modified=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: ./.github/actions/registry-diff
