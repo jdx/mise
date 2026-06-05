@@ -190,6 +190,9 @@ mod tests {
 
     #[tokio::test]
     async fn decrypts_sops_toml_file() {
+        let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
+        let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
+        crate::env::remove_var("MISE_SOPS_ROPS");
         crate::env::set_var("MISE_SOPS_AGE_KEY", AGE_PRIVATE_KEY);
         Settings::reset(None);
         let config = Config::reset().await.unwrap();
@@ -208,5 +211,54 @@ mod tests {
 
         let env = EnvResults::toml(&config, &p, Ok).await.unwrap();
         assert_eq!(env.get("SECRET").unwrap(), "mysecret");
+
+        match prev_age_key {
+            Some(v) => crate::env::set_var("MISE_SOPS_AGE_KEY", v),
+            None => crate::env::remove_var("MISE_SOPS_AGE_KEY"),
+        }
+        match prev_rops {
+            Some(v) => crate::env::set_var("MISE_SOPS_ROPS", v),
+            None => crate::env::remove_var("MISE_SOPS_ROPS"),
+        }
+        Settings::reset(None);
+    }
+
+    #[tokio::test]
+    async fn errors_when_sops_cli_is_configured_for_toml_file() {
+        let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
+        let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
+        crate::env::set_var("MISE_SOPS_AGE_KEY", AGE_PRIVATE_KEY);
+        crate::env::set_var("MISE_SOPS_ROPS", "0");
+        Settings::reset(None);
+        let config = Config::reset().await.unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join(".env.toml");
+
+        let encrypted = RopsFileBuilder::<TomlFileFormat>::new(r#"SECRET = "mysecret""#)
+            .unwrap()
+            .add_integration_key::<AgeIntegration>(
+                AgeIntegration::parse_key_id(AGE_PUBLIC_KEY).unwrap(),
+            )
+            .encrypt::<AES256GCM, SHA512>()
+            .unwrap()
+            .to_string();
+        file::write(&p, encrypted).unwrap();
+
+        let err = EnvResults::toml(&config, &p, Ok).await.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("sops.rops=false is not supported for TOML SOPS files"),
+            "{err}"
+        );
+
+        match prev_age_key {
+            Some(v) => crate::env::set_var("MISE_SOPS_AGE_KEY", v),
+            None => crate::env::remove_var("MISE_SOPS_AGE_KEY"),
+        }
+        match prev_rops {
+            Some(v) => crate::env::set_var("MISE_SOPS_ROPS", v),
+            None => crate::env::remove_var("MISE_SOPS_ROPS"),
+        }
+        Settings::reset(None);
     }
 }

@@ -25,6 +25,13 @@ where
     static AGE_KEY_FILE: OnceCell<Option<std::path::PathBuf>> = OnceCell::const_new();
     static MUTEX: Mutex<()> = Mutex::const_new(());
 
+    let use_rops = Settings::get().sops.rops;
+    if !use_rops && format == "toml" {
+        return Err(eyre!(
+            "sops.rops=false is not supported for TOML SOPS files because the sops CLI does not support TOML; set sops.rops=true or use a JSON/YAML SOPS file"
+        ));
+    }
+
     let age = AGE_KEY
         .get_or_init(async || {
             // 1. Check mise-specific MISE_SOPS_AGE_KEY setting first (highest priority)
@@ -126,8 +133,6 @@ where
     }
 
     let _lock = MUTEX.lock().await; // prevent multiple threads from using the same age key
-    // getsops/sops does not support TOML yet, so keep TOML on the rops path.
-    let use_rops = Settings::get().sops.rops || format == "toml";
     let age_env_key = if use_rops { "ROPS_AGE" } else { "SOPS_AGE_KEY" };
     let prev_age = env::var(age_env_key).ok();
     let prev_age_key_file = env::var("SOPS_AGE_KEY_FILE").ok();

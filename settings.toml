@@ -2151,7 +2151,7 @@ type = "String"
 
 [sops.rops]
 default = true
-description = "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops."
+description = "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops. Required for TOML SOPS files because the sops CLI does not support TOML."
 env = "MISE_SOPS_ROPS"
 type = "Bool"
 
