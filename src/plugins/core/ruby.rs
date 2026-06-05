@@ -1022,6 +1022,7 @@ impl Backend for RubyPlugin {
         target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         if target.os_name() == "windows" {
+            // Windows uses RubyInstaller2, so ruby-build/precompiled settings do not affect it.
             return BTreeMap::new();
         }
 
