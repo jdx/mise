@@ -45,7 +45,7 @@ jobs:
     if: github.repository == 'jdx/mise'
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0 # for lastUpdated
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
