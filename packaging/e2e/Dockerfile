@@ -33,6 +33,7 @@ apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libgl1 \
     libglib2.0-0 \
+    libharfbuzz0b \
     libicu-dev \
     libncurses-dev \
     libreadline-dev \
