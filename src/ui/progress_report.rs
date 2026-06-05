@@ -16,8 +16,6 @@ use crate::{backend, ui};
 pub enum ProgressIcon {
     Success,
     Skipped,
-    Warning,
-    Error,
 }
 
 impl Display for ProgressIcon {
@@ -25,8 +23,6 @@ impl Display for ProgressIcon {
         match self {
             ProgressIcon::Success => write!(f, "{}", style::egreen("✓").bright()),
             ProgressIcon::Skipped => write!(f, "{}", style::eyellow("⇢").bright()),
-            ProgressIcon::Warning => write!(f, "{}", style::eyellow("⚠").bright()),
-            ProgressIcon::Error => write!(f, "{}", style::ered("✗").bright()),
         }
     }
 }
@@ -135,8 +131,6 @@ impl SingleReport for ProgressReport {
         // Set status based on icon
         match icon {
             ProgressIcon::Success => self.job.set_status(ProgressStatus::Done),
-            ProgressIcon::Error => self.job.set_status(ProgressStatus::Failed),
-            ProgressIcon::Warning => self.job.set_status(ProgressStatus::Warn),
             ProgressIcon::Skipped => self.job.set_status(ProgressStatus::Done),
         }
     }

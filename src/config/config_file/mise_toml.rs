@@ -37,7 +37,7 @@ use crate::watch_files::WatchFile;
 use crate::{env, file};
 
 use super::diagnostic::toml_parse_error;
-use super::{ConfigFileType, min_version::MinVersionSpec};
+use super::min_version::MinVersionSpec;
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
@@ -585,10 +585,6 @@ impl MiseToml {
 }
 
 impl ConfigFile for MiseToml {
-    fn config_type(&self) -> ConfigFileType {
-        ConfigFileType::MiseToml
-    }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }

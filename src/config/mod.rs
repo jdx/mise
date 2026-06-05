@@ -75,7 +75,6 @@ pub struct Config {
     tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
-    vars_loader: Option<Arc<Config>>,
     vars_results: OnceCell<EnvResults>,
 }
 
@@ -158,7 +157,6 @@ impl Config {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         let vars_config = Arc::new(Self {
@@ -178,14 +176,11 @@ impl Config {
             shell_aliases: config.shell_aliases.clone(),
             tera_files: config.tera_files.clone(),
             vars: config.vars.clone(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         });
         let vars_results = measure!("config::load vars_results", {
             let results = load_vars(&vars_config).await?;
-            vars_config.vars_results.set(results.clone()).ok();
             config.vars_results.set(results.clone()).ok();
-            config.vars_loader = Some(vars_config.clone());
             results
         });
         let vars: IndexMap<String, String> = vars_results
@@ -274,17 +269,6 @@ impl Config {
     pub async fn env_results(self: &Arc<Self>) -> Result<&EnvResults> {
         self.env
             .get_or_try_init(|| async { self.load_env().await })
-            .await
-    }
-
-    pub async fn vars_results(self: &Arc<Self>) -> Result<&EnvResults> {
-        if let Some(loader) = &self.vars_loader
-            && let Some(results) = loader.vars_results.get()
-        {
-            return Ok(results);
-        }
-        self.vars_results
-            .get_or_try_init(|| async move { load_vars(self).await })
             .await
     }
 
@@ -2618,7 +2602,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2696,7 +2679,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2778,7 +2760,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2862,7 +2843,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2921,7 +2901,6 @@ mod tests {
                 shell_aliases: Default::default(),
                 tera_files: Default::default(),
                 vars: Default::default(),
-                vars_loader: None,
                 vars_results: OnceCell::new(),
             };
             config.tool_request_set.set(ToolRequestSet::new()).ok();
