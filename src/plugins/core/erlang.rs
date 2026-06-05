@@ -157,6 +157,8 @@ impl ErlangPlugin {
                 bail!("could not determine OS release");
             }
         } else {
+            // Cross-platform Linux lock resolution cannot inspect the target
+            // distro, so use Bob's newest supported Ubuntu build.
             "ubuntu-24.04".to_string()
         };
 
@@ -480,6 +482,8 @@ impl Backend for ErlangPlugin {
     }
 
     fn supports_lockfile_url(&self) -> bool {
+        // In default mode, precompiled Erlang is opportunistic and may fall
+        // back to kerl, so locked installs cannot always require a URL.
         Settings::get().erlang.compile == Some(false)
     }
 
