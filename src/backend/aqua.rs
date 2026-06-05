@@ -65,46 +65,66 @@ impl<'a> AquaOptions<'a> {
     }
 
     fn var(&self, name: &str) -> Result<Option<String>> {
-        let opts = self.values.raw();
-        if let Some(toml::Value::Table(vars)) = opts.opts.get("vars")
-            && let Some(value) = vars.get(name)
-        {
-            return toml_string_var(&format!("vars.{name}"), value).map(Some);
-        }
-        opts.opts
+        self.canonical_var_options()?
             .get(name)
-            .map(|value| toml_string_var(name, value).map(Some))
+            .map(|value| toml_string_var(&format!("vars.{name}"), value).map(Some))
             .unwrap_or(Ok(None))
     }
 
-    fn lockfile_options(&self) -> BTreeMap<String, String> {
-        let mut result = BTreeMap::new();
+    fn lockfile_options(&self) -> Result<BTreeMap<String, String>> {
+        Ok(self
+            .canonical_var_options()?
+            .into_iter()
+            .filter_map(|(key, value)| {
+                toml_value_to_string(value).map(|value| (format!("vars.{key}"), value))
+            })
+            .collect())
+    }
+
+    fn canonical_var_options(&self) -> Result<BTreeMap<String, &toml::Value>> {
+        let mut vars = BTreeMap::new();
         for (key, value) in self.values.raw().iter() {
             if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
                 continue;
             }
+
             if key == "vars" {
                 if let toml::Value::Table(table) = value {
-                    Self::insert_vars_lockfile_options(&mut result, table);
+                    Self::insert_nested_var_options(&mut vars, table)?;
                 }
-            } else if let Some(value) = toml_value_to_string(value) {
-                let key = if key.starts_with("vars.") {
-                    key.clone()
-                } else {
-                    format!("vars.{key}")
-                };
-                result.entry(key).or_insert(value);
+                continue;
             }
+
+            let key = if let Some(key) = key.strip_prefix("vars.") {
+                key.to_string()
+            } else {
+                key.clone()
+            };
+            Self::insert_var_option(&mut vars, key, value)?;
         }
-        result
+        Ok(vars)
     }
 
-    fn insert_vars_lockfile_options(result: &mut BTreeMap<String, String>, table: &toml::Table) {
-        for (key, value) in table {
-            if let Some(value) = toml_value_to_string(value) {
-                result.insert(format!("vars.{key}"), value);
-            }
+    fn insert_var_option<'b>(
+        result: &mut BTreeMap<String, &'b toml::Value>,
+        key: String,
+        value: &'b toml::Value,
+    ) -> Result<()> {
+        if result.contains_key(&key) {
+            bail!("conflicting aqua var `{key}`: use only one spelling");
         }
+        result.insert(key, value);
+        Ok(())
+    }
+
+    fn insert_nested_var_options<'b>(
+        result: &mut BTreeMap<String, &'b toml::Value>,
+        table: &'b toml::Table,
+    ) -> Result<()> {
+        for (key, value) in table {
+            Self::insert_var_option(result, key.clone(), value)?;
+        }
+        Ok(())
     }
 }
 
@@ -584,7 +604,7 @@ impl Backend for AquaBackend {
             });
         }
 
-        let cache_key = opts.lockfile_options();
+        let cache_key = opts.lockfile_options()?;
         let cache: CacheManager<Vec<PathBuf>> =
             CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
                 .with_fresh_file(install_path.clone())
@@ -622,7 +642,7 @@ impl Backend for AquaBackend {
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let request_options = request.options();
         AquaOptions::new(&request_options).lockfile_options()
     }
@@ -2934,7 +2954,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_var_options_prefers_nested_vars() {
+    fn test_apply_var_options_errors_for_duplicate_nested_vars() {
         let mut pkg = AquaPackage::default();
         pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
         pkg.vars = vec![aqua_var("channel", true)];
@@ -2952,11 +2972,83 @@ mod tests {
             .insert("vars".to_string(), toml::Value::Table(vars));
 
         let opts = AquaOptions::new(&opts);
+        let err = AquaBackend::apply_var_options(pkg, &opts).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("conflicting aqua var `channel`: use only one spelling"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_apply_var_options_reads_prefixed_vars() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
+        pkg.vars = vec![aqua_var("channel", true)];
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
+        let opts = AquaOptions::new(&opts);
         let pkg = AquaBackend::apply_var_options(pkg, &opts).unwrap();
 
         assert_eq!(
             pkg.asset("1.0.0", "linux", "amd64").unwrap(),
-            "tool-beta-1.0.0.tar.gz"
+            "tool-stable-1.0.0.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_apply_var_options_errors_for_duplicate_prefixed_vars() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
+        pkg.vars = vec![aqua_var("channel", true)];
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("manifest".to_string()),
+        );
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
+        let opts = AquaOptions::new(&opts);
+        let err = AquaBackend::apply_var_options(pkg, &opts).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("conflicting aqua var `channel`: use only one spelling"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_apply_var_options_allows_same_spelling_overrides() {
+        let mut pkg = AquaPackage::default();
+        pkg.asset = "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string();
+        pkg.vars = vec![aqua_var("channel", true)];
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("manifest".to_string()),
+        );
+        let mut overrides = ToolVersionOptions::default();
+        overrides.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+        opts.apply_overrides(&overrides);
+
+        let opts = AquaOptions::new(&opts);
+        let pkg = AquaBackend::apply_var_options(pkg, &opts).unwrap();
+
+        assert_eq!(
+            pkg.asset("1.0.0", "linux", "amd64").unwrap(),
+            "tool-stable-1.0.0.tar.gz"
         );
     }
 
@@ -3018,7 +3110,7 @@ mod tests {
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
-        let lock_opts = AquaOptions::new(&opts).lockfile_options();
+        let lock_opts = AquaOptions::new(&opts).lockfile_options().unwrap();
 
         assert_eq!(lock_opts.get("vars.channel"), Some(&"stable".to_string()));
         assert_eq!(lock_opts.get("vars.go_version"), Some(&"1.24".to_string()));
@@ -3044,19 +3136,25 @@ mod tests {
             .opts
             .insert("vars".to_string(), toml::Value::Table(vars));
 
+        let mut prefixed = ToolVersionOptions::default();
+        prefixed.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+
         assert_eq!(
-            AquaOptions::new(&top_level).lockfile_options(),
-            AquaOptions::new(&nested).lockfile_options()
+            AquaOptions::new(&top_level).lockfile_options().unwrap(),
+            AquaOptions::new(&nested).lockfile_options().unwrap()
+        );
+        assert_eq!(
+            AquaOptions::new(&prefixed).lockfile_options().unwrap(),
+            AquaOptions::new(&nested).lockfile_options().unwrap()
         );
     }
 
     #[test]
-    fn test_lockfile_options_nested_aqua_vars_take_precedence() {
+    fn test_lockfile_options_errors_for_duplicate_nested_vars() {
         let mut opts = ToolVersionOptions::default();
-        opts.opts.insert(
-            "channel".to_string(),
-            toml::Value::String("stable".to_string()),
-        );
         let mut vars = toml::Table::new();
         vars.insert(
             "channel".to_string(),
@@ -3064,10 +3162,39 @@ mod tests {
         );
         opts.opts
             .insert("vars".to_string(), toml::Value::Table(vars));
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
 
-        let lock_opts = AquaOptions::new(&opts).lockfile_options();
+        let err = AquaOptions::new(&opts).lockfile_options().unwrap_err();
 
-        assert_eq!(lock_opts.get("vars.channel"), Some(&"beta".to_string()));
+        assert!(
+            err.to_string()
+                .contains("conflicting aqua var `channel`: use only one spelling"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_lockfile_options_errors_for_duplicate_prefixed_vars() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "channel".to_string(),
+            toml::Value::String("stable".to_string()),
+        );
+        opts.opts.insert(
+            "vars.channel".to_string(),
+            toml::Value::String("manifest".to_string()),
+        );
+
+        let err = AquaOptions::new(&opts).lockfile_options().unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("conflicting aqua var `channel`: use only one spelling"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

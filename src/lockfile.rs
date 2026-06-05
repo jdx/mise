@@ -1134,15 +1134,15 @@ pub fn update_lockfiles(
         let tools_by_short: HashMap<String, Vec<LockfileTool>> = tool_versions_by_short
             .into_iter()
             .map(|(short, versions)| {
-                (
+                Ok((
                     short,
                     versions
                         .iter()
                         .map(lockfile_tool_from_tool_version)
-                        .collect(),
-                )
+                        .collect::<Result<Vec<_>>>()?,
+                ))
             })
-            .collect();
+            .collect::<Result<_>>()?;
 
         // Check for provenance regression before merging (which drops old version entries).
         // For github backend tools, error if the highest prior version had provenance but
@@ -1516,7 +1516,20 @@ pub async fn resolve_tool_lock_info(
     let target = PlatformTarget::new(platform.clone());
 
     let (info, options, conda_packages) = if let Some(backend) = backend {
-        let options = backend.resolve_lockfile_options(&tv.request, &target);
+        let options = match backend.resolve_lockfile_options(&tv.request, &target) {
+            Ok(options) => options,
+            Err(e) => {
+                return (
+                    ba.short.clone(),
+                    tv.version.clone(),
+                    ba.stored_full(),
+                    platform,
+                    Err(e.to_string()),
+                    BTreeMap::new(),
+                    BTreeMap::new(),
+                );
+            }
+        };
         match backend.resolve_lock_info(&tv, &target).await {
             Ok(info) => {
                 let conda_packages = if backend.get_type() == BackendType::Conda {
@@ -1980,16 +1993,7 @@ impl LockfileTool {
     }
 }
 
-impl From<ToolVersionList> for Vec<LockfileTool> {
-    fn from(tvl: ToolVersionList) -> Self {
-        tvl.versions
-            .iter()
-            .map(lockfile_tool_from_tool_version)
-            .collect()
-    }
-}
-
-fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> LockfileTool {
+fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
     let mut platforms = BTreeMap::new();
 
     // Convert tool version lock_platforms to lockfile platforms
@@ -2000,17 +2004,17 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> LockfileTool {
     // Resolve lockfile options from the backend
     let options = if let Ok(backend) = tv.request.backend() {
         let target = PlatformTarget::from_current();
-        backend.resolve_lockfile_options(&tv.request, &target)
+        backend.resolve_lockfile_options(&tv.request, &target)?
     } else {
         BTreeMap::new()
     };
 
-    LockfileTool {
+    Ok(LockfileTool {
         version: tv.version.clone(),
         backend: Some(tv.ba().stored_full()),
         options,
         platforms,
-    }
+    })
 }
 
 fn format(mut doc: DocumentMut) -> String {

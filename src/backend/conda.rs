@@ -661,9 +661,9 @@ impl Backend for CondaBackend {
         &self,
         request: &crate::toolset::ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        CondaOptions::new(&raw_opts).lockfile_options()
+        Ok(CondaOptions::new(&raw_opts).lockfile_options())
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {

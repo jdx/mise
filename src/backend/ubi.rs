@@ -15,7 +15,7 @@ use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, toolset::ToolVersionOptions};
 use crate::{file, github, gitlab, hash};
 use async_trait::async_trait;
-use eyre::bail;
+use eyre::{Result, bail};
 use regex::Regex;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -452,9 +452,9 @@ impl Backend for UbiBackend {
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        UbiOptions::new(&raw_opts).lockfile_options()
+        Ok(UbiOptions::new(&raw_opts).lockfile_options())
     }
 }
 

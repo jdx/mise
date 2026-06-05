@@ -322,9 +322,9 @@ impl Backend for PIPXBackend {
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let opts = request.options();
-        PipxOptions::new(&opts).lockfile_options()
+        Ok(PipxOptions::new(&opts).lockfile_options())
     }
 }
 

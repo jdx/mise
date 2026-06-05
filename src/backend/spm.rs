@@ -13,7 +13,7 @@ use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
 use duct::Expression;
-use eyre::{WrapErr, bail};
+use eyre::{Result, WrapErr, bail};
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::de::{MapAccess, Visitor};
@@ -162,9 +162,9 @@ impl Backend for SPMBackend {
         &self,
         request: &crate::toolset::ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        SpmOptions::new(&raw_opts).lockfile_options(target)
+        Ok(SpmOptions::new(&raw_opts).lockfile_options(target))
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {

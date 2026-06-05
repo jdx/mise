@@ -2135,6 +2135,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_tool_options_preserve_quoted_literal_dotted_keys() {
+        crate::toolset::install_state::init().await.unwrap();
+        let cf = MiseToml::from_str(
+            r#"
+            [tools."aqua:example/vars-tool"]
+            version = "1.0.0"
+            fixture_version = "2.0.0"
+            "vars.fixture_version" = "1.0.0"
+            "#,
+            std::path::Path::new("mise.toml"),
+        )
+        .unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let (_, requests, _) = trs.iter().next().unwrap();
+        let opts = requests[0].options();
+
+        assert_eq!(opts.get("fixture_version"), Some("2.0.0"));
+        assert_eq!(opts.get("vars.fixture_version"), Some("1.0.0"));
+    }
+
+    #[tokio::test]
     async fn test_env_source_var_in_tool() {
         let cwd = CWD.as_ref().unwrap();
         let script = cwd.join("set-go-version.sh");

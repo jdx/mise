@@ -489,10 +489,10 @@ impl Backend for JavaPlugin {
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        JavaOptions::new(&raw_opts)
-            .lockfile_options(&request.version(), &Settings::get().java.shorthand_vendor)
+        Ok(JavaOptions::new(&raw_opts)
+            .lockfile_options(&request.version(), &Settings::get().java.shorthand_vendor))
     }
 
     async fn resolve_lock_info(

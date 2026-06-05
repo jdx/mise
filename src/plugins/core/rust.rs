@@ -155,14 +155,14 @@ impl Backend for RustPlugin {
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let rt = match request.source() {
             IdiomaticVersionFile(path) => parse_idiomatic_file(path).ok(),
             _ => None,
         };
 
         let raw_opts = request.options();
-        RustOptions::new(&raw_opts).lockfile_options(rt.as_ref())
+        Ok(RustOptions::new(&raw_opts).lockfile_options(rt.as_ref()))
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
