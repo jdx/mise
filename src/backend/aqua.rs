@@ -7,7 +7,7 @@ use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
-use crate::file::{TarFormat, TarOptions};
+use crate::file::{ArchiveOptions, TarFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
@@ -2282,13 +2282,14 @@ impl AquaBackend {
         let first_bin_path = bin_paths
             .first()
             .expect("at least one bin path should exist");
-        let tar_opts = TarOptions {
+        let archive_opts = ArchiveOptions {
             pr: Some(ctx.pr.as_ref()),
-            ..TarOptions::new(TarFormat::from_ext(format))
+            single_file_dest: Some(first_bin_path),
+            ..Default::default()
         };
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
-            file::untar(&tarball_path, &install_path, &tar_opts)?;
+            file::unarchive_with_format(&tarball_path, &install_path, format, &archive_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
@@ -2297,34 +2298,13 @@ impl AquaBackend {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;
-        } else if format.starts_with("tar") || (format == "7z" && cfg!(windows)) {
-            file::untar(&tarball_path, &install_path, &tar_opts)?;
-            make_executable = true;
-        } else if format == "zip" {
-            file::unzip(&tarball_path, &install_path, &Default::default())?;
-            make_executable = true;
-        } else if format == "gz" {
-            file::create_dir_all(&install_path)?;
-            file::un_gz(&tarball_path, first_bin_path)?;
-            make_executable = true;
-        } else if format == "xz" {
-            file::create_dir_all(&install_path)?;
-            file::un_xz(&tarball_path, first_bin_path)?;
-            make_executable = true;
-        } else if format == "zst" {
-            file::create_dir_all(&install_path)?;
-            file::un_zst(&tarball_path, first_bin_path)?;
-            make_executable = true;
-        } else if format == "bz2" {
-            file::create_dir_all(&install_path)?;
-            file::un_bz2(&tarball_path, first_bin_path)?;
-            make_executable = true;
         } else if format == "dmg" {
             file::un_dmg(&tarball_path, &install_path)?;
         } else if format == "pkg" {
             file::un_pkg(&tarball_path, &install_path)?;
         } else {
-            bail!("unsupported format: {}", format);
+            file::unarchive_with_format(&tarball_path, &install_path, format, &archive_opts)?;
+            make_executable = true;
         }
 
         if make_executable {

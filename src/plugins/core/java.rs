@@ -13,7 +13,7 @@ use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::{TarFormat, TarOptions};
+use crate::file::{ArchiveOptions, TarFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -218,19 +218,19 @@ impl JavaPlugin {
     ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("extract {filename}"));
-        match m.file_type.as_deref() {
-            Some("zip") => file::unzip(tarball_path, &tv.download_path(), &Default::default())?,
-            _ => file::untar(
-                tarball_path,
-                &tv.download_path(),
-                &TarOptions {
-                    pr: Some(pr),
-                    ..TarOptions::new(TarFormat::from_file_name(
-                        &tarball_path.file_name().unwrap().to_string_lossy(),
-                    ))
-                },
-            )?,
-        }
+        let format = match m.file_type.as_deref() {
+            Some("zip") => TarFormat::Zip,
+            _ => TarFormat::from_file_name(&tarball_path.file_name().unwrap().to_string_lossy()),
+        };
+        file::unarchive(
+            tarball_path,
+            &tv.download_path(),
+            format,
+            &ArchiveOptions {
+                pr: Some(pr),
+                ..Default::default()
+            },
+        )?;
         self.move_to_install_path(tv, m)
     }
 

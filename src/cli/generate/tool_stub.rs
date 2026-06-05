@@ -4,7 +4,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::tool_stub::ToolStubFile;
 use crate::config::Config;
-use crate::file::{self, TarFormat, TarOptions};
+use crate::file::{self, TarFormat};
 use crate::http::HTTP;
 use crate::lockfile::PlatformInfo;
 use crate::minisign;
@@ -508,16 +508,17 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         std::fs::create_dir_all(&extracted_dir)?;
 
         // Try extraction using mise's built-in extraction logic (reuse the passed progress reporter)
-        let tar_opts = TarOptions {
+        let format = TarFormat::from_file_name(
+            &archive_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy(),
+        );
+        let archive_opts = file::ArchiveOptions {
             pr: Some(pr),
-            ..TarOptions::new(TarFormat::from_file_name(
-                &archive_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-            ))
+            ..Default::default()
         };
-        file::untar(archive_path, &extracted_dir, &tar_opts)?;
+        file::unarchive(archive_path, &extracted_dir, format, &archive_opts)?;
 
         // Check if strip_components would be applied during actual installation
         let format =
