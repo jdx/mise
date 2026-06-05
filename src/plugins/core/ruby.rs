@@ -1519,4 +1519,29 @@ mod tests {
             ])
         );
     }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_ruby_install_inputs_with_patches() {
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(true);
+            settings.ruby.ruby_install = Some(true);
+            settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                (
+                    "apply_patches".to_string(),
+                    "https://example.com/ruby.patch".to_string(),
+                ),
+                ("compile".to_string(), "true".to_string()),
+                ("ruby_install".to_string(), "true".to_string()),
+                (
+                    "ruby_install_repo".to_string(),
+                    DEFAULT_RUBY_INSTALL_REPO.to_string(),
+                ),
+            ])
+        );
+    }
 }
