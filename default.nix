@@ -17,6 +17,9 @@ rustPlatform.buildRustPackage {
     pkg-config
     rustPlatform.bindgenHook
   ];
+  nativeCheckInputs = with pkgs; [
+    git
+  ];
   buildInputs = with pkgs; [
     bash
     coreutils
