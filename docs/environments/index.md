@@ -325,9 +325,9 @@ _.file = '.env'
 ```
 
 ::: info
-Dotenv files use [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have problems
-with dotenv parsing, you will likely need to post an issue there, not to mise since there is not
-much mise can do about the way that crate works.
+Only dotenv-format files use [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have
+problems with dotenv parsing, you will likely need to post an issue there, not to mise since there is
+not much mise can do about the way that crate works. JSON, YAML, and TOML files use separate parsers.
 :::
 
 The `env._.file` directive supports:
