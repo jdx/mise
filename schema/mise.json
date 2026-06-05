@@ -2604,6 +2604,13 @@
       "allOf": [
         {
           "$ref": "#/$defs/task_props"
+        },
+        {
+          "properties": {
+            "hide": false,
+            "quiet": false,
+            "raw": false
+          }
         }
       ],
       "unevaluatedProperties": false,

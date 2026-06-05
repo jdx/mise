@@ -64,7 +64,7 @@ When a task extends a template, fields are merged according to these rules:
 | Sandbox deny fields                     | Compose with task-local settings                            |
 | Sandbox allow fields                    | Template and task-local values are combined                 |
 | `description`, `shell`, `timeout`, etc. | Local overrides template (if set)                           |
-| `quiet`, `hide`, `raw`                  | Not carried over (must be set explicitly in task)           |
+| `quiet`, `hide`, `raw`                  | Not supported on templates (set explicitly on each task)    |
 
 ### Example: Deep Merge for Tools
 
