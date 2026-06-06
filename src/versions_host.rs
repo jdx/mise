@@ -148,7 +148,10 @@ impl<'a> VersionsHostLogContext<'a> {
             fields.push_str(&format!(" digest={}", log_value(digest)));
         }
         if let Some(full) = self.full {
-            fields.push_str(&format!(" full={}", log_value(full)));
+            fields.push_str(&format!(
+                " full={}",
+                log_value(&sanitize_full_for_log(full))
+            ));
         }
         if let Some(version) = self.version {
             fields.push_str(&format!(" version={}", log_value(version)));
@@ -166,6 +169,20 @@ fn log_value(value: &str) -> String {
     } else {
         format!("{:?}", value)
     }
+}
+
+fn sanitize_full_for_log(full: &str) -> String {
+    let Some((backend, value)) = full.split_once(':') else {
+        return full.to_string();
+    };
+    if let Ok(mut url) = url::Url::parse(value) {
+        let _ = url.set_username("");
+        let _ = url.set_password(None);
+        url.set_query(None);
+        url.set_fragment(None);
+        return format!("{backend}:{url}");
+    }
+    full.to_string()
 }
 
 fn log_versions_host_trace(ctx: VersionsHostLogContext<'_>, outcome: &str, extra: &str) {
@@ -257,12 +274,12 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
         },
     };
 
-    log_versions_host_trace(ctx, "success", &format!("versions={}", versions.len()));
-
     if versions.is_empty() {
         log_versions_host_trace(ctx, "empty", "fallback=true");
         return Ok(None);
     }
+
+    log_versions_host_trace(ctx, "success", &format!("versions={}", versions.len()));
 
     CACHE
         .lock()
@@ -577,6 +594,20 @@ mod tests {
         assert_eq!(
             fields,
             r#"endpoint=install_track tool="some tool" full=github:jdx/mise version=1.2.3"#
+        );
+    }
+
+    #[test]
+    fn test_versions_host_log_context_redacts_full_url_credentials() {
+        let fields = VersionsHostLogContext::install_track(
+            "private",
+            "github:https://user:token@example.com/org/repo?token=secret#frag",
+            "1.2.3",
+        )
+        .fields();
+        assert_eq!(
+            fields,
+            r#"endpoint=install_track tool=private full=github:https://example.com/org/repo version=1.2.3"#
         );
     }
 
