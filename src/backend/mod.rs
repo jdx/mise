@@ -85,7 +85,7 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
 pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
-    let full = ba.full();
+    let full = ba.full_without_opts();
     REGISTRY
         .get(ba.short.as_str())
         .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
@@ -540,6 +540,16 @@ mod tests {
             &resolved,
             &["api_url", "version_prefix"],
         ));
+    }
+
+    #[test]
+    fn test_backend_arg_matches_registry_backend_ignores_inline_opts() {
+        let ba = BackendArg::new(
+            "communique".to_string(),
+            Some("github:jdx/communique[asset_pattern=communique-*]".to_string()),
+        );
+
+        assert!(backend_arg_matches_registry_backend(&ba));
     }
 
     #[test]
