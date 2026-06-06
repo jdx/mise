@@ -1233,20 +1233,33 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         )
         .unwrap();
 
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer ghu-stale"));
         let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
         let text = client
-            .get_text(format!("{server_url}/api/v3/repos/owner/repo/releases"))
+            .get_text_request(format!("{server_url}/api/v3/repos/owner/repo/releases"))
+            .headers(&headers)
+            .send()
             .await
-            .unwrap();
+            .unwrap_or_else(|err| {
+                let requests = requests.lock().unwrap();
+                panic!(
+                    "request failed: {err:#}\nrequests:\n{}",
+                    requests.join("\n---\n")
+                );
+            });
 
         assert_eq!(text, "[]");
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
         let requests = requests.lock().unwrap();
-        assert!(requests[0].contains("GET /api/v3/repos/owner/repo/releases"));
-        assert!(requests[0].contains("authorization: Bearer ghu-stale"));
-        assert!(requests[1].contains("POST /login/oauth/access_token"));
-        assert!(requests[2].contains("GET /api/v3/repos/owner/repo/releases"));
-        assert!(requests[2].contains("authorization: Bearer ghu-refreshed"));
+        let first_request = requests[0].to_ascii_lowercase();
+        let refresh_request = requests[1].to_ascii_lowercase();
+        let retry_request = requests[2].to_ascii_lowercase();
+        assert!(first_request.contains("get /api/v3/repos/owner/repo/releases"));
+        assert!(first_request.contains("authorization: bearer ghu-stale"));
+        assert!(refresh_request.contains("post /login/oauth/access_token"));
+        assert!(retry_request.contains("get /api/v3/repos/owner/repo/releases"));
+        assert!(retry_request.contains("authorization: bearer ghu-refreshed"));
         let cache = std::fs::read_to_string(cache_path).unwrap();
         assert!(cache.contains("ghu-refreshed"));
     }
