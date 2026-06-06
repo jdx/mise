@@ -47,6 +47,8 @@ shell = "bash -c"
 [task_templates.base]
 quiet = true
 dir = "{{config_root}}"
+interactive = true
+raw_args = true
 deny_net = true
 allow_env = ["CI"]
 

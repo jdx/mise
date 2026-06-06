@@ -53,6 +53,10 @@ pub struct TaskTemplate {
     pub run_windows: Vec<RunEntry>,
     #[serde(default)]
     pub file: Option<String>,
+    #[serde(default)]
+    pub interactive: bool,
+    #[serde(default)]
+    pub raw_args: bool,
     /// Block reads, writes, network, and env vars
     #[serde(default)]
     pub deny_all: bool,
@@ -178,6 +182,14 @@ impl Task {
         // Therefore, we do NOT merge these boolean fields from templates to avoid the case
         // where a task explicitly sets `quiet = false` but gets overridden by a template's
         // `quiet = true`. Users must explicitly set these in their task if needed.
+
+        // interactive/raw_args: sticky-true merge (matches task overlay merge in Task::merge)
+        if template.interactive {
+            self.interactive = true;
+        }
+        if template.raw_args {
+            self.raw_args = true;
+        }
 
         // silent: use template only if local is Off (Silent is an enum, so we can distinguish)
         if matches!(self.silent, Silent::Off)
@@ -401,6 +413,48 @@ mod tests {
             _ => None,
         });
         assert_eq!(shared_val, Some("task_value"));
+    }
+
+    #[test]
+    fn test_merge_template_interactive_from_template() {
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            interactive: true,
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(task.interactive);
+    }
+
+    #[test]
+    fn test_merge_template_raw_args_from_template() {
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            raw_args: true,
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(task.raw_args);
+    }
+
+    #[test]
+    fn test_merge_template_interactive_task_already_set() {
+        let mut task = Task {
+            interactive: true,
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            interactive: false,
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(task.interactive);
     }
 
     #[test]

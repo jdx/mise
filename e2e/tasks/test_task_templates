@@ -181,4 +181,19 @@ EOF
 
 assert "mise run build" "cargo build"
 
+# Test raw_args inherited from template
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."proxy:base"]
+raw_args = true
+run = 'echo "got:$@"'
+
+[tasks.proxy]
+extends = "proxy:base"
+EOF
+
+assert "mise run proxy --help" "got: --help"
+
 echo '' >mise.toml
