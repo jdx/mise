@@ -158,11 +158,11 @@ assert_fail "$TOMBI_LINT mise-bad-tmpl.toml"
 
 # Verify that quiet/hide/raw/interactive/raw_args are rejected on task_templates
 for flag in quiet hide raw interactive raw_args; do
-	cat >"$HOME/workdir/mise-bad-tmpl-output-flag.toml" <<TOML
+  cat >"$HOME/workdir/mise-bad-tmpl-output-flag.toml" <<TOML
 [task_templates.base]
 $flag = true
 TOML
-	assert_fail "$TOMBI_LINT mise-bad-tmpl-output-flag.toml"
+  assert_fail "$TOMBI_LINT mise-bad-tmpl-output-flag.toml"
 done
 
 cat >"$HOME/workdir/mise-bad-os.toml" <<'TOML'
