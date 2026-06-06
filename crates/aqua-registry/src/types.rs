@@ -470,12 +470,7 @@ impl AquaPackage {
 
         for format in formats {
             if asset_name.ends_with(&format!(".{format}")) {
-                return match format {
-                    "tgz" => "tar.gz",
-                    "txz" => "tar.xz",
-                    "tbz2" | "tbz" => "tar.bz2",
-                    _ => format,
-                };
+                return format;
             }
         }
         "raw"
@@ -570,12 +565,7 @@ impl AquaPackage {
             };
             self.detect_format(&asset)
         } else {
-            match self.format.as_str() {
-                "tgz" => "tar.gz",
-                "txz" => "tar.xz",
-                "tbz2" | "tbz" => "tar.bz2",
-                format => format,
-            }
+            self.format.as_str()
         };
         Ok(format)
     }
