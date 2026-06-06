@@ -158,20 +158,25 @@ async fn refresh_cached_token(
         return Ok(None);
     };
 
-    if let Some(stale_access_token) = stale_access_token {
+    let invalidate_on_none = if let Some(stale_access_token) = stale_access_token {
         if cached.access_token != stale_access_token {
             return Ok(Some(cached.access_token));
         }
-        cached.expires_at = chrono::Utc::now();
-        cache.tokens.insert(cache_key.to_string(), cached.clone());
-        if let Err(err) = write_cache(&cache) {
-            warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
-        }
+        true
     } else if reusable(&cached) {
         return Ok(Some(cached.access_token));
-    }
+    } else {
+        false
+    };
 
     let Some(refreshed) = refresh_token(&cached).await? else {
+        if invalidate_on_none {
+            cached.expires_at = chrono::Utc::now();
+            cache.tokens.insert(cache_key.to_string(), cached);
+            if let Err(err) = write_cache(&cache) {
+                warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
+            }
+        }
         return Ok(None);
     };
     let access_token = refreshed.access_token.clone();
@@ -512,5 +517,100 @@ pub(crate) mod test_support {
 
     pub(crate) fn clear_cache_path() {
         *TEST_CACHE_PATH.write().unwrap() = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct OAuthEnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        vars: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl OAuthEnvGuard {
+        fn new(auth_url: String, cache_path: PathBuf) -> Self {
+            let lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+            let vars = vec![
+                (
+                    "MISE_GITHUB_OAUTH_CLIENT_ID",
+                    std::env::var("MISE_GITHUB_OAUTH_CLIENT_ID").ok(),
+                ),
+                (
+                    "MISE_GITHUB_OAUTH_AUTH_URL",
+                    std::env::var("MISE_GITHUB_OAUTH_AUTH_URL").ok(),
+                ),
+                (
+                    "MISE_GITHUB_OAUTH_API_URL",
+                    std::env::var("MISE_GITHUB_OAUTH_API_URL").ok(),
+                ),
+                (
+                    "MISE_GITHUB_OAUTH_SCOPES",
+                    std::env::var("MISE_GITHUB_OAUTH_SCOPES").ok(),
+                ),
+            ];
+            crate::env::set_var("MISE_GITHUB_OAUTH_CLIENT_ID", "Iv1.mock");
+            crate::env::set_var("MISE_GITHUB_OAUTH_AUTH_URL", auth_url);
+            crate::env::set_var("MISE_GITHUB_OAUTH_API_URL", "https://api.github.com");
+            crate::env::remove_var("MISE_GITHUB_OAUTH_SCOPES");
+            test_support::set_cache_path(cache_path);
+            Settings::reset(None);
+            Self { _lock: lock, vars }
+        }
+    }
+
+    impl Drop for OAuthEnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.vars {
+                if let Some(value) = value {
+                    crate::env::set_var(key, value);
+                } else {
+                    crate::env::remove_var(key);
+                }
+            }
+            test_support::clear_cache_path();
+            Settings::reset(None);
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_error_preserves_cached_token() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((sock, _)) = listener.accept().await {
+                drop(sock);
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard =
+            OAuthEnvGuard::new(format!("http://127.0.0.1:{port}/login"), cache_path.clone());
+
+        let expires_at = chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let cache_key = cache_key("api.github.com", "Iv1.mock", "");
+        std::fs::write(
+            &cache_path,
+            format!(
+                r#"[tokens.{cache_key}]
+access_token = "ghu-stale"
+expires_at = "2099-01-01T00:00:00Z"
+refresh_token = "ghr-refresh"
+refresh_expires_at = "2099-01-01T00:00:00Z"
+"#
+            ),
+        )
+        .unwrap();
+
+        let result = refresh_cached_token(&cache_key, Some("ghu-stale")).await;
+
+        assert!(result.is_err());
+        let cache = read_cache();
+        let cached = cache.tokens.get(&cache_key).unwrap();
+        assert_eq!(cached.access_token, "ghu-stale");
+        assert_eq!(cached.expires_at, expires_at);
     }
 }
