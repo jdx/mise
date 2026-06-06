@@ -1151,7 +1151,11 @@ pub trait Backend: Debug + Send + Sync {
                 }
                 is_registry_backend
             } else {
-                true // Not in registry, safe to use versions host
+                trace!(
+                    "Skipping versions host for {} because it is not in the registry",
+                    ba.short
+                );
+                false
             }
         };
 

@@ -296,12 +296,21 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
+    get_release_for_url_with_versions_host(api_url, repo, tag, true).await
+}
+
+pub async fn get_release_for_url_with_versions_host(
+    api_url: &str,
+    repo: &str,
+    tag: &str,
+    use_versions_host: bool,
+) -> Result<GithubRelease> {
     let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     cache
         .get_or_try_init_async_if(
-            async || get_release_(api_url, repo, tag).await,
+            async || get_release_with_options(api_url, repo, tag, use_versions_host).await,
             should_cache_release,
         )
         .await
@@ -357,7 +366,17 @@ fn pick_best_build_revision(releases: Vec<GithubRelease>, version: &str) -> Opti
 }
 
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
-    if is_public_github_api_base(api_url)
+    get_release_with_options(api_url, repo, tag, true).await
+}
+
+async fn get_release_with_options(
+    api_url: &str,
+    repo: &str,
+    tag: &str,
+    use_versions_host: bool,
+) -> Result<GithubRelease> {
+    if use_versions_host
+        && is_public_github_api_base(api_url)
         && let Ok(Some(release)) = crate::versions_host::github_release(repo, tag).await
     {
         trace!("got GitHub release {repo}@{tag} from mise-versions");

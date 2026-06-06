@@ -14,6 +14,7 @@ use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::registry::REGISTRY;
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, forgejo, github, gitlab};
@@ -392,7 +393,10 @@ impl Backend for UnifiedGitBackend {
                 }
             }
         } else {
-            match github::get_release_for_url(&api_url, &repo, "latest").await {
+            match self
+                .get_github_release_for_url(&api_url, &repo, "latest")
+                .await
+            {
                 Ok(r) => Some(r.tag_name),
                 Err(e) => {
                     debug!("Failed to fetch latest GitHub release for {repo}: {e}");
@@ -426,10 +430,19 @@ impl Backend for UnifiedGitBackend {
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
 
+        let use_versions_host = self.use_versions_host_for_github_metadata();
         match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
             let api_url = api_url.clone();
             let repo = repo.clone();
-            async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+            async move {
+                github::get_release_for_url_with_versions_host(
+                    &api_url,
+                    &repo,
+                    &candidate,
+                    use_versions_host,
+                )
+                .await
+            }
         })
         .await
         {
@@ -605,6 +618,28 @@ impl UnifiedGitBackend {
         }
     }
 
+    fn use_versions_host_for_github_metadata(&self) -> bool {
+        let full = self.ba.full();
+        REGISTRY
+            .get(self.ba.short.as_str())
+            .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
+    }
+
+    async fn get_github_release_for_url(
+        &self,
+        api_url: &str,
+        repo: &str,
+        tag: &str,
+    ) -> Result<github::GithubRelease> {
+        github::get_release_for_url_with_versions_host(
+            api_url,
+            repo,
+            tag,
+            self.use_versions_host_for_github_metadata(),
+        )
+        .await
+    }
+
     /// Detect what provenance type is available for a release by checking its assets
     /// and querying the GitHub attestation API.
     async fn detect_provenance_type(
@@ -620,11 +655,20 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
+        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.to_string();
-                async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+                async move {
+                    github::get_release_for_url_with_versions_host(
+                        &api_url,
+                        &repo,
+                        &candidate,
+                        use_versions_host,
+                    )
+                    .await
+                }
             })
             .await
             .ok();
@@ -782,11 +826,20 @@ impl UnifiedGitBackend {
         if settings.slsa && settings.github.slsa {
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
+            let use_versions_host = self.use_versions_host_for_github_metadata();
             let release =
                 try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
                     let api_url = api_url.to_string();
                     let repo = repo.to_string();
-                    async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+                    async move {
+                        github::get_release_for_url_with_versions_host(
+                            &api_url,
+                            &repo,
+                            &candidate,
+                            use_versions_host,
+                        )
+                        .await
+                    }
                 })
                 .await?;
 
@@ -1181,7 +1234,9 @@ impl UnifiedGitBackend {
         version: &str,
         target: &PlatformTarget,
     ) -> Result<ReleaseAsset> {
-        let release = github::get_release_for_url(api_url, repo, version).await?;
+        let release = self
+            .get_github_release_for_url(api_url, repo, version)
+            .await?;
         let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
 
         // Build asset list with URLs for checksum fetching
@@ -1884,11 +1939,20 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.version_prefix();
+        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.clone();
-                async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+                async move {
+                    github::get_release_for_url_with_versions_host(
+                        &api_url,
+                        &repo,
+                        &candidate,
+                        use_versions_host,
+                    )
+                    .await
+                }
             })
             .await
             {
