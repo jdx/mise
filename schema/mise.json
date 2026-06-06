@@ -2608,8 +2608,10 @@
         {
           "properties": {
             "hide": false,
+            "interactive": false,
             "quiet": false,
-            "raw": false
+            "raw": false,
+            "raw_args": false
           }
         }
       ],
