@@ -8,10 +8,14 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, backend::VersionInfo, config::Config};
+use crate::{
+    backend::Backend, backend::VersionInfo, backend::platform_target::PlatformTarget,
+    config::Config,
+};
 use crate::{env, file, plugins};
 use async_trait::async_trait;
 use eyre::Result;
@@ -45,14 +49,53 @@ impl ElixirPlugin {
             .execute()
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let version = &tv.version;
-        let version = if regex!(r"^[0-9]").is_match(version) {
-            &format!("v{version}")
+    fn version_tag(version: &str) -> String {
+        if regex!(r"^[0-9]").is_match(version) {
+            format!("v{version}")
         } else {
-            version
-        };
-        let url = format!("https://builds.hex.pm/builds/elixir/{version}.zip");
+            version.to_string()
+        }
+    }
+
+    fn download_url(version: &str) -> String {
+        format!(
+            "https://builds.hex.pm/builds/elixir/{}.zip",
+            Self::version_tag(version)
+        )
+    }
+
+    async fn checksum(version: &str) -> Result<Option<String>> {
+        let version_tag = Self::version_tag(version);
+        let builds = HTTP_FETCH
+            .get_text_cached("https://builds.hex.pm/builds/elixir/builds.txt")
+            .await?;
+        Ok(builds.lines().find_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 4 && parts[0] == version_tag {
+                Some(format!("sha256:{}", parts[3]))
+            } else {
+                None
+            }
+        }))
+    }
+
+    fn lockfile_url(&self, tv: &ToolVersion) -> Option<String> {
+        tv.lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|p| p.url.clone())
+    }
+
+    fn set_lockfile_url(&self, tv: &mut ToolVersion, url: &str) {
+        tv.lock_platforms
+            .entry(self.get_platform_key())
+            .or_default()
+            .url = Some(url.to_string());
+    }
+
+    async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+        let url = self
+            .lockfile_url(tv)
+            .unwrap_or_else(|| Self::download_url(&tv.version));
 
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
@@ -61,6 +104,7 @@ impl ElixirPlugin {
         if !tarball_path.exists() {
             HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
         }
+        self.set_lockfile_url(tv, &url);
 
         Ok(tarball_path)
     }
@@ -94,7 +138,7 @@ impl Backend for ElixirPlugin {
         // Format: "version hash timestamp checksum"
         // Example: "v1.17.3 abc123 2024-12-01T00:00:00Z def456"
         let versions: Vec<VersionInfo> = HTTP_FETCH
-            .get_text("https://builds.hex.pm/builds/elixir/builds.txt")
+            .get_text_cached("https://builds.hex.pm/builds/elixir/builds.txt")
             .await?
             .lines()
             .unique()
@@ -140,13 +184,25 @@ impl Backend for ElixirPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
+        let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
         self.install(ctx, &tv, &tarball_path).await?;
         self.verify(ctx, &tv).await?;
         Ok(tv)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        Ok(PlatformInfo {
+            url: Some(Self::download_url(&tv.version)),
+            checksum: Self::checksum(&tv.version).await?,
+            ..Default::default()
+        })
     }
 
     async fn list_bin_paths(
