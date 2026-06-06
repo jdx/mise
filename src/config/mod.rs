@@ -75,7 +75,6 @@ pub struct Config {
     tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
-    vars_loader: Option<Arc<Config>>,
     vars_results: OnceCell<EnvResults>,
 }
 
@@ -158,7 +157,6 @@ impl Config {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         let vars_config = Arc::new(Self {
@@ -178,14 +176,11 @@ impl Config {
             shell_aliases: config.shell_aliases.clone(),
             tera_files: config.tera_files.clone(),
             vars: config.vars.clone(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         });
         let vars_results = measure!("config::load vars_results", {
             let results = load_vars(&vars_config).await?;
-            vars_config.vars_results.set(results.clone()).ok();
             config.vars_results.set(results.clone()).ok();
-            config.vars_loader = Some(vars_config.clone());
             results
         });
         let vars: IndexMap<String, String> = vars_results
@@ -277,17 +272,6 @@ impl Config {
             .await
     }
 
-    pub async fn vars_results(self: &Arc<Self>) -> Result<&EnvResults> {
-        if let Some(loader) = &self.vars_loader
-            && let Some(results) = loader.vars_results.get()
-        {
-            return Ok(results);
-        }
-        self.vars_results
-            .get_or_try_init(|| async move { load_vars(self).await })
-            .await
-    }
-
     pub fn env_results_cached(&self) -> Option<&EnvResults> {
         self.env.get()
     }
@@ -313,23 +297,6 @@ impl Config {
             .await
     }
 
-    pub async fn get_tool_opts(
-        self: &Arc<Self>,
-        backend_arg: &Arc<BackendArg>,
-    ) -> Result<Option<ToolOptions>> {
-        let trs = self.get_tool_request_set().await?;
-        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
-        let tool_request = short_match.or_else(|| {
-            if !self.has_tool_alias(&backend_arg.short) {
-                return None;
-            }
-
-            let resolved_ba = BackendArg::new(backend_arg.full(), None);
-            trs.iter().find(|tr| tr.0.short == resolved_ba.short)
-        });
-        Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
-    }
-
     fn has_tool_alias(&self, short: &str) -> bool {
         self.all_aliases
             .get(short)
@@ -351,7 +318,17 @@ impl Config {
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
     ) -> Result<ResolvedToolOptions> {
-        let config_opts = self.get_tool_opts(backend_arg).await?;
+        let trs = self.get_tool_request_set().await?;
+        let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
+        let tool_request = short_match.or_else(|| {
+            if !self.has_tool_alias(&backend_arg.short) {
+                return None;
+            }
+
+            let resolved_ba = BackendArg::new(backend_arg.full(), None);
+            trs.iter().find(|tr| tr.0.short == resolved_ba.short)
+        });
+        let config_opts = tool_request.and_then(|tr| tr.1.first().map(|req| req.options()));
         let alias_opts = self.get_backend_alias_opts(backend_arg);
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
@@ -1928,7 +1905,7 @@ async fn load_local_tasks_with_context(
 
                     // If no config file exists, still load default task include dirs
                     if !found_config {
-                        let includes = task_includes_for_dir(&subdir, &config.config_files);
+                        let includes = task_includes_for_dir(&subdir, &config.config_files)?;
                         for include in includes {
                             let mut subdir_tasks =
                                 load_tasks_includes(&config, &include, &subdir, &None).await?;
@@ -2376,8 +2353,10 @@ fn is_glob_pattern(pattern: &str) -> bool {
 
 /// Expand a task include pattern (which may be a glob) to a list of paths
 fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
-    if is_glob_pattern(pattern) {
-        match glob(dir, pattern) {
+    let pattern = file::replace_path(pattern);
+    let pattern = pattern.to_string_lossy();
+    if is_glob_pattern(&pattern) {
+        match glob(dir, &pattern) {
             Ok(paths) => paths,
             Err(err) => {
                 warn!(
@@ -2391,7 +2370,7 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         }
     } else {
         // Literal path
-        let path = PathBuf::from(pattern);
+        let path = PathBuf::from(&*pattern);
         let resolved = if path.is_absolute() {
             path
         } else {
@@ -2411,9 +2390,7 @@ async fn load_file_tasks(
     config_root: &Path,
 ) -> Result<Vec<Task>> {
     let includes = cf
-        .task_config()
-        .includes
-        .clone()
+        .task_config_includes()?
         .unwrap_or_else(default_task_includes);
 
     let mut tasks = vec![];
@@ -2439,25 +2416,28 @@ async fn load_file_tasks(
     Ok(tasks)
 }
 
-pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
+pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
     let configs = configs_at_root(dir, config_files);
 
     // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
     let (includes, resolve_dir) = configs
         .iter()
-        .find_map(|cf| {
-            cf.task_config().includes.clone().map(|includes| {
+        .find_map(|cf| match cf.task_config_includes() {
+            Ok(Some(includes)) => Some(Ok({
                 // Resolve relative paths from the config root, not the config file's directory
                 (includes, cf.config_root())
-            })
+            })),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
         })
+        .transpose()?
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
             (default_task_includes(), dir.to_path_buf())
         });
 
-    includes
+    Ok(includes
         .into_iter()
         .flat_map(|p| {
             // Git URLs are handled by load_file_tasks, not here
@@ -2467,7 +2447,7 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
             expand_task_include(&resolve_dir, &p)
         })
         .unique()
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>())
 }
 
 pub async fn load_tasks_in_dir(
@@ -2480,12 +2460,12 @@ pub async fn load_tasks_in_dir(
 
     let (includes, resolve_dir) = configs
         .iter()
-        .find_map(|cf| {
-            cf.task_config()
-                .includes
-                .clone()
-                .map(|includes| (includes, cf.config_root()))
+        .find_map(|cf| match cf.task_config_includes() {
+            Ok(Some(includes)) => Some(Ok((includes, cf.config_root()))),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
         })
+        .transpose()?
         .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf()));
 
     let mut config_tasks = vec![];
@@ -2618,7 +2598,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2696,7 +2675,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2778,7 +2756,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2862,7 +2839,6 @@ mod tests {
             shell_aliases: Default::default(),
             tera_files: Default::default(),
             vars: Default::default(),
-            vars_loader: None,
             vars_results: OnceCell::new(),
         };
         config.tool_request_set.set(trs).ok();
@@ -2921,7 +2897,6 @@ mod tests {
                 shell_aliases: Default::default(),
                 tera_files: Default::default(),
                 vars: Default::default(),
-                vars_loader: None,
                 vars_results: OnceCell::new(),
             };
             config.tool_request_set.set(ToolRequestSet::new()).ok();

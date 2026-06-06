@@ -37,7 +37,7 @@ use crate::watch_files::WatchFile;
 use crate::{env, file};
 
 use super::diagnostic::toml_parse_error;
-use super::{ConfigFileType, min_version::MinVersionSpec};
+use super::min_version::MinVersionSpec;
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
@@ -585,10 +585,6 @@ impl MiseToml {
 }
 
 impl ConfigFile for MiseToml {
-    fn config_type(&self) -> ConfigFileType {
-        ConfigFileType::MiseToml
-    }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
@@ -915,6 +911,19 @@ impl ConfigFile for MiseToml {
         &self.task_config
     }
 
+    fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
+        self.task_config
+            .includes
+            .as_ref()
+            .map(|includes| {
+                includes
+                    .iter()
+                    .map(|include| self.parse_template(include))
+                    .collect()
+            })
+            .transpose()
+    }
+
     fn experimental_monorepo_root(&self) -> Option<bool> {
         self.experimental_monorepo_root
     }
@@ -1004,7 +1013,7 @@ impl Debug for MiseToml {
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
         if let Some(min_version) = &self.min_version {
-            d.field("min_version", &min_version.to_string());
+            d.field("min_version", min_version);
         }
         if !self.env_file.is_empty() {
             d.field("env_file", &self.env_file);

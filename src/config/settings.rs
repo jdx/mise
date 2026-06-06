@@ -457,6 +457,12 @@ impl Settings {
         if self.shorthands_file.is_some() {
             warn_deprecated("shorthands_file");
         }
+        if let Some(registry_url) = self.aqua.registry_url.take() {
+            warn_deprecated("aqua.registry_url");
+            if self.aqua.registries.is_none() {
+                self.aqua.registries = Some(vec![registry_url]);
+            }
+        }
     }
 
     pub fn add_cli_matches(cli: &Cli) {
@@ -1104,6 +1110,73 @@ mod tests {
         let settings = Settings::get();
         assert_eq!(settings.minimum_release_age.as_deref(), Some("7d"));
         Settings::reset(None);
+    }
+
+    #[test]
+    fn test_aqua_registry_url_accepts_single_string() {
+        let settings_file: SettingsFile = toml::from_str(
+            r#"
+            [settings]
+            aqua.registry_url = "https://example.com/registry"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            settings_file.settings.aqua.registry_url,
+            Some("https://example.com/registry".to_string())
+        );
+    }
+
+    #[test]
+    fn test_aqua_registries_accepts_list() {
+        let settings_file: SettingsFile = toml::from_str(
+            r#"
+            [settings]
+            aqua.registries = [
+              "https://example.com/first",
+              "https://example.com/second",
+            ]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            settings_file.settings.aqua.registries,
+            Some(vec![
+                "https://example.com/first".to_string(),
+                "https://example.com/second".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_aqua_registry_url_sets_registries() {
+        let mut settings = Settings::default();
+        settings.aqua.registry_url = Some("https://example.com/legacy".to_string());
+
+        settings.set_hidden_configs();
+
+        assert_eq!(settings.aqua.registry_url, None);
+        assert_eq!(
+            settings.aqua.registries,
+            Some(vec!["https://example.com/legacy".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_aqua_registries_overrides_registry_url() {
+        let mut settings = Settings::default();
+        settings.aqua.registry_url = Some("https://example.com/legacy".to_string());
+        settings.aqua.registries = Some(vec!["https://example.com/new".to_string()]);
+
+        settings.set_hidden_configs();
+
+        assert_eq!(settings.aqua.registry_url, None);
+        assert_eq!(
+            settings.aqua.registries,
+            Some(vec!["https://example.com/new".to_string()])
+        );
     }
 
     #[test]

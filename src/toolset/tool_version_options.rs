@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use std::ops::{Deref, DerefMut};
 
 /// Option keys that are only relevant during initial installation and should not
-/// be persisted in the manifest or included in `full_with_opts()`.
+/// be persisted in the manifest or serialized into task/backend option specs.
 // install_env is a core field on CoreToolOptions, but parse_tool_options()
 // can still place it in opts, so we filter it here as well.
 pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
@@ -173,19 +173,6 @@ impl ResolvedToolOptions {
     pub fn has_any_key_from_sources(&self, keys: &[&str], sources: &[ToolOptionSource]) -> bool {
         keys.iter()
             .any(|key| self.has_key_from_sources(key, sources))
-    }
-
-    pub fn has_any_key_except_from_sources(
-        &self,
-        except_keys: &[&str],
-        sources: &[ToolOptionSource],
-    ) -> bool {
-        self.sources.iter().any(|(key, source)| {
-            sources.contains(source)
-                && !except_keys
-                    .iter()
-                    .any(|except_key| option_key_matches(key, except_key))
-        })
     }
 
     pub fn apply_overrides(&mut self, options: &ToolVersionOptions, source: ToolOptionSource) {
@@ -564,7 +551,7 @@ pub fn try_parse_tool_options(s: &str) -> Result<ToolVersionOptions, String> {
 /// task tool specs and backend args.
 ///
 /// Complex values that cannot be round-tripped through that syntax (arrays and
-/// tables) are omitted entirely, matching `BackendArg::full_with_opts()`.
+/// tables) are omitted entirely.
 pub fn serialize_tool_options<'a, I>(opts: I) -> Option<String>
 where
     I: IntoIterator<Item = (&'a String, &'a toml::Value)>,
@@ -1246,10 +1233,6 @@ mod tests {
         );
         assert!(resolved.has_key_from_sources("install_env", &[ToolOptionSource::Config]));
         assert!(resolved.has_key_from_sources("depends", &[ToolOptionSource::InlineBackendArg]));
-        assert!(!resolved.has_any_key_except_from_sources(
-            &["install_env", "depends"],
-            &[ToolOptionSource::InlineBackendArg],
-        ));
     }
 
     #[test]

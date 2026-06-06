@@ -163,6 +163,7 @@ rops = { version = "0.1", default-features = false, features = [
   "sha2",
   "yaml",
   "json",
+  "toml",
   "age",
 ] }
 serde = { version = "1", features = ["derive"] }

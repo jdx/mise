@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -131,16 +131,8 @@ pub fn strict_metadata() -> bool {
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
 pub struct GitHubReleaseInfo {
-    pub repo: String,
     pub asset_pattern: Option<String>,
     pub api_url: Option<String>,
-    pub release_type: ReleaseType,
-}
-
-#[derive(Debug, Clone)]
-pub enum ReleaseType {
-    GitHub,
-    GitLab,
 }
 
 /// Information about a tool version including optional metadata like creation time
@@ -1630,26 +1622,6 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
 
-    async fn warn_if_dependencies_missing(&self, config: &Arc<Config>) -> eyre::Result<()> {
-        let deps = self
-            .get_all_dependencies(false)?
-            .into_iter()
-            .filter(|ba| &**self.ba() != ba)
-            .map(|ba| ba.short)
-            .collect::<HashSet<_>>();
-        if !deps.is_empty() {
-            trace!("Ensuring dependencies installed for {}", self.id());
-            let ts = config.get_tool_request_set().await?.filter_by_tool(deps);
-            let missing = ts.missing_tools(config).await;
-            if !missing.is_empty() {
-                warn_once!(
-                    "missing dependency: {}",
-                    missing.iter().map(|d| d.to_string()).join(", "),
-                );
-            }
-        }
-        Ok(())
-    }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         remove_all_with_progress(&self.ba().installs_path, pr)?;
         remove_all_with_progress(&self.ba().cache_path, pr)?;

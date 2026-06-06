@@ -286,8 +286,14 @@ fn valid_github_browser_download_url(url: &str, owner: &str, repo: &str, tag: &s
             segments.next()
         ),
         (Some(o), Some(r), Some("releases"), Some("download"), Some(t), Some(_asset), None)
-            if o == owner && r == repo && path_segment_matches(t, tag)
+            if github_repo_segment_matches(o, owner)
+                && github_repo_segment_matches(r, repo)
+                && path_segment_matches(t, tag)
     )
+}
+
+fn github_repo_segment_matches(segment: &str, expected: &str) -> bool {
+    segment.eq_ignore_ascii_case(expected)
 }
 
 fn path_segment_matches(segment: &str, expected: &str) -> bool {
@@ -313,7 +319,7 @@ fn valid_github_asset_api_url(url: &str, owner: &str, repo: &str) -> bool {
             segments.next()
         ),
         (Some("repos"), Some(o), Some(r), Some("releases"), Some("assets"), Some(_), None)
-            if o == owner && r == repo
+            if github_repo_segment_matches(o, owner) && github_repo_segment_matches(r, repo)
     )
 }
 
@@ -432,6 +438,12 @@ mod tests {
             "mise-test-fixtures",
             "release/2026"
         ));
+        assert!(valid_github_browser_download_url(
+            "https://github.com/Dicklesworthstone/destructive_command_guard/releases/download/v0.5.6/dcg-aarch64-apple-darwin.tar.xz",
+            "Dicklesworthstone",
+            "Destructive_command_guard",
+            "v0.5.6"
+        ));
         assert!(!valid_github_browser_download_url(
             "https://github.com/jdx/mise-test-fixtures/releases/download/v0.9.0/hello-world.tar.gz",
             "jdx",
@@ -464,6 +476,11 @@ mod tests {
             "https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
             "jdx",
             "mise-test-fixtures"
+        ));
+        assert!(valid_github_asset_api_url(
+            "https://api.github.com/repos/Dicklesworthstone/destructive_command_guard/releases/assets/430632958",
+            "Dicklesworthstone",
+            "Destructive_command_guard"
         ));
         assert!(!valid_github_asset_api_url(
             "https://api.github.com/repos/other/mise-test-fixtures/releases/assets/1",
