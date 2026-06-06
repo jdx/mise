@@ -262,6 +262,7 @@ if ((${#FAILED_TESTS[@]} > 0)); then
         for failed in "${FAILED_TESTS[@]}"; do
           echo "- \`$failed\`"
         done
+        echo
       } >>"$ORIGINAL_GITHUB_STEP_SUMMARY"
     fi
   fi
