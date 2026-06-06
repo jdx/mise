@@ -189,10 +189,10 @@ dnf install mise
 
 [COPR package page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/)
 
-### Snap (Linux, currently in beta)
+### Snap (Linux)
 
 ```sh
-sudo snap install mise --classic --beta
+sudo snap install mise --classic
 ```
 
 [snapcraft.io page](https://snapcraft.io/mise)
