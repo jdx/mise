@@ -41,6 +41,7 @@ pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
 type CachedResult = Arc<OnceCell<Result<String, String>>>;
 static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+type RetryHeaders = Arc<Mutex<HeaderMap>>;
 
 #[derive(Debug)]
 pub struct Client {
@@ -381,9 +382,17 @@ impl Client {
         verb_label: &str,
         retries: i64,
     ) -> Result<Response> {
+        let retry_headers = Arc::new(Mutex::new(headers.clone()));
         retry_async_with_retries(verb_label, &url, retries, || async {
-            self.send_once_with_https_fallback(method.clone(), url.clone(), headers, verb_label)
-                .await
+            let headers = retry_headers.lock().unwrap().clone();
+            self.send_once_with_https_fallback_with_retry_headers(
+                method.clone(),
+                url.clone(),
+                &headers,
+                verb_label,
+                Some(retry_headers.clone()),
+            )
+            .await
         })
         .await
     }
@@ -402,28 +411,50 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
     ) -> Result<Response> {
+        self.send_once_with_https_fallback_with_retry_headers(
+            method, url, headers, verb_label, None,
+        )
+        .await
+    }
+
+    async fn send_once_with_https_fallback_with_retry_headers(
+        &self,
+        method: Method,
+        url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+        retry_headers: Option<RetryHeaders>,
+    ) -> Result<Response> {
         match self
-            .send_once(method.clone(), url.clone(), headers, verb_label)
+            .send_once_with_retry_headers(
+                method.clone(),
+                url.clone(),
+                headers,
+                verb_label,
+                retry_headers.clone(),
+            )
             .await
         {
             Ok(resp) => Ok(resp),
             Err(err) if url.scheme() == "http" && is_connection_error(&err) => {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
-                self.send_once(method, url, headers, verb_label).await
+                self.send_once_with_retry_headers(method, url, headers, verb_label, retry_headers)
+                    .await
             }
             Err(err) => Err(err),
         }
     }
 
-    async fn send_once(
+    async fn send_once_with_retry_headers(
         &self,
         method: Method,
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
+        retry_headers: Option<RetryHeaders>,
     ) -> Result<Response> {
-        self.send_once_inner(method, url, headers, verb_label, true, true)
+        self.send_once_inner(method, url, headers, verb_label, true, true, retry_headers)
             .await
     }
 
@@ -435,7 +466,9 @@ impl Client {
         verb_label: &str,
         use_netrc: bool,
         retry_github_oauth_401: bool,
+        retry_headers: Option<RetryHeaders>,
     ) -> Result<Response> {
+        let original_url = url.clone();
         apply_url_replacements(&mut url);
         debug!("{} {}", verb_label, &url);
 
@@ -479,8 +512,8 @@ impl Client {
         display_github_rate_limit(&resp);
         if retry_github_oauth_401
             && let Some(stale_access_token) =
-                stale_github_oauth_unauthorized_token(&url, &final_headers, &resp)
-            && let Some(host) = url.host_str()
+                stale_github_oauth_unauthorized_token(&original_url, &final_headers, &resp)
+            && let Some(host) = original_url.host_str()
         {
             match crate::github::oauth::refresh_cached_token_for_host(host, &stale_access_token)
                 .await
@@ -489,13 +522,22 @@ impl Client {
                     let mut headers = final_headers.clone();
                     if let Ok(value) = HeaderValue::from_str(format!("Bearer {token}").as_str()) {
                         headers.insert(AUTHORIZATION, value);
+                        if let Some(retry_headers) = &retry_headers {
+                            *retry_headers.lock().unwrap() = headers.clone();
+                        }
                         debug!(
                             "{} {} retrying with refreshed GitHub OAuth token after 401",
                             verb_label, &url
                         );
-                        return Box::pin(
-                            self.send_once_inner(method, url, &headers, verb_label, false, false),
-                        )
+                        return Box::pin(self.send_once_inner(
+                            method,
+                            original_url,
+                            &headers,
+                            verb_label,
+                            false,
+                            false,
+                            retry_headers,
+                        ))
                         .await;
                     } else {
                         debug!(
@@ -527,9 +569,15 @@ impl Client {
                     "{} {} retrying without GitHub auth after {}",
                     verb_label, &url, status
                 );
-                return Box::pin(
-                    self.send_once_inner(method, url, &headers, verb_label, false, false),
-                )
+                return Box::pin(self.send_once_inner(
+                    method,
+                    original_url,
+                    &headers,
+                    verb_label,
+                    false,
+                    false,
+                    retry_headers,
+                ))
                 .await;
             }
             return Err(status_error.into());
