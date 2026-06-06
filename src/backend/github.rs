@@ -7,14 +7,16 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_with_fallback,
     template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
 };
-use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
+use crate::backend::{
+    MISE_BINS_DIR, SecurityFeature, backend_arg_matches_registry_backend,
+    runtime_path_for_install_path,
+};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
-use crate::registry::REGISTRY;
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, forgejo, github, gitlab};
@@ -619,10 +621,7 @@ impl UnifiedGitBackend {
     }
 
     fn use_versions_host_for_github_metadata(&self) -> bool {
-        let full = self.ba.full();
-        REGISTRY
-            .get(self.ba.short.as_str())
-            .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
+        backend_arg_matches_registry_backend(&self.ba)
     }
 
     async fn get_github_release_for_url(

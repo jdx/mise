@@ -19,18 +19,18 @@ wait_for_file "$SERVER_PORT_FILE" "GitHub API blocker port file" 30 "$SERVER_PID
 SERVER_PORT=$(cat "$SERVER_PORT_FILE")
 
 rm -rf "$MISE_CACHE_DIR/github"
-mise uninstall github:jdx/mise-test-fixtures 2>/dev/null || true
+mise uninstall communique 2>/dev/null || true
 
 cat <<EOF >mise.toml
 [settings]
 url_replacements = { "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
 
 [tools]
-"github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+communique = "1.1.3"
 EOF
 
 assert_succeed "mise install"
-assert_contains "mise x -- hello-world" "hello world"
+assert_contains "mise x -- communique --version" "communique 1.1.3"
 
 if compgen -G "$HEADERS_LOG_DIR/request_*.json" >/dev/null; then
   cat "$HEADERS_LOG_DIR"/request_*.json

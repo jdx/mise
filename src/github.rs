@@ -295,17 +295,13 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
         .await
 }
 
-pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
-    get_release_for_url_with_versions_host(api_url, repo, tag, true).await
-}
-
 pub async fn get_release_for_url_with_versions_host(
     api_url: &str,
     repo: &str,
     tag: &str,
     use_versions_host: bool,
 ) -> Result<GithubRelease> {
-    let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
+    let key = format!("{api_url}-{repo}-{tag}-versions-host-{use_versions_host}").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     cache
@@ -933,7 +929,7 @@ something_else = "value"
         let repo = "owner/empty-assets-cache-test";
         let tag = "v1.0.0";
         let path = format!("/repos/{repo}/releases/tags/{tag}");
-        let key = format!("{}-{repo}-{tag}", server.url()).to_kebab_case();
+        let key = format!("{}-{repo}-{tag}-versions-host-true", server.url()).to_kebab_case();
 
         let cached_empty_release = make_release(tag);
         {
@@ -951,7 +947,9 @@ something_else = "value"
             .create_async()
             .await;
 
-        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, true)
+            .await
+            .unwrap();
         assert!(release.assets.is_empty());
         empty_mock.assert_async().await;
         empty_mock.remove_async().await;
@@ -969,11 +967,15 @@ something_else = "value"
             .create_async()
             .await;
 
-        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, true)
+            .await
+            .unwrap();
         assert_eq!(release.assets.len(), 1);
         assert_eq!(release.assets[0].name, "tool-v1.0.0-linux-x86_64.tar.gz");
 
-        let release = get_release_for_url(&server.url(), repo, tag).await.unwrap();
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, true)
+            .await
+            .unwrap();
         assert_eq!(release.assets.len(), 1);
         mock.assert_async().await;
     }

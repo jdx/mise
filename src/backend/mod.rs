@@ -84,6 +84,13 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
+pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
+    let full = ba.full();
+    REGISTRY
+        .get(ba.short.as_str())
+        .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
+}
+
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
     ToolOptionSource::InstallManifest,
     ToolOptionSource::BackendAlias,
@@ -1140,16 +1147,15 @@ pub trait Backend: Debug + Send + Sync {
             // the registry's default. When a user aliases a tool to a different backend
             // (e.g. `php = "github:verzly/php"`), the versions host would return versions
             // from the registry's default backend which may not match the aliased backend.
-            let full = ba.full();
-            if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
-                let is_registry_backend = rt.backends().iter().any(|b| *b == full);
-                if !is_registry_backend {
+            if REGISTRY.contains_key(ba.short.as_str()) {
+                if !backend_arg_matches_registry_backend(&ba) {
                     trace!(
                         "Skipping versions host for {} because backend {} is not the registry default",
-                        ba.short, full
+                        ba.short,
+                        ba.full()
                     );
                 }
-                is_registry_backend
+                backend_arg_matches_registry_backend(&ba)
             } else {
                 trace!(
                     "Skipping versions host for {} because it is not in the registry",
