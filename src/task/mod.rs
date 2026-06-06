@@ -741,7 +741,15 @@ impl Task {
         let config = Config::get().await.unwrap();
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        for dir in config::task_includes_for_dir(&project_root, &config.config_files) {
+        let task_includes = match config::task_includes_for_dir(&project_root, &config.config_files)
+        {
+            Ok(includes) => includes,
+            Err(err) => {
+                warn!("failed to resolve task include paths: {err:#}");
+                Vec::new()
+            }
+        };
+        for dir in task_includes {
             if dir.is_dir() && project_root.join(&dir).exists() {
                 return project_root.join(dir);
             }

@@ -139,7 +139,7 @@ impl TasksLs {
             && !cfg!(windows)
             && let Some(cwd) = &*dirs::CWD
         {
-            let includes = config::task_includes_for_dir(cwd, &config.config_files);
+            let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
             if !find_non_executable_task_files(&includes).is_empty() {
                 warn!(
                     "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. Run `chmod +x` on the task files to fix this."
