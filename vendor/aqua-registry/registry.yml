@@ -30027,7 +30027,7 @@ packages:
     description: Convert mixed-script Korean text into hangul-only text
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.1.1")
         asset: gukhanmun-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.bz2
         files:
@@ -30044,13 +30044,28 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: "true"
+        asset: gukhanmun-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        files:
+          - name: gukhanmun
+          - name: gukhanmun-mkdict
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: dahlia
     repo_name: hongdown
     description: A Markdown formatter that enforces Hong Minhee's Markdown style conventions
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.4.2")
         asset: hongdown-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.bz2
         files:
@@ -30065,6 +30080,119 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: "true"
+        asset: hongdown-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        files:
+          - name: hongdown
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: dahlia
+    repo_name: seonbi
+    description: SmartyPants for Korean language
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.3")
+        asset: seonbi-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
+        overrides:
+          - goos: windows
+            format: zip
+            asset: seonbi-{{.Version}}.{{.OS}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.0")
+        asset: seonbi-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
+        overrides:
+          - goos: windows
+            format: zip
+            asset: seonbi-{{.Version}}.{{.OS}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: seonbi-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
+        overrides:
+          - goos: windows
+            format: zip
+            asset: seonbi-{{.Version}}.{{.OS}}.{{.Format}}
+  - type: github_release
+    repo_owner: dahlia
+    repo_name: submark
+    description: Extract a part from CommonMark/Markdown docs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.1.0"
+        asset: submark-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "0.2.0"
+        asset: submark-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          windows: win64
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: windows
+            asset: submark-{{.OS}}
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("<= 0.3.1")
+        asset: submark-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          windows: win64
+        overrides:
+          - goos: windows
+            asset: submark-{{.OS}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: submark-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          windows: win64
+        overrides:
+          - goos: windows
+            asset: submark-{{.OS}}
   - type: github_release
     repo_owner: daichirata
     repo_name: hammer
@@ -71184,6 +71312,58 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+  - name: oxc-project/oxc/oxfmt
+    type: github_release
+    repo_owner: oxc-project
+    repo_name: oxc
+    description: A collection of high-performance JavaScript tools
+    version_filter: Version matches "^apps_v"
+    version_prefix: apps_v
+    files:
+      - name: oxfmt
+        src: "{{.AssetWithoutExt}}"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.43.0")
+        asset: oxfmt-{{.OS}}-{{.Arch}}-gnu.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: darwin
+            asset: oxfmt-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: oxfmt-{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: semver("= 1.47.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.51.0")
+        asset: oxfmt-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.53.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: oxfmt-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     name: oxc-project/oxc/oxlint
     repo_owner: oxc-project
@@ -79394,7 +79574,7 @@ packages:
     version_overrides:
       - version_constraint: Version in ["v0.1.1", "v0.2.3"]
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.6.2")
         asset: jf-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
@@ -79411,6 +79591,25 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: jf-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
   - type: github_release
     repo_owner: sayanarijit
     repo_name: xplr
