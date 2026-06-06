@@ -508,9 +508,26 @@ impl HttpBackend {
 
     fn install_version_name(tv: &ToolVersion, cache_key: &str) -> String {
         if tv.version == "latest" || tv.version.is_empty() {
-            cache_key[..7.min(cache_key.len())].to_string()
+            Self::content_version_name(cache_key)
         } else {
-            tv.tv_pathname()
+            Self::sanitize_install_version_name(tv.tv_pathname())
+        }
+    }
+
+    fn content_version_name(cache_key: &str) -> String {
+        let short = &cache_key[..7.min(cache_key.len())];
+        if short.is_empty() {
+            "_implicit".to_string()
+        } else {
+            short.to_string()
+        }
+    }
+
+    fn sanitize_install_version_name(version_name: String) -> String {
+        match version_name.replace('\\', "-").as_str() {
+            "." => "_".to_string(),
+            ".." => "__".to_string(),
+            name => name.to_string(),
         }
     }
 
@@ -555,15 +572,15 @@ impl HttpBackend {
         Ok(())
     }
 
-    /// Create additional symlink for implicit versions (latest, empty)
+    /// Create additional symlink for latest versions
     fn create_version_alias_symlink(&self, tv: &ToolVersion, cache_key: &str) -> Result<()> {
-        if tv.version != "latest" && !tv.version.is_empty() {
+        if tv.version != "latest" {
             return Ok(());
         }
 
-        let content_version = &cache_key[..7.min(cache_key.len())];
+        let content_version = Self::content_version_name(cache_key);
         let original_path = tv.ba().installs_path.join(&tv.version);
-        let content_path = tv.ba().installs_path.join(content_version);
+        let content_path = tv.ba().installs_path.join(&content_version);
 
         if original_path.exists() {
             file::remove_all(&original_path)?;
@@ -681,8 +698,50 @@ mod tests {
     }
 
     #[test]
+    fn install_symlink_path_sanitizes_parent_version() {
+        let tv = http_test_tv("..");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, "__");
+        assert!(
+            Path::new(&version_name)
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)))
+        );
+    }
+
+    #[test]
+    fn install_symlink_path_sanitizes_windows_separators() {
+        let tv = http_test_tv(r"..\..\outside-root\mise-http-version-out\selected-prefix");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(
+            version_name,
+            "..-..-outside-root-mise-http-version-out-selected-prefix"
+        );
+        assert!(!version_name.contains('\\'));
+    }
+
+    #[test]
+    fn install_symlink_path_sanitizes_windows_unc_paths() {
+        let tv = http_test_tv(r"\\server\share");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, "--server-share");
+        assert!(!version_name.contains('\\'));
+    }
+
+    #[test]
     fn latest_install_symlink_still_uses_content_version() {
         let tv = http_test_tv("latest");
+        let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
+
+        assert_eq!(version_name, "abcdef1");
+    }
+
+    #[test]
+    fn empty_install_symlink_still_uses_content_version() {
+        let tv = http_test_tv("");
         let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
 
         assert_eq!(version_name, "abcdef1");
