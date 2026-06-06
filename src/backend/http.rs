@@ -506,14 +506,23 @@ impl HttpBackend {
     // Symlink creation
     // -------------------------------------------------------------------------
 
+    /// Return the single path component used for the HTTP install symlink.
     fn install_version_name(tv: &ToolVersion, cache_key: &str) -> String {
         if tv.version == "latest" || tv.version.is_empty() {
             Self::content_version_name(cache_key)
         } else {
-            Self::sanitize_install_version_name(tv.tv_pathname())
+            Self::sanitize_install_version_name(&tv.version, tv.tv_pathname())
         }
     }
 
+    /// Return the absolute path where the HTTP install symlink should live.
+    fn install_path_for(tv: &ToolVersion, cache_key: &str) -> PathBuf {
+        tv.ba()
+            .installs_path
+            .join(Self::install_version_name(tv, cache_key))
+    }
+
+    /// Return a deterministic content-derived version name for implicit versions.
     fn content_version_name(cache_key: &str) -> String {
         let short = &cache_key[..7.min(cache_key.len())];
         if short.is_empty() {
@@ -523,11 +532,18 @@ impl HttpBackend {
         }
     }
 
-    fn sanitize_install_version_name(version_name: String) -> String {
-        match version_name.replace('\\', "-").as_str() {
+    /// Sanitize a requested version into a path component without collapsing identities.
+    fn sanitize_install_version_name(raw_version: &str, version_name: String) -> String {
+        let sanitized = match version_name.replace('\\', "-").as_str() {
             "." => "_".to_string(),
             ".." => "__".to_string(),
             name => name.to_string(),
+        };
+        if sanitized == raw_version {
+            sanitized
+        } else {
+            let hash = hash::hash_sha256_to_str(raw_version);
+            format!("{}-{}", sanitized, &hash[..7])
         }
     }
 
@@ -542,8 +558,7 @@ impl HttpBackend {
         let cache_path = self.cache_path(cache_key);
 
         // Determine version name for install path
-        let version_name = Self::install_version_name(tv, cache_key);
-        let install_path = tv.ba().installs_path.join(&version_name);
+        let install_path = Self::install_path_for(tv, cache_key);
 
         // Clean up existing install
         if install_path.exists() {
@@ -685,24 +700,33 @@ mod tests {
         ToolVersion::new(request, version.to_string())
     }
 
+    fn version_hash(version: &str) -> String {
+        crate::hash::hash_sha256_to_str(version)[..7].to_string()
+    }
+
     #[test]
     fn install_symlink_path_uses_sanitized_version_pathname() {
-        let tv = http_test_tv("/outside-root/mise-http-version-out/selected-prefix");
+        let version = "/outside-root/mise-http-version-out/selected-prefix";
+        let tv = http_test_tv(version);
         let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
 
         assert_eq!(
             version_name,
-            "-outside-root-mise-http-version-out-selected-prefix"
+            format!(
+                "-outside-root-mise-http-version-out-selected-prefix-{}",
+                version_hash(version)
+            )
         );
         assert!(!Path::new(&version_name).is_absolute());
     }
 
     #[test]
     fn install_symlink_path_sanitizes_parent_version() {
-        let tv = http_test_tv("..");
+        let version = "..";
+        let tv = http_test_tv(version);
         let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
 
-        assert_eq!(version_name, "__");
+        assert_eq!(version_name, format!("__-{}", version_hash(version)));
         assert!(
             Path::new(&version_name)
                 .components()
@@ -712,23 +736,47 @@ mod tests {
 
     #[test]
     fn install_symlink_path_sanitizes_windows_separators() {
-        let tv = http_test_tv(r"..\..\outside-root\mise-http-version-out\selected-prefix");
+        let version = r"..\..\outside-root\mise-http-version-out\selected-prefix";
+        let tv = http_test_tv(version);
         let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
 
         assert_eq!(
             version_name,
-            "..-..-outside-root-mise-http-version-out-selected-prefix"
+            format!(
+                "..-..-outside-root-mise-http-version-out-selected-prefix-{}",
+                version_hash(version)
+            )
         );
         assert!(!version_name.contains('\\'));
     }
 
     #[test]
     fn install_symlink_path_sanitizes_windows_unc_paths() {
-        let tv = http_test_tv(r"\\server\share");
+        let version = r"\\server\share";
+        let tv = http_test_tv(version);
         let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
 
-        assert_eq!(version_name, "--server-share");
+        assert_eq!(
+            version_name,
+            format!("--server-share-{}", version_hash(version))
+        );
         assert!(!version_name.contains('\\'));
+    }
+
+    #[test]
+    fn install_symlink_path_preserves_distinct_sanitized_versions() {
+        let slash = HttpBackend::install_version_name(&http_test_tv("a/b"), "abcdef123456");
+        let colon = HttpBackend::install_version_name(&http_test_tv("a:b"), "abcdef123456");
+        let backslash = HttpBackend::install_version_name(&http_test_tv(r"a\b"), "abcdef123456");
+        let dash = HttpBackend::install_version_name(&http_test_tv("a-b"), "abcdef123456");
+
+        assert_eq!(dash, "a-b");
+        assert_ne!(slash, dash);
+        assert_ne!(colon, dash);
+        assert_ne!(backslash, dash);
+        assert_ne!(slash, colon);
+        assert_ne!(slash, backslash);
+        assert_ne!(colon, backslash);
     }
 
     #[test]
@@ -745,6 +793,15 @@ mod tests {
         let version_name = HttpBackend::install_version_name(&tv, "abcdef123456");
 
         assert_eq!(version_name, "abcdef1");
+    }
+
+    #[test]
+    fn empty_install_path_uses_content_version_path() {
+        let tv = http_test_tv("");
+        let install_path = HttpBackend::install_path_for(&tv, "abcdef123456");
+
+        assert_eq!(install_path, tv.ba().installs_path.join("abcdef1"));
+        assert_ne!(install_path, tv.ba().installs_path);
     }
 }
 
@@ -890,6 +947,7 @@ impl Backend for HttpBackend {
         // Create symlinks
         self.create_install_symlink(&tv, &cache_key, &extraction_type, &opts)?;
         self.create_version_alias_symlink(&tv, &cache_key)?;
+        tv.install_path = Some(Self::install_path_for(&tv, &cache_key));
 
         // Verify checksum for lockfile
         if lockfile_enabled || has_lockfile_checksum {
