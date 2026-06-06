@@ -1,0 +1,4 @@
+backends = ["github:phongndo/hz"]
+description = "Fast terminal workflow for parallel development with agents"
+os = ["linux", "macos"]
+test = { cmd = "hz --version", expected = "hz {{version}}" }
