@@ -423,7 +423,7 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
     ) -> Result<Response> {
-        self.send_once_inner(method, url, headers, verb_label, true)
+        self.send_once_inner(method, url, headers, verb_label, true, true)
             .await
     }
 
@@ -434,6 +434,7 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
         use_netrc: bool,
+        retry_github_oauth_401: bool,
     ) -> Result<Response> {
         apply_url_replacements(&mut url);
         debug!("{} {}", verb_label, &url);
@@ -476,6 +477,32 @@ impl Client {
         }
         debug!("{} {url} {}", verb_label, resp.status());
         display_github_rate_limit(&resp);
+        if retry_github_oauth_401
+            && is_stale_github_oauth_unauthorized(&url, &final_headers, &resp)
+            && let Some(host) = url.host_str()
+        {
+            match crate::github::oauth::refresh_cached_token_for_host(host).await {
+                Ok(Some(token)) => {
+                    let mut headers = final_headers;
+                    headers.insert(
+                        AUTHORIZATION,
+                        HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
+                    );
+                    debug!(
+                        "{} {} retrying with refreshed GitHub OAuth token after 401",
+                        verb_label, &url
+                    );
+                    return Box::pin(
+                        self.send_once_inner(method, url, &headers, verb_label, false, false),
+                    )
+                    .await;
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    debug!("failed to refresh GitHub OAuth token after 401: {err:#}");
+                }
+            }
+        }
         if is_authenticated_github_forbidden(&url, &final_headers, &resp) {
             let status = resp.status();
             let status_error = resp
@@ -494,8 +521,10 @@ impl Client {
                     "{} {} retrying without GitHub auth after {}",
                     verb_label, &url, status
                 );
-                return Box::pin(self.send_once_inner(method, url, &headers, verb_label, false))
-                    .await;
+                return Box::pin(
+                    self.send_once_inner(method, url, &headers, verb_label, false, false),
+                )
+                .await;
             }
             return Err(status_error.into());
         }
@@ -554,6 +583,23 @@ fn is_authenticated_github_forbidden(url: &Url, headers: &HeaderMap, resp: &Resp
     resp.status() == StatusCode::FORBIDDEN
         && url.host_str() == Some("api.github.com")
         && headers.contains_key(AUTHORIZATION)
+}
+
+fn is_stale_github_oauth_unauthorized(url: &Url, headers: &HeaderMap, resp: &Response) -> bool {
+    if resp.status() != StatusCode::UNAUTHORIZED || !crate::github::is_github_api_url(url) {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let Some(token) = crate::github::oauth::cached_access_token_for_host(host) else {
+        return false;
+    };
+    headers
+        .get(AUTHORIZATION)
+        .and_then(|header| header.to_str().ok())
+        .and_then(|header| header.strip_prefix("Bearer "))
+        .is_some_and(|header_token| header_token == token)
 }
 
 pub fn error_code(e: &Report) -> Option<u16> {
@@ -802,6 +848,7 @@ mod tests {
     use super::*;
     use confique::Layer;
     use indexmap::IndexMap;
+    use std::path::PathBuf;
     use url::Url;
 
     // Mutex to ensure tests don't interfere with each other when modifying global settings
@@ -902,6 +949,65 @@ mod tests {
         SettingsGuard { _lock: lock }
     }
 
+    struct GithubOauthSettingsGuard {
+        _settings_lock: std::sync::MutexGuard<'static, ()>,
+        _github_env_lock: std::sync::MutexGuard<'static, ()>,
+        vars: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl Drop for GithubOauthSettingsGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.vars {
+                if let Some(value) = value {
+                    crate::env::set_var(key, value);
+                } else {
+                    crate::env::remove_var(key);
+                }
+            }
+            crate::github::oauth::test_support::clear_cache_path();
+            crate::config::Settings::reset(None);
+        }
+    }
+
+    fn set_test_github_oauth(server_url: &str, cache_path: PathBuf) -> GithubOauthSettingsGuard {
+        let settings_lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let github_env_lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let vars = vec![
+            ("MISE_EXPERIMENTAL", std::env::var("MISE_EXPERIMENTAL").ok()),
+            (
+                "MISE_GITHUB_OAUTH_CLIENT_ID",
+                std::env::var("MISE_GITHUB_OAUTH_CLIENT_ID").ok(),
+            ),
+            (
+                "MISE_GITHUB_OAUTH_AUTH_URL",
+                std::env::var("MISE_GITHUB_OAUTH_AUTH_URL").ok(),
+            ),
+            (
+                "MISE_GITHUB_OAUTH_API_URL",
+                std::env::var("MISE_GITHUB_OAUTH_API_URL").ok(),
+            ),
+            ("MISE_GITHUB_TOKEN", std::env::var("MISE_GITHUB_TOKEN").ok()),
+            ("GITHUB_API_TOKEN", std::env::var("GITHUB_API_TOKEN").ok()),
+            ("GITHUB_TOKEN", std::env::var("GITHUB_TOKEN").ok()),
+        ];
+
+        crate::env::set_var("MISE_EXPERIMENTAL", "1");
+        crate::env::set_var("MISE_GITHUB_OAUTH_CLIENT_ID", "Iv1.mock");
+        crate::env::set_var("MISE_GITHUB_OAUTH_AUTH_URL", format!("{server_url}/login"));
+        crate::env::set_var("MISE_GITHUB_OAUTH_API_URL", format!("{server_url}/api/v3"));
+        crate::env::remove_var("MISE_GITHUB_TOKEN");
+        crate::env::remove_var("GITHUB_API_TOKEN");
+        crate::env::remove_var("GITHUB_TOKEN");
+        crate::github::oauth::test_support::set_cache_path(cache_path);
+        crate::config::Settings::reset(None);
+
+        GithubOauthSettingsGuard {
+            _settings_lock: settings_lock,
+            _github_env_lock: github_env_lock,
+            vars,
+        }
+    }
+
     // A tiny in-process HTTP/1.1 responder. Each accepted connection consumes
     // the next response from `responses` and writes it back. Returns the bound
     // port and an Arc counter of connections actually served.
@@ -955,6 +1061,68 @@ mod tests {
     }
     fn server_error_response() -> &'static str {
         "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_github_oauth_401_refreshes_and_retries_once() {
+        let mut server = mockito::Server::new_async().await;
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard = set_test_github_oauth(&server.url(), cache_path.clone());
+        let cache_key = crate::github::oauth::test_support::cache_key("127.0.0.1", "Iv1.mock", "");
+        std::fs::write(
+            &cache_path,
+            format!(
+                r#"[tokens.{cache_key}]
+access_token = "ghu-stale"
+expires_at = "2099-01-01T00:00:00Z"
+refresh_token = "ghr-refresh"
+refresh_expires_at = "2099-01-01T00:00:00Z"
+"#
+            ),
+        )
+        .unwrap();
+
+        let stale = server
+            .mock("GET", "/api/v3/repos/owner/repo/releases")
+            .match_header("authorization", "Bearer ghu-stale")
+            .with_status(401)
+            .with_body("Bad credentials")
+            .expect(1)
+            .create_async()
+            .await;
+        let refresh = server
+            .mock("POST", "/login/oauth/access_token")
+            .match_body(mockito::Matcher::Regex(
+                "grant_type=refresh_token".to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"access_token":"ghu-refreshed","expires_in":28800}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let refreshed = server
+            .mock("GET", "/api/v3/repos/owner/repo/releases")
+            .match_header("authorization", "Bearer ghu-refreshed")
+            .with_status(200)
+            .with_body("[]")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+        let text = client
+            .get_text(format!("{}/api/v3/repos/owner/repo/releases", server.url()))
+            .await
+            .unwrap();
+
+        assert_eq!(text, "[]");
+        stale.assert_async().await;
+        refresh.assert_async().await;
+        refreshed.assert_async().await;
+        let cache = std::fs::read_to_string(cache_path).unwrap();
+        assert!(cache.contains("ghu-refreshed"));
     }
 
     #[tokio::test(flavor = "current_thread")]

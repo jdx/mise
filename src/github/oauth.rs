@@ -65,6 +65,9 @@ struct TokenCache {
     tokens: HashMap<String, CachedToken>,
 }
 
+#[cfg(test)]
+static TEST_CACHE_PATH: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
 pub fn resolve_token(host: &str) -> Option<String> {
     let settings = Settings::get();
     if settings.github.oauth_client_id.trim().is_empty()
@@ -78,6 +81,25 @@ pub fn resolve_token(host: &str) -> Option<String> {
         allow_device_flow: false,
     })
     .ok()
+}
+
+pub fn cached_access_token_for_host(host: &str) -> Option<String> {
+    let settings = Settings::get();
+    let client_id = settings.github.oauth_client_id.trim();
+    if client_id.is_empty() || !host_matches_settings(host, &settings.github.oauth_api_url) {
+        return None;
+    }
+    let canonical_host =
+        api_host(&settings.github.oauth_api_url).unwrap_or_else(|| host.to_string());
+    let cache_key = cache_key(
+        &canonical_host,
+        client_id,
+        settings.github.oauth_scopes.trim(),
+    );
+    read_cache()
+        .tokens
+        .get(&cache_key)
+        .map(|cached| cached.access_token.clone())
 }
 
 /// If OAuth is configured and a cached or refreshable token is available,
@@ -103,6 +125,41 @@ pub fn inject_token_env(env: &mut EnvMap) {
 
 pub fn token(req: TokenRequest) -> Result<String> {
     block_on(token_async(req))
+}
+
+pub async fn refresh_cached_token_for_host(host: &str) -> Result<Option<String>> {
+    let settings = Settings::get();
+    if settings.github.oauth_client_id.trim().is_empty()
+        || !host_matches_settings(host, &settings.github.oauth_api_url)
+    {
+        return Ok(None);
+    }
+
+    let client_id = settings.github.oauth_client_id.trim();
+    let scopes = settings.github.oauth_scopes.trim();
+    let canonical_host =
+        api_host(&settings.github.oauth_api_url).unwrap_or_else(|| host.to_string());
+    let cache_key = cache_key(&canonical_host, client_id, scopes);
+    let mut cache = read_cache();
+    let Some(mut cached) = cache.tokens.get(&cache_key).cloned() else {
+        return Ok(None);
+    };
+
+    cached.expires_at = chrono::Utc::now();
+    cache.tokens.insert(cache_key.clone(), cached.clone());
+    if let Err(err) = write_cache(&cache) {
+        warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
+    }
+
+    let Some(refreshed) = refresh_token(&cached).await? else {
+        return Ok(None);
+    };
+    let access_token = refreshed.access_token.clone();
+    cache.tokens.insert(cache_key, refreshed);
+    if let Err(err) = write_cache(&cache) {
+        warn!("failed to cache refreshed GitHub OAuth token: {err:#}");
+    }
+    Ok(Some(access_token))
 }
 
 async fn token_async(req: TokenRequest) -> Result<String> {
@@ -346,6 +403,10 @@ fn cache_key(host: &str, client_id: &str, scopes: &str) -> String {
 }
 
 fn cache_path() -> PathBuf {
+    #[cfg(test)]
+    if let Some(path) = TEST_CACHE_PATH.read().unwrap().clone() {
+        return path;
+    }
     env::MISE_STATE_DIR.join("github-oauth-tokens.toml")
 }
 
@@ -409,5 +470,22 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
             .build()
             .expect("failed to build tokio runtime")
             .block_on(future)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+
+    pub(crate) fn cache_key(host: &str, client_id: &str, scopes: &str) -> String {
+        super::cache_key(host, client_id, scopes)
+    }
+
+    pub(crate) fn set_cache_path(path: PathBuf) {
+        *TEST_CACHE_PATH.write().unwrap() = Some(path);
+    }
+
+    pub(crate) fn clear_cache_path() {
+        *TEST_CACHE_PATH.write().unwrap() = None;
     }
 }
