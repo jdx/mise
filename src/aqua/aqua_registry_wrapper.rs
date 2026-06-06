@@ -18,26 +18,18 @@ pub static AQUA_REGISTRY: Lazy<AquaRegistry> = Lazy::new(AquaRegistry::from_sett
 
 #[derive(Debug)]
 pub struct AquaRegistry {
-    registry_url: Option<String>,
-    use_baked_registry: bool,
-    prefer_offline: bool,
-    source_cache_ttl: duration::Duration,
-    cache: RegistryCache,
-    registry: Arc<OnceCell<std::result::Result<Option<Arc<ActiveRegistry>>, String>>>,
+    registries: Vec<RegistrySource>,
 }
 
 impl AquaRegistry {
     fn from_settings() -> Self {
         let path = AQUA_REGISTRY_PATH.clone();
         let settings = Settings::get();
-        let registry_url =
-            settings.aqua.registry_url.clone().or_else(|| {
-                (!settings.aqua.baked_registry).then(|| AQUA_DEFAULT_REGISTRY_URL.into())
-            });
+        let registry_urls = configured_registry_urls(&settings);
 
         Self::new(
             path,
-            registry_url,
+            registry_urls,
             settings.aqua.baked_registry,
             settings.prefer_offline(),
             settings.aqua_registry_cache_ttl(),
@@ -46,18 +38,88 @@ impl AquaRegistry {
 
     fn new(
         cache_dir: PathBuf,
-        registry_url: Option<String>,
+        registry_urls: Vec<String>,
         use_baked_registry: bool,
+        prefer_offline: bool,
+        source_cache_ttl: duration::Duration,
+    ) -> Self {
+        let cache = RegistryCache::new(cache_dir);
+        let mut registries = registry_urls
+            .into_iter()
+            .map(|registry_url| {
+                RegistrySource::Downloaded(DownloadedRegistry::new(
+                    registry_url,
+                    cache.clone(),
+                    prefer_offline,
+                    source_cache_ttl,
+                ))
+            })
+            .collect::<Vec<_>>();
+        if use_baked_registry {
+            registries.push(RegistrySource::Baked);
+        }
+        Self { registries }
+    }
+}
+
+#[derive(Debug)]
+enum RegistrySource {
+    Downloaded(DownloadedRegistry),
+    Baked,
+}
+
+impl RegistrySource {
+    async fn package(&self, package_id: &str) -> aqua_registry::Result<Option<AquaPackage>> {
+        match self {
+            Self::Downloaded(registry) => match registry.package(package_id).await {
+                Ok(package) => Ok(Some(package)),
+                Err(AquaRegistryError::PackageNotFound(_)) => Ok(None),
+                Err(err) => Err(err),
+            },
+            Self::Baked => super::standard_registry::package(package_id).transpose(),
+        }
+    }
+
+    fn description(&self) -> &str {
+        match self {
+            Self::Downloaded(registry) => registry.registry_url.as_str(),
+            Self::Baked => "baked-in aqua registry",
+        }
+    }
+}
+
+fn configured_registry_urls(settings: &Settings) -> Vec<String> {
+    if let Some(registries) = settings.aqua.registries.clone() {
+        registries
+    } else if settings.aqua.baked_registry {
+        Vec::new()
+    } else {
+        vec![AQUA_DEFAULT_REGISTRY_URL.into()]
+    }
+}
+
+#[derive(Debug)]
+struct DownloadedRegistry {
+    registry_url: String,
+    prefer_offline: bool,
+    source_cache_ttl: duration::Duration,
+    cache: RegistryCache,
+    registry: OnceCell<std::result::Result<Arc<ActiveRegistry>, String>>,
+}
+
+impl DownloadedRegistry {
+    fn new(
+        registry_url: String,
+        cache: RegistryCache,
         prefer_offline: bool,
         source_cache_ttl: duration::Duration,
     ) -> Self {
         Self {
             registry_url,
-            use_baked_registry,
             prefer_offline,
             source_cache_ttl,
-            cache: RegistryCache::new(cache_dir),
-            registry: Arc::new(OnceCell::new()),
+            cache,
+            registry: OnceCell::new(),
         }
     }
 }
@@ -93,32 +155,29 @@ impl AquaRegistry {
     }
 
     async fn fetch_package(&self, package_id: &str) -> aqua_registry::Result<AquaPackage> {
-        match self.registry().await {
-            Ok(Some(registry)) => match registry.package(package_id) {
-                Ok(package) => {
-                    log::trace!("reading aqua package for {package_id} from custom registry");
-                    return Ok(package);
-                }
-                Err(AquaRegistryError::PackageNotFound(_)) => {}
-                Err(err) => return Err(err),
-            },
-            Ok(None) => {}
-            Err(err) => return Err(err),
-        }
-
-        if self.use_baked_registry
-            && let Some(package) = super::standard_registry::package(package_id)
-        {
-            log::trace!("reading baked-in aqua package for {package_id}");
-            return package;
+        for registry in &self.registries {
+            if let Some(package) = registry.package(package_id).await? {
+                log::trace!(
+                    "reading aqua package for {package_id} from {}",
+                    registry.description()
+                );
+                return Ok(package);
+            }
         }
 
         Err(AquaRegistryError::RegistryNotAvailable(format!(
             "no aqua-registry found for {package_id}"
         )))
     }
+}
 
-    async fn registry(&self) -> aqua_registry::Result<Option<Arc<ActiveRegistry>>> {
+impl DownloadedRegistry {
+    async fn package(&self, package_id: &str) -> aqua_registry::Result<AquaPackage> {
+        let registry = self.registry().await?;
+        registry.package(package_id)
+    }
+
+    async fn registry(&self) -> aqua_registry::Result<Arc<ActiveRegistry>> {
         let registry = self
             .registry
             .get_or_init(|| async { self.load_registry().await.map_err(|err| err.to_string()) })
@@ -128,11 +187,8 @@ impl AquaRegistry {
             .map_err(AquaRegistryError::RegistryNotAvailable)
     }
 
-    async fn load_registry(&self) -> aqua_registry::Result<Option<Arc<ActiveRegistry>>> {
-        let Some(registry_url) = self.registry_url.as_deref() else {
-            return Ok(None);
-        };
-
+    async fn load_registry(&self) -> aqua_registry::Result<Arc<ActiveRegistry>> {
+        let registry_url = self.registry_url.as_str();
         let source = self.registry_source(registry_url).await?;
         let source_hash = RegistryCache::source_hash(&source);
 
@@ -145,7 +201,7 @@ impl AquaRegistry {
                 registry_url.to_string(),
                 source_hash.clone(),
             );
-            return Ok(Some(Arc::new(ActiveRegistry::Compiled(registry))));
+            return Ok(Arc::new(ActiveRegistry::Compiled(registry)));
         }
 
         let registry = parse_registry_source(registry_url.to_string(), source).await?;
@@ -155,7 +211,7 @@ impl AquaRegistry {
             source_hash,
             Arc::clone(&registry),
         );
-        Ok(Some(Arc::new(ActiveRegistry::Parsed(registry))))
+        Ok(Arc::new(ActiveRegistry::Parsed(registry)))
     }
 
     async fn load_compiled_registry(
@@ -494,13 +550,51 @@ mod tests {
         );
     }
 
+    #[test]
+    fn registries_setting_becomes_registry_urls() {
+        let mut settings = Settings::default();
+        settings.aqua.baked_registry = true;
+        settings.aqua.registries = Some(vec![
+            "https://example.com/first".to_string(),
+            "https://example.com/second".to_string(),
+        ]);
+
+        assert_eq!(
+            configured_registry_urls(&settings),
+            vec![
+                "https://example.com/first".to_string(),
+                "https://example.com/second".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn baked_registry_disabled_without_config_uses_downloaded_official_registry() {
+        let mut settings = Settings::default();
+        settings.aqua.baked_registry = false;
+
+        assert_eq!(
+            configured_registry_urls(&settings),
+            vec![AQUA_DEFAULT_REGISTRY_URL.to_string()]
+        );
+    }
+
+    #[test]
+    fn explicit_empty_registries_override_default_registry() {
+        let mut settings = Settings::default();
+        settings.aqua.baked_registry = false;
+        settings.aqua.registries = Some(Vec::new());
+
+        assert_eq!(configured_registry_urls(&settings), Vec::<String>::new());
+    }
+
     #[tokio::test]
-    async fn custom_registry_load_failure_does_not_fall_back_to_baked_registry() {
+    async fn registry_load_failure_does_not_check_later_registries() {
         let temp = tempfile::tempdir().unwrap();
         let missing_registry = temp.path().join("missing-registry");
         let err = test_registry(
             temp.path().to_path_buf(),
-            Some(file_registry_url(&missing_registry)),
+            vec![file_registry_url(&missing_registry)],
             true,
         )
         .fetch_package("01mf02/jaq")
@@ -511,7 +605,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn baked_registry_fallback_handles_custom_registry_package_miss() {
+    async fn baked_registry_handles_downloaded_registry_package_miss() {
         let temp = tempfile::tempdir().unwrap();
         let registry_dir = temp.path().join("custom-registry");
         std::fs::create_dir(&registry_dir).unwrap();
@@ -523,7 +617,7 @@ mod tests {
 
         let package = test_registry(
             temp.path().to_path_buf(),
-            Some(file_registry_url(&registry_dir)),
+            vec![file_registry_url(&registry_dir)],
             true,
         )
         .fetch_package("01mf02/jaq")
@@ -535,13 +629,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn custom_registry_does_not_fall_back_when_baked_registry_disabled() {
+    async fn downloaded_registry_miss_fails_when_baked_registry_disabled() {
         let temp = tempfile::tempdir().unwrap();
         let missing_registry = temp.path().join("missing-registry");
 
         let err = test_registry(
             temp.path().to_path_buf(),
-            Some(file_registry_url(&missing_registry)),
+            vec![file_registry_url(&missing_registry)],
             false,
         )
         .fetch_package("01mf02/jaq")
@@ -557,11 +651,14 @@ mod tests {
         let registry_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("vendor/aqua-registry");
         let fetcher = test_registry(
             temp.path().to_path_buf(),
-            Some(file_registry_url(&registry_dir)),
+            vec![file_registry_url(&registry_dir)],
             false,
         );
 
-        let registry = fetcher.load_registry().await.unwrap().unwrap();
+        let registry = first_downloaded_registry(&fetcher)
+            .load_registry()
+            .await
+            .unwrap();
         let package = registry.package("01mf02/jaq").unwrap();
 
         assert_eq!(package.repo_owner, "01mf02");
@@ -583,10 +680,10 @@ mod tests {
             .write_compiled(&registry_url, &source_hash, &parsed)
             .unwrap();
 
-        let registry = test_registry(temp.path().to_path_buf(), Some(registry_url), false)
+        let fetcher = test_registry(temp.path().to_path_buf(), vec![registry_url], false);
+        let registry = first_downloaded_registry(&fetcher)
             .load_registry()
             .await
-            .unwrap()
             .unwrap();
 
         assert!(matches!(registry.as_ref(), ActiveRegistry::Compiled(_)));
@@ -606,11 +703,12 @@ mod tests {
 
         let fetcher = test_registry(
             temp.path().join("cache"),
-            Some(format!("file://{}", registry_dir.display())),
+            vec![format!("file://{}", registry_dir.display())],
             false,
         );
-        let first = fetcher
-            .registry_source(fetcher.registry_url.as_deref().unwrap())
+        let registry = first_downloaded_registry(&fetcher);
+        let first = registry
+            .registry_source(registry.registry_url.as_str())
             .await
             .unwrap();
 
@@ -619,8 +717,8 @@ mod tests {
             "packages:\n  - name: example/second\n    url: https://example.com/second\n",
         )
         .unwrap();
-        let second = fetcher
-            .registry_source(fetcher.registry_url.as_deref().unwrap())
+        let second = registry
+            .registry_source(registry.registry_url.as_str())
             .await
             .unwrap();
 
@@ -640,11 +738,12 @@ mod tests {
 
         let fetcher = test_registry(
             temp.path().join("cache"),
-            Some(file_registry_url(&registry_path)),
+            vec![file_registry_url(&registry_path)],
             false,
         );
-        let source = fetcher
-            .registry_source(fetcher.registry_url.as_deref().unwrap())
+        let registry = first_downloaded_registry(&fetcher);
+        let source = registry
+            .registry_source(registry.registry_url.as_str())
             .await
             .unwrap();
 
@@ -654,33 +753,143 @@ mod tests {
     #[tokio::test]
     async fn prefer_offline_missing_source_has_clear_error() {
         let temp = tempfile::tempdir().unwrap();
-        let mut fetcher = test_registry(
+        let fetcher = AquaRegistry::new(
             temp.path().to_path_buf(),
-            Some("https://example.com/aqua-registry".to_string()),
+            vec!["https://example.com/aqua-registry".to_string()],
             false,
+            true,
+            DEFAULT_AQUA_REGISTRY_CACHE_TTL,
         );
-        fetcher.prefer_offline = true;
 
-        let err = fetcher
-            .registry_source(fetcher.registry_url.as_deref().unwrap())
+        let err = first_downloaded_registry(&fetcher)
+            .registry_source("https://example.com/aqua-registry")
             .await
             .unwrap_err();
 
         assert!(err.to_string().contains("prefer-offline mode is enabled"));
     }
 
+    #[tokio::test]
+    async fn registries_are_checked_in_order() {
+        let temp = tempfile::tempdir().unwrap();
+        let first_registry = write_registry(
+            temp.path(),
+            "first-registry",
+            "packages:\n  - name: example/shared\n    repo_owner: example\n    repo_name: first\n",
+        );
+        let second_registry = write_registry(
+            temp.path(),
+            "second-registry",
+            "packages:\n  - name: example/shared\n    repo_owner: example\n    repo_name: second\n",
+        );
+
+        let package = test_registry(
+            temp.path().join("cache"),
+            vec![
+                file_registry_url(&first_registry),
+                file_registry_url(&second_registry),
+            ],
+            false,
+        )
+        .fetch_package("example/shared")
+        .await
+        .unwrap();
+
+        assert_eq!(package.repo_name, "first");
+    }
+
+    #[tokio::test]
+    async fn registry_miss_checks_next_registry() {
+        let temp = tempfile::tempdir().unwrap();
+        let first_registry = write_registry(
+            temp.path(),
+            "first-registry",
+            "packages:\n  - name: example/first\n    repo_owner: example\n    repo_name: first\n",
+        );
+        let second_registry = write_registry(
+            temp.path(),
+            "second-registry",
+            "packages:\n  - name: example/second\n    repo_owner: example\n    repo_name: second\n",
+        );
+
+        let package = test_registry(
+            temp.path().join("cache"),
+            vec![
+                file_registry_url(&first_registry),
+                file_registry_url(&second_registry),
+            ],
+            false,
+        )
+        .fetch_package("example/second")
+        .await
+        .unwrap();
+
+        assert_eq!(package.repo_name, "second");
+    }
+
+    #[tokio::test]
+    async fn registry_aliases_are_registry_local() {
+        let temp = tempfile::tempdir().unwrap();
+        let first_registry = write_registry(
+            temp.path(),
+            "first-registry",
+            r#"
+packages:
+  - name: example/canonical
+    repo_owner: example
+    repo_name: first
+    aliases:
+      - name: example/shared
+"#,
+        );
+        let second_registry = write_registry(
+            temp.path(),
+            "second-registry",
+            "packages:\n  - name: example/shared\n    repo_owner: example\n    repo_name: second\n",
+        );
+
+        let package = test_registry(
+            temp.path().join("cache"),
+            vec![
+                file_registry_url(&first_registry),
+                file_registry_url(&second_registry),
+            ],
+            true,
+        )
+        .fetch_package("example/shared")
+        .await
+        .unwrap();
+
+        assert_eq!(package.name.as_deref(), Some("example/canonical"));
+        assert_eq!(package.repo_name, "first");
+    }
+
     fn test_registry(
         cache_dir: PathBuf,
-        registry_url: Option<String>,
+        registry_urls: Vec<String>,
         use_baked_registry: bool,
     ) -> AquaRegistry {
         AquaRegistry::new(
             cache_dir,
-            registry_url,
+            registry_urls,
             use_baked_registry,
             false,
             DEFAULT_AQUA_REGISTRY_CACHE_TTL,
         )
+    }
+
+    fn first_downloaded_registry(fetcher: &AquaRegistry) -> &DownloadedRegistry {
+        match fetcher.registries.first().unwrap() {
+            RegistrySource::Downloaded(registry) => registry,
+            RegistrySource::Baked => panic!("expected downloaded registry"),
+        }
+    }
+
+    fn write_registry(root: &Path, name: &str, source: &str) -> PathBuf {
+        let registry_dir = root.join(name);
+        std::fs::create_dir(&registry_dir).unwrap();
+        std::fs::write(registry_dir.join("registry.yml"), source).unwrap();
+        registry_dir
     }
 
     fn file_registry_url(path: &Path) -> String {
