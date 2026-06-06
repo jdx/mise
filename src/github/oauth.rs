@@ -474,9 +474,21 @@ fn default_poll_interval() -> u64 {
     5
 }
 
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        tokio::task::block_in_place(|| handle.block_on(future))
+fn block_on<F>(future: F) -> F::Output
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    if tokio::runtime::Handle::try_current().is_ok() {
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("failed to build tokio runtime")
+                .block_on(future)
+        })
+        .join()
+        .expect("tokio runtime thread panicked")
     } else {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()

@@ -43,6 +43,31 @@ static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 type RetryHeaders = Arc<Mutex<HeaderMap>>;
 
+#[derive(Clone)]
+struct SendOnceOptions {
+    use_netrc: bool,
+    retry_github_oauth_401: bool,
+    retry_headers: Option<RetryHeaders>,
+}
+
+impl SendOnceOptions {
+    fn new(retry_headers: Option<RetryHeaders>) -> Self {
+        Self {
+            use_netrc: true,
+            retry_github_oauth_401: true,
+            retry_headers,
+        }
+    }
+
+    fn recursive_retry(&self) -> Self {
+        Self {
+            use_netrc: false,
+            retry_github_oauth_401: false,
+            retry_headers: self.retry_headers.clone(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Client {
     reqwest: reqwest::Client,
@@ -454,8 +479,14 @@ impl Client {
         verb_label: &str,
         retry_headers: Option<RetryHeaders>,
     ) -> Result<Response> {
-        self.send_once_inner(method, url, headers, verb_label, true, true, retry_headers)
-            .await
+        self.send_once_inner(
+            method,
+            url,
+            headers,
+            verb_label,
+            SendOnceOptions::new(retry_headers),
+        )
+        .await
     }
 
     async fn send_once_inner(
@@ -464,9 +495,7 @@ impl Client {
         mut url: Url,
         headers: &HeaderMap,
         verb_label: &str,
-        use_netrc: bool,
-        retry_github_oauth_401: bool,
-        retry_headers: Option<RetryHeaders>,
+        options: SendOnceOptions,
     ) -> Result<Response> {
         let original_url = url.clone();
         apply_url_replacements(&mut url);
@@ -474,7 +503,7 @@ impl Client {
 
         // Apply netrc credentials after URL replacement
         let mut final_headers = headers.clone();
-        if use_netrc {
+        if options.use_netrc && !final_headers.contains_key(AUTHORIZATION) {
             final_headers.extend(netrc_headers(&url));
         }
 
@@ -510,7 +539,7 @@ impl Client {
         }
         debug!("{} {url} {}", verb_label, resp.status());
         display_github_rate_limit(&resp);
-        if retry_github_oauth_401
+        if options.retry_github_oauth_401
             && let Some(stale_access_token) =
                 stale_github_oauth_unauthorized_token(&original_url, &final_headers, &resp)
             && let Some(host) = original_url.host_str()
@@ -519,10 +548,10 @@ impl Client {
                 .await
             {
                 Ok(Some(token)) => {
-                    let mut headers = final_headers.clone();
+                    let mut headers = headers.clone();
                     if let Ok(value) = HeaderValue::from_str(format!("Bearer {token}").as_str()) {
                         headers.insert(AUTHORIZATION, value);
-                        if let Some(retry_headers) = &retry_headers {
+                        if let Some(retry_headers) = &options.retry_headers {
                             *retry_headers.lock().unwrap() = headers.clone();
                         }
                         debug!(
@@ -534,9 +563,7 @@ impl Client {
                             original_url,
                             &headers,
                             verb_label,
-                            false,
-                            false,
-                            retry_headers,
+                            options.recursive_retry(),
                         ))
                         .await;
                     } else {
@@ -574,9 +601,7 @@ impl Client {
                     original_url,
                     &headers,
                     verb_label,
-                    false,
-                    false,
-                    retry_headers,
+                    options.recursive_retry(),
                 ))
                 .await;
             }
@@ -648,9 +673,7 @@ fn stale_github_oauth_unauthorized_token(
         return None;
     }
     let host = url.host_str()?;
-    let Some(token) = crate::github::oauth::cached_access_token_for_host(host) else {
-        return None;
-    };
+    let token = crate::github::oauth::cached_access_token_for_host(host)?;
     let header_token = headers
         .get(AUTHORIZATION)
         .and_then(|header| header.to_str().ok())
