@@ -1127,6 +1127,17 @@ mod tests {
     async fn spawn_canned_server(
         responses: Vec<&'static str>,
     ) -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        let (port, count, _) = spawn_recording_server(responses).await;
+        (port, count)
+    }
+
+    async fn spawn_recording_server(
+        responses: Vec<&'static str>,
+    ) -> (
+        u16,
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    ) {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1134,7 +1145,9 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let count = Arc::new(AtomicUsize::new(0));
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
         let count_inner = count.clone();
+        let requests_inner = requests.clone();
         tokio::spawn(async move {
             for resp in responses {
                 let Ok((mut sock, _)) = listener.accept().await else {
@@ -1156,11 +1169,15 @@ mod tests {
                         Err(_) => break,
                     }
                 }
+                requests_inner
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&total).to_string());
                 let _ = sock.write_all(resp.as_bytes()).await;
                 let _ = sock.shutdown().await;
             }
         });
-        (port, count)
+        (port, count, requests)
     }
 
     fn ok_response() -> &'static str {
@@ -1175,13 +1192,28 @@ mod tests {
     fn server_error_response() -> &'static str {
         "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     }
+    fn unauthorized_response() -> &'static str {
+        "HTTP/1.1 401 Unauthorized\r\nContent-Length: 15\r\nConnection: close\r\n\r\nBad credentials"
+    }
+    fn github_oauth_token_response() -> &'static str {
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 51\r\nConnection: close\r\n\r\n{\"access_token\":\"ghu-refreshed\",\"expires_in\":28800}"
+    }
+    fn json_empty_array_response() -> &'static str {
+        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_github_oauth_401_refreshes_and_retries_once() {
-        let mut server = mockito::Server::new_async().await;
+        let (port, count, requests) = spawn_recording_server(vec![
+            unauthorized_response(),
+            github_oauth_token_response(),
+            json_empty_array_response(),
+        ])
+        .await;
+        let server_url = format!("http://127.0.0.1:{port}");
         let dir = tempfile::tempdir().unwrap();
         let cache_path = dir.path().join("github-oauth-tokens.toml");
-        let _guard = set_test_github_oauth(&server.url(), cache_path.clone());
+        let _guard = set_test_github_oauth(&server_url, cache_path.clone());
         let settings = crate::config::Settings::get();
         let cache_key = crate::github::oauth::test_support::cache_key(
             "127.0.0.1",
@@ -1201,44 +1233,20 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         )
         .unwrap();
 
-        let stale = server
-            .mock("GET", "/api/v3/repos/owner/repo/releases")
-            .match_header("authorization", "Bearer ghu-stale")
-            .with_status(401)
-            .with_body("Bad credentials")
-            .expect(1)
-            .create_async()
-            .await;
-        let refresh = server
-            .mock("POST", "/login/oauth/access_token")
-            .match_body(mockito::Matcher::Regex(
-                "grant_type=refresh_token".to_string(),
-            ))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{"access_token":"ghu-refreshed","expires_in":28800}"#)
-            .expect(1)
-            .create_async()
-            .await;
-        let refreshed = server
-            .mock("GET", "/api/v3/repos/owner/repo/releases")
-            .match_header("authorization", "Bearer ghu-refreshed")
-            .with_status(200)
-            .with_body("[]")
-            .expect(1)
-            .create_async()
-            .await;
-
         let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
         let text = client
-            .get_text(format!("{}/api/v3/repos/owner/repo/releases", server.url()))
+            .get_text(format!("{server_url}/api/v3/repos/owner/repo/releases"))
             .await
             .unwrap();
 
         assert_eq!(text, "[]");
-        stale.assert_async().await;
-        refresh.assert_async().await;
-        refreshed.assert_async().await;
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+        let requests = requests.lock().unwrap();
+        assert!(requests[0].contains("GET /api/v3/repos/owner/repo/releases"));
+        assert!(requests[0].contains("authorization: Bearer ghu-stale"));
+        assert!(requests[1].contains("POST /login/oauth/access_token"));
+        assert!(requests[2].contains("GET /api/v3/repos/owner/repo/releases"));
+        assert!(requests[2].contains("authorization: Bearer ghu-refreshed"));
         let cache = std::fs::read_to_string(cache_path).unwrap();
         assert!(cache.contains("ghu-refreshed"));
     }
