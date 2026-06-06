@@ -68,10 +68,10 @@ sudo dnf install mise
 
 See the [copr page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/) for more information.
 
-== Snap (beta)
+== Snap
 
 ```sh
-sudo snap install mise --classic --beta
+sudo snap install mise --classic
 ```
 
 See the [snapcraft.io page](https://snapcraft.io/mise) for more information.
