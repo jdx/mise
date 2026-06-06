@@ -218,10 +218,7 @@ impl JavaPlugin {
     ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("extract {filename}"));
-        let format = match m.file_type.as_deref() {
-            Some("zip") => TarFormat::Zip,
-            _ => TarFormat::from_file_name(&tarball_path.file_name().unwrap().to_string_lossy()),
-        };
+        let format = TarFormat::from_file_name(&filename);
         file::unarchive(
             tarball_path,
             &tv.download_path(),
