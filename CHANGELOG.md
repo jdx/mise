@@ -1,5 +1,85 @@
 # Changelog
 
+## [2026.6.1](https://github.com/jdx/mise/compare/v2026.6.0..v2026.6.1) - 2026-06-06
+
+### 🚀 Features
+
+- **(aqua)** support multiple custom registries by @risu729 in [#10179](https://github.com/jdx/mise/pull/10179)
+- **(env)** support sops toml env files by @risu729 in [#10201](https://github.com/jdx/mise/pull/10201)
+- **(hooks)** add run_windows support by @risu729 in [#10202](https://github.com/jdx/mise/pull/10202)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** extract 7z archives by @risu729 in [#10224](https://github.com/jdx/mise/pull/10224)
+- **(elixir)** resolve lockfile urls from builds index by @risu729 in [#10226](https://github.com/jdx/mise/pull/10226)
+- **(env)** uv venv in env_cache key to prevent cross directory leak by @Nagato-Yuzuru in [#10217](https://github.com/jdx/mise/pull/10217)
+- **(github)** accept canonical versions host repo casing by @risu729 in [#10240](https://github.com/jdx/mise/pull/10240)
+- **(github)** refresh oauth token after 401 by @jdx in [#10246](https://github.com/jdx/mise/pull/10246)
+- **(github)** warn on versions host metadata fallback by @jdx in [#10254](https://github.com/jdx/mise/pull/10254)
+- **(github)** skip versions host for non-registry tools by @jdx in [#10255](https://github.com/jdx/mise/pull/10255)
+- **(github)** add structured versions host logs by @jdx in [#10256](https://github.com/jdx/mise/pull/10256)
+- **(ruby)** lock resolved install options by @risu729 in [#9992](https://github.com/jdx/mise/pull/9992)
+- **(task)** render task config includes by @risu729 in [#10225](https://github.com/jdx/mise/pull/10225)
+- watch cwds of dependencies by @43081j in [#10054](https://github.com/jdx/mise/pull/10054)
+- nix flake build test failure by @okuuva in [#10243](https://github.com/jdx/mise/pull/10243)
+- Make directory task include also support toml files by @davidolrik in [#10219](https://github.com/jdx/mise/pull/10219)
+
+### 🚜 Refactor
+
+- remove stale dead code by @risu729 in [#10238](https://github.com/jdx/mise/pull/10238)
+
+### 📚 Documentation
+
+- update snap installation by @salim-b in [#10250](https://github.com/jdx/mise/pull/10250)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:rpm docker digest to 06492ad by @renovate[bot] in [#10231](https://github.com/jdx/mise/pull/10231)
+- update jdx/mise-action digest to dba1968 by @renovate[bot] in [#10232](https://github.com/jdx/mise/pull/10232)
+- update ghcr.io/jdx/mise:alpine docker digest to 2c22b32 by @renovate[bot] in [#10229](https://github.com/jdx/mise/pull/10229)
+- update rust crate toml_edit to v0.25.12 by @renovate[bot] in [#10236](https://github.com/jdx/mise/pull/10236)
+- update rust crate jiff to v0.2.28 by @renovate[bot] in [#10234](https://github.com/jdx/mise/pull/10234)
+- update rust crate ctor to v1.0.7 by @renovate[bot] in [#10233](https://github.com/jdx/mise/pull/10233)
+- update ghcr.io/jdx/mise:deb docker digest to fa244a8 by @renovate[bot] in [#10230](https://github.com/jdx/mise/pull/10230)
+- update rust crate reqwest to v0.13.4 by @renovate[bot] in [#10235](https://github.com/jdx/mise/pull/10235)
+- update actions/checkout digest to df4cb1c by @renovate[bot] in [#10228](https://github.com/jdx/mise/pull/10228)
+
+### 📦 Registry
+
+- use aqua for aube by @jdx in [#10171](https://github.com/jdx/mise/pull/10171)
+- add pgroll by @diegoholiveira in [#10252](https://github.com/jdx/mise/pull/10252)
+
+### Chore
+
+- **(ci)** use pr-closer action by @jdx in [#10222](https://github.com/jdx/mise/pull/10222)
+- **(ci)** separate e2e retry summaries by @risu729 in [#10223](https://github.com/jdx/mise/pull/10223)
+- fix spelling by @jsoref in [#10180](https://github.com/jdx/mise/pull/10180)
+
+### Security
+
+- prevent http install path escape by @jdx in [#10245](https://github.com/jdx/mise/pull/10245)
+
+### New Contributors
+
+- @davidolrik made their first contribution in [#10219](https://github.com/jdx/mise/pull/10219)
+- @diegoholiveira made their first contribution in [#10252](https://github.com/jdx/mise/pull/10252)
+- @Nagato-Yuzuru made their first contribution in [#10217](https://github.com/jdx/mise/pull/10217)
+- @jsoref made their first contribution in [#10180](https://github.com/jdx/mise/pull/10180)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`dahlia/seonbi`](https://github.com/dahlia/seonbi)
+- [`dahlia/submark`](https://github.com/dahlia/submark)
+- [`oxc-project/oxc/oxfmt`](https://github.com/oxc-project/oxc)
+
+#### Updated Packages (3)
+
+- [`dahlia/gukhanmun`](https://github.com/dahlia/gukhanmun)
+- [`dahlia/hongdown`](https://github.com/dahlia/hongdown)
+- [`sayanarijit/jf`](https://github.com/sayanarijit/jf)
+
 ## [2026.6.0](https://github.com/jdx/mise/compare/v2026.5.18..v2026.6.0) - 2026-06-03
 
 ### 🚀 Features
