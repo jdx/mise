@@ -325,9 +325,9 @@ _.file = '.env'
 ```
 
 ::: info
-This uses [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have problems with
-the way `env._.file` works, you will likely need to post an issue there,
-not to mise since there is not much mise can do about the way that crate works.
+Only dotenv-format files use [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have
+problems with dotenv parsing, you will likely need to post an issue there, not to mise since there is
+not much mise can do about the way that crate works. JSON, YAML, and TOML files use separate parsers.
 :::
 
 The `env._.file` directive supports:
@@ -335,12 +335,17 @@ The `env._.file` directive supports:
 - A single file as a string or an object
 - Multiple files as an array of strings and objects
 - Using relative or absolute paths
-- Using `dotenv`, `json`, or `yaml` file formats
+- Using `dotenv`, `json`, `yaml`, or `toml` file formats
 - The `redact` and `tools` options
 
 ```toml
 [env]
 _.file = '.env.yaml'
+```
+
+```toml
+[env]
+_.file = '.env.toml'
 ```
 
 ```toml
@@ -356,7 +361,7 @@ _.file = [
     '.env.json',
     # Load env from the dotenv file at an absolute path
     '/User/bob/.env',
-    # Load env from the yaml file relative to this config file and redacts the values
+    # Load env from the yaml file relative to this config file and redact the values
     { path = ".secrets.yaml", redact = true }
 ]
 ```

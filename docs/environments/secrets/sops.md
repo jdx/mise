@@ -27,6 +27,10 @@ mise will automatically decrypt the file if it is sops-encrypted.
 Currently age is the only sops encryption method supported.
 ::::
 
+:::: warning
+The external `sops` CLI does not currently support TOML input/output. mise can decrypt SOPS-encrypted `.env.toml` files only with the default `sops.rops = true` setting. If you set `sops.rops = false`, mise shells out to the `sops` CLI and encrypted TOML env files fail with a configuration error. Use `.env.json` or `.env.yaml` when you need the external CLI path.
+::::
+
 1. Install tools: `mise use -g sops age`
 
 2. Generate an age key and note the public key:
