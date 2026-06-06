@@ -166,7 +166,8 @@ pub async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<Github
         encode_path_segment(tag)
     );
 
-    let Some(release) = fetch_optional_json(&url, "GitHub release metadata").await? else {
+    let label = format!("GitHub release metadata for {repo}@{tag}");
+    let Some(release) = fetch_optional_json(&url, &label).await? else {
         return Ok(None);
     };
     if !valid_github_release_asset_urls(&release, owner, repo_name) {
@@ -205,8 +206,8 @@ pub async fn github_attestations(
         encode_digest_path_segment(digest)
     );
 
-    let response: Option<AttestationsResponse> =
-        fetch_optional_json(&url, "GitHub attestations").await?;
+    let label = format!("GitHub attestations for {repo}@{digest}");
+    let response: Option<AttestationsResponse> = fetch_optional_json(&url, &label).await?;
     Ok(response.map(|r| r.attestations))
 }
 
@@ -222,11 +223,11 @@ where
         Err(err) => match http::error_code(&err).unwrap_or(0) {
             404 => Ok(None),
             429 => {
-                debug!("mise-versions rate limited while fetching {label}");
+                warn!("mise-versions rate limited while fetching {label}; falling back");
                 Ok(None)
             }
             _ => {
-                debug!("mise-versions {label} lookup failed: {err:#}");
+                warn!("mise-versions {label} lookup failed, falling back: {err:#}");
                 Ok(None)
             }
         },
