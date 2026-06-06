@@ -41,21 +41,26 @@ pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
 type CachedResult = Arc<OnceCell<Result<String, String>>>;
 static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
-type RetryHeaders = Arc<Mutex<HeaderMap>>;
+type RetryStateHandle = Arc<Mutex<RetryState>>;
+
+struct RetryState {
+    headers: HeaderMap,
+    use_netrc: bool,
+}
 
 #[derive(Clone)]
 struct SendOnceOptions {
     use_netrc: bool,
     retry_github_oauth_401: bool,
-    retry_headers: Option<RetryHeaders>,
+    retry_state: Option<RetryStateHandle>,
 }
 
 impl SendOnceOptions {
-    fn new(retry_headers: Option<RetryHeaders>) -> Self {
+    fn new(retry_state: Option<RetryStateHandle>, use_netrc: bool) -> Self {
         Self {
-            use_netrc: true,
+            use_netrc,
             retry_github_oauth_401: true,
-            retry_headers,
+            retry_state,
         }
     }
 
@@ -63,7 +68,7 @@ impl SendOnceOptions {
         Self {
             use_netrc: false,
             retry_github_oauth_401: false,
-            retry_headers: self.retry_headers.clone(),
+            retry_state: self.retry_state.clone(),
         }
     }
 }
@@ -407,15 +412,22 @@ impl Client {
         verb_label: &str,
         retries: i64,
     ) -> Result<Response> {
-        let retry_headers = Arc::new(Mutex::new(headers.clone()));
+        let retry_state = Arc::new(Mutex::new(RetryState {
+            headers: headers.clone(),
+            use_netrc: true,
+        }));
         retry_async_with_retries(verb_label, &url, retries, || async {
-            let headers = retry_headers.lock().unwrap().clone();
+            let (headers, use_netrc) = {
+                let state = retry_state.lock().unwrap();
+                (state.headers.clone(), state.use_netrc)
+            };
             self.send_once_with_https_fallback_with_retry_headers(
                 method.clone(),
                 url.clone(),
                 &headers,
                 verb_label,
-                Some(retry_headers.clone()),
+                Some(retry_state.clone()),
+                use_netrc,
             )
             .await
         })
@@ -437,7 +449,7 @@ impl Client {
         verb_label: &str,
     ) -> Result<Response> {
         self.send_once_with_https_fallback_with_retry_headers(
-            method, url, headers, verb_label, None,
+            method, url, headers, verb_label, None, true,
         )
         .await
     }
@@ -448,7 +460,8 @@ impl Client {
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
-        retry_headers: Option<RetryHeaders>,
+        retry_state: Option<RetryStateHandle>,
+        use_netrc: bool,
     ) -> Result<Response> {
         match self
             .send_once_with_retry_headers(
@@ -456,7 +469,8 @@ impl Client {
                 url.clone(),
                 headers,
                 verb_label,
-                retry_headers.clone(),
+                retry_state.clone(),
+                use_netrc,
             )
             .await
         {
@@ -464,8 +478,15 @@ impl Client {
             Err(err) if url.scheme() == "http" && is_connection_error(&err) => {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
-                self.send_once_with_retry_headers(method, url, headers, verb_label, retry_headers)
-                    .await
+                self.send_once_with_retry_headers(
+                    method,
+                    url,
+                    headers,
+                    verb_label,
+                    retry_state,
+                    use_netrc,
+                )
+                .await
             }
             Err(err) => Err(err),
         }
@@ -477,14 +498,15 @@ impl Client {
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
-        retry_headers: Option<RetryHeaders>,
+        retry_state: Option<RetryStateHandle>,
+        use_netrc: bool,
     ) -> Result<Response> {
         self.send_once_inner(
             method,
             url,
             headers,
             verb_label,
-            SendOnceOptions::new(retry_headers),
+            SendOnceOptions::new(retry_state, use_netrc),
         )
         .await
     }
@@ -503,7 +525,7 @@ impl Client {
 
         // Apply netrc credentials after URL replacement
         let mut final_headers = headers.clone();
-        if options.use_netrc && !final_headers.contains_key(AUTHORIZATION) {
+        if options.use_netrc {
             final_headers.extend(netrc_headers(&url));
         }
 
@@ -551,8 +573,11 @@ impl Client {
                     let mut headers = headers.clone();
                     if let Ok(value) = HeaderValue::from_str(format!("Bearer {token}").as_str()) {
                         headers.insert(AUTHORIZATION, value);
-                        if let Some(retry_headers) = &options.retry_headers {
-                            *retry_headers.lock().unwrap() = headers.clone();
+                        if let Some(retry_state) = &options.retry_state {
+                            *retry_state.lock().unwrap() = RetryState {
+                                headers: headers.clone(),
+                                use_netrc: false,
+                            };
                         }
                         debug!(
                             "{} {} retrying with refreshed GitHub OAuth token after 401",
@@ -1069,6 +1094,10 @@ mod tests {
                 "MISE_GITHUB_OAUTH_API_URL",
                 std::env::var("MISE_GITHUB_OAUTH_API_URL").ok(),
             ),
+            (
+                "MISE_GITHUB_OAUTH_SCOPES",
+                std::env::var("MISE_GITHUB_OAUTH_SCOPES").ok(),
+            ),
             ("MISE_GITHUB_TOKEN", std::env::var("MISE_GITHUB_TOKEN").ok()),
             ("GITHUB_API_TOKEN", std::env::var("GITHUB_API_TOKEN").ok()),
             ("GITHUB_TOKEN", std::env::var("GITHUB_TOKEN").ok()),
@@ -1078,6 +1107,7 @@ mod tests {
         crate::env::set_var("MISE_GITHUB_OAUTH_CLIENT_ID", "Iv1.mock");
         crate::env::set_var("MISE_GITHUB_OAUTH_AUTH_URL", format!("{server_url}/login"));
         crate::env::set_var("MISE_GITHUB_OAUTH_API_URL", format!("{server_url}/api/v3"));
+        crate::env::remove_var("MISE_GITHUB_OAUTH_SCOPES");
         crate::env::remove_var("MISE_GITHUB_TOKEN");
         crate::env::remove_var("GITHUB_API_TOKEN");
         crate::env::remove_var("GITHUB_TOKEN");
@@ -1152,7 +1182,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache_path = dir.path().join("github-oauth-tokens.toml");
         let _guard = set_test_github_oauth(&server.url(), cache_path.clone());
-        let cache_key = crate::github::oauth::test_support::cache_key("127.0.0.1", "Iv1.mock", "");
+        let settings = crate::config::Settings::get();
+        let cache_key = crate::github::oauth::test_support::cache_key(
+            "127.0.0.1",
+            "Iv1.mock",
+            settings.github.oauth_scopes.trim(),
+        );
         std::fs::write(
             &cache_path,
             format!(
