@@ -478,24 +478,30 @@ impl Client {
         debug!("{} {url} {}", verb_label, resp.status());
         display_github_rate_limit(&resp);
         if retry_github_oauth_401
-            && is_stale_github_oauth_unauthorized(&url, &final_headers, &resp)
+            && let Some(stale_access_token) =
+                stale_github_oauth_unauthorized_token(&url, &final_headers, &resp)
             && let Some(host) = url.host_str()
         {
-            match crate::github::oauth::refresh_cached_token_for_host(host).await {
+            match crate::github::oauth::refresh_cached_token_for_host(host, &stale_access_token)
+                .await
+            {
                 Ok(Some(token)) => {
-                    let mut headers = final_headers;
-                    headers.insert(
-                        AUTHORIZATION,
-                        HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
-                    );
-                    debug!(
-                        "{} {} retrying with refreshed GitHub OAuth token after 401",
-                        verb_label, &url
-                    );
-                    return Box::pin(
-                        self.send_once_inner(method, url, &headers, verb_label, false, false),
-                    )
-                    .await;
+                    let mut headers = final_headers.clone();
+                    if let Ok(value) = HeaderValue::from_str(format!("Bearer {token}").as_str()) {
+                        headers.insert(AUTHORIZATION, value);
+                        debug!(
+                            "{} {} retrying with refreshed GitHub OAuth token after 401",
+                            verb_label, &url
+                        );
+                        return Box::pin(
+                            self.send_once_inner(method, url, &headers, verb_label, false, false),
+                        )
+                        .await;
+                    } else {
+                        debug!(
+                            "refreshed GitHub OAuth token contains invalid header bytes; skipping retry"
+                        );
+                    }
                 }
                 Ok(None) => {}
                 Err(err) => {
@@ -585,21 +591,27 @@ fn is_authenticated_github_forbidden(url: &Url, headers: &HeaderMap, resp: &Resp
         && headers.contains_key(AUTHORIZATION)
 }
 
-fn is_stale_github_oauth_unauthorized(url: &Url, headers: &HeaderMap, resp: &Response) -> bool {
+fn stale_github_oauth_unauthorized_token(
+    url: &Url,
+    headers: &HeaderMap,
+    resp: &Response,
+) -> Option<String> {
     if resp.status() != StatusCode::UNAUTHORIZED || !crate::github::is_github_api_url(url) {
-        return false;
+        return None;
     }
-    let Some(host) = url.host_str() else {
-        return false;
-    };
+    let host = url.host_str()?;
     let Some(token) = crate::github::oauth::cached_access_token_for_host(host) else {
-        return false;
+        return None;
     };
-    headers
+    let header_token = headers
         .get(AUTHORIZATION)
         .and_then(|header| header.to_str().ok())
-        .and_then(|header| header.strip_prefix("Bearer "))
-        .is_some_and(|header_token| header_token == token)
+        .and_then(|header| header.strip_prefix("Bearer "))?;
+    if header_token == token {
+        Some(header_token.to_string())
+    } else {
+        None
+    }
 }
 
 pub fn error_code(e: &Report) -> Option<u16> {

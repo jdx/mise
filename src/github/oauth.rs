@@ -11,6 +11,8 @@ const GRANT_DEVICE_CODE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_TOKEN_SECS: i64 = 8 * 60 * 60;
 const REUSE_BUFFER_SECS: i64 = 300;
 
+static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[derive(Debug, Clone)]
 pub struct TokenRequest {
     pub host: String,
@@ -127,7 +129,10 @@ pub fn token(req: TokenRequest) -> Result<String> {
     block_on(token_async(req))
 }
 
-pub async fn refresh_cached_token_for_host(host: &str) -> Result<Option<String>> {
+pub async fn refresh_cached_token_for_host(
+    host: &str,
+    stale_access_token: &str,
+) -> Result<Option<String>> {
     let settings = Settings::get();
     if settings.github.oauth_client_id.trim().is_empty()
         || !host_matches_settings(host, &settings.github.oauth_api_url)
@@ -140,10 +145,15 @@ pub async fn refresh_cached_token_for_host(host: &str) -> Result<Option<String>>
     let canonical_host =
         api_host(&settings.github.oauth_api_url).unwrap_or_else(|| host.to_string());
     let cache_key = cache_key(&canonical_host, client_id, scopes);
+
+    let _lock = REFRESH_TOKEN_LOCK.lock().await;
     let mut cache = read_cache();
     let Some(mut cached) = cache.tokens.get(&cache_key).cloned() else {
         return Ok(None);
     };
+    if cached.access_token != stale_access_token {
+        return Ok(Some(cached.access_token));
+    }
 
     cached.expires_at = chrono::Utc::now();
     cache.tokens.insert(cache_key.clone(), cached.clone());
