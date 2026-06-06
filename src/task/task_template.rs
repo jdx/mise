@@ -8,7 +8,6 @@ use serde::Deserialize;
 /// A task template definition that can be extended by tasks via `extends`
 /// Templates are defined in [task_templates.*] sections of mise.toml
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct TaskTemplate {
     #[serde(default)]
     pub description: String,
@@ -390,22 +389,6 @@ mod tests {
             _ => None,
         });
         assert_eq!(shared_val, Some("task_value"));
-    }
-
-    #[test]
-    fn test_task_template_rejects_output_flags() {
-        for (field, body) in [
-            ("quiet", "quiet = true"),
-            ("hide", "hide = true"),
-            ("raw", "raw = true"),
-        ] {
-            let err = toml::from_str::<TaskTemplate>(body).unwrap_err();
-            assert!(
-                err.message().contains(field),
-                "expected unknown field {field}, got: {}",
-                err.message()
-            );
-        }
     }
 
     #[test]
