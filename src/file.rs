@@ -1052,19 +1052,6 @@ impl<'a> TarOptions<'a> {
     }
 }
 
-pub fn unarchive_with_format(
-    archive: &Path,
-    dest: &Path,
-    format: &str,
-    opts: &ArchiveOptions,
-) -> Result<()> {
-    let archive_format = TarFormat::from_ext(format);
-    if archive_format == TarFormat::Raw && !format.eq_ignore_ascii_case("raw") {
-        bail!("unsupported format: {}", format);
-    }
-    unarchive(archive, dest, archive_format, opts)
-}
-
 pub fn unarchive(
     archive: &Path,
     dest: &Path,

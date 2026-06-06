@@ -2287,9 +2287,13 @@ impl AquaBackend {
             single_file_dest: Some(first_bin_path),
             ..Default::default()
         };
+        let archive_format = TarFormat::from_ext(format);
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
-            file::unarchive_with_format(&tarball_path, &install_path, format, &archive_opts)?;
+            if archive_format == TarFormat::Raw && !format.eq_ignore_ascii_case("raw") {
+                bail!("unsupported format: {}", format);
+            }
+            file::unarchive(&tarball_path, &install_path, archive_format, &archive_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
@@ -2303,7 +2307,10 @@ impl AquaBackend {
         } else if format == "pkg" {
             file::un_pkg(&tarball_path, &install_path)?;
         } else {
-            file::unarchive_with_format(&tarball_path, &install_path, format, &archive_opts)?;
+            if archive_format == TarFormat::Raw && !format.eq_ignore_ascii_case("raw") {
+                bail!("unsupported format: {}", format);
+            }
+            file::unarchive(&tarball_path, &install_path, archive_format, &archive_opts)?;
             make_executable = true;
         }
 
