@@ -11,8 +11,8 @@ output=$(mise install python@3.13.5 2>&1) || true
 echo "$output"
 
 # Verify attestation verification was attempted and succeeded
-assert_contains "echo \"$output\"" "verify GitHub artifact attestations"
-assert_contains "echo \"$output\"" "✓ GitHub artifact attestations verified"
+assert_contains_text "$output" "verify GitHub artifact attestations"
+assert_contains_text "$output" "✓ GitHub artifact attestations verified"
 
 # Verify the installed Python works
 assert "mise x python@3.13.5 -- python --version" "Python 3.13.5"
