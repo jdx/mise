@@ -145,27 +145,37 @@ pub async fn refresh_cached_token_for_host(
     let canonical_host =
         api_host(&settings.github.oauth_api_url).unwrap_or_else(|| host.to_string());
     let cache_key = cache_key(&canonical_host, client_id, scopes);
+    refresh_cached_token(&cache_key, Some(stale_access_token)).await
+}
 
+async fn refresh_cached_token(
+    cache_key: &str,
+    stale_access_token: Option<&str>,
+) -> Result<Option<String>> {
     let _lock = REFRESH_TOKEN_LOCK.lock().await;
     let mut cache = read_cache();
-    let Some(mut cached) = cache.tokens.get(&cache_key).cloned() else {
+    let Some(mut cached) = cache.tokens.get(cache_key).cloned() else {
         return Ok(None);
     };
-    if cached.access_token != stale_access_token {
-        return Ok(Some(cached.access_token));
-    }
 
-    cached.expires_at = chrono::Utc::now();
-    cache.tokens.insert(cache_key.clone(), cached.clone());
-    if let Err(err) = write_cache(&cache) {
-        warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
+    if let Some(stale_access_token) = stale_access_token {
+        if cached.access_token != stale_access_token {
+            return Ok(Some(cached.access_token));
+        }
+        cached.expires_at = chrono::Utc::now();
+        cache.tokens.insert(cache_key.to_string(), cached.clone());
+        if let Err(err) = write_cache(&cache) {
+            warn!("failed to invalidate GitHub OAuth token cache: {err:#}");
+        }
+    } else if reusable(&cached) {
+        return Ok(Some(cached.access_token));
     }
 
     let Some(refreshed) = refresh_token(&cached).await? else {
         return Ok(None);
     };
     let access_token = refreshed.access_token.clone();
-    cache.tokens.insert(cache_key, refreshed);
+    cache.tokens.insert(cache_key.to_string(), refreshed);
     if let Err(err) = write_cache(&cache) {
         warn!("failed to cache refreshed GitHub OAuth token: {err:#}");
     }
@@ -198,15 +208,8 @@ async fn token_async(req: TokenRequest) -> Result<String> {
         return Ok(cached.access_token.clone());
     }
     if let Some(cached) = cache.tokens.get(&cache_key).cloned() {
-        match refresh_token(&cached).await {
-            Ok(Some(refreshed)) => {
-                let token = refreshed.access_token.clone();
-                cache.tokens.insert(cache_key, refreshed);
-                if let Err(err) = write_cache(&cache) {
-                    warn!("failed to cache GitHub OAuth token: {err:#}");
-                }
-                return Ok(token);
-            }
+        match refresh_cached_token(&cache_key, None).await {
+            Ok(Some(token)) => return Ok(token),
             Ok(None) => {}
             Err(err) => {
                 debug!("failed to refresh GitHub OAuth token: {err:#}");
