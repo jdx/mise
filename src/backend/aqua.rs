@@ -2290,9 +2290,6 @@ impl AquaBackend {
         let archive_format = TarFormat::from_ext(format);
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
-            if archive_format == TarFormat::Raw && !format.eq_ignore_ascii_case("raw") {
-                bail!("unsupported format: {}", format);
-            }
             file::unarchive(&tarball_path, &install_path, archive_format, &archive_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
             file::create_dir_all(&install_path)?;

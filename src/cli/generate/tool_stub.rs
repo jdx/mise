@@ -514,11 +514,15 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
                 .unwrap_or_default()
                 .to_string_lossy(),
         );
-        let archive_opts = file::ArchiveOptions {
-            pr: Some(pr),
-            ..Default::default()
-        };
-        file::unarchive(archive_path, &extracted_dir, format, &archive_opts)?;
+        file::unarchive(
+            archive_path,
+            &extracted_dir,
+            format,
+            &file::ArchiveOptions {
+                pr: Some(pr),
+                ..Default::default()
+            },
+        )?;
 
         // Check if strip_components would be applied during actual installation
         let format =
