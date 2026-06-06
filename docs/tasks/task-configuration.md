@@ -744,7 +744,7 @@ includes = [
 
 :::
 
-URL format: `git::<protocol>://<url>//<path>?<ref>`
+URL format: `git::<protocol>://<url>//<path>?ref=<ref>`
 
 Required fields:
 
