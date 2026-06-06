@@ -435,7 +435,7 @@ pub fn install_artifact(
             install_path.join(cleaned_name)
         };
 
-        file::un_compressed_file(file_path, &dest, format)?;
+        file::decompress_file(file_path, &dest, format)?;
 
         file::make_executable(&dest)?;
     } else if format == file::TarFormat::Raw {

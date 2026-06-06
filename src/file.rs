@@ -881,7 +881,7 @@ pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn un_compressed_file(input: &Path, dest: &Path, format: TarFormat) -> Result<()> {
+pub fn decompress_file(input: &Path, dest: &Path, format: TarFormat) -> Result<()> {
     if let Some(parent) = dest.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -1101,7 +1101,7 @@ pub fn unarchive(
                 .single_file_dest
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| compressed_file_dest(archive, dest));
-            un_compressed_file(archive, &out_path, format)
+            decompress_file(archive, &out_path, format)
         }
         TarFormat::Raw => unreachable!("raw is handled as a legacy tar format"),
         TarFormat::TarGz
