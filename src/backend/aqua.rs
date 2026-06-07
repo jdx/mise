@@ -2304,6 +2304,8 @@ impl AquaBackend {
             file::un_dmg(&tarball_path, &install_path)?;
         } else if format == "pkg" {
             file::un_pkg(&tarball_path, &install_path)?;
+        } else if is_unimplemented_aqua_extraction_format(format) {
+            bail!("aqua format {format} is not yet implemented");
         } else {
             let Some(archive_format) = archive_format else {
                 bail!("unsupported format: {}", format);
@@ -2639,6 +2641,15 @@ fn starts_with_v(s: &str) -> bool {
 
 fn ends_with_v(s: &str) -> bool {
     s.ends_with('v') || s.ends_with('V')
+}
+
+/// Keep in sync with `aqua_registry::AQUA_UNIMPLEMENTED_EXTRACTION_FORMATS`.
+const AQUA_UNIMPLEMENTED_EXTRACTION_FORMATS: &[&str] = &[
+    "tar.br", "tbr", "tar.lz4", "tlz4", "lz4", "tar.sz", "tsz", "sz", "rar",
+];
+
+fn is_unimplemented_aqua_extraction_format(format: &str) -> bool {
+    AQUA_UNIMPLEMENTED_EXTRACTION_FORMATS.contains(&format)
 }
 
 fn complete_windows_ext(
