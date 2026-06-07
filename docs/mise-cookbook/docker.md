@@ -39,19 +39,23 @@ For toolbox containers or bastion hosts where tools should be pre-installed for 
 use `mise install --system` to install tools into `/usr/local/share/mise/installs`.
 Each user's mise will automatically find these system-level tools without any configuration.
 
+The following example also shows installing using `extrepo` on Debian/Ubuntu image.
+With this approach you cannot specify `MISE_VERSION` or `MISE_INSTALL_PATH`.
+
 ```Dockerfile [Dockerfile]
+# syntax=docker/dockerfile:1
 FROM debian:13-slim
 
-RUN apt-get update  \
-    && apt-get -y --no-install-recommends install  \
-        sudo curl git ca-certificates build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
-
-# Install mise
-RUN curl https://mise.run | sh
+RUN <<EOF
+  set -ex
+  apt-get update
+  apt-get install -y extrepo
+  extrepo enable mise
+  apt-get remove -y --auto-remove extrepo # extrepo and its deps are not needed after extrepo enable
+  apt-get update
+  apt-get install -y mise build-essential
+  rm -fr /var/lib/apt/lists/*
+EOF
 
 # Pre-install tools to the system-wide shared directory
 RUN mise install --system node@26 python@3.15
