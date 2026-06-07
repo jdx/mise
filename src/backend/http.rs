@@ -57,7 +57,7 @@ struct FileInfo {
     /// File extension
     extension: String,
     /// Detected archive format
-    format: file::TarFormat,
+    format: file::ArchiveFormat,
     /// Whether this is a compressed single binary (not a tar archive)
     is_compressed_binary: bool,
 }
@@ -81,7 +81,7 @@ impl FileInfo {
         };
 
         let file_name = effective_path.file_name().unwrap().to_string_lossy();
-        let format = file::TarFormat::from_file_name(&file_name);
+        let format = file::ArchiveFormat::from_file_name(&file_name);
 
         let extension = format
             .extension()
@@ -94,7 +94,7 @@ impl FileInfo {
                     .to_string()
             });
 
-        let is_compressed_binary = !format.is_archive() && format != file::TarFormat::Raw;
+        let is_compressed_binary = !format.is_archive() && format != file::ArchiveFormat::Raw;
 
         Self {
             effective_path,
@@ -286,7 +286,7 @@ impl HttpBackend {
     /// used different options (e.g., different `bin` name)
     fn extraction_type_from_cache(&self, cache_key: &str, file_info: &FileInfo) -> ExtractionType {
         // For archives, we don't need to detect the filename
-        if !file_info.is_compressed_binary && file_info.format != file::TarFormat::Raw {
+        if !file_info.is_compressed_binary && file_info.format != file::ArchiveFormat::Raw {
             return ExtractionType::Archive;
         }
 
@@ -369,7 +369,7 @@ impl HttpBackend {
 
         if file_info.is_compressed_binary {
             self.extract_compressed_binary(dest, file_path, &file_info, opts, pr)
-        } else if file_info.format == file::TarFormat::Raw {
+        } else if file_info.format == file::ArchiveFormat::Raw {
             self.extract_raw_file(dest, file_path, &file_info, opts, pr)
         } else {
             self.extract_archive(tv, dest, file_path, &file_info, opts, pr)
@@ -444,14 +444,14 @@ impl HttpBackend {
             strip_components = Some(1);
         }
 
-        let archive_opts = file::ArchiveOptions {
+        let extract_opts = file::ExtractOptions {
             strip_components: strip_components.unwrap_or(0),
             pr,
             preserve_mtime: false,
             ..Default::default()
         };
 
-        file::unarchive(file_path, dest, file_info.format, &archive_opts)?;
+        file::extract_archive(file_path, dest, file_info.format, &extract_opts)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = opts.rename_exe() {

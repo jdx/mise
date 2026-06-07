@@ -7,7 +7,7 @@ use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
-use crate::file::{ArchiveOptions, TarFormat};
+use crate::file::{ArchiveFormat, ExtractOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
@@ -1272,7 +1272,8 @@ impl AquaBackend {
         v: &str,
     ) -> Result<bool> {
         let format = pkg.format(v, os(), arch())?;
-        let format = TarFormat::from_ext(format);
+        let format = ArchiveFormat::from_ext(format)
+            .ok_or_else(|| eyre!("unsupported archive format for SLSA content check"))?;
         if !format.is_archive() {
             return Err(eyre!(
                 "SLSA provenance subject mismatch and content-level fallback is only supported for archives"
@@ -2282,15 +2283,15 @@ impl AquaBackend {
         let first_bin_path = bin_paths
             .first()
             .expect("at least one bin path should exist");
-        let archive_opts = ArchiveOptions {
+        let extract_opts = ExtractOptions {
             pr: Some(ctx.pr.as_ref()),
-            single_file_dest: Some(first_bin_path),
             ..Default::default()
         };
-        let archive_format = TarFormat::from_ext(format);
+        let archive_format = ArchiveFormat::from_ext(format);
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
-            file::unarchive(&tarball_path, &install_path, archive_format, &archive_opts)?;
+            let archive_format = archive_format.unwrap_or(ArchiveFormat::TarGz);
+            file::extract_archive(&tarball_path, &install_path, archive_format, &extract_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
@@ -2304,11 +2305,16 @@ impl AquaBackend {
         } else if format == "pkg" {
             file::un_pkg(&tarball_path, &install_path)?;
         } else {
-            if archive_format == TarFormat::Raw && !format.eq_ignore_ascii_case("raw") {
+            let Some(archive_format) = archive_format else {
                 bail!("unsupported format: {}", format);
+            };
+            if archive_format.is_compressed_file() {
+                file::decompress_file(&tarball_path, first_bin_path, archive_format)?;
+                make_executable = true;
+            } else {
+                file::extract_archive(&tarball_path, &install_path, archive_format, &extract_opts)?;
+                make_executable = true;
             }
-            file::unarchive(&tarball_path, &install_path, archive_format, &archive_opts)?;
-            make_executable = true;
         }
 
         if make_executable {

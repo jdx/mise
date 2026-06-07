@@ -96,7 +96,7 @@ impl SwiftPlugin {
                 &file::TarOptions {
                     strip_components: 1,
                     pr: Some(ctx.pr.as_ref()),
-                    ..file::TarOptions::new(file::TarFormat::TarGz)
+                    ..file::TarOptions::new(file::ArchiveFormat::TarGz)
                 },
             )?;
         }

@@ -881,7 +881,7 @@ pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn decompress_file(input: &Path, dest: &Path, format: TarFormat) -> Result<()> {
+pub fn decompress_file(input: &Path, dest: &Path, format: ArchiveFormat) -> Result<()> {
     if let Some(parent) = dest.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -889,16 +889,16 @@ pub fn decompress_file(input: &Path, dest: &Path, format: TarFormat) -> Result<(
     }
 
     match format {
-        TarFormat::Gz => un_gz(input, dest),
-        TarFormat::Xz => un_xz(input, dest),
-        TarFormat::Zst => un_zst(input, dest),
-        TarFormat::Bz2 => un_bz2(input, dest),
+        ArchiveFormat::Gz => un_gz(input, dest),
+        ArchiveFormat::Xz => un_xz(input, dest),
+        ArchiveFormat::Zst => un_zst(input, dest),
+        ArchiveFormat::Bz2 => un_bz2(input, dest),
         _ => bail!("unsupported compressed file format: {}", format),
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
-pub enum TarFormat {
+pub enum ArchiveFormat {
     #[strum(serialize = "tar.gz", serialize = "tgz")]
     TarGz,
     #[strum(serialize = "gz")]
@@ -925,105 +925,104 @@ pub enum TarFormat {
     Raw,
 }
 
-impl TarFormat {
+impl ArchiveFormat {
     pub fn from_file_name(filename: &str) -> Self {
         let filename = filename.to_lowercase();
 
         if let Some(idx) = filename.rfind(".tar.") {
             let ext = &filename[idx + 1..];
-            let fmt = Self::from_ext(ext);
-            if fmt != TarFormat::Raw {
+            if let Some(fmt) = Self::from_ext(ext) {
                 return fmt;
             }
         }
 
         if let Some(ext) = Path::new(&filename).extension().and_then(|s| s.to_str()) {
-            Self::from_ext(ext)
+            Self::from_ext(ext).unwrap_or(ArchiveFormat::Raw)
         } else {
-            TarFormat::Raw
+            ArchiveFormat::Raw
         }
     }
 
-    pub fn from_ext(ext: &str) -> Self {
-        ext.to_lowercase().parse().unwrap_or(TarFormat::Raw)
+    pub fn from_ext(ext: &str) -> Option<Self> {
+        ext.to_lowercase().parse().ok()
     }
 
     pub fn is_archive(&self) -> bool {
         match self {
-            TarFormat::TarGz
-            | TarFormat::TarXz
-            | TarFormat::TarBz2
-            | TarFormat::TarZst
-            | TarFormat::Tar
-            | TarFormat::Zip
-            | TarFormat::SevenZip => true,
-            TarFormat::Gz | TarFormat::Xz | TarFormat::Bz2 | TarFormat::Zst | TarFormat::Raw => {
-                false
-            }
+            ArchiveFormat::TarGz
+            | ArchiveFormat::TarXz
+            | ArchiveFormat::TarBz2
+            | ArchiveFormat::TarZst
+            | ArchiveFormat::Tar
+            | ArchiveFormat::Zip
+            | ArchiveFormat::SevenZip => true,
+            ArchiveFormat::Gz
+            | ArchiveFormat::Xz
+            | ArchiveFormat::Bz2
+            | ArchiveFormat::Zst
+            | ArchiveFormat::Raw => false,
         }
     }
 
     pub fn is_tar_archive(&self) -> bool {
         matches!(
             self,
-            TarFormat::TarGz
-                | TarFormat::TarXz
-                | TarFormat::TarBz2
-                | TarFormat::TarZst
-                | TarFormat::Tar
+            ArchiveFormat::TarGz
+                | ArchiveFormat::TarXz
+                | ArchiveFormat::TarBz2
+                | ArchiveFormat::TarZst
+                | ArchiveFormat::Tar
         )
     }
 
     pub fn is_compressed_file(&self) -> bool {
         matches!(
             self,
-            TarFormat::Gz | TarFormat::Xz | TarFormat::Bz2 | TarFormat::Zst
+            ArchiveFormat::Gz | ArchiveFormat::Xz | ArchiveFormat::Bz2 | ArchiveFormat::Zst
         )
     }
 
     fn can_open_with_tar(&self) -> bool {
-        self.is_tar_archive() || *self == TarFormat::Raw
+        self.is_tar_archive() || *self == ArchiveFormat::Raw
     }
 
     pub fn extension(&self) -> Option<&'static str> {
         match self {
-            TarFormat::TarGz => Some("tar.gz"),
-            TarFormat::Gz => Some("gz"),
-            TarFormat::TarXz => Some("tar.xz"),
-            TarFormat::Xz => Some("xz"),
-            TarFormat::TarBz2 => Some("tar.bz2"),
-            TarFormat::Bz2 => Some("bz2"),
-            TarFormat::TarZst => Some("tar.zst"),
-            TarFormat::Zst => Some("zst"),
-            TarFormat::Tar => Some("tar"),
-            TarFormat::Zip => Some("zip"),
-            TarFormat::SevenZip => Some("7z"),
-            TarFormat::Raw => None,
+            ArchiveFormat::TarGz => Some("tar.gz"),
+            ArchiveFormat::Gz => Some("gz"),
+            ArchiveFormat::TarXz => Some("tar.xz"),
+            ArchiveFormat::Xz => Some("xz"),
+            ArchiveFormat::TarBz2 => Some("tar.bz2"),
+            ArchiveFormat::Bz2 => Some("bz2"),
+            ArchiveFormat::TarZst => Some("tar.zst"),
+            ArchiveFormat::Zst => Some("zst"),
+            ArchiveFormat::Tar => Some("tar"),
+            ArchiveFormat::Zip => Some("zip"),
+            ArchiveFormat::SevenZip => Some("7z"),
+            ArchiveFormat::Raw => None,
         }
     }
 }
 
-pub struct ArchiveOptions<'a> {
+pub struct ExtractOptions<'a> {
     pub strip_components: usize,
     pub pr: Option<&'a dyn SingleReport>,
     /// When false, files will be extracted with current timestamp instead of archive's mtime
     pub preserve_mtime: bool,
-    pub single_file_dest: Option<&'a Path>,
 }
 
-impl<'a> Default for ArchiveOptions<'a> {
+impl<'a> Default for ExtractOptions<'a> {
     fn default() -> Self {
         Self {
             strip_components: 0,
             pr: None,
             preserve_mtime: true,
-            single_file_dest: None,
         }
     }
 }
 
-impl<'a> ArchiveOptions<'a> {
-    fn tar_options(&self, format: TarFormat) -> TarOptions<'a> {
+impl<'a> ExtractOptions<'a> {
+    fn tar_options(&self, format: ArchiveFormat) -> TarOptions<'a> {
         TarOptions {
             format,
             strip_components: self.strip_components,
@@ -1034,7 +1033,7 @@ impl<'a> ArchiveOptions<'a> {
 }
 
 pub struct TarOptions<'a> {
-    pub format: TarFormat,
+    pub format: ArchiveFormat,
     pub strip_components: usize,
     pub pr: Option<&'a dyn SingleReport>,
     /// When false, files will be extracted with current timestamp instead of archive's mtime
@@ -1042,7 +1041,7 @@ pub struct TarOptions<'a> {
 }
 
 impl<'a> TarOptions<'a> {
-    pub fn new(format: TarFormat) -> Self {
+    pub fn new(format: ArchiveFormat) -> Self {
         Self {
             format,
             strip_components: 0,
@@ -1052,22 +1051,27 @@ impl<'a> TarOptions<'a> {
     }
 }
 
-pub fn unarchive(
+pub fn extract_archive(
     archive: &Path,
     dest: &Path,
-    format: TarFormat,
-    opts: &ArchiveOptions,
+    format: ArchiveFormat,
+    opts: &ExtractOptions,
 ) -> Result<()> {
     match format {
-        format if format.can_open_with_tar() => untar(archive, dest, &opts.tar_options(format)),
-        TarFormat::Zip => unzip(
+        ArchiveFormat::TarGz
+        | ArchiveFormat::TarXz
+        | ArchiveFormat::TarBz2
+        | ArchiveFormat::TarZst
+        | ArchiveFormat::Tar
+        | ArchiveFormat::Raw => untar(archive, dest, &opts.tar_options(format)),
+        ArchiveFormat::Zip => unzip(
             archive,
             dest,
             &ZipOptions {
                 strip_components: opts.strip_components,
             },
         ),
-        TarFormat::SevenZip => {
+        ArchiveFormat::SevenZip => {
             #[cfg(windows)]
             {
                 return un7z(
@@ -1083,34 +1087,9 @@ pub fn unarchive(
                 bail!("7z format not supported on this platform");
             }
         }
-        format if format.is_compressed_file() => {
-            let out_path = opts
-                .single_file_dest
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| compressed_file_dest(archive, dest));
-            decompress_file(archive, &out_path, format)
+        ArchiveFormat::Gz | ArchiveFormat::Xz | ArchiveFormat::Bz2 | ArchiveFormat::Zst => {
+            bail!("extract_archive does not support compressed single-file format: {format}")
         }
-        TarFormat::Raw => unreachable!("raw is handled as a legacy tar format"),
-        TarFormat::TarGz
-        | TarFormat::TarXz
-        | TarFormat::TarBz2
-        | TarFormat::TarZst
-        | TarFormat::Tar
-        | TarFormat::Gz
-        | TarFormat::Xz
-        | TarFormat::Bz2
-        | TarFormat::Zst => unreachable!("handled by guarded match arms above"),
-    }
-}
-
-fn compressed_file_dest(archive: &Path, dest: &Path) -> PathBuf {
-    if dest.is_dir() {
-        let name = archive
-            .file_stem()
-            .unwrap_or_else(|| archive.file_name().unwrap());
-        dest.join(name)
-    } else {
-        dest.to_path_buf()
     }
 }
 
@@ -1215,20 +1194,20 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     Ok(())
 }
 
-fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
+fn open_tar(format: ArchiveFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
     let f = File::open(archive)?;
     Ok(match format {
         // TODO: we probably shouldn't assume raw is tar.gz, but this was to retain existing behavior
-        TarFormat::TarGz | TarFormat::Raw => Box::new(GzDecoder::new(f)),
-        TarFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
-        TarFormat::TarBz2 => Box::new(BzDecoder::new(f)),
-        TarFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
-        TarFormat::Tar => Box::new(f),
-        TarFormat::Gz | TarFormat::Xz | TarFormat::Bz2 | TarFormat::Zst => {
+        ArchiveFormat::TarGz | ArchiveFormat::Raw => Box::new(GzDecoder::new(f)),
+        ArchiveFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
+        ArchiveFormat::TarBz2 => Box::new(BzDecoder::new(f)),
+        ArchiveFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
+        ArchiveFormat::Tar => Box::new(f),
+        ArchiveFormat::Gz | ArchiveFormat::Xz | ArchiveFormat::Bz2 | ArchiveFormat::Zst => {
             bail!("{} is not a tar archive", format)
         }
-        TarFormat::Zip => bail!("zip format not supported"),
-        TarFormat::SevenZip => bail!("7z format not supported"),
+        ArchiveFormat::Zip => bail!("zip format not supported"),
+        ArchiveFormat::SevenZip => bail!("7z format not supported"),
     })
 }
 
@@ -1382,7 +1361,7 @@ fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Compon
         .skip_while(|c| matches!(c, std::path::Component::CurDir))
 }
 
-pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(String, bool)>> {
+pub fn inspect_tar_contents(archive: &Path, format: ArchiveFormat) -> Result<Vec<(String, bool)>> {
     let tar = open_tar(format, archive)?;
     let mut archive = Archive::new(tar);
     let mut top_level_components = std::collections::HashMap::new();
@@ -1472,10 +1451,10 @@ pub fn inspect_7z_contents(_archive: &Path) -> Result<Vec<(String, bool)>> {
 }
 
 /// Determines if strip_components=1 should be applied based on archive structure
-pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool> {
+pub fn should_strip_components(archive: &Path, format: ArchiveFormat) -> Result<bool> {
     let top_level_entries = match format {
-        TarFormat::Zip => inspect_zip_contents(archive)?,
-        TarFormat::SevenZip => inspect_7z_contents(archive)?,
+        ArchiveFormat::Zip => inspect_zip_contents(archive)?,
+        ArchiveFormat::SevenZip => inspect_7z_contents(archive)?,
         _ => inspect_tar_contents(archive, format)?,
     };
 
@@ -1502,7 +1481,7 @@ pub struct ArchiveContent {
 /// fail closed instead of being ignored.
 pub fn archive_content_files(
     archive_path: &Path,
-    format: TarFormat,
+    format: ArchiveFormat,
     strip_components: usize,
 ) -> Result<Vec<ArchiveContent>> {
     if strip_components > 1 {
@@ -1510,16 +1489,20 @@ pub fn archive_content_files(
     }
 
     match format {
-        TarFormat::TarGz
-        | TarFormat::TarXz
-        | TarFormat::TarBz2
-        | TarFormat::TarZst
-        | TarFormat::Tar => archive_content_files_tar(archive_path, format, strip_components),
-        TarFormat::Zip => archive_content_files_zip(archive_path, strip_components),
-        TarFormat::SevenZip => {
+        ArchiveFormat::TarGz
+        | ArchiveFormat::TarXz
+        | ArchiveFormat::TarBz2
+        | ArchiveFormat::TarZst
+        | ArchiveFormat::Tar => archive_content_files_tar(archive_path, format, strip_components),
+        ArchiveFormat::Zip => archive_content_files_zip(archive_path, strip_components),
+        ArchiveFormat::SevenZip => {
             bail!("content-level SLSA verification does not support 7z archives")
         }
-        TarFormat::Gz | TarFormat::Xz | TarFormat::Bz2 | TarFormat::Zst | TarFormat::Raw => {
+        ArchiveFormat::Gz
+        | ArchiveFormat::Xz
+        | ArchiveFormat::Bz2
+        | ArchiveFormat::Zst
+        | ArchiveFormat::Raw => {
             bail!("content-level SLSA verification only supports archive formats")
         }
     }
@@ -1527,7 +1510,7 @@ pub fn archive_content_files(
 
 fn archive_content_files_tar(
     archive_path: &Path,
-    format: TarFormat,
+    format: ArchiveFormat,
     strip_components: usize,
 ) -> Result<Vec<ArchiveContent>> {
     let tar = open_tar(format, archive_path)?;
@@ -1674,7 +1657,7 @@ mod tests {
             builder.finish().unwrap();
         }
 
-        let files = archive_content_files(&archive_path, TarFormat::Tar, 1).unwrap();
+        let files = archive_content_files(&archive_path, ArchiveFormat::Tar, 1).unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].name, "tool");
         assert_eq!(files[0].sha256, hex::encode(Sha256::digest(b"tool")));
@@ -1698,7 +1681,7 @@ mod tests {
             builder.finish().unwrap();
         }
 
-        let err = archive_content_files(&archive_path, TarFormat::Tar, 0).unwrap_err();
+        let err = archive_content_files(&archive_path, ArchiveFormat::Tar, 0).unwrap_err();
         assert!(err.to_string().contains("non-regular archive entry"));
     }
 
@@ -1811,7 +1794,7 @@ mod tests {
         // For now, we'll test with a nonexistent file to ensure the function
         // returns false when it can't read the archive
         let non_existent_path = Path::new("/non/existent/archive.tar.gz");
-        let result = should_strip_components(non_existent_path, TarFormat::TarGz);
+        let result = should_strip_components(non_existent_path, ArchiveFormat::TarGz);
         assert!(result.is_err()); // Should fail to open nonexistent file
 
         // Note: To properly test this function, we would need actual tar archives
@@ -1888,7 +1871,7 @@ mod tests {
         gz.finish().unwrap();
 
         // Now test inspect_tar_contents
-        let result = inspect_tar_contents(temp_file.path(), TarFormat::TarGz).unwrap();
+        let result = inspect_tar_contents(temp_file.path(), ArchiveFormat::TarGz).unwrap();
 
         // Should have 3 top-level entries: dir1, dir2, standalone
         // NOT a single "." entry
@@ -1915,7 +1898,7 @@ mod tests {
         }
 
         // Verify should_strip_components returns false (multiple top-level entries)
-        let should_strip = should_strip_components(temp_file.path(), TarFormat::TarGz).unwrap();
+        let should_strip = should_strip_components(temp_file.path(), ArchiveFormat::TarGz).unwrap();
         assert!(
             !should_strip,
             "Should NOT strip components for multi-entry archive"
@@ -1988,31 +1971,65 @@ mod tests {
     }
 
     #[test]
-    fn test_tar_format_from_file_name() {
-        assert_eq!(TarFormat::from_file_name("foo.tar.gz"), TarFormat::TarGz);
-        assert_eq!(TarFormat::from_file_name("foo.tgz"), TarFormat::TarGz);
-        assert_eq!(TarFormat::from_file_name("foo.tar.xz"), TarFormat::TarXz);
-        assert_eq!(TarFormat::from_file_name("foo.txz"), TarFormat::TarXz);
-        assert_eq!(TarFormat::from_file_name("foo.tar.bz2"), TarFormat::TarBz2);
-        assert_eq!(TarFormat::from_file_name("foo.tbz2"), TarFormat::TarBz2);
-        assert_eq!(TarFormat::from_file_name("foo.tbz"), TarFormat::TarBz2);
-        assert_eq!(TarFormat::from_ext("tbz"), TarFormat::TarBz2);
-        assert_eq!(TarFormat::from_file_name("foo.tar.zst"), TarFormat::TarZst);
-        assert_eq!(TarFormat::from_file_name("foo.tzst"), TarFormat::TarZst);
-        assert_eq!(TarFormat::from_file_name("foo.tar"), TarFormat::Tar);
-        assert_eq!(TarFormat::from_file_name("foo.zip"), TarFormat::Zip);
-        assert_eq!(TarFormat::from_file_name("foo.vsix"), TarFormat::Zip);
-        assert_eq!(TarFormat::from_file_name("foo.7z"), TarFormat::SevenZip);
-        assert_eq!(TarFormat::from_file_name("foo.gz"), TarFormat::Gz);
-        assert_eq!(TarFormat::from_file_name("foo.xz"), TarFormat::Xz);
-        assert_eq!(TarFormat::from_file_name("foo.bz2"), TarFormat::Bz2);
-        assert_eq!(TarFormat::from_file_name("foo.zst"), TarFormat::Zst);
-        assert_eq!(TarFormat::from_file_name("foo"), TarFormat::Raw);
-        assert_eq!(TarFormat::from_file_name("foo.txt"), TarFormat::Raw);
+    fn test_archive_format_from_file_name() {
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.tar.gz"),
+            ArchiveFormat::TarGz
+        );
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.tgz"),
+            ArchiveFormat::TarGz
+        );
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.tar.xz"),
+            ArchiveFormat::TarXz
+        );
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.txz"),
+            ArchiveFormat::TarXz
+        );
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.tar.bz2"),
+            ArchiveFormat::TarBz2
+        );
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.tbz2"),
+            ArchiveFormat::TarBz2
+        );
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.tbz"),
+            ArchiveFormat::TarBz2
+        );
+        assert_eq!(ArchiveFormat::from_ext("tbz"), Some(ArchiveFormat::TarBz2));
+        assert_eq!(ArchiveFormat::from_ext("tar.br"), None);
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.tar.zst"),
+            ArchiveFormat::TarZst
+        );
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.tzst"),
+            ArchiveFormat::TarZst
+        );
+        assert_eq!(ArchiveFormat::from_file_name("foo.tar"), ArchiveFormat::Tar);
+        assert_eq!(ArchiveFormat::from_file_name("foo.zip"), ArchiveFormat::Zip);
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.vsix"),
+            ArchiveFormat::Zip
+        );
+        assert_eq!(
+            ArchiveFormat::from_file_name("foo.7z"),
+            ArchiveFormat::SevenZip
+        );
+        assert_eq!(ArchiveFormat::from_file_name("foo.gz"), ArchiveFormat::Gz);
+        assert_eq!(ArchiveFormat::from_file_name("foo.xz"), ArchiveFormat::Xz);
+        assert_eq!(ArchiveFormat::from_file_name("foo.bz2"), ArchiveFormat::Bz2);
+        assert_eq!(ArchiveFormat::from_file_name("foo.zst"), ArchiveFormat::Zst);
+        assert_eq!(ArchiveFormat::from_file_name("foo"), ArchiveFormat::Raw);
+        assert_eq!(ArchiveFormat::from_file_name("foo.txt"), ArchiveFormat::Raw);
     }
 
     #[test]
-    fn test_unarchive_single_file() {
+    fn test_decompress_file() {
         use flate2::Compression;
         use flate2::write::GzEncoder;
         use std::io::Write;
@@ -2022,16 +2039,13 @@ mod tests {
         let src_path = dir.path().join("test.gz");
         let dest_path = dir.path().join("test-out");
 
-        // Create a dummy gzip file
         let file = File::create(&src_path).unwrap();
         let mut encoder = GzEncoder::new(file, Compression::default());
         encoder.write_all(b"hello world").unwrap();
         encoder.finish().unwrap();
 
-        // unarchive (decompress) it
-        unarchive(&src_path, &dest_path, TarFormat::Gz, &Default::default()).unwrap();
+        decompress_file(&src_path, &dest_path, ArchiveFormat::Gz).unwrap();
 
-        // Verify output
         assert!(dest_path.exists());
         assert!(dest_path.is_file());
         let content = std::fs::read_to_string(&dest_path).unwrap();
@@ -2039,36 +2053,7 @@ mod tests {
     }
 
     #[test]
-    fn test_unarchive_single_file_to_dir() {
-        use flate2::Compression;
-        use flate2::write::GzEncoder;
-        use std::io::Write;
-        use tempfile::tempdir;
-
-        let dir = tempdir().unwrap();
-        let src_path = dir.path().join("test_file.gz");
-        let dest_dir = dir.path().join("out_dir");
-        std::fs::create_dir(&dest_dir).unwrap();
-
-        // Create a dummy gzip file
-        let file = File::create(&src_path).unwrap();
-        let mut encoder = GzEncoder::new(file, Compression::default());
-        encoder.write_all(b"hello world").unwrap();
-        encoder.finish().unwrap();
-
-        // unarchive (decompress) it
-        unarchive(&src_path, &dest_dir, TarFormat::Gz, &Default::default()).unwrap();
-
-        // Verify output - should be out_dir/test_file
-        let expected_path = dest_dir.join("test_file");
-        assert!(expected_path.exists());
-        assert!(expected_path.is_file());
-        let content = std::fs::read_to_string(&expected_path).unwrap();
-        assert_eq!(content, "hello world");
-    }
-
-    #[test]
-    fn test_unarchive_single_file_creates_parent_dir() {
+    fn test_decompress_file_creates_parent_dir() {
         use flate2::Compression;
         use flate2::write::GzEncoder;
         use std::io::Write;
@@ -2083,16 +2068,7 @@ mod tests {
         encoder.write_all(b"hello world").unwrap();
         encoder.finish().unwrap();
 
-        unarchive(
-            &src_path,
-            dir.path(),
-            TarFormat::Gz,
-            &ArchiveOptions {
-                single_file_dest: Some(&dest_path),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        decompress_file(&src_path, &dest_path, ArchiveFormat::Gz).unwrap();
 
         assert!(dest_path.exists());
         assert!(dest_path.is_file());
@@ -2101,7 +2077,7 @@ mod tests {
     }
 
     #[test]
-    fn test_unarchive_zip() {
+    fn test_extract_archive_zip() {
         use std::io::Write;
         use tempfile::tempdir;
 
@@ -2116,7 +2092,13 @@ mod tests {
         zip.write_all(b"hello world").unwrap();
         zip.finish().unwrap();
 
-        unarchive(&src_path, &dest_dir, TarFormat::Zip, &Default::default()).unwrap();
+        extract_archive(
+            &src_path,
+            &dest_dir,
+            ArchiveFormat::Zip,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
 
         let extracted_path = dest_dir.join("pkg").join("tool");
         assert!(extracted_path.exists());
@@ -2137,7 +2119,7 @@ mod tests {
             &dest_path,
             &TarOptions {
                 pr: None,
-                ..TarOptions::new(TarFormat::Gz)
+                ..TarOptions::new(ArchiveFormat::Gz)
             },
         )
         .unwrap_err();

@@ -187,7 +187,7 @@ impl RubyPlugin {
                 }
 
                 let strip_components =
-                    file::should_strip_components(&temp_archive, file::TarFormat::Zip)?;
+                    file::should_strip_components(&temp_archive, file::ArchiveFormat::Zip)?;
 
                 file::unzip(
                     &temp_archive,
@@ -796,7 +796,7 @@ impl RubyPlugin {
             &file::TarOptions {
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                ..file::TarOptions::new(file::TarFormat::TarGz)
+                ..file::TarOptions::new(file::ArchiveFormat::TarGz)
             },
         )?;
 

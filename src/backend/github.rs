@@ -1880,9 +1880,9 @@ impl UnifiedGitBackend {
     ) -> Result<bool> {
         let raw_opts = tv.request.options();
         let format = if let Some(format_opt) = lookup_with_fallback(&raw_opts, "format") {
-            file::TarFormat::from_ext(&format_opt)
+            file::ArchiveFormat::from_ext(&format_opt).unwrap_or(file::ArchiveFormat::Raw)
         } else {
-            file::TarFormat::from_file_name(
+            file::ArchiveFormat::from_file_name(
                 &file_path.file_name().unwrap_or_default().to_string_lossy(),
             )
         };

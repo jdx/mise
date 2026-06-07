@@ -4,7 +4,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::tool_stub::ToolStubFile;
 use crate::config::Config;
-use crate::file::{self, TarFormat};
+use crate::file::{self, ArchiveFormat};
 use crate::http::HTTP;
 use crate::lockfile::PlatformInfo;
 use crate::minisign;
@@ -471,7 +471,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         let checksum = format!("blake3:{}", blake3::hash(&bytes).to_hex());
 
         // Detect binary path if this is an archive
-        let bin_path = if TarFormat::from_file_name(&filename).is_archive() {
+        let bin_path = if ArchiveFormat::from_file_name(&filename).is_archive() {
             // Update progress message for extraction and reuse the same progress reporter
             pr.set_message(format!("extract {filename}"));
             match self
@@ -508,17 +508,17 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         std::fs::create_dir_all(&extracted_dir)?;
 
         // Try extraction using mise's built-in extraction logic (reuse the passed progress reporter)
-        let format = TarFormat::from_file_name(
+        let format = ArchiveFormat::from_file_name(
             &archive_path
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy(),
         );
-        file::unarchive(
+        file::extract_archive(
             archive_path,
             &extracted_dir,
             format,
-            &file::ArchiveOptions {
+            &file::ExtractOptions {
                 pr: Some(pr),
                 ..Default::default()
             },
@@ -526,7 +526,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
 
         // Check if strip_components would be applied during actual installation
         let format =
-            TarFormat::from_file_name(&archive_path.file_name().unwrap().to_string_lossy());
+            ArchiveFormat::from_file_name(&archive_path.file_name().unwrap().to_string_lossy());
         let will_strip = file::should_strip_components(archive_path, format)?;
 
         // Find executable files

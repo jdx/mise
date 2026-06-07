@@ -149,7 +149,7 @@ impl ErlangPlugin {
             &tv.download_path(),
             &TarOptions {
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(file::TarFormat::TarGz)
+                ..TarOptions::new(file::ArchiveFormat::TarGz)
             },
         )?;
 
@@ -236,7 +236,7 @@ impl ErlangPlugin {
             &tv.install_path(),
             &TarOptions {
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(file::TarFormat::TarGz)
+                ..TarOptions::new(file::ArchiveFormat::TarGz)
             },
         )?;
         Ok(Some(tv))
