@@ -121,7 +121,7 @@ On Ubuntu 26.04+, mise is available via a PPA:
 
 ```sh
 sudo add-apt-repository -y ppa:jdxcode/mise
-sudo apt update -y
+sudo apt update
 sudo apt install -y mise
 ```
 
@@ -130,7 +130,7 @@ On Debian 11+ and Ubuntu 22.04+, mise repository can be enabled with extrepo:
 ```sh
 sudo apt install -y extrepo
 sudo extrepo enable mise
-sudo apt update -y
+sudo apt update
 sudo apt install -y mise
 ```
 
