@@ -43,6 +43,7 @@ The following example also shows installing using `extrepo` on Debian/Ubuntu ima
 With this approach you cannot specify `MISE_VERSION` or `MISE_INSTALL_PATH`.
 
 ```Dockerfile [Dockerfile]
+# syntax=docker/dockerfile:1
 FROM debian:13-slim
 
 RUN <<EOF
