@@ -686,7 +686,11 @@ impl UnifiedGitBackend {
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
                 match crate::github::sigstore::detect_attestations(
-                    owner, repo_name, api_url, digest,
+                    owner,
+                    repo_name,
+                    api_url,
+                    digest,
+                    self.use_versions_host_for_github_metadata(),
                 )
                 .await
                 {
@@ -797,6 +801,7 @@ impl UnifiedGitBackend {
                     repo_name,
                     None,
                     Some(api_url),
+                    self.use_versions_host_for_github_metadata(),
                 )
                 .await
                 {
@@ -1845,6 +1850,7 @@ impl UnifiedGitBackend {
             repo_name,
             None, // We don't know the expected workflow
             Some(api_url),
+            self.use_versions_host_for_github_metadata(),
         )
         .await
         {

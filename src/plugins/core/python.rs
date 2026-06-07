@@ -726,6 +726,7 @@ impl PythonPlugin {
             "python-build-standalone",
             None, // Accept any workflow from repo
             None,
+            true,
         )
         .await
         {

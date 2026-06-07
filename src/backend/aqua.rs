@@ -24,7 +24,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{
-    backend::{Backend, MISE_BINS_DIR, strict_metadata},
+    backend::{Backend, MISE_BINS_DIR, backend_arg_matches_registry_backend, strict_metadata},
     config::Config,
 };
 use crate::{file, github, minisign};
@@ -1071,6 +1071,7 @@ impl AquaBackend {
             &pkg.repo_name,
             github::API_URL,
             digest,
+            backend_arg_matches_registry_backend(&self.ba),
         )
         .await
     }
@@ -1162,6 +1163,7 @@ impl AquaBackend {
             &pkg.repo_name,
             signer_workflow.as_deref(),
             None,
+            backend_arg_matches_registry_backend(&self.ba),
         )
         .await
         {
