@@ -448,7 +448,6 @@ impl HttpBackend {
             strip_components: strip_components.unwrap_or(0),
             pr,
             preserve_mtime: false,
-            ..Default::default()
         };
 
         file::extract_archive(file_path, dest, file_info.format, &extract_opts)?;
