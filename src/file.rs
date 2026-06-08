@@ -907,7 +907,7 @@ pub enum TarFormat {
     TarXz,
     #[strum(serialize = "xz")]
     Xz,
-    #[strum(serialize = "tar.bz2", serialize = "tbz2", serialize = "tbz")]
+    #[strum(serialize = "tar.bz2", serialize = "tbz2")]
     TarBz2,
     #[strum(serialize = "bz2")]
     Bz2,
@@ -1935,8 +1935,6 @@ mod tests {
         assert_eq!(TarFormat::from_file_name("foo.txz"), TarFormat::TarXz);
         assert_eq!(TarFormat::from_file_name("foo.tar.bz2"), TarFormat::TarBz2);
         assert_eq!(TarFormat::from_file_name("foo.tbz2"), TarFormat::TarBz2);
-        assert_eq!(TarFormat::from_file_name("foo.tbz"), TarFormat::TarBz2);
-        assert_eq!(TarFormat::from_ext("tbz"), TarFormat::TarBz2);
         assert_eq!(TarFormat::from_file_name("foo.tar.zst"), TarFormat::TarZst);
         assert_eq!(TarFormat::from_file_name("foo.tzst"), TarFormat::TarZst);
         assert_eq!(TarFormat::from_file_name("foo.tar"), TarFormat::Tar);
