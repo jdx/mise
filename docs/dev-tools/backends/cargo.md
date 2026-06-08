@@ -60,7 +60,7 @@ This will execute a `cargo install` command with the corresponding Git options.
 
 ## Settings
 
-Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
+Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environment variable listed.
 
 Some Cargo settings are only meaningful when mise runs `cargo install`. If `cargo-binstall`
 installs a prebuilt binary, Cargo build settings and `cargo install` behavior do not affect that
