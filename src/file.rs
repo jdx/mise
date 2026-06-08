@@ -1000,27 +1000,8 @@ impl ArchiveFormat {
         self.is_tar_archive() || *self == ArchiveFormat::Raw
     }
 
-    pub fn extension(&self) -> Option<&'static str> {
-        match self {
-            ArchiveFormat::TarGz => Some("tar.gz"),
-            ArchiveFormat::Gz => Some("gz"),
-            ArchiveFormat::TarXz => Some("tar.xz"),
-            ArchiveFormat::Xz => Some("xz"),
-            ArchiveFormat::TarBz2 => Some("tar.bz2"),
-            ArchiveFormat::Bz2 => Some("bz2"),
-            ArchiveFormat::TarZst => Some("tar.zst"),
-            ArchiveFormat::Zst => Some("zst"),
-            ArchiveFormat::Tar => Some("tar"),
-            ArchiveFormat::Zip => Some("zip"),
-            ArchiveFormat::SevenZip => Some("7z"),
-            ArchiveFormat::TarBr => Some("tar.br"),
-            ArchiveFormat::TarLz4 => Some("tar.lz4"),
-            ArchiveFormat::Lz4 => Some("lz4"),
-            ArchiveFormat::TarSz => Some("tar.sz"),
-            ArchiveFormat::Sz => Some("sz"),
-            ArchiveFormat::Rar => Some("rar"),
-            ArchiveFormat::Raw => None,
-        }
+    pub fn extension(&self) -> Option<String> {
+        (*self != ArchiveFormat::Raw).then(|| self.to_string())
     }
 }
 
