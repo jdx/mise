@@ -963,26 +963,11 @@ impl ArchiveFormat {
     }
 
     pub fn is_archive(&self) -> bool {
-        match self {
-            ArchiveFormat::TarGz
-            | ArchiveFormat::TarXz
-            | ArchiveFormat::TarBz2
-            | ArchiveFormat::TarZst
-            | ArchiveFormat::Tar
-            | ArchiveFormat::Zip
-            | ArchiveFormat::SevenZip
-            | ArchiveFormat::TarBr
-            | ArchiveFormat::TarLz4
-            | ArchiveFormat::TarSz
-            | ArchiveFormat::Rar => true,
-            ArchiveFormat::Gz
-            | ArchiveFormat::Xz
-            | ArchiveFormat::Bz2
-            | ArchiveFormat::Zst
-            | ArchiveFormat::Lz4
-            | ArchiveFormat::Sz
-            | ArchiveFormat::Raw => false,
-        }
+        self.is_tar_archive()
+            || matches!(
+                self,
+                ArchiveFormat::Zip | ArchiveFormat::SevenZip | ArchiveFormat::Rar
+            )
     }
 
     pub fn is_tar_archive(&self) -> bool {
