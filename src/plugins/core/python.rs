@@ -297,7 +297,7 @@ impl PythonPlugin {
                         debug!("no precompiled python found for {}", tv.version);
                     } else {
                         warn!(
-                            "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile false`",
+                            "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile=false`",
                             tv.version
                         );
                     }

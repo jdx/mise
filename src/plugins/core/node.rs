@@ -515,7 +515,7 @@ impl NodePlugin {
                     }
                 }
                 msg.push_str("\nYou can try setting the flavor using:\n");
-                msg.push_str("  mise settings set node.flavor <flavor>\n");
+                msg.push_str("  mise settings set node.flavor=<flavor>\n");
                 return Ok(Some(msg));
             } else {
                 // Fallback: list all files for that version if no arch match

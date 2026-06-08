@@ -68,7 +68,7 @@ If a platform-specific package is not available, the backend will fall back to `
 
 ## Settings
 
-Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
+Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environment variable listed.
 
 <script setup>
 import Settings from '/components/settings.vue';

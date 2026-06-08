@@ -126,7 +126,7 @@ Run `ghtkn get` once manually before relying on it from mise so any browser-base
 The credential command runs with mise shims removed from `PATH` to avoid recursive mise invocations. If you install `ghtkn` with mise, use `mise which` to find the real executable path and store that in `credential_command` instead of relying on the shim:
 
 ```sh
-mise settings set github.credential_command "$(mise which ghtkn) get -m 1h"
+mise settings set github.credential_command="$(mise which ghtkn) get -m 1h"
 ```
 
 Do not make the credential command run `mise x`, `mise exec`, or another command that may need GitHub access to resolve or install `ghtkn`, since that can loop while mise is trying to obtain the GitHub token.
@@ -157,8 +157,8 @@ This feature is experimental. Enable it with `mise settings experimental=true` (
 Create a GitHub App with device flow enabled, then configure its client ID:
 
 ```sh
-mise settings set experimental true
-mise settings set github.oauth_client_id Iv1.yourgithubappclientid
+mise settings set experimental=true
+mise settings set github.oauth_client_id=Iv1.yourgithubappclientid
 ```
 
 Authorize once:
