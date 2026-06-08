@@ -2300,7 +2300,7 @@ impl AquaBackend {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;
-        } else if format == "raw" {
+        } else if matches!(format, "" | "raw") {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;

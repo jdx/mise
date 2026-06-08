@@ -436,8 +436,10 @@ impl HttpBackend {
             opts.strip_components().and_then(|s| s.parse().ok());
 
         // Auto-detect strip_components=1 for single-directory archives
+        let can_probe_strip = file_info.format != file::TarFormat::SevenZip || cfg!(windows);
         if strip_components.is_none()
             && opts.bin_path().is_none()
+            && can_probe_strip
             && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
         {
             debug!("Auto-detected single directory archive, using strip_components=1");
