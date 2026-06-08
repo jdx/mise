@@ -793,10 +793,11 @@ impl RubyPlugin {
         file::untar(
             &tarball_path,
             &install_path,
-            &file::TarOptions {
+            file::TarFormat::TarGz,
+            &file::ExtractOptions {
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                ..file::TarOptions::new(file::TarFormat::TarGz)
+                ..Default::default()
             },
         )?;
 

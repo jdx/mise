@@ -9,7 +9,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::DEFAULT_NODE_MIRROR_URL;
 use crate::config::{Config, Settings};
-use crate::file::{TarFormat, TarOptions};
+use crate::file::{ExtractOptions, TarFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -116,10 +116,11 @@ impl NodePlugin {
                 file::untar(
                     &opts.binary_tarball_path,
                     &opts.install_path,
-                    &TarOptions {
+                    TarFormat::TarGz,
+                    &ExtractOptions {
                         strip_components: 1,
                         pr: Some(ctx.pr.as_ref()),
-                        ..TarOptions::new(TarFormat::TarGz)
+                        ..Default::default()
                     },
                 )?;
                 Ok(())
@@ -187,9 +188,10 @@ impl NodePlugin {
         file::untar(
             &opts.source_tarball_path,
             opts.build_dir.parent().unwrap(),
-            &TarOptions {
+            TarFormat::TarGz,
+            &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
-                ..TarOptions::new(TarFormat::TarGz)
+                ..Default::default()
             },
         )?;
         self.exec_configure(ctx, opts, tv)?;

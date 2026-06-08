@@ -393,14 +393,7 @@ impl HttpBackend {
             pr.set_message(format!("extract {}", file_info.file_name()));
         }
 
-        file::untar(
-            file_path,
-            &dest_file,
-            &file::TarOptions {
-                pr,
-                ..file::TarOptions::new(file_info.format)
-            },
-        )?;
+        file::decompress_file(file_path, &dest_file, file_info.format)?;
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
@@ -451,14 +444,13 @@ impl HttpBackend {
             strip_components = Some(1);
         }
 
-        let tar_opts = file::TarOptions {
-            format: file_info.format,
+        let extract_opts = file::ExtractOptions {
             strip_components: strip_components.unwrap_or(0),
             pr,
             preserve_mtime: false,
         };
 
-        file::untar(file_path, dest, &tar_opts)?;
+        file::extract_archive(file_path, dest, file_info.format, &extract_opts)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = opts.rename_exe() {
