@@ -1022,36 +1022,6 @@ impl<'a> Default for ExtractOptions<'a> {
     }
 }
 
-impl<'a> ExtractOptions<'a> {
-    fn tar_options(&self, format: ArchiveFormat) -> TarOptions<'a> {
-        TarOptions {
-            format,
-            strip_components: self.strip_components,
-            pr: self.pr,
-            preserve_mtime: self.preserve_mtime,
-        }
-    }
-}
-
-pub struct TarOptions<'a> {
-    pub format: ArchiveFormat,
-    pub strip_components: usize,
-    pub pr: Option<&'a dyn SingleReport>,
-    /// When false, files will be extracted with current timestamp instead of archive's mtime
-    pub preserve_mtime: bool,
-}
-
-impl<'a> TarOptions<'a> {
-    pub fn new(format: ArchiveFormat) -> Self {
-        Self {
-            format,
-            strip_components: 0,
-            pr: None,
-            preserve_mtime: true,
-        }
-    }
-}
-
 pub fn extract_archive(
     archive: &Path,
     dest: &Path,
@@ -1067,7 +1037,7 @@ pub fn extract_archive(
         | ArchiveFormat::TarBr
         | ArchiveFormat::TarLz4
         | ArchiveFormat::TarSz
-        | ArchiveFormat::Raw => untar(archive, dest, &opts.tar_options(format)),
+        | ArchiveFormat::Raw => untar(archive, dest, format, opts),
         ArchiveFormat::Zip => unzip(
             archive,
             dest,
@@ -1103,9 +1073,14 @@ pub fn extract_archive(
     }
 }
 
-pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
-    if !opts.format.can_open_with_tar() {
-        bail!("untar only supports tar formats, got {}", opts.format);
+pub fn untar(
+    archive: &Path,
+    dest: &Path,
+    format: ArchiveFormat,
+    opts: &ExtractOptions,
+) -> Result<()> {
+    if !format.can_open_with_tar() {
+        bail!("untar only supports tar formats, got {}", format);
     }
 
     debug!("tar -xf {} -C {}", archive.display(), dest.display());
@@ -1122,7 +1097,6 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         format!("failed to extract tar: {archive} to {dest}")
     };
 
-    let format = opts.format;
     let tar = open_tar(format, archive)?;
     // TODO: put this back in when we can read+write in parallel
     // let mut cur = Cursor::new(vec![]);
@@ -2156,10 +2130,8 @@ mod tests {
         let err = untar(
             &src_path,
             &dest_path,
-            &TarOptions {
-                pr: None,
-                ..TarOptions::new(ArchiveFormat::Gz)
-            },
+            ArchiveFormat::Gz,
+            &ExtractOptions::default(),
         )
         .unwrap_err();
 
