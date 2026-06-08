@@ -1018,27 +1018,11 @@ pub fn extract_archive(
         | TarFormat::TarZst
         | TarFormat::Tar
         | TarFormat::Raw => untar(archive, dest, format, opts),
-        TarFormat::Zip => unzip(
-            archive,
-            dest,
-            &ZipOptions {
-                strip_components: opts.strip_components,
-                pr: opts.pr,
-                preserve_mtime: opts.preserve_mtime,
-            },
-        ),
+        TarFormat::Zip => unzip(archive, dest, opts),
         TarFormat::SevenZip => {
             #[cfg(windows)]
             {
-                return un7z(
-                    archive,
-                    dest,
-                    &SevenZipOptions {
-                        strip_components: opts.strip_components,
-                        pr: opts.pr,
-                        preserve_mtime: opts.preserve_mtime,
-                    },
-                );
+                return un7z(archive, dest, opts);
             }
             #[cfg(not(windows))]
             {
@@ -1215,23 +1199,7 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
     Ok(())
 }
 
-pub struct ZipOptions<'a> {
-    pub strip_components: usize,
-    pub pr: Option<&'a dyn SingleReport>,
-    pub preserve_mtime: bool,
-}
-
-impl<'a> Default for ZipOptions<'a> {
-    fn default() -> Self {
-        Self {
-            strip_components: 0,
-            pr: None,
-            preserve_mtime: true,
-        }
-    }
-}
-
-pub fn unzip(archive: &Path, dest: &Path, opts: &ZipOptions<'_>) -> Result<()> {
+pub fn unzip(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()> {
     // TODO: show progress
     debug!("unzip {} -d {}", archive.display(), dest.display());
     if let Some(pr) = &opts.pr {
@@ -1290,25 +1258,7 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub struct SevenZipOptions<'a> {
-    pub strip_components: usize,
-    pub pr: Option<&'a dyn SingleReport>,
-    pub preserve_mtime: bool,
-}
-
-#[cfg(windows)]
-impl<'a> Default for SevenZipOptions<'a> {
-    fn default() -> Self {
-        Self {
-            strip_components: 0,
-            pr: None,
-            preserve_mtime: true,
-        }
-    }
-}
-
-#[cfg(windows)]
-pub fn un7z(archive: &Path, dest: &Path, opts: &SevenZipOptions<'_>) -> Result<()> {
+pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()> {
     if let Some(pr) = &opts.pr {
         pr.set_message(format!(
             "extract {}",

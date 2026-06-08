@@ -192,7 +192,7 @@ impl RubyPlugin {
                 file::unzip(
                     &temp_archive,
                     &tmp,
-                    &file::ZipOptions {
+                    &file::ExtractOptions {
                         strip_components: if strip_components { 1 } else { 0 },
                         ..Default::default()
                     },
