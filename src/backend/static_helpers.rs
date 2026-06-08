@@ -399,12 +399,12 @@ pub fn install_artifact(
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
 
-    // Use TarFormat for format detection
+    // Use ExtractionFormat for format detection
     // Check for explicit format option first, then fall back to file extension
     let format = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
-        file::TarFormat::from_ext(&format_opt)
+        file::ExtractionFormat::from_ext(&format_opt)
     } else {
-        file::TarFormat::from_file_name(
+        file::ExtractionFormat::from_file_name(
             &file_path.file_name().unwrap_or_default().to_string_lossy(),
         )
     };
@@ -412,7 +412,7 @@ pub fn install_artifact(
     // Get file extension and detect format
     let file_name = file_path.file_name().unwrap().to_string_lossy();
 
-    if !format.is_archive() && format != file::TarFormat::Raw {
+    if !format.is_archive() && format != file::ExtractionFormat::Raw {
         // Handle compressed single binary
         let ext = Path::new(&*file_name)
             .extension()
@@ -438,7 +438,7 @@ pub fn install_artifact(
         file::decompress_file(file_path, &dest, format)?;
 
         file::make_executable(&dest)?;
-    } else if format == file::TarFormat::Raw {
+    } else if format == file::ExtractionFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
         if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);

@@ -57,7 +57,7 @@ struct FileInfo {
     /// File extension
     extension: String,
     /// Detected archive format
-    format: file::TarFormat,
+    format: file::ExtractionFormat,
     /// Whether this is a compressed single binary (not a tar archive)
     is_compressed_binary: bool,
 }
@@ -81,7 +81,7 @@ impl FileInfo {
         };
 
         let file_name = effective_path.file_name().unwrap().to_string_lossy();
-        let format = file::TarFormat::from_file_name(&file_name);
+        let format = file::ExtractionFormat::from_file_name(&file_name);
 
         let extension = format
             .extension()
@@ -94,7 +94,7 @@ impl FileInfo {
                     .to_string()
             });
 
-        let is_compressed_binary = !format.is_archive() && format != file::TarFormat::Raw;
+        let is_compressed_binary = !format.is_archive() && format != file::ExtractionFormat::Raw;
 
         Self {
             effective_path,
@@ -286,7 +286,7 @@ impl HttpBackend {
     /// used different options (e.g., different `bin` name)
     fn extraction_type_from_cache(&self, cache_key: &str, file_info: &FileInfo) -> ExtractionType {
         // For archives, we don't need to detect the filename
-        if !file_info.is_compressed_binary && file_info.format != file::TarFormat::Raw {
+        if !file_info.is_compressed_binary && file_info.format != file::ExtractionFormat::Raw {
             return ExtractionType::Archive;
         }
 
@@ -369,7 +369,7 @@ impl HttpBackend {
 
         if file_info.is_compressed_binary {
             self.extract_compressed_binary(dest, file_path, &file_info, opts, pr)
-        } else if file_info.format == file::TarFormat::Raw {
+        } else if file_info.format == file::ExtractionFormat::Raw {
             self.extract_raw_file(dest, file_path, &file_info, opts, pr)
         } else {
             self.extract_archive(tv, dest, file_path, &file_info, opts, pr)
@@ -436,7 +436,7 @@ impl HttpBackend {
             opts.strip_components().and_then(|s| s.parse().ok());
 
         // Auto-detect strip_components=1 for single-directory archives
-        let can_probe_strip = file_info.format != file::TarFormat::SevenZip || cfg!(windows);
+        let can_probe_strip = file_info.format != file::ExtractionFormat::SevenZip || cfg!(windows);
         if strip_components.is_none()
             && opts.bin_path().is_none()
             && can_probe_strip

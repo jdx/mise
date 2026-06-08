@@ -8,7 +8,7 @@ use crate::backend::{Backend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::{ExtractOptions, TarFormat};
+use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -160,7 +160,7 @@ impl GoPlugin {
             file::untar(
                 tarball_path,
                 tmp_extract_path.path(),
-                TarFormat::TarGz,
+                ExtractionFormat::TarGz,
                 &ExtractOptions {
                     pr: Some(pr),
                     ..Default::default()

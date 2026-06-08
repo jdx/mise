@@ -192,7 +192,8 @@ impl AsdfPlugin {
 
         pr.set_message("extracting zip file".to_string());
 
-        let strip_components = file::should_strip_components(&temp_archive, file::TarFormat::Zip)?;
+        let strip_components =
+            file::should_strip_components(&temp_archive, file::ExtractionFormat::Zip)?;
 
         file::unzip(
             &temp_archive,

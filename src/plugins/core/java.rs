@@ -13,7 +13,7 @@ use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::{ExtractOptions, TarFormat};
+use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -232,9 +232,9 @@ impl JavaPlugin {
         let format = m
             .file_type
             .as_deref()
-            .map(TarFormat::from_ext)
-            .filter(|f| *f != TarFormat::Raw)
-            .unwrap_or_else(|| TarFormat::from_file_name(&filename));
+            .map(ExtractionFormat::from_ext)
+            .filter(|f| *f != ExtractionFormat::Raw)
+            .unwrap_or_else(|| ExtractionFormat::from_file_name(&filename));
         file::extract_archive(
             tarball_path,
             &tv.download_path(),

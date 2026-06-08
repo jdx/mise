@@ -147,7 +147,7 @@ impl ErlangPlugin {
         file::untar(
             &tarball_path,
             &tv.download_path(),
-            file::TarFormat::TarGz,
+            file::ExtractionFormat::TarGz,
             &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
                 ..Default::default()
@@ -235,7 +235,7 @@ impl ErlangPlugin {
         file::untar(
             &tarball_path,
             &tv.install_path(),
-            file::TarFormat::TarGz,
+            file::ExtractionFormat::TarGz,
             &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
                 ..Default::default()

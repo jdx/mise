@@ -92,7 +92,7 @@ impl SwiftPlugin {
             file::untar(
                 tarball_path,
                 &tv.install_path(),
-                file::TarFormat::TarGz,
+                file::ExtractionFormat::TarGz,
                 &file::ExtractOptions {
                     strip_components: 1,
                     pr: Some(ctx.pr.as_ref()),

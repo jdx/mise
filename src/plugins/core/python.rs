@@ -7,7 +7,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::{ExtractOptions, TarFormat, display_path};
+use crate::file::{ExtractOptions, ExtractionFormat, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -373,7 +373,7 @@ impl PythonPlugin {
         file::extract_archive(
             &tarball_path,
             &install,
-            TarFormat::from_file_name(filename),
+            ExtractionFormat::from_file_name(filename),
             &ExtractOptions {
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
