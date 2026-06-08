@@ -9,7 +9,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.6.0"
+version = "2026.6.1"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -163,6 +163,7 @@ rops = { version = "0.1", default-features = false, features = [
   "sha2",
   "yaml",
   "json",
+  "toml",
   "age",
 ] }
 serde = { version = "1", features = ["derive"] }

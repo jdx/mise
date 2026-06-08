@@ -261,16 +261,16 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "type": "array",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "dotenv file to load",
+                        "description": "environment file to load (dotenv, json, yaml, or toml)",
                         "type": "string"
                       },
                       {
@@ -1498,7 +1498,7 @@
             },
             "rops": {
               "default": true,
-              "description": "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops.",
+              "description": "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops. Required for TOML SOPS files because the sops CLI does not support TOML.",
               "type": "boolean"
             },
             "strict": {
@@ -1895,13 +1895,13 @@
             "file": {
               "oneOf": [
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "items": {
-                    "description": "dotenv file to load",
+                    "description": "environment file to load (dotenv, json, yaml, or toml)",
                     "type": "string"
                   },
                   "type": "array"

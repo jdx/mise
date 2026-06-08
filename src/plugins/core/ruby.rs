@@ -27,6 +27,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{file, hash, plugins, timeout};
 
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
+const DEFAULT_RUBY_PRECOMPILED_URL: &str = "jdx/ruby";
 const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_RUBY_GITHUB_ATTESTATIONS=false\n\
     or add `ruby.github_attestations = false` under [settings] in mise.toml";
 
@@ -433,6 +434,10 @@ impl RubyPlugin {
             return None;
         }
         Some(ProvenanceType::GithubAttestations)
+    }
+
+    fn use_versions_host_for_precompiled_attestations(source: &str) -> bool {
+        source == DEFAULT_RUBY_PRECOMPILED_URL
     }
 
     /// Check if precompiled binaries should be tried
@@ -845,6 +850,7 @@ impl RubyPlugin {
             repo,
             None, // Accept any workflow from repo
             None,
+            Self::use_versions_host_for_precompiled_attestations(source),
         )
         .await
         {
@@ -1169,7 +1175,6 @@ mod tests {
     static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     const DEFAULT_RUBY_BUILD_REPO: &str = "https://github.com/rbenv/ruby-build.git";
     const DEFAULT_RUBY_INSTALL_REPO: &str = "https://github.com/postmodern/ruby-install.git";
-    const DEFAULT_RUBY_PRECOMPILED_URL: &str = "jdx/ruby";
 
     struct SettingsResetGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -1278,6 +1283,16 @@ mod tests {
         "#}),
             ""
         );
+    }
+
+    #[test]
+    fn test_ruby_precompiled_versions_host_only_for_default_source() {
+        assert!(RubyPlugin::use_versions_host_for_precompiled_attestations(
+            DEFAULT_RUBY_PRECOMPILED_URL
+        ));
+        assert!(!RubyPlugin::use_versions_host_for_precompiled_attestations(
+            "acme/ruby"
+        ));
     }
 
     #[test]

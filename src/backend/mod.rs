@@ -84,6 +84,13 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
+pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
+    let full = ba.full_without_opts();
+    REGISTRY
+        .get(ba.short.as_str())
+        .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
+}
+
 const VERSIONS_HOST_LOCAL_OPT_SOURCES: &[ToolOptionSource] = &[
     ToolOptionSource::InstallManifest,
     ToolOptionSource::BackendAlias,
@@ -533,6 +540,16 @@ mod tests {
             &resolved,
             &["api_url", "version_prefix"],
         ));
+    }
+
+    #[test]
+    fn test_backend_arg_matches_registry_backend_ignores_inline_opts() {
+        let ba = BackendArg::new(
+            "communique".to_string(),
+            Some("github:jdx/communique[asset_pattern=communique-*]".to_string()),
+        );
+
+        assert!(backend_arg_matches_registry_backend(&ba));
     }
 
     #[test]
@@ -1140,18 +1157,21 @@ pub trait Backend: Debug + Send + Sync {
             // the registry's default. When a user aliases a tool to a different backend
             // (e.g. `php = "github:verzly/php"`), the versions host would return versions
             // from the registry's default backend which may not match the aliased backend.
-            let full = ba.full();
-            if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
-                let is_registry_backend = rt.backends().iter().any(|b| *b == full);
-                if !is_registry_backend {
+            if REGISTRY.contains_key(ba.short.as_str()) {
+                if !backend_arg_matches_registry_backend(&ba) {
                     trace!(
                         "Skipping versions host for {} because backend {} is not the registry default",
-                        ba.short, full
+                        ba.short,
+                        ba.full()
                     );
                 }
-                is_registry_backend
+                backend_arg_matches_registry_backend(&ba)
             } else {
-                true // Not in registry, safe to use versions host
+                trace!(
+                    "Skipping versions host for {} because it is not in the registry",
+                    ba.short
+                );
+                false
             }
         };
 
