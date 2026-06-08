@@ -970,10 +970,6 @@ impl TarFormat {
         )
     }
 
-    fn can_open_with_tar(&self) -> bool {
-        self.is_tar_archive() || *self == TarFormat::Raw
-    }
-
     pub fn extension(&self) -> Option<&'static str> {
         match self {
             TarFormat::TarGz => Some("tar.gz"),
@@ -1052,7 +1048,7 @@ pub fn extract_archive(
 }
 
 pub fn untar(archive: &Path, dest: &Path, format: TarFormat, opts: &ExtractOptions) -> Result<()> {
-    if !format.can_open_with_tar() {
+    if !format.is_tar_archive() && format != TarFormat::Raw {
         bail!("untar only supports tar formats, got {}", format);
     }
 
