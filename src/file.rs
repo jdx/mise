@@ -893,6 +893,9 @@ pub fn decompress_file(input: &Path, dest: &Path, format: ArchiveFormat) -> Resu
         ArchiveFormat::Xz => un_xz(input, dest),
         ArchiveFormat::Zst => un_zst(input, dest),
         ArchiveFormat::Bz2 => un_bz2(input, dest),
+        ArchiveFormat::Lz4 | ArchiveFormat::Sz => {
+            unimplemented!("{format} format not supported")
+        }
         _ => bail!("unsupported compressed file format: {}", format),
     }
 }
@@ -921,6 +924,18 @@ pub enum ArchiveFormat {
     Zip,
     #[strum(serialize = "7z")]
     SevenZip,
+    #[strum(serialize = "tar.br", serialize = "tbr")]
+    TarBr,
+    #[strum(serialize = "tar.lz4", serialize = "tlz4")]
+    TarLz4,
+    #[strum(serialize = "lz4")]
+    Lz4,
+    #[strum(serialize = "tar.sz", serialize = "tsz")]
+    TarSz,
+    #[strum(serialize = "sz")]
+    Sz,
+    #[strum(serialize = "rar")]
+    Rar,
     #[strum(serialize = "raw")]
     Raw,
 }
@@ -955,11 +970,17 @@ impl ArchiveFormat {
             | ArchiveFormat::TarZst
             | ArchiveFormat::Tar
             | ArchiveFormat::Zip
-            | ArchiveFormat::SevenZip => true,
+            | ArchiveFormat::SevenZip
+            | ArchiveFormat::TarBr
+            | ArchiveFormat::TarLz4
+            | ArchiveFormat::TarSz
+            | ArchiveFormat::Rar => true,
             ArchiveFormat::Gz
             | ArchiveFormat::Xz
             | ArchiveFormat::Bz2
             | ArchiveFormat::Zst
+            | ArchiveFormat::Lz4
+            | ArchiveFormat::Sz
             | ArchiveFormat::Raw => false,
         }
     }
@@ -972,13 +993,21 @@ impl ArchiveFormat {
                 | ArchiveFormat::TarBz2
                 | ArchiveFormat::TarZst
                 | ArchiveFormat::Tar
+                | ArchiveFormat::TarBr
+                | ArchiveFormat::TarLz4
+                | ArchiveFormat::TarSz
         )
     }
 
     pub fn is_compressed_file(&self) -> bool {
         matches!(
             self,
-            ArchiveFormat::Gz | ArchiveFormat::Xz | ArchiveFormat::Bz2 | ArchiveFormat::Zst
+            ArchiveFormat::Gz
+                | ArchiveFormat::Xz
+                | ArchiveFormat::Bz2
+                | ArchiveFormat::Zst
+                | ArchiveFormat::Lz4
+                | ArchiveFormat::Sz
         )
     }
 
@@ -999,6 +1028,12 @@ impl ArchiveFormat {
             ArchiveFormat::Tar => Some("tar"),
             ArchiveFormat::Zip => Some("zip"),
             ArchiveFormat::SevenZip => Some("7z"),
+            ArchiveFormat::TarBr => Some("tar.br"),
+            ArchiveFormat::TarLz4 => Some("tar.lz4"),
+            ArchiveFormat::Lz4 => Some("lz4"),
+            ArchiveFormat::TarSz => Some("tar.sz"),
+            ArchiveFormat::Sz => Some("sz"),
+            ArchiveFormat::Rar => Some("rar"),
             ArchiveFormat::Raw => None,
         }
     }
@@ -1063,6 +1098,9 @@ pub fn extract_archive(
         | ArchiveFormat::TarBz2
         | ArchiveFormat::TarZst
         | ArchiveFormat::Tar
+        | ArchiveFormat::TarBr
+        | ArchiveFormat::TarLz4
+        | ArchiveFormat::TarSz
         | ArchiveFormat::Raw => untar(archive, dest, &opts.tar_options(format)),
         ArchiveFormat::Zip => unzip(
             archive,
@@ -1087,9 +1125,15 @@ pub fn extract_archive(
                 bail!("7z format not supported on this platform");
             }
         }
-        ArchiveFormat::Gz | ArchiveFormat::Xz | ArchiveFormat::Bz2 | ArchiveFormat::Zst => {
+        ArchiveFormat::Gz
+        | ArchiveFormat::Xz
+        | ArchiveFormat::Bz2
+        | ArchiveFormat::Zst
+        | ArchiveFormat::Lz4
+        | ArchiveFormat::Sz => {
             bail!("extract_archive does not support compressed single-file format: {format}")
         }
+        ArchiveFormat::Rar => unimplemented!("rar format not supported"),
     }
 }
 
@@ -1208,6 +1252,12 @@ fn open_tar(format: ArchiveFormat, archive: &Path) -> Result<Box<dyn std::io::Re
         }
         ArchiveFormat::Zip => bail!("zip format not supported"),
         ArchiveFormat::SevenZip => bail!("7z format not supported"),
+        ArchiveFormat::TarBr | ArchiveFormat::TarLz4 | ArchiveFormat::TarSz => {
+            unimplemented!("{format} format not supported")
+        }
+        ArchiveFormat::Lz4 | ArchiveFormat::Sz | ArchiveFormat::Rar => {
+            bail!("{} is not a tar archive", format)
+        }
     })
 }
 
@@ -1493,7 +1543,10 @@ pub fn archive_content_files(
         | ArchiveFormat::TarXz
         | ArchiveFormat::TarBz2
         | ArchiveFormat::TarZst
-        | ArchiveFormat::Tar => archive_content_files_tar(archive_path, format, strip_components),
+        | ArchiveFormat::Tar
+        | ArchiveFormat::TarBr
+        | ArchiveFormat::TarLz4
+        | ArchiveFormat::TarSz => archive_content_files_tar(archive_path, format, strip_components),
         ArchiveFormat::Zip => archive_content_files_zip(archive_path, strip_components),
         ArchiveFormat::SevenZip => {
             bail!("content-level SLSA verification does not support 7z archives")
@@ -1502,9 +1555,12 @@ pub fn archive_content_files(
         | ArchiveFormat::Xz
         | ArchiveFormat::Bz2
         | ArchiveFormat::Zst
+        | ArchiveFormat::Lz4
+        | ArchiveFormat::Sz
         | ArchiveFormat::Raw => {
             bail!("content-level SLSA verification only supports archive formats")
         }
+        ArchiveFormat::Rar => unimplemented!("rar format not supported"),
     }
 }
 
@@ -2001,7 +2057,24 @@ mod tests {
             ArchiveFormat::TarBz2
         );
         assert_eq!(ArchiveFormat::from_ext("tbz"), Some(ArchiveFormat::TarBz2));
-        assert_eq!(ArchiveFormat::from_ext("tar.br"), None);
+        assert_eq!(
+            ArchiveFormat::from_ext("tar.br"),
+            Some(ArchiveFormat::TarBr)
+        );
+        assert_eq!(ArchiveFormat::from_ext("tbr"), Some(ArchiveFormat::TarBr));
+        assert_eq!(
+            ArchiveFormat::from_ext("tar.lz4"),
+            Some(ArchiveFormat::TarLz4)
+        );
+        assert_eq!(ArchiveFormat::from_ext("tlz4"), Some(ArchiveFormat::TarLz4));
+        assert_eq!(ArchiveFormat::from_ext("lz4"), Some(ArchiveFormat::Lz4));
+        assert_eq!(
+            ArchiveFormat::from_ext("tar.sz"),
+            Some(ArchiveFormat::TarSz)
+        );
+        assert_eq!(ArchiveFormat::from_ext("tsz"), Some(ArchiveFormat::TarSz));
+        assert_eq!(ArchiveFormat::from_ext("sz"), Some(ArchiveFormat::Sz));
+        assert_eq!(ArchiveFormat::from_ext("rar"), Some(ArchiveFormat::Rar));
         assert_eq!(
             ArchiveFormat::from_file_name("foo.tar.zst"),
             ArchiveFormat::TarZst
