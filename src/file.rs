@@ -894,7 +894,7 @@ pub fn decompress_file(input: &Path, dest: &Path, format: ArchiveFormat) -> Resu
         ArchiveFormat::Zst => un_zst(input, dest),
         ArchiveFormat::Bz2 => un_bz2(input, dest),
         ArchiveFormat::Lz4 | ArchiveFormat::Sz => {
-            unimplemented!("{format} format not supported")
+            bail!("{format} format not supported")
         }
         _ => bail!("unsupported compressed file format: {}", format),
     }
@@ -1133,7 +1133,7 @@ pub fn extract_archive(
         | ArchiveFormat::Sz => {
             bail!("extract_archive does not support compressed single-file format: {format}")
         }
-        ArchiveFormat::Rar => unimplemented!("rar format not supported"),
+        ArchiveFormat::Rar => bail!("rar format not supported"),
     }
 }
 
@@ -1253,7 +1253,7 @@ fn open_tar(format: ArchiveFormat, archive: &Path) -> Result<Box<dyn std::io::Re
         ArchiveFormat::Zip => bail!("zip format not supported"),
         ArchiveFormat::SevenZip => bail!("7z format not supported"),
         ArchiveFormat::TarBr | ArchiveFormat::TarLz4 | ArchiveFormat::TarSz => {
-            unimplemented!("{format} format not supported")
+            bail!("{format} format not supported")
         }
         ArchiveFormat::Lz4 | ArchiveFormat::Sz | ArchiveFormat::Rar => {
             bail!("{} is not a tar archive", format)
@@ -1560,7 +1560,7 @@ pub fn archive_content_files(
         | ArchiveFormat::Raw => {
             bail!("content-level SLSA verification only supports archive formats")
         }
-        ArchiveFormat::Rar => unimplemented!("rar format not supported"),
+        ArchiveFormat::Rar => bail!("rar format not supported"),
     }
 }
 
