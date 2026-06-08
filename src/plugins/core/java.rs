@@ -218,7 +218,11 @@ impl JavaPlugin {
     ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("extract {filename}"));
-        let format = ArchiveFormat::from_file_name(&filename);
+        let format = m
+            .file_type
+            .as_deref()
+            .and_then(ArchiveFormat::from_ext)
+            .unwrap_or_else(|| ArchiveFormat::from_file_name(&filename));
         file::extract_archive(
             tarball_path,
             &tv.download_path(),
