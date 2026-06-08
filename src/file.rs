@@ -1023,6 +1023,8 @@ pub fn extract_archive(
             dest,
             &ZipOptions {
                 strip_components: opts.strip_components,
+                pr: opts.pr,
+                preserve_mtime: opts.preserve_mtime,
             },
         ),
         TarFormat::SevenZip => {
@@ -1033,6 +1035,8 @@ pub fn extract_archive(
                     dest,
                     &SevenZipOptions {
                         strip_components: opts.strip_components,
+                        pr: opts.pr,
+                        preserve_mtime: opts.preserve_mtime,
                     },
                 );
             }
@@ -1164,6 +1168,17 @@ fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>>
     })
 }
 
+fn reset_dir_mtime_to_now(dir: &Path) -> Result<()> {
+    let now = FileTime::now();
+    for entry in WalkDir::new(dir) {
+        let entry = entry?;
+        if entry.file_type().is_file() {
+            set_file_times(entry.path(), now, now)?;
+        }
+    }
+    Ok(())
+}
+
 fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
     if strip_depth == 0 {
         return Ok(());
@@ -1200,18 +1215,39 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
     Ok(())
 }
 
-#[derive(Default)]
-pub struct ZipOptions {
+pub struct ZipOptions<'a> {
     pub strip_components: usize,
+    pub pr: Option<&'a dyn SingleReport>,
+    pub preserve_mtime: bool,
 }
 
-pub fn unzip(archive: &Path, dest: &Path, opts: &ZipOptions) -> Result<()> {
+impl<'a> Default for ZipOptions<'a> {
+    fn default() -> Self {
+        Self {
+            strip_components: 0,
+            pr: None,
+            preserve_mtime: true,
+        }
+    }
+}
+
+pub fn unzip(archive: &Path, dest: &Path, opts: &ZipOptions<'_>) -> Result<()> {
     // TODO: show progress
     debug!("unzip {} -d {}", archive.display(), dest.display());
+    if let Some(pr) = &opts.pr {
+        pr.set_message(format!(
+            "extract {}",
+            archive.file_name().unwrap().to_string_lossy()
+        ));
+    }
     ZipArchive::new(File::open(archive)?)
         .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
         .extract(dest)
         .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))?;
+
+    if !opts.preserve_mtime {
+        reset_dir_mtime_to_now(dest)?;
+    }
 
     strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
         format!(
@@ -1254,15 +1290,37 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-#[derive(Default)]
-pub struct SevenZipOptions {
+pub struct SevenZipOptions<'a> {
     pub strip_components: usize,
+    pub pr: Option<&'a dyn SingleReport>,
+    pub preserve_mtime: bool,
 }
 
 #[cfg(windows)]
-pub fn un7z(archive: &Path, dest: &Path, opts: &SevenZipOptions) -> Result<()> {
+impl<'a> Default for SevenZipOptions<'a> {
+    fn default() -> Self {
+        Self {
+            strip_components: 0,
+            pr: None,
+            preserve_mtime: true,
+        }
+    }
+}
+
+#[cfg(windows)]
+pub fn un7z(archive: &Path, dest: &Path, opts: &SevenZipOptions<'_>) -> Result<()> {
+    if let Some(pr) = &opts.pr {
+        pr.set_message(format!(
+            "extract {}",
+            archive.file_name().unwrap().to_string_lossy()
+        ));
+    }
     sevenz_rust::decompress_file(archive, dest)
         .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
+
+    if !opts.preserve_mtime {
+        reset_dir_mtime_to_now(dest)?;
+    }
 
     strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
         format!(

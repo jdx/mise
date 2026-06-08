@@ -166,6 +166,7 @@ impl VfoxPlugin {
             &self.plugin_path,
             &file::ZipOptions {
                 strip_components: if strip_components { 1 } else { 0 },
+                ..Default::default()
             },
         )?;
         Ok(())

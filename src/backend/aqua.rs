@@ -2287,6 +2287,9 @@ impl AquaBackend {
             ..Default::default()
         };
         let mut archive_format = TarFormat::from_ext(format);
+        if archive_format == TarFormat::Raw && !matches!(format, "" | "raw" | "dmg" | "pkg") {
+            bail!("unsupported aqua package format: {format}");
+        }
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
             if archive_format == TarFormat::Raw {

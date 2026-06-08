@@ -194,6 +194,7 @@ impl RubyPlugin {
                     &tmp,
                     &file::ZipOptions {
                         strip_components: if strip_components { 1 } else { 0 },
+                        ..Default::default()
                     },
                 )?;
             }
