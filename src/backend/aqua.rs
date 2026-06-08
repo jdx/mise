@@ -2307,11 +2307,10 @@ impl AquaBackend {
         } else if let Some(archive_format) = archive_format {
             if archive_format.is_compressed_file() {
                 file::decompress_file(&tarball_path, first_bin_path, archive_format)?;
-                make_executable = true;
             } else {
                 file::extract_archive(&tarball_path, &install_path, archive_format, &extract_opts)?;
-                make_executable = true;
             }
+            make_executable = true;
         } else {
             bail!("unsupported format: {}", format);
         }
