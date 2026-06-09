@@ -123,23 +123,16 @@ impl LsRemote {
         };
         let matches_prefix = |v: &str| prefix.as_ref().is_none_or(|p| v.starts_with(p));
 
-        let all_versions = plugin.list_remote_versions_with_info(config).await?;
-        let hidden_versions = before_date
-            .map(|before| {
-                VersionInfo::count_hidden_by_date(
-                    &all_versions
-                        .iter()
-                        .filter(|v| matches_prefix(&v.version))
-                        .cloned()
-                        .collect::<Vec<_>>(),
-                    before,
-                )
-            })
-            .unwrap_or_default();
-        let versions = filter_versions_by_date(all_versions, before_date)
+        let versions_matching_prefix = plugin
+            .list_remote_versions_with_info(config)
+            .await?
             .into_iter()
             .filter(|v| matches_prefix(&v.version))
             .collect::<Vec<_>>();
+        let hidden_versions = before_date
+            .map(|before| VersionInfo::count_hidden_by_date(&versions_matching_prefix, before))
+            .unwrap_or_default();
+        let versions = filter_versions_by_date(versions_matching_prefix, before_date);
 
         if self.json {
             miseprintln!("{}", serde_json::to_string(&versions)?);

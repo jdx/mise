@@ -172,7 +172,6 @@ fn is_false(v: &bool) -> bool {
 
 impl VersionInfo {
     fn created_at_timestamp(&self) -> Option<Timestamp> {
-        use crate::duration::parse_into_timestamp;
         match &self.created_at {
             Some(ts) => {
                 let created = parse_into_timestamp(ts);
