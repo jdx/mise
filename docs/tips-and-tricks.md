@@ -199,6 +199,17 @@ minimum_release_age = "1d"  # trivy updates are time-sensitive, use a shorter wi
 
 Precedence: `--minimum-release-age` CLI flag > per-tool `minimum_release_age` > global `minimum_release_age` setting.
 
+Use `minimum_release_age_excludes` to exclude tools or backends from the global setting:
+
+```toml
+[settings]
+minimum_release_age = "7d"
+minimum_release_age_excludes = ["trivy", "npm:*"]
+```
+
+Exclusions can match backend wildcards like `npm:*`, tool shorthands like `trivy`, or full backend IDs like `npm:prettier`.
+Per-tool `minimum_release_age` options and the CLI flag still apply even when a tool matches the exclusion list.
+
 See [`minimum_release_age`](/configuration/settings.html#minimum_release_age) for more details.
 
 ## [`mise up --bump`](/cli/upgrade.html)

@@ -1402,6 +1402,34 @@ env = "MISE_MINIMUM_RELEASE_AGE"
 optional = true
 type = "String"
 
+[minimum_release_age_excludes]
+default = []
+description = "Tools and backends to exclude from the global minimum_release_age setting"
+docs = """
+Exclude tools or backends from the global [`minimum_release_age`](#minimum_release_age) setting.
+This is useful for tools where newly published releases are time-sensitive.
+
+Exclusions match any of:
+
+- Backend wildcard: `npm:*`, `pipx:*`, `github:*`
+- Registry tool shorthand: `trivy`, `node`
+- Full backend ID: `npm:prettier`, `aqua:aquasecurity/trivy`
+
+Example:
+
+```toml
+[settings]
+minimum_release_age = "7d"
+minimum_release_age_excludes = ["trivy", "npm:*"]
+```
+
+This only excludes tools from the global setting. A per-tool `minimum_release_age` option
+or the `--minimum-release-age` CLI flag still applies to matching tools.
+"""
+env = "MISE_MINIMUM_RELEASE_AGE_EXCLUDES"
+parse_env = "list_by_comma"
+type = "ListString"
+
 [netrc]
 default = true
 description = "Use a netrc file for HTTP Basic authentication."

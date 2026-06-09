@@ -21,7 +21,7 @@ use crate::duration::parse_into_timestamp;
 use crate::file::{
     canonicalize_cached, display_path, remove_all_with_progress, remove_all_with_warning,
 };
-use crate::install_before::resolve_before_date;
+use crate::install_before::resolve_before_date_for_tool;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -2444,7 +2444,7 @@ async fn effective_latest_before_date<B: Backend + ?Sized>(
     }
 
     let opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
-    resolve_before_date(None, opts.minimum_release_age())
+    resolve_before_date_for_tool(backend.ba(), None, opts.minimum_release_age())
 }
 
 fn latest_stable_candidate_allowed_by_before_date(

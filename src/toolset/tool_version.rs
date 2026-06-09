@@ -12,7 +12,7 @@ use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
-use crate::install_before::resolve_before_date;
+use crate::install_before::resolve_before_date_for_tool;
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
@@ -78,7 +78,11 @@ impl ToolVersion {
     ) -> Result<Self> {
         let minimum_release_age = request.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
-        opts.before_date = resolve_before_date(opts.before_date, minimum_release_age.as_deref())?;
+        opts.before_date = resolve_before_date_for_tool(
+            request.ba(),
+            opts.before_date,
+            minimum_release_age.as_deref(),
+        )?;
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version

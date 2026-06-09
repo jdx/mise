@@ -88,6 +88,21 @@ EOF
 mise install
 assert_contains "mise ls --installed jq" "1.6"
 
+# Test: minimum_release_age_excludes skips the global setting for matching tools
+mise uninstall jq --all 2>/dev/null || true
+rm -f mise.toml
+cat <<EOF >mise.toml
+[settings]
+minimum_release_age = "2019-01-01"
+minimum_release_age_excludes = ["jq"]
+
+[tools]
+jq = "latest"
+EOF
+mise install
+assert_not_empty "mise ls --installed jq"
+assert_not_contains "mise ls --installed jq" "1.6"
+
 # Test: CLI --minimum-release-age flag overrides per-tool minimum_release_age
 # per-tool=2024-01-01 would give jq 1.7.1, CLI --minimum-release-age=2019-01-01 gives jq 1.6
 mise uninstall jq --all 2>/dev/null || true
