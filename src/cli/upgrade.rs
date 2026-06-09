@@ -6,7 +6,10 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
 use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
+use crate::semver::split_version_prefix;
+use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
+use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
     get_versions_needed_by_tracked_configs_excluding_locks,
@@ -140,6 +143,14 @@ impl Upgrade {
         let mut outdated = ts
             .list_outdated_versions_filtered(&config, self.bump, &opts, filter_tools, exclude_tools)
             .await;
+        self.warn_if_newer_versions_hidden_by_minimum_release_age(
+            &config,
+            &ts,
+            &opts,
+            filter_tools,
+            exclude_tools,
+        )
+        .await;
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
         }
@@ -527,6 +538,136 @@ impl Upgrade {
             return Ok(Some(parse_into_timestamp(minimum_release_age)?));
         }
         Ok(None)
+    }
+
+    async fn warn_if_newer_versions_hidden_by_minimum_release_age(
+        &self,
+        config: &Arc<Config>,
+        ts: &crate::toolset::Toolset,
+        opts: &ResolveOptions,
+        filter_tools: Option<&[ToolArg]>,
+        exclude_tools: Option<&[ToolArg]>,
+    ) {
+        let list_versions = if opts.inactive {
+            match ts.list_all_versions(config).await {
+                Ok(v) => v,
+                Err(err) => {
+                    warn!("Failed to list all versions: {err:#}");
+                    vec![]
+                }
+            }
+        } else {
+            ts.list_current_versions()
+        };
+        let mut warned = HashSet::new();
+        for (_, tv) in list_versions {
+            if let Some(exclude) = exclude_tools
+                && exclude.iter().any(|t| t.ba.as_ref() == tv.ba())
+            {
+                continue;
+            }
+            if let Some(tools) = filter_tools
+                && !tools.iter().any(|t| t.ba.as_ref() == tv.ba())
+            {
+                continue;
+            }
+            let warning_key = format!("{}@{}", tv.ba().short, tv.request.version());
+            if !warned.insert(warning_key) {
+                continue;
+            }
+            let eligible_latest = self.latest_for_upgrade(config, &tv, opts).await;
+            let unfiltered_latest = self.unfiltered_latest_for_upgrade(config, &tv, opts).await;
+            match (eligible_latest, unfiltered_latest) {
+                (Some(eligible), Some(unfiltered))
+                    if is_outdated_version(&eligible, &unfiltered) =>
+                {
+                    warn!(
+                        "newer {} release {unfiltered} ignored by minimum_release_age; latest eligible release is {eligible}",
+                        tv.ba().short
+                    );
+                }
+                (None, Some(unfiltered)) => {
+                    warn!(
+                        "newer {} release {unfiltered} ignored by minimum_release_age; no eligible release found",
+                        tv.ba().short
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    async fn latest_for_upgrade(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        opts: &ResolveOptions,
+    ) -> Option<String> {
+        let backend = match tv.backend() {
+            Ok(backend) => backend,
+            Err(err) => {
+                warn!("Error getting backend for {tv}: {err:#}");
+                return None;
+            }
+        };
+        let latest = if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown)
+        {
+            let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+            backend
+                .latest_version(
+                    config,
+                    prefixed_latest_query(&prefix, &prefix_version),
+                    opts.before_date,
+                )
+                .await
+                .ok()
+                .flatten()
+        } else {
+            tv.latest_version_with_opts(config, opts).await.ok()
+        };
+        latest
+    }
+
+    async fn unfiltered_latest_for_upgrade(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        opts: &ResolveOptions,
+    ) -> Option<String> {
+        let backend = match tv.backend() {
+            Ok(backend) => backend,
+            Err(err) => {
+                warn!("Error getting backend for {tv}: {err:#}");
+                return None;
+            }
+        };
+        let query = if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
+            let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+            prefixed_latest_query(&prefix, &prefix_version).unwrap_or_else(|| "latest".to_string())
+        } else {
+            tv.request.version()
+        };
+        let mut matches = match backend.list_versions_matching(config, &query).await {
+            Ok(matches) => matches,
+            Err(err) => {
+                warn!("Error getting latest version for {}: {err:#}", tv.ba());
+                return None;
+            }
+        };
+        if matches.is_empty() && query == "latest" {
+            matches = match backend.list_remote_versions(config).await {
+                Ok(versions) => versions,
+                Err(err) => {
+                    warn!("Error getting latest version for {}: {err:#}", tv.ba());
+                    return None;
+                }
+            };
+        }
+        if matches.contains(&query) {
+            Some(query)
+        } else {
+            matches.last().cloned()
+        }
     }
 }
 

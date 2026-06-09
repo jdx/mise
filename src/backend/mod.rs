@@ -171,29 +171,38 @@ fn is_false(v: &bool) -> bool {
 }
 
 impl VersionInfo {
+    pub fn hidden_by_date(&self, before: Timestamp) -> bool {
+        use crate::duration::parse_into_timestamp;
+        match &self.created_at {
+            Some(ts) => match parse_into_timestamp(ts) {
+                Ok(created) => created >= before,
+                Err(_) => false,
+            },
+            None => false,
+        }
+    }
+
+    pub fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
+        versions.iter().filter(|v| v.hidden_by_date(before)).count()
+    }
+
     /// Filter versions to only include those released before the given timestamp.
     /// Versions without a created_at timestamp are included by default.
     pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
-        use crate::duration::parse_into_timestamp;
         versions
             .into_iter()
-            .filter(|v| {
-                match &v.created_at {
-                    Some(ts) => {
-                        // Parse the timestamp using parse_into_timestamp which handles
-                        // RFC3339, date-only (YYYY-MM-DD), and other formats
-                        match parse_into_timestamp(ts) {
-                            Ok(created) => created < before,
-                            Err(_) => {
-                                // If we can't parse the timestamp, include the version
-                                trace!("Failed to parse timestamp: {}", ts);
-                                true
-                            }
+            .filter(|v| match &v.created_at {
+                Some(ts) => {
+                    if v.hidden_by_date(before) {
+                        false
+                    } else {
+                        if crate::duration::parse_into_timestamp(ts).is_err() {
+                            trace!("Failed to parse timestamp: {}", ts);
                         }
+                        true
                     }
-                    // Include versions without timestamps
-                    None => true,
                 }
+                None => true,
             })
             .collect()
     }

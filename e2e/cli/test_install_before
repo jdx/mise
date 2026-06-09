@@ -38,6 +38,14 @@ mise install tiny@1.0.0
 output=$(mise upgrade --minimum-release-age 2025-01-01 --dry-run 2>&1)
 assert_contains "echo '$output'" "tiny"
 
+rm -f mise.toml
+cat <<EOF >mise.toml
+[tools]
+jq = "latest"
+EOF
+output=$(mise upgrade jq --minimum-release-age 2019-01-01 --dry-run 2>&1)
+assert_contains "echo '$output'" "newer jq release"
+
 # Test: install --minimum-release-age with relative duration "90d"
 mise uninstall tiny --all 2>/dev/null || true
 output=$(mise install tiny@latest --minimum-release-age 90d --dry-run 2>&1)
