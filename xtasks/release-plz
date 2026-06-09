@@ -283,12 +283,12 @@ AQUA_REGISTRY_METADATA="$AQUA_REGISTRY_DIR/metadata.json"
 AQUA_REGISTRY_FILE="$AQUA_REGISTRY_DIR/registry.yml"
 AQUA_REGISTRY_REPO="aquaproj/aqua-registry"
 
-# Capture current aqua-registry tag before updating
+# Capture current aqua-registry ref before updating
 OLD_AQUA_REGISTRY_TAG=""
 if [[ -f $AQUA_REGISTRY_METADATA ]]; then
 	OLD_AQUA_REGISTRY_TAG="$(jq -r '.tag // empty' "$AQUA_REGISTRY_METADATA")"
 fi
-NEW_AQUA_REGISTRY_TAG="$(gh release view --repo "$AQUA_REGISTRY_REPO" --json tagName --jq .tagName)"
+NEW_AQUA_REGISTRY_TAG="$(gh api "repos/$AQUA_REGISTRY_REPO/commits/main" --jq .sha)"
 
 rm -rf "$AQUA_REGISTRY_DIR"
 mkdir -p "$AQUA_REGISTRY_DIR"
