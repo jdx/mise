@@ -1358,7 +1358,6 @@ hide = true
 type = "String"
 
 [minimum_release_age]
-default = "24h"
 description = "Minimum release age / supply chain protection — only install versions older than this threshold"
 docs = """
 Filter tool versions by release date to limit supply chain risk. Similar to Renovate's
@@ -1407,6 +1406,7 @@ minimum_release_age = "7d"  # override for this tool only
 ```
 """
 env = "MISE_MINIMUM_RELEASE_AGE"
+optional = true
 type = "String"
 
 [minimum_release_age_excludes]

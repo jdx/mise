@@ -4,16 +4,20 @@ use eyre::Result;
 use jiff::Timestamp;
 
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
+
+const DEFAULT_MINIMUM_RELEASE_AGE: &str = "24h";
 
 /// Resolve the effective `minimum_release_age` cutoff.
 ///
 /// Precedence (highest to lowest):
 /// 1. `before_date` - a pre-resolved `ResolveOptions` cutoff.
 /// 2. A per-tool, backend, or config `minimum_release_age` option.
-/// 3. The global `minimum_release_age` setting.
+/// 3. The global `minimum_release_age` setting, or the built-in default for
+///    backends that provide release timestamps.
 ///
 /// All string-based durations (e.g. `"3d"`) are resolved against
 /// [`crate::duration::process_now`] so that every call within a single mise
@@ -25,7 +29,7 @@ pub fn resolve_before_date(
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
-    resolve_before_date_with_excludes(before_date, minimum_release_age, false)
+    resolve_before_date_with_excludes(None, before_date, minimum_release_age, false)
 }
 
 pub fn resolve_before_date_for_tool(
@@ -34,6 +38,7 @@ pub fn resolve_before_date_for_tool(
     minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
     resolve_before_date_with_excludes(
+        Some(backend_arg),
         before_date,
         minimum_release_age,
         is_minimum_release_age_excluded(backend_arg),
@@ -41,6 +46,7 @@ pub fn resolve_before_date_for_tool(
 }
 
 fn resolve_before_date_with_excludes(
+    backend_arg: Option<&BackendArg>,
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
     excluded: bool,
@@ -54,9 +60,30 @@ fn resolve_before_date_with_excludes(
     if excluded {
         return Ok(None);
     }
-    Ok(Some(parse_into_timestamp(
-        &Settings::get().minimum_release_age,
-    )?))
+    if let Some(before) = &Settings::get().minimum_release_age {
+        return Ok(Some(parse_into_timestamp(before)?));
+    }
+    if backend_arg.is_some_and(default_minimum_release_age_applies) {
+        return Ok(Some(parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE)?));
+    }
+    Ok(None)
+}
+
+fn default_minimum_release_age_applies(backend_arg: &BackendArg) -> bool {
+    matches!(
+        backend_arg.backend_type(),
+        BackendType::Aqua
+            | BackendType::Cargo
+            | BackendType::Core
+            | BackendType::Gem
+            | BackendType::Github
+            | BackendType::Gitlab
+            | BackendType::Go
+            | BackendType::Npm
+            | BackendType::Pipx
+            | BackendType::Spm
+            | BackendType::Ubi
+    )
 }
 
 fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
@@ -91,7 +118,7 @@ pub(crate) async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_before_date, resolve_before_date_for_tool};
+    use super::{DEFAULT_MINIMUM_RELEASE_AGE, resolve_before_date, resolve_before_date_for_tool};
     use crate::cli::args::BackendArg;
     use crate::config::settings::{Settings, SettingsPartial};
     use confique::Layer;
@@ -217,12 +244,26 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_before_date_falls_back_to_default_setting() {
+    fn test_effective_before_date_without_backend_has_no_default() {
+        Settings::reset(None);
+        assert_eq!(resolved_timestamp(None, None), None);
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_falls_back_to_default_for_supported_backend() {
         Settings::reset(None);
         assert_eq!(
-            resolved_timestamp(None, None),
-            Some(crate::duration::parse_into_timestamp("24h").unwrap())
+            resolved_tool_timestamp("npm:prettier", None, None),
+            Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap())
         );
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_skips_default_for_unsupported_backend() {
+        Settings::reset(None);
+        assert_eq!(resolved_tool_timestamp("asdf:tiny", None, None), None);
         Settings::reset(None);
     }
 

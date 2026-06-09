@@ -17,7 +17,9 @@ unset MISE_MINIMUM_RELEASE_AGE
 
 # Test: minimum_release_age=0s effectively disables the delay and returns the absolute latest.
 export MISE_MINIMUM_RELEASE_AGE="0s"
-assert_not_contains "mise latest npm:prettier" "2.8.8"
+latest_prettier="$(mise latest npm:prettier)"
+assert_matches "echo \"$latest_prettier\"" '^[0-9]+\.[0-9]+\.[0-9]+$'
+assert_not_contains_text "$latest_prettier" "2.8.8"
 unset MISE_MINIMUM_RELEASE_AGE
 
 # Test: `mise latest --minimum-release-age` CLI flag should filter by date
