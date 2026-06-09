@@ -854,7 +854,7 @@ impl NPMBackend {
     }
 
     fn lifecycle_scripts_from_package_json(package_json_path: &Path) -> Vec<&'static str> {
-        const LIFECYCLE_SCRIPTS: &[&str] = &["preinstall", "install", "postinstall", "prepare"];
+        const LIFECYCLE_SCRIPTS: &[&str] = &["preinstall", "install", "postinstall"];
         let Ok(package_json) = std::fs::read_to_string(package_json_path) else {
             return vec![];
         };
@@ -1140,6 +1140,7 @@ mod tests {
                 "scripts": {
                     "test": "node test.js",
                     "preinstall": "node preinstall.js",
+                    "prepare": "node prepare.js",
                     "postinstall": "node postinstall.js"
                 }
             }"#,
