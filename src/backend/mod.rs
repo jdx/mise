@@ -189,19 +189,18 @@ impl VersionInfo {
     /// Filter versions to only include those released before the given timestamp.
     /// Versions without a created_at timestamp are included by default.
     pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
+        use crate::duration::parse_into_timestamp;
+
         versions
             .into_iter()
             .filter(|v| match &v.created_at {
-                Some(ts) => {
-                    if v.hidden_by_date(before) {
-                        false
-                    } else {
-                        if crate::duration::parse_into_timestamp(ts).is_err() {
-                            trace!("Failed to parse timestamp: {}", ts);
-                        }
+                Some(ts) => match parse_into_timestamp(ts) {
+                    Ok(created) => created < before,
+                    Err(_) => {
+                        trace!("Failed to parse timestamp: {}", ts);
                         true
                     }
-                }
+                },
                 None => true,
             })
             .collect()
