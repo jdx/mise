@@ -598,7 +598,20 @@ impl Upgrade {
             let eligible_latest = self
                 .latest_for_upgrade(config, &tv, &opts_with_effective_before_date)
                 .await;
-            let baseline_latest = self.baseline_latest_for_upgrade(config, &tv, opts).await;
+            let eligible_latest = match eligible_latest {
+                Ok(latest) => latest,
+                Err(err) => {
+                    warn!("Error getting latest version for {}: {err:#}", tv.ba());
+                    continue;
+                }
+            };
+            let baseline_latest = match self.baseline_latest_for_upgrade(config, &tv, opts).await {
+                Ok(latest) => latest,
+                Err(err) => {
+                    warn!("Error getting latest version for {}: {err:#}", tv.ba());
+                    continue;
+                }
+            };
             match (eligible_latest, baseline_latest) {
                 (Some(eligible), Some(baseline)) if is_outdated_version(&eligible, &baseline) => {
                     warn!(
@@ -622,16 +635,9 @@ impl Upgrade {
         config: &Arc<Config>,
         tv: &ToolVersion,
         opts: &ResolveOptions,
-    ) -> Option<String> {
-        let backend = match tv.backend() {
-            Ok(backend) => backend,
-            Err(err) => {
-                warn!("Error getting backend for {tv}: {err:#}");
-                return None;
-            }
-        };
-        let latest = if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown)
-        {
+    ) -> Result<Option<String>> {
+        let backend = tv.backend()?;
+        if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
             backend
                 .latest_version(
@@ -640,12 +646,9 @@ impl Upgrade {
                     opts.before_date,
                 )
                 .await
-                .ok()
-                .flatten()
         } else {
-            tv.latest_version_with_opts(config, opts).await.ok()
-        };
-        latest
+            tv.latest_version_with_opts(config, opts).await.map(Some)
+        }
     }
 
     async fn baseline_latest_for_upgrade(
@@ -653,41 +656,15 @@ impl Upgrade {
         config: &Arc<Config>,
         tv: &ToolVersion,
         opts: &ResolveOptions,
-    ) -> Option<String> {
-        let backend = match tv.backend() {
-            Ok(backend) => backend,
-            Err(err) => {
-                warn!("Error getting backend for {tv}: {err:#}");
-                return None;
-            }
-        };
+    ) -> Result<Option<String>> {
+        let backend = tv.backend()?;
         let query = if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
-            prefixed_latest_query(&prefix, &prefix_version).unwrap_or_else(|| "latest".to_string())
+            prefixed_latest_query(&prefix, &prefix_version)
         } else {
-            tv.request.version()
+            Some(tv.request.version())
         };
-        let mut matches = match backend.list_versions_matching(config, &query).await {
-            Ok(matches) => matches,
-            Err(err) => {
-                warn!("Error getting latest version for {}: {err:#}", tv.ba());
-                return None;
-            }
-        };
-        if matches.is_empty() && query == "latest" {
-            matches = match backend.list_remote_versions(config).await {
-                Ok(versions) => versions,
-                Err(err) => {
-                    warn!("Error getting latest version for {}: {err:#}", tv.ba());
-                    return None;
-                }
-            };
-        }
-        if matches.contains(&query) {
-            Some(query)
-        } else {
-            matches.last().cloned()
-        }
+        backend.latest_version_unfiltered(config, query).await
     }
 }
 

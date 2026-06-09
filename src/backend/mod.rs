@@ -1527,6 +1527,27 @@ pub trait Backend: Debug + Send + Sync {
             .await
     }
 
+    /// Get the latest version without applying release-date cutoffs.
+    ///
+    /// This is intended for diagnostics that compare a date-filtered result
+    /// with the absolute latest result. Normal resolution should use
+    /// `latest_version` so global, per-tool, and default release-age cutoffs are
+    /// honored.
+    async fn latest_version_unfiltered(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+    ) -> eyre::Result<Option<String>> {
+        let resolved_query = query.as_deref().unwrap_or("latest");
+        if resolved_query == "latest"
+            && let Some(version) = self.latest_stable_version(config).await?
+        {
+            return Ok(Some(version));
+        }
+        self.latest_version_for_query(config, resolved_query, None, false)
+            .await
+    }
+
     /// Like `latest_version` but with explicit refresh control. Pass
     /// `refresh = true` to bypass the cached remote-versions list when falling
     /// back to the full version-list path. The `latest_stable_version` fast
