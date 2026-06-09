@@ -1,5 +1,66 @@
 # Changelog
 
+## [2026.6.2](https://github.com/jdx/mise/compare/v2026.6.1..v2026.6.2) - 2026-06-09
+
+### 🚀 Features
+
+- **(config)** add minimum release age excludes by @jdx in [#10277](https://github.com/jdx/mise/pull/10277)
+- **(config)** default release age and warn on hidden versions by @jdx in [#10279](https://github.com/jdx/mise/pull/10279)
+
+### 🐛 Bug Fixes
+
+- **(github)** skip versions host for non-registry attestations by @jdx in [#10260](https://github.com/jdx/mise/pull/10260)
+- **(npm)** warn when install hooks are skipped by @jdx in [#10280](https://github.com/jdx/mise/pull/10280)
+
+### 📚 Documentation
+
+- **(security)** clarify minimum release age support by @jdx in [#10278](https://github.com/jdx/mise/pull/10278)
+- **(settings)** prefer assignment form for set examples by @jdx in [#10271](https://github.com/jdx/mise/pull/10271)
+- On Debian/Ubuntu, use extrepo for installing by @okulev in [#10262](https://github.com/jdx/mise/pull/10262)
+- improve sponsor logo contrast by @jdx in [#10270](https://github.com/jdx/mise/pull/10270)
+
+### 🧪 Testing
+
+- **(aqua)** allow commit metadata refs by @jdx in [#10287](https://github.com/jdx/mise/pull/10287)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance lockfile maintenance by @renovate[bot] in [#10265](https://github.com/jdx/mise/pull/10265)
+
+### 📦 Registry
+
+- add cargo-msrv by @jdx in [#10276](https://github.com/jdx/mise/pull/10276)
+- update aube and pitchfork aqua entries by @jdx in [#10285](https://github.com/jdx/mise/pull/10285)
+
+### Chore
+
+- **(ci)** ignore RUSTSEC-2026-0173 proc-macro-error2 advisory by @risu729 in [#10269](https://github.com/jdx/mise/pull/10269)
+- **(release)** validate vendored aqua registry by @jdx in [#10286](https://github.com/jdx/mise/pull/10286)
+
+### New Contributors
+
+- @okulev made their first contribution in [#10262](https://github.com/jdx/mise/pull/10262)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (10)
+
+- [`alibaba/open-code-review`](https://github.com/alibaba/open-code-review)
+- [`grafana-cold-storage/grizzly`](https://github.com/grafana-cold-storage/grizzly)
+- [`hashicorp/hcl/hclfmt`](https://github.com/hashicorp/hcl)
+- [`jdx/aube`](https://github.com/jdx/aube)
+- [`jdx/pitchfork`](https://github.com/jdx/pitchfork)
+- [`klauspost/asmfmt`](https://github.com/klauspost/asmfmt)
+- [`lexfrei/claudeline`](https://github.com/lexfrei/claudeline)
+- `macstadium.com/orka3`
+- [`openai/tart`](https://github.com/openai/tart)
+- [`visioncortex/vtracer`](https://github.com/visioncortex/vtracer)
+
+#### Updated Packages (2)
+
+- [`FiloSottile/age`](https://github.com/FiloSottile/age)
+- [`GitGuardian/ggshield`](https://github.com/GitGuardian/ggshield)
+
 ## [2026.6.1](https://github.com/jdx/mise/compare/v2026.6.0..v2026.6.1) - 2026-06-06
 
 ### 🚀 Features

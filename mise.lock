@@ -104,56 +104,56 @@ backend = "github:endevco/aube"
 
 [tools.aube."platforms.linux-arm64"]
 checksum = "sha256:5e1a207be4b83cd1e0186402764b56e5a702c0332f519959c16d02f4cee9e008"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/433127937"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/433127937"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-arm64-musl"]
 checksum = "sha256:8c3098765cee83d654176fd2ed5eadd7224cff08d76f0ce551149fe65ee082d8"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432794003"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432794003"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64"]
 checksum = "sha256:3f3d183d6a9644391ffa3ac521c010c90cebc4fd6ab208aa9aa552c70986a357"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432797995"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432797995"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64-baseline"]
 checksum = "sha256:3f3d183d6a9644391ffa3ac521c010c90cebc4fd6ab208aa9aa552c70986a357"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432797995"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432797995"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64-musl"]
 checksum = "sha256:2ac54a2bc6248c6b1df9c3a160beea6cf3255102337488f5d3b2dc317ea673a0"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432798092"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432798092"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:2ac54a2bc6248c6b1df9c3a160beea6cf3255102337488f5d3b2dc317ea673a0"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432798092"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432798092"
 provenance = "github-attestations"
 
 [tools.aube."platforms.macos-arm64"]
 checksum = "sha256:3acf85c4373d30800dd739c279bdbecc5f602ee82009498408b82ce99c8e3f72"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432824150"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432824150"
 provenance = "github-attestations"
 
 [tools.aube."platforms.windows-x64"]
 checksum = "sha256:950fb818925c31dca4e122bae72a6088c92edc8760c8374fbf0470620ce5e1fa"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432804595"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432804595"
 provenance = "github-attestations"
 
 [tools.aube."platforms.windows-x64-baseline"]
 checksum = "sha256:950fb818925c31dca4e122bae72a6088c92edc8760c8374fbf0470620ce5e1fa"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432804595"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432804595"
 provenance = "github-attestations"
 
 [[tools.bun]]

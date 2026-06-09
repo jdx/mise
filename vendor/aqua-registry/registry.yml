@@ -3570,19 +3570,30 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: Version == "v1.3.1"
+        # https://github.com/FiloSottile/age/pull/676
+        # https://github.com/FiloSottile/age/commit/10561a774f9f6de47c8d23ddc58537b6a18b083d
+        asset: age-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        github_artifact_attestations:
+          signer_workflow: FiloSottile/age/.github/workflows/build.yml
+        overrides:
+          - goos: windows
+            format: zip
+          - goos: darwin
+            goarch: amd64
+            github_artifact_attestations:
+              signer_workflow: FiloSottile/age/.github/workflows/darwin-amd64-backfill.yml
       - version_constraint: "true"
         asset: age-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        github_artifact_attestations:
+          signer_workflow: FiloSottile/age/.github/workflows/build.yml
         overrides:
           - goos: windows
             format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-        github_artifact_attestations:
-          signer_workflow: FiloSottile/age/.github/workflows/build.yml
   - type: github_release
     repo_owner: FiloSottile
     repo_name: mkcert
@@ -3811,7 +3822,33 @@ packages:
             format: zip
             files:
               - name: ggshield
-                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield.exe
+                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield
+        supported_envs:
+          - darwin
+          - windows/amd64
+          - linux/amd64
+      - version_constraint: semver("<= 1.50.4")
+        asset: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ggshield
+            src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: ggshield
+                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield
+          - goos: linux
+            files:
+              - name: ggshield
+                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield
         supported_envs:
           - darwin
           - windows/amd64
@@ -3833,7 +3870,7 @@ packages:
             format: zip
             files:
               - name: ggshield
-                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield.exe
+                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield
           - goos: linux
             files:
               - name: ggshield
@@ -3842,6 +3879,8 @@ packages:
           - darwin
           - windows/amd64
           - linux/amd64
+        github_artifact_attestations:
+          signer_workflow: GitGuardian/ggshield/\.github/workflows/tag\.yml
   - type: github_release
     repo_owner: GoTestTools
     repo_name: gotestfmt
@@ -12106,6 +12145,41 @@ packages:
             goarch: arm64
             replacements:
               linux: unknown-linux-gnu
+  - type: github_release
+    repo_owner: alibaba
+    repo_name: open-code-review
+    description: "Open-source & free — Battle-tested at Alibaba's scale. Hybrid architecture code review tool: deterministic pipelines + LLM Agent, precise line-level comments, built-in fine-tuned ruleset (NPE, thread-safety, XSS, SQL injection), OpenAI & Anthropic compatible"
+    files:
+      - name: ocr
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        asset: opencodereview-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.1.10")
+        asset: opencodereview-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: opencodereview-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
   - type: github_release
     repo_owner: allero-io
     repo_name: allero
@@ -24811,20 +24885,6 @@ packages:
           asset: cirrus_{{trimV .Version}}_checksums.txt
           algorithm: sha256
   - type: github_release
-    repo_owner: cirruslabs
-    repo_name: tart
-    description: macOS and Linux VMs on Apple Silicon to use in CI and other automations
-    asset: tart.tar.gz
-    files:
-      - name: tart
-        src: tart.app/Contents/MacOS/tart
-    checksum:
-      type: github_release
-      asset: tart_{{.Version}}_checksums.txt
-      algorithm: sha256
-    supported_envs:
-      - darwin
-  - type: github_release
     repo_owner: citrusframework
     repo_name: yaks
     asset: yaks-{{trimV .Version}}-{{.OS}}-{{.Arch}}.tar.gz
@@ -35388,171 +35448,6 @@ packages:
       - linux
       - amd64
   - type: github_release
-    repo_owner: jdx
-    repo_name: aube
-    aliases:
-      - name: endevco/aube
-    description: A fast Node.js package manager
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: Version == "v1.0.0-beta.1"
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux/amd64
-          - darwin
-          - windows
-      - version_constraint: semver("<= 1.0.0-beta.11")
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-      - version_constraint: semver("<= 1.1.0")
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-musl
-          windows: pc-windows-msvc
-        overrides:
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-      - version_constraint: semver("<= 1.18.1")
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: linux
-            variants:
-              - key: libc
-                value: glibc
-          - goos: linux
-            replacements:
-              linux: unknown-linux-musl
-            variants:
-              - key: libc
-                value: musl
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-      - version_constraint: "true"
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: linux
-            variants:
-              - key: libc
-                value: glibc
-          - goos: linux
-            replacements:
-              linux: unknown-linux-musl
-            variants:
-              - key: libc
-                value: musl
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-        github_artifact_attestations:
-          signer_workflow: jdx/aube/\.github/workflows/release\.yml
-  - type: github_release
-    repo_owner: jdx
-    repo_name: pitchfork
-    aliases:
-      - name: endevco/pitchfork
-    description: Daemons with DX
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: Version == "v0.1.1"
-        no_asset: true
-      - version_constraint: semver("<= 0.1.3")
-        asset: pitchfork-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-        overrides:
-          - goos: linux
-            replacements:
-              amd64: x86_64
-        supported_envs:
-          - linux
-          - darwin/arm64
-      - version_constraint: "true"
-        asset: pitchfork-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-  - type: github_release
     repo_owner: enokawa
     repo_name: taskdiff
     description: Diff tool for ECS Task Definition
@@ -44892,6 +44787,29 @@ packages:
         github_artifact_attestations:
           signer_workflow: graelo/pumas/\.github/workflows/release\.yml
   - type: github_release
+    repo_owner: grafana-cold-storage
+    repo_name: grizzly
+    aliases:
+      - name: grafana/grizzly
+    description: A utility for managing Jsonnet dashboards against the Grafana API
+    files:
+      - name: grr
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.0")
+        asset: grr-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: grr-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: grafana
     repo_name: alloy
     description: OpenTelemetry Collector distribution with programmable pipelines
@@ -45001,27 +44919,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-  - type: github_release
-    repo_owner: grafana
-    repo_name: grizzly
-    description: A utility for managing Jsonnet dashboards against the Grafana API
-    files:
-      - name: grr
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.1.0")
-        asset: grr-{{.OS}}-{{.Arch}}
-        format: raw
-        rosetta2: true
-        supported_envs:
-          - linux
-          - darwin
-      - version_constraint: "true"
-        asset: grr-{{.OS}}-{{.Arch}}
-        format: raw
-        supported_envs:
-          - linux
-          - darwin
   - type: github_release
     repo_owner: grafana
     repo_name: jsonnet-language-server
@@ -46311,6 +46208,17 @@ packages:
       type: github_release
       asset: go-getter_{{trimV .Version}}_SHA256SUMS
       algorithm: sha256
+  - name: hashicorp/hcl/hclfmt
+    type: go_install
+    repo_owner: hashicorp
+    repo_name: hcl
+    description: HashiCorp configuration language formatter
+    files:
+      - name: hclfmt
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        path: github.com/hashicorp/hcl/v{{(semver .Version).Major}}/cmd/hclfmt
   - type: http
     repo_owner: hashicorp
     repo_name: hcp
@@ -50615,6 +50523,128 @@ packages:
       algorithm: sha256
   - type: github_release
     repo_owner: jdx
+    repo_name: aube
+    aliases:
+      - name: endevco/aube
+    description: A fast Node.js package manager
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0-beta.1"
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 1.0.0-beta.11")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: semver("<= 1.1.0")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: semver("<= 1.18.1")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            replacements:
+              linux: unknown-linux-musl
+            variants:
+              - key: libc
+                value: musl
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: "true"
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            replacements:
+              linux: unknown-linux-musl
+            variants:
+              - key: libc
+                value: musl
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+        github_artifact_attestations:
+          signer_workflow: jdx/aube/\.github/workflows/release\.yml
+  - type: github_release
+    repo_owner: jdx
     repo_name: hk
     description: git hook and pre-commit lint manager
     version_constraint: "false"
@@ -50790,6 +50820,49 @@ packages:
             asset: SHASUMS512.txt.minisig
             # https://github.com/jdx/mise/blob/main/minisign.pub
             public_key: RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
+  - type: github_release
+    repo_owner: jdx
+    repo_name: pitchfork
+    aliases:
+      - name: endevco/pitchfork
+    description: Daemons with DX
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.1"
+        no_asset: true
+      - version_constraint: semver("<= 0.1.3")
+        asset: pitchfork-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: "true"
+        asset: pitchfork-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
   - type: github_release
     repo_owner: jdx
     repo_name: usage
@@ -55273,6 +55346,47 @@ packages:
           - goos: darwin
             goarch: arm64
             asset: zprint{{.OS}}a-{{.Version}}
+  - type: github_release
+    repo_owner: klauspost
+    repo_name: asmfmt
+    description: Go Assembler Formatter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.3.1"
+        no_asset: true
+      - version_constraint: Version == "v1.3.0"
+        asset: asmfmt-{{.OS}}_{{.Arch}}_{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: OSX
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.2.3")
+        no_asset: true
+      - version_constraint: "true"
+        asset: asmfmt-{{.OS}}_{{.Arch}}_{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: OSX
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: kluctl
     repo_name: kluctl
@@ -60023,6 +60137,21 @@ packages:
         supported_envs:
           - linux/amd64
   - type: github_release
+    repo_owner: lexfrei
+    repo_name: claudeline
+    description: Claude Code statusline with real usage limits from Anthropic API
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: claudeline_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+  - type: github_release
     repo_owner: liamg
     repo_name: comet
     description: Command line tool to help you use conventional commit messages (https://www.conventionalcommits.org)
@@ -61367,6 +61496,30 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: http
+    name: macstadium.com/orka3
+    description: CLI for the Orka virtualization platform on Apple hardware
+    link: https://docs.macstadium.com/orka/orka-overview/tools-integrations
+    url: https://cli-builds-public.s3.eu-west-1.amazonaws.com/official/{{.Version}}/orka3/{{.OS}}/{{.Arch}}/orka3.{{.Format}}
+    replacements:
+      darwin: macos
+    overrides:
+      - goos: darwin
+        format: pkg
+        files:
+          - name: orka3
+            src: orka3.pkg/Payload/orka3
+      - goos: linux
+        format: tar.gz
+        files:
+          - name: orka3
+      - goos: windows
+        url: https://cli-builds-public.s3.eu-west-1.amazonaws.com/official/{{.Version}}/orka3/{{.OS}}/{{.Arch}}/orka3.exe
+        format: raw
+    supported_envs:
+      - darwin
+      - linux
+      - windows/amd64
   - type: github_release
     repo_owner: madelynnblue
     repo_name: sqlfmt
@@ -69314,6 +69467,22 @@ packages:
         overrides:
           - goos: windows
             asset: codex-{{.Arch}}-{{.OS}}.exe.{{.Format}}
+  - type: github_release
+    repo_owner: openai
+    repo_name: tart
+    description: macOS and Linux VMs on Apple Silicon to use in CI and other automations
+    asset: tart.tar.gz
+    aliases:
+      - name: cirruslabs/tart
+    files:
+      - name: tart
+        src: tart.app/Contents/MacOS/tart
+    checksum:
+      type: github_release
+      asset: tart_{{.Version}}_checksums.txt
+      algorithm: sha256
+    supported_envs:
+      - darwin
   - name: openbao/openbao/bao
     type: github_release
     repo_owner: openbao
@@ -95297,6 +95466,108 @@ packages:
     supported_envs:
       - linux
       - darwin
+  - type: github_release
+    repo_owner: visioncortex
+    repo_name: vtracer
+    description: Raster to Vector Graphics Converter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.1.0"
+        asset: vtracer
+        format: raw
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "0.1.1"
+        asset: vtracer-{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.2.0"
+        asset: vtracer-{{.OS}}
+        format: raw
+        overrides:
+          - goos: windows
+            asset: vtracer
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: Version == "0.2.1"
+        no_asset: true
+      - version_constraint: Version == "0.3.0"
+        asset: vtracer-{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: windows
+            asset: vtracer
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.4.0"
+        asset: vtracer-{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: darwin
+            asset: vtracer-{{.OS}}-intel
+          - goos: windows
+            asset: vtracer
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.5.0"
+        asset: vtracer-{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: darwin
+            asset: vtracer-{{.OS}}-m1
+          - goos: windows
+            asset: vtracer
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.6.0"
+        asset: vtracer-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: x64
+          - goos: windows
+            asset: vtracer-{{.OS}}-32
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: Version == "0.6.1"
+        no_asset: true
+      - version_constraint: "true"
+        asset: vtracer-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: visma-prodsec
     repo_name: confused
