@@ -477,7 +477,7 @@ impl Toolset {
             let tool_dir_name = tv.ba().tool_dir_name();
             tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));
         }
-        let before_date = tv.before_date;
+        let before_date = transitive_dependency_before_date(tr, &tv);
 
         let ctx = InstallContext {
             config: config.clone(),
@@ -633,5 +633,16 @@ fn should_refresh_remote_versions(
         }
         ToolRequest::Sub { orig_version, .. } => orig_version == "latest",
         ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => false,
+    }
+}
+
+fn transitive_dependency_before_date(
+    tr: &ToolRequest,
+    tv: &ToolVersion,
+) -> Option<jiff::Timestamp> {
+    match tr {
+        ToolRequest::Version { version, .. } if version == &tv.version => None,
+        ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => None,
+        _ => tv.before_date,
     }
 }
