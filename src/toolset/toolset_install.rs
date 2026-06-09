@@ -641,7 +641,9 @@ fn transitive_dependency_before_date(
     tv: &ToolVersion,
 ) -> Option<jiff::Timestamp> {
     match tr {
-        ToolRequest::Version { version, .. } if version == &tv.version => None,
+        ToolRequest::Version { version, .. } if version != "latest" && version == &tv.version => {
+            None
+        }
         ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => None,
         _ => tv.before_date,
     }
