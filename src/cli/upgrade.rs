@@ -598,19 +598,17 @@ impl Upgrade {
             let eligible_latest = self
                 .latest_for_upgrade(config, &tv, &opts_with_effective_before_date)
                 .await;
-            let unfiltered_latest = self.unfiltered_latest_for_upgrade(config, &tv, opts).await;
-            match (eligible_latest, unfiltered_latest) {
-                (Some(eligible), Some(unfiltered))
-                    if is_outdated_version(&eligible, &unfiltered) =>
-                {
+            let baseline_latest = self.baseline_latest_for_upgrade(config, &tv, opts).await;
+            match (eligible_latest, baseline_latest) {
+                (Some(eligible), Some(baseline)) if is_outdated_version(&eligible, &baseline) => {
                     warn!(
-                        "newer {} release {unfiltered} ignored by minimum_release_age; latest eligible release is {eligible}",
+                        "newer {} release {baseline} ignored by minimum_release_age; latest eligible release is {eligible}",
                         tv.ba().short
                     );
                 }
-                (None, Some(unfiltered)) => {
+                (None, Some(baseline)) => {
                     warn!(
-                        "newer {} release {unfiltered} ignored by minimum_release_age; no eligible release found",
+                        "newer {} release {baseline} ignored by minimum_release_age; no eligible release found",
                         tv.ba().short
                     );
                 }
@@ -650,7 +648,7 @@ impl Upgrade {
         latest
     }
 
-    async fn unfiltered_latest_for_upgrade(
+    async fn baseline_latest_for_upgrade(
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
