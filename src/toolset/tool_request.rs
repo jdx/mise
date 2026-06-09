@@ -14,7 +14,7 @@ use crate::cli::args::BackendArg;
 use crate::config::config_file::config_root;
 use crate::dirs;
 use crate::env;
-use crate::install_before::resolve_before_date;
+use crate::install_before::resolve_before_date_for_tool;
 use crate::lockfile::LockfileTool;
 use crate::path::PathExt;
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -376,7 +376,11 @@ impl ToolRequest {
     pub fn resolve_options(&self, opts: &ResolveOptions) -> Result<ResolveOptions> {
         let minimum_release_age = self.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
-        opts.before_date = resolve_before_date(opts.before_date, minimum_release_age.as_deref())?;
+        opts.before_date = resolve_before_date_for_tool(
+            self.ba(),
+            opts.before_date,
+            minimum_release_age.as_deref(),
+        )?;
         Ok(opts)
     }
 

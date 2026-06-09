@@ -1091,6 +1091,14 @@
           "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
           "type": "string"
         },
+        "minimum_release_age_excludes": {
+          "default": [],
+          "description": "Tools and backends to exclude from the global minimum_release_age setting",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "netrc": {
           "default": true,
           "description": "Use a netrc file for HTTP Basic authentication.",
