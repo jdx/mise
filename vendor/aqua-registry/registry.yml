@@ -35388,8 +35388,10 @@ packages:
       - linux
       - amd64
   - type: github_release
-    repo_owner: endevco
+    repo_owner: jdx
     repo_name: aube
+    aliases:
+      - name: endevco/aube
     description: A fast Node.js package manager
     version_constraint: "false"
     version_overrides:
@@ -35447,6 +35449,35 @@ packages:
           - linux
           - darwin/arm64
           - windows
+      - version_constraint: semver("<= 1.18.1")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            replacements:
+              linux: unknown-linux-musl
+            variants:
+              - key: libc
+                value: musl
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
       - version_constraint: "true"
         asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -35477,12 +35508,12 @@ packages:
           - darwin/arm64
           - windows
         github_artifact_attestations:
-          signer_workflow: endevco/aube/\.github/workflows/release\.yml
+          signer_workflow: jdx/aube/\.github/workflows/release\.yml
   - type: github_release
-    repo_owner: endevco
+    repo_owner: jdx
     repo_name: pitchfork
     aliases:
-      - name: jdx/pitchfork
+      - name: endevco/pitchfork
     description: Daemons with DX
     version_constraint: "false"
     version_overrides:
