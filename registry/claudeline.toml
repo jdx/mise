@@ -1,0 +1,3 @@
+backends = ["aqua:lexfrei/claudeline", "github:lexfrei/claudeline"]
+description = "Claude Code statusline with real usage limits from the Anthropic API"
+test = { cmd = "claudeline -v", expected = "claudeline {{version}}" }
