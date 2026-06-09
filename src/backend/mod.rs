@@ -171,15 +171,23 @@ fn is_false(v: &bool) -> bool {
 }
 
 impl VersionInfo {
-    pub fn hidden_by_date(&self, before: Timestamp) -> bool {
+    fn created_at_timestamp(&self) -> Option<Timestamp> {
         use crate::duration::parse_into_timestamp;
         match &self.created_at {
-            Some(ts) => match parse_into_timestamp(ts) {
-                Ok(created) => created >= before,
-                Err(_) => false,
-            },
-            None => false,
+            Some(ts) => {
+                let created = parse_into_timestamp(ts);
+                if created.is_err() {
+                    trace!("Failed to parse timestamp: {}", ts);
+                }
+                created.ok()
+            }
+            None => None,
         }
+    }
+
+    pub fn hidden_by_date(&self, before: Timestamp) -> bool {
+        self.created_at_timestamp()
+            .is_some_and(|created| created >= before)
     }
 
     pub fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
@@ -189,19 +197,11 @@ impl VersionInfo {
     /// Filter versions to only include those released before the given timestamp.
     /// Versions without a created_at timestamp are included by default.
     pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
-        use crate::duration::parse_into_timestamp;
-
         versions
             .into_iter()
-            .filter(|v| match &v.created_at {
-                Some(ts) => match parse_into_timestamp(ts) {
-                    Ok(created) => created < before,
-                    Err(_) => {
-                        trace!("Failed to parse timestamp: {}", ts);
-                        true
-                    }
-                },
-                None => true,
+            .filter(|v| {
+                v.created_at_timestamp()
+                    .is_none_or(|created| created < before)
             })
             .collect()
     }

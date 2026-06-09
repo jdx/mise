@@ -250,6 +250,16 @@ fn warn_deprecated(key: &str) {
     }
 }
 
+fn normalize_hidden_config_aliases(mut partial: SettingsPartial) -> SettingsPartial {
+    if let Some(v) = partial.install_before.take() {
+        warn_deprecated("install_before");
+        if partial.minimum_release_age.is_none() {
+            partial.minimum_release_age = Some(v);
+        }
+    }
+    partial
+}
+
 impl Settings {
     pub fn parse_default_package_line(package: &str) -> Option<String> {
         let package = package.split('#').next().unwrap_or_default().trim();
@@ -276,7 +286,9 @@ impl Settings {
 
         // Initial pass to obtain cd option
         let mut sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+            .preloaded(normalize_hidden_config_aliases(
+                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
+            ))
             .env();
 
         let mut settings = sb.load()?;
@@ -290,7 +302,9 @@ impl Settings {
 
         // Reload settings after current directory option processed
         sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+            .preloaded(normalize_hidden_config_aliases(
+                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
+            ))
             .env();
         for file in Self::all_settings_files() {
             sb = sb.preloaded(file);
@@ -520,7 +534,7 @@ impl Settings {
         let raw = file::read_to_string(path)?;
         let settings_file: SettingsFile = toml::from_str(&raw)?;
 
-        Ok(settings_file.settings)
+        Ok(normalize_hidden_config_aliases(settings_file.settings))
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
