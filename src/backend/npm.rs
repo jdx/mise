@@ -802,10 +802,12 @@ impl NPMBackend {
         let mut iter = args.iter().peekable();
         while let Some(arg) = iter.next() {
             if arg == "--ignore-scripts" {
-                ignore_scripts = iter
-                    .peek()
-                    .and_then(|next| parse_bool_arg(next))
-                    .unwrap_or(true);
+                if let Some(value) = iter.peek().and_then(|next| parse_bool_arg(next)) {
+                    ignore_scripts = value;
+                    iter.next();
+                } else {
+                    ignore_scripts = true;
+                }
             } else if arg == "--no-ignore-scripts" {
                 ignore_scripts = false;
             } else if let Some(value) = arg.strip_prefix("--ignore-scripts=")
@@ -900,8 +902,8 @@ fn is_semver_prerelease(version: &str) -> bool {
 
 fn parse_bool_arg(value: &str) -> Option<bool> {
     match value {
-        "true" => Some(true),
-        "false" => Some(false),
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
         _ => None,
     }
 }
@@ -1099,8 +1101,15 @@ mod tests {
             "--ignore-scripts=false".into()
         ])));
         assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--ignore-scripts=0".into()
+        ])));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
             "--ignore-scripts".into(),
             "false".into()
+        ])));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--ignore-scripts".into(),
+            "0".into()
         ])));
         assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
             "--no-ignore-scripts".into()
@@ -1112,6 +1121,12 @@ mod tests {
         assert!(NPMBackend::effective_npm_ignore_scripts(&Some(vec![
             "--ignore-scripts=false".into(),
             "--ignore-scripts=true".into()
+        ])));
+        assert!(NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--ignore-scripts".into(),
+            "false".into(),
+            "--ignore-scripts".into(),
+            "1".into()
         ])));
     }
 
