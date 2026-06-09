@@ -2297,11 +2297,15 @@ impl AquaBackend {
             }
             file::extract_archive(&tarball_path, &install_path, archive_format, &extract_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
-            file::create_dir_all(&install_path)?;
+            if let Some(parent) = first_bin_path.parent() {
+                file::create_dir_all(parent)?;
+            }
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;
         } else if matches!(format, "" | "raw") {
-            file::create_dir_all(&install_path)?;
+            if let Some(parent) = first_bin_path.parent() {
+                file::create_dir_all(parent)?;
+            }
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;
         } else if format == "dmg" {
