@@ -1379,16 +1379,21 @@ Example:
 minimum_release_age = "7d"  # only install versions released more than 7 days ago
 ```
 
-Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
-Versions without timestamps are included by default.
+Capability depends on what each backend can report or pass through:
+
+- Top-level version filtering: applies to fuzzy version requests when the backend provides release
+  timestamps, such as `aqua:`, `cargo:`, `github:`, `gitlab:`, `go:`, `npm:`, `pipx:`, and many
+  core tools. Versions without timestamps are included by default.
+- Transitive dependency filtering during install: only `npm:` and `pipx:` currently forward the
+  cutoff to the package manager. Other backends may still select an older top-level tool version,
+  but they do not constrain dependencies fetched by the tool's installer/compiler.
 
 **Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
 like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
 allowing you to selectively use newer versions for specific tools while keeping others behind the
 cutoff date.
 
-Some package-manager backends also forward the cutoff to transitive dependency resolution during
-install. This includes `npm:` and `pipx:` tools.
+For `npm:` and `pipx:` package-manager support details, see the backend docs.
 
 Can be overridden with the `--minimum-release-age` CLI flag or per-tool with the `minimum_release_age` tool option.
 
