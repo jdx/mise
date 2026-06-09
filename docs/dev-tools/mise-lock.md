@@ -355,11 +355,11 @@ When enabled, every `mise install` will cryptographically verify provenance rega
 
 ## Minimum Release Age
 
-In addition to lockfiles, mise supports the [`minimum_release_age`](/configuration/settings.html#minimum_release_age) setting to limit supply chain risk by only installing versions that have been available for a minimum amount of time:
+In addition to lockfiles, mise uses the [`minimum_release_age`](/configuration/settings.html#minimum_release_age) setting to limit supply chain risk by only installing versions that have been available for a minimum amount of time. It defaults to `24h`:
 
 ```toml
 [settings]
-minimum_release_age = "7d"  # only resolve to versions released more than 7 days ago
+minimum_release_age = "7d"  # override the default 24h delay
 ```
 
 This pairs well with lockfiles — use `minimum_release_age` to avoid picking up brand-new releases, and lockfiles to pin the exact versions you've vetted.

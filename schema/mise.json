@@ -1093,7 +1093,7 @@
         },
         "minimum_release_age_excludes": {
           "default": [],
-          "description": "Tools and backends to exclude from the global minimum_release_age setting",
+          "description": "Tools and backends to exclude from the global/default minimum_release_age setting",
           "type": "array",
           "items": {
             "type": "string"

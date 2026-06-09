@@ -103,9 +103,9 @@ export MISE_NPM_PACKAGE_MANAGER=aube
 
 # Ensure aube is available after the default package manager test, since
 # npm.package_manager=auto uses aube when it is already installed.
-# Pin to the current aube release checked for this test. Bypass
-# MISE_MINIMUM_RELEASE_AGE because the global filter is set to test the
-# package-manager flag plumbing below.
+# Pin to the current aube release checked for this test. Remove this test's
+# MISE_MINIMUM_RELEASE_AGE override; the explicit version bypasses the default
+# release-age filter.
 AUBE_TEST_VERSION="1.16.0"
 if ! command -v aube >/dev/null 2>&1; then
   echo "aube not available in test environment, installing..."

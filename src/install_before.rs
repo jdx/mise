@@ -4,16 +4,20 @@ use eyre::Result;
 use jiff::Timestamp;
 
 use crate::backend::Backend;
-use crate::cli::args::BackendArg;
+use crate::backend::backend_type::BackendType;
+use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
+
+const DEFAULT_MINIMUM_RELEASE_AGE: &str = "24h";
 
 /// Resolve the effective `minimum_release_age` cutoff.
 ///
 /// Precedence (highest to lowest):
 /// 1. `before_date` - a pre-resolved `ResolveOptions` cutoff.
 /// 2. A per-tool, backend, or config `minimum_release_age` option.
-/// 3. The global `minimum_release_age` setting.
+/// 3. The global `minimum_release_age` setting, or the built-in default for
+///    backends that provide release timestamps.
 ///
 /// All string-based durations (e.g. `"3d"`) are resolved against
 /// [`crate::duration::process_now`] so that every call within a single mise
@@ -25,7 +29,7 @@ pub fn resolve_before_date(
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
-    resolve_before_date_with_excludes(before_date, minimum_release_age, false)
+    resolve_before_date_with_excludes(None, before_date, minimum_release_age, false)
 }
 
 pub fn resolve_before_date_for_tool(
@@ -34,6 +38,7 @@ pub fn resolve_before_date_for_tool(
     minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
     resolve_before_date_with_excludes(
+        Some(backend_arg),
         before_date,
         minimum_release_age,
         is_minimum_release_age_excluded(backend_arg),
@@ -41,6 +46,7 @@ pub fn resolve_before_date_for_tool(
 }
 
 fn resolve_before_date_with_excludes(
+    backend_arg: Option<&BackendArg>,
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
     excluded: bool,
@@ -51,13 +57,31 @@ fn resolve_before_date_with_excludes(
     if let Some(before) = minimum_release_age {
         return Ok(Some(parse_into_timestamp(before)?));
     }
-    if excluded {
-        return Ok(None);
-    }
-    if let Some(before) = &Settings::get().minimum_release_age {
+    if !excluded && let Some(before) = &Settings::get().minimum_release_age {
         return Ok(Some(parse_into_timestamp(before)?));
     }
+    if !excluded && backend_arg.is_some_and(default_minimum_release_age_applies) {
+        return Ok(Some(parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE)?));
+    }
     Ok(None)
+}
+
+fn default_minimum_release_age_applies(backend_arg: &BackendArg) -> bool {
+    matches!(
+        backend_arg.backend_type(),
+        BackendType::Aqua
+            | BackendType::Cargo
+            | BackendType::Core
+            | BackendType::Forgejo
+            | BackendType::Gem
+            | BackendType::Github
+            | BackendType::Gitlab
+            | BackendType::Go
+            | BackendType::Npm
+            | BackendType::Pipx
+            | BackendType::Spm
+            | BackendType::Ubi
+    )
 }
 
 fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
@@ -66,14 +90,31 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
         return false;
     }
 
-    let full = backend_arg.full_without_opts();
-    let backend_type = backend_arg.backend_type().to_string();
-    let backend_wildcard = format!("{backend_type}:*");
-
+    let mut full = None;
+    let mut backend_wildcard = None;
     excludes.iter().any(|exclude| {
         let exclude = exclude.trim();
-        !exclude.is_empty()
-            && (exclude == backend_arg.short || exclude == full || exclude == backend_wildcard)
+        if exclude.is_empty() {
+            return false;
+        }
+        if exclude == backend_arg.short {
+            return true;
+        }
+        let full = full.get_or_insert_with(|| {
+            if backend_arg.short.contains(':') {
+                split_bracketed_opts(&backend_arg.short)
+                    .map(|(name, _)| name.to_string())
+                    .unwrap_or_else(|| backend_arg.short.clone())
+            } else {
+                backend_arg.full_without_opts()
+            }
+        });
+        if exclude == full {
+            return true;
+        }
+        let backend_wildcard =
+            backend_wildcard.get_or_insert_with(|| format!("{}:*", backend_arg.backend_type()));
+        exclude == backend_wildcard
     })
 }
 
@@ -92,7 +133,7 @@ pub(crate) async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_before_date, resolve_before_date_for_tool};
+    use super::{DEFAULT_MINIMUM_RELEASE_AGE, resolve_before_date, resolve_before_date_for_tool};
     use crate::cli::args::BackendArg;
     use crate::config::settings::{Settings, SettingsPartial};
     use confique::Layer;
@@ -149,12 +190,12 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_before_date_excludes_global_by_tool() {
+    fn test_effective_before_date_excludes_global_by_backend_id() {
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("2024-01-03".to_string());
-        partial.minimum_release_age_excludes = Some(vec!["node".to_string()]);
+        partial.minimum_release_age_excludes = Some(vec!["npm:prettier".to_string()]);
         Settings::reset(Some(partial));
-        assert_eq!(resolved_tool_timestamp("node", None, None), None);
+        assert_eq!(resolved_tool_timestamp("npm:prettier", None, None), None);
         Settings::reset(None);
     }
 
@@ -176,16 +217,6 @@ mod tests {
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("2024-01-03".to_string());
         partial.minimum_release_age_excludes = Some(vec!["npm:*".to_string()]);
-        Settings::reset(Some(partial));
-        assert_eq!(resolved_tool_timestamp("npm:prettier", None, None), None);
-        Settings::reset(None);
-    }
-
-    #[test]
-    fn test_effective_before_date_excludes_global_by_full_backend_id() {
-        let mut partial = SettingsPartial::empty();
-        partial.minimum_release_age = Some("2024-01-03".to_string());
-        partial.minimum_release_age_excludes = Some(vec!["npm:prettier".to_string()]);
         Settings::reset(Some(partial));
         assert_eq!(resolved_tool_timestamp("npm:prettier", None, None), None);
         Settings::reset(None);
@@ -218,9 +249,36 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_before_date_none_when_unset() {
+    fn test_effective_before_date_without_backend_has_no_default() {
         Settings::reset(None);
         assert_eq!(resolved_timestamp(None, None), None);
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_falls_back_to_default_for_supported_backend() {
+        Settings::reset(None);
+        assert_eq!(
+            resolved_tool_timestamp("npm:prettier", None, None),
+            Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap())
+        );
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_falls_back_to_default_for_forgejo_backend() {
+        Settings::reset(None);
+        assert_eq!(
+            resolved_tool_timestamp("forgejo:codeberg.org/forgejo/forgejo", None, None),
+            Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap())
+        );
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_skips_default_for_unsupported_backend() {
+        Settings::reset(None);
+        assert_eq!(resolved_tool_timestamp("asdf:tiny", None, None), None);
         Settings::reset(None);
     }
 

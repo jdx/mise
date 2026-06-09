@@ -171,29 +171,36 @@ fn is_false(v: &bool) -> bool {
 }
 
 impl VersionInfo {
+    fn created_at_timestamp(&self) -> Option<Timestamp> {
+        match &self.created_at {
+            Some(ts) => {
+                let created = parse_into_timestamp(ts);
+                if created.is_err() {
+                    trace!("Failed to parse timestamp: {}", ts);
+                }
+                created.ok()
+            }
+            None => None,
+        }
+    }
+
+    pub fn hidden_by_date(&self, before: Timestamp) -> bool {
+        self.created_at_timestamp()
+            .is_some_and(|created| created >= before)
+    }
+
+    pub fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
+        versions.iter().filter(|v| v.hidden_by_date(before)).count()
+    }
+
     /// Filter versions to only include those released before the given timestamp.
     /// Versions without a created_at timestamp are included by default.
     pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
-        use crate::duration::parse_into_timestamp;
         versions
             .into_iter()
             .filter(|v| {
-                match &v.created_at {
-                    Some(ts) => {
-                        // Parse the timestamp using parse_into_timestamp which handles
-                        // RFC3339, date-only (YYYY-MM-DD), and other formats
-                        match parse_into_timestamp(ts) {
-                            Ok(created) => created < before,
-                            Err(_) => {
-                                // If we can't parse the timestamp, include the version
-                                trace!("Failed to parse timestamp: {}", ts);
-                                true
-                            }
-                        }
-                    }
-                    // Include versions without timestamps
-                    None => true,
-                }
+                v.created_at_timestamp()
+                    .is_none_or(|created| created < before)
             })
             .collect()
     }
@@ -1517,6 +1524,27 @@ pub trait Backend: Debug + Send + Sync {
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
         self.latest_version_with_refresh(config, query, before_date, false)
+            .await
+    }
+
+    /// Get the latest version without applying release-date cutoffs.
+    ///
+    /// This is intended for diagnostics that compare a date-filtered result
+    /// with the absolute latest result. Normal resolution should use
+    /// `latest_version` so global, per-tool, and default release-age cutoffs are
+    /// honored.
+    async fn latest_version_unfiltered(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+    ) -> eyre::Result<Option<String>> {
+        let resolved_query = query.as_deref().unwrap_or("latest");
+        if resolved_query == "latest"
+            && let Some(version) = self.latest_stable_version(config).await?
+        {
+            return Ok(Some(version));
+        }
+        self.latest_version_for_query(config, resolved_query, None, false)
             .await
     }
 

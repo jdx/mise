@@ -1376,7 +1376,7 @@ Example:
 
 ```toml
 [settings]
-minimum_release_age = "7d"  # only install versions released more than 7 days ago
+minimum_release_age = "7d"  # default is 24h
 ```
 
 Capability depends on what each backend can report or pass through:
@@ -1395,6 +1395,8 @@ cutoff date.
 
 For `npm:` and `pipx:` package-manager support details, see the backend docs.
 
+Defaults to `24h`. Set `minimum_release_age = "0s"` to effectively disable the delay.
+
 Can be overridden with the `--minimum-release-age` CLI flag or per-tool with the `minimum_release_age` tool option.
 
 ```toml
@@ -1409,9 +1411,9 @@ type = "String"
 
 [minimum_release_age_excludes]
 default = []
-description = "Tools and backends to exclude from the global minimum_release_age setting"
+description = "Tools and backends to exclude from the global/default minimum_release_age setting"
 docs = """
-Exclude tools or backends from the global [`minimum_release_age`](#minimum_release_age) setting.
+Exclude tools or backends from the global/default [`minimum_release_age`](#minimum_release_age) setting.
 This is useful for tools where newly published releases are time-sensitive.
 
 Exclusions match any of:
@@ -1428,7 +1430,7 @@ minimum_release_age = "7d"
 minimum_release_age_excludes = ["trivy", "npm:*"]
 ```
 
-This only excludes tools from the global setting. A per-tool `minimum_release_age` option
+This excludes matching tools from the global setting and built-in default. A per-tool `minimum_release_age` option
 or the `--minimum-release-age` CLI flag still applies to matching tools.
 """
 env = "MISE_MINIMUM_RELEASE_AGE_EXCLUDES"
