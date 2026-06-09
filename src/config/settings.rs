@@ -380,9 +380,7 @@ impl Settings {
     fn set_hidden_configs(&mut self) {
         if let Some(v) = self.install_before.take() {
             warn_deprecated("install_before");
-            if self.minimum_release_age.is_none() {
-                self.minimum_release_age = Some(v);
-            }
+            self.minimum_release_age = v;
         }
         // Migrate task_* settings to task.* (must run before auto_install override below)
         if let Some(v) = self.task_disable_paths.take()
@@ -1108,7 +1106,7 @@ mod tests {
         partial.install_before = Some("7d".to_string());
         Settings::reset(Some(partial));
         let settings = Settings::get();
-        assert_eq!(settings.minimum_release_age.as_deref(), Some("7d"));
+        assert_eq!(settings.minimum_release_age, "7d");
         Settings::reset(None);
     }
 

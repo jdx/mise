@@ -1088,6 +1088,7 @@
           "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "minimum_release_age": {
+          "default": "24h",
           "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
           "type": "string"
         },

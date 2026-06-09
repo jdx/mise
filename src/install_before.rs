@@ -54,10 +54,9 @@ fn resolve_before_date_with_excludes(
     if excluded {
         return Ok(None);
     }
-    if let Some(before) = &Settings::get().minimum_release_age {
-        return Ok(Some(parse_into_timestamp(before)?));
-    }
-    Ok(None)
+    Ok(Some(parse_into_timestamp(
+        &Settings::get().minimum_release_age,
+    )?))
 }
 
 fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
@@ -218,9 +217,12 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_before_date_none_when_unset() {
+    fn test_effective_before_date_falls_back_to_default_setting() {
         Settings::reset(None);
-        assert_eq!(resolved_timestamp(None, None), None);
+        assert_eq!(
+            resolved_timestamp(None, None),
+            Some(crate::duration::parse_into_timestamp("24h").unwrap())
+        );
         Settings::reset(None);
     }
 

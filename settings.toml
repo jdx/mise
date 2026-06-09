@@ -1358,6 +1358,7 @@ hide = true
 type = "String"
 
 [minimum_release_age]
+default = "24h"
 description = "Minimum release age / supply chain protection — only install versions older than this threshold"
 docs = """
 Filter tool versions by release date to limit supply chain risk. Similar to Renovate's
@@ -1376,7 +1377,7 @@ Example:
 
 ```toml
 [settings]
-minimum_release_age = "7d"  # only install versions released more than 7 days ago
+minimum_release_age = "7d"  # default is 24h
 ```
 
 Capability depends on what each backend can report or pass through:
@@ -1395,6 +1396,8 @@ cutoff date.
 
 For `npm:` and `pipx:` package-manager support details, see the backend docs.
 
+Defaults to `24h`. Set `minimum_release_age = "0s"` to effectively disable the delay.
+
 Can be overridden with the `--minimum-release-age` CLI flag or per-tool with the `minimum_release_age` tool option.
 
 ```toml
@@ -1404,7 +1407,6 @@ minimum_release_age = "7d"  # override for this tool only
 ```
 """
 env = "MISE_MINIMUM_RELEASE_AGE"
-optional = true
 type = "String"
 
 [minimum_release_age_excludes]
