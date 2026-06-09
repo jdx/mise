@@ -57,10 +57,7 @@ fn resolve_before_date_with_excludes(
     if let Some(before) = minimum_release_age {
         return Ok(Some(parse_into_timestamp(before)?));
     }
-    if excluded {
-        return Ok(None);
-    }
-    if let Some(before) = &Settings::get().minimum_release_age {
+    if !excluded && let Some(before) = &Settings::get().minimum_release_age {
         return Ok(Some(parse_into_timestamp(before)?));
     }
     if backend_arg.is_some_and(default_minimum_release_age_applies) {
@@ -193,12 +190,15 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_before_date_excludes_global_by_tool() {
+    fn test_effective_before_date_excludes_global_by_backend_id() {
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("2024-01-03".to_string());
-        partial.minimum_release_age_excludes = Some(vec!["node".to_string()]);
+        partial.minimum_release_age_excludes = Some(vec!["npm:prettier".to_string()]);
         Settings::reset(Some(partial));
-        assert_eq!(resolved_tool_timestamp("node", None, None), None);
+        assert_eq!(
+            resolved_tool_timestamp("npm:prettier", None, None),
+            Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap())
+        );
         Settings::reset(None);
     }
 
@@ -221,17 +221,10 @@ mod tests {
         partial.minimum_release_age = Some("2024-01-03".to_string());
         partial.minimum_release_age_excludes = Some(vec!["npm:*".to_string()]);
         Settings::reset(Some(partial));
-        assert_eq!(resolved_tool_timestamp("npm:prettier", None, None), None);
-        Settings::reset(None);
-    }
-
-    #[test]
-    fn test_effective_before_date_excludes_global_by_full_backend_id() {
-        let mut partial = SettingsPartial::empty();
-        partial.minimum_release_age = Some("2024-01-03".to_string());
-        partial.minimum_release_age_excludes = Some(vec!["npm:prettier".to_string()]);
-        Settings::reset(Some(partial));
-        assert_eq!(resolved_tool_timestamp("npm:prettier", None, None), None);
+        assert_eq!(
+            resolved_tool_timestamp("npm:prettier", None, None),
+            Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap())
+        );
         Settings::reset(None);
     }
 
