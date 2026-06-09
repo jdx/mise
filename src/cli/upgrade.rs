@@ -6,6 +6,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
 use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
+use crate::install_before::resolve_before_date_for_tool;
 use crate::semver::split_version_prefix;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
@@ -575,7 +576,28 @@ impl Upgrade {
             if !warned.insert(warning_key) {
                 continue;
             }
-            let eligible_latest = self.latest_for_upgrade(config, &tv, opts).await;
+            let before_date = match resolve_before_date_for_tool(
+                tv.ba(),
+                opts.before_date,
+                tv.request.options().minimum_release_age(),
+            ) {
+                Ok(Some(before_date)) => before_date,
+                Ok(None) => continue,
+                Err(err) => {
+                    warn!(
+                        "Error resolving minimum_release_age for {}: {err:#}",
+                        tv.ba()
+                    );
+                    continue;
+                }
+            };
+            let opts_with_effective_before_date = ResolveOptions {
+                before_date: Some(before_date),
+                ..opts.clone()
+            };
+            let eligible_latest = self
+                .latest_for_upgrade(config, &tv, &opts_with_effective_before_date)
+                .await;
             let unfiltered_latest = self.unfiltered_latest_for_upgrade(config, &tv, opts).await;
             match (eligible_latest, unfiltered_latest) {
                 (Some(eligible), Some(unfiltered))

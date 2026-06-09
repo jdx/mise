@@ -5,7 +5,7 @@ use jiff::Timestamp;
 
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
 
@@ -75,6 +75,7 @@ fn default_minimum_release_age_applies(backend_arg: &BackendArg) -> bool {
         BackendType::Aqua
             | BackendType::Cargo
             | BackendType::Core
+            | BackendType::Forgejo
             | BackendType::Gem
             | BackendType::Github
             | BackendType::Gitlab
@@ -92,14 +93,31 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
         return false;
     }
 
-    let full = backend_arg.full_without_opts();
-    let backend_type = backend_arg.backend_type().to_string();
-    let backend_wildcard = format!("{backend_type}:*");
-
+    let mut full = None;
+    let mut backend_wildcard = None;
     excludes.iter().any(|exclude| {
         let exclude = exclude.trim();
-        !exclude.is_empty()
-            && (exclude == backend_arg.short || exclude == full || exclude == backend_wildcard)
+        if exclude.is_empty() {
+            return false;
+        }
+        if exclude == backend_arg.short {
+            return true;
+        }
+        let full = full.get_or_insert_with(|| {
+            if backend_arg.short.contains(':') {
+                split_bracketed_opts(&backend_arg.short)
+                    .map(|(name, _)| name.to_string())
+                    .unwrap_or_else(|| backend_arg.short.clone())
+            } else {
+                backend_arg.full_without_opts()
+            }
+        });
+        if exclude == full {
+            return true;
+        }
+        let backend_wildcard =
+            backend_wildcard.get_or_insert_with(|| format!("{}:*", backend_arg.backend_type()));
+        exclude == backend_wildcard
     })
 }
 
@@ -255,6 +273,16 @@ mod tests {
         Settings::reset(None);
         assert_eq!(
             resolved_tool_timestamp("npm:prettier", None, None),
+            Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap())
+        );
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_effective_before_date_falls_back_to_default_for_forgejo_backend() {
+        Settings::reset(None);
+        assert_eq!(
+            resolved_tool_timestamp("forgejo:codeberg.org/forgejo/forgejo", None, None),
             Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap())
         );
         Settings::reset(None);
