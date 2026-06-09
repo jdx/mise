@@ -854,6 +854,8 @@ impl NPMBackend {
     }
 
     fn lifecycle_scripts_from_package_json(package_json_path: &Path) -> Vec<&'static str> {
+        // `prepare` does not run for versioned registry installs, which are what
+        // the npm backend performs.
         const LIFECYCLE_SCRIPTS: &[&str] = &["preinstall", "install", "postinstall"];
         let Ok(package_json) = std::fs::read_to_string(package_json_path) else {
             return vec![];
