@@ -416,6 +416,8 @@ impl Backend for NPMBackend {
                 cmd.execute()?;
             }
             _ => {
+                let npm_args = options.npm_args().map(shell_words::split).transpose()?;
+                let skipped_lifecycle_scripts = Self::effective_npm_ignore_scripts(&npm_args);
                 let mut cmd = CmdLineRunner::new(NPM_PROGRAM)
                     .arg("install")
                     .arg("-g")
@@ -435,10 +437,13 @@ impl Backend for NPMBackend {
                             .await,
                     )?;
                 cmd = cmd.arg(NPM_IGNORE_SCRIPTS_ARG);
-                if let Some(args) = options.npm_args() {
-                    cmd = cmd.args(shell_words::split(args)?);
+                if let Some(args) = &npm_args {
+                    cmd = cmd.args(args);
                 }
                 cmd.execute()?;
+                if skipped_lifecycle_scripts {
+                    self.warn_if_npm_package_lifecycle_scripts_skipped(&tv);
+                }
             }
         }
         Ok(tv)
@@ -789,6 +794,88 @@ impl NPMBackend {
         seconds.div_ceil(60)
     }
 
+    fn effective_npm_ignore_scripts(args: &Option<Vec<String>>) -> bool {
+        let Some(args) = args else {
+            return true;
+        };
+        let mut ignore_scripts = true;
+        let mut iter = args.iter().peekable();
+        while let Some(arg) = iter.next() {
+            if arg == "--ignore-scripts" {
+                if let Some(value) = iter.peek().and_then(|next| parse_bool_arg(next)) {
+                    ignore_scripts = value;
+                    iter.next();
+                } else {
+                    ignore_scripts = true;
+                }
+            } else if arg == "--no-ignore-scripts" {
+                ignore_scripts = false;
+            } else if let Some(value) = arg.strip_prefix("--ignore-scripts=")
+                && let Some(value) = parse_bool_arg(value)
+            {
+                ignore_scripts = value;
+            }
+        }
+        ignore_scripts
+    }
+
+    fn warn_if_npm_package_lifecycle_scripts_skipped(&self, tv: &ToolVersion) {
+        let tool_name = self.tool_name();
+        let Some((package_json_path, hooks)) =
+            Self::installed_package_lifecycle_scripts(&tv.install_path(), &tool_name)
+        else {
+            return;
+        };
+        warn!(
+            "{}@{} declares npm lifecycle script(s) ({}) in {}, but mise skipped them with {}. Review the package before opting in with `npm_args = \"--ignore-scripts=false\"`.",
+            self.ba().full(),
+            tv.version,
+            hooks.join(", "),
+            package_json_path.display(),
+            NPM_IGNORE_SCRIPTS_ARG
+        );
+    }
+
+    fn installed_package_lifecycle_scripts(
+        install_path: &Path,
+        package_name: &str,
+    ) -> Option<(std::path::PathBuf, Vec<&'static str>)> {
+        for node_modules in [
+            install_path.join("lib").join("node_modules"),
+            install_path.join("node_modules"),
+        ] {
+            let package_json_path = node_modules.join(package_name).join("package.json");
+            let hooks = Self::lifecycle_scripts_from_package_json(&package_json_path);
+            if !hooks.is_empty() {
+                return Some((package_json_path, hooks));
+            }
+        }
+        None
+    }
+
+    fn lifecycle_scripts_from_package_json(package_json_path: &Path) -> Vec<&'static str> {
+        // `prepare` does not run for versioned registry installs, which are what
+        // the npm backend performs.
+        const LIFECYCLE_SCRIPTS: &[&str] = &["preinstall", "install", "postinstall"];
+        let Ok(package_json) = std::fs::read_to_string(package_json_path) else {
+            return vec![];
+        };
+        let Ok(package_json) = serde_json::from_str::<serde_json::Value>(&package_json) else {
+            return vec![];
+        };
+        let Some(scripts) = package_json
+            .get("scripts")
+            .and_then(|scripts| scripts.as_object())
+        else {
+            return vec![];
+        };
+        LIFECYCLE_SCRIPTS
+            .iter()
+            .filter(|script| scripts.contains_key(**script))
+            .copied()
+            .collect()
+    }
+
     #[cfg(any(windows, test))]
     fn windows_bin_paths_for_install_path(install_path: &Path) -> Vec<std::path::PathBuf> {
         let bin_dir = install_path.join("bin");
@@ -813,6 +900,14 @@ impl NPMBackend {
 fn is_semver_prerelease(version: &str) -> bool {
     let core_and_pre = version.split_once('+').map_or(version, |(v, _)| v);
     core_and_pre.contains('-')
+}
+
+fn parse_bool_arg(value: &str) -> Option<bool> {
+    match value {
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
+        _ => None,
+    }
 }
 
 /// Returns install-time-only option keys for NPM backend.
@@ -994,6 +1089,69 @@ mod tests {
         assert_eq!(
             NPMBackend::windows_bin_paths_for_install_path(&install_path),
             vec![install_path]
+        );
+    }
+
+    #[test]
+    fn test_effective_npm_ignore_scripts_defaults_to_true() {
+        assert!(NPMBackend::effective_npm_ignore_scripts(&None));
+    }
+
+    #[test]
+    fn test_effective_npm_ignore_scripts_honors_later_false_arg() {
+        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--ignore-scripts=false".into()
+        ])));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--ignore-scripts=0".into()
+        ])));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--ignore-scripts".into(),
+            "false".into()
+        ])));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--ignore-scripts".into(),
+            "0".into()
+        ])));
+        assert!(!NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--no-ignore-scripts".into()
+        ])));
+    }
+
+    #[test]
+    fn test_effective_npm_ignore_scripts_later_arg_wins() {
+        assert!(NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--ignore-scripts=false".into(),
+            "--ignore-scripts=true".into()
+        ])));
+        assert!(NPMBackend::effective_npm_ignore_scripts(&Some(vec![
+            "--ignore-scripts".into(),
+            "false".into(),
+            "--ignore-scripts".into(),
+            "1".into()
+        ])));
+    }
+
+    #[test]
+    fn test_lifecycle_scripts_from_package_json_finds_install_hooks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let package_json_path = tmp.path().join("package.json");
+        std::fs::write(
+            &package_json_path,
+            r#"{
+                "scripts": {
+                    "test": "node test.js",
+                    "preinstall": "node preinstall.js",
+                    "prepare": "node prepare.js",
+                    "postinstall": "node postinstall.js"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            NPMBackend::lifecycle_scripts_from_package_json(&package_json_path),
+            vec!["preinstall", "postinstall"]
         );
     }
 
