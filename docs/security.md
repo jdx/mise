@@ -47,10 +47,10 @@ Explicitly pinned versions like `node@22.5.0` bypass the filter.
 
 Capability depends on the backend:
 
-| Capability | Backends |
-| --- | --- |
-| Top-level version filtering | Backends that provide release timestamps, such as `aqua:`, `cargo:`, `github:`, `gitlab:`, `go:`, `npm:`, `pipx:`, and many core tools |
-| Transitive dependency filtering during install | `npm:` and `pipx:` |
+| Capability                                     | Backends                                                                                                                               |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Top-level version filtering                    | Backends that provide release timestamps, such as `aqua:`, `cargo:`, `github:`, `gitlab:`, `go:`, `npm:`, `pipx:`, and many core tools |
+| Transitive dependency filtering during install | `npm:` and `pipx:`                                                                                                                     |
 
 Versions without timestamps are included by default. Backends without transitive dependency support
 may still select an older top-level tool version, but they do not constrain dependencies fetched by
