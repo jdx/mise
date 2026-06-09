@@ -364,8 +364,12 @@ minimum_release_age = "7d"  # only resolve to versions released more than 7 days
 
 This pairs well with lockfiles — use `minimum_release_age` to avoid picking up brand-new releases, and lockfiles to pin the exact versions you've vetted.
 
-Some package-manager backends also forward this cutoff into transitive dependency resolution during
-install. This includes `npm:` and `pipx:` tools.
+This setting filters top-level fuzzy version resolution for backends that provide release timestamps.
+Versions without timestamps are included by default.
+
+Only `npm:` and `pipx:` currently forward the same cutoff into transitive dependency resolution during
+install. Other backends may select an older top-level tool version, but they do not constrain
+dependencies fetched by the tool's installer/compiler.
 
 ## See Also
 
