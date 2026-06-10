@@ -1,0 +1,5 @@
+aliases = ["agy"]
+backends = ["aqua:google-antigravity/antigravity-cli"]
+description = "Google's agentic development platform CLI companion"
+test = { cmd = "agy --version", expected = "{{version}}" }
+
