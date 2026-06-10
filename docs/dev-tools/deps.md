@@ -36,6 +36,7 @@ auto = true  # Auto-run before mise x/run
 [deps.yarn]
 [deps.pnpm]
 [deps.bun]
+[deps.deno]
 [deps.aube]
 [deps.go]
 [deps.pip]
@@ -53,21 +54,22 @@ disable = ["npm"]
 
 mise includes built-in providers for common package managers:
 
-| Provider   | Sources                                 | Outputs               | Command                              |
-| ---------- | --------------------------------------- | --------------------- | ------------------------------------ |
-| `npm`      | `package.json`, `package-lock.json`     | `node_modules/`       | `npm install`                        |
-| `yarn`     | `package.json`, `yarn.lock`             | `node_modules/`       | `yarn install`                       |
-| `pnpm`     | `package.json`, `pnpm-lock.yaml`        | `node_modules/`       | `pnpm install`                       |
-| `bun`      | `package.json`, `bun.lock`, `bun.lockb` | `node_modules/`       | `bun install`                        |
-| `aube`     | `package.json`, `aube-lock.yaml`        | `node_modules/`       | `aube install`                       |
-| `go`       | `go.mod`                                | `vendor/` or `go.sum` | `go mod vendor` or `go mod download` |
-| `pip`      | `requirements.txt`                      | `.venv/`              | `pip install -r requirements.txt`    |
-| `poetry`   | `pyproject.toml`, `poetry.lock`         | `.venv/`              | `poetry install`                     |
-| `uv`       | `pyproject.toml`, `uv.lock`             | `.venv/`              | `uv sync`                            |
-| `bundler`  | `Gemfile`, `Gemfile.lock`               | `vendor/bundle/`      | `bundle install`                     |
-| `composer` | `composer.json`, `composer.lock`        | `vendor/`             | `composer install`                   |
-| `dart`     | `pubspec.yaml`, `pubspec.lock`          | `.dart_tool/`         | `dart pub get`                       |
-| `flutter`  | `pubspec.yaml`, `pubspec.lock`          | `.dart_tool/`         | `flutter pub get`                    |
+| Provider   | Sources                                                | Outputs               | Command                              |
+| ---------- | ------------------------------------------------------ | --------------------- | ------------------------------------ |
+| `npm`      | `package.json`, `package-lock.json`                    | `node_modules/`       | `npm install`                        |
+| `yarn`     | `package.json`, `yarn.lock`                            | `node_modules/`       | `yarn install`                       |
+| `pnpm`     | `package.json`, `pnpm-lock.yaml`                       | `node_modules/`       | `pnpm install`                       |
+| `bun`      | `package.json`, `bun.lock`, `bun.lockb`                | `node_modules/`       | `bun install`                        |
+| `deno`     | `deno.json`, `deno.jsonc`, `package.json`, `deno.lock` | `node_modules/`       | `deno install`                       |
+| `aube`     | `package.json`, `aube-lock.yaml`                       | `node_modules/`       | `aube install`                       |
+| `go`       | `go.mod`                                               | `vendor/` or `go.sum` | `go mod vendor` or `go mod download` |
+| `pip`      | `requirements.txt`                                     | `.venv/`              | `pip install -r requirements.txt`    |
+| `poetry`   | `pyproject.toml`, `poetry.lock`                        | `.venv/`              | `poetry install`                     |
+| `uv`       | `pyproject.toml`, `uv.lock`                            | `.venv/`              | `uv sync`                            |
+| `bundler`  | `Gemfile`, `Gemfile.lock`                              | `vendor/bundle/`      | `bundle install`                     |
+| `composer` | `composer.json`, `composer.lock`                       | `vendor/`             | `composer install`                   |
+| `dart`     | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/`         | `dart pub get`                       |
+| `flutter`  | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/`         | `flutter pub get`                    |
 
 Built-in providers are only active when explicitly configured in `mise.toml` and their lockfile exists.
 
@@ -87,7 +89,7 @@ mise deps remove npm:lodash
 ```
 
 The ecosystem prefix tells mise which package manager to use. Currently supported
-ecosystems for add/remove: `npm`, `yarn`, `pnpm`, `bun`, `aube`, `dart`, `flutter`.
+ecosystems for add/remove: `npm`, `yarn`, `pnpm`, `bun`, `deno`, `aube`, `dart`, `flutter`.
 
 ## Custom Providers
 
