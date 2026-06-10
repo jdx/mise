@@ -69,7 +69,7 @@ impl DepsProvider for DenoDepsProvider {
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
-        let mut args = vec!["install".to_string()];
+        let mut args = vec!["add".to_string()];
         if dev {
             args.push("--dev".to_string());
         }
@@ -80,12 +80,12 @@ impl DepsProvider for DenoDepsProvider {
             args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("deno install {}", packages.join(" ")),
+            description: format!("deno add {}", packages.join(" ")),
         })
     }
 
     fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
-        let mut args = vec!["uninstall".to_string()];
+        let mut args = vec!["remove".to_string()];
         args.extend(packages.iter().map(|p| p.to_string()));
 
         Ok(DepsCommand {
@@ -93,7 +93,7 @@ impl DepsProvider for DenoDepsProvider {
             args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("deno uninstall {}", packages.join(" ")),
+            description: format!("deno remove {}", packages.join(" ")),
         })
     }
 }
