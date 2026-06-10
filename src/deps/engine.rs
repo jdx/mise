@@ -21,9 +21,8 @@ use super::deps_ordering::DepsOrdering;
 use super::providers::{
     AubeDepsProvider, BunDepsProvider, BundlerDepsProvider, ComposerDepsProvider,
     CustomDepsProvider, DartDepsProvider, DenoDepsProvider, GitSubmoduleDepsProvider,
-    GoDepsProvider,
-    NpmDepsProvider, PipDepsProvider, PnpmDepsProvider, PoetryDepsProvider, UvDepsProvider,
-    YarnDepsProvider,
+    GoDepsProvider, NpmDepsProvider, PipDepsProvider, PnpmDepsProvider, PoetryDepsProvider,
+    UvDepsProvider, YarnDepsProvider,
 };
 use super::rule::BUILTIN_PROVIDERS;
 use super::state::{self, DepsState};
