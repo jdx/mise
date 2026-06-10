@@ -1,6 +1,5 @@
 backends = [
   { full = "aqua:ImageMagick/ImageMagick", platforms = [
-    "linux",
     "windows",
   ] },
   "conda:imagemagick",
