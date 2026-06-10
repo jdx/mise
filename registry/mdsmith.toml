@@ -1,0 +1,3 @@
+backends = ["github:jeduden/mdsmith"]
+description = "fast, auto-fixing Markdown linter and formatter. Checks style, readability, structure, and cross-file integrity."
+test = { cmd = "mdsmith version", expected = "mdsmith v{{version}}" }
