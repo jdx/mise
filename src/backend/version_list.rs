@@ -114,9 +114,10 @@ pub fn parse_version_list(
 
     // DO NOT sort versions here - the backend/upstream determines version order.
     // Sorting is handled elsewhere (e.g., versions host, resolve logic).
-    // If a version_expr is provided, use it to post-process the extracted versions
-    // (e.g. sortVersions). When no other extraction method produced results,
-    // the expr operates on `body` alone (the original behavior).
+    // When a registry entry needs explicit sorting, it can use version_expr
+    // (e.g. sortVersions) to post-process the extracted versions.
+    // When no other extraction method produced results, the expr operates on
+    // `body` alone (the original behavior).
     if let Some(expr_str) = version_expr {
         versions = eval_version_expr(expr_str, trimmed, &versions)?;
     }
@@ -125,19 +126,17 @@ pub fn parse_version_list(
 }
 
 /// Evaluate a version expression using expr-lang.
-/// When `versions` is non-empty, it is injected as a `versions` variable
-/// so the expression can post-process previously extracted version lists.
+/// The previously extracted version list is always injected as a `versions`
+/// variable so the expression can post-process it (e.g. sortVersions).
 fn eval_version_expr(expr_str: &str, body: &str, versions: &[String]) -> Result<Vec<String>> {
     use versions::Versioning;
 
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
-    if !versions.is_empty() {
-        ctx.insert(
-            "versions".to_string(),
-            Value::Array(versions.iter().map(|v| Value::String(v.clone())).collect()),
-        );
-    }
+    ctx.insert(
+        "versions".to_string(),
+        Value::Array(versions.iter().map(|v| Value::String(v.clone())).collect()),
+    );
 
     // expr-lang 1.0+ has built-in fromJSON, keys, values, len, toJSON functions
     let mut env = Environment::new();
