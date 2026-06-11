@@ -554,8 +554,8 @@ impl Lock {
             let source = cf.source();
             let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
                 .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
-            if !config_paths_set.contains(path)
-                && !(source.is_idiomatic_version_file() && source_lockfile_matches)
+            if !(config_paths_set.contains(path)
+                || source.is_idiomatic_version_file() && source_lockfile_matches)
             {
                 continue;
             }
