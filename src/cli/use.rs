@@ -146,6 +146,7 @@ impl Use {
             latest_versions: false,
             use_locked_version: true,
             before_date: self.get_before_date()?,
+            before_date_from_default: false,
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
