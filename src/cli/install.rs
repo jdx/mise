@@ -248,6 +248,7 @@ impl Install {
                 use_locked_version: true,
                 latest_versions: true,
                 before_date: self.get_before_date()?,
+                before_date_from_default: false,
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: false,

@@ -12,7 +12,7 @@ use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
-use crate::install_before::resolve_before_date_for_tool;
+use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
@@ -78,11 +78,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         let minimum_release_age = request.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
-        opts.before_date = resolve_before_date_for_tool(
-            request.ba(),
-            opts.before_date,
-            minimum_release_age.as_deref(),
-        )?;
+        opts.apply_before_date_for_tool(request.ba(), minimum_release_age.as_deref())?;
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
@@ -244,6 +240,7 @@ impl ToolVersion {
             latest_versions: true,
             use_locked_version: false,
             before_date: base_opts.before_date,
+            before_date_from_default: base_opts.before_date_from_default,
             offline: base_opts.offline,
             refresh_remote_versions: base_opts.refresh_remote_versions,
             inactive: base_opts.inactive,
@@ -362,7 +359,7 @@ impl ToolVersion {
         let is_offline = settings.offline() || opts.offline;
         let prefer_offline = settings.prefer_offline();
         let should_filter_installed_versions =
-            opts.before_date.is_some() && !is_offline && !prefer_offline;
+            opts.filters_installed_versions() && !is_offline && !prefer_offline;
 
         if v == "latest" {
             if !opts.latest_versions
@@ -544,7 +541,7 @@ impl ToolVersion {
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
         let should_filter_installed_versions =
-            opts.before_date.is_some() && !is_offline && !settings.prefer_offline();
+            opts.filters_installed_versions() && !is_offline && !settings.prefer_offline();
         if !opts.latest_versions
             && !should_filter_installed_versions
             && let Some(v) = backend.list_installed_versions_matching(prefix).last()
@@ -640,6 +637,12 @@ pub struct ResolveOptions {
     pub use_locked_version: bool,
     /// Only consider versions released before this timestamp
     pub before_date: Option<Timestamp>,
+    /// `before_date` came from the built-in default release age rather than
+    /// explicit configuration (CLI flag, per-tool option, or the
+    /// `minimum_release_age` setting). The default only gates which versions
+    /// remote resolution may pick — it must not disable installed-version
+    /// fast paths (https://github.com/jdx/mise/discussions/10308).
+    pub before_date_from_default: bool,
     /// Additive to `Settings::offline()` — either being true skips remote version listing.
     pub offline: bool,
     /// Ignore cached remote version lists while resolving this request.
@@ -656,10 +659,50 @@ impl Default for ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
             before_date: None,
+            before_date_from_default: false,
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
         }
+    }
+}
+
+impl ResolveOptions {
+    /// Merge the effective release-age cutoff for a tool into these options.
+    /// A cutoff pre-resolved by the caller keeps its provenance flag; cutoffs
+    /// resolved here are flagged by source so installed-version fast paths
+    /// can ignore the built-in default.
+    pub fn apply_before_date_for_tool(
+        &mut self,
+        backend_arg: &BackendArg,
+        minimum_release_age: Option<&str>,
+    ) -> Result<()> {
+        match resolve_before_date_for_tool_with_source(
+            backend_arg,
+            self.before_date,
+            minimum_release_age,
+        )? {
+            Some((ts, source)) => {
+                self.before_date = Some(ts);
+                match source {
+                    BeforeDateSource::Provided => {}
+                    BeforeDateSource::Explicit => self.before_date_from_default = false,
+                    BeforeDateSource::Default => self.before_date_from_default = true,
+                }
+            }
+            None => {
+                self.before_date = None;
+                self.before_date_from_default = false;
+            }
+        }
+        Ok(())
+    }
+
+    /// An explicit cutoff means fuzzy requests must resolve date-aware even
+    /// when an installed version matches; the built-in default must not force
+    /// that remote resolution.
+    fn filters_installed_versions(&self) -> bool {
+        self.before_date.is_some() && !self.before_date_from_default
     }
 }
 
@@ -694,7 +737,11 @@ impl Display for ResolveOptions {
             opts.push("use_locked_version".to_string());
         }
         if let Some(ts) = &self.before_date {
-            opts.push(format!("before_date={ts}"));
+            if self.before_date_from_default {
+                opts.push(format!("before_date={ts} (default)"));
+            } else {
+                opts.push(format!("before_date={ts}"));
+            }
         }
         if self.offline {
             opts.push("offline".to_string());
