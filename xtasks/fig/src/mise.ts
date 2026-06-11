@@ -3826,6 +3826,12 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--refresh",
+              description:
+                "[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire",
+              isRepeatable: false,
+            },
+            {
               name: "--unmask",
               description: "Show the full unmasked token",
               isRepeatable: false,
