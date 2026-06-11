@@ -898,7 +898,9 @@ pub fn lockfile_path_for_config(config_path: &Path) -> (PathBuf, bool) {
 ///
 /// Idiomatic version files are not config files themselves, so their lock entries
 /// belong to the nearest active mise config root that contains the version file.
-/// If multiple configs share that root, the highest-precedence config wins.
+/// If multiple base configs share that root, the later entry in config_files wins
+/// so colocated configs have a deterministic lockfile target, such as
+/// .mise/config.toml mapping .dummy-version to .mise/mise.lock instead of mise.lock.
 pub fn lockfile_path_for_tool_source(
     config: &Config,
     source: &ToolSource,
@@ -918,6 +920,7 @@ pub fn lockfile_path_for_tool_source(
                     (
                         root.components().count(),
                         is_base,
+                        // Tie-break same-root base configs by config_files order.
                         idx,
                         lockfile_path_for_config(config_path),
                     )

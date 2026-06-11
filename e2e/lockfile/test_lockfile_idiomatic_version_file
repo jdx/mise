@@ -48,6 +48,8 @@ idiomatic_version_file_enable_tools = ["dummy"]
 lockfile = true
 EOF
 
+# Keep mise.toml and .mise/config.toml together to verify that an idiomatic
+# .dummy-version maps to .mise/mise.lock instead of the root mise.lock.
 mkdir -p .mise
 cat <<'EOF' >.mise/config.toml
 [settings]
