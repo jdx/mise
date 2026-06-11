@@ -474,6 +474,19 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    /// Append a single argument to the command line *verbatim*, bypassing the
+    /// MSVCRT-style quoting std normally applies on Windows. Required when
+    /// spawning `cmd.exe /c <script>`: cmd does not understand the `\"`
+    /// escaping std would otherwise emit for inner double quotes, so the script
+    /// must reach cmd unquoted. See `TaskExecutor::get_cmd_program_and_args`
+    /// and discussion #9355.
+    #[cfg(windows)]
+    pub fn raw_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
+        use std::os::windows::process::CommandExt;
+        self.cmd.raw_arg(arg);
+        self
+    }
+
     pub fn with_pr(mut self, pr: &'a dyn SingleReport) -> Self {
         self.pr = Some(pr);
         self
