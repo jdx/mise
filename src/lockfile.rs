@@ -894,6 +894,38 @@ pub fn lockfile_path_for_config(config_path: &Path) -> (PathBuf, bool) {
     (lockfile_dir.join(lockfile_name), is_local)
 }
 
+/// Determines the lockfile path for a tool source.
+///
+/// Idiomatic version files are not config files themselves, so their lock entries
+/// belong to the nearest active mise config root that contains the version file.
+pub fn lockfile_path_for_tool_source(
+    config: &Config,
+    source: &ToolSource,
+) -> Option<(PathBuf, bool)> {
+    match source {
+        ToolSource::MiseToml(path) => Some(lockfile_path_for_config(path)),
+        ToolSource::IdiomaticVersionFile(path) => config
+            .config_files
+            .iter()
+            .filter(|(_, cf)| cf.source().is_mise_toml())
+            .filter_map(|(config_path, cf)| {
+                let root = cf.project_root().unwrap_or_else(|| cf.config_root());
+                let is_base = !is_local_config(config_path)
+                    && extract_env_from_config_path(config_path).is_none();
+                path.starts_with(&root).then(|| {
+                    (
+                        root.components().count(),
+                        is_base,
+                        lockfile_path_for_config(config_path),
+                    )
+                })
+            })
+            .max_by_key(|(root_depth, is_base, _)| (*root_depth, *is_base))
+            .map(|(_, _, lockfile)| lockfile),
+        _ => None,
+    }
+}
+
 /// Checks if a config path is a "local" config (should go to mise.local.lock)
 fn is_local_config(path: &Path) -> bool {
     let filename = path
@@ -1018,9 +1050,11 @@ pub fn update_lockfiles(
         // this update is written.
         let mut tool_versions_by_short: HashMap<String, Vec<ToolVersion>> = HashMap::new();
 
-        for config_path in &configs {
-            let tool_source = ToolSource::MiseToml(config_path.clone());
-            if let Some(tools) = tools_by_source.get(&tool_source) {
+        for (source, tools) in &tools_by_source {
+            let Some((source_lockfile, _)) = lockfile_path_for_tool_source(config, source) else {
+                continue;
+            };
+            if source_lockfile == lockfile_path {
                 for (short, tvl) in tools {
                     tool_versions_by_short
                         .entry(short.clone())
@@ -1031,8 +1065,10 @@ pub fn update_lockfiles(
         }
 
         for new_version in new_versions {
-            if let Some(source_path) = new_version.request.source().path() {
-                if !configs.iter().any(|config| config == source_path) {
+            if let Some((source_lockfile, _)) =
+                lockfile_path_for_tool_source(config, new_version.request.source())
+            {
+                if source_lockfile != lockfile_path {
                     continue;
                 }
 
@@ -1232,17 +1268,15 @@ fn check_provenance_regression(
 /// lockfile (existing entries are authoritative) apart from a fresh one whose only
 /// current-platform entry was just added by this install.
 pub fn snapshot_pre_install_platforms(
+    config: &Config,
     new_versions: &[ToolVersion],
 ) -> HashMap<PathBuf, BTreeSet<String>> {
     let mut result: HashMap<PathBuf, BTreeSet<String>> = HashMap::new();
     for tv in new_versions {
-        if !tv.request.source().is_mise_toml() {
-            continue;
-        }
-        let Some(source_path) = tv.request.source().path() else {
+        let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, tv.request.source())
+        else {
             continue;
         };
-        let (lockfile_path, _) = lockfile_path_for_config(source_path);
         if result.contains_key(&lockfile_path) {
             continue;
         }
@@ -1331,6 +1365,7 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform
 /// so the lockfile is complete and doesn't change when other developers on different
 /// platforms run `mise install`.
 pub async fn auto_lock_new_versions(
+    config: &Config,
     new_versions: &[ToolVersion],
     pre_install_platforms: &HashMap<PathBuf, BTreeSet<String>>,
     mode: LockfileUpdateMode,
@@ -1342,14 +1377,11 @@ pub async fn auto_lock_new_versions(
         return Ok(());
     }
 
-    // Group new_versions by lockfile path (only mise.toml sources, matching update_lockfiles)
+    // Group new_versions by lockfile path, matching update_lockfiles.
     let mut versions_by_lockfile: HashMap<PathBuf, Vec<&ToolVersion>> = HashMap::new();
     for tv in new_versions {
-        if !tv.request.source().is_mise_toml() {
-            continue;
-        }
-        if let Some(source_path) = tv.request.source().path() {
-            let (lockfile_path, _) = lockfile_path_for_config(source_path);
+        if let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, tv.request.source())
+        {
             versions_by_lockfile
                 .entry(lockfile_path)
                 .or_default()

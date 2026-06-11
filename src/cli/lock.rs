@@ -516,8 +516,9 @@ impl Lock {
 
         // First pass: tools from the resolved toolset whose source maps to this lockfile
         for (backend, tv) in ts.list_current_versions() {
-            if let Some(source_path) = tv.request.source().path() {
-                let (source_lockfile, _) = lockfile::lockfile_path_for_config(source_path);
+            if let Some((source_lockfile, _)) =
+                lockfile::lockfile_path_for_tool_source(config, tv.request.source())
+            {
                 if source_lockfile != target_lockfile_path {
                     continue;
                 }
