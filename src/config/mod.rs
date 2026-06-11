@@ -219,6 +219,8 @@ impl Config {
             }
         }
 
+        warn_if_auto_env_files_exist();
+
         time!("load done");
 
         measure!("config::load install_state", {
@@ -1023,24 +1025,32 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
 
     paths
 });
+/// Config filename patterns for a single MISE_ENV environment, in precedence order
+/// (later wins, matching LOCAL_CONFIG_FILENAMES ordering)
+fn env_config_patterns(env: &str) -> Vec<String> {
+    vec![
+        format!(".config/mise/config.{env}.toml"),
+        format!(".config/mise.{env}.toml"),
+        format!("mise/config.{env}.toml"),
+        format!("mise.{env}.toml"),
+        format!(".mise/config.{env}.toml"),
+        format!(".mise.{env}.toml"),
+        format!(".config/mise/config.{env}.local.toml"),
+        format!(".config/mise.{env}.local.toml"),
+        format!("mise/config.{env}.local.toml"),
+        format!("mise.{env}.local.toml"),
+        format!(".mise/config.{env}.local.toml"),
+        format!(".mise.{env}.local.toml"),
+    ]
+}
+
 pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     let mut filenames = LOCAL_CONFIG_FILENAMES
         .iter()
         .map(|f| f.to_string())
         .collect_vec();
-    for env in &*env::MISE_ENV {
-        filenames.push(format!(".config/mise/config.{env}.toml"));
-        filenames.push(format!(".config/mise.{env}.toml"));
-        filenames.push(format!("mise/config.{env}.toml"));
-        filenames.push(format!("mise.{env}.toml"));
-        filenames.push(format!(".mise/config.{env}.toml"));
-        filenames.push(format!(".mise.{env}.toml"));
-        filenames.push(format!(".config/mise/config.{env}.local.toml"));
-        filenames.push(format!(".config/mise.{env}.local.toml"));
-        filenames.push(format!("mise/config.{env}.local.toml"));
-        filenames.push(format!("mise.{env}.local.toml"));
-        filenames.push(format!(".mise/config.{env}.local.toml"));
-        filenames.push(format!(".mise.{env}.local.toml"));
+    for env in &*env::MISE_ENV_WITH_AUTO {
+        filenames.extend(env_config_patterns(env));
     }
     filenames
 });
@@ -1183,6 +1193,95 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
         .collect()
 }
 
+/// Whether to emit the phase-2 auto_env rollout warning. Pure for unit testing.
+/// Warns only when the user hasn't decided (setting unset), auto envs aren't
+/// already active, and the mise version is in the warning window that precedes
+/// the 2027.6.0 default flip.
+fn should_warn_auto_env(
+    version: &versions::Versioning,
+    setting: Option<bool>,
+    auto_envs_active: bool,
+) -> bool {
+    setting.is_none()
+        && !auto_envs_active
+        && *version >= versions::Versioning::new("2026.12.0").unwrap()
+        && !env::auto_env_default_for_version(version)
+}
+
+/// Phase-2 rollout warning for auto_env: starting with 2026.12.0, tell users about
+/// platform-specific config files (e.g. mise.windows.toml) that mise will begin
+/// loading automatically when auto_env defaults to true in 2027.6.0.
+fn warn_if_auto_env_files_exist() {
+    // dead code once the default flips on: the files load, so there is nothing to warn about
+    debug_assert!(
+        !env::auto_env_default_for_version(&version::V),
+        "auto_env is now default-on; remove warn_if_auto_env_files_exist() and should_warn_auto_env()"
+    );
+    if !should_warn_auto_env(
+        &version::V,
+        env::auto_env_setting(),
+        !env::AUTO_ENV_NAMES.is_empty(),
+    ) || *env::IS_RUNNING_AS_SHIM
+    {
+        return;
+    }
+    // skip hook-env to keep the every-prompt path free of extra filesystem checks
+    let args = env::ARGS.read().unwrap();
+    if args
+        .iter()
+        .take_while(|a| *a != "--")
+        .filter(|a| !a.starts_with('-'))
+        .nth(1)
+        .is_some_and(|a| a == "hook-env")
+    {
+        return;
+    }
+    drop(args);
+    let found = detect_auto_env_candidate_files();
+    if !found.is_empty() {
+        warn_once!(
+            "Found platform-specific config file(s) that mise will load automatically starting in 2027.6.0: {}. \
+            Set MISE_AUTO_ENV=true (or `auto_env = true` in .miserc.toml) to enable this now, \
+            or auto_env=false to keep the current behavior and silence this warning. \
+            See https://mise.jdx.dev/configuration/environments.html#platform-environments",
+            found.iter().map(display_path).join(", ")
+        );
+    }
+}
+
+/// Config files that exist on disk and would be loaded if auto_env were enabled,
+/// but are not loaded today because their platform env is not in MISE_ENV.
+fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
+    let candidate_envs = env::platform_env_names()
+        .into_iter()
+        .filter(|name| !env::MISE_ENV.contains(name))
+        .collect_vec();
+    let mut found = vec![];
+    for dir in all_dirs().unwrap_or_default() {
+        for env_name in &candidate_envs {
+            for pattern in env_config_patterns(env_name) {
+                found.extend(glob(&dir, &pattern).unwrap_or_default());
+            }
+        }
+    }
+    for dir in [*dirs::CONFIG, *dirs::SYSTEM_CONFIG] {
+        for env_name in &candidate_envs {
+            for filename in [
+                format!("config.{env_name}.toml"),
+                format!("mise.{env_name}.toml"),
+                format!("config.{env_name}.local.toml"),
+                format!("mise.{env_name}.local.toml"),
+            ] {
+                let p = dir.join(filename);
+                if p.is_file() {
+                    found.push(p);
+                }
+            }
+        }
+    }
+    found
+}
+
 /// Load config hierarchy from a specific directory (for monorepo tasks)
 /// This loads all config files from start_dir up through parent directories,
 /// including MISE_ENV-specific configs and idiomatic version files.
@@ -1296,13 +1395,13 @@ pub fn system_config_files() -> IndexSet<PathBuf> {
 
 static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     let mut filenames = vec!["config.toml".to_string(), "mise.toml".to_string()];
-    for env in &*env::MISE_ENV {
+    for env in &*env::MISE_ENV_WITH_AUTO {
         filenames.push(format!("config.{env}.toml"));
         filenames.push(format!("mise.{env}.toml"));
     }
     filenames.push("config.local.toml".to_string());
     filenames.push("mise.local.toml".to_string());
-    for env in &*env::MISE_ENV {
+    for env in &*env::MISE_ENV_WITH_AUTO {
         filenames.push(format!("config.{env}.local.toml"));
         filenames.push(format!("mise.{env}.local.toml"));
     }
@@ -2562,6 +2661,44 @@ mod tests {
     async fn test_load() {
         let config = Config::reset().await.unwrap();
         assert_debug_snapshot!(config);
+    }
+
+    #[test]
+    fn test_env_config_patterns() {
+        assert_eq!(
+            env_config_patterns("linux"),
+            vec![
+                ".config/mise/config.linux.toml",
+                ".config/mise.linux.toml",
+                "mise/config.linux.toml",
+                "mise.linux.toml",
+                ".mise/config.linux.toml",
+                ".mise.linux.toml",
+                ".config/mise/config.linux.local.toml",
+                ".config/mise.linux.local.toml",
+                "mise/config.linux.local.toml",
+                "mise.linux.local.toml",
+                ".mise/config.linux.local.toml",
+                ".mise.linux.local.toml",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_should_warn_auto_env() {
+        let v = |s: &str| versions::Versioning::new(s).unwrap();
+        // before the warning window: never warn
+        assert!(!should_warn_auto_env(&v("2026.6.2"), None, false));
+        // inside the warning window: warn only when the user hasn't decided
+        assert!(should_warn_auto_env(&v("2026.12.0"), None, false));
+        assert!(should_warn_auto_env(&v("2027.5.9"), None, false));
+        assert!(!should_warn_auto_env(&v("2026.12.0"), Some(false), false));
+        assert!(!should_warn_auto_env(&v("2026.12.0"), Some(true), true));
+        // auto envs already active (e.g. opted in): nothing to warn about
+        assert!(!should_warn_auto_env(&v("2026.12.0"), None, true));
+        // default flipped on: warning is obsolete
+        assert!(!should_warn_auto_env(&v("2027.6.0"), None, true));
+        assert!(!should_warn_auto_env(&v("2027.6.0"), Some(false), false));
     }
 
     #[tokio::test]

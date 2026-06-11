@@ -1638,11 +1638,13 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         seen_roots.insert(root.clone());
 
         // Read lockfiles in priority order (highest first):
-        // 1. mise.<env>.local.lock (if MISE_ENV is set)
+        // 1. mise.<env>.local.lock (explicit MISE_ENV, then auto platform envs)
         // 2. mise.local.lock
-        // 3. mise.<env>.lock (if MISE_ENV is set)
+        // 3. mise.<env>.lock (explicit MISE_ENV, then auto platform envs)
         // 4. mise.lock
-        for env_name in env::MISE_ENV.iter() {
+        // AUTO_ENV_NAMES is ordered least to most specific, so reverse it here
+        // to read the most specific (e.g. macos-arm64) first.
+        for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter().rev()) {
             let p = root.join(format!("mise.{env_name}.local.lock"));
             if let Ok(l) = Lockfile::read(&p) {
                 all.push(l);
@@ -1652,7 +1654,7 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         if let Ok(local) = Lockfile::read(&local_path) {
             all.push(local);
         }
-        for env_name in env::MISE_ENV.iter() {
+        for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter().rev()) {
             let p = root.join(format!("mise.{env_name}.lock"));
             if let Ok(l) = Lockfile::read(&p) {
                 all.push(l);

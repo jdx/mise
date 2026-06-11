@@ -257,6 +257,71 @@ pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
             .unwrap_or_default(),
     });
 pub static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
+
+/// The tri-state auto_env setting: MISE_AUTO_ENV env var > .miserc.toml > unset
+pub fn auto_env_setting() -> Option<bool> {
+    if var_is_true("MISE_AUTO_ENV") {
+        Some(true)
+    } else if var_is_false("MISE_AUTO_ENV") {
+        Some(false)
+    } else {
+        miserc::get_auto_env()
+    }
+}
+
+/// Default for auto_env when the setting is unset: off until mise 2027.6.0
+pub(crate) fn auto_env_default_for_version(v: &versions::Versioning) -> bool {
+    *v >= versions::Versioning::new("2027.6.0").unwrap()
+}
+
+/// Platform-derived environment names, regardless of whether auto_env is enabled.
+/// Ordered least to most specific: os family ("unix"), os, "{os}-{arch}".
+/// On Windows the family equals the os so it dedupes to ["windows", "windows-{arch}"].
+pub fn platform_env_names() -> Vec<String> {
+    let mut names: Vec<String> = vec![];
+    for name in [
+        consts::FAMILY.to_string(),
+        crate::cli::version::OS.to_string(),
+        format!(
+            "{}-{}",
+            *crate::cli::version::OS,
+            *crate::cli::version::ARCH
+        ),
+    ] {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+/// Platform environments active for config file discovery and lockfile selection.
+/// Empty unless auto_env is enabled. Names already in MISE_ENV are excluded so
+/// explicit environments keep their user-specified (higher) precedence.
+/// These are deliberately not part of MISE_ENV: they do not affect the
+/// `{{ mise_env }}` template variable or MISE_ENV propagation to subprocesses.
+pub static AUTO_ENV_NAMES: Lazy<Vec<String>> = Lazy::new(|| {
+    let enabled =
+        auto_env_setting().unwrap_or_else(|| auto_env_default_for_version(&crate::cli::version::V));
+    if !enabled {
+        return vec![];
+    }
+    platform_env_names()
+        .into_iter()
+        .filter(|name| !MISE_ENV.contains(name))
+        .collect()
+});
+
+/// Auto platform envs followed by explicit MISE_ENV entries, for "later wins"
+/// consumers like config filename enumeration.
+pub static MISE_ENV_WITH_AUTO: Lazy<Vec<String>> = Lazy::new(|| {
+    AUTO_ENV_NAMES
+        .iter()
+        .chain(MISE_ENV.iter())
+        .cloned()
+        .collect()
+});
+
 pub static MISE_GLOBAL_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_GLOBAL_CONFIG_FILE").or_else(|| var_path("MISE_CONFIG_FILE")));
 pub static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
@@ -873,6 +938,47 @@ mod tests {
             PathBuf::from("/foo/bar")
         );
         remove_var("MISE_TEST_PATH");
+    }
+
+    #[test]
+    fn test_auto_env_default_for_version() {
+        let v = |s: &str| versions::Versioning::new(s).unwrap();
+        assert!(!auto_env_default_for_version(&v("2026.6.2")));
+        assert!(!auto_env_default_for_version(&v("2026.12.0")));
+        assert!(!auto_env_default_for_version(&v("2027.5.9")));
+        assert!(auto_env_default_for_version(&v("2027.6.0")));
+        assert!(auto_env_default_for_version(&v("2028.1.0")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_platform_env_names_unix() {
+        let names = platform_env_names();
+        assert_eq!(names.len(), 3);
+        assert_eq!(names[0], "unix");
+        assert_eq!(names[1], *crate::cli::version::OS);
+        assert_eq!(
+            names[2],
+            format!(
+                "{}-{}",
+                *crate::cli::version::OS,
+                *crate::cli::version::ARCH
+            )
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_platform_env_names_windows() {
+        // os family == os on windows, so the list dedupes to two entries
+        let names = platform_env_names();
+        assert_eq!(
+            names,
+            vec![
+                "windows".to_string(),
+                format!("windows-{}", *crate::cli::version::ARCH)
+            ]
+        );
     }
 
     #[cfg(unix)]

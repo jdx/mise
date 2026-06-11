@@ -211,6 +211,36 @@ env = "MISE_ASDF_COMPAT"
 hide = true
 type = "Bool"
 
+[auto_env]
+description = "Automatically enable platform config environments (unix, {os}, {os}-{arch})."
+docs = """
+When enabled, mise treats the following as active config environments (in addition
+to any explicit `MISE_ENV`): `unix` (on unix-family platforms), the OS name
+(`linux`/`macos`/`windows`), and `{os}-{arch}` (e.g. `macos-arm64`, `windows-x64`,
+using mise's remapped arch names: `x86_64` -> `x64`, `aarch64` -> `arm64`).
+
+This causes config files such as `mise.windows.toml`, `mise/config.macos-arm64.toml`,
+or `mise.unix.toml` to be loaded automatically, and matching `mise.<env>.lock`
+lockfiles to be selected. Platform environments have lower precedence than explicit
+`MISE_ENV` entries; the full precedence order is `unix` < `{os}` < `{os}-{arch}` <
+explicit `MISE_ENV` entries. Platform environments do not affect the
+`{{ mise_env }}` template variable or the `MISE_ENV` variable passed to subprocesses.
+
+When unset, this currently defaults to `false`. Starting with mise 2027.6.0 it will
+default to `true`; set it to `false` to keep the old behavior, or `true` to adopt
+the new behavior early.
+
+This is an early-init setting: it must be set in `.miserc.toml` or via the
+`MISE_AUTO_ENV` environment variable. Setting it in `mise.toml` will have no effect
+because config file discovery has already occurred by the time `mise.toml` is read.
+
+See [Configuration Environments](/configuration/environments.html) for more details.
+"""
+env = "MISE_AUTO_ENV"
+optional = true
+rc = true
+type = "Bool"
+
 [auto_install]
 default = true
 description = "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler."
