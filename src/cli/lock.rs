@@ -551,11 +551,16 @@ impl Lock {
         // Second pass: iterate config files matching this lockfile to catch
         // tools that were overridden by a higher-priority config
         for (path, cf) in config.config_files.iter() {
-            if !config_paths_set.contains(path) {
+            let source = cf.source();
+            let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
+                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
+            if !config_paths_set.contains(path)
+                && !(source.is_idiomatic_version_file() && source_lockfile_matches)
+            {
                 continue;
             }
             if let Ok(trs) = cf.to_tool_request_set() {
-                for (ba, requests, _source) in trs.iter() {
+                for (ba, requests, source) in trs.iter() {
                     for request in requests {
                         if ba.backend().is_ok() {
                             // Check if the resolved toolset has a matching request.
@@ -574,11 +579,13 @@ impl Lock {
                                     }
                                 }
                             }
-                            // Resolve overridden `latest` requests through the same path as
-                            // active tools. When an install-before cutoff is active, bypass
-                            // installed-version selection so the fallback still uses release
-                            // dates from the remote version metadata.
-                            if !matched_resolved && request.version() == "latest" {
+                            // Resolve overridden requests through the same path as active
+                            // tools when the request cannot be copied from the resolved
+                            // toolset. Keep this broad only for idiomatic version files;
+                            // other sources preserve the previous latest-only behavior.
+                            let should_resolve_overridden =
+                                request.version() == "latest" || source.is_idiomatic_version_file();
+                            if !matched_resolved && should_resolve_overridden {
                                 let mut resolve_options = match request
                                     .resolve_options(base_resolve_options)
                                 {

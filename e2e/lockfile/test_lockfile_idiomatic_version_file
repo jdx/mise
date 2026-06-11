@@ -29,6 +29,23 @@ cat <<'EOF' >mise.toml
 [settings]
 idiomatic_version_file_enable_tools = ["dummy"]
 lockfile = true
+
+[tools]
+dummy = "2"
+EOF
+
+echo "1" >.dummy-version
+
+output=$(mise lock --dry-run --platform "$PLATFORM" 2>&1)
+assert_contains "echo '$output'" "dummy@1.1.0"
+assert_contains "echo '$output'" "dummy@2.0.0"
+
+rm -f mise.toml .dummy-version
+
+cat <<'EOF' >mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+lockfile = true
 EOF
 
 echo "1" >.dummy-version
