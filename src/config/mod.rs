@@ -1244,7 +1244,7 @@ fn warn_if_auto_env_files_exist() {
         warn_once!(
             "Found platform-specific config file(s) that mise will load automatically starting in 2027.6.0: {}. \
             Set MISE_AUTO_ENV=true (or `auto_env = true` in .miserc.toml) to enable this now, \
-            or auto_env=false to keep the current behavior and silence this warning. \
+            or `auto_env = false` to keep the current behavior and silence this warning. \
             See https://mise.jdx.dev/configuration/environments.html#platform-environments",
             found.iter().map(display_path).join(", ")
         );

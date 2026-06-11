@@ -25,9 +25,11 @@ echo 'env.AAA = "prod"' >mise.prod.toml
 # default: off, platform configs are not loaded
 assert "mise env --json | jq -r .AAA" "base"
 
-# no rollout warning at the current version (this assertion flips when the
-# phase-2 warning activates in 2026.12.0 — see warn_if_auto_env_files_exist)
-assert_not_contains "mise env 2>&1" "load automatically"
+# the rollout warning never fires once the user has set auto_env explicitly,
+# regardless of the phase the current version is in (the version-gated unset
+# case is covered by the should_warn_auto_env unit tests)
+assert_not_contains "MISE_AUTO_ENV=false mise env 2>&1" "load automatically"
+assert_not_contains "MISE_AUTO_ENV=true mise env 2>&1" "load automatically"
 
 # opt in: all platform configs load, most specific wins (unix < os < os-arch)
 MISE_AUTO_ENV=true assert "mise env --json | jq -r .AAA" "$os-$arch"
