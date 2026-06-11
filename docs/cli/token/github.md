@@ -24,6 +24,10 @@ GitHub hostname
 
 Print only the token value
 
+### `--refresh`
+
+[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
+
 ### `--unmask`
 
 Show the full unmasked token
@@ -39,4 +43,7 @@ github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
 
 $ mise token github github.mycompany.com
 github.mycompany.com: (none)
+
+$ mise token github --oauth --refresh
+github.com: gho_…xxxx (source: GitHub OAuth)
 ```
