@@ -1294,8 +1294,9 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
     found
         .into_iter()
         .filter(|p| {
-            !is_default_config_dir_override_filtered(p)
-                && !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
+            !(is_default_config_dir_override_filtered(p)
+                || config_file::is_ignored(&config_trust_root(p))
+                || config_file::is_ignored(p))
         })
         .collect()
 }
