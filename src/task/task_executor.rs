@@ -910,18 +910,28 @@ impl TaskExecutor {
                 let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], script, args);
                 return Ok((shell[0].clone(), cmd_args, true));
             }
-            full_args.push(script.to_string());
-            full_args.extend(args.iter().cloned());
+            // Non-POSIX, non-cmd shells (e.g. `pwsh -Command`) use a different
+            // quoting convention than `shell_words` (which is POSIX), so keep
+            // passing their forwarded args as separate argv. Only POSIX shells
+            // (`bash -c`, `sh -c`, …) fall through to the shared append below.
+            if !crate::path::is_posix_shell_program(Path::new(&shell[0])) {
+                full_args.push(script.to_string());
+                full_args.extend(args.iter().cloned());
+                return Ok((full_args[0].clone(), full_args[1..].to_vec(), false));
+            }
         }
 
-        #[cfg(unix)]
-        {
-            let mut script = script.to_string();
-            if !args.is_empty() {
-                script = format!("{script} {}", shell_words::join(args));
-            }
-            full_args.push(script);
+        // Shared (Unix, and Windows POSIX shells like `bash -c`): append the
+        // forwarded args to the command string so they reach an inline `-c` shell
+        // as part of the command — the documented behavior for inline TOML
+        // scripts — rather than as positional parameters. Passing them as separate
+        // argv to `bash -c` on Windows shifted the user's first arg into `$0`.
+        // See #9355.
+        let mut script = script.to_string();
+        if !args.is_empty() {
+            script = format!("{script} {}", shell_words::join(args));
         }
+        full_args.push(script);
         Ok((full_args[0].clone(), full_args[1..].to_vec(), false))
     }
 
