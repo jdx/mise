@@ -7375,12 +7375,22 @@ packages:
           - darwin/arm64
           - linux/amd64
           - windows
-      - version_constraint: "true"
+      - version_constraint: semver("< 0.14.0.2224")
         url: https://binaries.sonarsource.com/Distribution/sonarqube-cli/{{.Version}}/{{.OS}}/sonarqube-cli-{{.Version}}-{{.OS}}-{{.Arch}}.exe
         format: raw
         replacements:
           darwin: macos
           amd64: x86-64
+      - version_constraint: "true"
+        url: https://binaries.sonarsource.com/Distribution/sonarqube-cli/{{.Version}}/{{.OS}}/sonarqube-cli-{{.Version}}-{{.OS}}-{{.Arch}}.bin
+        format: raw
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          amd64: x86-64
+        overrides:
+          - goos: windows
+            url: https://binaries.sonarsource.com/Distribution/sonarqube-cli/{{.Version}}/{{.OS}}/sonarqube-cli-{{.Version}}-{{.OS}}-{{.Arch}}.exe
   - type: github_release
     repo_owner: Songmu
     repo_name: ecschedule
@@ -93621,6 +93631,18 @@ packages:
       - vue
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 0.106.0")
+        asset: vize-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: vize-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -93633,6 +93655,15 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.cosign.bundle"
+          opts:
+            - --certificate-identity
+            - https://github.com/ubugeeei-prod/vize/.github/workflows/release.yml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: umlx5h
     repo_name: gtrash
