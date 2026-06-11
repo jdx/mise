@@ -9651,9 +9651,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "3.4.0"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "188a4fb4ad9e81729867ebb83ccbc06f850a06362c2467eea0f268fe4f6df609"
+checksum = "bc055ae0a824bf9e409ee8e175ec224d5e1b79325557f51967eea0f103e5dc03"
 dependencies = [
  "clap",
  "heck",
