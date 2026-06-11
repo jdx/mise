@@ -1553,10 +1553,13 @@ pub trait Backend: Debug + Send + Sync {
         query: Option<String>,
     ) -> eyre::Result<Option<String>> {
         let resolved_query = query.as_deref().unwrap_or("latest");
-        if resolved_query == "latest"
-            && let Some(version) = self.latest_stable_version(config).await?
-        {
-            return Ok(Some(version));
+        if resolved_query == "latest" {
+            if let Some(info) = self.latest_stable_version_info(config).await? {
+                return Ok(Some(info.version));
+            }
+            if let Some(version) = self.latest_stable_version(config).await? {
+                return Ok(Some(version));
+            }
         }
         self.latest_version_for_query(config, resolved_query, None, false)
             .await
@@ -2605,6 +2608,10 @@ mod latest_version_tests {
             self.stable_calls.load(Ordering::SeqCst)
         }
 
+        fn stable_info_calls(&self) -> usize {
+            self.stable_info_calls.load(Ordering::SeqCst)
+        }
+
         fn list_calls(&self) -> usize {
             self.list_calls.load(Ordering::SeqCst)
         }
@@ -2779,6 +2786,36 @@ mod latest_version_tests {
         );
         assert_eq!(backend.stable_calls(), 0);
         assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_unfiltered_latest_uses_stable_info_when_version_list_is_stale() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-unfiltered-latest-stale-metadata").with_stable_info(
+            VersionInfo {
+                version: "3.0.0".to_string(),
+                created_at: Some("2026-01-01".to_string()),
+                ..Default::default()
+            },
+        );
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version_unfiltered(&config, Some("latest".to_string()))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
+        );
+        assert_eq!(backend.stable_info_calls(), 1);
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 0);
     }
 
     #[tokio::test]
