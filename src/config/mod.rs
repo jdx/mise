@@ -1256,7 +1256,9 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
         .into_iter()
         .filter(|name| !env::MISE_ENV.contains(name))
         .collect_vec();
-    let mut found = vec![];
+    // IndexSet: the all_dirs() walk and the global/system dir checks can find the
+    // same file (e.g. ~/.config/mise/config.{env}.toml when cwd is under $HOME)
+    let mut found = IndexSet::new();
     for dir in all_dirs().unwrap_or_default() {
         for env_name in &candidate_envs {
             for pattern in env_config_patterns(env_name) {
@@ -1274,12 +1276,12 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
             ] {
                 let p = dir.join(filename);
                 if p.is_file() {
-                    found.push(p);
+                    found.insert(p);
                 }
             }
         }
     }
-    found
+    found.into_iter().collect()
 }
 
 /// Load config hierarchy from a specific directory (for monorepo tasks)
