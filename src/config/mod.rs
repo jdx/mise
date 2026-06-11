@@ -1742,7 +1742,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     let pre_install_platforms = if new_versions.is_empty() {
         Default::default()
     } else {
-        lockfile::snapshot_pre_install_platforms(new_versions)
+        lockfile::snapshot_pre_install_platforms(config, new_versions)
     };
     measure!("updating lockfiles", {
         lockfile::update_lockfiles(config, ts, new_versions, lockfile_update_mode)
@@ -1751,6 +1751,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     if !new_versions.is_empty() {
         measure!("auto-locking platforms", {
             lockfile::auto_lock_new_versions(
+                config,
                 new_versions,
                 &pre_install_platforms,
                 lockfile_update_mode,
