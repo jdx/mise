@@ -522,6 +522,11 @@ impl Lock {
                 if source_lockfile != target_lockfile_path {
                     continue;
                 }
+            } else if tv.request.source().path().is_some() {
+                // Path-backed sources that do not map to a mise lockfile, such
+                // as .tool-versions and tool stubs, should not be folded into
+                // an arbitrary project mise.lock.
+                continue;
             } else {
                 // Tools without a source path (env vars, CLI args) go to mise.lock only
                 let is_base_lockfile = target_lockfile_path

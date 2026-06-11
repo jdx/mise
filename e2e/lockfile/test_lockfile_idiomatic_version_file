@@ -39,3 +39,5 @@ mise install dummy
 assert_contains "cat mise.lock" '[[tools.dummy]]'
 assert_contains "cat mise.lock" 'backend = "asdf:dummy"'
 assert "mise install --locked --dry-run dummy >/dev/null 2>&1"
+
+rm -f mise.toml mise.lock .dummy-version

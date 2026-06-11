@@ -1029,17 +1029,11 @@ pub fn update_lockfiles(
     // Process each lockfile, deferring provenance errors until all lockfiles are saved.
     let mut provenance_errors: Vec<String> = Vec::new();
 
-    for (lockfile_path, configs) in lockfile_configs {
+    for (lockfile_path, _configs) in lockfile_configs {
         // Only update existing lockfiles - creation is done elsewhere (e.g., by `mise lock`)
         if !lockfile_path.exists() {
             continue;
         }
-
-        trace!(
-            "updating lockfile {} from {} config files",
-            display_path(&lockfile_path),
-            configs.len()
-        );
 
         let mut existing_lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
@@ -1049,12 +1043,14 @@ pub fn update_lockfiles(
         // fuzzy request may still resolve through the old lockfile entry until
         // this update is written.
         let mut tool_versions_by_short: HashMap<String, Vec<ToolVersion>> = HashMap::new();
+        let mut contributing_sources = 0;
 
         for (source, tools) in &tools_by_source {
             let Some((source_lockfile, _)) = lockfile_path_for_tool_source(config, source) else {
                 continue;
             };
             if source_lockfile == lockfile_path {
+                contributing_sources += 1;
                 for (short, tvl) in tools {
                     tool_versions_by_short
                         .entry(short.clone())
@@ -1063,6 +1059,12 @@ pub fn update_lockfiles(
                 }
             }
         }
+
+        trace!(
+            "updating lockfile {} from {} source(s)",
+            display_path(&lockfile_path),
+            contributing_sources
+        );
 
         for new_version in new_versions {
             if let Some((source_lockfile, _)) =
