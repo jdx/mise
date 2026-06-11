@@ -898,6 +898,7 @@ pub fn lockfile_path_for_config(config_path: &Path) -> (PathBuf, bool) {
 ///
 /// Idiomatic version files are not config files themselves, so their lock entries
 /// belong to the nearest active mise config root that contains the version file.
+/// If multiple configs share that root, the highest-precedence config wins.
 pub fn lockfile_path_for_tool_source(
     config: &Config,
     source: &ToolSource,
@@ -907,8 +908,9 @@ pub fn lockfile_path_for_tool_source(
         ToolSource::IdiomaticVersionFile(path) => config
             .config_files
             .iter()
-            .filter(|(_, cf)| cf.source().is_mise_toml())
-            .filter_map(|(config_path, cf)| {
+            .enumerate()
+            .filter(|(_, (_, cf))| cf.source().is_mise_toml())
+            .filter_map(|(idx, (config_path, cf))| {
                 let root = cf.project_root().unwrap_or_else(|| cf.config_root());
                 let is_base = !is_local_config(config_path)
                     && extract_env_from_config_path(config_path).is_none();
@@ -916,12 +918,13 @@ pub fn lockfile_path_for_tool_source(
                     (
                         root.components().count(),
                         is_base,
+                        idx,
                         lockfile_path_for_config(config_path),
                     )
                 })
             })
-            .max_by_key(|(root_depth, is_base, _)| (*root_depth, *is_base))
-            .map(|(_, _, lockfile)| lockfile),
+            .max_by_key(|(root_depth, is_base, idx, _)| (*root_depth, *is_base, *idx))
+            .map(|(_, _, _, lockfile)| lockfile),
         _ => None,
     }
 }
