@@ -9,6 +9,7 @@ full = "http:openshift-install"
 bin = "openshift-install"
 version_list_url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/"
 version_regex = 'href="(\d+\.\d+\.\d+)/"'
+version_expr = 'sortVersions(versions)'
 
 [backends.options.platforms.linux-x64]
 url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/openshift-install-linux-{{ version }}.tar.gz"
