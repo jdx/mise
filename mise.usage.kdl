@@ -1007,6 +1007,7 @@ Examples:
 """#
         flag --oauth help="Force native GitHub OAuth device flow instead of normal token resolution"
         flag --raw help="Print only the token value"
+        flag --refresh help="[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
@@ -3272,9 +3273,13 @@ Examples:
     $ mise token github github.mycompany.com
     github.mycompany.com: (none)
 
+    $ mise token github --oauth --refresh
+    github.com: gho_…xxxx (source: GitHub OAuth)
+
 """#
         flag --oauth help="[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources"
         flag --raw help="Print only the token value"
+        flag --refresh help="[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }

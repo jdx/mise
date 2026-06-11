@@ -3146,6 +3146,9 @@ GitHub token
 \fB\-\-raw\fR
 Print only the token value
 .TP
+\fB\-\-refresh\fR
+[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh\-token grant or a new device\-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
+.TP
 \fB\-\-unmask\fR
 Show the full unmasked token
 \fBArguments:\fR
