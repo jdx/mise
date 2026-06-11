@@ -371,8 +371,7 @@ async fn get_release_with_options(
     tag: &str,
     use_versions_host: bool,
 ) -> Result<GithubRelease> {
-    if use_versions_host
-        && is_public_github_api_base(api_url)
+    if can_use_versions_host_for_release_metadata(api_url, tag, use_versions_host)
         && let Ok(Some(release)) = crate::versions_host::github_release(repo, tag).await
     {
         trace!("got GitHub release {repo}@{tag} from mise-versions");
@@ -392,6 +391,19 @@ async fn get_release_with_options(
 
 fn is_public_github_api_base(api_url: &str) -> bool {
     api_url.trim_end_matches('/') == API_URL
+}
+
+fn can_use_versions_host_for_release_metadata(
+    api_url: &str,
+    tag: &str,
+    use_versions_host: bool,
+) -> bool {
+    use_versions_host
+        && is_public_github_api_base(api_url)
+        // The versions-host release metadata endpoint uses the tag as a path segment.
+        // Tags containing `/` currently 400 at the service boundary, so skip the
+        // lookup and fall back directly to the GitHub API.
+        && !tag.contains('/')
 }
 
 fn next_page(headers: &HeaderMap) -> Option<String> {
@@ -900,6 +912,30 @@ something_else = "value"
         let releases = vec![make_release("3.3.10"), make_release("3.3.10-1")];
         let best = pick_best_build_revision(releases, "3.3.11");
         assert!(best.is_none());
+    }
+
+    #[test]
+    fn test_can_use_versions_host_for_release_metadata() {
+        assert!(can_use_versions_host_for_release_metadata(
+            "https://api.github.com",
+            "v1.0.0",
+            true
+        ));
+        assert!(!can_use_versions_host_for_release_metadata(
+            "https://api.github.com",
+            "@biomejs/biome@2.4.16",
+            true
+        ));
+        assert!(!can_use_versions_host_for_release_metadata(
+            "https://ghe.example.com/api/v3",
+            "v1.0.0",
+            true
+        ));
+        assert!(!can_use_versions_host_for_release_metadata(
+            "https://api.github.com",
+            "v1.0.0",
+            false
+        ));
     }
 
     #[test]
