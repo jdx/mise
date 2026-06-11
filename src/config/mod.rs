@@ -1260,6 +1260,12 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
     // same file (e.g. ~/.config/mise/config.{env}.toml when cwd is under $HOME)
     let mut found = IndexSet::new();
     for dir in all_dirs().unwrap_or_default() {
+        if env::MISE_IGNORED_CONFIG_PATHS
+            .iter()
+            .any(|p| dir.starts_with(p))
+        {
+            continue;
+        }
         for env_name in &candidate_envs {
             for pattern in env_config_patterns(env_name) {
                 found.extend(glob(&dir, &pattern).unwrap_or_default());
@@ -1281,7 +1287,15 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
             }
         }
     }
-    found.into_iter().collect()
+    // apply the same filters as load_config_paths so we don't warn about files
+    // that wouldn't be loaded even with auto_env enabled
+    found
+        .into_iter()
+        .filter(|p| {
+            !is_default_config_dir_override_filtered(p)
+                && !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
+        })
+        .collect()
 }
 
 /// Load config hierarchy from a specific directory (for monorepo tasks)
