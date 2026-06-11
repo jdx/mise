@@ -1225,18 +1225,20 @@ fn warn_if_auto_env_files_exist() {
     {
         return;
     }
-    // skip hook-env to keep the every-prompt path free of extra filesystem checks
-    let args = env::ARGS.read().unwrap();
-    if args
+    // Skip hook-env to keep the every-prompt path free of extra filesystem checks.
+    // Match the subcommand anywhere before `--` rather than guessing its positional
+    // slot (flags with separate values like `--cd /path` would shift it); the warning
+    // is advisory, so erring toward skipping it is the safe direction.
+    if env::ARGS
+        .read()
+        .unwrap()
         .iter()
+        .skip(1)
         .take_while(|a| *a != "--")
-        .filter(|a| !a.starts_with('-'))
-        .nth(1)
-        .is_some_and(|a| a == "hook-env")
+        .any(|a| a == "hook-env")
     {
         return;
     }
-    drop(args);
     let found = detect_auto_env_candidate_files();
     if !found.is_empty() {
         warn_once!(
