@@ -1907,8 +1907,10 @@ async fn load_local_tasks_with_context(
                     if !found_config {
                         let includes = task_includes_for_dir(&subdir, &config.config_files)?;
                         for include in includes {
-                            let mut subdir_tasks =
-                                load_tasks_includes(&config, &include, &subdir, &None).await?;
+                            let mut subdir_tasks = load_tasks_includes(
+                                &config, &include, &subdir, &None, &templates,
+                            )
+                            .await?;
                             if is_global_task_include_path(&include) {
                                 mark_tasks_as_global(&mut subdir_tasks);
                             }
@@ -2209,7 +2211,7 @@ async fn load_config_and_file_tasks(
 ) -> Result<Vec<Task>> {
     let config_root = cf.config_root();
     let config_tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
-    let file_tasks = load_file_tasks(config, cf.clone(), &config_root).await?;
+    let file_tasks = load_file_tasks(config, cf.clone(), &config_root, templates).await?;
     Ok(merge_file_and_config_tasks(file_tasks, config_tasks))
 }
 
@@ -2277,9 +2279,10 @@ async fn load_tasks_includes(
     root: &Path,
     config_root: &Path,
     task_config_dir: &Option<String>,
+    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
-        load_task_file(config, root, config_root, task_config_dir).await
+        load_task_file(config, root, config_root, task_config_dir, templates).await
     } else if root.is_dir() {
         let all_files = WalkDir::new(root)
             .follow_links(true)
@@ -2305,7 +2308,9 @@ async fn load_tasks_includes(
             .partition(|p| is_toml(p));
         let mut tasks = vec![];
         for path in toml_files {
-            tasks.extend(load_task_file(config, &path, config_root, task_config_dir).await?);
+            tasks.extend(
+                load_task_file(config, &path, config_root, task_config_dir, templates).await?,
+            );
         }
         let root = Arc::new(root.to_path_buf());
         let config_root = Arc::new(config_root.to_path_buf());
@@ -2395,6 +2400,7 @@ async fn load_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
+    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let includes = cf
         .task_config_includes()?
@@ -2413,7 +2419,8 @@ async fn load_file_tasks(
         };
         for path in paths {
             let mut loaded =
-                load_tasks_includes(config, &path, &config_root, &task_config_dir).await?;
+                load_tasks_includes(config, &path, &config_root, &task_config_dir, templates)
+                    .await?;
             if is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
@@ -2492,7 +2499,8 @@ pub async fn load_tasks_in_dir(
             expand_task_include(&resolve_dir, include)
         };
         for p in paths {
-            let mut loaded = load_tasks_includes(config, &p, dir, &task_config_dir).await?;
+            let mut loaded =
+                load_tasks_includes(config, &p, dir, &task_config_dir, templates).await?;
             if is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
             }
@@ -2520,6 +2528,7 @@ async fn load_task_file(
     path: &Path,
     config_root: &Path,
     task_config_dir: &Option<String>,
+    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
     let mut tasks = toml::from_str::<Tasks>(&raw)
@@ -2536,6 +2545,7 @@ async fn load_task_file(
     let mut out = vec![];
     for (_, mut task) in tasks {
         let config_root = config_root.to_path_buf();
+        resolve_task_template(&mut task, templates)?;
         if let Err(err) = task.render(config, &config_root).await {
             warn!("rendering task: {err:?}");
         }
@@ -2999,7 +3009,14 @@ vars = { target = "linux" }
 "#,
         )?;
 
-        let tasks = load_task_file(&config, &tasks_toml, temp_dir.path(), &None).await?;
+        let tasks = load_task_file(
+            &config,
+            &tasks_toml,
+            temp_dir.path(),
+            &None,
+            &IndexMap::new(),
+        )
+        .await?;
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "build");
         assert_eq!(tasks[0].description, "linux");
