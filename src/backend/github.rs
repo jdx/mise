@@ -362,7 +362,10 @@ impl Backend for UnifiedGitBackend {
         Ok(versions)
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+    async fn latest_stable_version_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Option<VersionInfo>> {
         if Settings::get().offline() {
             trace!("Skipping latest stable version due to offline mode");
             return Ok(None);
@@ -383,12 +386,12 @@ impl Backend for UnifiedGitBackend {
             return Ok(None);
         }
 
-        let latest_tag = if self.is_gitlab() {
+        let latest_release = if self.is_gitlab() {
             // GitLab doesn't have a "latest" endpoint
             return Ok(None);
         } else if self.is_forgejo() {
             match forgejo::get_release_for_url(&api_url, &repo, "latest").await {
-                Ok(r) => Some(r.tag_name),
+                Ok(r) => Some((r.tag_name, r.created_at, r.prerelease)),
                 Err(e) => {
                     debug!("Failed to fetch latest Forgejo release for {repo}: {e}");
                     None
@@ -399,7 +402,7 @@ impl Backend for UnifiedGitBackend {
                 .get_github_release_for_url(&api_url, &repo, "latest")
                 .await
             {
-                Ok(r) => Some(r.tag_name),
+                Ok(r) => Some((r.tag_name, r.created_at, r.prerelease)),
                 Err(e) => {
                     debug!("Failed to fetch latest GitHub release for {repo}: {e}");
                     None
@@ -407,14 +410,14 @@ impl Backend for UnifiedGitBackend {
             }
         };
 
-        let latest_version = latest_tag
-            .filter(|tag| version_prefix.is_none_or(|p| tag.starts_with(p)))
-            .map(|tag| self.strip_version_prefix(&tag, &opts));
-
-        match latest_version {
-            Some(version) => Ok(Some(version)),
-            None => Ok(None),
-        }
+        Ok(latest_release
+            .filter(|(tag, _, _)| version_prefix.is_none_or(|p| tag.starts_with(p)))
+            .map(|(tag, created_at, prerelease)| VersionInfo {
+                version: self.strip_version_prefix(&tag, &opts),
+                created_at: Some(created_at),
+                prerelease,
+                ..Default::default()
+            }))
     }
 
     async fn resolve_exact_version(

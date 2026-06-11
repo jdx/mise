@@ -7,7 +7,7 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::config::{Config, Settings};
-use crate::duration::parse_into_timestamp;
+use crate::duration::{parse_duration, parse_into_timestamp};
 
 const DEFAULT_MINIMUM_RELEASE_AGE: &str = "24h";
 
@@ -55,9 +55,15 @@ fn resolve_before_date_with_excludes(
         return Ok(Some(before_date));
     }
     if let Some(before) = minimum_release_age {
+        if parse_duration(before).is_ok_and(|duration| duration.is_zero()) {
+            return Ok(None);
+        }
         return Ok(Some(parse_into_timestamp(before)?));
     }
     if !excluded && let Some(before) = &Settings::get().minimum_release_age {
+        if parse_duration(before).is_ok_and(|duration| duration.is_zero()) {
+            return Ok(None);
+        }
         return Ok(Some(parse_into_timestamp(before)?));
     }
     if !excluded && backend_arg.is_some_and(default_minimum_release_age_applies) {
@@ -174,6 +180,18 @@ mod tests {
             resolved_timestamp(None, Some("2024-01-02")),
             Some(crate::duration::parse_into_timestamp("2024-01-02").unwrap())
         );
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_zero_minimum_release_age_disables_cutoff() {
+        Settings::reset(None);
+        assert_eq!(resolved_timestamp(None, Some("0s")), None);
+
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age = Some("0s".to_string());
+        Settings::reset(Some(partial));
+        assert_eq!(resolved_tool_timestamp("github:cli/cli", None, None), None);
         Settings::reset(None);
     }
 
