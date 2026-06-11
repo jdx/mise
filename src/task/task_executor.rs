@@ -845,8 +845,10 @@ impl TaskExecutor {
             self.exec_with_text_file_busy_retry(&file, args, task, env, prefix)
                 .await
         } else {
-            let (program, args) = self.get_cmd_program_and_args(script, task, args)?;
-            self.exec_program(&program, &args, task, env, prefix).await
+            let (program, args, cmd_verbatim) =
+                self.get_cmd_program_and_args(script, task, args)?;
+            self.exec_program(&program, &args, task, env, prefix, cmd_verbatim)
+                .await
         }
     }
 
@@ -874,18 +876,40 @@ impl TaskExecutor {
         Ok((shell[0].clone(), full_args[1..].to_vec()))
     }
 
+    /// Build the `(program, args, cmd_verbatim)` for an inline script. When
+    /// `cmd_verbatim` is true (Windows + a `cmd.exe` inline shell), `args` are
+    /// already wrapped for cmd and must be appended to the command line
+    /// verbatim (via `CmdLineRunner::raw_arg`) rather than through std's
+    /// MSVCRT-style quoting — see the windows branch below and discussion #9355.
     fn get_cmd_program_and_args(
         &self,
         script: &str,
         task: &Task,
         args: &[String],
-    ) -> Result<(String, Vec<String>)> {
+    ) -> Result<(String, Vec<String>, bool)> {
         let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
 
         #[cfg(windows)]
         {
+            // When the inline shell is cmd.exe, hand the script to cmd verbatim
+            // instead of letting std::process::Command apply MSVCRT-style
+            // quoting. std would wrap the script in quotes and escape any inner
+            // `"` as `\"`, but cmd.exe does not understand that escaping, so
+            // commands like `python -c "import x"` get mangled (the child sees
+            // `\"import`). We assemble the whole command into one body, wrap it
+            // in a single outer quote pair, and use `/s` so cmd strips exactly
+            // that pair and runs the rest — inner quotes included — verbatim.
+            // See discussion #9355.
+            let runs_command = shell
+                .iter()
+                .skip(1)
+                .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
+            if crate::path::is_cmd_shell_program(Path::new(&shell[0])) && runs_command {
+                let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], script, args);
+                return Ok((shell[0].clone(), cmd_args, true));
+            }
             full_args.push(script.to_string());
             full_args.extend(args.iter().cloned());
         }
@@ -898,7 +922,7 @@ impl TaskExecutor {
             }
             full_args.push(script);
         }
-        Ok((full_args[0].clone(), full_args[1..].to_vec()))
+        Ok((full_args[0].clone(), full_args[1..].to_vec(), false))
     }
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
@@ -963,7 +987,8 @@ impl TaskExecutor {
         prefix: &str,
     ) -> Result<()> {
         let (program, args) = self.get_file_program_and_args(file, task, args)?;
-        self.exec_program(&program, &args, task, env, prefix).await
+        self.exec_program(&program, &args, task, env, prefix, false)
+            .await
     }
 
     async fn exec_with_text_file_busy_retry(
@@ -1005,7 +1030,10 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
+        cmd_verbatim: bool,
     ) -> Result<()> {
+        #[cfg(not(windows))]
+        let _ = cmd_verbatim;
         let config = Config::get().await?;
         let program = program.to_executable();
         let redactions = config.redactions();
@@ -1024,8 +1052,20 @@ impl TaskExecutor {
         #[cfg(windows)]
         let program = resolve_posix_shell_program_path(&program, env).unwrap_or(program);
         let env = maybe_convert_env_for_msys_shell(Path::new(&program), env);
-        let mut cmd = CmdLineRunner::new(program.clone())
-            .args(args)
+        let runner = CmdLineRunner::new(program.clone());
+        // On Windows, `cmd_verbatim` means `args` are already wrapped for cmd.exe
+        // and must be appended to the command line without std's MSVCRT-style
+        // quoting (which would escape inner `"` as `\"` and break the command).
+        // See `get_cmd_program_and_args` and discussion #9355.
+        #[cfg(windows)]
+        let runner = if cmd_verbatim {
+            args.iter().fold(runner, |r, a| r.raw_arg(a))
+        } else {
+            runner.args(args)
+        };
+        #[cfg(not(windows))]
+        let runner = runner.args(args);
+        let mut cmd = runner
             .envs(env.as_ref())
             .redact(redactions.deref().clone())
             .raw(raw)
