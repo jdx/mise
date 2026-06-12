@@ -116,8 +116,26 @@ impl Install {
         {
             return;
         }
+        let Ok(config) = Config::get().await else {
+            return;
+        };
+        let mgrs = crate::system::packages_from_config(&config);
+        if mgrs.is_empty() {
+            return;
+        }
         // when everything is satisfied the hint never fires, so also
-        // throttle the checks to once per day
+        // throttle the checks to once per day — but only while the
+        // configured package set is unchanged, so editing
+        // [system.packages] re-checks immediately
+        let fingerprint = mgrs
+            .iter()
+            .flat_map(|mp| {
+                mp.requests
+                    .iter()
+                    .map(move |r| format!("{}:{}", mp.manager.name(), r.raw))
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         let checked = crate::dirs::STATE.join("system-packages-checked");
         if checked
             .metadata()
@@ -125,14 +143,8 @@ impl Install {
             .and_then(|m| m.modified().ok())
             .and_then(|t| t.elapsed().ok())
             .is_some_and(|age| age < std::time::Duration::from_secs(24 * 60 * 60))
+            && crate::file::read_to_string(&checked).is_ok_and(|prev| prev == fingerprint)
         {
-            return;
-        }
-        let Ok(config) = Config::get().await else {
-            return;
-        };
-        let mgrs = crate::system::packages_from_config(&config);
-        if mgrs.is_empty() {
             return;
         }
         let mut missing = 0;
@@ -158,7 +170,7 @@ impl Install {
             }
         }
         if all_queries_ok {
-            let _ = crate::file::touch_file(&checked);
+            let _ = crate::file::write(&checked, &fingerprint);
         }
         if missing > 0 {
             hint!(
