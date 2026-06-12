@@ -59,6 +59,8 @@ pub fn repository() -> PathBuf {
 /// Linux bottles are built with their ELF interpreter set to
 /// `<prefix>/lib/ld.so`; brew points that symlink at a brewed glibc when one
 /// is installed, otherwise at the host's dynamic linker. Mirror that here.
+/// Called before and after pours so a glibc poured in the current run
+/// repoints the symlink.
 pub fn setup_linux_runtime() -> Result<()> {
     if !cfg!(target_os = "linux") {
         return Ok(());
@@ -66,22 +68,35 @@ pub fn setup_linux_runtime() -> Result<()> {
     let lib = prefix().join("lib");
     crate::file::create_dir_all(&lib)?;
     let ld = lib.join("ld.so");
+    // a brewed glibc keg takes precedence (hosts older than the bottles'
+    // build glibc); otherwise the host loader
+    let loader_names = ["ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1"];
+    let brewed_glibc = super::pour::installed_versions("glibc")
+        .into_iter()
+        .filter_map(|version| {
+            let keg_lib = cellar().join("glibc").join(version).join("lib");
+            loader_names
+                .iter()
+                .map(|name| keg_lib.join(name))
+                .find(|p| p.exists())
+        })
+        .next();
+    if let Some(target) = brewed_glibc {
+        // repoint at the brewed glibc even if ld.so already exists
+        if std::fs::read_link(&ld).ok().as_deref() != Some(target.as_path()) {
+            if ld.symlink_metadata().is_ok() {
+                crate::file::remove_file(&ld)?;
+            }
+            crate::file::make_symlink(&target, &ld)?;
+        }
+        return Ok(());
+    }
     if ld.exists() {
         return Ok(()); // valid symlink or file already in place
     }
     if ld.symlink_metadata().is_ok() {
         crate::file::remove_file(&ld)?; // dangling symlink
     }
-    // a brewed glibc keg takes precedence (hosts older than the bottles'
-    // build glibc); otherwise the host loader
-    let brewed_glibc = crate::file::ls(&cellar().join("glibc"))
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|keg| {
-            let candidate = keg.join("lib/ld-linux-x86_64.so.2");
-            candidate.exists().then_some(candidate)
-        })
-        .next_back();
     let host_loader = [
         "/lib64/ld-linux-x86-64.so.2",
         "/lib/ld-linux-aarch64.so.1",
@@ -91,7 +106,7 @@ pub fn setup_linux_runtime() -> Result<()> {
     .map(Path::new)
     .find(|p| p.exists())
     .map(Path::to_path_buf);
-    let Some(target) = brewed_glibc.or(host_loader) else {
+    let Some(target) = host_loader else {
         bail!(
             "no dynamic linker found for {} — Homebrew bottles require glibc (musl-based \
              distros are unsupported)",
@@ -159,9 +174,9 @@ pub fn bootstrap(dry_run: bool) -> Result<()> {
         } else {
             user
         };
-        let mut dirs: Vec<String> = vec![prefix.to_string_lossy().to_string()];
-        dirs.extend(SUBDIRS.iter().map(|d| prefix.join(d).display().to_string()));
-        let mkdir_args: Vec<String> = ["-p".to_string()].into_iter().chain(dirs.clone()).collect();
+        let mut mkdir_dirs: Vec<String> = vec![prefix.to_string_lossy().to_string()];
+        mkdir_dirs.extend(dirs.iter().map(|d| d.display().to_string()));
+        let mkdir_args: Vec<String> = ["-p".to_string()].into_iter().chain(mkdir_dirs).collect();
         let chown_args: Vec<String> = vec!["-R".to_string(), owner, prefix.display().to_string()];
         if dry_run {
             miseprintln!("{}", sudo::argv("mkdir", &mkdir_args).join(" "));

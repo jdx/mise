@@ -98,6 +98,8 @@ impl BrewManager {
             ledger.record(name, &pkg_version, rf.on_request);
             ledger.save()?;
         }
+        // a glibc poured in this run repoints <prefix>/lib/ld.so at it
+        prefix::setup_linux_runtime()?;
         Ok(())
     }
 }

@@ -28,10 +28,18 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
         .iter()
         .map(|req| {
             // entries can be bare names or rpm name-version-release specs;
-            // match either the exact name or a spec prefixed by it
-            let found = installed
-                .iter()
-                .find(|(name, _)| req.name == **name || req.name.starts_with(&format!("{name}-")));
+            // match the exact name, or a spec like "bash-5.2.26-3.fc40" where
+            // what follows the name is a version (starts with a digit) — a
+            // bare "glib2" install must not satisfy a "glib2-devel" request
+            let found = installed.iter().find(|(name, _)| {
+                req.name == **name
+                    || req
+                        .name
+                        .strip_prefix(*name)
+                        .and_then(|rest| rest.strip_prefix('-'))
+                        .and_then(|version| version.chars().next())
+                        .is_some_and(|c| c.is_ascii_digit())
+            });
             let state = match found {
                 Some((_, version)) => PackageState::Installed {
                     version: version.to_string(),
@@ -126,9 +134,9 @@ mod tests {
             mgr.parse_request("bc"),
             mgr.parse_request("nonexistent"),
             mgr.parse_request("bash-5.2.26-3.fc40"),
+            mgr.parse_request("glib2-devel"),
         ];
-        let output =
-            "bc\t1.07.1-14.fc39\npackage nonexistent is not installed\nbash\t5.2.26-3.fc40\n";
+        let output = "bc\t1.07.1-14.fc39\npackage nonexistent is not installed\nbash\t5.2.26-3.fc40\nglib2\t2.80.0-1.fc40\n";
         let statuses = parse_rpm_query(output, &requests);
         assert_eq!(
             statuses[0].state,
@@ -144,5 +152,7 @@ mod tests {
                 version: "5.2.26-3.fc40".to_string()
             }
         );
+        // an installed "glib2" must not satisfy a "glib2-devel" request
+        assert_eq!(statuses[3].state, PackageState::Missing);
     }
 }
