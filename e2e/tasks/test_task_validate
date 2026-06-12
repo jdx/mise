@@ -269,6 +269,7 @@ EOF
 cat <<'EOF' >monorepo-validate/pkg/mise.toml
 [tasks._dep]
 hide = true
+alias = "dep-alias"
 usage = 'arg "<name>"'
 run = 'echo "arg=$usage_name"'
 
@@ -280,16 +281,20 @@ depends = [":_dep colon"]
 
 [tasks.w_full]
 depends = ["//pkg:_dep full"]
+
+[tasks.w_alias]
+depends = ["dep-alias alias"]
 EOF
 
 (
   cd monorepo-validate/pkg
-  assert_contains "mise tasks validate" "✓ All 4 task(s) validated successfully"
+  assert_contains "mise tasks validate" "✓ All 5 task(s) validated successfully"
 )
 
 assert_contains "mise -C monorepo-validate run //pkg:w_bare" "arg=bare"
 assert_contains "mise -C monorepo-validate run //pkg:w_colon" "arg=colon"
 assert_contains "mise -C monorepo-validate run //pkg:w_full" "arg=full"
+assert_contains "mise -C monorepo-validate run //pkg:w_alias" "arg=alias"
 
 # Clean up
 rm -rf monorepo-validate

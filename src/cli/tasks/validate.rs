@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::duration;
 use crate::file;
 use crate::task::task_fetcher::TaskFetcher;
-use crate::task::{Task, resolve_task_pattern};
+use crate::task::{GetMatchingExt, Task, build_task_ref_map, resolve_task_pattern};
 use crate::tera::contains_template_syntax;
 use crate::ui::style;
 use console::style as console_style;
@@ -230,11 +230,11 @@ impl TasksValidate {
     /// Monorepo-relative references are resolved the same way runtime task matching resolves them.
     fn task_exists(all_tasks: &BTreeMap<String, Task>, task_name: &str, parent: &Task) -> bool {
         let resolved_name = resolve_task_pattern(task_name, Some(parent));
-        all_tasks.contains_key(&resolved_name)
+        let task_refs = build_task_ref_map(all_tasks.iter());
+        task_refs
+            .get_matching(&resolved_name)
+            .is_ok_and(|matches| !matches.is_empty())
             || all_tasks.values().any(|t| t.display_name == resolved_name)
-            || all_tasks
-                .values()
-                .any(|t| t.aliases.contains(&resolved_name))
     }
 
     fn validate_missing_references(
