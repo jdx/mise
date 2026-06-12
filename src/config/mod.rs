@@ -2686,7 +2686,13 @@ fn task_include_requires_trust(path: &Path) -> bool {
     if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
         return true;
     }
-    file::read_to_string(path).map_or(true, |body| contains_template_syntax(&body))
+    let Ok(body) = file::read_to_string(path) else {
+        // can't read it — fall back to requiring trust
+        return true;
+    };
+    // literal delimiters, plus escaped ones (e.g. `{{`) that decode to
+    // templates after TOML parsing and would render at load time
+    contains_template_syntax(&body) || crate::task::file_has_decoded_template(path, &body)
 }
 
 async fn load_task_file(

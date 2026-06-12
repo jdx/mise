@@ -2021,8 +2021,9 @@ fn is_safe_config_body(body: &str) -> bool {
 }
 
 /// Whether any decoded string (table key or value, at any depth) contains
-/// Tera template syntax.
-fn toml_value_has_template(value: &toml::Value) -> bool {
+/// Tera template syntax. Used to catch escaped delimiters (e.g. `{{`)
+/// that a raw-text scan misses but that still render after TOML parsing.
+pub(crate) fn toml_value_has_template(value: &toml::Value) -> bool {
     match value {
         toml::Value::String(s) => contains_template_syntax(s),
         toml::Value::Array(arr) => arr.iter().any(toml_value_has_template),

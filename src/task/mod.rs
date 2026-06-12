@@ -504,6 +504,41 @@ pub struct Task {
     pub trailing_args: Vec<String>,
 }
 
+/// Parse the `#MISE key=value` (and `// MISE`, `:: MISE`, `[MISE]`) header
+/// lines out of a task script into their decoded TOML values.
+fn parse_mise_header_toml(body: &str) -> Result<Vec<toml::Value>> {
+    body.lines()
+        .filter_map(|line| {
+            regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+\s*=\s*[^\n]+)$").captures(line)
+        })
+        .map(|captures| captures.extract().1)
+        .map(|[toml]| {
+            toml::de::from_str::<toml::Value>(toml)
+                .map_err(|e| eyre::eyre!("failed to parse task header TOML {toml:?}: {e}"))
+        })
+        .collect()
+}
+
+/// Whether a task include file contains Tera template syntax only after TOML
+/// decoding (e.g. `{{` written as `{{`). Such escapes pass a
+/// raw-text scan but decode to real templates that render — and can `exec()` —
+/// at load time, so they must still require trust. `.toml` task files are
+/// checked whole; script files are checked through their `#MISE` headers (the
+/// only part parsed and rendered at load).
+pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
+    use crate::config::config_file::mise_toml::toml_value_has_template;
+    if path.extension().is_some_and(|e| e == "toml") {
+        // Unparseable TOML won't load as a task file (it errors before any
+        // render), so it doesn't need trust on this account.
+        toml::from_str::<toml::Value>(body).is_ok_and(|v| toml_value_has_template(&v))
+    } else {
+        parse_mise_header_toml(body)
+            .unwrap_or_default()
+            .iter()
+            .any(toml_value_has_template)
+    }
+}
+
 impl Task {
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         Ok(Self {
@@ -521,18 +556,7 @@ impl Task {
         config_root: &Path,
     ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
-        let info = file::read_to_string(path)?
-            .lines()
-            .filter_map(|line| {
-                regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+\s*=\s*[^\n]+)$")
-                    .captures(line)
-            })
-            .map(|captures| captures.extract().1)
-            .map(|[toml]| {
-                toml::de::from_str::<toml::Value>(toml)
-                    .map_err(|e| eyre::eyre!("failed to parse task header TOML {toml:?}: {e}"))
-            })
-            .collect::<Result<Vec<_>>>()?
+        let info = parse_mise_header_toml(&file::read_to_string(path)?)?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
             .flatten()
@@ -2305,6 +2329,33 @@ mod tests {
         CAPTURED_PARSER_FIELDS.with(|captured| {
             *captured.lock().unwrap() = Some(fields);
         });
+    }
+
+    #[test]
+    fn test_file_has_decoded_template() {
+        use super::file_has_decoded_template;
+        let toml = Path::new("ci.toml");
+        let script = Path::new("script.sh");
+
+        // plain template-free includes do not need trust
+        assert!(!file_has_decoded_template(
+            toml,
+            "[hello]\nrun = \"echo hi\"\ndescription = \"a plain task\"\n"
+        ));
+        assert!(!file_has_decoded_template(
+            script,
+            "#!/usr/bin/env bash\n#MISE description=\"a plain task\"\necho hi\n"
+        ));
+
+        // escaped delimiters ({ == '{', } == '}') decode to a template
+        assert!(file_has_decoded_template(
+            toml,
+            "[hello]\nrun = \"echo hi\"\ndescription = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n"
+        ));
+        assert!(file_has_decoded_template(
+            script,
+            "#!/usr/bin/env bash\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
+        ));
     }
 
     #[cfg(unix)]
