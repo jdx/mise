@@ -81,6 +81,33 @@ assert_not_contains "cat ~/.zshrc" 'eval "$(mise activate zsh)"'
 assert_contains "cat ~/.zshrc" "alias ll='ls -l'"
 assert_contains "cat ~/.zshrc" "# user content at the end"
 
+# content that merely mentions a marker is not treated as one
+cat <<'EOF' >mise.toml
+[[system.edits]]
+path = "~/.zshrc"
+id = "activate"
+block = 'echo "keep the >>> mise:activate >>> line intact"'
+
+[[system.edits]]
+path = "~/.zshrc"
+id = "aliases"
+block = "alias ll='ls -l'"
+EOF
+assert_succeed "mise system install --yes"
+assert_succeed "mise system status --missing"
+cat <<'EOF' >mise.toml
+[[system.edits]]
+path = "~/.zshrc"
+id = "activate"
+block = 'eval "$(mise activate zsh --shims)"'
+
+[[system.edits]]
+path = "~/.zshrc"
+id = "aliases"
+block = "alias ll='ls -l'"
+EOF
+assert_succeed "mise system install --yes"
+
 # corrupted markers are an error, not a guess
 sed -i.bak '/<<< mise:activate <<</d' ~/.zshrc
 assert_contains "mise system status" "differs (begin marker without end marker)"

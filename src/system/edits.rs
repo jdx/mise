@@ -217,6 +217,21 @@ fn end_marker(comment: &str, id: &str) -> String {
     format!("{comment} <<< mise:{id} <<<")
 }
 
+/// a line is a marker only when the pattern sits at the start of the line,
+/// preceded by at most a short comment token (`# `, `// `, `-- `, `<!-- `) —
+/// content that merely *mentions* a marker (`echo ">>> mise:x >>>"`, docs)
+/// must not count as one
+fn is_marker_line(line: &str, pat: &str) -> bool {
+    let trimmed = line.trim_start();
+    match trimmed.find(pat) {
+        Some(idx) => {
+            let prefix = &trimmed[..idx];
+            prefix.len() <= 8 && !prefix.chars().any(|c| c.is_alphanumeric())
+        }
+        None => false,
+    }
+}
+
 /// locate an id's marker pair in the file's lines: Ok(None) = no markers,
 /// Ok(Some((begin, end))) = line indexes, Err = corrupted markers
 fn find_block(lines: &[&str], id: &str) -> std::result::Result<Option<(usize, usize)>, String> {
@@ -225,13 +240,13 @@ fn find_block(lines: &[&str], id: &str) -> std::result::Result<Option<(usize, us
     let begins: Vec<usize> = lines
         .iter()
         .enumerate()
-        .filter(|(_, l)| l.contains(&begin_pat))
+        .filter(|(_, l)| is_marker_line(l, &begin_pat))
         .map(|(i, _)| i)
         .collect();
     let ends: Vec<usize> = lines
         .iter()
         .enumerate()
-        .filter(|(_, l)| l.contains(&end_pat))
+        .filter(|(_, l)| is_marker_line(l, &end_pat))
         .map(|(i, _)| i)
         .collect();
     match (begins.as_slice(), ends.as_slice()) {
@@ -248,7 +263,10 @@ fn find_block(lines: &[&str], id: &str) -> std::result::Result<Option<(usize, us
 /// per check/apply cycle (templates may use exec())
 fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>> {
     let EditOp::Block {
-        source, template, ..
+        id,
+        source,
+        template,
+        ..
     } = &req.op
     else {
         return Ok(None);
@@ -268,7 +286,18 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     } else {
         raw
     };
-    Ok(Some(content.trim_end_matches('\n').to_string()))
+    let content = content.trim_end_matches('\n').to_string();
+    // a block containing its own marker lines would write a file that can't
+    // be parsed back — refuse up front instead of corrupting on reapply
+    for pat in [format!(">>> mise:{id} >>>"), format!("<<< mise:{id} <<<")] {
+        if content.lines().any(|l| is_marker_line(l, &pat)) {
+            bail!(
+                "[[system.edits]] \"{}\": block content may not contain its own marker lines",
+                req.path_raw
+            );
+        }
+    }
+    Ok(Some(content))
 }
 
 /// Current state of one edit on this machine.
@@ -474,6 +503,18 @@ mod tests {
         // ids are delimited — "a" must not match "ab"
         let lines = vec!["# >>> mise:ab >>>", "# <<< mise:ab <<<"];
         assert_eq!(find_block(&lines, "a"), Ok(None));
+        // content that mentions a marker mid-line is not a marker
+        let lines = vec![
+            "# >>> mise:a >>>",
+            r#"echo "keep the >>> mise:a >>> line intact""#,
+            "# <<< mise:a <<<",
+        ];
+        assert_eq!(find_block(&lines, "a"), Ok(Some((0, 2))));
+        // ...but indented comment markers still count
+        let lines = vec!["  # >>> mise:a >>>", "  # <<< mise:a <<<"];
+        assert_eq!(find_block(&lines, "a"), Ok(Some((0, 1))));
+        let lines = vec!["<!-- >>> mise:a >>>", "<!-- <<< mise:a <<<"];
+        assert_eq!(find_block(&lines, "a"), Ok(Some((0, 1))));
         let lines = vec!["# >>> mise:a >>>"];
         assert!(find_block(&lines, "a").is_err());
         let lines = vec!["# <<< mise:a <<<", "# >>> mise:a >>>"];
