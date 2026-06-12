@@ -11,6 +11,7 @@ use super::relocate;
 use super::resolve::ResolvedFormula;
 use crate::file::{TarFormat, TarOptions};
 use crate::result::Result;
+use crate::ui::progress_report::SingleReport;
 
 /// directories linked from a keg into the prefix (brew's Keg::KEG_LINK_DIRECTORIES,
 /// minus etc/var which brew handles specially and we defer)
@@ -72,6 +73,7 @@ pub async fn pour(
     bottle: &BottleFile,
     tarball: &Path,
     closure: &[ResolvedFormula],
+    pr: &dyn SingleReport,
 ) -> Result<()> {
     let name = &rf.formula.name;
     let pkg_version = rf.formula.pkg_version()?;
@@ -87,13 +89,14 @@ pub async fn pour(
     crate::file::create_dir_all(&scratch)?;
 
     // bottle tarballs contain <name>/<pkg_version>/...
+    pr.set_message("extract".to_string());
     crate::file::untar(
         tarball,
         &scratch,
         &TarOptions {
             format: TarFormat::TarGz,
             strip_components: 0,
-            pr: None,
+            pr: Some(pr),
             preserve_mtime: true,
         },
     )
@@ -114,17 +117,20 @@ pub async fn pour(
     let report = if skip_relocation {
         relocate::RelocationReport::default()
     } else {
+        pr.set_message("relocate".to_string());
         relocate::relocate_keg(&tmp, name)?
     };
     // arm64 macOS kills binaries whose signature doesn't match; Linux ELF
     // files have no signatures to fix
     if cfg!(target_os = "macos") && !report.changed_machos.is_empty() {
+        pr.set_message("codesign".to_string());
         relocate::codesign(&report.changed_machos)
             .wrap_err_with(|| format!("failed to re-sign relocated binaries for {name}"))?;
     }
 
     write_receipt(rf, tag, &tmp, &report, closure)?;
 
+    pr.set_message("link".to_string());
     if keg.exists() {
         crate::file::remove_all(&keg)?;
     }

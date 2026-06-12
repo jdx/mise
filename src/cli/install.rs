@@ -124,11 +124,13 @@ impl Install {
             return;
         }
         // when everything is satisfied the hint never fires, so also
-        // throttle the checks to once per day — but only while the
-        // configured package set is unchanged, so editing
-        // [system.packages] re-checks immediately
+        // throttle the checks to once per day — but only while the set of
+        // packages that would actually be checked is unchanged, so editing
+        // [system.packages] or widening system_packages.managers re-checks
+        // immediately
         let fingerprint = mgrs
             .iter()
+            .filter(|mp| !mp.disabled && mp.manager.is_available())
             .flat_map(|mp| {
                 mp.requests
                     .iter()

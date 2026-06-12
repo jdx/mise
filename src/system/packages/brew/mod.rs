@@ -15,6 +15,8 @@ use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
 use crate::result::Result;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::{ProgressIcon, SingleReport};
 
 mod api;
 mod elf;
@@ -94,6 +96,7 @@ impl BrewManager {
         }
         prefix::bootstrap(false)?;
         prefix::setup_linux_runtime()?;
+        let mpr = MultiProgressReport::get();
         let mut ledger = state::Ledger::load();
         for rf in &to_pour {
             let name = &rf.formula.name;
@@ -107,11 +110,19 @@ impl BrewManager {
                     files.keys().cloned().collect::<Vec<_>>().join(", "),
                 );
             };
-            info!("brew: pouring {name} {pkg_version}");
-            let tarball = fetch::fetch_bottle(name, &pkg_version, bottle).await?;
-            pour::pour(rf, &tag, bottle, &tarball, &closure).await?;
+            let pr: Box<dyn SingleReport> = mpr.add(&format!("brew:{name}"));
+            let poured = async {
+                let tarball = fetch::fetch_bottle(name, &pkg_version, bottle, Some(&*pr)).await?;
+                pour::pour(rf, &tag, bottle, &tarball, &closure, &*pr).await
+            }
+            .await;
+            if let Err(err) = poured {
+                pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
+                return Err(err);
+            }
             ledger.record(name, &pkg_version, rf.on_request);
             ledger.save()?;
+            pr.finish_with_message(pkg_version.clone());
         }
         // a glibc poured in this run repoints <prefix>/lib/ld.so at it
         prefix::setup_linux_runtime()?;
