@@ -152,6 +152,26 @@ impl SystemPackageManager for PacmanManager {
         }
         sudo::run("pacman", &args, &[])
     }
+
+    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        // refresh sync DBs, then -S --needed upgrades exactly the named
+        // packages that are outdated. Note: Arch officially supports only
+        // full-system upgrades (-Syu); upgrading individual packages is a
+        // partial upgrade — documented as a caveat in the pacman docs page.
+        self.refresh(opts)?;
+        let mut args = vec![
+            "-S".to_string(),
+            "--noconfirm".to_string(),
+            "--needed".to_string(),
+            "--".to_string(),
+        ];
+        args.extend(pkgs.iter().map(|p| p.name.clone()));
+        if opts.dry_run {
+            miseprintln!("{}", sudo::argv("pacman", &args).join(" "));
+            return Ok(());
+        }
+        sudo::run("pacman", &args, &[])
+    }
 }
 
 #[cfg(test)]

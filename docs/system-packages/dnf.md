@@ -20,6 +20,8 @@ Alma, ...).
   release of that version.
 - `mise system install --update` adds `--refresh` to force a metadata
   refresh; otherwise dnf manages its own metadata expiry.
+- `mise system upgrade` runs `dnf upgrade -y --refresh` for the configured
+  packages — only already-installed packages are touched.
 
 ::: info
 Only `dnf` is supported — not legacy `yum`-only systems. On RHEL/CentOS 8+

@@ -167,6 +167,8 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise system <SUBCOMMAND>`](/cli/system.md)
 - [`mise system install [FLAGS] [PACKAGE]…`](/cli/system/install.md)
 - [`mise system status [-J --json] [--missing]`](/cli/system/status.md)
+- [`mise system upgrade [FLAGS] [PACKAGE]…`](/cli/system/upgrade.md)
+- [`mise system use [FLAGS] <PACKAGE>…`](/cli/system/use.md)
 - [`mise tasks [FLAGS] [TASK] <SUBCOMMAND>`](/cli/tasks.md)
 - [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)
 - [`mise tasks deps [--dot] [--hidden] [TASKS]…`](/cli/tasks/deps.md)

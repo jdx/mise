@@ -15,3 +15,5 @@ ever installed when explicitly requested with `mise system install`.
 
 - [`mise system install [FLAGS] [PACKAGE]…`](/cli/system/install.md)
 - [`mise system status [-J --json] [--missing]`](/cli/system/status.md)
+- [`mise system upgrade [FLAGS] [PACKAGE]…`](/cli/system/upgrade.md)
+- [`mise system use [FLAGS] <PACKAGE>…`](/cli/system/use.md)

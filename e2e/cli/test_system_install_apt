@@ -33,3 +33,16 @@ assert_succeed "bc --version"
 
 # second install is a no-op
 assert_contains "mise system install --yes 2>&1" "already installed"
+
+# upgrade refreshes lists and only touches installed packages
+assert_contains "mise system upgrade --dry-run" "apt-get update"
+assert_contains "mise system upgrade --dry-run" "apt-get install -y --only-upgrade -- bc"
+assert_succeed "mise system upgrade --yes"
+
+# `use` writes the config entry and installs in one step
+rm mise.toml
+apt-get remove -y bc >/dev/null 2>&1 || true
+assert_succeed "mise system use --yes apt:bc"
+assert_contains "cat mise.toml" '"apt:bc" = "latest"'
+assert_contains "mise system status" "installed"
+assert_succeed "bc --version"

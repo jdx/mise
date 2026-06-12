@@ -124,6 +124,28 @@ impl SystemPackageManager for DnfManager {
         }
         sudo::run("dnf", &args, &[])
     }
+
+    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        // --refresh: expire cached metadata so "upgrade" actually sees new
+        // versions; `dnf upgrade <pkg>` only touches already-installed
+        // packages (a pin downgrade would need `dnf install name-version`,
+        // which the install path already provides)
+        let mut args = vec![
+            "upgrade".to_string(),
+            "-y".to_string(),
+            "--refresh".to_string(),
+            "--".to_string(),
+        ];
+        args.extend(pkgs.iter().map(|p| match &p.version {
+            Some(v) => format!("{}-{v}", p.name),
+            None => p.name.clone(),
+        }));
+        if opts.dry_run {
+            miseprintln!("{}", sudo::argv("dnf", &args).join(" "));
+            return Ok(());
+        }
+        sudo::run("dnf", &args, &[])
+    }
 }
 
 #[cfg(test)]

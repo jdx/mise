@@ -18,6 +18,11 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 - If `/var/lib/pacman/sync` contains no databases (fresh containers), mise
   runs `pacman -Sy` automatically before installing. Force a refresh with
   `mise system install --update`.
+- `mise system upgrade` runs `pacman -Sy` and then upgrades only the
+  configured packages. Note that Arch officially supports only full-system
+  upgrades (`pacman -Syu`) — upgrading individual packages is a
+  [partial upgrade](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported),
+  so prefer running `pacman -Syu` yourself on a rolling-release system.
 
 ::: warning
 Arch repositories only carry the latest version of each package, so pacman

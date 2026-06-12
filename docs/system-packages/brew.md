@@ -82,6 +82,15 @@ For each formula in the dependency closure (dependencies first):
    [keg-only](https://docs.brew.sh/FAQ#what-does-keg-only-mean) formulae get
    the `opt` link but are not linked into the prefix, same as brew.
 
+## Upgrades
+
+`mise system upgrade` re-resolves the configured formulae against the
+formulae.brew.sh API and pours any whose current version differs from the
+linked keg — the new keg replaces the old one and the links are repointed,
+the same dance `brew upgrade` does. Since bottles only exist for a formula's
+current version, "upgrade" and "install the current bottle" are the same
+operation.
+
 ## Limitations
 
 - **Formulae only.** Casks (GUI apps) and `brew services` are not

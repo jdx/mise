@@ -2903,6 +2903,70 @@ Examples:
         flag "-J --json" help="Output in JSON format"
         flag --missing help="Exit with code 1 if any configured packages are missing"
     }
+    cmd upgrade help="Upgrade installed system packages from `[system.packages]`" {
+        alias up
+        long_help #"""
+Upgrade installed system packages from `[system.packages]`
+
+Refreshes package manager metadata and upgrades the configured packages
+that are already installed: apt/dnf/pacman upgrade to the newest available
+version (apt and dnf honor a version pinned in config), brew pours the
+formula's current bottle and replaces the old keg. Packages that are not
+installed yet are skipped — use `mise system install` for those.
+
+Packages can also be given explicitly in `manager:package` form.
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise system upgrade
+    $ mise system upgrade brew:postgresql@17
+    $ mise system upgrade --manager apt --yes
+    $ mise system upgrade --dry-run
+
+"""#
+        flag "-m --manager" help="Only upgrade packages for this manager, e.g. `apt` or `brew`" {
+            arg <MANAGER> {
+                choices apt brew dnf pacman
+            }
+        }
+        flag "-n --dry-run" help="Print the commands that would run without running them"
+        flag "-y --yes" help="Skip the confirmation prompt"
+        arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [system.packages]" required=#false var=#true
+    }
+    cmd use help="Add system packages to [system.packages] and install them" {
+        alias u
+        long_help #"""
+Add system packages to [system.packages] and install them
+
+Like `mise use` for tools: writes `"manager:package" = "version"` entries
+to mise.toml (the local config by default, the global one with `-g`) and
+then installs whatever is missing.
+
+Versions are pinned with `@`: `mise system use apt:curl@8.5.0-2`. Without
+`@` (or with `@latest`) no pin is written. brew formulae version through
+their names instead (`brew:postgresql@17`), so `@` is always part of the
+formula name there.
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise system use apt:curl brew:jq
+    $ mise system use -g brew:postgresql@17
+    $ mise system use apt:curl@8.5.0-2
+
+"""#
+        flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
+            arg <ENV>
+        }
+        flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one"
+        flag "-n --dry-run" help="Print the commands that would run without writing config or installing"
+        flag "-p --path" help="Write to this config file or directory" {
+            arg <PATH>
+        }
+        flag "-y --yes" help="Skip the confirmation prompt"
+        arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
+    }
 }
 cmd tasks help="Manage tasks" {
     alias t
