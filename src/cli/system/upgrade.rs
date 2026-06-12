@@ -8,9 +8,9 @@ use crate::system;
 ///
 /// Refreshes package manager metadata and upgrades the configured packages
 /// that are already installed: apt/dnf/pacman upgrade to the newest available
-/// version (or to the version pinned in config), brew pours the formula's
-/// current bottle and replaces the old keg. Packages that are not installed
-/// yet are skipped — use `mise system install` for those.
+/// version (apt and dnf honor a version pinned in config), brew pours the
+/// formula's current bottle and replaces the old keg. Packages that are not
+/// installed yet are skipped — use `mise system install` for those.
 ///
 /// Packages can also be given explicitly in `manager:package` form.
 #[derive(Debug, clap::Args)]

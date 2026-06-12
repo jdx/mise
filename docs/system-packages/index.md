@@ -81,10 +81,12 @@ installing — that's how a shared config picks up `apt:` lines authored on a
 Mac.
 
 `mise system upgrade` refreshes package manager metadata and upgrades the
-configured packages that are already installed (to the newest available
-version, or to the version pinned in config). Packages that aren't installed
-yet are skipped — that's `mise system install`'s job. For brew this pours the
-formula's current bottle and replaces the old keg.
+configured packages that are already installed to the newest available
+version — apt and dnf also honor a version pinned in config (pacman and brew
+[can't install pins](/system-packages/pacman.html), so pinned entries are
+skipped with a warning). Packages that aren't installed yet are skipped —
+that's `mise system install`'s job. For brew this pours the formula's current
+bottle and replaces the old keg.
 
 `mise doctor` also reports configured system packages and warns when any are
 missing.

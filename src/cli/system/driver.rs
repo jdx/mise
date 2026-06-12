@@ -1,5 +1,7 @@
 //! Shared per-manager execution loop for `mise system install`/`upgrade`/`use`.
 
+use std::collections::HashMap;
+
 use eyre::{Result, bail};
 
 use crate::config::Settings;
@@ -18,13 +20,6 @@ impl Action {
         match self {
             Action::Install => "install",
             Action::Upgrade => "upgrade",
-        }
-    }
-
-    fn past(self) -> &'static str {
-        match self {
-            Action::Install => "installed",
-            Action::Upgrade => "upgraded",
         }
     }
 }
@@ -141,11 +136,47 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             }
         }
         match action {
-            Action::Install => mp.manager.install(&targets, &opts).await?,
-            Action::Upgrade => mp.manager.upgrade(&targets, &opts).await?,
-        }
-        if !d.dry_run {
-            info!("{name}: {} {}", action.past(), list.join(", "));
+            Action::Install => {
+                mp.manager.install(&targets, &opts).await?;
+                if !d.dry_run {
+                    info!("{name}: installed {}", list.join(", "));
+                }
+            }
+            Action::Upgrade => {
+                // managers no-op packages that are already current, so
+                // re-query afterwards and report only what actually changed
+                let prior: HashMap<String, String> = statuses
+                    .iter()
+                    .filter_map(|s| match &s.state {
+                        PackageState::Installed { version }
+                        | PackageState::VersionMismatch { installed: version } => {
+                            Some((s.request.name.clone(), version.clone()))
+                        }
+                        PackageState::Missing => None,
+                    })
+                    .collect();
+                mp.manager.upgrade(&targets, &opts).await?;
+                if !d.dry_run {
+                    let after = mp.manager.installed(&targets).await?;
+                    let changed: Vec<String> = after
+                        .iter()
+                        .filter_map(|s| match &s.state {
+                            PackageState::Installed { version }
+                            | PackageState::VersionMismatch { installed: version } => {
+                                let old = prior.get(&s.request.name)?;
+                                (old != version)
+                                    .then(|| format!("{} {old} -> {version}", s.request.name))
+                            }
+                            PackageState::Missing => None,
+                        })
+                        .collect();
+                    if changed.is_empty() {
+                        info!("{name}: already up to date");
+                    } else {
+                        info!("{name}: upgraded {}", changed.join(", "));
+                    }
+                }
+            }
         }
     }
     Ok(())

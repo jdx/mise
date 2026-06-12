@@ -59,12 +59,16 @@ impl SystemUse {
             let (mgr, request) = system::parse_use_spec(spec)?;
             let key = format!("{mgr}:{}", request.name);
             let version = request.version.clone().unwrap_or_else(|| "latest".into());
-            if !entries.iter().any(|(k, _)| k == &key) {
-                entries.push((key, version));
+            // the same package twice: the last version wins, in the config
+            // entry and the install request alike
+            match entries.iter_mut().find(|(k, _)| k == &key) {
+                Some(entry) => entry.1 = version,
+                None => entries.push((key, version)),
             }
             let requests = by_mgr.entry(mgr).or_default();
-            if !requests.contains(&request) {
-                requests.push(request);
+            match requests.iter_mut().find(|r| r.name == request.name) {
+                Some(r) => *r = request,
+                None => requests.push(request),
             }
         }
         // resolve managers before touching the config file so a typo'd
@@ -106,15 +110,18 @@ impl SystemUse {
 
         // unlike `mise system install apt:x`, an unavailable manager is not
         // an error here: writing apt: entries from a mac into a shared repo
-        // config is the point of a declarative file. Say so, then install
-        // best-effort for this machine.
-        for mp in &mgrs {
-            if !mp.disabled && !mp.manager.is_available() {
-                info!(
-                    "{}: {} — added to config without installing",
-                    mp.manager.name(),
-                    mp.manager.unavailable_reason()
-                );
+        // config is the point of a declarative file. Say so (except in
+        // dry-run, where nothing was written), then install best-effort for
+        // this machine.
+        if !self.dry_run {
+            for mp in &mgrs {
+                if !mp.disabled && !mp.manager.is_available() {
+                    info!(
+                        "{}: {} — added to config without installing",
+                        mp.manager.name(),
+                        mp.manager.unavailable_reason()
+                    );
+                }
             }
         }
         let opts = DriverOpts {
