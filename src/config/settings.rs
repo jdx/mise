@@ -1099,7 +1099,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_settings_file_strips_local_trust_controls() {
+    fn test_parse_settings_file_strips_non_global_trust_controls() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".mise.toml");
         std::fs::write(
@@ -1123,25 +1123,22 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_settings_file_preserves_global_trust_controls() {
-        let global_path = crate::config::global_config_files()
-            .first()
-            .unwrap()
-            .to_path_buf();
-        let partial = strip_local_trust_controls(
-            toml::from_str::<SettingsFile>(
-                r#"
-                [settings]
-                ci = "true"
-                paranoid = true
-                trusted_config_paths = ["/"]
-                yes = true
-                "#,
-            )
-            .unwrap()
-            .settings,
-            &global_path,
-        );
+    fn test_global_config_preserves_trust_controls() {
+        let path = Path::new("/tmp/global-config.toml");
+        let mut settings = toml::from_str::<toml::Value>(
+            r#"
+            ci = "true"
+            paranoid = true
+            trusted_config_paths = ["/"]
+            yes = true
+            "#,
+        )
+        .unwrap()
+        .as_table()
+        .unwrap()
+        .clone();
+        strip_local_only_settings(&mut settings, path, true);
+        let partial = settings_partial_from_table(settings);
 
         assert_eq!(partial.ci, Some(true));
         assert_eq!(partial.paranoid, Some(true));
