@@ -20,9 +20,25 @@ pub fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
     prefix::cellar().join(name).join(pkg_version)
 }
 
-/// is this keg fully poured? (incomplete pours live in .mise-tmp-* dirs)
+/// is this keg fully poured and linked? Every pour ends by creating the
+/// `opt/<name>` symlink (even for keg-only formulae), so a Cellar directory
+/// without it is a remnant of a failed install and must not block a retry.
 pub fn keg_installed(name: &str, pkg_version: &str) -> bool {
-    keg_path(name, pkg_version).exists()
+    keg_path(name, pkg_version).exists() && linked_version(name).as_deref() == Some(pkg_version)
+}
+
+/// the version `opt/<name>` points at, if the symlink resolves to an
+/// existing keg
+pub fn linked_version(name: &str) -> Option<String> {
+    let opt = prefix::prefix().join("opt").join(name);
+    let target = std::fs::read_link(&opt).ok()?;
+    let resolved = opt.parent().unwrap().join(target);
+    if !resolved.is_dir() {
+        return None;
+    }
+    resolved
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
 }
 
 /// installed versions of this formula; the active keg (per the `opt`
@@ -191,7 +207,10 @@ fn write_receipt(
         .map(|p| p.to_string_lossy().to_string())
         .collect();
     let receipt = json!({
-        "homebrew_version": "4.0.0 (mise)",
+        // must stay >= 5.1.15: bottled_by_homebrew_at_least gates Linux ELF
+        // relocation on the receipt's homebrew_version, and a poured keg's
+        // linkage is already final
+        "homebrew_version": "5.1.15 (mise)",
         "used_options": [],
         "unused_options": [],
         "built_as_bottle": true,

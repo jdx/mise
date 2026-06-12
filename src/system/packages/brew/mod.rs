@@ -130,16 +130,15 @@ impl SystemPackageManager for BrewManager {
     }
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
-        // the Cellar is the source of truth whether kegs were poured by mise
-        // or by a real brew
+        // the prefix is the source of truth whether kegs were poured by mise
+        // or by a real brew; a formula counts as installed only when its opt
+        // symlink resolves to a keg — a Cellar directory without one is a
+        // remnant of a failed install and must not mask a retry
         Ok(pkgs
             .iter()
             .map(|req| {
-                let versions = pour::installed_versions(&req.name);
-                let state = match versions.first() {
-                    Some(version) => PackageState::Installed {
-                        version: version.clone(),
-                    },
+                let state = match pour::linked_version(&req.name) {
+                    Some(version) => PackageState::Installed { version },
                     None => PackageState::Missing,
                 };
                 PackageStatus {
