@@ -284,7 +284,7 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
 }
 
 pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
-    let key = format!("{repo}-{tag}-versions-host-true").to_kebab_case();
+    let key = release_cache_key(API_URL, repo, tag, true);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     cache
@@ -301,7 +301,7 @@ pub async fn get_release_for_url_with_versions_host(
     tag: &str,
     use_versions_host: bool,
 ) -> Result<GithubRelease> {
-    let key = format!("{api_url}-{repo}-{tag}-versions-host-{use_versions_host}").to_kebab_case();
+    let key = release_cache_key(api_url, repo, tag, use_versions_host);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     cache
@@ -310,6 +310,15 @@ pub async fn get_release_for_url_with_versions_host(
             should_cache_release,
         )
         .await
+}
+
+fn release_cache_key(api_url: &str, repo: &str, tag: &str, use_versions_host: bool) -> String {
+    let source = if use_versions_host {
+        "hosted"
+    } else {
+        "direct"
+    };
+    format!("{api_url}-{repo}-{tag}-{source}").to_kebab_case()
 }
 
 fn should_cache_release(release: &GithubRelease) -> bool {
@@ -925,7 +934,7 @@ something_else = "value"
         let repo = "owner/empty-assets-cache-test";
         let tag = "v1.0.0";
         let path = format!("/repos/{repo}/releases/tags/{tag}");
-        let key = format!("{}-{repo}-{tag}-versions-host-true", server.url()).to_kebab_case();
+        let key = release_cache_key(&server.url(), repo, tag, true);
 
         let cached_empty_release = make_release(tag);
         {
@@ -983,7 +992,7 @@ something_else = "value"
         let repo = "owner/versions-host-cache-split-test";
         let tag = "v1.0.0";
         let path = format!("/repos/{repo}/releases/tags/{tag}");
-        let true_key = format!("{}-{repo}-{tag}-versions-host-true", server.url()).to_kebab_case();
+        let true_key = release_cache_key(&server.url(), repo, tag, true);
 
         {
             let cache_group = get_release_cache(&true_key).await;
