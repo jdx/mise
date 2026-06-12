@@ -3298,7 +3298,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--missing",
               description:
-                "Exit with code 1 if any configured packages or files are missing",
+                "Exit with code 1 if any configured packages or files are not in their\ndesired state (missing, version mismatch, differs)",
               isRepeatable: false,
             },
           ],

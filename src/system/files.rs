@@ -182,10 +182,24 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
         FileMode::Symlink => check_symlink(&req.source, &req.target),
         FileMode::SymlinkEach => check_symlink_each(req),
         FileMode::Copy => check_copy(&req.source, &req.target),
-        FileMode::Template => check_content(
-            &req.target,
-            rendered.expect("rendered template content").as_bytes(),
-        ),
+        FileMode::Template => {
+            let state = check_content(
+                &req.target,
+                rendered.expect("rendered template content").as_bytes(),
+            )?;
+            // templates promise the source file's permissions — repair
+            // drift (e.g. a later chmod), not just content
+            #[cfg(unix)]
+            if state == FileState::Applied {
+                use std::os::unix::fs::PermissionsExt;
+                let mode_of =
+                    |p: &Path| -> Result<u32> { Ok(p.metadata()?.permissions().mode() & 0o7777) };
+                if mode_of(&req.source)? != mode_of(&req.target)? {
+                    return Ok(FileState::Differs("permissions differ".into()));
+                }
+            }
+            Ok(state)
+        }
     }
 }
 
@@ -511,10 +525,16 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
             }
         }
         FileMode::Copy => {
-            remove_existing(&req.target)?;
             if req.source.is_dir() {
+                // additive: overwrite matching files, leave files mise
+                // doesn't manage in place — only a type mismatch (vetted
+                // as a conflict) removes the target
+                if req.target.exists() && !req.target.is_dir() {
+                    remove_existing(&req.target)?;
+                }
                 file::copy_dir_all(&req.source, &req.target)?;
             } else {
+                remove_existing(&req.target)?;
                 file::copy(&req.source, &req.target)?;
             }
         }

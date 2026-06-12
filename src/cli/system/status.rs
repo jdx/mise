@@ -18,8 +18,9 @@ pub struct SystemStatus {
     #[clap(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured packages or files are missing
-    #[clap(long)]
+    /// Exit with code 1 if any configured packages or files are not in their
+    /// desired state (missing, version mismatch, differs)
+    #[clap(long, verbatim_doc_comment)]
     missing: bool,
 }
 

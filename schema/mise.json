@@ -2980,8 +2980,15 @@
                   },
                   "mode": {
                     "type": "string",
-                    "description": "how to apply the source to the target",
-                    "enum": ["symlink", "symlink-each", "copy", "template"]
+                    "description": "how to apply the source to the target: symlink (default), symlink-each, copy, or template; unknown modes from newer mise versions warn and are skipped",
+                    "anyOf": [
+                      {
+                        "enum": ["symlink", "symlink-each", "copy", "template"]
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
                   }
                 }
               }

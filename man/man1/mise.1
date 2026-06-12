@@ -2825,7 +2825,8 @@ from `[system.files]`
 Output in JSON format
 .TP
 \fB\-\-missing\fR
-Exit with code 1 if any configured packages or files are missing
+Exit with code 1 if any configured packages or files are not in their
+desired state (missing, version mismatch, differs)
 .SH "MISE SYSTEM UPGRADE"
 Upgrade installed system packages from `[system.packages]`
 

@@ -16,7 +16,8 @@ Output in JSON format
 
 ### `--missing`
 
-Exit with code 1 if any configured packages or files are missing
+Exit with code 1 if any configured packages or files are not in their
+desired state (missing, version mismatch, differs)
 
 Examples:
 

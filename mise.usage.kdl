@@ -2944,7 +2944,10 @@ Examples:
 
 """#
         flag "-J --json" help="Output in JSON format"
-        flag --missing help="Exit with code 1 if any configured packages or files are missing"
+        flag --missing help=#"""
+Exit with code 1 if any configured packages or files are not in their
+desired state (missing, version mismatch, differs)
+"""#
     }
     cmd upgrade help="Upgrade installed system packages from `[system.packages]`" {
         alias up

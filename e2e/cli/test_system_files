@@ -48,6 +48,27 @@ assert_contains "mise system status" "differs"
 assert_succeed "mise system install --yes"
 assert "cat ~/.config/starship.toml" "starship v2"
 
+# template permission drift is detected and repaired
+chmod 600 dotfiles/ssh_config.tmpl
+assert_contains "mise system status" "permissions differ"
+assert_succeed "mise system install --yes"
+case "$(uname -s)" in
+  Darwin) assert "stat -f %Lp ~/.ssh/config" "600" ;;
+  *) assert "stat -c %a ~/.ssh/config" "600" ;;
+esac
+
+# directory copies are additive: unmanaged files survive a reapply
+cat <<EOF >>mise.toml
+"~/.local/copydir" = { source = "dotfiles/bin", mode = "copy" }
+EOF
+assert_succeed "mise system install --yes"
+assert "cat ~/.local/copydir/one" "one"
+echo "keep me" >~/.local/copydir/unmanaged
+echo "one v2" >dotfiles/bin/one
+assert_succeed "mise system install --yes"
+assert "cat ~/.local/copydir/one" "one v2"
+assert "cat ~/.local/copydir/unmanaged" "keep me"
+
 # a real file where a symlink should go is a conflict: not clobbered
 rm ~/.gitconfig
 echo "precious" >~/.gitconfig
