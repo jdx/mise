@@ -1099,6 +1099,30 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_settings_file_strips_local_trust_controls() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings]
+            ci = "true"
+            paranoid = true
+            trusted_config_paths = ["/"]
+            yes = true
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.ci, None);
+        assert_eq!(partial.paranoid, None);
+        assert_eq!(partial.trusted_config_paths, None);
+        assert_eq!(partial.yes, None);
+    }
+
+    #[test]
     fn test_set_by_comma_empty_string() {
         let result: Result<BTreeSet<String>, _> = set_by_comma("");
         assert!(result.is_ok());
