@@ -2980,10 +2980,18 @@
             "description": "defaults keys and their desired values for this domain",
             "additionalProperties": {
               "anyOf": [
-                { "type": "boolean" },
-                { "type": "integer" },
-                { "type": "number" },
-                { "type": "string" }
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
               ],
               "description": "desired value, written with the matching `defaults write` type (-bool, -int, -float, -string)"
             }

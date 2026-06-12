@@ -155,11 +155,14 @@ pub async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result<()> {
     for req in requests {
         let mut args = vec!["write".to_string(), req.domain.clone(), req.key.clone()];
         args.extend(req.value.write_args());
+        // shell-quoted so the printed command is copy-pasteable even when a
+        // string value contains spaces
+        let display = shell_words::join(&args);
         if dry_run {
-            miseprintln!("defaults {}", args.join(" "));
+            miseprintln!("defaults {display}");
             continue;
         }
-        debug!("$ defaults {}", args.join(" "));
+        debug!("$ defaults {display}");
         let output = tokio::process::Command::new("defaults")
             .args(&args)
             .stdin(Stdio::null())
@@ -169,8 +172,7 @@ pub async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result<()> {
             .await?;
         if !output.status.success() {
             eyre::bail!(
-                "`defaults {}` failed: {}",
-                args.join(" "),
+                "`defaults {display}` failed: {}",
                 String::from_utf8_lossy(&output.stderr).trim()
             );
         }
@@ -197,7 +199,7 @@ async fn read(domain: &str, key: &str) -> Result<Option<(String, String)>> {
 }
 
 async fn defaults_cmd(args: &[&str]) -> Result<Option<String>> {
-    debug!("$ defaults {}", args.join(" "));
+    debug!("$ defaults {}", shell_words::join(args));
     let output = tokio::process::Command::new("defaults")
         .args(args)
         .stdin(Stdio::null())
@@ -206,11 +208,23 @@ async fn defaults_cmd(args: &[&str]) -> Result<Option<String>> {
         .output()
         .await?;
     if !output.status.success() {
-        return Ok(None);
+        // "does not exist" is the expected missing-key/-domain answer; any
+        // other failure (cfprefsd unavailable, managed domain, ...) must not
+        // masquerade as Unset
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("does not exist") {
+            return Ok(None);
+        }
+        eyre::bail!(
+            "`defaults {}` failed: {}",
+            shell_words::join(args),
+            stderr.trim()
+        );
     }
-    Ok(Some(
-        String::from_utf8_lossy(&output.stdout).trim().to_string(),
-    ))
+    // strip only the trailing newline — leading/trailing spaces can be
+    // significant in string values
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(Some(stdout.trim_end_matches(['\r', '\n']).to_string()))
 }
 
 #[cfg(test)]
