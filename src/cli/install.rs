@@ -116,6 +116,18 @@ impl Install {
         {
             return;
         }
+        // when everything is satisfied the hint never fires, so also
+        // throttle the checks to once per day
+        let checked = crate::dirs::STATE.join("system-packages-checked");
+        if checked
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age < std::time::Duration::from_secs(24 * 60 * 60))
+        {
+            return;
+        }
         let Ok(config) = Config::get().await else {
             return;
         };
@@ -123,6 +135,7 @@ impl Install {
         if mgrs.is_empty() {
             return;
         }
+        let _ = crate::file::touch_file(&checked);
         let mut missing = 0;
         for mp in mgrs {
             if !mp.manager.is_available() {
