@@ -109,7 +109,11 @@ impl Install {
     /// one-time hint when `[system.packages]` entries are missing — mise
     /// never installs system packages implicitly
     async fn hint_missing_system_packages(&self) {
-        if cfg!(test) || !console::user_attended() || !Settings::get().experimental {
+        // the status queries spawn package-manager processes; skip them
+        // entirely once the hint has been shown (or is disabled)
+        if !Settings::get().experimental
+            || !crate::hint::hint_would_display("system_packages_missing")
+        {
             return;
         }
         let Ok(config) = Config::get().await else {
