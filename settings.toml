@@ -705,6 +705,7 @@ is trimmed.
 Example: `op read "op://Private/Forgejo Token/credential"`
 """
 env = "MISE_FORGEJO_CREDENTIAL_COMMAND"
+global_only = true
 type = "String"
 
 [forgejo.fj_cli_tokens]
@@ -757,6 +758,7 @@ is trimmed.
 Example: `op read "op://Private/GitHub Token/credential"`
 """
 env = "MISE_GITHUB_CREDENTIAL_COMMAND"
+global_only = true
 type = "String"
 
 [github.gh_cli_tokens]
@@ -920,6 +922,7 @@ is trimmed.
 Example: `op read "op://Private/GitLab Token/credential"`
 """
 env = "MISE_GITLAB_CREDENTIAL_COMMAND"
+global_only = true
 type = "String"
 
 [gitlab.glab_cli_tokens]
