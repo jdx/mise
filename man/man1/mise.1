@@ -458,16 +458,16 @@ Symlinks all tool versions from an external tool into mise
 Symlinks all ruby tool versions from an external tool into mise
 .TP
 \fBsystem\fR
-[experimental] Manage system packages from `[system.packages]`
+[experimental] Manage system packages from `[system.packages]` and macOS
 .TP
 \fBsystem install\fR
-Install missing system packages from `[system.packages]`
+Install missing system packages from `[system.packages]` and apply macOS
 .RS
 \fIAliases: \fRi
 .RE
 .TP
 \fBsystem status\fR
-Show the status of system packages from `[system.packages]`
+Show the status of system packages from `[system.packages]` and macOS
 .RS
 \fIAliases: \fRls
 .RE
@@ -2745,15 +2745,18 @@ Symlinks all ruby tool versions from an external tool into mise
 \fB\-\-brew\fR
 Get tool versions from Homebrew
 .SH "MISE SYSTEM INSTALL"
-Install missing system packages from `[system.packages]`
+Install missing system packages from `[system.packages]` and apply macOS
+defaults from `[system.defaults]`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting).
+root (see the `system_packages.sudo` setting). On macOS, also writes any
+`[system.defaults]` entries that are unset or differ from the config.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config.
+the config. Explicit packages and `\-\-manager` scope the run to packages
+only.
 .PP
 \fBUsage:\fR mise system install [OPTIONS] [<PACKAGE>] ...
 .PP
@@ -2777,7 +2780,8 @@ Refresh package manager metadata first (apt: `apt\-get update`)
 \fB<PACKAGE>\fR
 Packages in `manager:package` form; defaults to everything configured in [system.packages]
 .SH "MISE SYSTEM STATUS"
-Show the status of system packages from `[system.packages]`
+Show the status of system packages from `[system.packages]` and macOS
+defaults from `[system.defaults]`
 .PP
 \fBUsage:\fR mise system status [OPTIONS]
 .PP
@@ -2788,7 +2792,7 @@ Show the status of system packages from `[system.packages]`
 Output in JSON format
 .TP
 \fB\-\-missing\fR
-Exit with code 1 if any configured packages are missing
+Exit with code 1 if any configured packages are missing or defaults are out of sync
 .SH "MISE SYSTEM UPGRADE"
 Upgrade installed system packages from `[system.packages]`
 

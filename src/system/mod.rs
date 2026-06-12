@@ -1,10 +1,11 @@
 //! `[system]` config section: machine-global bootstrapping.
 //!
 //! Currently this is `[system.packages]` — declarative system packages
-//! installed by `mise system install`. These are intentionally not part of
-//! `[tools]`: they're unversioned, machine-global, and managed by the OS
-//! package manager (or mise's own Homebrew-bottle installer), not mise's
-//! per-project toolset.
+//! installed by `mise system install` — and `[system.defaults]` — declarative
+//! macOS user defaults applied by the same command. These are intentionally
+//! not part of `[tools]`: they're unversioned, machine-global, and managed by
+//! the OS package manager (or mise's own Homebrew-bottle installer) or macOS
+//! `defaults`, not mise's per-project toolset.
 
 use std::sync::Arc;
 
@@ -13,8 +14,10 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::config::Config;
+use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
 
+pub mod defaults;
 pub mod packages;
 pub(crate) mod sudo;
 
@@ -26,6 +29,12 @@ pub struct SystemTomlConfig {
     /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
     pub packages: IndexMap<String, String>,
+    /// `[system.defaults.<domain>]` -> key -> value. Values stay raw TOML so
+    /// shapes from newer mise versions (arrays, dicts) parse fine on older
+    /// ones; the domain level is also raw so a malformed section warns
+    /// instead of failing the whole config.
+    #[serde(default)]
+    pub defaults: IndexMap<String, toml::Value>,
 }
 
 /// Packages for one manager, aggregated across the config hierarchy
@@ -130,6 +139,43 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
         }
     }
     resolve_managers(by_mgr, false).expect("non-strict resolve is infallible")
+}
+
+/// Aggregate `[system.defaults]` across all loaded config files.
+///
+/// (domain, key) pairs union global -> local; a more local config overrides
+/// the value a global config declared. Unsupported value shapes warn
+/// (forward compatibility) and are skipped.
+pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
+    let mut merged: IndexMap<(String, String), toml::Value> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.system_config() {
+            for (domain, entries) in sys.defaults {
+                match entries {
+                    toml::Value::Table(entries) => {
+                        for (key, value) in entries {
+                            merged.insert((domain.clone(), key), value);
+                        }
+                    }
+                    _ => warn!(
+                        "[system.defaults]: expected a table of key/value pairs for domain '{domain}'"
+                    ),
+                }
+            }
+        }
+    }
+    let mut out = vec![];
+    for ((domain, key), value) in merged {
+        match DefaultsValue::from_toml(&value) {
+            Some(value) => out.push(DefaultsRequest { domain, key, value }),
+            None => warn!(
+                "[system.defaults]: unsupported value type for {domain} {key} \
+                 (expected bool, integer, float, or string)"
+            ),
+        }
+    }
+    out
 }
 
 /// Build [`ManagerPackages`] from explicit CLI specs like `apt:curl`.

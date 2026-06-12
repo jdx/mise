@@ -4,12 +4,14 @@
 - **Usage**: `mise system <SUBCOMMAND>`
 - **Source code**: [`src/cli/system/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/mod.rs)
 
-[experimental] Manage system packages from `[system.packages]`
+[experimental] Manage system packages from `[system.packages]` and macOS
+defaults from `[system.defaults]`
 
 System packages are machine-global packages installed by the OS package
 manager (apt, dnf, pacman) or mise's Homebrew-bottle installer (brew).
+macOS defaults are user preferences written with `defaults write`.
 Unlike `[tools]`, they are not version-pinned per-project and are only
-ever installed when explicitly requested with `mise system install`.
+ever applied when explicitly requested with `mise system install`.
 
 ## Subcommands
 

@@ -2079,6 +2079,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_system_defaults() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [system.defaults.NSGlobalDomain]
+        KeyRepeat = 2
+        ApplePressAndHoldEnabled = false
+
+        [system.defaults."com.apple.dock"]
+        autohide = true
+        tilesize = 48
+        magnification-scale = 1.5
+        orientation = "left"
+        # unsupported shapes still parse (forward compatibility)
+        future-array = [1, 2]
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.system_config().unwrap();
+        let global = system.defaults.get("NSGlobalDomain").unwrap();
+        assert_eq!(global.get("KeyRepeat").unwrap(), &toml::Value::Integer(2));
+        assert_eq!(
+            global.get("ApplePressAndHoldEnabled").unwrap(),
+            &toml::Value::Boolean(false)
+        );
+        let dock = system.defaults.get("com.apple.dock").unwrap();
+        assert_eq!(dock.get("autohide").unwrap(), &toml::Value::Boolean(true));
+        assert_eq!(dock.get("tilesize").unwrap(), &toml::Value::Integer(48));
+        assert_eq!(
+            dock.get("magnification-scale").unwrap(),
+            &toml::Value::Float(1.5)
+        );
+        assert_eq!(
+            dock.get("orientation").unwrap(),
+            &toml::Value::String("left".into())
+        );
+        assert!(dock.get("future-array").unwrap().is_array());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
     async fn test_update_system_package() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");

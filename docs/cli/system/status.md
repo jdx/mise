@@ -5,7 +5,8 @@
 - **Aliases**: `ls`
 - **Source code**: [`src/cli/system/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/status.rs)
 
-Show the status of system packages from `[system.packages]`
+Show the status of system packages from `[system.packages]` and macOS
+defaults from `[system.defaults]`
 
 ## Flags
 
@@ -15,7 +16,7 @@ Output in JSON format
 
 ### `--missing`
 
-Exit with code 1 if any configured packages are missing
+Exit with code 1 if any configured packages are missing or defaults are out of sync
 
 Examples:
 

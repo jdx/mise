@@ -3213,12 +3213,12 @@ const completionSpec: Fig.Spec = {
     {
       name: "system",
       description:
-        "[experimental] Manage system packages from `[system.packages]`",
+        "[experimental] Manage system packages from `[system.packages]` and macOS\ndefaults from `[system.defaults]`",
       subcommands: [
         {
           name: ["install", "i"],
           description:
-            "Install missing system packages from `[system.packages]`",
+            "Install missing system packages from `[system.packages]` and apply macOS\ndefaults from `[system.defaults]`",
           options: [
             {
               name: ["-m", "--manager"],
@@ -3259,7 +3259,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["status", "ls"],
           description:
-            "Show the status of system packages from `[system.packages]`",
+            "Show the status of system packages from `[system.packages]` and macOS\ndefaults from `[system.defaults]`",
           options: [
             {
               name: ["-J", "--json"],
@@ -3269,7 +3269,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--missing",
               description:
-                "Exit with code 1 if any configured packages are missing",
+                "Exit with code 1 if any configured packages are missing or defaults are out of sync",
               isRepeatable: false,
             },
           ],

@@ -2849,27 +2849,38 @@ Examples:
         flag --brew help="Get tool versions from Homebrew"
     }
 }
-cmd system subcommand_required=#true help="[experimental] Manage system packages from `[system.packages]`" {
+cmd system subcommand_required=#true help=#"""
+[experimental] Manage system packages from `[system.packages]` and macOS
+defaults from `[system.defaults]`
+"""# {
     long_help #"""
-[experimental] Manage system packages from `[system.packages]`
+[experimental] Manage system packages from `[system.packages]` and macOS
+defaults from `[system.defaults]`
 
 System packages are machine-global packages installed by the OS package
 manager (apt, dnf, pacman) or mise's Homebrew-bottle installer (brew).
+macOS defaults are user preferences written with `defaults write`.
 Unlike `[tools]`, they are not version-pinned per-project and are only
-ever installed when explicitly requested with `mise system install`.
+ever applied when explicitly requested with `mise system install`.
 """#
-    cmd install help="Install missing system packages from `[system.packages]`" {
+    cmd install help=#"""
+Install missing system packages from `[system.packages]` and apply macOS
+defaults from `[system.defaults]`
+"""# {
         alias i
         long_help #"""
-Install missing system packages from `[system.packages]`
+Install missing system packages from `[system.packages]` and apply macOS
+defaults from `[system.defaults]`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting).
+root (see the `system_packages.sudo` setting). On macOS, also writes any
+`[system.defaults]` entries that are unset or differ from the config.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config.
+the config. Explicit packages and `--manager` scope the run to packages
+only.
 """#
         after_long_help #"""
 Examples:
@@ -2890,7 +2901,10 @@ Examples:
         flag --update help="Refresh package manager metadata first (apt: `apt-get update`)"
         arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [system.packages]" required=#false var=#true
     }
-    cmd status help="Show the status of system packages from `[system.packages]`" {
+    cmd status help=#"""
+Show the status of system packages from `[system.packages]` and macOS
+defaults from `[system.defaults]`
+"""# {
         alias ls
         after_long_help #"""
 Examples:
@@ -2901,7 +2915,7 @@ Examples:
 
 """#
         flag "-J --json" help="Output in JSON format"
-        flag --missing help="Exit with code 1 if any configured packages are missing"
+        flag --missing help="Exit with code 1 if any configured packages are missing or defaults are out of sync"
     }
     cmd upgrade help="Upgrade installed system packages from `[system.packages]`" {
         alias up

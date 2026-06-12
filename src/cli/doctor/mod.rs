@@ -195,6 +195,10 @@ impl Doctor {
             data.insert("system_packages".into(), system_packages);
         }
 
+        if let Some(system_defaults) = self.system_defaults_json(&config).await {
+            data.insert("system_defaults".into(), system_defaults);
+        }
+
         if !self.errors.is_empty() {
             data.insert("errors".into(), self.errors.clone().into_iter().collect());
         }
@@ -365,6 +369,7 @@ impl Doctor {
         }
 
         self.analyze_system_packages(config).await?;
+        self.analyze_system_defaults(config).await?;
 
         Ok(())
     }
@@ -430,6 +435,86 @@ impl Doctor {
             ));
         }
         Some(map.into())
+    }
+
+    /// same diagnostics as [`Self::analyze_system_defaults`] for `doctor -J`
+    async fn system_defaults_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        if !Settings::get().experimental {
+            return None;
+        }
+        let defaults = crate::system::defaults_from_config(config);
+        if defaults.is_empty() {
+            return None;
+        }
+        if !crate::system::defaults::is_available() {
+            return Some(serde_json::json!({
+                "available": false,
+                "reason": crate::system::defaults::unavailable_reason(),
+                "requested": defaults.len(),
+            }));
+        }
+        match crate::system::defaults::status(&defaults).await {
+            Ok(statuses) => {
+                let out_of_sync = statuses
+                    .iter()
+                    .filter(|s| s.state != crate::system::defaults::DefaultsState::Set)
+                    .count();
+                if out_of_sync > 0 {
+                    self.warnings.push(format!(
+                        "{out_of_sync} macOS default(s) are out of sync, apply them with `mise system install`"
+                    ));
+                }
+                Some(serde_json::json!({
+                    "available": true,
+                    "requested": statuses.len(),
+                    "out_of_sync": out_of_sync,
+                }))
+            }
+            Err(err) => {
+                self.warnings
+                    .push(format!("failed to check macOS defaults: {err}"));
+                None
+            }
+        }
+    }
+
+    async fn analyze_system_defaults(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        if !Settings::get().experimental {
+            return Ok(());
+        }
+        let defaults = crate::system::defaults_from_config(config);
+        if defaults.is_empty() {
+            return Ok(());
+        }
+        let line = if !crate::system::defaults::is_available() {
+            format!(
+                "unavailable ({}), {} entry(ies) skipped",
+                crate::system::defaults::unavailable_reason(),
+                defaults.len()
+            )
+        } else {
+            match crate::system::defaults::status(&defaults).await {
+                Ok(statuses) => {
+                    let out_of_sync = statuses
+                        .iter()
+                        .filter(|s| s.state != crate::system::defaults::DefaultsState::Set)
+                        .count();
+                    if out_of_sync > 0 {
+                        self.warnings.push(format!(
+                            "{out_of_sync} macOS default(s) are out of sync, apply them with `mise system install`"
+                        ));
+                    }
+                    format!("{} requested, {out_of_sync} out of sync", statuses.len())
+                }
+                Err(err) => {
+                    self.warnings
+                        .push(format!("failed to check macOS defaults: {err}"));
+                    return Ok(());
+                }
+            }
+        };
+        info::section("system_defaults", line)?;
+        Ok(())
     }
 
     async fn analyze_system_packages(&mut self, config: &Arc<Config>) -> eyre::Result<()> {

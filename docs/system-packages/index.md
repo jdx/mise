@@ -24,6 +24,10 @@ itself. Use them for shared libraries and build dependencies that dev tools
 need (`libssl-dev`, `postgresql`, `ffmpeg`), not for the dev tools
 themselves — those belong in `[tools]`.
 
+The `[system]` section can also declare
+[macOS defaults](/system-packages/defaults.html) (`[system.defaults]`),
+applied by the same `mise system install` command.
+
 ## Supported package managers
 
 | Manager  | Platform                                                       | Page                                   |
