@@ -20,7 +20,7 @@ use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::{ConfigFile, config_trust_root, trust_check};
+use crate::config::config_file::{ConfigFile, config_trust_root, is_path_trusted, trust_check};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
@@ -2533,6 +2533,9 @@ async fn load_file_tasks(
     let config_root = Arc::new(config_root.to_path_buf());
     let cf_root = cf.config_root();
     let task_config_dir = cf.task_config().dir.clone();
+    // a config can only vouch for task include files when it was actually
+    // trusted — safe configs load without trust and cannot vouch for anything
+    let require_task_include_trust = !is_path_trusted(cf.get_path());
 
     for include in includes {
         let paths = if include.starts_with("git::") {
@@ -2547,7 +2550,7 @@ async fn load_file_tasks(
                 &config_root,
                 &task_config_dir,
                 templates,
-                false,
+                require_task_include_trust,
             )
             .await?;
             if is_global_task_include_path(&path) {
@@ -2600,7 +2603,9 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
-    let require_task_include_trust = configs.is_empty();
+    // a config can only vouch for task include files when it was actually
+    // trusted — safe configs load without trust and cannot vouch for anything
+    let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
 
     let (includes, resolve_dir) = configs
         .iter()
@@ -2661,10 +2666,22 @@ pub async fn load_tasks_in_dir(
 }
 
 fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
-    if require_trust && !is_global_task_include_path(path) {
+    if require_trust && !is_global_task_include_path(path) && task_include_requires_trust(path) {
         trust_check(path)?;
     }
     Ok(())
+}
+
+/// Template-free task files are inert at load time: TOML and `#MISE` headers
+/// are only parsed, and the scripts themselves only run on an explicit
+/// `mise run`. Templates are what can execute code while tasks load (via
+/// exec() etc. when task fields render), so only files containing template
+/// syntax need trust. Paranoid mode keeps requiring trust for everything.
+fn task_include_requires_trust(path: &Path) -> bool {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+        return true;
+    }
+    file::read_to_string(path).map_or(true, |body| contains_template_syntax(&body))
 }
 
 async fn load_task_file(

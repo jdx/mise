@@ -20,9 +20,11 @@ use itertools::Itertools;
 /// or assume trust in detected CI unless paranoid mode is enabled.
 ///
 /// Safe config files do not require trust: files that only contain
-/// `min_version` and `[tools]` entries with plain version strings (no
-/// templates and no tool options) are loaded without prompting, since
-/// nothing in them can execute code or change mise's behavior.
+/// `min_version`, `[tools]` entries with plain version strings, and
+/// `[tasks]` (no templates and no tool options) are loaded without
+/// prompting, since nothing in them executes code at load time — tools
+/// install and tasks run only on explicit commands like `mise install`
+/// or `mise run`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Trust {

@@ -309,10 +309,10 @@ impl MiseToml {
     /// Whether this config body can be loaded without trusting the file.
     ///
     /// Safe configs cannot execute code or change mise's behavior beyond
-    /// requesting tool versions, so there is nothing to gate behind a trust
-    /// prompt. Anything else — env vars, tasks, hooks, settings, aliases,
-    /// templates, tool options like `postinstall`/`install_env` — still
-    /// requires trust.
+    /// requesting tool versions and defining tasks, so there is nothing to
+    /// gate behind a trust prompt. Anything else — env vars, hooks, settings,
+    /// aliases, templates, tool options like `postinstall`/`install_env` —
+    /// still requires trust.
     fn is_trust_exempt(body: &str, path: &Path) -> bool {
         if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
             return false;
@@ -1970,12 +1970,17 @@ impl<'de> de::Deserialize<'de> for Alias {
     }
 }
 
-/// A config body is safe to load without trust when it only requests tool
-/// versions. `min_version` and `[tools]` entries with plain version strings
-/// cannot execute anything by themselves — installation only happens when the
-/// user explicitly runs a command like `mise install`. Tool entries with
-/// options (tables) are excluded because options like `postinstall` and
-/// `install_env` run code or alter the install environment.
+/// A config body is safe to load without trust when nothing in it can execute
+/// code at load time or change mise's behavior without an explicit user
+/// action:
+/// - `min_version` is inert
+/// - `[tools]` entries with plain version strings only matter when the user
+///   runs something like `mise install`. Entries with options (tables) are
+///   excluded because options like `postinstall` and `install_env` run code
+///   or alter the install environment.
+/// - `[tasks]` definitions are inert until the user explicitly runs one
+/// - no Tera template syntax anywhere — templates render while config and
+///   tasks load and can run arbitrary commands via exec()
 fn is_safe_config_body(body: &str) -> bool {
     // Tera templates can run arbitrary commands via exec() when rendered
     if contains_template_syntax(body) {
@@ -1986,7 +1991,7 @@ fn is_safe_config_body(body: &str) -> bool {
         return false;
     };
     table.iter().all(|(key, value)| match key.as_str() {
-        "min_version" => true,
+        "min_version" | "tasks" => true,
         "tools" => value.as_table().is_some_and(|tools| {
             tools.values().all(|version| match version {
                 toml::Value::String(_) => true,
@@ -2595,6 +2600,16 @@ run = 'echo "template"'
         python = ["3.11", "3.12"]
         "cargo:eza" = "latest"
         "#}));
+        // tasks are inert until the user explicitly runs one
+        assert!(is_safe_config_body(indoc! {r#"
+        [tasks.build]
+        run = "cargo build"
+        dir = "src"
+        env = { FOO = "bar" }
+        [tasks.test]
+        depends = ["build"]
+        run = ["cargo test"]
+        "#}));
 
         // templates can execute commands
         assert!(!is_safe_config_body(indoc! {r#"
@@ -2610,10 +2625,16 @@ run = 'echo "template"'
         [tools]
         node = [{ version = "20" }]
         "#}));
-        // anything beyond min_version/tools requires trust
+        // tasks with templates render (and can exec) while loading
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tasks.build]
+        run = "cargo build"
+        description = "{{ exec(command='echo hi') }}"
+        "#}));
+        // anything beyond min_version/tools/tasks requires trust
         for body in [
             "[env]\nFOO = \"bar\"",
-            "[tasks.build]\nrun = \"echo hi\"",
+            "[task_config]\nincludes = [\"tasks.toml\"]",
             "[hooks]\nenter = \"echo hi\"",
             "[settings]\nparanoid = false",
             "[alias]\nnode = \"asdf:foo/bar\"",
