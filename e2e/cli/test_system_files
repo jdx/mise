@@ -57,6 +57,25 @@ case "$(uname -s)" in
   *) assert "stat -c %a ~/.ssh/config" "600" ;;
 esac
 
+# copying an empty source directory still creates the target dir (converges)
+mkdir -p dotfiles/emptydir
+cat <<EOF >>mise.toml
+"~/.local/emptydir" = { source = "dotfiles/emptydir", mode = "copy" }
+EOF
+assert_succeed "mise system install --yes"
+assert_directory_exists "$HOME/.local/emptydir"
+assert_succeed "mise system status --missing"
+
+# dry-run never renders templates (exec() in a template must not run)
+cat <<EOF >dotfiles/exec.tmpl
+{{ exec(command="touch exec-ran") }}
+EOF
+cat <<EOF >>mise.toml
+"~/.local/exec-out" = { source = "dotfiles/exec.tmpl", mode = "template" }
+EOF
+assert_succeed "mise system install --dry-run"
+assert_fail "ls exec-ran"
+
 # a dangling symlink at a copy target is replaced, not an IO error
 rm ~/.config/starship.toml
 ln -s /nonexistent-source ~/.config/starship.toml

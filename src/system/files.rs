@@ -385,6 +385,13 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             ));
             continue;
         }
+        // rendering can run exec() — a dry run must not execute anything,
+        // so list template entries without computing their current state
+        if opts.dry_run && req.mode == FileMode::Template {
+            conflicts.extend(find_conflicts(req)?);
+            todo.push((req, None));
+            continue;
+        }
         let rendered = match req.mode {
             FileMode::Template => Some(render_template(config, req)?),
             _ => None,
@@ -549,6 +556,9 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                 if req.target.exists() && !req.target.is_dir() {
                     remove_existing(&req.target)?;
                 }
+                // even an empty source dir must produce the target dir,
+                // or the entry would never converge
+                file::create_dir_all(&req.target)?;
                 // per-file instead of copy_dir_all so a symlink at a
                 // destination is replaced, not written through
                 for (source, target) in walk_source_files(req)? {
