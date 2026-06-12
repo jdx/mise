@@ -524,14 +524,8 @@ impl Client {
             Err(err) if url.scheme() == "http" && is_connection_error(&err) => {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
-                self.send_once_with_retry_headers(
-                    method,
-                    url,
-                    headers,
-                    verb_label,
-                    options,
-                )
-                .await
+                self.send_once_with_retry_headers(method, url, headers, verb_label, options)
+                    .await
             }
             Err(err) => Err(err),
         }
