@@ -2307,6 +2307,20 @@ env = "MISE_SYSTEM_CONFIG_FILE"
 optional = true
 type = "Path"
 
+[system_packages.sudo]
+default = true
+description = "[experimental] Allow `mise system install` to elevate with sudo when not running as root."
+docs = """
+[experimental] Allow `mise system install` to elevate with sudo when not running as root.
+
+When disabled, mise never runs sudo: if elevation would be required, it errors
+with the exact command to run manually. mise only elevates for explicit
+`mise system install` invocations, logs the full command line before running
+it, and skips sudo entirely when already running as root (e.g. containers/CI).
+"""
+env = "MISE_SYSTEM_PACKAGES_SUDO"
+type = "Bool"
+
 [task.disable_paths]
 default = []
 description = "Paths that mise will not look for tasks in."

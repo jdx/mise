@@ -2825,6 +2825,53 @@ Examples:
         flag --brew help="Get tool versions from Homebrew"
     }
 }
+cmd system subcommand_required=#true help="[experimental] Manage system packages from `[system.packages]`" {
+    long_help #"""
+[experimental] Manage system packages from `[system.packages]`
+
+System packages are machine-global packages installed by the OS package
+manager (apt) or mise's Homebrew-bottle installer (brew). Unlike
+`[tools]`, they are not version-pinned per-project and are only ever
+installed when explicitly requested with `mise system install`.
+"""#
+    cmd install help="Install missing system packages from `[system.packages]`" {
+        alias i
+        long_help #"""
+Install missing system packages from `[system.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise system install
+    $ mise system install --dry-run
+    $ mise system install --manager apt --yes
+
+"""#
+        flag "-m --manager" help="Only install packages for this manager, e.g. `apt` or `brew`" {
+            arg <MANAGER>
+        }
+        flag "-n --dry-run" help="Print the commands that would run without running them"
+        flag "-y --yes" help="Skip the confirmation prompt"
+        flag --update help="Refresh package manager metadata first (apt: `apt-get update`)"
+    }
+    cmd status help="Show the status of system packages from `[system.packages]`" {
+        alias ls
+        after_long_help #"""
+Examples:
+
+    $ mise system status
+    $ mise system status --json
+    $ mise system status --missing # exit 1 if anything is missing
+
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --missing help="Exit with code 1 if any configured packages are missing"
+    }
+}
 cmd tasks help="Manage tasks" {
     alias t
     alias task hide=#true

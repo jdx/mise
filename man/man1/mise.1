@@ -457,6 +457,21 @@ Symlinks all tool versions from an external tool into mise
 \fBsync ruby\fR
 Symlinks all ruby tool versions from an external tool into mise
 .TP
+\fBsystem\fR
+[experimental] Manage system packages from `[system.packages]`
+.TP
+\fBsystem install\fR
+Install missing system packages from `[system.packages]`
+.RS
+\fIAliases: \fRi
+.RE
+.TP
+\fBsystem status\fR
+Show the status of system packages from `[system.packages]`
+.RS
+\fIAliases: \fRls
+.RE
+.TP
 \fBtasks\fR
 Manage tasks
 .RS
@@ -2702,6 +2717,42 @@ Symlinks all ruby tool versions from an external tool into mise
 .TP
 \fB\-\-brew\fR
 Get tool versions from Homebrew
+.SH "MISE SYSTEM INSTALL"
+Install missing system packages from `[system.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+.PP
+\fBUsage:\fR mise system install [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only install packages for this manager, e.g. `apt` or `brew`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-\-update\fR
+Refresh package manager metadata first (apt: `apt\-get update`)
+.SH "MISE SYSTEM STATUS"
+Show the status of system packages from `[system.packages]`
+.PP
+\fBUsage:\fR mise system status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured packages are missing
 .SH "MISE TASKS"
 Manage tasks
 .PP

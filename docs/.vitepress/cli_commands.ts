@@ -313,6 +313,17 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  system: {
+    hide: false,
+    subcommands: {
+      install: {
+        hide: false,
+      },
+      status: {
+        hide: false,
+      },
+    },
+  },
   tasks: {
     hide: false,
     subcommands: {

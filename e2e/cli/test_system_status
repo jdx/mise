@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[system.packages]
+apt = ["bc"]
+brew = ["jq"]
+EOF
+
+# status renders on any platform; unavailable managers are skipped, not errors
+assert_succeed "mise system status"
+assert_contains "mise system status" "bc"
+assert_contains "mise system status --json" '"apt"'
+
+# unknown managers warn but don't fail
+cat <<EOF >mise.toml
+[system.packages]
+not-a-real-manager = ["whatever"]
+EOF
+assert_succeed "mise system status"
+assert_contains "mise system status 2>&1" "unknown system package manager"
+
+# empty section
+cat <<EOF >mise.toml
+[tools]
+EOF
+assert_succeed "mise system status"

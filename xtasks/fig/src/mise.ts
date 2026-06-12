@@ -3184,6 +3184,64 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
+      name: "system",
+      description:
+        "[experimental] Manage system packages from `[system.packages]`",
+      subcommands: [
+        {
+          name: ["install", "i"],
+          description:
+            "Install missing system packages from `[system.packages]`",
+          options: [
+            {
+              name: ["-m", "--manager"],
+              description:
+                "Only install packages for this manager, e.g. `apt` or `brew`",
+              isRepeatable: false,
+              args: {
+                name: "manager",
+              },
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the commands that would run without running them",
+              isRepeatable: false,
+            },
+            {
+              name: ["-y", "--yes"],
+              description: "Skip the confirmation prompt",
+              isRepeatable: false,
+            },
+            {
+              name: "--update",
+              description:
+                "Refresh package manager metadata first (apt: `apt-get update`)",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
+          name: ["status", "ls"],
+          description:
+            "Show the status of system packages from `[system.packages]`",
+          options: [
+            {
+              name: ["-J", "--json"],
+              description: "Output in JSON format",
+              isRepeatable: false,
+            },
+            {
+              name: "--missing",
+              description:
+                "Exit with code 1 if any configured packages are missing",
+              isRepeatable: false,
+            },
+          ],
+        },
+      ],
+    },
+    {
       name: ["tasks", "t"],
       description: "Manage tasks",
       subcommands: [

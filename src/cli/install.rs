@@ -102,7 +102,47 @@ impl Install {
             }
             None => self.install_missing_runtimes(config).await?,
         };
+        self.hint_missing_system_packages().await;
         Ok(())
+    }
+
+    /// one-time hint when `[system.packages]` entries are missing — mise
+    /// never installs system packages implicitly
+    async fn hint_missing_system_packages(&self) {
+        if cfg!(test) || !console::user_attended() {
+            return;
+        }
+        let Ok(config) = Config::get().await else {
+            return;
+        };
+        let mgrs = crate::system::packages_from_config(&config);
+        if mgrs.is_empty() {
+            return;
+        }
+        for mp in mgrs {
+            if !mp.manager.is_available() {
+                continue;
+            }
+            if let Ok(statuses) = mp.manager.installed(&mp.requests).await {
+                let missing = statuses
+                    .iter()
+                    .filter(|s| {
+                        !matches!(
+                            s.state,
+                            crate::system::packages::PackageState::Installed { .. }
+                        )
+                    })
+                    .count();
+                if missing > 0 {
+                    hint!(
+                        "system_packages_missing",
+                        "{missing} system package(s) from [system.packages] are missing. Install them with",
+                        "mise system install"
+                    );
+                    return;
+                }
+            }
+        }
     }
 
     #[async_backtrace::framed]

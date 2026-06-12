@@ -1578,6 +1578,17 @@
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
         },
+        "system_packages": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "sudo": {
+              "default": true,
+              "description": "[experimental] Allow `mise system install` to elevate with sudo when not running as root.",
+              "type": "boolean"
+            }
+          }
+        },
         "task": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -2917,6 +2928,38 @@
       "$ref": "#/$defs/settings",
       "description": "mise settings",
       "type": "object"
+    },
+    "system": {
+      "type": "object",
+      "description": "[experimental] machine-global bootstrapping (system packages)",
+      "properties": {
+        "packages": {
+          "type": "object",
+          "description": "system packages to install with `mise system install`, keyed by package manager",
+          "properties": {
+            "apt": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "apt packages (linux), e.g. \"libssl-dev\" or \"curl=8.5.0-2\""
+            },
+            "brew": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Homebrew formulae (macOS), e.g. \"postgresql@17\""
+            }
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
     },
     "task_config": {
       "description": "configuration for task execution and management",

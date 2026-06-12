@@ -360,6 +360,54 @@ impl Doctor {
             Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
         }
 
+        self.analyze_system_packages(config).await?;
+
+        Ok(())
+    }
+
+    async fn analyze_system_packages(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        let mgrs = crate::system::packages_from_config(config);
+        if mgrs.is_empty() {
+            return Ok(());
+        }
+        let mut lines = vec![];
+        for mp in mgrs {
+            let name = mp.manager.name();
+            if !mp.manager.is_available() {
+                lines.push(format!(
+                    "{name}: unavailable ({}), {} package(s) skipped",
+                    mp.manager.unavailable_reason(),
+                    mp.requests.len()
+                ));
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    let missing = statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                    lines.push(format!(
+                        "{name}: {} requested, {missing} missing",
+                        statuses.len()
+                    ));
+                    if missing > 0 {
+                        self.warnings.push(format!(
+                            "{missing} system package(s) are missing, install them with `mise system install`"
+                        ));
+                    }
+                }
+                Err(err) => self
+                    .warnings
+                    .push(format!("failed to check {name} system packages: {err}")),
+            }
+        }
+        info::section("system_packages", lines.join("\n"))?;
         Ok(())
     }
 
