@@ -16,6 +16,7 @@ use crate::{backend, ui};
 pub enum ProgressIcon {
     Success,
     Skipped,
+    #[allow(dead_code)]
     Warning,
     Error,
 }
