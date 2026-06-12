@@ -343,14 +343,18 @@ pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
                 .join("\n"),
         );
     }
-    // remember the previous opt target (upgrades) so a failed link restores it
-    let prev_opt = std::fs::read_link(&opt_link).ok();
+    // remember every symlink we overwrite (upgrades replace the previous
+    // version's links, opt included) so a failed link restores all of them
     let mut created: Vec<PathBuf> = vec![];
+    let mut replaced: Vec<(PathBuf, PathBuf)> = vec![];
     let mut failure: Option<eyre::Report> = None;
     for (dest, target) in &links {
         let made = (|| -> Result<()> {
             crate::file::create_dir_all(dest.parent().unwrap())?;
             if dest.symlink_metadata().is_ok() {
+                if let Ok(prev) = std::fs::read_link(dest) {
+                    replaced.push((dest.clone(), prev));
+                }
                 crate::file::remove_file(dest)?;
             }
             crate::file::make_symlink(&relative_target(target, dest), dest)?;
@@ -366,8 +370,8 @@ pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
         for dest in created {
             let _ = crate::file::remove_file(&dest);
         }
-        if let Some(prev) = prev_opt {
-            let _ = crate::file::make_symlink(&prev, &opt_link);
+        for (dest, prev) in replaced {
+            let _ = crate::file::make_symlink(&prev, &dest);
         }
         return Err(err);
     }
