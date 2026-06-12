@@ -68,6 +68,6 @@ url = "https://github.com/orhun/git-cliff/releases/download/v2.10.0/git-cliff-2.
 checksum = "sha256:460a455bf0c6f4a0a9f5bab31d151ed483451dfd5bf60ddfa5eb6a1173b0d1cd"
 url = "https://github.com/orhun/git-cliff/releases/download/v2.10.0/git-cliff-2.10.0-x86_64-pc-windows-msvc.zip"
 
-[[tools.prettier]]
-version = "3.8.3"
-backend = "npm:prettier"
+[[tools.oxfmt]]
+version = "0.52.0"
+backend = "npm:oxfmt"

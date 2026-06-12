@@ -50,16 +50,16 @@ function writeFormattedJson(path: string, value: unknown) {
   writtenPaths.push(path);
 }
 
-function formatWithPrettier(paths: string[]) {
+function formatWithOxfmt(paths: string[]) {
   if (paths.length === 0) return;
-  const result = spawnSync("prettier", ["--write", ...paths], {
+  const result = spawnSync("oxfmt", ["--write", ...paths], {
     stdio: "inherit",
   });
   if (result.error) {
-    throw new Error(`prettier failed to spawn: ${result.error.message}`);
+    throw new Error(`oxfmt failed to spawn: ${result.error.message}`);
   }
   if (result.status !== 0) {
-    throw new Error(`prettier exited with status ${result.status}`);
+    throw new Error(`oxfmt exited with status ${result.status}`);
   }
 }
 
@@ -244,4 +244,4 @@ const misercSchema = {
 
 writeFormattedJson("schema/miserc.json", misercSchema);
 
-formatWithPrettier(writtenPaths);
+formatWithOxfmt(writtenPaths);

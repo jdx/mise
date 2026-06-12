@@ -698,6 +698,14 @@ backend = "npm:ajv-cli"
 version = "0.48.0"
 backend = "npm:markdownlint-cli"
 
+[[tools.oxfmt]]
+version = "0.52.0"
+backend = "npm:oxfmt"
+
+[[tools.oxlint]]
+version = "1.67.0"
+backend = "npm:oxlint"
+
 [[tools.pkl]]
 version = "0.31.1"
 backend = "aqua:apple/pkl"
@@ -737,10 +745,6 @@ url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-windows-amd64.e
 [tools.pkl."platforms.windows-x64-baseline"]
 checksum = "sha256:a8834481667325b44c539dbb758d7365a16389070f343c04b639bbe525ede013"
 url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-windows-amd64.exe"
-
-[[tools.prettier]]
-version = "3.8.3"
-backend = "npm:prettier"
 
 [[tools.ripgrep]]
 version = "15.1.0"

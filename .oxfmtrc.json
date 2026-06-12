@@ -1,0 +1,46 @@
+{
+  "printWidth": 80,
+  "trailingComma": "all",
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "*.rs",
+    "*.snap",
+    ".idea",
+    ".venv",
+    "*.gif",
+    "*.png",
+    "*.lock",
+    ".cliffignore",
+    "*.kdl",
+    "*.toml",
+    ".agent-os/",
+    "CHANGELOG.md",
+    "crates/aqua-registry/aqua-registry/",
+    "docs/.vitepress/cache",
+    "docs/.vitepress/dist",
+    "docs/.vitepress/theme/custom.css",
+    "docs/cli",
+    "docs/environments.md",
+    "docs/public/site.webmanifest",
+    "docs/registry.md",
+    "docs/plugin-usage.md",
+    "docs/plugin-publishing.md",
+    "docs/contributing.md",
+    "docs/backend-plugin-development.md",
+    "docs/url-replacements.md",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "CRUSH.md",
+    "e2e",
+    "src/assets/bash_zsh_support/",
+    "tasks.md",
+    "test/data",
+    "tmp"
+  ],
+  "overrides": [
+    {
+      "files": ["xtasks/fig/**/*.ts"],
+      "options": { "trailingComma": "es5" }
+    }
+  ]
+}

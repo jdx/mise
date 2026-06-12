@@ -385,7 +385,7 @@ hk check --step shellcheck
 
 ### Available Linters in hk
 
-- **prettier**: Code formatting for multiple languages
+- **oxfmt**: Code formatting for multiple languages (oxc formatter)
 - **clippy**: Rust linting with `cargo clippy`
 - **shellcheck**: Shell script linting
 - **shfmt**: Shell script formatting
@@ -401,7 +401,7 @@ mise run lint  # This runs hk check --all
 hk fix --all
 
 # Check specific file types
-hk check --step prettier
+hk check --step oxfmt
 hk check --step shellcheck
 ```
 

@@ -1,0 +1,6 @@
+{
+  "printWidth": 80,
+  "trailingComma": "all",
+  "sortPackageJson": false,
+  "ignorePatterns": ["plugins/nodejs", "embedded-plugins", "*.toml"]
+}

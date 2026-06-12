@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+  "jsPlugins": ["eslint-plugin-compat", "@withfig/eslint-plugin-fig-linter"],
+  "globals": { "Fig": "readonly" },
+  "rules": {
+    "compat/compat": "error"
+  },
+  "overrides": [
+    {
+      "files": ["xtasks/fig/**/*.ts"],
+      "rules": {
+        "no-unused-vars": "off",
+        "no-var": "off",
+        "typescript/no-unused-vars": "off",
+        "typescript/explicit-module-boundary-types": "off",
+        "@withfig/fig-linter/no-malicious-script": "error"
+      }
+    },
+    {
+      "files": ["xtasks/fig/src/**/*.ts"],
+      "rules": {
+        "@withfig/fig-linter/no-useless-insertvalue": "error",
+        "@withfig/fig-linter/no-empty-array-values": "error",
+        "@withfig/fig-linter/no-name-equals": "error"
+      }
+    }
+  ]
+}

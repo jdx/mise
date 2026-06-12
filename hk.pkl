@@ -10,15 +10,24 @@ local linters = new Mapping<String, Step> {
         check = "xargs -0 -I {} ajv compile -s {} --spec=draft2020 --strict-types=true --strict-tuples=true"
         check_first = false
     }
-    // uses builtin prettier linter config; run via `mise x` so hk picks up
-    // the mise-pinned prettier rather than whatever happens to be on
-    // PATH (e.g. a Homebrew prettier), keeping local and CI in sync.
-    ["prettier"] = (Builtins.prettier) {
-      batch = false
+    // uses oxfmt (oxc formatter), replacing prettier. run via `mise x` so hk
+    // uses the mise-pinned oxfmt rather than whatever is on PATH, keeping
+    // local and CI in sync. ignores live in .oxfmtrc.json (ignorePatterns); the
+    // glob is scoped to the file types prettier handled (TOML is owned by taplo,
+    // so it is deliberately excluded to avoid fighting that step).
+    ["oxfmt"] {
+      glob = List(
+        "**/*.js", "**/*.jsx", "**/*.ts", "**/*.tsx", "**/*.mjs", "**/*.cjs",
+        "**/*.json", "**/*.jsonc", "**/*.json5",
+        "**/*.css", "**/*.scss", "**/*.less",
+        "**/*.vue", "**/*.html",
+        "**/*.md", "**/*.mdx", "**/*.yaml", "**/*.yml", "**/*.graphql"
+      )
       exclude = "vendor/aqua-registry/**"
-      check = "mise x prettier -- prettier --check {{ files }}"
-      check_list_files = "mise x prettier -- prettier --list-different {{ files }}"
-      fix = "mise x prettier -- prettier --write {{ files }}"
+      batch = false
+      check = "mise x oxfmt -- oxfmt --check --no-error-on-unmatched-pattern {{ files }}"
+      check_list_files = "mise x oxfmt -- oxfmt --list-different --no-error-on-unmatched-pattern {{ files }}"
+      fix = "mise x oxfmt -- oxfmt --write --no-error-on-unmatched-pattern {{ files }}"
       depends = List("schema")
     }
     //["clippy"] = (Builtins.cargo_clippy) {

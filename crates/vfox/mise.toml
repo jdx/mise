@@ -2,7 +2,7 @@
 cargo-binstall = "latest"
 "cargo:cargo-edit" = "latest"
 git-cliff = "latest"
-prettier = "latest"
+oxfmt = "0.52"
 
 [tasks.build]
 run = "cargo build"
@@ -16,9 +16,9 @@ run = "true"
 [tasks.lint-fix]
 run = "cargo fmt --all && cargo clippy --fix --all --all-features --allow-dirty --allow-staged -- -D warnings"
 [tasks.lint]
-depends = ['lint:prettier', 'lint:clippy', 'lint:fmt']
-[tasks."lint:prettier"]
-run = "prettier -c ."
+depends = ['lint:oxfmt', 'lint:clippy', 'lint:fmt']
+[tasks."lint:oxfmt"]
+run = "oxfmt --check ."
 [tasks."lint:clippy"]
 run = 'cargo clippy --all-features -- -D warnings'
 [tasks."lint:fmt"]

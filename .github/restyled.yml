@@ -1,5 +1,7 @@
 enabled: true
 restylers:
   - "!shellharden"
-  - "!prettier-markdown"
+  # formatting is handled by oxfmt (see hk.pkl); disable restyled's prettier
+  # so it doesn't fight oxfmt (notably the fig trailingComma=es5 override).
+  - "!prettier"
   - "*"
