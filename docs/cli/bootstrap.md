@@ -8,7 +8,8 @@
 
 Runs the bootstrap steps for the current config in order:
 
-1. `mise system install` — install missing `[system.packages]`
+1. `mise system install` — install missing `[system.packages]` and apply
+   `[system.files]`
 2. `mise install` — install missing tools from `[tools]`
 3. `mise run bootstrap` — if a task named `bootstrap` is defined
 

@@ -8,14 +8,16 @@ mod upgrade;
 #[path = "use.rs"]
 mod r#use;
 
-/// [experimental] Manage system packages from `[system.packages]` and macOS
-/// defaults from `[system.defaults]`
+/// [experimental] Manage system packages from `[system.packages]`, files
+/// from `[system.files]`, and macOS defaults from `[system.defaults]`
 ///
 /// System packages are machine-global packages installed by the OS package
 /// manager (apt, dnf, pacman) or mise's Homebrew-bottle installer (brew).
-/// macOS defaults are user preferences written with `defaults write`.
-/// Unlike `[tools]`, they are not version-pinned per-project and are only
-/// ever applied when explicitly requested with `mise system install`.
+/// System files are config files (dotfiles) symlinked, copied, or rendered
+/// to machine-global paths. macOS defaults are user preferences written
+/// with `defaults write`. Unlike `[tools]`, none of these are version-pinned
+/// per-project and they are only ever acted on when explicitly requested
+/// with `mise system install`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct System {

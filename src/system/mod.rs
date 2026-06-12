@@ -1,11 +1,13 @@
 //! `[system]` config section: machine-global bootstrapping.
 //!
-//! Currently this is `[system.packages]` — declarative system packages
-//! installed by `mise system install` — and `[system.defaults]` — declarative
-//! macOS user defaults applied by the same command. These are intentionally
-//! not part of `[tools]`: they're unversioned, machine-global, and managed by
-//! the OS package manager (or mise's own Homebrew-bottle installer) or macOS
-//! `defaults`, not mise's per-project toolset.
+//! This is `[system.packages]` — declarative system packages installed by
+//! `mise system install` — `[system.files]` — declarative config files
+//! (dotfiles) — and `[system.defaults]` — declarative macOS user defaults,
+//! all applied by the same command. These are intentionally not part of
+//! `[tools]`: they're unversioned, machine-global, and managed by the OS
+//! package manager (or mise's own Homebrew-bottle installer), plain
+//! filesystem operations, or macOS `defaults`, not mise's per-project
+//! toolset.
 
 use std::sync::Arc;
 
@@ -18,6 +20,7 @@ use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
 
 pub mod defaults;
+pub mod files;
 pub mod packages;
 pub(crate) mod sudo;
 
@@ -35,6 +38,9 @@ pub struct SystemTomlConfig {
     /// instead of failing the whole config.
     #[serde(default)]
     pub defaults: IndexMap<String, toml::Value>,
+    /// target path -> source (see [`files`])
+    #[serde(default)]
+    pub files: IndexMap<String, files::FileTomlEntry>,
 }
 
 /// Packages for one manager, aggregated across the config hierarchy

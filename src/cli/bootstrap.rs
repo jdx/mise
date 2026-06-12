@@ -10,7 +10,8 @@ use crate::system;
 ///
 /// Runs the bootstrap steps for the current config in order:
 ///
-/// 1. `mise system install` — install missing `[system.packages]`
+/// 1. `mise system install` — install missing `[system.packages]` and apply
+///    `[system.files]`
 /// 2. `mise install` — install missing tools from `[tools]`
 /// 3. `mise run bootstrap` — if a task named `bootstrap` is defined
 ///
@@ -52,6 +53,21 @@ impl Bootstrap {
                 yes: self.yes,
             };
             driver::run(mgrs, Action::Install, &opts).await?;
+        }
+
+        let files = system::files::files_from_config(&config);
+        if files.is_empty() {
+            debug!("bootstrap: no [system.files] configured, skipping");
+        } else {
+            info!("bootstrap: system files");
+            let opts = system::files::ApplyOpts {
+                dry_run: self.dry_run,
+                // conflicts shouldn't be steamrolled by a bootstrap;
+                // `mise system install --force` is the explicit way
+                force: false,
+                yes: self.yes,
+            };
+            system::files::apply(&config, &files, &opts)?;
         }
 
         info!("bootstrap: tools");

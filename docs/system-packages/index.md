@@ -16,6 +16,10 @@ and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
 pages).
 
+mise can also place machine-global config files (dotfiles) — see
+[System Files](/system-files.html), which follows the same rules and shares
+the same commands.
+
 System packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are installed
 machine-globally by the platform's package manager — or, for `brew`, by

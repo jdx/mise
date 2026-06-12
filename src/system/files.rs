@@ -1,0 +1,504 @@
+//! `[system.files]` — declarative config files (dotfiles) applied by
+//! `mise system install` or `mise bootstrap`.
+//!
+//! Entries are keyed by target path and point at a source file or directory,
+//! resolved relative to the config file that declares them:
+//!
+//! ```toml
+//! [system.files]
+//! "~/.gitconfig" = "dotfiles/gitconfig"                  # symlink (default)
+//! "~/.config/foo.toml" = { source = "foo.toml", mode = "copy" }
+//! "~/.ssh/config" = { source = "ssh.tmpl", mode = "template" }
+//! "~/.config/nvim" = "dotfiles/nvim"                     # symlink the dir itself
+//! "~/.local/bin" = { source = "bin", mode = "symlink-each" }
+//! ```
+//!
+//! Like `[system.packages]`, entries merge across the config hierarchy
+//! (global -> local, local overrides by target key) and are only ever
+//! applied by an explicit command, never implicitly.
+
+use std::path::{Path, PathBuf};
+
+use eyre::{Result, bail};
+use indexmap::IndexMap;
+use serde::Deserialize;
+
+use crate::config::Config;
+use crate::file;
+use crate::path::PathExt;
+use crate::ui::prompt;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileMode {
+    /// symlink the target to the source — a file or the directory itself
+    Symlink,
+    /// source is a directory: recreate its directory structure under the
+    /// target and symlink each file individually, so the target directory
+    /// can also hold files mise doesn't manage
+    SymlinkEach,
+    /// copy the source file (or directory, recursively)
+    Copy,
+    /// render the source through the mise template engine and write the
+    /// result (permissions are taken from the source file)
+    Template,
+}
+
+impl FileMode {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "symlink" => Some(Self::Symlink),
+            "symlink-each" => Some(Self::SymlinkEach),
+            "copy" => Some(Self::Copy),
+            "template" => Some(Self::Template),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Symlink => "symlink",
+            Self::SymlinkEach => "symlink-each",
+            Self::Copy => "copy",
+            Self::Template => "template",
+        }
+    }
+}
+
+/// one `[system.files]` entry as written in mise.toml
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum FileTomlEntry {
+    /// `"~/.gitconfig" = "dotfiles/gitconfig"`
+    Source(String),
+    /// `"~/.gitconfig" = { source = "...", mode = "..." }` — mode stays a
+    /// string here so configs using modes from newer mise versions still
+    /// parse (they warn and are skipped, like unknown package managers)
+    Table {
+        source: String,
+        #[serde(default)]
+        mode: Option<String>,
+    },
+}
+
+/// one file entry, resolved against the config file that declared it
+#[derive(Debug, Clone)]
+pub struct FileRequest {
+    /// target path as written in config (display/merge key)
+    pub target_raw: String,
+    /// absolute target path (`~` expanded)
+    pub target: PathBuf,
+    /// absolute source path (relative sources resolve against the config
+    /// file's directory)
+    pub source: PathBuf,
+    pub mode: FileMode,
+    /// directory of the declaring config file — base dir for template
+    /// functions like `exec` and `read_file`
+    pub base: PathBuf,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum FileState {
+    Applied,
+    Missing,
+    /// target exists but doesn't match — the reason is human-readable
+    Differs(String),
+    SourceMissing,
+}
+
+/// Aggregate `[system.files]` across all loaded config files. Keys union
+/// global -> local; a more local config overrides an entry for the same
+/// target. Malformed entries and unknown modes warn and are skipped.
+pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
+    let mut merged: IndexMap<String, FileRequest> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for (path, cf) in config.config_files.iter().rev() {
+        let Some(sys) = cf.system_config() else {
+            continue;
+        };
+        let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        for (target_raw, entry) in sys.files {
+            let (source, mode) = match entry {
+                FileTomlEntry::Source(source) => (source, None),
+                FileTomlEntry::Table { source, mode } => (source, mode),
+            };
+            let mode = match mode.as_deref() {
+                None => FileMode::Symlink,
+                Some(m) => match FileMode::parse(m) {
+                    Some(m) => m,
+                    None => {
+                        warn!(
+                            "[system.files].\"{target_raw}\": unknown mode '{m}', ignoring entry"
+                        );
+                        continue;
+                    }
+                },
+            };
+            let target = file::replace_path(&target_raw);
+            if target.is_relative() {
+                warn!(
+                    "[system.files].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
+                );
+                continue;
+            }
+            let source = file::replace_path(&source);
+            let source = if source.is_relative() {
+                base.join(source)
+            } else {
+                source
+            };
+            merged.insert(
+                target_raw.clone(),
+                FileRequest {
+                    target_raw,
+                    target,
+                    source,
+                    mode,
+                    base: base.clone(),
+                },
+            );
+        }
+    }
+    merged.into_values().collect()
+}
+
+/// Current state of one entry on this machine.
+pub fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
+    if !req.source.exists() {
+        return Ok(FileState::SourceMissing);
+    }
+    match req.mode {
+        FileMode::Symlink => check_symlink(&req.source, &req.target),
+        FileMode::SymlinkEach => check_symlink_each(req),
+        FileMode::Copy => check_copy(&req.source, &req.target),
+        FileMode::Template => {
+            let rendered = render_template(config, req)?;
+            check_content(&req.target, rendered.as_bytes())
+        }
+    }
+}
+
+fn check_symlink(source: &Path, target: &Path) -> Result<FileState> {
+    // on Windows file "symlinks" are copies (see `link_file`)
+    if cfg!(windows) && source.is_file() {
+        return check_copy(source, target);
+    }
+    if target.is_symlink() {
+        let dest = std::fs::read_link(target)?;
+        if dest == *source || points_at_same_file(target, source) {
+            Ok(FileState::Applied)
+        } else {
+            Ok(FileState::Differs(format!(
+                "symlink points to {}",
+                dest.display_user()
+            )))
+        }
+    } else if target.exists() {
+        Ok(FileState::Differs("exists but is not a symlink".into()))
+    } else {
+        Ok(FileState::Missing)
+    }
+}
+
+fn points_at_same_file(target: &Path, source: &Path) -> bool {
+    match (target.canonicalize(), source.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
+fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
+    if !req.source.is_dir() {
+        bail!(
+            "[system.files].\"{}\": mode symlink-each requires the source to be a directory: {}",
+            req.target_raw,
+            req.source.display_user()
+        );
+    }
+    let mut applied = 0;
+    let mut missing = 0;
+    let mut differs: Option<String> = None;
+    for (source, target) in walk_source_files(req)? {
+        match check_symlink(&source, &target)? {
+            FileState::Applied => applied += 1,
+            FileState::Missing => missing += 1,
+            FileState::Differs(reason) => {
+                differs.get_or_insert(format!("{}: {reason}", target.display_user()));
+            }
+            FileState::SourceMissing => unreachable!("walked from source"),
+        }
+    }
+    if let Some(reason) = differs {
+        Ok(FileState::Differs(reason))
+    } else if missing == 0 {
+        Ok(FileState::Applied)
+    } else if applied == 0 {
+        Ok(FileState::Missing)
+    } else {
+        Ok(FileState::Differs(format!(
+            "{applied} of {} files linked",
+            applied + missing
+        )))
+    }
+}
+
+fn check_copy(source: &Path, target: &Path) -> Result<FileState> {
+    if source.is_dir() {
+        if !target.exists() {
+            return Ok(FileState::Missing);
+        }
+        if !target.is_dir() {
+            return Ok(FileState::Differs("exists but is not a directory".into()));
+        }
+        for entry in walkdir::WalkDir::new(source) {
+            let entry = entry?;
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let rel = entry.path().strip_prefix(source)?;
+            match check_content(&target.join(rel), &file::read(entry.path())?)? {
+                FileState::Applied => {}
+                _ => return Ok(FileState::Differs(format!("{} differs", rel.display()))),
+            }
+        }
+        Ok(FileState::Applied)
+    } else {
+        check_content(target, &file::read(source)?)
+    }
+}
+
+fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
+    if !target.exists() && !target.is_symlink() {
+        return Ok(FileState::Missing);
+    }
+    if target.is_dir() {
+        return Ok(FileState::Differs("exists but is a directory".into()));
+    }
+    if file::read(target)? == expected {
+        Ok(FileState::Applied)
+    } else {
+        Ok(FileState::Differs("content differs".into()))
+    }
+}
+
+fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
+    let raw = file::read_to_string(&req.source)?;
+    let mut tera = crate::tera::get_tera(Some(&req.base));
+    let rendered = tera.render_str(&raw, &config.tera_ctx).map_err(|err| {
+        eyre::eyre!(
+            "[system.files].\"{}\": failed to render template {}: {err}",
+            req.target_raw,
+            req.source.display_user()
+        )
+    })?;
+    Ok(rendered)
+}
+
+/// every (source file, target path) pair of a symlink-each entry
+fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
+    let mut out = vec![];
+    for entry in walkdir::WalkDir::new(&req.source).sort_by_file_name() {
+        let entry = entry?;
+        if entry.file_type().is_dir() {
+            continue;
+        }
+        let rel = entry.path().strip_prefix(&req.source)?;
+        out.push((entry.path().to_path_buf(), req.target.join(rel)));
+    }
+    Ok(out)
+}
+
+pub struct ApplyOpts {
+    pub dry_run: bool,
+    /// replace conflicting targets (existing real files where a symlink
+    /// should go, or type mismatches) instead of erroring
+    pub force: bool,
+    pub yes: bool,
+}
+
+/// Apply all entries that aren't already in the desired state. Conflicting
+/// targets (a real file where a symlink should go, a directory where a file
+/// should go) are an error unless `force` is set — content updates for
+/// copy/template entries are not conflicts, overwriting is their job.
+pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<()> {
+    let mut todo = vec![];
+    let mut conflicts = vec![];
+    for req in requests {
+        if check(config, req)? == FileState::Applied {
+            continue;
+        }
+        if !req.source.exists() {
+            bail!(
+                "[system.files].\"{}\": source does not exist: {}",
+                req.target_raw,
+                req.source.display_user()
+            );
+        }
+        conflicts.extend(find_conflicts(req)?);
+        todo.push(req);
+    }
+    if todo.is_empty() {
+        info!("files: all files are applied");
+        return Ok(());
+    }
+    if !conflicts.is_empty() && !opts.force {
+        bail!(
+            "files: refusing to overwrite existing files (use --force):\n{}",
+            conflicts
+                .iter()
+                .map(|p| format!("  {}", p.display_user()))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+    if opts.dry_run {
+        for req in &todo {
+            miseprintln!("{}", describe(req)?);
+        }
+        return Ok(());
+    }
+    if !opts.yes && console::user_attended_stderr() {
+        let list = todo
+            .iter()
+            .map(|r| r.target_raw.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !prompt::confirm(format!("files: apply {list}?"))? {
+            info!("files: skipped");
+            return Ok(());
+        }
+    }
+    for req in &todo {
+        apply_one(config, req)?;
+    }
+    info!(
+        "files: applied {}",
+        todo.iter()
+            .map(|r| r.target_raw.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Ok(())
+}
+
+/// existing paths this entry would have to delete or replace — not counting
+/// content overwrites by copy/template (those are the declared intent) or
+/// re-pointing symlinks (always mise-owned territory)
+fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    let mut out = vec![];
+    match req.mode {
+        FileMode::Symlink => {
+            if req.target.exists() && !req.target.is_symlink() {
+                out.push(req.target.clone());
+            }
+        }
+        FileMode::SymlinkEach => {
+            for (_, target) in walk_source_files(req)? {
+                if target.exists() && !target.is_symlink() {
+                    out.push(target);
+                }
+            }
+        }
+        FileMode::Copy | FileMode::Template => {
+            // a dir where a file should go (or vice versa) must be removed;
+            // file-over-file is an ordinary overwrite
+            if req.target.exists() && req.target.is_dir() != req.source.is_dir() {
+                out.push(req.target.clone());
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn describe(req: &FileRequest) -> Result<String> {
+    let src = req.source.display_user();
+    let tgt = req.target.display_user();
+    Ok(match req.mode {
+        FileMode::Symlink => format!("ln -sf {src} {tgt}"),
+        FileMode::SymlinkEach => {
+            format!(
+                "ln -sf {src}/* into {tgt}/ ({} files)",
+                walk_source_files(req)?.len()
+            )
+        }
+        FileMode::Copy if req.source.is_dir() => format!("cp -r {src} {tgt}"),
+        FileMode::Copy => format!("cp {src} {tgt}"),
+        FileMode::Template => format!("render {src} -> {tgt}"),
+    })
+}
+
+fn apply_one(config: &Config, req: &FileRequest) -> Result<()> {
+    debug!("files: {}", describe(req)?);
+    if let Some(parent) = req.target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    match req.mode {
+        FileMode::Symlink => {
+            remove_existing(&req.target)?;
+            link_path(&req.source, &req.target)?;
+        }
+        FileMode::SymlinkEach => {
+            for (source, target) in walk_source_files(req)? {
+                if check_symlink(&source, &target)? == FileState::Applied {
+                    continue;
+                }
+                if let Some(parent) = target.parent() {
+                    file::create_dir_all(parent)?;
+                }
+                remove_existing(&target)?;
+                link_path(&source, &target)?;
+            }
+        }
+        FileMode::Copy => {
+            remove_existing(&req.target)?;
+            if req.source.is_dir() {
+                file::copy_dir_all(&req.source, &req.target)?;
+            } else {
+                file::copy(&req.source, &req.target)?;
+            }
+        }
+        FileMode::Template => {
+            let rendered = render_template(config, req)?;
+            remove_existing(&req.target)?;
+            file::write(&req.target, &rendered)?;
+            #[cfg(unix)]
+            std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
+        }
+    }
+    Ok(())
+}
+
+/// remove whatever sits at `path` so it can be replaced — conflicts have
+/// already been vetted (or --force given) by the time this runs
+fn remove_existing(path: &Path) -> Result<()> {
+    if path.is_symlink() || path.is_file() {
+        file::remove_file(path)?;
+    } else if path.is_dir() {
+        file::remove_all(path)?;
+    }
+    Ok(())
+}
+
+fn link_path(source: &Path, target: &Path) -> Result<()> {
+    if cfg!(windows) && source.is_file() {
+        // Windows file symlinks require elevation; junctions only work for
+        // directories — fall back to a copy like make_symlink_or_copy does
+        file::copy(source, target)?;
+    } else {
+        file::make_symlink(source, target)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_mode_parse() {
+        assert_eq!(FileMode::parse("symlink"), Some(FileMode::Symlink));
+        assert_eq!(FileMode::parse("symlink-each"), Some(FileMode::SymlinkEach));
+        assert_eq!(FileMode::parse("copy"), Some(FileMode::Copy));
+        assert_eq!(FileMode::parse("template"), Some(FileMode::Template));
+        assert_eq!(FileMode::parse("hardlink"), None);
+    }
+}

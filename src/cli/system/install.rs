@@ -4,13 +4,14 @@ use super::driver::{self, Action, DriverOpts};
 use crate::config::{Config, Settings};
 use crate::system;
 
-/// Install missing system packages from `[system.packages]` and apply macOS
-/// defaults from `[system.defaults]`
+/// Install missing system packages from `[system.packages]`, apply files
+/// from `[system.files]`, and write macOS defaults from `[system.defaults]`
 ///
 /// Checks which configured packages are missing and installs them with the
 /// system package manager. This may elevate with sudo when not running as
-/// root (see the `system_packages.sudo` setting). On macOS, also writes any
-/// `[system.defaults]` entries that are unset or differ from the config.
+/// root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
+/// entries that aren't in their desired state are applied, and on macOS any
+/// `[system.defaults]` entries that are unset or differ are written.
 ///
 /// Packages can also be given explicitly in `manager:package` form (e.g.
 /// `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -23,6 +24,10 @@ pub struct SystemInstall {
     /// in [system.packages]
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
+
+    /// Overwrite existing files that conflict with `[system.files]` entries
+    #[clap(long, short)]
+    force: bool,
 
     /// Only install packages for this manager, e.g. `apt` or `brew`
     #[clap(long, short, value_parser = ["apt", "brew", "dnf", "pacman"])]
@@ -57,6 +62,10 @@ impl SystemInstall {
         } else {
             system::packages_from_specs(&self.packages)?
         };
+        // explicit packages or a --manager filter narrow the run to those
+        // packages; files and defaults are part of the "apply everything"
+        // form only
+        let packages_only = !self.packages.is_empty() || self.manager.is_some();
         let opts = DriverOpts {
             manager: self.manager.clone(),
             explicit: !self.packages.is_empty(),
@@ -64,10 +73,25 @@ impl SystemInstall {
             update: self.update,
             yes: self.yes,
         };
-        // when only defaults are configured, skip the driver so it doesn't
-        // print "no system packages configured"
-        if !mgrs.is_empty() || defaults.is_empty() {
+        let files = if packages_only {
+            vec![]
+        } else {
+            let config = Config::get().await?;
+            system::files::files_from_config(&config)
+        };
+        // when only defaults/files are configured, skip the driver so it
+        // doesn't print "no system packages configured"
+        if !mgrs.is_empty() || (defaults.is_empty() && files.is_empty()) {
             driver::run(mgrs, Action::Install, &opts).await?;
+        }
+        if !files.is_empty() {
+            let config = Config::get().await?;
+            let apply_opts = system::files::ApplyOpts {
+                dry_run: self.dry_run,
+                force: self.force,
+                yes: self.yes,
+            };
+            system::files::apply(&config, &files, &apply_opts)?;
         }
         self.apply_defaults(defaults).await
     }
