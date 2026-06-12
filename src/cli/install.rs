@@ -26,7 +26,7 @@ use std::path::PathBuf;
 /// Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
 ///
 /// Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
-#[derive(Debug, clap::Args)]
+#[derive(Debug, Default, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Install {
     /// Tool(s) to install
@@ -86,6 +86,15 @@ pub struct Install {
 }
 
 impl Install {
+    /// a bare `mise install` (install everything missing from config), as run
+    /// by `mise bootstrap`
+    pub(crate) fn new_bare(dry_run: bool) -> Self {
+        Self {
+            dry_run,
+            ..Default::default()
+        }
+    }
+
     fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }

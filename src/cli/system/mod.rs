@@ -1,7 +1,7 @@
 use clap::Subcommand;
 use eyre::Result;
 
-mod driver;
+pub(super) mod driver;
 mod install;
 mod status;
 mod upgrade;

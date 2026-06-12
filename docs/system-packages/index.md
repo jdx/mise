@@ -144,5 +144,9 @@ mise system install --yes
 mise install
 ```
 
+[`mise bootstrap --yes`](/cli/bootstrap.html) combines both (and runs a task
+named `bootstrap` afterwards, if one is defined) — one command to set up a
+fresh machine or container.
+
 `mise system status --missing` exits 1 when packages are missing, which makes
 a convenient CI check without installing anything.

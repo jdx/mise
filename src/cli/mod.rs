@@ -14,6 +14,7 @@ pub mod args;
 mod asdf;
 pub mod backends;
 mod bin_paths;
+mod bootstrap;
 mod cache;
 mod completion;
 mod config;
@@ -209,6 +210,7 @@ pub enum Commands {
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
+    Bootstrap(bootstrap::Bootstrap),
     Cache(cache::Cache),
     Completion(completion::Completion),
     Config(config::Config),
@@ -283,6 +285,7 @@ impl Commands {
             Self::Asdf(cmd) => cmd.run().await,
             Self::Backends(cmd) => cmd.run().await,
             Self::BinPaths(cmd) => cmd.run().await,
+            Self::Bootstrap(cmd) => cmd.run().await,
             Self::Cache(cmd) => cmd.run(),
             Self::Completion(cmd) => cmd.run().await,
             Self::Config(cmd) => cmd.run().await,
