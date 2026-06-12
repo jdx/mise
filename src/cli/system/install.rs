@@ -80,6 +80,13 @@ impl SystemInstall {
                 continue;
             }
             let name = mp.manager.name();
+            if mp.disabled {
+                if self.manager.is_some() {
+                    bail!("manager '{name}' is excluded by the system_packages.managers setting");
+                }
+                debug!("{name}: skipping, excluded by system_packages.managers");
+                continue;
+            }
             if !mp.manager.is_available() {
                 if self.manager.is_some() {
                     // explicitly requested — failing silently would be a lie

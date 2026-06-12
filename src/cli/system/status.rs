@@ -29,8 +29,12 @@ impl SystemStatus {
         let mut json_out = serde_json::Map::new();
         for mp in mgrs {
             let name = mp.manager.name();
-            if !mp.manager.is_available() {
-                let reason = mp.manager.unavailable_reason();
+            if mp.disabled || !mp.manager.is_available() {
+                let reason = if mp.disabled {
+                    "excluded by the system_packages.managers setting".to_string()
+                } else {
+                    mp.manager.unavailable_reason()
+                };
                 if self.json {
                     json_out.insert(
                         name.to_string(),

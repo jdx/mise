@@ -150,7 +150,7 @@ impl Install {
         let mut missing = 0;
         let mut all_queries_ok = true;
         for mp in mgrs {
-            if !mp.manager.is_available() {
+            if mp.disabled || !mp.manager.is_available() {
                 continue;
             }
             match mp.manager.installed(&mp.requests).await {

@@ -10,6 +10,10 @@ case "$(uname -m)" in
   *) exit 0 ;;
 esac
 
+# the guard above skips when /home/linuxbrew exists, so clean up even when
+# an assertion fails mid-test — otherwise a failed run masks later ones
+trap 'rm -rf /home/linuxbrew' EXIT
+
 cat <<EOF >mise.toml
 [system.packages]
 "brew:xz" = "latest"
@@ -25,5 +29,3 @@ assert_contains "/home/linuxbrew/.linuxbrew/bin/xz --version" "xz"
 
 # idempotent
 assert_contains "mise system install --yes 2>&1" "already"
-
-rm -rf /home/linuxbrew

@@ -382,12 +382,17 @@ impl Doctor {
         let mut total_missing = 0;
         for mp in mgrs {
             let name = mp.manager.name();
-            if !mp.manager.is_available() {
+            if mp.disabled || !mp.manager.is_available() {
+                let reason = if mp.disabled {
+                    "excluded by the system_packages.managers setting".to_string()
+                } else {
+                    mp.manager.unavailable_reason()
+                };
                 map.insert(
                     name.into(),
                     serde_json::json!({
                         "available": false,
-                        "reason": mp.manager.unavailable_reason(),
+                        "reason": reason,
                         "requested": mp.requests.len(),
                     }),
                 );
@@ -439,10 +444,14 @@ impl Doctor {
         let mut total_missing = 0;
         for mp in mgrs {
             let name = mp.manager.name();
-            if !mp.manager.is_available() {
+            if mp.disabled || !mp.manager.is_available() {
+                let reason = if mp.disabled {
+                    "excluded by the system_packages.managers setting".to_string()
+                } else {
+                    mp.manager.unavailable_reason()
+                };
                 lines.push(format!(
-                    "{name}: unavailable ({}), {} package(s) skipped",
-                    mp.manager.unavailable_reason(),
+                    "{name}: unavailable ({reason}), {} package(s) skipped",
                     mp.requests.len()
                 ));
                 continue;

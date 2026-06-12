@@ -32,6 +32,10 @@ pub struct SystemTomlConfig {
 pub struct ManagerPackages {
     pub manager: Arc<dyn SystemPackageManager>,
     pub requests: Vec<PackageRequest>,
+    /// excluded by the `system_packages.managers` setting — surfaced by
+    /// status/doctor (nothing is silently invisible), skipped by install
+    /// and the missing-packages hint
+    pub disabled: bool,
 }
 
 /// Split a `"manager:package"` spec (config key or CLI argument). Only the
@@ -110,21 +114,20 @@ fn resolve_managers(
         .clone();
     let mut out = vec![];
     for (name, requests) in by_mgr {
-        if let Some(enabled) = &enabled
-            && !enabled.contains(&name)
-        {
-            if strict {
-                bail!(
-                    "manager '{name}' is excluded by the system_packages.managers setting \
-                     (currently: {})",
-                    enabled.join(", ")
-                );
-            }
-            debug!("system package manager '{name}' disabled by system_packages.managers");
-            continue;
+        let disabled = enabled.as_ref().is_some_and(|e| !e.contains(&name));
+        if disabled && strict {
+            bail!(
+                "manager '{name}' is excluded by the system_packages.managers setting \
+                 (currently: {})",
+                enabled.as_deref().unwrap_or_default().join(", ")
+            );
         }
         match packages::get_manager(&name) {
-            Some(manager) => out.push(ManagerPackages { manager, requests }),
+            Some(manager) => out.push(ManagerPackages {
+                manager,
+                requests,
+                disabled,
+            }),
             None => {
                 if strict {
                     bail!("unknown system package manager '{name}'");
