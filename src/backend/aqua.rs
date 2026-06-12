@@ -1282,7 +1282,7 @@ impl AquaBackend {
         v: &str,
     ) -> Result<bool> {
         let format = pkg.format(v, os(), arch())?;
-        let format = TarFormat::from_ext(format);
+        let format = Self::effective_archive_format(pkg, format)?;
         if !format.is_archive() {
             return Err(eyre!(
                 "SLSA provenance subject mismatch and content-level fallback is only supported for archives"
@@ -2275,6 +2275,20 @@ impl AquaBackend {
         }
     }
 
+    fn effective_archive_format(pkg: &AquaPackage, format: &str) -> Result<TarFormat> {
+        let archive_format = TarFormat::from_ext(format);
+        if archive_format == TarFormat::Raw && !matches!(format, "" | "raw" | "dmg" | "pkg") {
+            bail!("unsupported aqua package format: {format}");
+        }
+        if pkg.r#type == AquaPackageType::GithubArchive && archive_format == TarFormat::Raw {
+            // The aqua registry can omit format for GitHub-generated archive downloads.
+            // Historically Raw reached untar/open_tar, which treated it as gzip-tar.
+            Ok(TarFormat::TarGz)
+        } else {
+            Ok(archive_format)
+        }
+    }
+
     fn install(
         &self,
         ctx: &InstallContext,
@@ -2320,18 +2334,11 @@ impl AquaBackend {
             pr: Some(ctx.pr.as_ref()),
             ..Default::default()
         };
-        let mut archive_format = TarFormat::from_ext(format);
-        if archive_format == TarFormat::Raw && !matches!(format, "" | "raw" | "dmg" | "pkg") {
-            bail!("unsupported aqua package format: {format}");
-        }
+        let archive_format = Self::effective_archive_format(pkg, format)?;
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
-            if archive_format == TarFormat::Raw {
-                // The aqua registry can omit format for GitHub-generated archive downloads.
-                // Historically Raw reached untar/open_tar, which treated it as gzip-tar.
-                archive_format = TarFormat::TarGz;
-            }
             file::extract_archive(&tarball_path, &install_path, archive_format, &extract_opts)?;
+            make_executable = true;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
             if let Some(parent) = first_bin_path.parent() {
                 file::create_dir_all(parent)?;

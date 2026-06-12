@@ -1214,12 +1214,12 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
             "{}_tmp_strip",
             path.file_name().unwrap().to_string_lossy()
         ));
-        fs::rename(&path, &temp_path)?;
+        do_rename(&path, &temp_path)?;
 
         for entry in ls(&temp_path)? {
             if let Some(file_name) = entry.file_name() {
                 let dest_path = dir.join(file_name);
-                fs::rename(entry, dest_path)?;
+                do_rename(&entry, &dest_path)?;
             } else {
                 continue;
             }
