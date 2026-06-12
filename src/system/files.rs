@@ -109,7 +109,9 @@ pub enum FileState {
 /// global -> local; a more local config overrides an entry for the same
 /// target. Malformed entries and unknown modes warn and are skipped.
 pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
-    let mut merged: IndexMap<String, FileRequest> = IndexMap::new();
+    // keyed by the *expanded* target so "~/.gitconfig" in one config and
+    // its absolute spelling in another are one entry, not two
+    let mut merged: IndexMap<PathBuf, FileRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for (path, cf) in config.config_files.iter().rev() {
         let Some(sys) = cf.system_config() else {
@@ -147,7 +149,7 @@ pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
                 source
             };
             merged.insert(
-                target_raw.clone(),
+                target.clone(),
                 FileRequest {
                     target_raw,
                     target,
@@ -292,7 +294,12 @@ fn check_copy(source: &Path, target: &Path) -> Result<FileState> {
 }
 
 fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
-    if !target.exists() && !target.is_symlink() {
+    // copy/template targets must be real files; a symlink — dangling or
+    // live — gets replaced (re-pointing/replacing symlinks needs no --force)
+    if target.is_symlink() {
+        return Ok(FileState::Differs("exists but is a symlink".into()));
+    }
+    if !target.exists() {
         return Ok(FileState::Missing);
     }
     if target.is_dir() {
@@ -446,10 +453,20 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
 /// content overwrites by copy/template (those are the declared intent) or
 /// re-pointing symlinks (always mise-owned territory)
 fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    // on Windows, file "symlinks" are applied as copies (see `link_path`),
+    // so existing regular-file targets are routine content updates there,
+    // not conflicts — only a type mismatch blocks
+    let file_link_conflicts = |source: &Path, target: &Path| {
+        if cfg!(windows) && source.is_file() {
+            target.exists() && target.is_dir()
+        } else {
+            target.exists() && !target.is_symlink()
+        }
+    };
     let mut out = vec![];
     match req.mode {
         FileMode::Symlink => {
-            if req.target.exists() && !req.target.is_symlink() {
+            if file_link_conflicts(&req.source, &req.target) {
                 out.push(req.target.clone());
             }
         }
@@ -461,8 +478,8 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                     out.push(dir);
                 }
             }
-            for (_, target) in walk_source_files(req)? {
-                if target.exists() && !target.is_symlink() {
+            for (source, target) in walk_source_files(req)? {
+                if file_link_conflicts(&source, &target) {
                     out.push(target);
                 }
             }
@@ -532,7 +549,17 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                 if req.target.exists() && !req.target.is_dir() {
                     remove_existing(&req.target)?;
                 }
-                file::copy_dir_all(&req.source, &req.target)?;
+                // per-file instead of copy_dir_all so a symlink at a
+                // destination is replaced, not written through
+                for (source, target) in walk_source_files(req)? {
+                    if let Some(parent) = target.parent() {
+                        file::create_dir_all(parent)?;
+                    }
+                    if target.is_symlink() {
+                        file::remove_file(&target)?;
+                    }
+                    file::copy(&source, &target)?;
+                }
             } else {
                 remove_existing(&req.target)?;
                 file::copy(&req.source, &req.target)?;

@@ -238,6 +238,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise system status</bold>
     $ <bold>mise system status --json</bold>
-    $ <bold>mise system status --missing</bold> # exit 1 if anything is missing
+    $ <bold>mise system status --missing</bold> # exit 1 if anything is out of sync
 "#
 );

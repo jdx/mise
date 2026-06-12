@@ -24,5 +24,5 @@ Examples:
 ```
 mise system status
 mise system status --json
-mise system status --missing # exit 1 if anything is missing
+mise system status --missing # exit 1 if anything is out of sync
 ```

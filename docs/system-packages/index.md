@@ -63,7 +63,7 @@ applied by the same `mise system install` command.
 ```sh
 mise system status            # table of requested vs installed packages
 mise system status --json     # machine-readable
-mise system status --missing  # exit 1 if anything is missing (CI check)
+mise system status --missing  # exit 1 if anything is out of sync (CI check)
 
 mise system install           # install whatever is missing (prompts first)
 mise system install apt:curl  # install specific packages (configured or not)

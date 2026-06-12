@@ -61,7 +61,7 @@ those modes. Symlinks are re-pointed freely, since a symlink is never data.
 
 ```sh
 mise system status            # shows file state: applied/missing/differs
-mise system status --missing  # exit 1 if anything is missing (CI check)
+mise system status --missing  # exit 1 if anything is out of sync (CI check)
 
 mise system install           # install packages, then apply files (prompts first)
 mise system install --dry-run # print what would be done
