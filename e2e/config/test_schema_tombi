@@ -45,7 +45,6 @@ run = "cargo fmt"
 shell = "bash -c"
 
 [task_templates.base]
-quiet = true
 dir = "{{config_root}}"
 deny_net = true
 allow_env = ["CI"]
@@ -124,7 +123,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-directive.toml", "mise-bad-tmpl.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-directive.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -153,10 +152,18 @@ assert_fail "$TOMBI_LINT mise-bad-env-directive.toml"
 cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'
 [task_templates.derived]
 extends = "base"
-quiet = true
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-tmpl.toml"
+
+# Verify that quiet/hide/raw/interactive/raw_args are rejected on task_templates
+for flag in quiet hide raw interactive raw_args; do
+  cat >"$HOME/workdir/mise-bad-tmpl-output-flag.toml" <<TOML
+[task_templates.base]
+$flag = true
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-tmpl-output-flag.toml"
+done
 
 cat >"$HOME/workdir/mise-bad-os.toml" <<'TOML'
 [tools]

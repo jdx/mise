@@ -51,6 +51,7 @@ pub struct SettingsMeta {
     pub deprecated: Option<&'static str>,
     pub deprecated_warn_at: Option<&'static str>,
     pub deprecated_remove_at: Option<&'static str>,
+    pub global_only: bool,
 }
 
 #[derive(
@@ -250,6 +251,50 @@ fn warn_deprecated(key: &str) {
     }
 }
 
+fn normalize_hidden_config_aliases(mut partial: SettingsPartial) -> SettingsPartial {
+    if let Some(v) = partial.install_before.take() {
+        warn_deprecated("install_before");
+        if partial.minimum_release_age.is_none() {
+            partial.minimum_release_age = Some(v);
+        }
+    }
+    partial
+}
+
+fn strip_local_only_settings(settings: &mut toml::Table, path: &Path, is_global: bool) {
+    if is_global {
+        return;
+    }
+
+    for key in SETTINGS_META
+        .iter()
+        .filter_map(|(key, meta)| meta.global_only.then_some(*key))
+    {
+        if let Some(value) = remove_nested_toml_value(settings, key)
+            && should_warn_ignored_global_only_value(&value)
+        {
+            warn!(
+                "{key} in non-global config {} is ignored for security reasons",
+                path.display()
+            );
+        }
+    }
+}
+
+fn remove_nested_toml_value(table: &mut toml::Table, key: &str) -> Option<toml::Value> {
+    let mut parts = key.split('.').collect_vec();
+    let last = parts.pop()?;
+    let mut current = table;
+    for part in parts {
+        current = current.get_mut(part)?.as_table_mut()?;
+    }
+    current.remove(last)
+}
+
+fn should_warn_ignored_global_only_value(value: &toml::Value) -> bool {
+    !matches!(value, toml::Value::String(s) if s.is_empty())
+}
+
 impl Settings {
     pub fn parse_default_package_line(package: &str) -> Option<String> {
         let package = package.split('#').next().unwrap_or_default().trim();
@@ -276,7 +321,9 @@ impl Settings {
 
         // Initial pass to obtain cd option
         let mut sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+            .preloaded(normalize_hidden_config_aliases(
+                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
+            ))
             .env();
 
         let mut settings = sb.load()?;
@@ -290,7 +337,9 @@ impl Settings {
 
         // Reload settings after current directory option processed
         sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+            .preloaded(normalize_hidden_config_aliases(
+                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
+            ))
             .env();
         for file in Self::all_settings_files() {
             sb = sb.preloaded(file);
@@ -518,9 +567,13 @@ impl Settings {
 
     pub fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
-        let settings_file: SettingsFile = toml::from_str(&raw)?;
+        let mut raw: toml::Value = toml::from_str(&raw)?;
+        if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
+            strip_local_only_settings(settings, path, crate::config::is_global_config(path));
+        }
+        let settings_file: SettingsFile = raw.try_into()?;
 
-        Ok(settings_file.settings)
+        Ok(normalize_hidden_config_aliases(settings_file.settings))
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
@@ -972,6 +1025,79 @@ where
 mod tests {
     use super::*;
 
+    fn credential_command_settings_table() -> toml::Table {
+        toml::from_str::<toml::Value>(
+            r#"
+            [github]
+            credential_command = "echo github-token"
+
+            [gitlab]
+            credential_command = "echo gitlab-token"
+
+            [forgejo]
+            credential_command = "echo forgejo-token"
+            "#,
+        )
+        .unwrap()
+        .as_table()
+        .unwrap()
+        .clone()
+    }
+
+    fn settings_partial_from_table(settings: toml::Table) -> SettingsPartial {
+        let mut root = toml::Table::new();
+        root.insert("settings".to_string(), toml::Value::Table(settings));
+        let settings_file: SettingsFile = toml::Value::Table(root).try_into().unwrap();
+        settings_file.settings
+    }
+
+    #[test]
+    fn test_parse_settings_file_strips_local_credential_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings.github]
+            credential_command = "echo github-token"
+
+            [settings.gitlab]
+            credential_command = "echo gitlab-token"
+
+            [settings.forgejo]
+            credential_command = "echo forgejo-token"
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.github.credential_command, None);
+        assert_eq!(partial.gitlab.credential_command, None);
+        assert_eq!(partial.forgejo.credential_command, None);
+    }
+
+    #[test]
+    fn test_global_config_preserves_credential_commands() {
+        let path = Path::new("/tmp/global-config.toml");
+        let mut settings = credential_command_settings_table();
+        strip_local_only_settings(&mut settings, path, true);
+        let partial = settings_partial_from_table(settings);
+
+        assert_eq!(
+            partial.github.credential_command.as_deref(),
+            Some("echo github-token")
+        );
+        assert_eq!(
+            partial.gitlab.credential_command.as_deref(),
+            Some("echo gitlab-token")
+        );
+        assert_eq!(
+            partial.forgejo.credential_command.as_deref(),
+            Some("echo forgejo-token")
+        );
+    }
+
     #[test]
     fn test_set_by_comma_empty_string() {
         let result: Result<BTreeSet<String>, _> = set_by_comma("");
@@ -1109,6 +1235,17 @@ mod tests {
         Settings::reset(Some(partial));
         let settings = Settings::get();
         assert_eq!(settings.minimum_release_age.as_deref(), Some("7d"));
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_minimum_release_age_hidden_alias_wins_over_install_before() {
+        let mut partial = SettingsPartial::empty();
+        partial.install_before = Some("7d".to_string());
+        partial.minimum_release_age = Some("3d".to_string());
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert_eq!(settings.minimum_release_age.as_deref(), Some("3d"));
         Settings::reset(None);
     }
 

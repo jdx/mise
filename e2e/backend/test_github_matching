@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# Test the `matching` / `matching_regex` options for the github backend.
+#
+# oxc-project/oxc ships BOTH oxlint and oxfmt as separate per-platform assets in
+# a single release. Plain autodetection picks oxfmt (shortest-name tiebreak), and
+# neither binary is named after the repo so the repo-name preference gives no
+# signal. `matching` narrows to the intended binary WHILE keeping platform
+# autodetection — so the same config is portable across OS/arch (unlike
+# asset_pattern, which discards autodetection). Ported from the ubi backend.
+#
+# Note: the oxc assets are per-platform archives named with the platform triple
+# (e.g. oxlint-aarch64-apple-darwin.tar.gz / .zip); each extracts to a triple-named
+# binary, so `rename_exe = oxlint` exposes it on PATH as plain `oxlint`.
+
+export MISE_EXPERIMENTAL=1
+
+# A `matching` value that excludes every asset must fail asset selection with an
+# error that names the filter (proves the option is parsed + threaded, and that
+# the failure isn't a misleading "no asset for this platform"). Run this BEFORE
+# any successful install, since asset selection only happens at download time —
+# an already-installed version would make `mise install` a no-op. The expected
+# substring asserts the failure is the filter-excluded path, not an unrelated
+# error (network, bad tag, etc.).
+assert_fail 'mise install "github:oxc-project/oxc[matching=does-not-exist]@apps_v1.69.0"' "filtered by matching"
+
+# Same for matching_regex.
+assert_fail 'mise install "github:oxc-project/oxc[matching_regex=^does-not-exist]@apps_v1.69.0"' "filtered by matching_regex"
+
+# A syntactically invalid matching_regex (unclosed group) must be a hard error,
+# NOT silently ignored — otherwise selection would fall back to autodetection and
+# install the wrong binary (oxfmt) without telling the user their filter was bad.
+# The substring asserts it failed specifically on regex compilation.
+assert_fail 'mise install "github:oxc-project/oxc[matching_regex=oxlint(]@apps_v1.69.0"' "invalid matching_regex"
+
+# `asset_pattern` takes precedence over `matching`/`matching_regex` (it replaces
+# autodetection, leaving no candidate set to narrow). Proven platform-independently:
+# a bogus asset_pattern that matches NO asset, combined with a valid matching=oxlint,
+# must FAIL — if matching were (incorrectly) honored here it would rescue the install
+# by selecting oxlint. The substring asserts the failure is the asset_pattern path
+# ("No matching asset found for pattern"), not the matching path ("filtered by ..."),
+# which proves asset_pattern wins and matching is ignored.
+assert_fail 'mise install "github:oxc-project/oxc[asset_pattern=this-matches-no-asset,matching=oxlint]@apps_v1.69.0"' "No matching asset found for pattern"
+
+# Same precedence check for an *invalid* matching_regex. When asset_pattern is set,
+# matching_regex is ignored everywhere (binary selection AND provenance), so a
+# syntactically invalid regex must NOT hard-fail the install — asset_pattern wins,
+# and an ignored field shouldn't be validated. This bogus asset_pattern matches no
+# asset, so the failure must be the asset_pattern path ("No matching asset found
+# for pattern"), NOT regex compilation ("invalid matching_regex"). If the up-front
+# matching_regex validation runs regardless of asset_pattern, this fails on the
+# wrong (regex) error.
+assert_fail 'mise install "github:oxc-project/oxc[asset_pattern=this-matches-no-asset,matching_regex=oxlint(]@apps_v1.69.0"' "No matching asset found for pattern"
+
+# matching=oxlint selects the oxlint asset for THIS platform (autodetection still
+# chooses the correct OS/arch), not oxfmt — verified end-to-end by running it.
+assert_contains 'mise x "github:oxc-project/oxc[matching=oxlint,rename_exe=oxlint]@apps_v1.69.0" -- oxlint --version' "1.69.0"
+
+# Second real repo to prove the behavior isn't oxc-specific: bazelbuild/buildtools
+# ships buildifier, buildozer and unused_deps as separate per-platform bare
+# binaries. Plain autodetection picks buildozer (shortest-name tiebreak), so
+# matching=buildifier is required to select buildifier. This is the same repo the
+# ubi backend covers in e2e/cli/test_upgrade — exercised here for the github backend.
+assert_contains 'mise x "github:bazelbuild/buildtools[matching=buildifier,rename_exe=buildifier]@7.1.2" -- buildifier --version' "buildifier version: 7.1.2"

@@ -28,17 +28,11 @@ pub struct TaskTemplate {
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
-    pub hide: Option<bool>,
-    #[serde(default)]
-    pub raw: Option<bool>,
-    #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
     #[serde(default)]
     pub shell: Option<String>,
-    #[serde(default)]
-    pub quiet: Option<bool>,
     #[serde(default)]
     pub silent: Option<Silent>,
     #[serde(default)]
@@ -173,11 +167,12 @@ impl Task {
             self.shell = template.shell.clone();
         }
 
-        // Note: quiet, hide, and raw are `bool` in Task (not Option<bool>), so we cannot
-        // distinguish between "not set" (defaults to false) and "explicitly set to false".
-        // Therefore, we do NOT merge these boolean fields from templates to avoid the case
-        // where a task explicitly sets `quiet = false` but gets overridden by a template's
-        // `quiet = true`. Users must explicitly set these in their task if needed.
+        // Note: quiet, hide, raw, interactive, and raw_args are `bool` in Task (not
+        // Option<bool>), so we cannot distinguish between "not set" (defaults to false)
+        // and "explicitly set to false". Therefore, we do NOT merge these boolean
+        // fields from templates to avoid the case where a task explicitly sets
+        // `quiet = false` but gets overridden by a template's `quiet = true`. Users
+        // must explicitly set these in their task if needed.
 
         // silent: use template only if local is Off (Silent is an enum, so we can distinguish)
         if matches!(self.silent, Silent::Off)

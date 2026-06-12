@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# Test auto_env: platform environments (unix, {os}, {os}-{arch}) are
+# automatically active for config file discovery when enabled
+
+os="$(uname -s)"
+case "$os" in
+  Darwin) os=macos ;;
+  Linux) os=linux ;;
+esac
+arch="$(uname -m)"
+case "$arch" in
+  x86_64) arch=x64 ;;
+  aarch64 | arm64) arch=arm64 ;;
+esac
+
+echo 'env.AAA = "base"
+env.BBB = "base"' >mise.toml
+echo 'env.AAA = "unix"
+env.UNIX_LOADED = "1"' >mise.unix.toml
+echo "env.AAA = \"$os\"" >"mise.$os.toml"
+echo "env.AAA = \"$os-$arch\"" >"mise.$os-$arch.toml"
+echo 'env.AAA = "prod"' >mise.prod.toml
+
+# default: off, platform configs are not loaded
+assert "mise env --json | jq -r .AAA" "base"
+
+# the rollout warning never fires once the user has set auto_env explicitly,
+# regardless of the phase the current version is in (the version-gated unset
+# case is covered by the should_warn_auto_env unit tests)
+assert_not_contains "MISE_AUTO_ENV=false mise env 2>&1" "load automatically"
+assert_not_contains "MISE_AUTO_ENV=true mise env 2>&1" "load automatically"
+
+# opt in: all platform configs load, most specific wins (unix < os < os-arch)
+MISE_AUTO_ENV=true assert "mise env --json | jq -r .AAA" "$os-$arch"
+MISE_AUTO_ENV=true assert "mise env --json | jq -r .UNIX_LOADED" "1"
+MISE_AUTO_ENV=true assert "mise env --json | jq -r .BBB" "base"
+
+# explicit MISE_ENV entries take precedence over auto platform envs
+MISE_AUTO_ENV=true MISE_ENV=prod assert "mise env --json | jq -r .AAA" "prod"
+
+# explicit MISE_ENV listing a platform env dedupes (file loaded once) and
+# keeps its user-specified (higher) precedence
+MISE_AUTO_ENV=true MISE_ENV=$os assert "mise env --json | jq -r .AAA" "$os"
+MISE_AUTO_ENV=true MISE_ENV=$os assert "mise config ls | grep -c \"mise.$os.toml\"" "1"
+
+# explicit opt-out
+MISE_AUTO_ENV=false assert "mise env --json | jq -r .AAA" "base"
+
+# auto envs are not added to MISE_ENV itself: {{ mise_env }} and MISE_ENV
+# propagation to subprocesses only reflect explicit environments
+cat <<'EOF' >>mise.toml
+[tasks.print]
+run = '{% if mise_env %}echo {{mise_env}}{% endif %}'
+EOF
+MISE_AUTO_ENV=true assert "mise run print" ""
+MISE_AUTO_ENV=true MISE_ENV=prod assert "mise run print" "[prod]"
+
+# auto_env can be enabled via .miserc.toml
+echo 'auto_env = true' >.miserc.toml
+assert "mise env --json | jq -r .AAA" "$os-$arch"
+# env var overrides .miserc.toml
+MISE_AUTO_ENV=false assert "mise env --json | jq -r .AAA" "base"
+rm -f .miserc.toml
+
+# global config dir platform configs load too
+mkdir -p "$MISE_CONFIG_DIR"
+echo "env.GLOBAL_AUTO = \"$os\"" >"$MISE_CONFIG_DIR/config.$os.toml"
+MISE_AUTO_ENV=true assert "mise env --json | jq -r .GLOBAL_AUTO" "$os"
+assert "mise env --json | jq -r .GLOBAL_AUTO" "null"
+rm -f "$MISE_CONFIG_DIR/config.$os.toml"

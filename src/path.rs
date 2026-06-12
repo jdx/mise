@@ -152,6 +152,120 @@ pub fn is_posix_shell_program(program: &Path) -> bool {
     POSIX_SHELLS.iter().any(|name| *name == stem)
 }
 
+/// Returns true if `program` is `cmd` / `cmd.exe`, the Windows command
+/// interpreter. Used on Windows to decide whether an inline task/hook command
+/// must be passed to the shell *verbatim* (via raw command-line args) instead
+/// of through std's MSVCRT-style argument quoting. cmd.exe does not understand
+/// the `\"` escaping std emits for inner double quotes, so that quoting mangles
+/// commands like `python -c "import x"`. See discussion #9355.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn is_cmd_shell_program(program: &Path) -> bool {
+    program_stem(program).as_deref() == Some("cmd")
+}
+
+/// Assemble the args (everything after the `cmd.exe` program) for running
+/// `script` — plus any forwarded `args` — through cmd.exe *verbatim*.
+///
+/// Returns the cmd switches from `shell_flags` (with `/s` ensured at the front),
+/// followed by the whole command wrapped in a single outer double-quote pair.
+/// The caller must append these to the command line as *raw* args (e.g.
+/// [`crate::cmd::CmdLineRunner::raw_arg`] / `Command::raw_arg`) so std does not
+/// apply its MSVCRT-style quoting. cmd's `/s` then strips exactly that one outer
+/// pair and runs the remainder untouched, so any inner double quotes in the
+/// command (e.g. `python -c "import x"`) survive to the child. See discussion
+/// #9355.
+///
+/// `script` is emitted exactly as written (it carries the user's own quoting).
+/// Forwarded `args` are separate argv values, so each is MSVCRT-quoted *inside*
+/// the outer pair (cmd passes those inner quotes through untouched) — preserving
+/// the spaces-in-forwarded-args fix from #6744 instead of splitting them.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) -> Vec<String> {
+    let mut body = script.to_string();
+    for arg in args {
+        body.push(' ');
+        body.push_str(&quote_arg_for_cmd_body(arg));
+    }
+    let mut out: Vec<String> = Vec::with_capacity(shell_flags.len() + 2);
+    if !shell_flags.iter().any(|f| f.eq_ignore_ascii_case("/s")) {
+        out.push("/s".to_string());
+    }
+    out.extend(shell_flags.iter().cloned());
+    out.push(format!("\"{body}\""));
+    out
+}
+
+/// MSVCRT/`CommandLineToArgvW`-style quoting for a single argument, matching the
+/// rules `std::process::Command` uses on Windows. Used for forwarded args placed
+/// inside [`cmd_verbatim_args`]' outer quote pair so the *child program* (parsed
+/// by the C runtime) sees each as one argument. Quotes when needed: empty, or
+/// containing whitespace, `"`, or a cmd.exe metacharacter (`& | < > ( ) ^`).
+/// The metacharacters matter because, after `cmd /s /c` strips the single outer
+/// quote pair, an unquoted `a&b` would be parsed by cmd as shell syntax rather
+/// than reaching the child as one argv value; double quotes suppress that. (`%`
+/// is intentionally omitted — cmd expands `%VAR%` even inside quotes, so quoting
+/// cannot protect it.) Backslashes are doubled only where they precede a `"`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn quote_arg_for_cmd_body(arg: &str) -> String {
+    if !arg.is_empty() && !arg.contains([' ', '\t', '"', '&', '|', '<', '>', '(', ')', '^']) {
+        return arg.to_string();
+    }
+    let mut s = String::with_capacity(arg.len() + 2);
+    s.push('"');
+    let mut backslashes = 0usize;
+    for c in arg.chars() {
+        if c == '\\' {
+            backslashes += 1;
+        } else {
+            if c == '"' {
+                // Emit 2n+1 backslashes so the `"` is escaped, not a delimiter.
+                for _ in 0..=backslashes {
+                    s.push('\\');
+                }
+            }
+            backslashes = 0;
+        }
+        s.push(c);
+    }
+    // Double the trailing backslashes so they don't escape the closing quote.
+    for _ in 0..backslashes {
+        s.push('\\');
+    }
+    s.push('"');
+    s
+}
+
+/// Windows: if `program` is `cmd[.exe]` invoked with a `/c`|`/k` flag, build a
+/// configured-but-unspawned [`std::process::Command`] that hands `body` to cmd
+/// *verbatim* — raw args, a single outer quote pair, `/s` ensured (see
+/// [`cmd_verbatim_args`]) — so inner double quotes survive. Returns `None` for
+/// any non-cmd shell (or a cmd invocation that does not run a command string),
+/// so the caller falls through to its existing duct/std path unchanged.
+///
+/// Only the program and args are set; the caller owns env, cwd, stdio, and
+/// spawning. Mirrors the inline-task path in
+/// `TaskExecutor::get_cmd_program_and_args` and the hook path in
+/// `hooks::execute`, extended to the other `cmd /c` call sites. See #9355.
+#[cfg(windows)]
+pub fn cmd_verbatim_command(
+    program: &str,
+    flags: &[String],
+    body: &str,
+) -> Option<std::process::Command> {
+    use std::os::windows::process::CommandExt;
+    let runs_command = flags
+        .iter()
+        .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
+    if !is_cmd_shell_program(Path::new(program)) || !runs_command {
+        return None;
+    }
+    let mut c = std::process::Command::new(program);
+    for a in cmd_verbatim_args(flags, body, &[]) {
+        c.raw_arg(a);
+    }
+    Some(c)
+}
+
 /// Split a configured shell *command string* (program + args) into argv,
 /// honoring host conventions.
 ///
@@ -412,6 +526,114 @@ mod tests {
         assert!(!is_posix_shell_program(Path::new("pwsh.exe")));
         assert!(!is_posix_shell_program(Path::new("rustc")));
         assert!(!is_posix_shell_program(Path::new("")));
+    }
+
+    #[test]
+    fn test_is_cmd_shell_program() {
+        assert!(is_cmd_shell_program(Path::new("cmd")));
+        assert!(is_cmd_shell_program(Path::new("cmd.exe")));
+        assert!(is_cmd_shell_program(Path::new("CMD.EXE")));
+        assert!(is_cmd_shell_program(Path::new(
+            r"C:\Windows\System32\cmd.exe"
+        )));
+
+        assert!(!is_cmd_shell_program(Path::new("bash")));
+        assert!(!is_cmd_shell_program(Path::new("bash.exe")));
+        assert!(!is_cmd_shell_program(Path::new("powershell")));
+        assert!(!is_cmd_shell_program(Path::new("pwsh.exe")));
+        // `cmd.com` is not the modern interpreter we target.
+        assert!(!is_cmd_shell_program(Path::new("cmd.com")));
+        assert!(!is_cmd_shell_program(Path::new("")));
+    }
+
+    #[test]
+    fn test_cmd_verbatim_args() {
+        let c = || "/c".to_string();
+
+        // The reported case: inner double quotes must survive untouched inside
+        // the single outer quote pair, with `/s` ensured. The caller passes
+        // each element as a raw arg, so the resulting command line is
+        // `cmd /s /c "uv run python -c "import x""` — cmd strips only the outer
+        // pair. See discussion #9355.
+        assert_eq!(
+            cmd_verbatim_args(&[c()], r#"uv run python -c "import x""#, &[]),
+            sv(&["/s", "/c", r#""uv run python -c "import x"""#])
+        );
+
+        // No inner quotes — still wrapped, still gets `/s`.
+        assert_eq!(
+            cmd_verbatim_args(&[c()], "echo hi", &[]),
+            sv(&["/s", "/c", r#""echo hi""#])
+        );
+
+        // Forwarded args go inside the same outer quote pair, each MSVCRT-quoted
+        // when it contains spaces so the program still sees them as one argument
+        // (preserving the #6744 spaces-in-args fix). `c` stays bare.
+        assert_eq!(
+            cmd_verbatim_args(&[c()], "proxy", &["a b".to_string(), "c".to_string()]),
+            sv(&["/s", "/c", r#""proxy "a b" c""#])
+        );
+
+        // A forwarded path with a space (mirrors e2e-win/task_args.Tests.ps1):
+        // `type ".\test dir\file.txt"` must reach `type` as a single argument.
+        assert_eq!(
+            cmd_verbatim_args(&[c()], "type", &[r".\test dir\file.txt".to_string()]),
+            sv(&["/s", "/c", r#""type ".\test dir\file.txt"""#])
+        );
+
+        // An explicit `/s` in the shell flags is not duplicated.
+        assert_eq!(
+            cmd_verbatim_args(&["/s".to_string(), c()], "echo hi", &[]),
+            sv(&["/s", "/c", r#""echo hi""#])
+        );
+    }
+
+    #[test]
+    fn test_quote_arg_for_cmd_body() {
+        // No special chars -> returned as-is (no quotes added).
+        assert_eq!(quote_arg_for_cmd_body("plain"), "plain");
+        // Space/tab -> wrapped.
+        assert_eq!(quote_arg_for_cmd_body("a b"), r#""a b""#);
+        // Empty -> quoted empty string.
+        assert_eq!(quote_arg_for_cmd_body(""), r#""""#);
+        // Inner quote -> escaped as \".
+        assert_eq!(quote_arg_for_cmd_body(r#"a"b"#), r#""a\"b""#);
+        // Trailing backslashes are doubled before the closing quote (only when
+        // the arg is quoted because it also contains a space).
+        assert_eq!(quote_arg_for_cmd_body(r"a b\"), r#""a b\\""#);
+        // A backslash not adjacent to a quote is left alone.
+        assert_eq!(quote_arg_for_cmd_body(r"a\b c"), r#""a\b c""#);
+        // cmd metacharacters (no whitespace) are still quoted so cmd does not
+        // interpret them as shell syntax after stripping the outer quote pair.
+        assert_eq!(quote_arg_for_cmd_body("a&b"), r#""a&b""#);
+        assert_eq!(quote_arg_for_cmd_body("foo|bar"), r#""foo|bar""#);
+        assert_eq!(quote_arg_for_cmd_body("a>b"), r#""a>b""#);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_cmd_verbatim_command() {
+        // cmd + /c -> Some; the body is wrapped in one outer quote pair with `/s`
+        // ensured, passed via raw_arg (which appears verbatim in get_args()).
+        let c = cmd_verbatim_command("cmd", &["/c".to_string()], r#"echo "a b""#).unwrap();
+        assert_eq!(c.get_program().to_str(), Some("cmd"));
+        let args: Vec<String> = c
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "/s".to_string(),
+                "/c".to_string(),
+                r#""echo "a b"""#.to_string()
+            ]
+        );
+        // /k also runs a command string.
+        assert!(cmd_verbatim_command("cmd", &["/k".to_string()], "echo hi").is_some());
+        // Non-cmd shell, or cmd without /c|/k -> None (caller falls through).
+        assert!(cmd_verbatim_command("bash", &["-c".to_string()], "echo hi").is_none());
+        assert!(cmd_verbatim_command("cmd", &[], "echo hi").is_none());
     }
 
     #[test]

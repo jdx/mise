@@ -538,6 +538,10 @@
           "type": "boolean",
           "deprecated": true
         },
+        "auto_env": {
+          "description": "Automatically enable platform config environments (unix, {os}, {os}-{arch}).",
+          "type": "boolean"
+        },
         "auto_install": {
           "default": true,
           "description": "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler.",
@@ -1091,6 +1095,14 @@
           "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
           "type": "string"
         },
+        "minimum_release_age_excludes": {
+          "default": [],
+          "description": "Tools and backends to exclude from the global/default minimum_release_age setting",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "netrc": {
           "default": true,
           "description": "Use a netrc file for HTTP Basic authentication.",
@@ -1565,6 +1577,24 @@
         "system_config_file": {
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
+        },
+        "system_packages": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "managers": {
+              "description": "[experimental] Restrict which system package managers mise will use.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "sudo": {
+              "default": true,
+              "description": "[experimental] Allow `mise system install` to elevate with sudo when not running as root.",
+              "type": "boolean"
+            }
+          }
         },
         "task": {
           "type": "object",
@@ -2623,6 +2653,15 @@
       "allOf": [
         {
           "$ref": "#/$defs/task_props"
+        },
+        {
+          "properties": {
+            "hide": false,
+            "interactive": false,
+            "quiet": false,
+            "raw": false,
+            "raw_args": false
+          }
         }
       ],
       "unevaluatedProperties": false,
@@ -2881,6 +2920,18 @@
           "type": "string",
           "description": "User baked into the image config"
         },
+        "user_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Numeric UID assigned to tar layer entries"
+        },
+        "group_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Numeric GID assigned to tar layer entries. Defaults to user_id when unset"
+        },
         "mount_point": {
           "type": "string",
           "description": "Override where mise installs go in the image (default /mise)"
@@ -2905,6 +2956,23 @@
       "$ref": "#/$defs/settings",
       "description": "mise settings",
       "type": "object"
+    },
+    "system": {
+      "type": "object",
+      "description": "[experimental] machine-global bootstrapping (system packages)",
+      "properties": {
+        "packages": {
+          "type": "object",
+          "description": "system packages to install with `mise system install`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_-]+:.+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "description": "version pin in the manager's native format, or \"latest\""
+          }
+        }
+      }
     },
     "task_config": {
       "description": "configuration for task execution and management",

@@ -1,5 +1,153 @@
 # Changelog
 
+## [2026.6.4](https://github.com/jdx/mise/compare/v2026.6.3..v2026.6.4) - 2026-06-12
+
+### 🚀 Features
+
+- **(github)** add `matching` and `matching_regex` asset options by @devnulled in [#10325](https://github.com/jdx/mise/pull/10325)
+- **(oci)** add configurable layer owner by @ThomasK33 in [#10075](https://github.com/jdx/mise/pull/10075)
+- **(system)** declarative system packages (apt, dnf, pacman, and brew without brew) by @jdx in [#10326](https://github.com/jdx/mise/pull/10326)
+- **(system)** add mise system use and mise system upgrade by @jdx in [#10346](https://github.com/jdx/mise/pull/10346)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support override env selectors by @risu729 in [#10200](https://github.com/jdx/mise/pull/10200)
+- **(aqua)** route versions host by registry repo by @jdx in [#10341](https://github.com/jdx/mise/pull/10341)
+- **(backend)** honor zero minimum release age flag by @jdx in [#10344](https://github.com/jdx/mise/pull/10344)
+- **(core)** preserve inner quotes for remaining cmd /c call sites on windows by @JamBalaya56562 in [#10323](https://github.com/jdx/mise/pull/10323)
+- **(dotnet)** include runtime in lock identity by @risu729 in [#10175](https://github.com/jdx/mise/pull/10175)
+- **(install)** skip inactive unknown tools by @risu729 in [#10206](https://github.com/jdx/mise/pull/10206)
+- **(java)** include shorthand vendor in lock identity by @risu729 in [#9989](https://github.com/jdx/mise/pull/9989)
+- **(task)** append forwarded args to inline bash -c tasks on windows by @JamBalaya56562 in [#10321](https://github.com/jdx/mise/pull/10321)
+- **(task)** validate monorepo-relative task refs by @jdx in [#10342](https://github.com/jdx/mise/pull/10342)
+- **(task)** show multiline descriptions in usage help by @risu729 in [#10204](https://github.com/jdx/mise/pull/10204)
+- **(tasks)** refactor editor command handling and improve error reporting by @roele in [#9752](https://github.com/jdx/mise/pull/9752)
+
+### 🧪 Testing
+
+- **(completions)** update usage 3.5 expectations by @jdx in [#10340](https://github.com/jdx/mise/pull/10340)
+- **(use)** cover quiet global use output by @risu729 in [#10199](https://github.com/jdx/mise/pull/10199)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 1248f2a by @renovate[bot] in [#10331](https://github.com/jdx/mise/pull/10331)
+- update rust crate tabled to 0.21 by @renovate[bot] in [#10337](https://github.com/jdx/mise/pull/10337)
+- update rattler by @renovate[bot] in [#10336](https://github.com/jdx/mise/pull/10336)
+- update actions/checkout action to v6.0.3 by @renovate[bot] in [#10335](https://github.com/jdx/mise/pull/10335)
+- update ghcr.io/jdx/mise:deb docker digest to 50edf9f by @renovate[bot] in [#10332](https://github.com/jdx/mise/pull/10332)
+- update rust docker digest to 4fd8406 by @renovate[bot] in [#10334](https://github.com/jdx/mise/pull/10334)
+- update ghcr.io/jdx/mise:rpm docker digest to 57866e0 by @renovate[bot] in [#10333](https://github.com/jdx/mise/pull/10333)
+
+### 📦 Registry
+
+- add ghtkn by @TyceHerrman in [#9967](https://github.com/jdx/mise/pull/9967)
+- add antigravity-cli by @rhanneken in [#10324](https://github.com/jdx/mise/pull/10324)
+
+### New Contributors
+
+- @ThomasK33 made their first contribution in [#10075](https://github.com/jdx/mise/pull/10075)
+- @devnulled made their first contribution in [#10325](https://github.com/jdx/mise/pull/10325)
+
+## [2026.6.3](https://github.com/jdx/mise/compare/v2026.6.2..v2026.6.3) - 2026-06-11
+
+### 🚀 Features
+
+- **(backend)** allow version_expr to post-process version_regex results by @konono in [#10302](https://github.com/jdx/mise/pull/10302)
+- **(config)** automatically define platform environments (auto_env) by @jdx in [#10316](https://github.com/jdx/mise/pull/10316)
+- **(deps)** add support for Deno by @felipecrs in [#10291](https://github.com/jdx/mise/pull/10291)
+- **(github)** add --refresh flag to mint a fresh OAuth token by @jdx in [#10317](https://github.com/jdx/mise/pull/10317)
+
+### 🐛 Bug Fixes
+
+- **(backend)** respect permissive minimum release age by @jdx in [#10310](https://github.com/jdx/mise/pull/10310)
+- **(completions)** require usage 3.5 by @jdx in [#10313](https://github.com/jdx/mise/pull/10313)
+- **(config)** default release age cutoff should not disable installed-version resolution by @jdx in [#10315](https://github.com/jdx/mise/pull/10315)
+- **(lock)** lock idiomatic version file tools by @jdx in [#10309](https://github.com/jdx/mise/pull/10309)
+- **(lock)** disambiguate idiomatic lock target by @jdx in [#10319](https://github.com/jdx/mise/pull/10319)
+- **(python)** honor minimum release age for core versions by @jdx in [#10311](https://github.com/jdx/mise/pull/10311)
+- **(registry)** rename podman gh organization by @TyceHerrman in [#10288](https://github.com/jdx/mise/pull/10288)
+- **(task)** preserve inner quotes for cmd /c tasks and hooks on windows by @JamBalaya56562 in [#10301](https://github.com/jdx/mise/pull/10301)
+- **(task)** resolve templates in included task files by @jdx in [#10312](https://github.com/jdx/mise/pull/10312)
+- retry rename on Windows transient file locks during install by @jhult in [#10300](https://github.com/jdx/mise/pull/10300)
+
+### 📦 Registry
+
+- add imagemagick ([aqua:ImageMagick/ImageMagick](https://github.com/ImageMagick/ImageMagick)) by @thernstig in [#10118](https://github.com/jdx/mise/pull/10118)
+- add vscode-cli (backend:aqua:microsoft/vscode/code) by @felipecrs in [#10314](https://github.com/jdx/mise/pull/10314)
+
+### New Contributors
+
+- @felipecrs made their first contribution in [#10314](https://github.com/jdx/mise/pull/10314)
+- @jhult made their first contribution in [#10300](https://github.com/jdx/mise/pull/10300)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (2)
+
+- [`SonarSource/sonarqube-cli`](https://github.com/SonarSource/sonarqube-cli)
+- [`ubugeeei-prod/vize`](https://github.com/ubugeeei-prod/vize)
+
+## [2026.6.2](https://github.com/jdx/mise/compare/v2026.6.1..v2026.6.2) - 2026-06-09
+
+### 🚀 Features
+
+- **(config)** add minimum release age excludes by @jdx in [#10277](https://github.com/jdx/mise/pull/10277)
+- **(config)** default release age and warn on hidden versions by @jdx in [#10279](https://github.com/jdx/mise/pull/10279)
+
+### 🐛 Bug Fixes
+
+- **(github)** skip versions host for non-registry attestations by @jdx in [#10260](https://github.com/jdx/mise/pull/10260)
+- **(npm)** warn when install hooks are skipped by @jdx in [#10280](https://github.com/jdx/mise/pull/10280)
+
+### 📚 Documentation
+
+- **(security)** clarify minimum release age support by @jdx in [#10278](https://github.com/jdx/mise/pull/10278)
+- **(settings)** prefer assignment form for set examples by @jdx in [#10271](https://github.com/jdx/mise/pull/10271)
+- On Debian/Ubuntu, use extrepo for installing by @okulev in [#10262](https://github.com/jdx/mise/pull/10262)
+- improve sponsor logo contrast by @jdx in [#10270](https://github.com/jdx/mise/pull/10270)
+
+### 🧪 Testing
+
+- **(aqua)** allow commit metadata refs by @jdx in [#10287](https://github.com/jdx/mise/pull/10287)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance lockfile maintenance by @renovate[bot] in [#10265](https://github.com/jdx/mise/pull/10265)
+
+### 📦 Registry
+
+- add cargo-msrv by @jdx in [#10276](https://github.com/jdx/mise/pull/10276)
+- update aube and pitchfork aqua entries by @jdx in [#10285](https://github.com/jdx/mise/pull/10285)
+
+### Chore
+
+- **(ci)** ignore RUSTSEC-2026-0173 proc-macro-error2 advisory by @risu729 in [#10269](https://github.com/jdx/mise/pull/10269)
+- **(release)** validate vendored aqua registry by @jdx in [#10286](https://github.com/jdx/mise/pull/10286)
+
+### New Contributors
+
+- @okulev made their first contribution in [#10262](https://github.com/jdx/mise/pull/10262)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (10)
+
+- [`alibaba/open-code-review`](https://github.com/alibaba/open-code-review)
+- [`grafana-cold-storage/grizzly`](https://github.com/grafana-cold-storage/grizzly)
+- [`hashicorp/hcl/hclfmt`](https://github.com/hashicorp/hcl)
+- [`jdx/aube`](https://github.com/jdx/aube)
+- [`jdx/pitchfork`](https://github.com/jdx/pitchfork)
+- [`klauspost/asmfmt`](https://github.com/klauspost/asmfmt)
+- [`lexfrei/claudeline`](https://github.com/lexfrei/claudeline)
+- `macstadium.com/orka3`
+- [`openai/tart`](https://github.com/openai/tart)
+- [`visioncortex/vtracer`](https://github.com/visioncortex/vtracer)
+
+#### Updated Packages (2)
+
+- [`FiloSottile/age`](https://github.com/FiloSottile/age)
+- [`GitGuardian/ggshield`](https://github.com/GitGuardian/ggshield)
+
 ## [2026.6.1](https://github.com/jdx/mise/compare/v2026.6.0..v2026.6.1) - 2026-06-06
 
 ### 🚀 Features

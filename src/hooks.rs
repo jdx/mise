@@ -583,6 +583,47 @@ async fn execute(
     // Prevent recursive hook execution (e.g. hook runs `mise run` which spawns
     // a shell that activates mise and re-triggers hooks)
     env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
+
+    // On Windows, when the hook shell is cmd.exe, the rendered command must be
+    // passed to cmd *verbatim*. Going through std/duct's MSVCRT-style quoting
+    // would escape inner `"` as `\"`, which cmd.exe does not understand, so a
+    // hook like `python -c "import x"` is mangled. Unlike tasks, hooks have no
+    // `usage`/shebang/file-based escape hatch, so this is the only fix. duct
+    // can't emit raw args, so spawn std Command directly with raw command-line
+    // args (wrapped in one outer quote pair + `/s`), forwarding stdout to stderr
+    // to match the duct path's `stdout_to_stderr()`. See discussion #9355.
+    #[cfg(windows)]
+    {
+        let runs_command = shell
+            .iter()
+            .skip(1)
+            .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
+        if crate::path::is_cmd_shell_program(Path::new(&shell[0])) && runs_command {
+            use std::os::windows::io::AsHandle;
+            use std::os::windows::process::CommandExt;
+            let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], &rendered_script, &[]);
+            trace!("hook (cmd verbatim): {} {}", shell[0], cmd_args.join(" "));
+            let mut c = std::process::Command::new(&shell[0]);
+            for a in &cmd_args {
+                c.raw_arg(a);
+            }
+            c.env_clear();
+            c.envs(env.iter());
+            // Send the hook's stdout to mise's stderr (matching the duct
+            // `stdout_to_stderr()` the non-cmd path uses) by handing the child a
+            // clone of our stderr handle. Redirecting the descriptor directly —
+            // rather than piping through a reader thread — means a hook that
+            // spawns a background child holding the write end can't block us
+            // waiting for pipe EOF, and stdout/stderr ordering is preserved.
+            c.stdout(std::io::stderr().as_handle().try_clone_to_owned()?);
+            let status = c.status()?;
+            if !status.success() {
+                eyre::bail!("hook command failed: {status}");
+            }
+            return Ok(());
+        }
+    }
+
     cmd(&shell[0], args)
         .stdout_to_stderr()
         // .dir(root)

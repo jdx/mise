@@ -452,10 +452,48 @@ pub fn tera_exec(
                     env_no_shims
                         .insert(env::PATH_KEY.to_string(), strip_shims_from_path(&path_val));
                 }
-                let mut cmd: duct::Expression = cmd(&shell[0], args).full_env(&env_no_shims);
-                if let Some(dir) = &dir {
-                    cmd = cmd.dir(dir);
-                }
+                // Run the command capturing stdout (duct `.read()` trims one
+                // trailing newline). On Windows a `cmd /c` command is passed
+                // verbatim so inner double quotes survive (#9355); non-cmd shells
+                // and Unix keep the duct path. Returns eyre::Result so it can feed
+                // the cache's get_or_try_init directly.
+                let run_once = || -> eyre::Result<String> {
+                    #[cfg(windows)]
+                    {
+                        if let Some(mut c) =
+                            crate::path::cmd_verbatim_command(&shell[0], &shell[1..], command)
+                        {
+                            c.env_clear();
+                            c.envs(env_no_shims.iter());
+                            if let Some(dir) = &dir {
+                                c.current_dir(dir);
+                            }
+                            let out = c.output()?;
+                            if !out.status.success() {
+                                eyre::bail!(
+                                    "exec command failed: {}",
+                                    String::from_utf8_lossy(&out.stderr)
+                                );
+                            }
+                            // Strict UTF-8 like duct's `.read()` (which uses
+                            // read_to_string and errors on invalid UTF-8 rather
+                            // than substituting U+FFFD replacement characters).
+                            let mut s = String::from_utf8(out.stdout)?;
+                            // Match duct's `.read()`: strip *all* trailing \r and
+                            // \n, so the cmd path returns byte-identical output to
+                            // the non-cmd (duct) path on the same machine.
+                            while s.ends_with('\n') || s.ends_with('\r') {
+                                s.pop();
+                            }
+                            return Ok(s);
+                        }
+                    }
+                    let mut expr: duct::Expression = cmd(&shell[0], args).full_env(&env_no_shims);
+                    if let Some(dir) = &dir {
+                        expr = expr.dir(dir);
+                    }
+                    Ok(expr.read()?)
+                };
                 let result = if cache.is_some() || cache_duration.is_some() {
                     let cachehash = hash::hash_blake3_to_str(
                         &(dir
@@ -474,12 +512,12 @@ pub fn tera_exec(
                         cacheman = cacheman.with_fresh_duration(Some(cache_duration));
                     }
                     let cache = cacheman.build();
-                    match cache.get_or_try_init(|| Ok(cmd.read()?)) {
+                    match cache.get_or_try_init(run_once) {
                         Ok(result) => result.clone(),
                         Err(e) => return Err(format!("exec command: {e}").into()),
                     }
                 } else {
-                    cmd.read()?
+                    run_once().map_err(|e| tera::Error::msg(format!("exec command: {e}")))?
                 };
                 Ok(Value::String(result))
             }

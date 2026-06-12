@@ -474,6 +474,40 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    /// Append a shell's `flags` followed by an inline command `body`. On Windows,
+    /// when this runner's program is `cmd[.exe]` and `flags` contain `/c`|`/k`,
+    /// the body is handed to cmd *verbatim* (raw args, one outer quote pair via
+    /// [`crate::path::cmd_verbatim_args`]) so inner double quotes survive — the
+    /// same fix the inline-task path uses. Otherwise (Unix, or a non-cmd Windows
+    /// shell) this is exactly `self.args(flags).arg(body)`. See #9355.
+    pub fn cmd_body_args(self, flags: &[String], body: &str) -> Self {
+        #[cfg(windows)]
+        {
+            let program = std::path::PathBuf::from(self.cmd.get_program());
+            let runs_command = flags
+                .iter()
+                .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
+            if crate::path::is_cmd_shell_program(&program) && runs_command {
+                let cmd_args = crate::path::cmd_verbatim_args(flags, body, &[]);
+                return cmd_args.into_iter().fold(self, |r, a| r.raw_arg(a));
+            }
+        }
+        self.args(flags).arg(body)
+    }
+
+    /// Append a single argument to the command line *verbatim*, bypassing the
+    /// MSVCRT-style quoting std normally applies on Windows. Required when
+    /// spawning `cmd.exe /c <script>`: cmd does not understand the `\"`
+    /// escaping std would otherwise emit for inner double quotes, so the script
+    /// must reach cmd unquoted. See `TaskExecutor::get_cmd_program_and_args`
+    /// and discussion #9355.
+    #[cfg(windows)]
+    pub fn raw_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
+        use std::os::windows::process::CommandExt;
+        self.cmd.raw_arg(arg);
+        self
+    }
+
     pub fn with_pr(mut self, pr: &'a dyn SingleReport) -> Self {
         self.pr = Some(pr);
         self
@@ -1056,5 +1090,45 @@ mod tests {
         let _config = Config::get().await.unwrap();
         let output = cmd!("echo", "foo", "bar").read().unwrap();
         assert_eq!("foo bar", output);
+    }
+
+    #[test]
+    fn test_cmd_body_args_unix_fallthrough() {
+        // On Unix `cmd_body_args` must be exactly `args(flags).arg(body)` — the
+        // non-regression contract shared by every CmdLineRunner call site.
+        let r = super::CmdLineRunner::new("bash").cmd_body_args(&["-c".to_string()], "echo hi");
+        assert_eq!(r.get_args(), vec!["-c".to_string(), "echo hi".to_string()]);
+    }
+}
+
+#[cfg(test)]
+#[cfg(windows)]
+mod windows_tests {
+    #[test]
+    fn test_cmd_body_args_cmd_verbatim() {
+        // cmd /c <body>: the verbatim branch produces the cmd_verbatim_args output
+        // (`/s /c "<body>"`) rather than the fall-through [/c, <body>] layout.
+        let r =
+            super::CmdLineRunner::new("cmd").cmd_body_args(&["/c".to_string()], r#"echo "a b""#);
+        assert!(r.get_program().to_lowercase().contains("cmd"));
+        assert_eq!(
+            r.get_args(),
+            vec![
+                "/s".to_string(),
+                "/c".to_string(),
+                r#""echo "a b"""#.to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_cmd_body_args_non_cmd_fallthrough() {
+        // A non-cmd Windows shell keeps the plain args(flags).arg(body) layout.
+        let r = super::CmdLineRunner::new("pwsh")
+            .cmd_body_args(&["-Command".to_string()], r#"echo "a b""#);
+        assert_eq!(
+            r.get_args(),
+            vec!["-Command".to_string(), r#"echo "a b""#.to_string()]
+        );
     }
 }

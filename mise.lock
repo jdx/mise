@@ -104,56 +104,56 @@ backend = "github:endevco/aube"
 
 [tools.aube."platforms.linux-arm64"]
 checksum = "sha256:5e1a207be4b83cd1e0186402764b56e5a702c0332f519959c16d02f4cee9e008"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/433127937"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/433127937"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-arm64-musl"]
 checksum = "sha256:8c3098765cee83d654176fd2ed5eadd7224cff08d76f0ce551149fe65ee082d8"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432794003"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432794003"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64"]
 checksum = "sha256:3f3d183d6a9644391ffa3ac521c010c90cebc4fd6ab208aa9aa552c70986a357"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432797995"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432797995"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64-baseline"]
 checksum = "sha256:3f3d183d6a9644391ffa3ac521c010c90cebc4fd6ab208aa9aa552c70986a357"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432797995"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432797995"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64-musl"]
 checksum = "sha256:2ac54a2bc6248c6b1df9c3a160beea6cf3255102337488f5d3b2dc317ea673a0"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432798092"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432798092"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:2ac54a2bc6248c6b1df9c3a160beea6cf3255102337488f5d3b2dc317ea673a0"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432798092"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432798092"
 provenance = "github-attestations"
 
 [tools.aube."platforms.macos-arm64"]
 checksum = "sha256:3acf85c4373d30800dd739c279bdbecc5f602ee82009498408b82ce99c8e3f72"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432824150"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432824150"
 provenance = "github-attestations"
 
 [tools.aube."platforms.windows-x64"]
 checksum = "sha256:950fb818925c31dca4e122bae72a6088c92edc8760c8374fbf0470620ce5e1fa"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432804595"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432804595"
 provenance = "github-attestations"
 
 [tools.aube."platforms.windows-x64-baseline"]
 checksum = "sha256:950fb818925c31dca4e122bae72a6088c92edc8760c8374fbf0470620ce5e1fa"
-url = "https://github.com/endevco/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/endevco/aube/releases/assets/432804595"
+url = "https://github.com/jdx/aube/releases/download/v1.16.1/aube-v1.16.1-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/432804595"
 provenance = "github-attestations"
 
 [[tools.bun]]
@@ -1003,44 +1003,44 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
 
 [[tools.usage]]
-version = "3.4.0"
+version = "3.5.0"
 backend = "aqua:jdx/usage"
 
 [tools.usage."platforms.linux-arm64"]
-checksum = "sha256:5cea2993383ccbbdbf9693bec484c47fc3cbcff75ec167618e1e775e5df9ba19"
-url = "https://github.com/jdx/usage/releases/download/v3.4.0/usage-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:a0aab1ecbae1bc48aa3aac6ebb508f5df44a77122bb8d6ea23b86ee9fd699518"
+url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-aarch64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-arm64-musl"]
-checksum = "sha256:5cea2993383ccbbdbf9693bec484c47fc3cbcff75ec167618e1e775e5df9ba19"
-url = "https://github.com/jdx/usage/releases/download/v3.4.0/usage-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:a0aab1ecbae1bc48aa3aac6ebb508f5df44a77122bb8d6ea23b86ee9fd699518"
+url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-aarch64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-x64"]
-checksum = "sha256:1a54260df50f1764bc8cbabf8763f2a6314c5025d3b06b512d02898eb28768b3"
-url = "https://github.com/jdx/usage/releases/download/v3.4.0/usage-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:d686d7acff1fc5ffd04be2fefccd342564648d353609fab81e22a3672446c4f0"
+url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-x64-baseline"]
-checksum = "sha256:1a54260df50f1764bc8cbabf8763f2a6314c5025d3b06b512d02898eb28768b3"
-url = "https://github.com/jdx/usage/releases/download/v3.4.0/usage-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:d686d7acff1fc5ffd04be2fefccd342564648d353609fab81e22a3672446c4f0"
+url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-x64-musl"]
-checksum = "sha256:1a54260df50f1764bc8cbabf8763f2a6314c5025d3b06b512d02898eb28768b3"
-url = "https://github.com/jdx/usage/releases/download/v3.4.0/usage-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:d686d7acff1fc5ffd04be2fefccd342564648d353609fab81e22a3672446c4f0"
+url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:1a54260df50f1764bc8cbabf8763f2a6314c5025d3b06b512d02898eb28768b3"
-url = "https://github.com/jdx/usage/releases/download/v3.4.0/usage-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:d686d7acff1fc5ffd04be2fefccd342564648d353609fab81e22a3672446c4f0"
+url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.usage."platforms.macos-arm64"]
-checksum = "sha256:e9f7cd9038fec6352eaa001903414edc95bb77386a9573fde21be17991f3f719"
-url = "https://github.com/jdx/usage/releases/download/v3.4.0/usage-universal-apple-darwin.tar.gz"
+checksum = "sha256:dcb1022d2e6cbe0070e3259a48a5e058ca64ecc707b6901b929b388b95bb322c"
+url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-universal-apple-darwin.tar.gz"
 
 [tools.usage."platforms.windows-x64"]
-checksum = "sha256:2272ad0d264b99986ef8e3d537f774f046db5fe096e8a9375fbb1482f0934e8c"
-url = "https://github.com/jdx/usage/releases/download/v3.4.0/usage-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:4647b8894520c4ab8d8424950fd7bddd2b76aa6c71bdedc90b2464985ab3b8cd"
+url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-pc-windows-msvc.zip"
 
 [tools.usage."platforms.windows-x64-baseline"]
-checksum = "sha256:2272ad0d264b99986ef8e3d537f774f046db5fe096e8a9375fbb1482f0934e8c"
-url = "https://github.com/jdx/usage/releases/download/v3.4.0/usage-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:4647b8894520c4ab8d8424950fd7bddd2b76aa6c71bdedc90b2464985ab3b8cd"
+url = "https://github.com/jdx/usage/releases/download/v3.5.0/usage-x86_64-pc-windows-msvc.zip"
 
 [[tools.wait-for-gh-rate-limit]]
 version = "1.1.1"

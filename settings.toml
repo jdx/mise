@@ -211,6 +211,36 @@ env = "MISE_ASDF_COMPAT"
 hide = true
 type = "Bool"
 
+[auto_env]
+description = "Automatically enable platform config environments (unix, {os}, {os}-{arch})."
+docs = """
+When enabled, mise treats the following as active config environments (in addition
+to any explicit `MISE_ENV`): `unix` (on unix-family platforms), the OS name
+(`linux`/`macos`/`windows`), and `{os}-{arch}` (e.g. `macos-arm64`, `windows-x64`,
+using mise's remapped arch names: `x86_64` -> `x64`, `aarch64` -> `arm64`).
+
+This causes config files such as `mise.windows.toml`, `mise/config.macos-arm64.toml`,
+or `mise.unix.toml` to be loaded automatically, and matching `mise.<env>.lock`
+lockfiles to be selected. Platform environments have lower precedence than explicit
+`MISE_ENV` entries; the full precedence order is `unix` < `{os}` < `{os}-{arch}` <
+explicit `MISE_ENV` entries. Platform environments do not affect the
+`{{ mise_env }}` template variable or the `MISE_ENV` variable passed to subprocesses.
+
+When unset, this currently defaults to `false`. Starting with mise 2027.6.0 it will
+default to `true`; set it to `false` to keep the old behavior, or `true` to adopt
+the new behavior early.
+
+This is an early-init setting: it must be set in `.miserc.toml` or via the
+`MISE_AUTO_ENV` environment variable. Setting it in `mise.toml` will have no effect
+because config file discovery has already occurred by the time `mise.toml` is read.
+
+See [Configuration Environments](/configuration/environments.html) for more details.
+"""
+env = "MISE_AUTO_ENV"
+optional = true
+rc = true
+type = "Bool"
+
 [auto_install]
 default = true
 description = "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler."
@@ -675,6 +705,7 @@ is trimmed.
 Example: `op read "op://Private/Forgejo Token/credential"`
 """
 env = "MISE_FORGEJO_CREDENTIAL_COMMAND"
+global_only = true
 type = "String"
 
 [forgejo.fj_cli_tokens]
@@ -727,6 +758,7 @@ is trimmed.
 Example: `op read "op://Private/GitHub Token/credential"`
 """
 env = "MISE_GITHUB_CREDENTIAL_COMMAND"
+global_only = true
 type = "String"
 
 [github.gh_cli_tokens]
@@ -890,6 +922,7 @@ is trimmed.
 Example: `op read "op://Private/GitLab Token/credential"`
 """
 env = "MISE_GITLAB_CREDENTIAL_COMMAND"
+global_only = true
 type = "String"
 
 [gitlab.glab_cli_tokens]
@@ -1376,19 +1409,26 @@ Example:
 
 ```toml
 [settings]
-minimum_release_age = "7d"  # only install versions released more than 7 days ago
+minimum_release_age = "7d"  # default is 24h
 ```
 
-Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
-Versions without timestamps are included by default.
+Capability depends on what each backend can report or pass through:
+
+- Top-level version filtering: applies to fuzzy version requests when the backend provides release
+  timestamps, such as `aqua:`, `cargo:`, `github:`, `gitlab:`, `go:`, `npm:`, `pipx:`, and many
+  core tools. Versions without timestamps are included by default.
+- Transitive dependency filtering during install: only `npm:` and `pipx:` currently forward the
+  cutoff to the package manager. Other backends may still select an older top-level tool version,
+  but they do not constrain dependencies fetched by the tool's installer/compiler.
 
 **Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
 like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
 allowing you to selectively use newer versions for specific tools while keeping others behind the
 cutoff date.
 
-Some package-manager backends also forward the cutoff to transitive dependency resolution during
-install. This includes `npm:` and `pipx:` tools.
+For `npm:` and `pipx:` package-manager support details, see the backend docs.
+
+Defaults to `24h`. Set `minimum_release_age = "0s"` to effectively disable the delay.
 
 Can be overridden with the `--minimum-release-age` CLI flag or per-tool with the `minimum_release_age` tool option.
 
@@ -1401,6 +1441,34 @@ minimum_release_age = "7d"  # override for this tool only
 env = "MISE_MINIMUM_RELEASE_AGE"
 optional = true
 type = "String"
+
+[minimum_release_age_excludes]
+default = []
+description = "Tools and backends to exclude from the global/default minimum_release_age setting"
+docs = """
+Exclude tools or backends from the global/default [`minimum_release_age`](#minimum_release_age) setting.
+This is useful for tools where newly published releases are time-sensitive.
+
+Exclusions match any of:
+
+- Backend wildcard: `npm:*`, `pipx:*`, `github:*`
+- Registry tool shorthand: `trivy`, `node`
+- Full backend ID: `npm:prettier`, `aqua:aquasecurity/trivy`
+
+Example:
+
+```toml
+[settings]
+minimum_release_age = "7d"
+minimum_release_age_excludes = ["trivy", "npm:*"]
+```
+
+This excludes matching tools from the global setting and built-in default. A per-tool `minimum_release_age` option
+or the `--minimum-release-age` CLI flag still applies to matching tools.
+"""
+env = "MISE_MINIMUM_RELEASE_AGE_EXCLUDES"
+parse_env = "list_by_comma"
+type = "ListString"
 
 [netrc]
 default = true
@@ -2241,6 +2309,44 @@ description = "Path to the system mise config file. Default is `/etc/mise/config
 env = "MISE_SYSTEM_CONFIG_FILE"
 optional = true
 type = "Path"
+
+[system_packages.managers]
+description = "[experimental] Restrict which system package managers mise will use."
+docs = """
+[experimental] Restrict which system package managers mise will use.
+
+By default mise acts on every manager in `[system.packages]` that is available
+on the current machine. When more than one could apply (e.g. several package
+managers installed on one machine, or a shared config listing managers you
+don't want on this machine), set this to the subset you want:
+
+```toml
+[settings]
+system_packages.managers = ["apt"]
+```
+
+This composes well with platform-specific config files
+(`mise.macos.toml`, `mise.linux.toml`) for per-OS defaults.
+"""
+env = "MISE_SYSTEM_PACKAGES_MANAGERS"
+optional = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
+[system_packages.sudo]
+default = true
+description = "[experimental] Allow `mise system install` to elevate with sudo when not running as root."
+docs = """
+[experimental] Allow `mise system install` to elevate with sudo when not running as root.
+
+When disabled, mise never runs sudo: if elevation would be required, it errors
+with the exact command to run manually. mise only elevates for explicit
+`mise system install` invocations, logs the full command line before running
+it, and skips sudo entirely when already running as root (e.g. containers/CI).
+"""
+env = "MISE_SYSTEM_PACKAGES_SUDO"
+type = "Bool"
 
 [task.disable_paths]
 default = []

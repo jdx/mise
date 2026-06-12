@@ -12,8 +12,8 @@ use path_absolutize::Absolutize;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, ConfigPathOptions, Settings, config_file, resolve_target_config_path};
-use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
+use crate::install_before::resolve_cli_minimum_release_age;
 use crate::registry::REGISTRY;
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion,
@@ -146,6 +146,7 @@ impl Use {
             latest_versions: false,
             use_locked_version: true,
             before_date: self.get_before_date()?,
+            before_date_from_default: false,
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
@@ -379,10 +380,7 @@ impl Use {
     /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(minimum_release_age) = &self.minimum_release_age {
-            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
-        }
-        Ok(None)
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 }
 

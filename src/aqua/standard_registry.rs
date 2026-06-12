@@ -72,7 +72,14 @@ mod tests {
             "aquaproj/aqua-registry"
         );
         assert!(!AQUA_STANDARD_REGISTRY_METADATA.tag.is_empty());
-        assert!(AQUA_STANDARD_REGISTRY_METADATA.tag.starts_with('v'));
+        assert!(
+            AQUA_STANDARD_REGISTRY_METADATA.tag.starts_with('v')
+                || AQUA_STANDARD_REGISTRY_METADATA.tag.len() == 40
+                    && AQUA_STANDARD_REGISTRY_METADATA
+                        .tag
+                        .chars()
+                        .all(|c| c.is_ascii_hexdigit())
+        );
     }
 
     #[test]

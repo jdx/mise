@@ -22,6 +22,13 @@ pub struct Github {
     #[clap(long)]
     pub(crate) raw: bool,
 
+    /// [experimental] Mint a fresh OAuth token even if the cached one has not
+    /// expired, via the refresh-token grant or a new device-code flow.
+    /// Use after changing the GitHub App's installations or permissions:
+    /// cached tokens keep their original access until they expire
+    #[clap(long, requires = "oauth")]
+    pub(crate) refresh: bool,
+
     /// Show the full unmasked token
     #[clap(long)]
     pub(crate) unmask: bool,
@@ -34,6 +41,7 @@ impl Github {
                 github::oauth::token(github::oauth::TokenRequest {
                     host: self.host.clone(),
                     allow_device_flow: true,
+                    force_refresh: self.refresh,
                 })?,
                 github::TokenSource::GithubOauth,
             ))
@@ -75,5 +83,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise token github github.mycompany.com</bold>
     github.mycompany.com: (none)
+
+    $ <bold>mise token github --oauth --refresh</bold>
+    github.com: gho_…xxxx (source: GitHub OAuth)
 "#
 );

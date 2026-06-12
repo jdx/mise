@@ -134,7 +134,7 @@ mise install gitlab:user/repo
 ```
 
 ::: tip
-The autodetection logic is implemented in [`src/backend/asset_matcher.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_matcher.rs), which is shared by both the GitHub and GitLab backends.
+The autodetection logic is implemented in [`src/backend/asset_matcher.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_matcher.rs), which is shared by the GitHub, GitLab, and Forgejo backends.
 :::
 
 ### `asset_pattern`
@@ -146,6 +146,51 @@ Specifies the pattern to match against release asset names. This is useful when 
 version = "latest"
 asset_pattern = "gitlab-runner-linux-x64"
 ```
+
+### `matching`
+
+Narrows asset selection to names containing the given substring, **while keeping platform autodetection**. Unlike [`asset_pattern`](#asset_pattern) (which replaces autodetection entirely), `matching` only refines the candidate set — autodetection still chooses the correct OS/arch from the narrowed list, so a single config stays portable across platforms.
+
+This is the option to reach for when a repository ships **multiple binaries as separate per-platform assets** and autodetection can't tell which one you want.
+
+```toml
+[tools]
+# When a release ships several binaries per platform (e.g. `mytool-cli` and
+# `mytool-server`), matching picks one on every OS/arch without hardcoding a
+# platform-specific asset_pattern.
+"gitlab:owner/repo" = { version = "latest", matching = "mytool-cli" }
+```
+
+Tool options can also be passed inline on the command line using `[key=value]` syntax:
+
+```sh
+mise use "gitlab:owner/repo[matching=mytool-cli]"
+```
+
+`matching` is a case-sensitive substring test, so a value that is also a substring of another asset's name (e.g. `matching = "tool"` when both `tool-*` and `tool-extras-*` are published) won't uniquely select your binary. Use [`matching_regex`](#matching_regex) with an anchor when you need a precise match.
+
+If [`asset_pattern`](#asset_pattern) is also set, it takes precedence and `matching`/`matching_regex` are ignored — `asset_pattern` replaces autodetection entirely, so there is no candidate set left for them to narrow. They are ignored silently: when `asset_pattern` is set, a `matching_regex` is never consulted and an invalid one is not reported, since mise does not error on a superseded option.
+
+### `matching_regex`
+
+Like [`matching`](#matching), but the asset name must match the given regular expression. Use this when a substring isn't selective enough. The match is case-sensitive; use an inline `(?i)` flag for case-insensitive matching.
+
+```toml
+[tools]
+"gitlab:owner/repo" = { version = "latest", matching_regex = "^mytool-cli-" }
+```
+
+If both `matching` and `matching_regex` are set, an asset must satisfy **both** (logical AND)
+to remain a candidate.
+
+::: warning
+`matching`/`matching_regex` are **not** part of the install path — it is keyed by the tool
+name (`owner/repo`, or a `tool_alias`) and version. To install two binaries from the same
+release, give each its own [`tool_alias`](/dev-tools/backends/github.html#multiple-assets-from-the-same-release)
+so they get distinct install directories; reusing the same `gitlab:owner/repo` string with
+different `matching` values resolves to the same directory and the second install overwrites
+the first.
+:::
 
 ### `version_prefix`
 
