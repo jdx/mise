@@ -937,8 +937,8 @@ pub trait Backend: Debug + Send + Sync {
         &self,
         _request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
-        BTreeMap::new() // Default: no options affect artifact identity
+    ) -> Result<BTreeMap<String, String>> {
+        Ok(BTreeMap::new()) // Default: no options affect artifact identity
     }
 
     /// Returns all platform variants that should be locked for a given base platform.

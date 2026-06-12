@@ -331,7 +331,7 @@ impl ToolRequest {
     ) -> Result<Option<LockfileTool>> {
         let request_options = if let Ok(backend) = self.backend() {
             let target = PlatformTarget::from_current();
-            backend.resolve_lockfile_options(self, &target)
+            backend.resolve_lockfile_options(self, &target)?
         } else {
             BTreeMap::new()
         };

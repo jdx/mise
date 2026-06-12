@@ -97,9 +97,9 @@ impl Backend for DotnetPlugin {
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        DotnetOptions::new(&raw_opts).lockfile_options()
+        Ok(DotnetOptions::new(&raw_opts).lockfile_options())
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -483,7 +483,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            backend.resolve_lockfile_options(&request, &PlatformTarget::from_current()),
+            backend
+                .resolve_lockfile_options(&request, &PlatformTarget::from_current())
+                .unwrap(),
             BTreeMap::from([("runtime".to_string(), "aspnetcore".to_string())])
         );
 
@@ -497,6 +499,7 @@ mod tests {
         assert!(
             backend
                 .resolve_lockfile_options(&request_no_runtime, &PlatformTarget::from_current())
+                .unwrap()
                 .is_empty()
         );
     }

@@ -930,7 +930,7 @@ impl Backend for PythonPlugin {
         &self,
         request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
         let is_current_platform = target.is_current();
@@ -961,7 +961,7 @@ impl Backend for PythonPlugin {
 
         let raw_opts = request.options();
         opts.extend(PythonOptions::new(&raw_opts).lockfile_options());
-        opts
+        Ok(opts)
     }
 
     async fn resolve_lock_info(

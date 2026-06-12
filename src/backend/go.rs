@@ -15,7 +15,7 @@ use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 use async_trait::async_trait;
 use dashmap::DashMap;
-use eyre::WrapErr;
+use eyre::{Result, WrapErr};
 use serde_json::Deserializer;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
@@ -169,9 +169,9 @@ impl Backend for GoBackend {
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        GoOptions::new(&raw_opts).lockfile_options()
+        Ok(GoOptions::new(&raw_opts).lockfile_options())
     }
 }
 

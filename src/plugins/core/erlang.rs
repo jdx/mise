@@ -392,7 +392,7 @@ impl Backend for ErlangPlugin {
         &self,
         _request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
         let is_current_platform = target.is_current();
@@ -407,6 +407,6 @@ impl Backend for ErlangPlugin {
             opts.insert("compile".to_string(), "true".to_string());
         }
 
-        opts
+        Ok(opts)
     }
 }

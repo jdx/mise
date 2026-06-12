@@ -1036,10 +1036,10 @@ impl Backend for RubyPlugin {
         &self,
         _request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         if target.os_name() == "windows" {
             // Windows uses RubyInstaller2, so ruby-build/precompiled settings do not affect it.
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         }
 
         let mut opts = BTreeMap::new();
@@ -1082,7 +1082,7 @@ impl Backend for RubyPlugin {
             }
         }
 
-        opts
+        Ok(opts)
     }
 
     async fn resolve_lock_info(
@@ -1206,7 +1206,7 @@ mod tests {
 
         let backend = RubyPlugin::new();
         let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
-        backend.resolve_lockfile_options(&request, &target)
+        backend.resolve_lockfile_options(&request, &target).unwrap()
     }
 
     fn non_current_platform_target() -> PlatformTarget {
@@ -1337,7 +1337,7 @@ mod tests {
         let backend = RubyPlugin::new();
         let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
         let target = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
-        let opts = backend.resolve_lockfile_options(&request, &target);
+        let opts = backend.resolve_lockfile_options(&request, &target).unwrap();
         let tv = ToolVersion::new(request, "3.3.0".to_string());
         let info = tokio::runtime::Builder::new_current_thread()
             .enable_all()

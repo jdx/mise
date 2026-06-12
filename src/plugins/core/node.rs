@@ -741,7 +741,7 @@ impl Backend for NodePlugin {
         &self,
         _request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
         let is_current_platform = target.is_current();
@@ -762,7 +762,7 @@ impl Backend for NodePlugin {
             opts.insert("flavor".to_string(), flavor);
         }
 
-        opts
+        Ok(opts)
     }
 
     async fn resolve_lock_info(

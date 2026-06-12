@@ -587,9 +587,9 @@ impl Backend for UnifiedGitBackend {
         &self,
         request: &ToolRequest,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        self.options(&raw_opts).lockfile_options(target)
+        Ok(self.options(&raw_opts).lockfile_options(target))
     }
 
     /// Resolve platform-specific lock information for cross-platform lockfile generation.

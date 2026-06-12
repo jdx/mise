@@ -224,9 +224,9 @@ impl Backend for NPMBackend {
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         let opts = request.options();
-        NpmOptions::new(&opts).lockfile_options()
+        Ok(NpmOptions::new(&opts).lockfile_options())
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -1278,7 +1278,9 @@ mod tests {
         let request =
             ToolRequest::new_opts(backend.ba().clone(), "latest", options, ToolSource::Unknown)
                 .unwrap();
-        let resolved = backend.resolve_lockfile_options(&request, &PlatformTarget::from_current());
+        let resolved = backend
+            .resolve_lockfile_options(&request, &PlatformTarget::from_current())
+            .unwrap();
         assert_eq!(
             resolved.get("npm_args"),
             Some(&"--ignore-scripts=false".to_string())
