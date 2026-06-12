@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# A safe (untrusted) mise.toml is tracked and its tool pins remain visible
+# through tracked-config reload paths like `mise ls --all-sources`, even when
+# invoked from a different directory. Regression: tracked-config loading used
+# to skip any config without a trust marker, which safe configs don't create.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p proj other
+cat <<'EOF' >proj/mise.toml
+[tools]
+tiny = "3.1.0"
+EOF
+
+# install from the safe config (loads + tracks it, no trust prompt/marker)
+(cd proj && MISE_YES=0 mise install tiny)
+
+# from an unrelated directory, the tracked safe config's pin is still listed
+cd other || exit 1
+assert_contains "MISE_YES=0 mise ls --all-sources 2>&1" "proj/mise.toml"
+assert_contains "MISE_YES=0 mise ls --all-sources 2>&1" "tiny"

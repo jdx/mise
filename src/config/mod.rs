@@ -542,7 +542,12 @@ impl Config {
             // to parse for trusted files. Untrusted non-MiseToml files (like
             // .tool-versions) don't need trust and will parse fine regardless.
             let trust_root = config_file::config_trust_root(&path);
-            if !config_file::is_trusted(&trust_root) && !config_file::is_trusted(&path) {
+            if !config_file::is_trusted(&trust_root)
+                && !config_file::is_trusted(&path)
+                // safe mise.toml files load without a trust marker, so a missing
+                // marker doesn't mean they should be skipped here
+                && !MiseToml::path_is_trust_exempt(&path)
+            {
                 debug!("skipping untrusted tracked config: {}", display_path(&path));
                 continue;
             }

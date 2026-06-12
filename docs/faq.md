@@ -242,8 +242,8 @@ mise upgrade --bump node
 ## My config file is being ignored / `mise trust` issues
 
 mise requires you to trust config files that were not created by you. Safe config files —
-those that only contain `min_version`, `[tools]` entries with plain version strings, and
-`[tasks]` (no templates and no tool options) — are loaded without trust, since nothing in
+those that only contain `min_version`, `[tools]` entries with plain version strings (or
+arrays of them), and `[tasks]` (no templates and no tool options) — are loaded without trust, since nothing in
 them executes code at load time: tools install and tasks run only on explicit commands like
 `mise install` or `mise run`. Everything else (env vars, hooks, settings, aliases, templates,
 tool options) requires trust. Common issues:

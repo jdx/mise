@@ -306,6 +306,13 @@ impl MiseToml {
         Ok(rf)
     }
 
+    /// Whether the config file at `path` loads without trust (see
+    /// [`Self::is_trust_exempt`]). Returns false for unreadable files and for
+    /// non-mise.toml files (e.g. `.tool-versions`), which have their own flow.
+    pub fn path_is_trust_exempt(path: &Path) -> bool {
+        file::read_to_string(path).is_ok_and(|body| Self::is_trust_exempt(&body, path))
+    }
+
     /// Whether this config body can be loaded without trusting the file.
     ///
     /// Safe configs cannot execute code or change mise's behavior beyond
@@ -1982,7 +1989,7 @@ impl<'de> de::Deserialize<'de> for Alias {
 /// - no Tera template syntax anywhere — templates render while config and
 ///   tasks load and can run arbitrary commands via exec()
 fn is_safe_config_body(body: &str) -> bool {
-    // Tera templates can run arbitrary commands via exec() when rendered
+    // Fast reject: literal Tera delimiters in the raw text.
     if contains_template_syntax(body) {
         return false;
     }
@@ -1990,6 +1997,14 @@ fn is_safe_config_body(body: &str) -> bool {
         // let the normal trust + parse flow handle invalid TOML
         return false;
     };
+    // The raw-body check above misses escaped delimiters that TOML decodes,
+    // e.g. `"{{ exec(...) }}"` becomes `{{ exec(...) }}`
+    // after parsing and would still render via Tera. Re-check every decoded
+    // string (keys and values, at any depth) so no exec()-capable template
+    // can slip through into tool versions or task fields.
+    if toml_table_has_template(&table) {
+        return false;
+    }
     table.iter().all(|(key, value)| match key.as_str() {
         "min_version" | "tasks" => true,
         "tools" => value.as_table().is_some_and(|tools| {
@@ -2003,6 +2018,23 @@ fn is_safe_config_body(body: &str) -> bool {
         }),
         _ => false,
     })
+}
+
+/// Whether any decoded string (table key or value, at any depth) contains
+/// Tera template syntax.
+fn toml_value_has_template(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::String(s) => contains_template_syntax(s),
+        toml::Value::Array(arr) => arr.iter().any(toml_value_has_template),
+        toml::Value::Table(t) => toml_table_has_template(t),
+        _ => false,
+    }
+}
+
+fn toml_table_has_template(table: &toml::Table) -> bool {
+    table
+        .iter()
+        .any(|(k, v)| contains_template_syntax(k) || toml_value_has_template(v))
 }
 
 fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
@@ -2631,6 +2663,18 @@ run = 'echo "template"'
         run = "cargo build"
         description = "{{ exec(command='echo hi') }}"
         "#}));
+        // escaped Tera delimiters ({ == '{', } == '}') decode to
+        // `{{ exec(...) }}` after TOML parsing and must not bypass the check
+        assert!(!is_safe_config_body(
+            "[tools]\nnode = \"\\u007b\\u007b exec(command='echo 20') \\u007d\\u007d\"\n"
+        ));
+        assert!(!is_safe_config_body(
+            "[tasks.build]\nrun = \"cargo build\"\ndescription = \"\\u007b\\u007b exec(command='echo hi') \\u007d\\u007d\"\n"
+        ));
+        // an escaped delimiter in a key must also be caught
+        assert!(!is_safe_config_body(
+            "[tasks]\n\"\\u007b\\u007b exec() \\u007d\\u007d\" = { run = \"x\" }\n"
+        ));
         // anything beyond min_version/tools/tasks requires trust
         for body in [
             "[env]\nFOO = \"bar\"",

@@ -7,6 +7,15 @@
 export MISE_TRUSTED_CONFIG_PATHS=""
 unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
 
+# Fail if any trust marker file/symlink exists under trusted-configs. This is
+# precise (a stale empty dir won't mask a wrongly-written marker) unlike a bare
+# directory-existence check.
+assert_no_trust_marker() {
+  local found
+  found=$(find "$MISE_STATE_DIR/trusted-configs" -mindepth 1 \( -type f -o -type l \) 2>/dev/null || true)
+  [[ -z $found ]] || fail "$1 (found trust markers: $found)"
+}
+
 mkdir -p project
 cd project || exit 1
 
@@ -23,7 +32,7 @@ EOF
 # loads without prompting and without creating a trust marker
 MISE_YES=0 mise install tiny
 assert_contains "MISE_YES=0 mise ls tiny" "3.1.0"
-[[ ! -e $MISE_STATE_DIR/trusted-configs ]] || fail "safe config should not be silently trusted"
+assert_no_trust_marker "safe config should not be silently trusted"
 
 # config tasks only execute on explicit `mise run`, so they don't need trust
 assert_contains "MISE_YES=0 mise run hi" "task-ran-without-trust"
@@ -37,7 +46,7 @@ echo file-task-ran-without-trust
 EOF
 chmod +x mise-tasks/filetask
 assert_contains "MISE_YES=0 mise run filetask" "file-task-ran-without-trust"
-[[ ! -e $MISE_STATE_DIR/trusted-configs ]] || fail "file task should not require or create trust"
+assert_no_trust_marker "file task should not require or create trust"
 
 # a template in a file task header renders at load time, so it requires trust
 cat <<'EOF' >mise-tasks/evil
@@ -69,6 +78,18 @@ EOF
 output=$(MISE_YES=0 mise tasks 2>&1 || true)
 [[ ! -f marker ]] || fail "task template executed in untrusted config"
 echo "$output" | grep -qi "trust" || fail "expected trust error for task template, got: $output"
+
+# escaped Tera delimiters ({ == '{', } == '}') decode to a template
+# after TOML parsing; this must not bypass the safety check and exec
+printf '[tools]\ntiny = "\\u007b\\u007b exec(command=%stouch marker%s) \\u007d\\u007d"\n' "'" "'" >mise.toml
+output=$(MISE_YES=0 mise ls 2>&1 || true)
+[[ ! -f marker ]] || fail "escaped template executed in untrusted config (tools)"
+echo "$output" | grep -qi "trust" || fail "expected trust error for escaped tools template, got: $output"
+
+printf '[tasks.hi]\nrun = "echo hi"\ndescription = "\\u007b\\u007b exec(command=%stouch marker%s) \\u007d\\u007d"\n' "'" "'" >mise.toml
+output=$(MISE_YES=0 mise tasks 2>&1 || true)
+[[ ! -f marker ]] || fail "escaped template executed in untrusted config (tasks)"
+echo "$output" | grep -qi "trust" || fail "expected trust error for escaped task template, got: $output"
 
 # tool options can run code (postinstall) or alter installs (install_env)
 cat <<'EOF' >mise.toml
