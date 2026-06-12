@@ -38,7 +38,8 @@ impl BrewManager {
 
     async fn install_via_pour(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         // bottles only exist for a formula's current version — versioning is
-        // expressed in the formula name itself (postgresql@17)
+        // expressed in the formula name itself (postgresql@17); the CLI
+        // filters pinned requests out before calling
         if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
             bail!(
                 "brew bottles are only published for a formula's current version ('{p}'): \
@@ -146,6 +147,10 @@ impl SystemPackageManager for BrewManager {
 
     fn unavailable_reason(&self) -> String {
         "only available on arm64 macos and x86_64/arm64 linux".to_string()
+    }
+
+    fn supports_version_pins(&self) -> bool {
+        false
     }
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {

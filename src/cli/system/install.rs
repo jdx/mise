@@ -88,8 +88,9 @@ impl SystemInstall {
                 continue;
             }
             if !mp.manager.is_available() {
-                if self.manager.is_some() {
-                    // explicitly requested — failing silently would be a lie
+                if self.manager.is_some() || !self.packages.is_empty() {
+                    // explicitly requested (via --manager or manager:package
+                    // specs) — failing silently would be a lie
                     bail!(
                         "{name} is not available: {}",
                         mp.manager.unavailable_reason()
@@ -99,11 +100,23 @@ impl SystemInstall {
                 continue;
             }
             let statuses = mp.manager.installed(&mp.requests).await?;
-            let missing: Vec<_> = statuses
+            let mut missing: Vec<_> = statuses
                 .iter()
                 .filter(|s| !matches!(s.state, PackageState::Installed { .. }))
                 .map(|s| s.request.clone())
                 .collect();
+            // a pin this manager can never satisfy must not block the rest
+            // of the batch — it stays visible in `status` as a mismatch
+            if !mp.manager.supports_version_pins() {
+                missing.retain(|r| {
+                    if r.version.is_some() {
+                        warn!("{name}: cannot install pinned version '{r}', skipping");
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
             let satisfied = statuses.len() - missing.len();
             if satisfied > 0 {
                 info!("{name}: {satisfied} package(s) already installed");

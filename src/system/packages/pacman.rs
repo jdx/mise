@@ -121,10 +121,14 @@ impl SystemPackageManager for PacmanManager {
         Ok(parse_pacman_query(&stdout, pkgs))
     }
 
+    fn supports_version_pins(&self) -> bool {
+        false
+    }
+
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         // Arch repos only carry the latest version — pacman has no syntax to
         // install an older one, so a pin can be checked (status) but not
-        // satisfied here
+        // satisfied here; the CLI filters pinned requests out before calling
         if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
             bail!(
                 "pacman cannot install a pinned version ('{p}'): Arch repositories only \

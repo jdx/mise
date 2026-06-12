@@ -22,7 +22,7 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 ::: warning
 Arch repositories only carry the latest version of each package, so pacman
 entries cannot be installed at a pinned version — `mise system install`
-rejects pins, though `mise system status` will still report a
-`version mismatch` for them. AUR packages are not supported (they require an
-AUR helper and building from source).
+skips pinned entries with a warning, though `mise system status` still
+reports a `version mismatch` for them. AUR packages are not supported (they
+require an AUR helper and building from source).
 :::

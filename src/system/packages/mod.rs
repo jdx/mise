@@ -81,6 +81,15 @@ pub trait SystemPackageManager: Send + Sync {
 
     /// Install the given packages (already filtered to missing/mismatched).
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()>;
+
+    /// Can `install` satisfy a version pin? pacman (Arch repos only carry
+    /// the latest version) and brew (bottles only exist for a formula's
+    /// current version) cannot — their pins are status-only, and the
+    /// install command skips them with a warning instead of failing the
+    /// rest of the batch.
+    fn supports_version_pins(&self) -> bool {
+        true
+    }
 }
 
 pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
