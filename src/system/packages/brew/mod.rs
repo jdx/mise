@@ -77,6 +77,13 @@ impl BrewManager {
             }
             return Ok(());
         }
+        if prefix::sudo_invoking_user().is_some() {
+            warn!(
+                "running under sudo — poured files will be owned by root; run \
+                 `mise system install` without sudo instead (mise elevates itself \
+                 for the one-time prefix setup)"
+            );
+        }
         prefix::bootstrap(false)?;
         prefix::setup_linux_runtime()?;
         let mut ledger = state::Ledger::load();

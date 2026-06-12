@@ -118,11 +118,45 @@ pub fn setup_linux_runtime() -> Result<()> {
 }
 
 fn writable(path: &Path) -> bool {
+    // root can write regardless of owner — and `sudo mise` must never treat
+    // a user-owned prefix as broken and chown it to root
+    if nix::unistd::geteuid().is_root() {
+        return path.exists();
+    }
     !matches!(
         path.metadata()
             .map(|m| std::os::unix::fs::MetadataExt::uid(&m)),
         Ok(uid) if uid != nix::unistd::geteuid().as_raw()
     ) && path.exists()
+}
+
+/// The invoking user when mise itself was run under sudo (root euid with
+/// SUDO_USER set). None for plain root (e.g. a container) and non-root runs.
+pub fn sudo_invoking_user() -> Option<String> {
+    if nix::unistd::geteuid().is_root()
+        && let Ok(sudo_user) = crate::env::var("SUDO_USER")
+        && !sudo_user.is_empty()
+        && sudo_user != "root"
+    {
+        Some(sudo_user)
+    } else {
+        None
+    }
+}
+
+/// Who should own the prefix. Under `sudo mise`, the invoking user
+/// (SUDO_USER), not root — mirrors brew's install.sh. Plain root (e.g. a
+/// container) owns it as root.
+fn prefix_owner() -> Option<String> {
+    if let Some(user) = sudo_invoking_user() {
+        return Some(user);
+    }
+    // derive the username from the effective uid — $USER can be unset or
+    // stale (sudo -u, minimal containers)
+    nix::unistd::User::from_uid(nix::unistd::geteuid())
+        .ok()
+        .flatten()
+        .map(|u| u.name)
 }
 
 /// Make sure the prefix exists, has the standard layout, and is writable by
@@ -149,18 +183,18 @@ pub fn bootstrap(dry_run: bool) -> Result<()> {
         return Ok(());
     }
     // try without elevation first — covers prefixes under user-writable
-    // parents; the real prefixes need sudo to create
-    if needs_create && !dry_run && dirs.iter().try_for_each(std::fs::create_dir_all).is_ok() {
+    // parents; the real prefixes need sudo to create. Skipped under `sudo
+    // mise`: root could create the dirs, but they must be chowned to the
+    // invoking user afterwards
+    if needs_create
+        && !dry_run
+        && sudo_invoking_user().is_none()
+        && dirs.iter().try_for_each(std::fs::create_dir_all).is_ok()
+    {
         return Ok(());
     }
     if needs_create || needs_chown {
-        // derive the username from the effective uid — $USER can be unset or
-        // stale (sudo -u, minimal containers)
-        let Some(user) = nix::unistd::User::from_uid(nix::unistd::geteuid())
-            .ok()
-            .flatten()
-            .map(|u| u.name)
-        else {
+        let Some(user) = prefix_owner() else {
             // never chown to a guessed owner — that can lock the user out
             bail!(
                 "cannot determine the current user to own {}",
