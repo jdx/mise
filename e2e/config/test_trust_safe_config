@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+# Safe mise.toml files (only min_version + [tools] with plain version strings)
+# can be loaded without trusting them first. Anything that can execute code or
+# change mise's behavior still requires trust.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p project
+cd project || exit 1
+
+cat <<'EOF' >mise.toml
+min_version = "2024.1.1"
+
+[tools]
+tiny = "3.1.0"
+EOF
+
+# loads without prompting and without creating a trust marker
+MISE_YES=0 mise install tiny
+assert_contains "MISE_YES=0 mise ls tiny" "3.1.0"
+[[ ! -e $MISE_STATE_DIR/trusted-configs ]] || fail "safe config should not be silently trusted"
+
+# a template in a version string requires trust and must not execute
+cat <<'EOF' >mise.toml
+[tools]
+tiny = "{{ exec(command='echo PWNED > marker') }}"
+EOF
+output=$(MISE_YES=0 mise ls 2>&1 || true)
+[[ ! -f marker ]] || fail "template executed in untrusted config"
+echo "$output" | grep -qi "trust" || fail "expected trust error for template, got: $output"
+
+# tool options can run code (postinstall) or alter installs (install_env)
+cat <<'EOF' >mise.toml
+[tools]
+tiny = { version = "3.1.0", postinstall = "touch marker" }
+EOF
+output=$(MISE_YES=0 mise ls 2>&1 || true)
+echo "$output" | grep -qi "trust" || fail "expected trust error for tool options, got: $output"
+
+# env vars require trust
+cat <<'EOF' >mise.toml
+[env]
+FOO = "bar"
+EOF
+output=$(MISE_YES=0 mise env 2>&1 || true)
+echo "$output" | grep -qi "trust" || fail "expected trust error for env, got: $output"
+
+# unsafe configs still load normally once trusted
+mise trust
+assert_contains "mise env" "FOO=bar"

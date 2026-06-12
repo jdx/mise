@@ -12,6 +12,11 @@ parsing `mise.toml`. Without trust, mise may prompt, skip the config in some
 discovery paths, fail with an untrusted-config error when it cannot prompt,
 or assume trust in detected CI unless paranoid mode is enabled.
 
+Safe config files do not require trust: files that only contain
+`min_version` and `[tools]` entries with plain version strings (no
+templates and no tool options) are loaded without prompting, since
+nothing in them can execute code or change mise's behavior.
+
 ## Arguments
 
 ### `[CONFIG_FILE]`
