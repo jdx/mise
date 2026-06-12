@@ -2293,6 +2293,8 @@ impl AquaBackend {
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
             if archive_format == TarFormat::Raw {
+                // The aqua registry can omit format for GitHub-generated archive downloads.
+                // Historically Raw reached untar/open_tar, which treated it as gzip-tar.
                 archive_format = TarFormat::TarGz;
             }
             file::extract_archive(&tarball_path, &install_path, archive_format, &extract_opts)?;
