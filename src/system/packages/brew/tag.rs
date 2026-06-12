@@ -24,11 +24,18 @@ const MACOS_VERSIONS: &[(u32, &str)] = &[
 ];
 
 static MACOS_MAJOR: Lazy<u32> = Lazy::new(|| {
-    cmd("sw_vers", ["-productVersion"])
+    let major = cmd("sw_vers", ["-productVersion"])
         .read()
         .ok()
-        .and_then(|v| v.trim().split('.').next()?.parse().ok())
-        .unwrap_or(0)
+        .and_then(|v| v.trim().split('.').next()?.parse().ok());
+    if major.is_none() {
+        // without the OS version every versioned tag is filtered out and the
+        // downstream "no bottle for this machine" error would be misleading
+        warn!(
+            "brew: cannot determine the macOS version from `sw_vers` — only version-independent ('all') bottles will match"
+        );
+    }
+    major.unwrap_or(0)
 });
 
 /// Bottle tags acceptable on this machine, in preference order
