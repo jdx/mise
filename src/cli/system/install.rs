@@ -105,6 +105,7 @@ impl SystemInstall {
                 .filter(|s| !matches!(s.state, PackageState::Installed { .. }))
                 .map(|s| s.request.clone())
                 .collect();
+            let satisfied = statuses.len() - missing.len();
             // a pin this manager can never satisfy must not block the rest
             // of the batch — it stays visible in `status` as a mismatch
             if !mp.manager.supports_version_pins() {
@@ -117,7 +118,6 @@ impl SystemInstall {
                     }
                 });
             }
-            let satisfied = statuses.len() - missing.len();
             if satisfied > 0 {
                 info!("{name}: {satisfied} package(s) already installed");
             }
