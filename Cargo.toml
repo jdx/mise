@@ -144,7 +144,7 @@ rattler_solve = { version = "7", default-features = false, features = [
   "resolvo",
 ] }
 rattler_package_streaming = { version = "0.26", default-features = false }
-rattler_virtual_packages = { version = "2", default-features = false }
+rattler_virtual_packages = { version = "3", default-features = false }
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
