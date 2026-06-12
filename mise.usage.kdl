@@ -1623,6 +1623,14 @@ By default `mise oci build` only packages tools declared in the project's mise c
             arg <MOUNT_POINT>
         }
         flag --no-mise help="Do not embed the currently-running mise binary at /usr/local/bin/mise"
+        flag --owner help="UID[:GID] to assign to every tar entry in generated layers" {
+            long_help #"""
+UID[:GID] to assign to every tar entry in generated layers
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+"""#
+            arg "<UID[:GID]>"
+        }
     }
     cmd push help="[experimental] Build an OCI image and push it to a registry" {
         long_help #"""
@@ -1675,6 +1683,14 @@ See `mise oci build --help` for details.
             arg <MOUNT_POINT>
         }
         flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag --owner help="UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)" {
+            long_help #"""
+UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+"""#
+            arg "<UID[:GID]>"
+        }
         flag --tool help="Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`" default=auto {
             arg <TOOL> {
                 choices auto skopeo crane
@@ -1742,6 +1758,14 @@ By default, both the container (`--rm`) and the loaded image are removed when th
             arg <MOUNT_POINT>
         }
         flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
+        flag --owner help="UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)" {
+            long_help #"""
+UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+"""#
+            arg "<UID[:GID]>"
+        }
         flag --volume help="Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)" var=#true {
             long_help #"""
 Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)

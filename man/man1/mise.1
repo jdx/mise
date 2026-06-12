@@ -1623,6 +1623,11 @@ Where to place tool installs inside the image (default: /mise)
 .TP
 \fB\-\-no\-mise\fR
 Do not embed the currently\-running mise binary at /usr/local/bin/mise
+.TP
+\fB\-\-owner\fR \fI<UID[:GID]>\fR
+UID[:GID] to assign to every tar entry in generated layers
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 .SH "MISE OCI PUSH"
 [experimental] Build an OCI image and push it to a registry
 
@@ -1656,6 +1661,11 @@ Override in\-image mount point (ignored with \-\-image\-dir)
 .TP
 \fB\-\-no\-mise\fR
 Don't embed the mise binary (ignored with \-\-image\-dir)
+.TP
+\fB\-\-owner\fR \fI<UID[:GID]>\fR
+UID[:GID] to assign to every tar entry when building (conflicts with \-\-image\-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 .TP
 \fB\-\-tool\fR \fI<TOOL>\fR
 Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`
@@ -1710,6 +1720,11 @@ Override in\-image mount point (ignored with \-\-image\-dir)
 .TP
 \fB\-\-no\-mise\fR
 Don't embed the mise binary (ignored with \-\-image\-dir)
+.TP
+\fB\-\-owner\fR \fI<UID[:GID]>\fR
+UID[:GID] to assign to every tar entry when building (conflicts with \-\-image\-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 .TP
 \fB\-\-volume\fR \fI<HOST:CONTAINER>\fR
 Bind\-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)

@@ -80,7 +80,8 @@ the previous build (or from the registry, on pull).
 ## `mise oci build`
 
 ```sh
-mise oci build [-o PATH] [--from REF] [--tag REF] [--mount-point PATH] [--no-mise]
+mise oci build [-o PATH] [--from REF] [--tag REF] [--mount-point PATH]
+               [--no-mise] [--owner UID[:GID]]
 ```
 
 - `-o, --output PATH` — output directory (default `./mise-oci`)
@@ -92,6 +93,10 @@ mise oci build [-o PATH] [--from REF] [--tag REF] [--mount-point PATH] [--no-mis
   (default `/mise`). Must be absolute.
 - `--no-mise` — don't embed the running mise binary at
   `/usr/local/bin/mise`
+- `--owner UID[:GID]` — numeric owner for every generated layer entry.
+  Defaults to `[oci].user_id` / `[oci].group_id`, then `0:0`. If GID is
+  omitted, it defaults to UID. This affects file ownership only, not the
+  image `USER` directive.
 
 ## `mise oci run`
 
@@ -101,6 +106,7 @@ Build (or reuse) an image and run a command inside it, like
 ```sh
 mise oci run [--engine ENGINE] [--image-dir DIR]
              [--from REF] [--mount-point PATH] [--no-mise]
+             [--owner UID[:GID]]
              [-i] [-t] [-e KEY=VAL]... [--volume HOST:CONTAINER]...
              [-w DIR] [--keep]
              -- <cmd> [args...]
@@ -108,6 +114,8 @@ mise oci run [--engine ENGINE] [--image-dir DIR]
 
 - `--engine` — `auto` (default, prefers podman), `podman`, or `docker`.
 - `--image-dir` — skip the build and use an existing OCI layout.
+- `--owner UID[:GID]` — numeric owner for generated layer entries when
+  building fresh; it cannot be combined with `--image-dir`.
 - `-i`, `-t`, `-e`, `--volume`, `-w`, `--keep` — pass through to the
   underlying engine the same way `docker run` uses them. (There's no
   `-v` short flag for `--volume` because mise reserves `-v` for
@@ -140,6 +148,7 @@ login`, etc.).
 ```sh
 mise oci push [--tool TOOL] [--image-dir DIR]
               [--from REF] [--mount-point PATH] [--no-mise]
+              [--owner UID[:GID]]
               <REGISTRY_REF>
 ```
 
@@ -147,6 +156,9 @@ mise oci push [--tool TOOL] [--image-dir DIR]
   `ghcr.io/me/devenv:latest`). Must include a registry host.
 - `--tool` — `auto` (default, prefers skopeo), `skopeo`, or `crane`.
 - `--image-dir` — push an existing OCI layout instead of building.
+
+- `--owner UID[:GID]` — numeric owner for generated layer entries when
+  building fresh; it cannot be combined with `--image-dir`.
 
 Examples:
 
@@ -163,13 +175,15 @@ mise oci push --image-dir ./img ghcr.io/me/devenv:v1
 
 ```toml
 [oci]
-from       = "debian:bookworm-slim"  # base image ref
-tag        = "ghcr.io/me/devenv:v1"  # default tag for the built image
-workdir    = "/workspace"             # WORKDIR
-entrypoint = ["bash", "-l"]           # ENTRYPOINT
-cmd        = []                        # CMD
-user       = "nonroot"                # USER
-mount_point = "/mise"                 # where tools install in the image
+from        = "debian:bookworm-slim"  # base image ref
+tag         = "ghcr.io/me/devenv:v1"  # default tag for the built image
+workdir     = "/workspace"             # WORKDIR
+entrypoint  = ["bash", "-l"]           # ENTRYPOINT
+cmd         = []                        # CMD
+user        = "nonroot"                # USER
+user_id     = 1000                      # tar layer entry UID (file ownership)
+group_id    = 1000                      # tar layer entry GID (defaults to user_id)
+mount_point = "/mise"                  # where tools install in the image
 
 # Extra env baked into the image config (image-only — won't shadow MISE_*).
 [oci.env]
@@ -179,6 +193,10 @@ NODE_ENV = "production"
 [oci.labels]
 "org.opencontainers.image.source" = "https://github.com/me/my-app"
 ```
+
+`[oci].user` sets the image `USER` directive. `[oci].user_id` and
+`[oci].group_id` set layer file ownership; if no `group_id` is configured,
+it defaults to the resolved `user_id`.
 
 CLI flags override the `[oci]` section. The `[oci]` section overrides the
 `oci.default_from` / `oci.default_mount_point` settings.

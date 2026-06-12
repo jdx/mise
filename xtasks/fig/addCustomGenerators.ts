@@ -194,11 +194,11 @@ const main = async (fileName: string, outFile?: string) => {
     const transformedSourceFile = result.transformed[0];
 
     const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
-    const output = printer.printNode(
-      ts.EmitHint.Unspecified,
-      transformedSourceFile,
-      sourceFile
-    );
+    const output = printer
+      .printNode(ts.EmitHint.Unspecified, transformedSourceFile, sourceFile)
+      // usage-cli drops brackets from Fig arg names; keep GID visibly optional.
+      .replaceAll('"name": "uid:gid"', '"name": "uid[:gid]"')
+      .replaceAll('name: "uid:gid"', 'name: "uid[:gid]"');
 
     fsAsync.writeFile(
       outFile ?? `${fileName.replace(".ts", "")}.out.ts`,
