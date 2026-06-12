@@ -18,6 +18,9 @@ System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
   `name:arch` qualifiers pass through in the package name.
 - `DEBIAN_FRONTEND=noninteractive` is set so installs never block on
   configuration prompts.
+- `mise system upgrade` runs `apt-get update` and then
+  `apt-get install --only-upgrade` for the configured packages, so nothing
+  not already installed gets pulled in.
 
 ## Metadata refresh
 
@@ -35,4 +38,5 @@ mise system install --update
 A pinned entry (`"apt:curl" = "8.5.0-2ubuntu10"`) shows as `version mismatch`
 in `mise system status` when a different version is installed, and
 `mise system install` passes the pin to apt to correct it. `"latest"` entries
-are satisfied by any installed version — mise does not upgrade them.
+are satisfied by any installed version — use `mise system upgrade` to move
+them to the newest available version.

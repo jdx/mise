@@ -487,6 +487,33 @@ impl MiseToml {
         Ok(())
     }
 
+    /// Set `[system.packages]."<manager>:<package>" = "<version>"`,
+    /// creating the tables as needed ("latest" means no pin)
+    pub fn update_system_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
+        self.system
+            .get_or_insert_with(Default::default)
+            .packages
+            .insert(spec.to_string(), version.to_string());
+        let mut doc = self.doc_mut()?;
+        let system = doc
+            .get_mut()
+            .unwrap()
+            .entry("system")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        // don't render an empty [system] header above [system.packages]
+        system.set_implicit(true);
+        let packages = system
+            .entry("packages")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        let key = get_key_with_decor(packages, spec);
+        packages.insert_formatted(&key, toml_edit::value(version));
+        Ok(())
+    }
+
     pub fn update_env_age(
         &mut self,
         key: &str,
@@ -2048,6 +2075,30 @@ mod tests {
         file::write(&p, "[tools]\n").unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         assert!(cf.system_config().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_system_package() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        // creates [system.packages] when absent, preserves other sections
+        file::write(&p, "[tools]\njq = \"latest\"\n").unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_system_package("apt:curl", "latest").unwrap();
+        cf.update_system_package("brew:postgresql@17", "latest")
+            .unwrap();
+        // overrides an existing pin in place
+        cf.update_system_package("apt:curl", "8.5.0-2").unwrap();
+        assert_snapshot!(cf.dump().unwrap(), @r#"
+        [tools]
+        jq = "latest"
+
+        [system.packages]
+        "apt:curl" = "8.5.0-2"
+        "brew:postgresql@17" = "latest"
+        "#);
+        let system = cf.system_config().unwrap();
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
     }
 
     #[tokio::test]

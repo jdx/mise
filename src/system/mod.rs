@@ -52,6 +52,53 @@ pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
     }
 }
 
+/// Split a `mise system use` spec `manager:package[@version]` into its parts.
+///
+/// `@version` mirrors `mise use tool@version`; `@latest` (or no `@`) means no
+/// pin. brew is exempt from `@` parsing: `@` is part of brew formula *names*
+/// (`postgresql@17` — that name IS brew's versioning mechanism), and brew
+/// bottles can't be installed at a pinned version anyway.
+pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
+    let (mgr, rest) = parse_spec(spec)?;
+    if mgr == "brew" {
+        return Ok((
+            mgr,
+            PackageRequest {
+                name: rest,
+                version: None,
+            },
+        ));
+    }
+    match rest.rsplit_once('@') {
+        Some((name, version)) if !name.is_empty() && !version.is_empty() => Ok((
+            mgr,
+            PackageRequest {
+                name: name.to_string(),
+                version: (version != "latest").then(|| version.to_string()),
+            },
+        )),
+        Some(_) => {
+            bail!("invalid system package spec '{spec}': expected '<manager>:<package>[@version]'")
+        }
+        None => Ok((
+            mgr,
+            PackageRequest {
+                name: rest,
+                version: None,
+            },
+        )),
+    }
+}
+
+/// Build [`ManagerPackages`] from already-parsed requests (used by
+/// `mise system use`, where version pins come from the CLI spec). Unknown or
+/// settings-excluded managers are hard errors.
+pub fn packages_from_requests(
+    by_mgr: IndexMap<String, Vec<PackageRequest>>,
+) -> eyre::Result<Vec<ManagerPackages>> {
+    resolve_managers(by_mgr, true)
+}
+
 /// Aggregate `[system.packages]` across all loaded config files.
 ///
 /// Keys union global -> local; a more local config overrides the version pin
@@ -143,4 +190,41 @@ fn resolve_managers(
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_use_spec() {
+        let (mgr, req) = parse_use_spec("apt:curl").unwrap();
+        assert_eq!(
+            (mgr.as_str(), req.name.as_str(), req.version),
+            ("apt", "curl", None)
+        );
+
+        let (mgr, req) = parse_use_spec("apt:curl@8.5.0-2").unwrap();
+        assert_eq!(mgr, "apt");
+        assert_eq!(req.name, "curl");
+        assert_eq!(req.version.as_deref(), Some("8.5.0-2"));
+
+        // @latest is the same as no pin
+        let (_, req) = parse_use_spec("dnf:bash@latest").unwrap();
+        assert_eq!(req.version, None);
+
+        // apt arch qualifiers stay in the name
+        let (_, req) = parse_use_spec("apt:gcc:arm64@13.2").unwrap();
+        assert_eq!(req.name, "gcc:arm64");
+        assert_eq!(req.version.as_deref(), Some("13.2"));
+
+        // brew formula names contain '@' — never treated as a version
+        let (mgr, req) = parse_use_spec("brew:postgresql@17").unwrap();
+        assert_eq!(mgr, "brew");
+        assert_eq!(req.name, "postgresql@17");
+        assert_eq!(req.version, None);
+
+        assert!(parse_use_spec("apt:curl@").is_err());
+        assert!(parse_use_spec("noprefix").is_err());
+    }
 }

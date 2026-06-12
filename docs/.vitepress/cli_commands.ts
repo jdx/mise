@@ -322,6 +322,12 @@ export const commands: { [key: string]: Command } = {
       status: {
         hide: false,
       },
+      upgrade: {
+        hide: false,
+      },
+      use: {
+        hide: false,
+      },
     },
   },
   tasks: {

@@ -168,6 +168,31 @@ impl SystemPackageManager for AptManager {
         }
         sudo::run("apt-get", &args, &debian_frontend())
     }
+
+    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        // upgrading against stale lists is a no-op, so always refresh first
+        self.update(opts)?;
+        // `--only-upgrade` keeps a race (package removed between our status
+        // check and this call) from turning an upgrade into a fresh install
+        let mut args = vec![
+            "install".to_string(),
+            "-y".to_string(),
+            "--only-upgrade".to_string(),
+            "--".to_string(),
+        ];
+        args.extend(pkgs.iter().map(|p| match &p.version {
+            Some(v) => format!("{}={v}", p.name),
+            None => p.name.clone(),
+        }));
+        if opts.dry_run {
+            miseprintln!(
+                "{}",
+                sudo::argv_with_env("apt-get", &args, &debian_frontend()).join(" ")
+            );
+            return Ok(());
+        }
+        sudo::run("apt-get", &args, &debian_frontend())
+    }
 }
 
 #[cfg(test)]

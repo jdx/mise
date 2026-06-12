@@ -82,6 +82,15 @@ pub trait SystemPackageManager: Send + Sync {
     /// Install the given packages (already filtered to missing/mismatched).
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()>;
 
+    /// Upgrade the given packages (already filtered to installed ones).
+    /// Defaults to `install` — for brew that is exactly right (pouring a
+    /// formula whose current version differs replaces the old keg), and apt/
+    /// dnf/pacman override to refresh metadata first and use their native
+    /// upgrade invocation.
+    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        self.install(pkgs, opts).await
+    }
+
     /// Can `install` satisfy a version pin? pacman (Arch repos only carry
     /// the latest version) and brew (bottles only exist for a formula's
     /// current version) cannot — their pins are status-only, and the

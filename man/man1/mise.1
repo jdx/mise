@@ -472,6 +472,18 @@ Show the status of system packages from `[system.packages]`
 \fIAliases: \fRls
 .RE
 .TP
+\fBsystem upgrade\fR
+Upgrade installed system packages from `[system.packages]`
+.RS
+\fIAliases: \fRup
+.RE
+.TP
+\fBsystem use\fR
+Add system packages to [system.packages] and install them
+.RS
+\fIAliases: \fRu
+.RE
+.TP
 \fBtasks\fR
 Manage tasks
 .RS
@@ -2777,6 +2789,71 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured packages are missing
+.SH "MISE SYSTEM UPGRADE"
+Upgrade installed system packages from `[system.packages]`
+
+Refreshes package manager metadata and upgrades the configured packages
+that are already installed: apt/dnf/pacman upgrade to the newest available
+version (or to the version pinned in config), brew pours the formula's
+current bottle and replaces the old keg. Packages that are not installed
+yet are skipped — use `mise system install` for those.
+
+Packages can also be given explicitly in `manager:package` form.
+.PP
+\fBUsage:\fR mise system upgrade [OPTIONS] [<PACKAGE>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only upgrade packages for this manager, e.g. `apt` or `brew`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [system.packages]
+.SH "MISE SYSTEM USE"
+Add system packages to [system.packages] and install them
+
+Like `mise use` for tools: writes `"manager:package" = "version"` entries
+to mise.toml (the local config by default, the global one with `\-g`) and
+then installs whatever is missing.
+
+Versions are pinned with `@`: `mise system use apt:curl@8.5.0\-2`. Without
+`@` (or with `@latest`) no pin is written. brew formulae version through
+their names instead (`brew:postgresql@17`), so `@` is always part of the
+formula name there.
+.PP
+\fBUsage:\fR mise system use [OPTIONS] <PACKAGE> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-g, \-\-global\fR
+Write to the global config (~/.config/mise/config.toml) instead of the local one
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
+.TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Write to the config file for this environment (mise.<ENV>.toml)
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without writing config or installing
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package[@version]` form
 .SH "MISE TASKS"
 Manage tasks
 .PP

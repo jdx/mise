@@ -63,7 +63,28 @@ mise system install --dry-run # print the commands without running them
 mise system install --yes     # skip the confirmation prompt
 mise system install --manager apt
 mise system install --update  # refresh package manager metadata first
+
+mise system use apt:curl brew:jq   # add to [system.packages] and install
+mise system use -g brew:ffmpeg     # write to the global config instead
+mise system use apt:curl@8.5.0-2   # pin a version (brew pins via the
+                                   # formula name: brew:postgresql@17)
+
+mise system upgrade           # upgrade installed packages to current versions
+mise system upgrade --manager brew
 ```
+
+`mise system use` is `mise use` for system packages: it writes
+`"manager:package" = "version"` entries to mise.toml (the local file by
+default, the global one with `-g`) and installs whatever is missing. Entries
+for managers that aren't available on the current machine are written without
+installing — that's how a shared config picks up `apt:` lines authored on a
+Mac.
+
+`mise system upgrade` refreshes package manager metadata and upgrades the
+configured packages that are already installed (to the newest available
+version, or to the version pinned in config). Packages that aren't installed
+yet are skipped — that's `mise system install`'s job. For brew this pours the
+formula's current bottle and replaces the old keg.
 
 `mise doctor` also reports configured system packages and warns when any are
 missing.

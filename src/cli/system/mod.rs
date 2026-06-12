@@ -1,8 +1,12 @@
 use clap::Subcommand;
 use eyre::Result;
 
+mod driver;
 mod install;
 mod status;
+mod upgrade;
+#[path = "use.rs"]
+mod r#use;
 
 /// [experimental] Manage system packages from `[system.packages]`
 ///
@@ -21,6 +25,8 @@ pub struct System {
 enum Commands {
     Install(install::SystemInstall),
     Status(status::SystemStatus),
+    Upgrade(upgrade::SystemUpgrade),
+    Use(r#use::SystemUse),
 }
 
 impl System {
@@ -28,6 +34,8 @@ impl System {
         match self.command {
             Commands::Install(cmd) => cmd.run().await,
             Commands::Status(cmd) => cmd.run().await,
+            Commands::Upgrade(cmd) => cmd.run().await,
+            Commands::Use(cmd) => cmd.run().await,
         }
     }
 }
