@@ -460,14 +460,18 @@ impl Client {
                 let state = retry_state.lock().unwrap();
                 (state.headers.clone(), state.use_netrc)
             };
+            let options = SendOnceOptions::new(Some(retry_state.clone()), use_netrc);
+            let options = if error_for_status {
+                options
+            } else {
+                options.allow_error_status()
+            };
             self.send_once_with_https_fallback_with_retry_headers(
                 method.clone(),
                 url.clone(),
                 &headers,
                 verb_label,
-                Some(retry_state.clone()),
-                use_netrc,
-                error_for_status,
+                options,
             )
             .await
         })
@@ -489,7 +493,11 @@ impl Client {
         verb_label: &str,
     ) -> Result<Response> {
         self.send_once_with_https_fallback_with_retry_headers(
-            method, url, headers, verb_label, None, true, true,
+            method,
+            url,
+            headers,
+            verb_label,
+            SendOnceOptions::new(None, true),
         )
         .await
     }
@@ -500,9 +508,7 @@ impl Client {
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
-        retry_state: Option<RetryStateHandle>,
-        use_netrc: bool,
-        error_for_status: bool,
+        options: SendOnceOptions,
     ) -> Result<Response> {
         match self
             .send_once_with_retry_headers(
@@ -510,9 +516,7 @@ impl Client {
                 url.clone(),
                 headers,
                 verb_label,
-                retry_state.clone(),
-                use_netrc,
-                error_for_status,
+                options.clone(),
             )
             .await
         {
@@ -525,9 +529,7 @@ impl Client {
                     url,
                     headers,
                     verb_label,
-                    retry_state,
-                    use_netrc,
-                    error_for_status,
+                    options,
                 )
                 .await
             }
@@ -541,16 +543,8 @@ impl Client {
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
-        retry_state: Option<RetryStateHandle>,
-        use_netrc: bool,
-        error_for_status: bool,
+        options: SendOnceOptions,
     ) -> Result<Response> {
-        let options = SendOnceOptions::new(retry_state, use_netrc);
-        let options = if error_for_status {
-            options
-        } else {
-            options.allow_error_status()
-        };
         self.send_once_inner(method, url, headers, verb_label, options)
             .await
     }
