@@ -4,11 +4,9 @@ System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
 
 ```toml
 [system.packages]
-apt = [
-  "libssl-dev",
-  "curl=8.5.0-2ubuntu10", # version pin
-  "gcc:arm64",            # architecture qualifier
-]
+"apt:libssl-dev" = "latest"
+"apt:curl" = "8.5.0-2ubuntu10" # version pin
+"apt:gcc:arm64" = "latest"     # architecture qualifier
 ```
 
 ## Behavior
@@ -16,8 +14,8 @@ apt = [
 - Package state is checked with `dpkg-query` (read-only, never elevates).
 - Missing packages are installed with `apt-get install -y`, elevated with
   sudo when necessary (see [sudo](/system-packages/index.html#sudo)).
-- Entries pass through to apt verbatim, so apt's native syntax works:
-  `name=version` pins and `name:arch` qualifiers.
+- Version pins are passed to apt as its native `name=version` syntax;
+  `name:arch` qualifiers pass through in the package name.
 - `DEBIAN_FRONTEND=noninteractive` is set so installs never block on
   configuration prompts.
 
@@ -34,7 +32,7 @@ mise system install --update
 
 ## Version pins
 
-A pinned entry (`curl=8.5.0-2ubuntu10`) shows as `version mismatch` in
-`mise system status` when a different version is installed, and
-`mise system install` passes the pin to apt to correct it. Unpinned entries
+A pinned entry (`"apt:curl" = "8.5.0-2ubuntu10"`) shows as `version mismatch`
+in `mise system status` when a different version is installed, and
+`mise system install` passes the pin to apt to correct it. `"latest"` entries
 are satisfied by any installed version — mise does not upgrade them.

@@ -3221,6 +3221,13 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
           ],
+          args: {
+            name: "package",
+            description:
+              "Packages in `manager:package` form; defaults to everything configured in [system.packages]",
+            isOptional: true,
+            isVariadic: true,
+          },
         },
         {
           name: ["status", "ls"],

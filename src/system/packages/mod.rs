@@ -15,16 +15,26 @@ pub mod brew;
 pub mod dnf;
 pub mod pacman;
 
-/// A single package entry from `[system.packages]`.
+/// A single package entry from `[system.packages]` — the part after the
+/// `manager:` prefix of a `"manager:package" = "version"` config entry.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PackageRequest {
-    /// raw string from config, passed through to the manager
-    /// (e.g. "libssl-dev", "curl=8.5.0-2", "postgresql@17")
-    pub raw: String,
-    /// package name (apt: portion before '='; brew: full formula name incl. "@17")
+    /// package name as written in the spec (apt: may carry an `:arch`
+    /// qualifier like "gcc:arm64"; brew: full formula name incl. "@17")
     pub name: String,
-    /// apt: pinned version after '='; brew: None (the version lives in the formula name)
+    /// version pin from the config value (`"latest"` parses to None). Each
+    /// manager renders this into its native pin syntax at install time
+    /// (apt: `name=version`, dnf: `name-version`).
     pub version: Option<String>,
+}
+
+impl std::fmt::Display for PackageRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.version {
+            Some(v) => write!(f, "{}@{}", self.name, v),
+            None => write!(f, "{}", self.name),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,15 +81,6 @@ pub trait SystemPackageManager: Send + Sync {
 
     /// Install the given packages (already filtered to missing/mismatched).
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()>;
-
-    /// Parse a raw config entry into a request. Default splits no version out.
-    fn parse_request(&self, raw: &str) -> PackageRequest {
-        PackageRequest {
-            raw: raw.to_string(),
-            name: raw.to_string(),
-            version: None,
-        }
-    }
 }
 
 pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {

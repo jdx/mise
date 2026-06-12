@@ -5,15 +5,24 @@ mise can ensure machine-global system packages are installed via the
 
 ```toml
 [system.packages]
-apt = ["libssl-dev", "build-essential"]
-brew = ["postgresql@17", "ffmpeg"]
+"apt:libssl-dev" = "latest"
+"apt:build-essential" = "latest"
+"brew:postgresql@17" = "latest"
+"brew:ffmpeg" = "latest"
 ```
 
+Each entry is keyed `"manager:package"` — the manager prefix is required —
+and the value is a version: `"latest"` for whatever the manager installs, or
+a pin in the manager's native format where supported (see the per-manager
+pages).
+
 System packages are intentionally separate from [`[tools]`](/configuration.html):
-they are not version-pinned per-project, do not get shims, and are managed by
-the OS package manager. Use them for shared libraries and build dependencies
-that dev tools need (`libssl-dev`, `postgresql`, `ffmpeg`), not for the dev
-tools themselves — those belong in `[tools]`.
+they are not version-pinned per-project, do not get shims, and are installed
+machine-globally by the platform's package manager — or, for `brew`, by
+mise's built-in Homebrew bottle installer, which doesn't require Homebrew
+itself. Use them for shared libraries and build dependencies that dev tools
+need (`libssl-dev`, `postgresql`, `ffmpeg`), not for the dev tools
+themselves — those belong in `[tools]`.
 
 ## Supported package managers
 
@@ -27,12 +36,14 @@ tools themselves — those belong in `[tools]`.
 ## Semantics
 
 - **Declarative and additive** — entries merge across the
-  [config hierarchy](/configuration.html) (global → project) as a union. A
-  project can add packages on top of the global list but not remove them.
+  [config hierarchy](/configuration.html) (global → project) as a union of
+  keys. A project can add packages on top of the global list (and override a
+  global entry's version pin) but not remove them.
 - **OS-filtered** — entries for a manager that isn't available on the current
-  machine are silently skipped, so the same config works across platforms.
-  `apt` entries are ignored on macOS, `brew` entries on Linux, `dnf` entries
-  on Ubuntu, and so on.
+  machine are not acted on, so the same config works across platforms: `apt`
+  entries are ignored on macOS, `dnf` entries on Ubuntu, and so on (`brew`
+  works on both macOS and Linux). `mise system status` and `mise doctor`
+  still list unavailable managers so nothing is silently invisible.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
   missing, but only `mise system install` ever installs anything.
@@ -47,6 +58,7 @@ mise system status --json     # machine-readable
 mise system status --missing  # exit 1 if anything is missing (CI check)
 
 mise system install           # install whatever is missing (prompts first)
+mise system install apt:curl  # install specific packages (configured or not)
 mise system install --dry-run # print the commands without running them
 mise system install --yes     # skip the confirmation prompt
 mise system install --manager apt

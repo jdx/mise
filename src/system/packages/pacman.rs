@@ -48,8 +48,20 @@ fn parse_pacman_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageS
         .iter()
         .map(|req| {
             let state = match installed.get(req.name.as_str()) {
-                Some(version) => PackageState::Installed {
-                    version: version.to_string(),
+                // a pin matches the full version-pkgrel or just the version
+                // part (any pkgrel)
+                Some(version) => match &req.version {
+                    Some(requested)
+                        if *version != requested.as_str()
+                            && !version.starts_with(&format!("{requested}-")) =>
+                    {
+                        PackageState::VersionMismatch {
+                            installed: version.to_string(),
+                        }
+                    }
+                    _ => PackageState::Installed {
+                        version: version.to_string(),
+                    },
                 },
                 None => PackageState::Missing,
             };
@@ -110,6 +122,15 @@ impl SystemPackageManager for PacmanManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        // Arch repos only carry the latest version — pacman has no syntax to
+        // install an older one, so a pin can be checked (status) but not
+        // satisfied here
+        if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
+            bail!(
+                "pacman cannot install a pinned version ('{p}'): Arch repositories only \
+                 provide the latest version"
+            );
+        }
         if opts.update || self.dbs_missing() {
             self.refresh(opts)?;
         }
@@ -117,8 +138,10 @@ impl SystemPackageManager for PacmanManager {
             "-S".to_string(),
             "--noconfirm".to_string(),
             "--needed".to_string(),
+            // `--` keeps package operands from being parsed as pacman options
+            "--".to_string(),
         ];
-        args.extend(pkgs.iter().map(|p| p.raw.clone()));
+        args.extend(pkgs.iter().map(|p| p.name.clone()));
         if opts.dry_run {
             miseprintln!("{}", sudo::argv("pacman", &args).join(" "));
             return Ok(());
@@ -131,11 +154,22 @@ impl SystemPackageManager for PacmanManager {
 mod tests {
     use super::*;
 
+    fn req(name: &str, version: Option<&str>) -> PackageRequest {
+        PackageRequest {
+            name: name.to_string(),
+            version: version.map(str::to_string),
+        }
+    }
+
     #[test]
     fn test_parse_pacman_query() {
-        let mgr = PacmanManager::new();
-        let requests = vec![mgr.parse_request("bc"), mgr.parse_request("nonexistent")];
-        let output = "bc 1.08.2-1\n";
+        let requests = vec![
+            req("bc", None),
+            req("nonexistent", None),
+            req("zsh", Some("5.9")),
+            req("tmux", Some("3.3")),
+        ];
+        let output = "bc 1.08.2-1\nzsh 5.9-5\ntmux 3.4-2\n";
         let statuses = parse_pacman_query(output, &requests);
         assert_eq!(
             statuses[0].state,
@@ -144,5 +178,19 @@ mod tests {
             }
         );
         assert_eq!(statuses[1].state, PackageState::Missing);
+        // a version-only pin matches any pkgrel
+        assert_eq!(
+            statuses[2].state,
+            PackageState::Installed {
+                version: "5.9-5".to_string()
+            }
+        );
+        // a different installed version must not satisfy a pin
+        assert_eq!(
+            statuses[3].state,
+            PackageState::VersionMismatch {
+                installed: "3.4-2".to_string()
+            }
+        );
     }
 }

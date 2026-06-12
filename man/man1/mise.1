@@ -2723,8 +2723,12 @@ Install missing system packages from `[system.packages]`
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
 root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config.
 .PP
-\fBUsage:\fR mise system install [OPTIONS]
+\fBUsage:\fR mise system install [OPTIONS] [<PACKAGE>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -2740,6 +2744,11 @@ Skip the confirmation prompt
 .TP
 \fB\-\-update\fR
 Refresh package manager metadata first (apt: `apt\-get update`)
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [system.packages]
 .SH "MISE SYSTEM STATUS"
 Show the status of system packages from `[system.packages]`
 .PP

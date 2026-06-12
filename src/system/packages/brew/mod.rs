@@ -35,6 +35,14 @@ impl BrewManager {
     }
 
     async fn install_via_pour(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        // bottles only exist for a formula's current version — versioning is
+        // expressed in the formula name itself (postgresql@17)
+        if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
+            bail!(
+                "brew bottles are only published for a formula's current version ('{p}'): \
+                 pin via the formula name instead (e.g. \"brew:postgresql@17\")"
+            );
+        }
         let roots: Vec<String> = pkgs.iter().map(|p| p.name.clone()).collect();
         let closure = resolve::resolve_closure(&roots).await?;
         for rf in &closure {
@@ -138,7 +146,17 @@ impl SystemPackageManager for BrewManager {
             .iter()
             .map(|req| {
                 let state = match pour::linked_version(&req.name) {
-                    Some(version) => PackageState::Installed { version },
+                    // a pin matches the keg version exactly or up to its
+                    // revision suffix ("17.5" matches keg "17.5_1")
+                    Some(version) => match &req.version {
+                        Some(requested)
+                            if version != *requested
+                                && !version.starts_with(&format!("{requested}_")) =>
+                        {
+                            PackageState::VersionMismatch { installed: version }
+                        }
+                        _ => PackageState::Installed { version },
+                    },
                     None => PackageState::Missing,
                 };
                 PackageStatus {

@@ -2,10 +2,10 @@
 
 cat <<EOF >mise.toml
 [system.packages]
-apt = ["bc"]
-brew = ["jq"]
-dnf = ["bc"]
-pacman = ["bc"]
+"apt:bc" = "latest"
+"brew:jq" = "latest"
+"dnf:bc" = "latest"
+"pacman:bc" = "latest"
 EOF
 
 # status renders on any platform; unavailable managers are skipped, not errors
@@ -16,10 +16,18 @@ assert_contains "mise system status --json" '"apt"'
 # unknown managers warn but don't fail
 cat <<EOF >mise.toml
 [system.packages]
-not-a-real-manager = ["whatever"]
+"not-a-real-manager:whatever" = "latest"
 EOF
 assert_succeed "mise system status"
 assert_contains "mise system status 2>&1" "unknown system package manager"
+
+# the manager prefix is required; entries without one warn but don't fail
+cat <<EOF >mise.toml
+[system.packages]
+"noprefix" = "latest"
+EOF
+assert_succeed "mise system status"
+assert_contains "mise system status 2>&1" "invalid system package spec"
 
 # empty [system.packages] section
 cat <<EOF >mise.toml

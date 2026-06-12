@@ -2842,11 +2842,16 @@ Install missing system packages from `[system.packages]`
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
 root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config.
 """#
         after_long_help #"""
 Examples:
 
     $ mise system install
+    $ mise system install apt:curl brew:jq
     $ mise system install --dry-run
     $ mise system install --manager apt --yes
 
@@ -2859,6 +2864,7 @@ Examples:
         flag "-n --dry-run" help="Print the commands that would run without running them"
         flag "-y --yes" help="Skip the confirmation prompt"
         flag --update help="Refresh package manager metadata first (apt: `apt-get update`)"
+        arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [system.packages]" required=#false var=#true
     }
     cmd status help="Show the status of system packages from `[system.packages]`" {
         alias ls

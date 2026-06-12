@@ -27,37 +27,22 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
     requests
         .iter()
         .map(|req| {
-            // entries can be bare names or rpm name-version-release specs;
-            // match the exact name, or a spec like "bash-5.2.26-3.fc40" where
-            // what follows the name is a version (starts with a digit) — a
-            // bare "glib2" install must not satisfy a "glib2-devel" request
-            let found = installed.iter().find_map(|(name, version)| {
-                if req.name == **name {
-                    return Some((None, *version));
-                }
-                req.name
-                    .strip_prefix(*name)
-                    .and_then(|rest| rest.strip_prefix('-'))
-                    .filter(|v| v.chars().next().is_some_and(|c| c.is_ascii_digit()))
-                    .map(|requested| (Some(requested), *version))
-            });
-            let state = match found {
-                Some((None, version)) => PackageState::Installed {
-                    version: version.to_string(),
-                },
-                // an NVR spec pins a version: the installed version-release
-                // must match it (a version-only spec matches any release)
-                Some((Some(requested), version)) => {
-                    if version == requested || version.starts_with(&format!("{requested}-")) {
-                        PackageState::Installed {
-                            version: version.to_string(),
-                        }
-                    } else {
+            let state = match installed.get(req.name.as_str()) {
+                // a pin must match the installed version-release exactly, or
+                // its version part (a version-only pin matches any release)
+                Some(version) => match &req.version {
+                    Some(requested)
+                        if *version != requested
+                            && !version.starts_with(&format!("{requested}-")) =>
+                    {
                         PackageState::VersionMismatch {
                             installed: version.to_string(),
                         }
                     }
-                }
+                    _ => PackageState::Installed {
+                        version: version.to_string(),
+                    },
+                },
                 None => PackageState::Missing,
             };
             PackageStatus {
@@ -126,9 +111,13 @@ impl SystemPackageManager for DnfManager {
         if opts.update {
             args.push("--refresh".to_string());
         }
-        // raw entries pass through verbatim — dnf natively handles
-        // name-version-release pins and group/module syntax
-        args.extend(pkgs.iter().map(|p| p.raw.clone()));
+        // `--` keeps package operands from being parsed as dnf options;
+        // pins render to rpm's native name-version(-release) syntax
+        args.push("--".to_string());
+        args.extend(pkgs.iter().map(|p| match &p.version {
+            Some(v) => format!("{}-{v}", p.name),
+            None => p.name.clone(),
+        }));
         if opts.dry_run {
             miseprintln!("{}", sudo::argv("dnf", &args).join(" "));
             return Ok(());
@@ -141,16 +130,22 @@ impl SystemPackageManager for DnfManager {
 mod tests {
     use super::*;
 
+    fn req(name: &str, version: Option<&str>) -> PackageRequest {
+        PackageRequest {
+            name: name.to_string(),
+            version: version.map(str::to_string),
+        }
+    }
+
     #[test]
     fn test_parse_rpm_query() {
-        let mgr = DnfManager::new();
         let requests = vec![
-            mgr.parse_request("bc"),
-            mgr.parse_request("nonexistent"),
-            mgr.parse_request("bash-5.2.26-3.fc40"),
-            mgr.parse_request("glib2-devel"),
-            mgr.parse_request("zsh-5.8-1.fc40"),
-            mgr.parse_request("tmux-3.4"),
+            req("bc", None),
+            req("nonexistent", None),
+            req("bash", Some("5.2.26-3.fc40")),
+            req("glib2-devel", None),
+            req("zsh", Some("5.8-1.fc40")),
+            req("tmux", Some("3.4")),
         ];
         let output = "bc\t1.07.1-14.fc39\npackage nonexistent is not installed\nbash\t5.2.26-3.fc40\nglib2\t2.80.0-1.fc40\nzsh\t5.9-2.fc40\ntmux\t3.4-3.fc40\n";
         let statuses = parse_rpm_query(output, &requests);
@@ -161,8 +156,7 @@ mod tests {
             }
         );
         assert_eq!(statuses[1].state, PackageState::Missing);
-        // name-version-release specs match by name prefix when the version
-        // agrees
+        // a version-release pin matches the full installed version-release
         assert_eq!(
             statuses[2].state,
             PackageState::Installed {
@@ -171,14 +165,14 @@ mod tests {
         );
         // an installed "glib2" must not satisfy a "glib2-devel" request
         assert_eq!(statuses[3].state, PackageState::Missing);
-        // a different installed version must not satisfy an NVR pin
+        // a different installed version must not satisfy a pin
         assert_eq!(
             statuses[4].state,
             PackageState::VersionMismatch {
                 installed: "5.9-2.fc40".to_string()
             }
         );
-        // a version-only spec matches any release
+        // a version-only pin matches any release
         assert_eq!(
             statuses[5].state,
             PackageState::Installed {

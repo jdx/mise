@@ -132,7 +132,7 @@ impl Install {
             .flat_map(|mp| {
                 mp.requests
                     .iter()
-                    .map(move |r| format!("{}:{}", mp.manager.name(), r.raw))
+                    .map(move |r| format!("{}:{}", mp.manager.name(), r))
             })
             .collect::<Vec<_>>()
             .join("\n");

@@ -165,7 +165,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)
 - [`mise sync ruby [--brew]`](/cli/sync/ruby.md)
 - [`mise system <SUBCOMMAND>`](/cli/system.md)
-- [`mise system install [FLAGS]`](/cli/system/install.md)
+- [`mise system install [FLAGS] [PACKAGE]…`](/cli/system/install.md)
 - [`mise system status [-J --json] [--missing]`](/cli/system/status.md)
 - [`mise tasks [FLAGS] [TASK] <SUBCOMMAND>`](/cli/tasks.md)
 - [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)

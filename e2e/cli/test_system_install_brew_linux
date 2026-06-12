@@ -12,7 +12,7 @@ esac
 
 cat <<EOF >mise.toml
 [system.packages]
-brew = ["xz"]
+"brew:xz" = "latest"
 EOF
 
 assert_contains "mise system status" "missing"

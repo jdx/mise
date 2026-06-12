@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 
+use eyre::bail;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -20,11 +21,11 @@ pub(crate) mod sudo;
 /// `[system]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct SystemTomlConfig {
-    /// manager name -> package strings. String-keyed so configs using
-    /// managers from newer mise versions (dnf, pacman, winget, ...) parse
-    /// fine on older ones.
+    /// `"manager:package"` -> version (`"latest"` or a manager-native pin).
+    /// String-keyed so configs using managers from newer mise versions (dnf,
+    /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
-    pub packages: IndexMap<String, Vec<String>>,
+    pub packages: IndexMap<String, String>,
 }
 
 /// Packages for one manager, aggregated across the config hierarchy
@@ -33,58 +34,110 @@ pub struct ManagerPackages {
     pub requests: Vec<PackageRequest>,
 }
 
+/// Split a `"manager:package"` spec (config key or CLI argument). Only the
+/// first `:` separates — apt arch qualifiers ("apt:gcc:arm64") and brew
+/// versioned formula names ("brew:postgresql@17") stay part of the package.
+pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
+    match spec.split_once(':') {
+        Some((mgr, pkg)) if !mgr.is_empty() && !pkg.is_empty() => {
+            Ok((mgr.to_string(), pkg.to_string()))
+        }
+        _ => bail!(
+            "invalid system package spec '{spec}': expected '<manager>:<package>' (e.g. \"apt:curl\")"
+        ),
+    }
+}
+
 /// Aggregate `[system.packages]` across all loaded config files.
 ///
-/// Additive union, global -> local, deduped preserving first-seen order: a
-/// project config can add requirements on top of the global ones but not
-/// remove them. Unknown managers warn (forward compatibility) and are
-/// skipped. The `system_packages.managers` setting restricts which managers
-/// are used at all.
+/// Keys union global -> local; a more local config overrides the version pin
+/// of a key the global config declared. Malformed keys and unknown managers
+/// warn (forward compatibility) and are skipped. The
+/// `system_packages.managers` setting restricts which managers are used at
+/// all.
 pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
+    let mut merged: IndexMap<String, String> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.system_config() {
+            for (spec, version) in sys.packages {
+                merged.insert(spec, version);
+            }
+        }
+    }
+    let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    for (spec, version) in merged {
+        match parse_spec(&spec) {
+            Ok((mgr, name)) => {
+                let version = (version != "latest").then_some(version);
+                by_mgr
+                    .entry(mgr)
+                    .or_default()
+                    .push(PackageRequest { name, version });
+            }
+            Err(err) => warn!("[system.packages]: {err}"),
+        }
+    }
+    resolve_managers(by_mgr, false).expect("non-strict resolve is infallible")
+}
+
+/// Build [`ManagerPackages`] from explicit CLI specs like `apt:curl`.
+/// Unlike the config path, malformed specs and unknown managers are hard
+/// errors. CLI specs carry no version pin — pins live in the config value.
+pub fn packages_from_specs(specs: &[String]) -> eyre::Result<Vec<ManagerPackages>> {
+    let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    for spec in specs {
+        let (mgr, name) = parse_spec(spec)?;
+        let requests = by_mgr.entry(mgr).or_default();
+        let request = PackageRequest {
+            name,
+            version: None,
+        };
+        if !requests.contains(&request) {
+            requests.push(request);
+        }
+    }
+    resolve_managers(by_mgr, true)
+}
+
+fn resolve_managers(
+    by_mgr: IndexMap<String, Vec<PackageRequest>>,
+    strict: bool,
+) -> eyre::Result<Vec<ManagerPackages>> {
     let enabled = crate::config::Settings::get()
         .system_packages
         .managers
         .clone();
-    let mut raw: IndexMap<String, Vec<String>> = IndexMap::new();
-    // config_files is ordered local -> global; reverse for global -> local
-    for cf in config.config_files.values().rev() {
-        if let Some(sys) = cf.system_config() {
-            for (mgr, pkgs) in sys.packages {
-                let entry = raw.entry(mgr).or_default();
-                for p in pkgs {
-                    if !entry.contains(&p) {
-                        entry.push(p);
-                    }
+    let mut out = vec![];
+    for (name, requests) in by_mgr {
+        if let Some(enabled) = &enabled
+            && !enabled.contains(&name)
+        {
+            if strict {
+                bail!(
+                    "manager '{name}' is excluded by the system_packages.managers setting \
+                     (currently: {})",
+                    enabled.join(", ")
+                );
+            }
+            debug!("system package manager '{name}' disabled by system_packages.managers");
+            continue;
+        }
+        match packages::get_manager(&name) {
+            Some(manager) => out.push(ManagerPackages { manager, requests }),
+            None => {
+                if strict {
+                    bail!("unknown system package manager '{name}'");
+                }
+                // brew is compiled out on Windows — not unknown, just
+                // unsupported there
+                if cfg!(windows) && name == "brew" {
+                    debug!("system package manager 'brew' is not supported on windows");
+                } else {
+                    warn!("unknown system package manager '{name}' in [system.packages], ignoring");
                 }
             }
         }
     }
-    raw.into_iter()
-        .filter_map(|(name, raws)| {
-            if let Some(enabled) = &enabled
-                && !enabled.contains(&name)
-            {
-                debug!("system package manager '{name}' disabled by system_packages.managers");
-                return None;
-            }
-            match packages::get_manager(&name) {
-                Some(manager) => {
-                    let requests = raws.iter().map(|r| manager.parse_request(r)).collect();
-                    Some(ManagerPackages { manager, requests })
-                }
-                None => {
-                    // brew is compiled out on Windows — not unknown, just
-                    // unsupported there
-                    if cfg!(windows) && name == "brew" {
-                        debug!("system package manager 'brew' is not supported on windows");
-                    } else {
-                        warn!(
-                            "unknown system package manager '{name}' in [system.packages], ignoring"
-                        );
-                    }
-                    None
-                }
-            }
-        })
-        .collect()
+    Ok(out)
 }

@@ -5,7 +5,9 @@ Alma, ...).
 
 ```toml
 [system.packages]
-dnf = ["openssl-devel", "postgresql-server"]
+"dnf:openssl-devel" = "latest"
+"dnf:postgresql-server" = "latest"
+"dnf:bash" = "5.2.26-3.fc40" # version or version-release pin
 ```
 
 ## Behavior
@@ -13,8 +15,9 @@ dnf = ["openssl-devel", "postgresql-server"]
 - Package state is checked with `rpm -q` (read-only, never elevates).
 - Missing packages are installed with `dnf install -y`, elevated with sudo
   when necessary (see [sudo](/system-packages/index.html#sudo)).
-- Entries pass through to dnf verbatim, so dnf's native syntax works,
-  including `name-version-release` pins.
+- Version pins are passed to dnf as its native `name-version` /
+  `name-version-release` syntax; a version-only pin is satisfied by any
+  release of that version.
 - `mise system install --update` adds `--refresh` to force a metadata
   refresh; otherwise dnf manages its own metadata expiry.
 

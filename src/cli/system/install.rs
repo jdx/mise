@@ -10,9 +10,18 @@ use crate::ui::prompt;
 /// Checks which configured packages are missing and installs them with the
 /// system package manager. This may elevate with sudo when not running as
 /// root (see the `system_packages.sudo` setting).
+///
+/// Packages can also be given explicitly in `manager:package` form (e.g.
+/// `apt:curl`, `brew:jq`); they are installed whether or not they appear in
+/// the config.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemInstall {
+    /// Packages in `manager:package` form; defaults to everything configured
+    /// in [system.packages]
+    #[clap(value_name = "PACKAGE")]
+    packages: Vec<String>,
+
     /// Only install packages for this manager, e.g. `apt` or `brew`
     #[clap(long, short, value_parser = ["apt", "brew", "dnf", "pacman"])]
     manager: Option<String>,
@@ -33,8 +42,12 @@ pub struct SystemInstall {
 impl SystemInstall {
     pub async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise system")?;
-        let config = Config::get().await?;
-        let mgrs = system::packages_from_config(&config);
+        let mgrs = if self.packages.is_empty() {
+            let config = Config::get().await?;
+            system::packages_from_config(&config)
+        } else {
+            system::packages_from_specs(&self.packages)?
+        };
         if let Some(only) = &self.manager
             && !mgrs.iter().any(|mp| mp.manager.name() == only)
         {
@@ -50,7 +63,7 @@ impl SystemInstall {
                     enabled.join(", ")
                 );
             }
-            bail!("no [system.packages] entries for manager '{only}'");
+            bail!("no packages requested for manager '{only}'");
         }
         if mgrs.is_empty() {
             info!("no system packages configured in [system.packages]");
@@ -91,7 +104,7 @@ impl SystemInstall {
             if missing.is_empty() {
                 continue;
             }
-            let list = missing.iter().map(|r| r.raw.as_str()).collect::<Vec<_>>();
+            let list = missing.iter().map(|r| r.to_string()).collect::<Vec<_>>();
             if !self.dry_run && !self.yes && console::user_attended_stderr() {
                 let msg = format!("{name}: install {}?", list.join(", "));
                 if !prompt::confirm(msg)? {
@@ -112,6 +125,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise system install</bold>
+    $ <bold>mise system install apt:curl brew:jq</bold>
     $ <bold>mise system install --dry-run</bold>
     $ <bold>mise system install --manager apt --yes</bold>
 "#

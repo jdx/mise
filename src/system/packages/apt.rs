@@ -52,43 +52,46 @@ fn dpkg_name(name: &str) -> &str {
 
 fn parse_dpkg_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatus> {
     // keyed by both "name" and "name:arch" so arch-qualified requests
-    // (gcc:arm64) only match that architecture
-    let mut installed: HashMap<String, (&str, &str)> = HashMap::new();
+    // (gcc:arm64) only match that architecture. A package can be installed
+    // for several architectures (multi-arch) at different versions, so keep
+    // every installed version — a version pin must match if *any* arch
+    // satisfies it, regardless of dpkg-query's output order
+    let mut installed: HashMap<String, Vec<&str>> = HashMap::new();
     for line in output.lines() {
         let mut parts = line.split('\t');
         if let (Some(name), Some(status), Some(version)) =
             (parts.next(), parts.next(), parts.next())
         {
-            if let Some(arch) = parts.next() {
-                installed.insert(format!("{name}:{arch}"), (status, version));
+            if status != "installed" {
+                continue;
             }
-            // a package can be present for several architectures
-            // (multi-arch); a bare-name request is satisfied by any
-            // installed arch, so never let a deinstalled foreign arch
-            // overwrite an installed entry
-            installed
-                .entry(name.to_string())
-                .and_modify(|entry| {
-                    if entry.0 != "installed" {
-                        *entry = (status, version);
-                    }
-                })
-                .or_insert((status, version));
+            if let Some(arch) = parts.next() {
+                installed
+                    .entry(format!("{name}:{arch}"))
+                    .or_default()
+                    .push(version);
+            }
+            installed.entry(name.to_string()).or_default().push(version);
         }
     }
     requests
         .iter()
         .map(|req| {
             let state = match installed.get(&req.name) {
-                Some(("installed", version)) => match &req.version {
-                    Some(requested) if requested != version => PackageState::VersionMismatch {
-                        installed: version.to_string(),
+                Some(versions) => match &req.version {
+                    Some(requested) if !versions.contains(&requested.as_str()) => {
+                        PackageState::VersionMismatch {
+                            installed: versions[0].to_string(),
+                        }
+                    }
+                    Some(requested) => PackageState::Installed {
+                        version: requested.clone(),
                     },
-                    _ => PackageState::Installed {
-                        version: version.to_string(),
+                    None => PackageState::Installed {
+                        version: versions[0].to_string(),
                     },
                 },
-                _ => PackageState::Missing,
+                None => PackageState::Missing,
             };
             PackageStatus {
                 request: req.clone(),
@@ -148,10 +151,14 @@ impl SystemPackageManager for AptManager {
         if opts.update || self.lists_missing() {
             self.update(opts)?;
         }
-        let mut args = vec!["install".to_string(), "-y".to_string()];
-        // raw entries pass through verbatim — apt-get natively handles
-        // name=version pins and name:arch qualifiers
-        args.extend(pkgs.iter().map(|p| p.raw.clone()));
+        // `--` keeps package operands from ever being parsed as apt-get
+        // options; pins render to apt's native name=version syntax and
+        // name:arch qualifiers pass through in the name
+        let mut args = vec!["install".to_string(), "-y".to_string(), "--".to_string()];
+        args.extend(pkgs.iter().map(|p| match &p.version {
+            Some(v) => format!("{}={v}", p.name),
+            None => p.name.clone(),
+        }));
         if opts.dry_run {
             miseprintln!(
                 "{}",
@@ -161,50 +168,32 @@ impl SystemPackageManager for AptManager {
         }
         sudo::run("apt-get", &args, &debian_frontend())
     }
-
-    fn parse_request(&self, raw: &str) -> PackageRequest {
-        let (name, version) = match raw.split_once('=') {
-            Some((name, version)) => (name.to_string(), Some(version.to_string())),
-            None => (raw.to_string(), None),
-        };
-        PackageRequest {
-            raw: raw.to_string(),
-            name,
-            version,
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn req(mgr: &AptManager, raw: &str) -> PackageRequest {
-        mgr.parse_request(raw)
+    fn req(name: &str, version: Option<&str>) -> PackageRequest {
+        PackageRequest {
+            name: name.to_string(),
+            version: version.map(str::to_string),
+        }
     }
 
     #[test]
-    fn test_parse_request() {
-        let mgr = AptManager::new();
-        let r = req(&mgr, "libssl-dev");
-        assert_eq!(r.name, "libssl-dev");
-        assert_eq!(r.version, None);
-        let r = req(&mgr, "curl=8.5.0-2ubuntu10");
-        assert_eq!(r.name, "curl");
-        assert_eq!(r.version, Some("8.5.0-2ubuntu10".to_string()));
-        let r = req(&mgr, "gcc:arm64");
-        assert_eq!(r.name, "gcc:arm64");
-        assert_eq!(dpkg_name(&r.name), "gcc");
+    fn test_dpkg_name() {
+        assert_eq!(dpkg_name("gcc"), "gcc");
+        assert_eq!(dpkg_name("gcc:arm64"), "gcc");
     }
 
     #[test]
     fn test_parse_dpkg_query() {
-        let mgr = AptManager::new();
         let requests = vec![
-            req(&mgr, "bc"),
-            req(&mgr, "nonexistent"),
-            req(&mgr, "removed-pkg"),
-            req(&mgr, "curl=9.9.9"),
+            req("bc", None),
+            req("nonexistent", None),
+            req("removed-pkg", None),
+            req("curl", Some("9.9.9")),
         ];
         let output = "bc\tinstalled\t1.07.1-3\tamd64\nremoved-pkg\tdeinstall\t2.0\tamd64\ncurl\tinstalled\t8.5.0-2\tamd64\n";
         let statuses = parse_dpkg_query(output, &requests);
@@ -226,8 +215,7 @@ mod tests {
 
     #[test]
     fn test_parse_dpkg_query_multiarch_bare_name() {
-        let mgr = AptManager::new();
-        let requests = vec![req(&mgr, "libssl3")];
+        let requests = vec![req("libssl3", None)];
         // installed for amd64, deinstalled for i386 — the bare request is
         // satisfied regardless of which line dpkg-query prints last
         for output in [
@@ -245,9 +233,27 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_dpkg_query_multiarch_bare_name_versioned() {
+        let requests = vec![req("libssl3", Some("3.0.2"))];
+        // two arches installed at different versions — the pin matches if
+        // any arch satisfies it, regardless of dpkg-query's output order
+        for output in [
+            "libssl3\tinstalled\t3.0.1\ti386\nlibssl3\tinstalled\t3.0.2\tamd64\n",
+            "libssl3\tinstalled\t3.0.2\tamd64\nlibssl3\tinstalled\t3.0.1\ti386\n",
+        ] {
+            let statuses = parse_dpkg_query(output, &requests);
+            assert_eq!(
+                statuses[0].state,
+                PackageState::Installed {
+                    version: "3.0.2".to_string()
+                }
+            );
+        }
+    }
+
+    #[test]
     fn test_parse_dpkg_query_arch_qualified() {
-        let mgr = AptManager::new();
-        let requests = vec![req(&mgr, "gcc:arm64"), req(&mgr, "gcc:amd64")];
+        let requests = vec![req("gcc:arm64", None), req("gcc:amd64", None)];
         let output = "gcc\tinstalled\t12.3\tarm64\n";
         let statuses = parse_dpkg_query(output, &requests);
         // gcc:arm64 matches the installed arm64 package

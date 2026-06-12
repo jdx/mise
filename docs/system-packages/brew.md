@@ -4,7 +4,9 @@ Homebrew formulae — **without requiring Homebrew to be installed**.
 
 ```toml
 [system.packages]
-brew = ["postgresql@17", "ffmpeg", "imagemagick"]
+"brew:postgresql@17" = "latest"
+"brew:ffmpeg" = "latest"
+"brew:imagemagick" = "latest"
 ```
 
 mise installs [homebrew/core](https://formulae.brew.sh) formulae directly

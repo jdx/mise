@@ -13,5 +13,5 @@ ever installed when explicitly requested with `mise system install`.
 
 ## Subcommands
 
-- [`mise system install [FLAGS]`](/cli/system/install.md)
+- [`mise system install [FLAGS] [PACKAGE]…`](/cli/system/install.md)
 - [`mise system status [-J --json] [--missing]`](/cli/system/status.md)

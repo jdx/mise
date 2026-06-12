@@ -4,7 +4,8 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 
 ```toml
 [system.packages]
-pacman = ["openssl", "base-devel"]
+"pacman:openssl" = "latest"
+"pacman:base-devel" = "latest"
 ```
 
 ## Behavior
@@ -19,7 +20,9 @@ pacman = ["openssl", "base-devel"]
   `mise system install --update`.
 
 ::: warning
-Arch packages are not versioned in the repositories — entries are plain
-package names. AUR packages are not supported (they require an AUR helper
-and building from source).
+Arch repositories only carry the latest version of each package, so pacman
+entries cannot be installed at a pinned version — `mise system install`
+rejects pins, though `mise system status` will still report a
+`version mismatch` for them. AUR packages are not supported (they require an
+AUR helper and building from source).
 :::

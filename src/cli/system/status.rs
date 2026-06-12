@@ -40,7 +40,7 @@ impl SystemStatus {
                     for req in &mp.requests {
                         rows.push(vec![
                             name.to_string(),
-                            req.raw.clone(),
+                            req.to_string(),
                             "".to_string(),
                             format!("skipped ({reason})"),
                         ]);
@@ -64,14 +64,15 @@ impl SystemStatus {
                 };
                 if self.json {
                     json_pkgs.push(json!({
-                        "package": s.request.raw,
+                        "package": s.request.name,
+                        "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
                         "state": state.replace(' ', "_"),
                         "installed_version": installed_version,
                     }));
                 } else {
                     rows.push(vec![
                         name.to_string(),
-                        s.request.raw.clone(),
+                        s.request.to_string(),
                         installed_version,
                         state.to_string(),
                     ]);

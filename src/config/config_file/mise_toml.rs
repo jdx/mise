@@ -2026,26 +2026,22 @@ mod tests {
             &p,
             r#"
         [system.packages]
-        apt = ["libssl-dev", "curl=8.5.0-2"]
-        brew = ["postgresql@17"]
-        future-manager = ["whatever"]
+        "apt:libssl-dev" = "latest"
+        "apt:curl" = "8.5.0-2"
+        "brew:postgresql@17" = "latest"
+        "future-manager:whatever" = "latest"
         "#,
         )
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         let system = cf.system_config().unwrap();
-        assert_eq!(
-            system.packages.get("apt").unwrap(),
-            &vec!["libssl-dev".to_string(), "curl=8.5.0-2".to_string()]
-        );
-        assert_eq!(
-            system.packages.get("brew").unwrap(),
-            &vec!["postgresql@17".to_string()]
-        );
+        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
-            system.packages.get("future-manager").unwrap(),
-            &vec!["whatever".to_string()]
+            system.packages.get("future-manager:whatever").unwrap(),
+            "latest"
         );
 
         // no [system] section -> None

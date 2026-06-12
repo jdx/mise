@@ -2942,42 +2942,13 @@
       "properties": {
         "packages": {
           "type": "object",
-          "description": "system packages to install with `mise system install`, keyed by package manager",
-          "properties": {
-            "apt": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "apt packages (debian/ubuntu), e.g. \"libssl-dev\" or \"curl=8.5.0-2\""
-            },
-            "brew": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Homebrew formulae (arm64 macOS, no brew required), e.g. \"postgresql@17\""
-            },
-            "dnf": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "dnf packages (fedora/rhel), e.g. \"openssl-devel\""
-            },
-            "pacman": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "pacman packages (arch), e.g. \"base-devel\""
-            }
+          "description": "system packages to install with `mise system install`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_-]+:.+$"
           },
           "additionalProperties": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "type": "string",
+            "description": "version pin in the manager's native format, or \"latest\""
           }
         }
       }
