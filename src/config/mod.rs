@@ -20,7 +20,7 @@ use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::{ConfigFile, config_trust_root};
+use crate::config::config_file::{ConfigFile, config_trust_root, trust_check};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
@@ -2027,7 +2027,7 @@ async fn load_local_tasks_with_context(
                         let includes = task_includes_for_dir(&subdir, &config.config_files)?;
                         for include in includes {
                             let mut subdir_tasks = load_tasks_includes(
-                                &config, &include, &subdir, &None, &templates,
+                                &config, &include, &subdir, &None, &templates, true,
                             )
                             .await?;
                             if is_global_task_include_path(&include) {
@@ -2399,8 +2399,10 @@ async fn load_tasks_includes(
     config_root: &Path,
     task_config_dir: &Option<String>,
     templates: &IndexMap<String, TaskTemplate>,
+    require_trust: bool,
 ) -> Result<Vec<Task>> {
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
+        trust_check_task_include(root, require_trust)?;
         load_task_file(config, root, config_root, task_config_dir, templates).await
     } else if root.is_dir() {
         let all_files = WalkDir::new(root)
@@ -2427,6 +2429,7 @@ async fn load_tasks_includes(
             .partition(|p| is_toml(p));
         let mut tasks = vec![];
         for path in toml_files {
+            trust_check_task_include(&path, require_trust)?;
             tasks.extend(
                 load_task_file(config, &path, config_root, task_config_dir, templates).await?,
             );
@@ -2437,6 +2440,7 @@ async fn load_tasks_includes(
             let root = root.clone();
             let config_root = config_root.clone();
             let config = config.clone();
+            trust_check_task_include(&path, require_trust)?;
             let mut task = Task::from_path(&config, &path, &root, &config_root).await?;
             if task.dir.is_none()
                 && let Some(ref dir) = *task_config_dir
@@ -2537,9 +2541,15 @@ async fn load_file_tasks(
             expand_task_include(&cf_root, &include)
         };
         for path in paths {
-            let mut loaded =
-                load_tasks_includes(config, &path, &config_root, &task_config_dir, templates)
-                    .await?;
+            let mut loaded = load_tasks_includes(
+                config,
+                &path,
+                &config_root,
+                &task_config_dir,
+                templates,
+                false,
+            )
+            .await?;
             if is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
@@ -2590,6 +2600,7 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
+    let require_task_include_trust = configs.is_empty();
 
     let (includes, resolve_dir) = configs
         .iter()
@@ -2618,8 +2629,15 @@ pub async fn load_tasks_in_dir(
             expand_task_include(&resolve_dir, include)
         };
         for p in paths {
-            let mut loaded =
-                load_tasks_includes(config, &p, dir, &task_config_dir, templates).await?;
+            let mut loaded = load_tasks_includes(
+                config,
+                &p,
+                dir,
+                &task_config_dir,
+                templates,
+                require_task_include_trust,
+            )
+            .await?;
             if is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
             }
@@ -2640,6 +2658,13 @@ pub async fn load_tasks_in_dir(
         task.display_name = task.display_name(&all_tasks);
     }
     Ok(tasks)
+}
+
+fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
+    if require_trust && !is_global_task_include_path(path) {
+        trust_check(path)?;
+    }
+    Ok(())
 }
 
 async fn load_task_file(
