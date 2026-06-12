@@ -1,5 +1,53 @@
 # Changelog
 
+## [2026.6.4](https://github.com/jdx/mise/compare/v2026.6.3..v2026.6.4) - 2026-06-12
+
+### 🚀 Features
+
+- **(github)** add `matching` and `matching_regex` asset options by @devnulled in [#10325](https://github.com/jdx/mise/pull/10325)
+- **(oci)** add configurable layer owner by @ThomasK33 in [#10075](https://github.com/jdx/mise/pull/10075)
+- **(system)** declarative system packages (apt, dnf, pacman, and brew without brew) by @jdx in [#10326](https://github.com/jdx/mise/pull/10326)
+- **(system)** add mise system use and mise system upgrade by @jdx in [#10346](https://github.com/jdx/mise/pull/10346)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support override env selectors by @risu729 in [#10200](https://github.com/jdx/mise/pull/10200)
+- **(aqua)** route versions host by registry repo by @jdx in [#10341](https://github.com/jdx/mise/pull/10341)
+- **(backend)** honor zero minimum release age flag by @jdx in [#10344](https://github.com/jdx/mise/pull/10344)
+- **(core)** preserve inner quotes for remaining cmd /c call sites on windows by @JamBalaya56562 in [#10323](https://github.com/jdx/mise/pull/10323)
+- **(dotnet)** include runtime in lock identity by @risu729 in [#10175](https://github.com/jdx/mise/pull/10175)
+- **(install)** skip inactive unknown tools by @risu729 in [#10206](https://github.com/jdx/mise/pull/10206)
+- **(java)** include shorthand vendor in lock identity by @risu729 in [#9989](https://github.com/jdx/mise/pull/9989)
+- **(task)** append forwarded args to inline bash -c tasks on windows by @JamBalaya56562 in [#10321](https://github.com/jdx/mise/pull/10321)
+- **(task)** validate monorepo-relative task refs by @jdx in [#10342](https://github.com/jdx/mise/pull/10342)
+- **(task)** show multiline descriptions in usage help by @risu729 in [#10204](https://github.com/jdx/mise/pull/10204)
+- **(tasks)** refactor editor command handling and improve error reporting by @roele in [#9752](https://github.com/jdx/mise/pull/9752)
+
+### 🧪 Testing
+
+- **(completions)** update usage 3.5 expectations by @jdx in [#10340](https://github.com/jdx/mise/pull/10340)
+- **(use)** cover quiet global use output by @risu729 in [#10199](https://github.com/jdx/mise/pull/10199)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 1248f2a by @renovate[bot] in [#10331](https://github.com/jdx/mise/pull/10331)
+- update rust crate tabled to 0.21 by @renovate[bot] in [#10337](https://github.com/jdx/mise/pull/10337)
+- update rattler by @renovate[bot] in [#10336](https://github.com/jdx/mise/pull/10336)
+- update actions/checkout action to v6.0.3 by @renovate[bot] in [#10335](https://github.com/jdx/mise/pull/10335)
+- update ghcr.io/jdx/mise:deb docker digest to 50edf9f by @renovate[bot] in [#10332](https://github.com/jdx/mise/pull/10332)
+- update rust docker digest to 4fd8406 by @renovate[bot] in [#10334](https://github.com/jdx/mise/pull/10334)
+- update ghcr.io/jdx/mise:rpm docker digest to 57866e0 by @renovate[bot] in [#10333](https://github.com/jdx/mise/pull/10333)
+
+### 📦 Registry
+
+- add ghtkn by @TyceHerrman in [#9967](https://github.com/jdx/mise/pull/9967)
+- add antigravity-cli by @rhanneken in [#10324](https://github.com/jdx/mise/pull/10324)
+
+### New Contributors
+
+- @ThomasK33 made their first contribution in [#10075](https://github.com/jdx/mise/pull/10075)
+- @devnulled made their first contribution in [#10325](https://github.com/jdx/mise/pull/10325)
+
 ## [2026.6.3](https://github.com/jdx/mise/compare/v2026.6.2..v2026.6.3) - 2026-06-11
 
 ### 🚀 Features
