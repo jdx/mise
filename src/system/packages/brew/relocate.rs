@@ -27,6 +27,9 @@ pub struct Replacement {
 pub fn standard_replacements() -> Vec<Replacement> {
     let prefix_buf = super::prefix::prefix();
     let prefix = prefix_buf.to_string_lossy();
+    let repository_buf = super::prefix::repository();
+    let repository = repository_buf.to_string_lossy();
+    let macos = cfg!(target_os = "macos");
     vec![
         Replacement {
             placeholder: b"@@HOMEBREW_PREFIX@@",
@@ -38,19 +41,28 @@ pub fn standard_replacements() -> Vec<Replacement> {
         },
         Replacement {
             placeholder: b"@@HOMEBREW_REPOSITORY@@",
-            value: prefix.as_bytes().to_vec(),
+            value: repository.as_bytes().to_vec(),
         },
         Replacement {
             placeholder: b"@@HOMEBREW_LIBRARY@@",
-            value: format!("{prefix}/Library").into_bytes(),
+            value: format!("{repository}/Library").into_bytes(),
         },
         Replacement {
             placeholder: b"@@HOMEBREW_PERL@@",
-            value: b"/usr/bin/perl".to_vec(),
+            // matches brew: system perl on macOS, brewed perl on Linux
+            value: if macos {
+                b"/usr/bin/perl".to_vec()
+            } else {
+                format!("{prefix}/opt/perl/bin/perl").into_bytes()
+            },
         },
         Replacement {
             placeholder: b"@@HOMEBREW_JAVA@@",
-            value: format!("{prefix}/opt/openjdk/libexec/openjdk.jdk/Contents/Home").into_bytes(),
+            value: if macos {
+                format!("{prefix}/opt/openjdk/libexec/openjdk.jdk/Contents/Home").into_bytes()
+            } else {
+                format!("{prefix}/opt/openjdk/libexec").into_bytes()
+            },
         },
     ]
 }
@@ -234,12 +246,26 @@ pub fn codesign(files: &[PathBuf]) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
+
+    /// fixed macOS-style replacements so tests behave the same on all hosts
+    pub(in super::super) fn test_replacements() -> Vec<Replacement> {
+        vec![
+            Replacement {
+                placeholder: b"@@HOMEBREW_PREFIX@@",
+                value: b"/opt/homebrew".to_vec(),
+            },
+            Replacement {
+                placeholder: b"@@HOMEBREW_CELLAR@@",
+                value: b"/opt/homebrew/Cellar".to_vec(),
+            },
+        ]
+    }
 
     #[test]
     fn test_replace_text() {
-        let replacements = standard_replacements();
+        let replacements = test_replacements();
         let content = b"#!@@HOMEBREW_PREFIX@@/bin/bash\nCELLAR=@@HOMEBREW_CELLAR@@/foo\n";
         let out = replace_text(content, &replacements);
         assert_eq!(
@@ -250,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_replace_in_binary_shrinking() {
-        let replacements = standard_replacements();
+        let replacements = test_replacements();
         // "@@HOMEBREW_PREFIX@@/lib/libx.dylib\0\0..." — replacement shrinks
         let mut content = b"@@HOMEBREW_PREFIX@@/lib/libx.dylib\0\0\0\0after".to_vec();
         let changed = replace_in_binary(&mut content, &replacements, Path::new("test")).unwrap();
@@ -263,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_replace_in_binary_growing_fits_in_padding() {
-        let replacements = standard_replacements();
+        let replacements = test_replacements();
         // cellar replacement grows by 1 byte, fits because of trailing NUL padding
         let mut content = b"@@HOMEBREW_CELLAR@@/foo\0\0\0after".to_vec();
         let changed = replace_in_binary(&mut content, &replacements, Path::new("test")).unwrap();
@@ -273,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_replace_in_binary_growing_does_not_fit() {
-        let replacements = standard_replacements();
+        let replacements = test_replacements();
         // only one trailing NUL — the grown string + terminator can't fit
         let mut content = b"@@HOMEBREW_CELLAR@@/foo\0after".to_vec();
         let res = replace_in_binary(&mut content, &replacements, Path::new("test"));

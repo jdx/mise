@@ -48,19 +48,24 @@ fn dpkg_name(name: &str) -> &str {
 }
 
 fn parse_dpkg_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatus> {
-    let mut installed: HashMap<&str, (&str, &str)> = HashMap::new();
+    // keyed by both "name" and "name:arch" so arch-qualified requests
+    // (gcc:arm64) only match that architecture
+    let mut installed: HashMap<String, (&str, &str)> = HashMap::new();
     for line in output.lines() {
         let mut parts = line.split('\t');
         if let (Some(name), Some(status), Some(version)) =
             (parts.next(), parts.next(), parts.next())
         {
-            installed.insert(name, (status, version));
+            if let Some(arch) = parts.next() {
+                installed.insert(format!("{name}:{arch}"), (status, version));
+            }
+            installed.insert(name.to_string(), (status, version));
         }
     }
     requests
         .iter()
         .map(|req| {
-            let state = match installed.get(dpkg_name(&req.name)) {
+            let state = match installed.get(&req.name) {
                 Some(("installed", version)) => match &req.version {
                     Some(requested) if requested != version => PackageState::VersionMismatch {
                         installed: version.to_string(),
@@ -103,7 +108,7 @@ impl SystemPackageManager for AptManager {
         }
         let mut args = vec![
             "-W".to_string(),
-            "-f=${Package}\\t${db:Status-Status}\\t${Version}\\n".to_string(),
+            "-f=${Package}\\t${db:Status-Status}\\t${Version}\\t${Architecture}\\n".to_string(),
         ];
         args.extend(pkgs.iter().map(|p| dpkg_name(&p.name).to_string()));
         debug!("$ dpkg-query {}", args.join(" "));
@@ -184,8 +189,7 @@ mod tests {
             req(&mgr, "removed-pkg"),
             req(&mgr, "curl=9.9.9"),
         ];
-        let output =
-            "bc\tinstalled\t1.07.1-3\nremoved-pkg\tdeinstall\t2.0\ncurl\tinstalled\t8.5.0-2\n";
+        let output = "bc\tinstalled\t1.07.1-3\tamd64\nremoved-pkg\tdeinstall\t2.0\tamd64\ncurl\tinstalled\t8.5.0-2\tamd64\n";
         let statuses = parse_dpkg_query(output, &requests);
         assert_eq!(
             statuses[0].state,
@@ -201,5 +205,22 @@ mod tests {
                 installed: "8.5.0-2".to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_parse_dpkg_query_arch_qualified() {
+        let mgr = AptManager::new();
+        let requests = vec![req(&mgr, "gcc:arm64"), req(&mgr, "gcc:amd64")];
+        let output = "gcc\tinstalled\t12.3\tarm64\n";
+        let statuses = parse_dpkg_query(output, &requests);
+        // gcc:arm64 matches the installed arm64 package
+        assert_eq!(
+            statuses[0].state,
+            PackageState::Installed {
+                version: "12.3".to_string()
+            }
+        );
+        // gcc:amd64 does not match the arm64 install
+        assert_eq!(statuses[1].state, PackageState::Missing);
     }
 }

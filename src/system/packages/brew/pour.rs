@@ -25,24 +25,29 @@ pub fn keg_installed(name: &str, pkg_version: &str) -> bool {
     keg_path(name, pkg_version).exists()
 }
 
-/// any installed version of this formula, newest mtime first
+/// installed versions of this formula; the active keg (per the `opt`
+/// symlink, like brew) first, the rest name-sorted
 pub fn installed_versions(name: &str) -> Vec<String> {
     let dir = prefix::cellar().join(name);
-    let mut versions: Vec<(std::time::SystemTime, String)> = crate::file::ls(&dir)
+    let mut versions: Vec<String> = crate::file::ls(&dir)
         .unwrap_or_default()
         .into_iter()
         .filter(|p| p.is_dir())
         .filter_map(|p| {
             let name = p.file_name()?.to_string_lossy().to_string();
-            if name.starts_with(".mise-tmp-") {
-                return None;
-            }
-            let mtime = p.metadata().ok()?.modified().ok()?;
-            Some((mtime, name))
+            (!name.starts_with(".mise-")).then_some(name)
         })
         .collect();
-    versions.sort_by(|a, b| b.0.cmp(&a.0));
-    versions.into_iter().map(|(_, v)| v).collect()
+    versions.sort();
+    let opt_target = std::fs::read_link(prefix::prefix().join("opt").join(name))
+        .ok()
+        .and_then(|t| t.file_name().map(|f| f.to_string_lossy().to_string()));
+    if let Some(active) = opt_target
+        && let Some(pos) = versions.iter().position(|v| v == &active)
+    {
+        versions.swap(0, pos);
+    }
+    versions
 }
 
 pub async fn pour(
@@ -90,7 +95,9 @@ pub async fn pour(
     } else {
         relocate::relocate_keg(&tmp)?
     };
-    if !report.changed_machos.is_empty() {
+    // arm64 macOS kills binaries whose signature doesn't match; Linux ELF
+    // files have no signatures to fix
+    if cfg!(target_os = "macos") && !report.changed_machos.is_empty() {
         relocate::codesign(&report.changed_machos)
             .wrap_err_with(|| format!("failed to re-sign relocated binaries for {name}"))?;
     }
@@ -101,7 +108,12 @@ pub async fn pour(
         crate::file::remove_all(&keg)?;
     }
     crate::file::rename(&tmp, &keg)?;
-    link_keg(name, &pkg_version, rf.formula.keg_only)?;
+    // never leave a half-installed keg: if linking fails (conflicts, IO),
+    // remove the keg so the next install retries from scratch
+    if let Err(err) = link_keg(name, &pkg_version, rf.formula.keg_only) {
+        let _ = crate::file::remove_all(&keg);
+        return Err(err);
+    }
     Ok(())
 }
 
@@ -168,7 +180,7 @@ fn write_receipt(
             "tap": "homebrew/core",
             "tap_git_head": null,
         },
-        "arch": "arm64",
+        "arch": if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" },
         "built_on": {},
     });
     crate::file::write(
@@ -209,11 +221,15 @@ fn can_overwrite(dest: &Path) -> bool {
     if !meta.is_symlink() {
         return false;
     }
-    let resolved = dest
-        .parent()
-        .unwrap()
-        .join(std::fs::read_link(dest).unwrap_or_default());
-    let resolved = crate::file::desymlink_path(&resolved);
+    let target = match std::fs::read_link(dest) {
+        Ok(t) => t,
+        Err(err) => {
+            // treat as a conflict (never clobber what we can't identify)
+            debug!("failed to read symlink {}: {err}", dest.display());
+            return false;
+        }
+    };
+    let resolved = crate::file::desymlink_path(&dest.parent().unwrap().join(target));
     resolved.starts_with(prefix::cellar()) || resolved.starts_with(prefix::prefix().join("opt"))
 }
 

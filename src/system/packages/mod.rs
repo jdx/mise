@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use crate::result::Result;
 
 pub mod apt;
+#[cfg(unix)]
 pub mod brew;
 pub mod dnf;
 pub mod pacman;
@@ -84,6 +85,7 @@ pub trait SystemPackageManager: Send + Sync {
 pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
     vec![
         Arc::new(apt::AptManager::new()),
+        #[cfg(unix)]
         Arc::new(brew::BrewManager::new()),
         Arc::new(dnf::DnfManager::new()),
         Arc::new(pacman::PacmanManager::new()),

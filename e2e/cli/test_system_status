@@ -21,7 +21,13 @@ EOF
 assert_succeed "mise system status"
 assert_contains "mise system status 2>&1" "unknown system package manager"
 
-# empty section
+# empty [system.packages] section
+cat <<EOF >mise.toml
+[system.packages]
+EOF
+assert_succeed "mise system status"
+
+# no [system] section at all
 cat <<EOF >mise.toml
 [tools]
 EOF

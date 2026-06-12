@@ -1,4 +1,5 @@
-//! The Homebrew prefix (/opt/homebrew): detection, ownership, bootstrap.
+//! The Homebrew prefix: /opt/homebrew (arm64 macOS) or
+//! /home/linuxbrew/.linuxbrew (Linux) — detection, ownership, bootstrap.
 
 use std::path::{Path, PathBuf};
 
@@ -6,8 +7,6 @@ use eyre::bail;
 
 use crate::result::Result;
 use crate::system::sudo;
-
-pub const PREFIX: &str = "/opt/homebrew";
 
 /// subdirectories brew's install.sh creates, mirrored here
 const SUBDIRS: &[&str] = &[
@@ -37,7 +36,8 @@ pub fn prefix() -> PathBuf {
     // the real prefix
     match crate::env::var("MISE_SYSTEM_BREW_PREFIX") {
         Ok(p) if !p.is_empty() => PathBuf::from(p),
-        _ => PathBuf::from(PREFIX),
+        _ if cfg!(target_os = "macos") => PathBuf::from("/opt/homebrew"),
+        _ => PathBuf::from("/home/linuxbrew/.linuxbrew"),
     }
 }
 
@@ -45,13 +45,15 @@ pub fn cellar() -> PathBuf {
     prefix().join("Cellar")
 }
 
-/// Is a real Homebrew installation managing this prefix? (a brew elsewhere
-/// on PATH with a different prefix doesn't count — it owns its own prefix)
-pub fn real_brew_installed() -> bool {
-    let prefix = prefix();
-    prefix.join("bin/brew").exists()
-        || prefix.join(".git").exists()
-        || prefix.join("Homebrew").exists()
+/// where brew would keep its own repository — referenced by the
+/// @@HOMEBREW_REPOSITORY@@ placeholder (== prefix on arm64 macOS, a
+/// subdirectory on Linux)
+pub fn repository() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        prefix()
+    } else {
+        prefix().join("Homebrew")
+    }
 }
 
 fn writable(path: &Path) -> bool {
@@ -62,8 +64,8 @@ fn writable(path: &Path) -> bool {
     ) && path.exists()
 }
 
-/// Make sure /opt/homebrew exists, has the standard layout, and is writable
-/// by the current user. May elevate once with sudo (mirrors what brew's own
+/// Make sure the prefix exists, has the standard layout, and is writable by
+/// the current user. May elevate once with sudo (mirrors what brew's own
 /// install.sh does). No-op if everything is already in place.
 pub fn bootstrap(dry_run: bool) -> Result<()> {
     let prefix = prefix();
@@ -78,7 +80,7 @@ pub fn bootstrap(dry_run: bool) -> Result<()> {
         return Ok(());
     }
     // try without elevation first — covers prefixes under user-writable
-    // parents; the real /opt/homebrew needs sudo to create
+    // parents; the real prefixes need sudo to create
     if needs_create
         && !dry_run
         && SUBDIRS
@@ -89,15 +91,31 @@ pub fn bootstrap(dry_run: bool) -> Result<()> {
         return Ok(());
     }
     if needs_create || needs_chown {
-        let user = crate::env::var("USER").unwrap_or_else(|_| "root".into());
+        // derive the username from the effective uid — $USER can be unset or
+        // stale (sudo -u, minimal containers)
+        let Some(user) = nix::unistd::User::from_uid(nix::unistd::geteuid())
+            .ok()
+            .flatten()
+            .map(|u| u.name)
+            .or_else(|| crate::env::var("USER").ok())
+        else {
+            // never chown to a guessed owner — that can lock the user out
+            bail!(
+                "cannot determine the current user to own {}",
+                prefix.display()
+            );
+        };
+        // brew's install.sh chowns to user:admin on macOS, just the user on
+        // Linux (the admin group doesn't exist there)
+        let owner = if cfg!(target_os = "macos") {
+            format!("{user}:admin")
+        } else {
+            user
+        };
         let mut dirs: Vec<String> = vec![prefix.to_string_lossy().to_string()];
         dirs.extend(SUBDIRS.iter().map(|d| prefix.join(d).display().to_string()));
         let mkdir_args: Vec<String> = ["-p".to_string()].into_iter().chain(dirs.clone()).collect();
-        let chown_args: Vec<String> = vec![
-            "-R".to_string(),
-            format!("{user}:admin"),
-            prefix.display().to_string(),
-        ];
+        let chown_args: Vec<String> = vec!["-R".to_string(), owner, prefix.display().to_string()];
         if dry_run {
             miseprintln!("{}", sudo::argv("mkdir", &mkdir_args).join(" "));
             miseprintln!("{}", sudo::argv("chown", &chown_args).join(" "));

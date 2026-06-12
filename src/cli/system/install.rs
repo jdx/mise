@@ -14,7 +14,7 @@ use crate::ui::prompt;
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemInstall {
     /// Only install packages for this manager, e.g. `apt` or `brew`
-    #[clap(long, short)]
+    #[clap(long, short, value_parser = ["apt", "brew", "dnf", "pacman"])]
     manager: Option<String>,
 
     /// Print the commands that would run without running them

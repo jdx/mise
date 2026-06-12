@@ -17,6 +17,13 @@ root (see the `system_packages.sudo` setting).
 
 Only install packages for this manager, e.g. `apt` or `brew`
 
+**Choices:**
+
+- `apt`
+- `brew`
+- `dnf`
+- `pacman`
+
 ### `-n --dry-run`
 
 Print the commands that would run without running them

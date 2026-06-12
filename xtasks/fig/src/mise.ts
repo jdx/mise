@@ -3200,6 +3200,7 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
               args: {
                 name: "manager",
+                suggestions: ["apt", "brew", "dnf", "pacman"],
               },
             },
             {

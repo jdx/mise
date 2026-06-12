@@ -27,9 +27,19 @@ pub(crate) fn is_root() -> bool {
 /// The argv that [`run`] would execute, including the `sudo` prefix when
 /// elevation would be used. For logging and `--dry-run`.
 pub(crate) fn argv(program: &str, args: &[String]) -> Vec<String> {
+    argv_with_env(program, args, &[])
+}
+
+fn argv_with_env(program: &str, args: &[String], envs: &[(String, String)]) -> Vec<String> {
     let mut argv = vec![];
     if !is_root() && Settings::get().system_packages.sudo {
         argv.push("sudo".to_string());
+        // sudo resets the environment by default; pass env vars through
+        // `env` so they reach the elevated command
+        if !envs.is_empty() {
+            argv.push("env".to_string());
+            argv.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
+        }
     }
     argv.push(program.to_string());
     argv.extend(args.iter().cloned());
@@ -45,7 +55,7 @@ pub(crate) fn argv(program: &str, args: &[String]) -> Vec<String> {
 ///   (`sudo -n`); otherwise errors with the exact command to run manually
 /// - `system_packages.sudo = false`: never elevates; errors if not root
 pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> Result<()> {
-    let argv = argv(program, args);
+    let argv = argv_with_env(program, args, envs);
     let manual_cmd = format!("sudo {} {}", program, args.join(" "));
     if !is_root() {
         if !Settings::get().system_packages.sudo {

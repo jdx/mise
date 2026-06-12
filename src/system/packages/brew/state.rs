@@ -38,8 +38,12 @@ impl Ledger {
 
     pub fn save(&self) -> Result<()> {
         let path = ledger_path();
-        crate::file::create_dir_all(path.parent().unwrap())?;
-        crate::file::write(&path, serde_json::to_string_pretty(self)?)?;
+        let parent = path.parent().unwrap();
+        crate::file::create_dir_all(parent)?;
+        // atomic write so an interrupted save can't corrupt the ledger
+        let tmp = parent.join("brew.json.tmp");
+        crate::file::write(&tmp, serde_json::to_string_pretty(self)?)?;
+        crate::file::rename(&tmp, &path)?;
         Ok(())
     }
 

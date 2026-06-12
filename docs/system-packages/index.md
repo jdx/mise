@@ -17,12 +17,12 @@ tools themselves — those belong in `[tools]`.
 
 ## Supported package managers
 
-| Manager  | Platform                                 | Page                                   |
-| -------- | ---------------------------------------- | -------------------------------------- |
-| `apt`    | Debian, Ubuntu                           | [apt](/system-packages/apt.html)       |
-| `dnf`    | Fedora, RHEL, CentOS, Rocky, Alma        | [dnf](/system-packages/dnf.html)       |
-| `pacman` | Arch, Manjaro                            | [pacman](/system-packages/pacman.html) |
-| `brew`   | macOS (arm64) — **no Homebrew required** | [brew](/system-packages/brew.html)     |
+| Manager  | Platform                                                       | Page                                   |
+| -------- | -------------------------------------------------------------- | -------------------------------------- |
+| `apt`    | Debian, Ubuntu                                                 | [apt](/system-packages/apt.html)       |
+| `dnf`    | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/system-packages/dnf.html)       |
+| `pacman` | Arch, Manjaro                                                  | [pacman](/system-packages/pacman.html) |
+| `brew`   | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/system-packages/brew.html)     |
 
 ## Semantics
 
@@ -60,7 +60,7 @@ missing.
 
 By default mise acts on every configured manager that is available on the
 current machine. Since availability implies the OS (`apt` only exists on
-Debian-family systems, `brew` only on macOS), this usually does the right
+Debian-family systems, `brew` wherever a bottle exists), this usually does the right
 thing without configuration.
 
 If more than one manager could apply — several package managers installed on

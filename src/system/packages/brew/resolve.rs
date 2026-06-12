@@ -15,36 +15,51 @@ pub struct ResolvedFormula {
     pub on_request: bool,
 }
 
+/// the `variations` entry that applies to the bottle that will actually be
+/// poured — the selected bottle tag, which may be older than the host's
+fn dep_tag(formula: &Formula, host_tag: &str) -> String {
+    formula
+        .bottle_files()
+        .and_then(|files| tag::select(files).map(|(tag, _)| tag))
+        .unwrap_or_else(|| host_tag.to_string())
+}
+
 /// Resolve the runtime closure of `roots` into install order (dependencies
 /// before dependents). Names are resolved through the API, so aliases map to
 /// their canonical formula.
 pub async fn resolve_closure(roots: &[String]) -> Result<Vec<ResolvedFormula>> {
     let host_tag = tag::host_tag();
     let mut formulae: HashMap<String, Formula> = HashMap::new();
+    // alias (or canonical name) -> canonical name, so repeated alias
+    // occurrences in the dep graph don't re-fetch from the API
+    let mut canonical: HashMap<String, String> = HashMap::new();
     let mut on_request: HashSet<String> = HashSet::new();
     let mut queue: Vec<(String, bool)> = roots.iter().map(|r| (r.clone(), true)).collect();
     while let Some((name, requested)) = queue.pop() {
-        if formulae.contains_key(&name) {
-            if requested {
-                on_request.insert(name);
+        let known = canonical.get(&name).cloned();
+        let canonical_name = match known {
+            Some(c) => c,
+            None => {
+                let formula = api::formula(&name).await?;
+                let c = formula.name.clone();
+                canonical.insert(name.clone(), c.clone());
+                canonical.insert(c.clone(), c.clone());
+                for alias in &formula.aliases {
+                    canonical.insert(alias.clone(), c.clone());
+                }
+                if !formulae.contains_key(&c) {
+                    let tag = dep_tag(&formula, &host_tag);
+                    for dep in formula.dependencies_for(&tag) {
+                        queue.push((dep.clone(), false));
+                    }
+                    formulae.insert(c.clone(), formula);
+                }
+                c
             }
-            continue;
-        }
-        let formula = api::formula(&name).await?;
-        let canonical = formula.name.clone();
+        };
         if requested {
-            on_request.insert(canonical.clone());
+            on_request.insert(canonical_name);
         }
-        if canonical != name {
-            // alias — track under the canonical name
-            if formulae.contains_key(&canonical) {
-                continue;
-            }
-        }
-        for dep in formula.dependencies_for(&host_tag) {
-            queue.push((dep.clone(), false));
-        }
-        formulae.insert(canonical, formula);
     }
 
     // depth-first post-order = dependencies first
@@ -55,6 +70,7 @@ pub async fn resolve_closure(roots: &[String]) -> Result<Vec<ResolvedFormula>> {
         name: &str,
         host_tag: &str,
         formulae: &HashMap<String, Formula>,
+        canonical: &HashMap<String, String>,
         done: &mut HashSet<String>,
         visiting: &mut Vec<String>,
         on_request: &HashSet<String>,
@@ -73,20 +89,11 @@ pub async fn resolve_closure(roots: &[String]) -> Result<Vec<ResolvedFormula>> {
             bail!("unresolved dependency: {name}");
         };
         visiting.push(name.to_string());
-        for dep in formula.dependencies_for(host_tag) {
-            // deps may be recorded under an alias; resolve to canonical via map
-            let dep_name = if formulae.contains_key(dep) {
-                dep.clone()
-            } else {
-                // alias was fetched and stored under canonical name; find it
-                formulae
-                    .values()
-                    .find(|f| f.aliases.iter().any(|a| a == dep))
-                    .map(|f| f.name.clone())
-                    .unwrap_or_else(|| dep.clone())
-            };
+        let tag = dep_tag(formula, host_tag);
+        for dep in formula.dependencies_for(&tag) {
+            let dep_name = canonical.get(dep).cloned().unwrap_or_else(|| dep.clone());
             visit(
-                &dep_name, host_tag, formulae, done, visiting, on_request, sorted,
+                &dep_name, host_tag, formulae, canonical, done, visiting, on_request, sorted,
             )?;
         }
         visiting.pop();
@@ -104,6 +111,7 @@ pub async fn resolve_closure(roots: &[String]) -> Result<Vec<ResolvedFormula>> {
             name,
             &host_tag,
             &formulae,
+            &canonical,
             &mut done,
             &mut visiting,
             &on_request,

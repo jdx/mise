@@ -94,12 +94,16 @@ impl SystemPackageManager for PacmanManager {
             .output()
             .await?;
         // pacman -Q exits 1 when any package is missing ("error: package 'x'
-        // was not found" on stderr); installed ones still print to stdout
-        if !output.status.success() && output.stdout.is_empty() && pkgs.len() > 1 {
-            debug!(
-                "pacman -Q: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
+        // was not found" on stderr); installed ones still print to stdout.
+        // Anything else on stderr (corrupt db, lock file) is a real error.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !output.status.success()
+            && !stderr.is_empty()
+            && !stderr
+                .lines()
+                .all(|l| l.trim().is_empty() || l.contains("was not found"))
+        {
+            bail!("pacman -Q failed: {}", stderr.trim());
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(parse_pacman_query(&stdout, pkgs))

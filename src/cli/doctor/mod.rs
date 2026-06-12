@@ -191,6 +191,10 @@ impl Doctor {
         });
         data.insert("toolset".into(), tools.collect());
 
+        if let Some(system_packages) = self.system_packages_json(&config).await {
+            data.insert("system_packages".into(), system_packages);
+        }
+
         if !self.errors.is_empty() {
             data.insert("errors".into(), self.errors.clone().into_iter().collect());
         }
@@ -363,6 +367,62 @@ impl Doctor {
         self.analyze_system_packages(config).await?;
 
         Ok(())
+    }
+
+    /// same diagnostics as [`Self::analyze_system_packages`] for `doctor -J`
+    async fn system_packages_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        if !Settings::get().experimental {
+            return None;
+        }
+        let mgrs = crate::system::packages_from_config(config);
+        if mgrs.is_empty() {
+            return None;
+        }
+        let mut map = serde_json::Map::new();
+        for mp in mgrs {
+            let name = mp.manager.name();
+            if !mp.manager.is_available() {
+                map.insert(
+                    name.into(),
+                    serde_json::json!({
+                        "available": false,
+                        "reason": mp.manager.unavailable_reason(),
+                        "requested": mp.requests.len(),
+                    }),
+                );
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    let missing = statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                    if missing > 0 {
+                        self.warnings.push(format!(
+                            "{missing} system package(s) are missing, install them with `mise system install`"
+                        ));
+                    }
+                    map.insert(
+                        name.into(),
+                        serde_json::json!({
+                            "available": true,
+                            "requested": statuses.len(),
+                            "missing": missing,
+                        }),
+                    );
+                }
+                Err(err) => self
+                    .warnings
+                    .push(format!("failed to check {name} system packages: {err}")),
+            }
+        }
+        Some(map.into())
     }
 
     async fn analyze_system_packages(&mut self, config: &Arc<Config>) -> eyre::Result<()> {

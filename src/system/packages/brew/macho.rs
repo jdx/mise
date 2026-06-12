@@ -79,13 +79,17 @@ fn patch_slice(slice: &mut [u8], replacements: &[Replacement], path: &Path) -> R
 
     // upper bound for growing the load-command table: the first byte of
     // section data (everything between sizeofcmds and there is padding)
+    let lc_end = HEADER_SIZE_64 + sizeofcmds;
     let mut first_data = slice.len();
     {
         let mut off = HEADER_SIZE_64;
         for _ in 0..ncmds {
+            if off + 8 > lc_end {
+                bail!("malformed load command table in {}", path.display());
+            }
             let cmd = u32_at(slice, off);
             let cmdsize = u32_at(slice, off + 4) as usize;
-            if cmdsize < 8 || off + cmdsize > slice.len() {
+            if cmdsize < 8 || off + cmdsize > lc_end {
                 bail!("malformed load command in {}", path.display());
             }
             if cmd == LC_SEGMENT_64 {
@@ -111,6 +115,9 @@ fn patch_slice(slice: &mut [u8], replacements: &[Replacement], path: &Path) -> R
     let mut changed = false;
     let mut off = HEADER_SIZE_64;
     for _ in 0..ncmds {
+        if off + 8 > lc_end {
+            bail!("malformed load command table in {}", path.display());
+        }
         let cmd = u32_at(slice, off);
         let cmdsize = u32_at(slice, off + 4) as usize;
         let mut bytes = slice[off..off + cmdsize].to_vec();
@@ -202,7 +209,7 @@ pub fn patch(content: &mut [u8], replacements: &[Replacement], path: &Path) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::system::packages::brew::relocate::standard_replacements;
+    use crate::system::packages::brew::relocate::tests::test_replacements;
 
     /// build a minimal 64-bit Mach-O: header + LC_SEGMENT_64 (one section)
     /// + LC_LOAD_DYLIB with the given name, then data at `data_off`
@@ -252,7 +259,7 @@ mod tests {
     fn test_patch_in_place_when_fits() {
         // shrinking replacement, no resize needed
         let mut buf = fake_macho(b"@@HOMEBREW_PREFIX@@/lib/libx.dylib", 0, 4096);
-        let changed = patch(&mut buf, &standard_replacements(), Path::new("t")).unwrap();
+        let changed = patch(&mut buf, &test_replacements(), Path::new("t")).unwrap();
         assert!(changed);
         assert_eq!(find_dylib_name(&buf), b"/opt/homebrew/lib/libx.dylib");
         assert_eq!(&buf[buf.len() - 12..], b"SECTION-DATA");
@@ -264,7 +271,7 @@ mod tests {
         let name = b"@@HOMEBREW_CELLAR@@/icu4c@78/78.3/lib/libicutu.78.dylib";
         let mut buf = fake_macho(name, 0, 4096);
         let old_sizeofcmds = u32_at(&buf, 20);
-        let changed = patch(&mut buf, &standard_replacements(), Path::new("t")).unwrap();
+        let changed = patch(&mut buf, &test_replacements(), Path::new("t")).unwrap();
         assert!(changed);
         assert_eq!(
             find_dylib_name(&buf),
@@ -280,7 +287,7 @@ mod tests {
         let name = b"@@HOMEBREW_CELLAR@@/icu4c@78/78.3/lib/libicutu.78.dylib";
         let tight = HEADER_SIZE_64 + 152 + 24 + name.len() + 1;
         let mut buf = fake_macho(name, 0, tight.div_ceil(8) as u32 * 8);
-        let res = patch(&mut buf, &standard_replacements(), Path::new("t"));
+        let res = patch(&mut buf, &test_replacements(), Path::new("t"));
         assert!(res.is_err());
     }
 
@@ -288,7 +295,7 @@ mod tests {
     fn test_patch_noop_without_placeholders() {
         let mut buf = fake_macho(b"/usr/lib/libSystem.B.dylib", 0, 4096);
         let orig = buf.clone();
-        let changed = patch(&mut buf, &standard_replacements(), Path::new("t")).unwrap();
+        let changed = patch(&mut buf, &test_replacements(), Path::new("t")).unwrap();
         assert!(!changed);
         assert_eq!(buf, orig);
     }

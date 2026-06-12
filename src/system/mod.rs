@@ -73,7 +73,15 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
                     Some(ManagerPackages { manager, requests })
                 }
                 None => {
-                    warn!("unknown system package manager '{name}' in [system.packages], ignoring");
+                    // brew is compiled out on Windows — not unknown, just
+                    // unsupported there
+                    if cfg!(windows) && name == "brew" {
+                        debug!("system package manager 'brew' is not supported on windows");
+                    } else {
+                        warn!(
+                            "unknown system package manager '{name}' in [system.packages], ignoring"
+                        );
+                    }
                     None
                 }
             }

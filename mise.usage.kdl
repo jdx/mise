@@ -2852,7 +2852,9 @@ Examples:
 
 """#
         flag "-m --manager" help="Only install packages for this manager, e.g. `apt` or `brew`" {
-            arg <MANAGER>
+            arg <MANAGER> {
+                choices apt brew dnf pacman
+            }
         }
         flag "-n --dry-run" help="Print the commands that would run without running them"
         flag "-y --yes" help="Skip the confirmation prompt"

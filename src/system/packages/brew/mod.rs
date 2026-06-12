@@ -1,12 +1,11 @@
 //! Homebrew formulae without Homebrew.
 //!
-//! On arm64 macOS, mise installs homebrew/core bottles directly into
-//! /opt/homebrew — fetching metadata from formulae.brew.sh, downloading
-//! bottles from ghcr.io, and doing the same relocation/codesigning work
-//! `brew` does at pour time. If a real Homebrew installation is detected,
-//! mise delegates to `brew` instead of touching the prefix itself; the
-//! receipts we write are brew-compatible, so a later-installed brew adopts
-//! mise-poured kegs seamlessly.
+//! mise installs homebrew/core bottles directly into the canonical prefix
+//! (/opt/homebrew on arm64 macOS, /home/linuxbrew/.linuxbrew on Linux) —
+//! fetching metadata from formulae.brew.sh, downloading bottles from
+//! ghcr.io, and doing the same relocation/codesigning work `brew` does at
+//! pour time. mise never shells out to brew; the receipts it writes are
+//! brew-compatible, so a real Homebrew sees mise-poured kegs as its own.
 //!
 //! Scope: formulae only. Taps require evaluating Ruby and are unsupported;
 //! casks and services are not implemented.
@@ -15,7 +14,6 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::cmd::CmdLineRunner;
 use crate::result::Result;
 
 mod api;
@@ -33,21 +31,6 @@ pub struct BrewManager {}
 impl BrewManager {
     pub fn new() -> Self {
         Self {}
-    }
-
-    async fn install_via_brew(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        let mut args = vec!["install".to_string()];
-        args.extend(pkgs.iter().map(|p| p.raw.clone()));
-        if opts.dry_run {
-            miseprintln!("brew {}", args.join(" "));
-            return Ok(());
-        }
-        info!("$ brew {}", args.join(" "));
-        let mut cmd = CmdLineRunner::new("brew");
-        for arg in &args {
-            cmd = cmd.arg(arg);
-        }
-        cmd.raw(true).execute()
     }
 
     async fn install_via_pour(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
@@ -128,10 +111,14 @@ impl SystemPackageManager for BrewManager {
 
     fn is_available(&self) -> bool {
         cfg!(all(target_os = "macos", target_arch = "aarch64"))
+            || cfg!(all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ))
     }
 
     fn unavailable_reason(&self) -> String {
-        "only available on arm64 macos".to_string()
+        "only available on arm64 macos and x86_64/arm64 linux".to_string()
     }
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
@@ -156,12 +143,6 @@ impl SystemPackageManager for BrewManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if prefix::real_brew_installed() {
-            // never share a poured prefix with a real brew — delegate
-            debug!("real Homebrew detected, delegating to brew");
-            self.install_via_brew(pkgs, opts).await
-        } else {
-            self.install_via_pour(pkgs, opts).await
-        }
+        self.install_via_pour(pkgs, opts).await
     }
 }

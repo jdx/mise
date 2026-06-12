@@ -77,13 +77,18 @@ impl SystemPackageManager for DnfManager {
             .stderr(Stdio::piped())
             .output()
             .await?;
-        // rpm -q exits nonzero when any package is not installed; those lines
-        // read "package X is not installed" and won't match the \t format
-        if !output.status.success() && output.stdout.is_empty() && !output.stderr.is_empty() {
-            bail!(
-                "rpm -q failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
+        // rpm -q exits nonzero when any package is not installed; "package X
+        // is not installed" goes to stdout or stderr depending on rpm version
+        // and won't match the \t format either way — absent packages parse as
+        // Missing. Only fail on rpm errors unrelated to missing packages.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !output.status.success()
+            && !stderr.is_empty()
+            && !stderr.lines().all(|l| {
+                l.trim().is_empty() || l.contains("is not installed") || l.contains("no packages")
+            })
+        {
+            bail!("rpm -q failed: {}", stderr.trim());
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(parse_rpm_query(&stdout, pkgs))

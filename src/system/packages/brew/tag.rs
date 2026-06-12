@@ -1,9 +1,10 @@
-//! Bottle tag selection for arm64 macOS.
+//! Bottle tag selection.
 //!
-//! Homebrew builds bottles per macOS version (`arm64_sequoia`, ...). A bottle
-//! built for an older macOS runs on a newer one, so we pick the newest tag
-//! that is <= the host version — the same logic brew uses — falling back to
-//! the version-independent `all` tag.
+//! On macOS, Homebrew builds bottles per OS version (`arm64_sequoia`, ...). A
+//! bottle built for an older macOS runs on a newer one, so we pick the newest
+//! tag that is <= the host version — the same logic brew uses — falling back
+//! to the version-independent `all` tag. Linux bottles have a single
+//! per-architecture tag (`x86_64_linux`, `arm64_linux`).
 
 use std::collections::HashMap;
 use std::sync::LazyLock as Lazy;
@@ -32,11 +33,17 @@ static MACOS_MAJOR: Lazy<u32> = Lazy::new(|| {
 
 /// Bottle tags acceptable on this machine, in preference order
 pub fn candidates() -> Vec<String> {
-    let mut tags: Vec<String> = MACOS_VERSIONS
-        .iter()
-        .filter(|(major, _)| *major <= *MACOS_MAJOR)
-        .map(|(_, name)| format!("arm64_{name}"))
-        .collect();
+    let mut tags: Vec<String> = if cfg!(target_os = "macos") {
+        MACOS_VERSIONS
+            .iter()
+            .filter(|(major, _)| *major <= *MACOS_MAJOR)
+            .map(|(_, name)| format!("arm64_{name}"))
+            .collect()
+    } else if cfg!(target_arch = "aarch64") {
+        vec!["arm64_linux".to_string()]
+    } else {
+        vec!["x86_64_linux".to_string()]
+    };
     tags.push("all".to_string());
     tags
 }
