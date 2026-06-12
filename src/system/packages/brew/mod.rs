@@ -17,6 +17,7 @@ use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPack
 use crate::result::Result;
 
 mod api;
+mod elf;
 mod fetch;
 mod macho;
 mod pour;
@@ -37,12 +38,10 @@ impl BrewManager {
         let roots: Vec<String> = pkgs.iter().map(|p| p.name.clone()).collect();
         let closure = resolve::resolve_closure(&roots).await?;
         for rf in &closure {
-            if rf.on_request && !roots.contains(&rf.formula.name) {
-                let alias = roots
-                    .iter()
-                    .find(|r| rf.formula.aliases.contains(r))
-                    .map(|s| s.as_str())
-                    .unwrap_or("?");
+            if rf.on_request
+                && !roots.contains(&rf.formula.name)
+                && let Some(alias) = roots.iter().find(|r| rf.formula.aliases.contains(r))
+            {
                 warn!(
                     "'{alias}' is an alias of '{}' — use the canonical name in [system.packages] \
                      so `mise system status` can track it",
@@ -50,15 +49,14 @@ impl BrewManager {
                 );
             }
         }
-        let to_pour: Vec<_> = closure
-            .iter()
-            .filter(|rf| {
-                rf.formula
-                    .pkg_version()
-                    .map(|v| !pour::keg_installed(&rf.formula.name, &v))
-                    .unwrap_or(false)
-            })
-            .collect();
+        let mut to_pour: Vec<_> = vec![];
+        for rf in &closure {
+            // a malformed version is an error, not "already poured"
+            let pkg_version = rf.formula.pkg_version()?;
+            if !pour::keg_installed(&rf.formula.name, &pkg_version) {
+                to_pour.push(rf);
+            }
+        }
         if to_pour.is_empty() {
             info!("brew: all formulae already poured");
             return Ok(());
@@ -80,6 +78,7 @@ impl BrewManager {
             return Ok(());
         }
         prefix::bootstrap(false)?;
+        prefix::setup_linux_runtime()?;
         let mut ledger = state::Ledger::load();
         for rf in &to_pour {
             let name = &rf.formula.name;

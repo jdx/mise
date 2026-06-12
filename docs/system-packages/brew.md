@@ -66,7 +66,11 @@ For each formula in the dependency closure (dependencies first):
    mise rewrites them to real paths — plain replacement in text files,
    in-place and load-command rewriting in Mach-O binaries (growing load
    commands into header padding when needed, exactly like brew's ruby-macho
-   does).
+   does). On Linux, the ELF interpreter and rpath are patched the way
+   brew's PatchELF gem does it: strings that no longer fit are moved into a
+   new segment appended to the binary, and the interpreter is pointed at
+   `<prefix>/lib/ld.so` (a symlink mise maintains to the system's dynamic
+   loader, or to a brewed glibc when one is installed).
 4. **Re-sign** (macOS): any modified binary is ad-hoc re-signed with
    `codesign` — required on arm64, where the kernel kills binaries whose
    signature doesn't match.

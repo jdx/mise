@@ -89,11 +89,16 @@ pub async fn pour(
     crate::file::rename(&inner, &tmp)?;
     crate::file::remove_all(&scratch)?;
 
-    // ":any_skip_relocation" bottles contain no embedded paths at all
-    let report = if bottle.cellar == ":any_skip_relocation" {
+    // ":any_skip_relocation" bottles need no relocation — except on Linux,
+    // where bottles built by Homebrew < 5.1.15 are incorrectly tagged and
+    // still carry placeholder ELF linkage (brew applies the same version
+    // check in extend/os/linux/bottle_specification.rb)
+    let skip_relocation = bottle.cellar == ":any_skip_relocation"
+        && (cfg!(target_os = "macos") || bottled_by_homebrew_at_least(&tmp, (5, 1, 15)));
+    let report = if skip_relocation {
         relocate::RelocationReport::default()
     } else {
-        relocate::relocate_keg(&tmp)?
+        relocate::relocate_keg(&tmp, name)?
     };
     // arm64 macOS kills binaries whose signature doesn't match; Linux ELF
     // files have no signatures to fix
@@ -115,6 +120,32 @@ pub async fn pour(
         return Err(err);
     }
     Ok(())
+}
+
+/// Was this bottle built by Homebrew >= `min`? Read from the receipt the
+/// bottle ships with (brew calls it the tab), before we overwrite it with our
+/// own. This mirrors brew's own `parsed_homebrew_version >= "5.1.15"` check —
+/// brew's version format is dotted numerics, not an arbitrary tool version.
+fn bottled_by_homebrew_at_least(keg: &Path, min: (u64, u64, u64)) -> bool {
+    let Ok(receipt) = crate::file::read_to_string(keg.join("INSTALL_RECEIPT.json")) else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&receipt) else {
+        return false;
+    };
+    let Some(version) = json.get("homebrew_version").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    // "5.1.16-31-ga1b2c3d" -> (5, 1, 16); unparseable -> (0, 0, 0) = old
+    let mut parts = version
+        .split(['.', '-', ' '])
+        .map(|p| p.parse::<u64>().unwrap_or(0));
+    let v = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    v >= min
 }
 
 /// brew-compatible INSTALL_RECEIPT.json so a later-installed real Homebrew

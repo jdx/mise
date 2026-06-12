@@ -30,7 +30,10 @@ impl AptManager {
     fn update(&self, opts: &InstallOpts) -> Result<()> {
         let args = vec!["update".to_string()];
         if opts.dry_run {
-            miseprintln!("{}", sudo::argv("apt-get", &args).join(" "));
+            miseprintln!(
+                "{}",
+                sudo::argv_with_env("apt-get", &args, &debian_frontend()).join(" ")
+            );
             return Ok(());
         }
         sudo::run("apt-get", &args, &debian_frontend())
@@ -139,7 +142,10 @@ impl SystemPackageManager for AptManager {
         // name=version pins and name:arch qualifiers
         args.extend(pkgs.iter().map(|p| p.raw.clone()));
         if opts.dry_run {
-            miseprintln!("{}", sudo::argv("apt-get", &args).join(" "));
+            miseprintln!(
+                "{}",
+                sudo::argv_with_env("apt-get", &args, &debian_frontend()).join(" ")
+            );
             return Ok(());
         }
         sudo::run("apt-get", &args, &debian_frontend())

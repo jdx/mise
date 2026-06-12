@@ -27,8 +27,13 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
     requests
         .iter()
         .map(|req| {
-            let state = match installed.get(req.name.as_str()) {
-                Some(version) => PackageState::Installed {
+            // entries can be bare names or rpm name-version-release specs;
+            // match either the exact name or a spec prefixed by it
+            let found = installed
+                .iter()
+                .find(|(name, _)| req.name == **name || req.name.starts_with(&format!("{name}-")));
+            let state = match found {
+                Some((_, version)) => PackageState::Installed {
                     version: version.to_string(),
                 },
                 None => PackageState::Missing,
@@ -117,8 +122,13 @@ mod tests {
     #[test]
     fn test_parse_rpm_query() {
         let mgr = DnfManager::new();
-        let requests = vec![mgr.parse_request("bc"), mgr.parse_request("nonexistent")];
-        let output = "bc\t1.07.1-14.fc39\npackage nonexistent is not installed\n";
+        let requests = vec![
+            mgr.parse_request("bc"),
+            mgr.parse_request("nonexistent"),
+            mgr.parse_request("bash-5.2.26-3.fc40"),
+        ];
+        let output =
+            "bc\t1.07.1-14.fc39\npackage nonexistent is not installed\nbash\t5.2.26-3.fc40\n";
         let statuses = parse_rpm_query(output, &requests);
         assert_eq!(
             statuses[0].state,
@@ -127,5 +137,12 @@ mod tests {
             }
         );
         assert_eq!(statuses[1].state, PackageState::Missing);
+        // name-version-release specs match by name prefix
+        assert_eq!(
+            statuses[2].state,
+            PackageState::Installed {
+                version: "5.2.26-3.fc40".to_string()
+            }
+        );
     }
 }

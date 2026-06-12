@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# e2e:writable-rootfs — installing a deb writes to /var and /usr, which the
+# e2e Docker sandbox mounts read-only by default
+
 # requires a Debian-ish Linux running as root (the CI container case);
 # elsewhere this test is a no-op
 if [[ "$(uname)" != "Linux" ]] || ! command -v apt-get >/dev/null || [[ "$(id -u)" != 0 ]]; then

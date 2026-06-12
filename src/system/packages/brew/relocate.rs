@@ -166,8 +166,12 @@ fn replace_in_binary(
 }
 
 /// Walk a poured keg and replace placeholders in all files.
-pub fn relocate_keg(keg: &Path) -> Result<RelocationReport> {
+pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> {
     let replacements = standard_replacements();
+    let elf_opts = super::elf::LinkageOpts::for_formula(formula_name);
+    // brew never patches glibc's own files — rewriting the dynamic linker
+    // breaks it (extend/os/linux/keg_relocate.rb)
+    let patch_elf = formula_name != "glibc" && !formula_name.starts_with("glibc@");
     let mut report = RelocationReport::default();
     for entry in walkdir::WalkDir::new(keg).follow_links(false) {
         let entry = entry?;
@@ -188,13 +192,14 @@ pub fn relocate_keg(keg: &Path) -> Result<RelocationReport> {
         );
         std::fs::set_permissions(path, writable)?;
         let macho = is_macho(&content);
-        // any file containing NUL bytes is treated as binary: in-place
-        // replacement that can't shift offsets
-        if macho || content.contains(&0) {
+        let elf = cfg!(target_os = "linux") && super::elf::is_elf(&content);
+        if macho || (!elf && content.contains(&0)) {
+            // any file containing NUL bytes is treated as binary: in-place
+            // replacement that can't shift offsets. Mach-O load commands
+            // first: proper rewriting that can grow a command when the
+            // replacement is longer; then the generic in-place pass for
+            // strings in data sections
             let mut content = content;
-            // Mach-O load commands first: proper rewriting that can grow a
-            // command when the replacement is longer; then the generic
-            // in-place pass for strings in data sections
             let mut changed = macho && super::macho::patch(&mut content, &replacements, path)?;
             changed |= replace_in_binary(&mut content, &replacements, path)?;
             if changed {
@@ -203,6 +208,18 @@ pub fn relocate_keg(keg: &Path) -> Result<RelocationReport> {
                     report.changed_machos.push(path.to_path_buf());
                 }
                 report.changed_files.push(path.to_path_buf());
+            }
+        } else if elf {
+            // Linux: patch the ELF interpreter and rpath, like brew's
+            // relocate_dynamic_linkage. brew does not rewrite other strings
+            // inside ELF binaries at pour time and neither do we — leftover
+            // placeholder copies in abandoned string tables are unreferenced.
+            if patch_elf {
+                let mut content = content;
+                if super::elf::patch(&mut content, &elf_opts, path)? {
+                    crate::file::write(path, &content)?;
+                    report.changed_files.push(path.to_path_buf());
+                }
             }
         } else {
             let new_content = replace_text(&content, &replacements);

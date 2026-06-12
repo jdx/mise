@@ -119,12 +119,13 @@ impl Install {
         if mgrs.is_empty() {
             return;
         }
+        let mut missing = 0;
         for mp in mgrs {
             if !mp.manager.is_available() {
                 continue;
             }
             if let Ok(statuses) = mp.manager.installed(&mp.requests).await {
-                let missing = statuses
+                missing += statuses
                     .iter()
                     .filter(|s| {
                         !matches!(
@@ -133,15 +134,14 @@ impl Install {
                         )
                     })
                     .count();
-                if missing > 0 {
-                    hint!(
-                        "system_packages_missing",
-                        "{missing} system package(s) from [system.packages] are missing. Install them with",
-                        "mise system install"
-                    );
-                    return;
-                }
             }
+        }
+        if missing > 0 {
+            hint!(
+                "system_packages_missing",
+                "{missing} system package(s) from [system.packages] are missing. Install them with",
+                "mise system install"
+            );
         }
     }
 

@@ -30,7 +30,11 @@ pub(crate) fn argv(program: &str, args: &[String]) -> Vec<String> {
     argv_with_env(program, args, &[])
 }
 
-fn argv_with_env(program: &str, args: &[String], envs: &[(String, String)]) -> Vec<String> {
+pub(crate) fn argv_with_env(
+    program: &str,
+    args: &[String],
+    envs: &[(String, String)],
+) -> Vec<String> {
     let mut argv = vec![];
     if !is_root() && Settings::get().system_packages.sudo {
         argv.push("sudo".to_string());
@@ -56,7 +60,16 @@ fn argv_with_env(program: &str, args: &[String], envs: &[(String, String)]) -> V
 /// - `system_packages.sudo = false`: never elevates; errors if not root
 pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> Result<()> {
     let argv = argv_with_env(program, args, envs);
-    let manual_cmd = format!("sudo {} {}", program, args.join(" "));
+    // the copy-pasteable fallback must include the env vars the automated
+    // path would have set (e.g. DEBIAN_FRONTEND=noninteractive)
+    let mut manual = vec!["sudo".to_string()];
+    if !envs.is_empty() {
+        manual.push("env".to_string());
+        manual.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
+    }
+    manual.push(program.to_string());
+    manual.extend(args.iter().cloned());
+    let manual_cmd = manual.join(" ");
     if !is_root() {
         if !Settings::get().system_packages.sudo {
             bail!(
@@ -65,9 +78,8 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
         }
         if crate::file::which("sudo").is_none() {
             bail!(
-                "sudo not found. Run as root:\n  {} {}",
-                program,
-                args.join(" ")
+                "sudo not found. Run as root:\n  {}",
+                manual_cmd.trim_start_matches("sudo ")
             );
         }
         if !console::user_attended_stderr() {

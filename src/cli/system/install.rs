@@ -56,6 +56,13 @@ impl SystemInstall {
             }
             let name = mp.manager.name();
             if !mp.manager.is_available() {
+                if self.manager.is_some() {
+                    // explicitly requested — failing silently would be a lie
+                    bail!(
+                        "{name} is not available: {}",
+                        mp.manager.unavailable_reason()
+                    );
+                }
                 debug!("{name}: skipping, {}", mp.manager.unavailable_reason());
                 continue;
             }
