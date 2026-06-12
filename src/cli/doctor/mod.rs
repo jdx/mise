@@ -191,6 +191,10 @@ impl Doctor {
         });
         data.insert("toolset".into(), tools.collect());
 
+        if let Some(system_packages) = self.system_packages_json(&config).await {
+            data.insert("system_packages".into(), system_packages);
+        }
+
         if !self.errors.is_empty() {
             data.insert("errors".into(), self.errors.clone().into_iter().collect());
         }
@@ -360,6 +364,126 @@ impl Doctor {
             Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
         }
 
+        self.analyze_system_packages(config).await?;
+
+        Ok(())
+    }
+
+    /// same diagnostics as [`Self::analyze_system_packages`] for `doctor -J`
+    async fn system_packages_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        if !Settings::get().experimental {
+            return None;
+        }
+        let mgrs = crate::system::packages_from_config(config);
+        if mgrs.is_empty() {
+            return None;
+        }
+        let mut map = serde_json::Map::new();
+        let mut total_missing = 0;
+        for mp in mgrs {
+            let name = mp.manager.name();
+            if mp.disabled || !mp.manager.is_available() {
+                let reason = if mp.disabled {
+                    "excluded by the system_packages.managers setting".to_string()
+                } else {
+                    mp.manager.unavailable_reason()
+                };
+                map.insert(
+                    name.into(),
+                    serde_json::json!({
+                        "available": false,
+                        "reason": reason,
+                        "requested": mp.requests.len(),
+                    }),
+                );
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    let missing = statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                    total_missing += missing;
+                    map.insert(
+                        name.into(),
+                        serde_json::json!({
+                            "available": true,
+                            "requested": statuses.len(),
+                            "missing": missing,
+                        }),
+                    );
+                }
+                Err(err) => self
+                    .warnings
+                    .push(format!("failed to check {name} system packages: {err}")),
+            }
+        }
+        if total_missing > 0 {
+            self.warnings.push(format!(
+                "{total_missing} system package(s) are missing, install them with `mise system install`"
+            ));
+        }
+        Some(map.into())
+    }
+
+    async fn analyze_system_packages(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        if !Settings::get().experimental {
+            return Ok(());
+        }
+        let mgrs = crate::system::packages_from_config(config);
+        if mgrs.is_empty() {
+            return Ok(());
+        }
+        let mut lines = vec![];
+        let mut total_missing = 0;
+        for mp in mgrs {
+            let name = mp.manager.name();
+            if mp.disabled || !mp.manager.is_available() {
+                let reason = if mp.disabled {
+                    "excluded by the system_packages.managers setting".to_string()
+                } else {
+                    mp.manager.unavailable_reason()
+                };
+                lines.push(format!(
+                    "{name}: unavailable ({reason}), {} package(s) skipped",
+                    mp.requests.len()
+                ));
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    let missing = statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                    lines.push(format!(
+                        "{name}: {} requested, {missing} missing",
+                        statuses.len()
+                    ));
+                    total_missing += missing;
+                }
+                Err(err) => self
+                    .warnings
+                    .push(format!("failed to check {name} system packages: {err}")),
+            }
+        }
+        if total_missing > 0 {
+            self.warnings.push(format!(
+                "{total_missing} system package(s) are missing, install them with `mise system install`"
+            ));
+        }
+        info::section("system_packages", lines.join("\n"))?;
         Ok(())
     }
 

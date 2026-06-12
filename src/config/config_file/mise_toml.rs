@@ -30,6 +30,7 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
+use crate::system::SystemTomlConfig;
 use crate::task::{Task, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -175,6 +176,8 @@ pub struct MiseToml {
     deps: Option<DepsConfig>,
     #[serde(default)]
     oci: Option<OciConfig>,
+    #[serde(default)]
+    system: Option<SystemTomlConfig>,
     #[serde(default)]
     vars: EnvList,
     #[serde(default)]
@@ -990,6 +993,10 @@ impl ConfigFile for MiseToml {
     fn oci_config(&self) -> Option<OciConfig> {
         self.oci.clone()
     }
+
+    fn system_config(&self) -> Option<SystemTomlConfig> {
+        self.system.clone()
+    }
 }
 
 /// Returns a [`toml_edit::Key`] from the given `key`.
@@ -1065,6 +1072,7 @@ impl Clone for MiseToml {
             watch_files: self.watch_files.clone(),
             deps: self.deps.clone(),
             oci: self.oci.clone(),
+            system: self.system.clone(),
             vars: self.vars.clone(),
             experimental_monorepo_root: self.experimental_monorepo_root,
             monorepo: self.monorepo.clone(),
@@ -2008,6 +2016,38 @@ mod tests {
             "{:#?}",
             cf.to_tool_request_set().unwrap().tools
         )));
+    }
+
+    #[tokio::test]
+    async fn test_system_packages() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [system.packages]
+        "apt:libssl-dev" = "latest"
+        "apt:curl" = "8.5.0-2"
+        "brew:postgresql@17" = "latest"
+        "future-manager:whatever" = "latest"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.system_config().unwrap();
+        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        // unknown managers parse fine (forward compatibility)
+        assert_eq!(
+            system.packages.get("future-manager:whatever").unwrap(),
+            "latest"
+        );
+
+        // no [system] section -> None
+        file::write(&p, "[tools]\n").unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        assert!(cf.system_config().is_none());
     }
 
     #[tokio::test]

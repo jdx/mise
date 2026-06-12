@@ -89,6 +89,17 @@ export default withMermaid(
             { text: "OCI Images (experimental)", link: "/dev-tools/mise-oci" },
             { text: "Deps", link: "/dev-tools/deps" },
             {
+              text: "System Packages (experimental)",
+              link: "/system-packages/",
+              collapsed: true,
+              items: [
+                { text: "apt", link: "/system-packages/apt" },
+                { text: "dnf", link: "/system-packages/dnf" },
+                { text: "pacman", link: "/system-packages/pacman" },
+                { text: "brew", link: "/system-packages/brew" },
+              ],
+            },
+            {
               text: "Backend Architecture",
               link: "/dev-tools/backend_architecture",
             },

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# Linuxbrew pour test: requires Linux x86_64/arm64 running as root (the CI
+# container case — root can create /home/linuxbrew without sudo) and network
+if [[ "$(uname)" != "Linux" ]] || [[ "$(id -u)" != 0 ]] || [[ -d /home/linuxbrew ]]; then
+  exit 0
+fi
+case "$(uname -m)" in
+  x86_64 | aarch64) ;;
+  *) exit 0 ;;
+esac
+
+# the guard above skips when /home/linuxbrew exists, so clean up even when
+# an assertion fails mid-test — otherwise a failed run masks later ones
+trap 'rm -rf /home/linuxbrew' EXIT
+
+cat <<EOF >mise.toml
+[system.packages]
+"brew:xz" = "latest"
+EOF
+
+assert_contains "mise system status" "missing"
+
+mise system install --yes
+assert_contains "mise system status" "installed"
+
+# the poured binary runs at the canonical prefix (relocation + linking worked)
+assert_contains "/home/linuxbrew/.linuxbrew/bin/xz --version" "xz"
+
+# idempotent
+assert_contains "mise system install --yes 2>&1" "already"

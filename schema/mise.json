@@ -1578,6 +1578,24 @@
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
         },
+        "system_packages": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "managers": {
+              "description": "[experimental] Restrict which system package managers mise will use.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "sudo": {
+              "default": true,
+              "description": "[experimental] Allow `mise system install` to elevate with sudo when not running as root.",
+              "type": "boolean"
+            }
+          }
+        },
         "task": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -2917,6 +2935,23 @@
       "$ref": "#/$defs/settings",
       "description": "mise settings",
       "type": "object"
+    },
+    "system": {
+      "type": "object",
+      "description": "[experimental] machine-global bootstrapping (system packages)",
+      "properties": {
+        "packages": {
+          "type": "object",
+          "description": "system packages to install with `mise system install`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_-]+:.+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "description": "version pin in the manager's native format, or \"latest\""
+          }
+        }
+      }
     },
     "task_config": {
       "description": "configuration for task execution and management",

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# e2e:writable-rootfs — installing a deb writes to /var and /usr, which the
+# e2e Docker sandbox mounts read-only by default
+
+# requires a Debian-ish Linux running as root (the CI container case);
+# elsewhere this test is a no-op
+if [[ "$(uname)" != "Linux" ]] || ! command -v apt-get >/dev/null || [[ "$(id -u)" != 0 ]]; then
+  exit 0
+fi
+
+cat <<EOF >mise.toml
+[system.packages]
+"apt:bc" = "latest"
+EOF
+
+apt-get remove -y bc >/dev/null 2>&1 || true
+
+assert_contains "mise system status" "missing"
+assert_fail "mise system status --missing"
+
+# dry-run prints the command without installing
+assert_contains "mise system install --dry-run" "apt-get install -y -- bc"
+assert_contains "mise system status" "missing"
+
+# explicit manager:package specs work, configured or not
+assert_contains "mise system install apt:bc --dry-run" "apt-get install -y -- bc"
+
+mise system install --yes
+assert_contains "mise system status" "installed"
+assert_succeed "mise system status --missing"
+assert_succeed "bc --version"
+
+# second install is a no-op
+assert_contains "mise system install --yes 2>&1" "already installed"

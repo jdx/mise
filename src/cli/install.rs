@@ -102,7 +102,85 @@ impl Install {
             }
             None => self.install_missing_runtimes(config).await?,
         };
+        self.hint_missing_system_packages().await;
         Ok(())
+    }
+
+    /// one-time hint when `[system.packages]` entries are missing — mise
+    /// never installs system packages implicitly
+    async fn hint_missing_system_packages(&self) {
+        // the status queries spawn package-manager processes; skip them
+        // entirely once the hint has been shown (or is disabled)
+        if !Settings::get().experimental
+            || !crate::hint::hint_would_display("system_packages_missing")
+        {
+            return;
+        }
+        let Ok(config) = Config::get().await else {
+            return;
+        };
+        let mgrs = crate::system::packages_from_config(&config);
+        if mgrs.is_empty() {
+            return;
+        }
+        // when everything is satisfied the hint never fires, so also
+        // throttle the checks to once per day — but only while the set of
+        // packages that would actually be checked is unchanged, so editing
+        // [system.packages] or widening system_packages.managers re-checks
+        // immediately
+        let fingerprint = mgrs
+            .iter()
+            .filter(|mp| !mp.disabled && mp.manager.is_available())
+            .flat_map(|mp| {
+                mp.requests
+                    .iter()
+                    .map(move |r| format!("{}:{}", mp.manager.name(), r))
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let checked = crate::dirs::STATE.join("system-packages-checked");
+        if checked
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age < std::time::Duration::from_secs(24 * 60 * 60))
+            && crate::file::read_to_string(&checked).is_ok_and(|prev| prev == fingerprint)
+        {
+            return;
+        }
+        let mut missing = 0;
+        let mut all_queries_ok = true;
+        for mp in mgrs {
+            if mp.disabled || !mp.manager.is_available() {
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    missing += statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                }
+                // a transient query failure must not start the 24h throttle
+                Err(_) => all_queries_ok = false,
+            }
+        }
+        if all_queries_ok {
+            let _ = crate::file::write(&checked, &fingerprint);
+        }
+        if missing > 0 {
+            hint!(
+                "system_packages_missing",
+                "{missing} system package(s) from [system.packages] are missing. Install them with",
+                "mise system install"
+            );
+        }
     }
 
     #[async_backtrace::framed]

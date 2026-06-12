@@ -148,6 +148,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn oci_config(&self) -> Option<crate::oci::OciConfig> {
         None
     }
+
+    fn system_config(&self) -> Option<crate::system::SystemTomlConfig> {
+        None
+    }
 }
 
 impl dyn ConfigFile {
