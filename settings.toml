@@ -1392,6 +1392,7 @@ hide = true
 type = "String"
 
 [minimum_release_age]
+default_docs = "24h"
 description = "Minimum release age / supply chain protection — only install versions older than this threshold"
 docs = """
 Filter tool versions by release date to limit supply chain risk. Similar to Renovate's
