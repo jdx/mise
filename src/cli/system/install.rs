@@ -93,50 +93,56 @@ impl SystemInstall {
             };
             system::files::apply(&config, &files, &apply_opts)?;
         }
-        self.apply_defaults(defaults).await
+        apply_defaults(defaults, self.dry_run, self.yes).await
     }
+}
 
-    async fn apply_defaults(&self, defaults: Vec<system::defaults::DefaultsRequest>) -> Result<()> {
-        use crate::system::defaults::{self, DefaultsState};
-        if defaults.is_empty() {
-            return Ok(());
-        }
-        if !defaults::is_available() {
-            // cross-platform config: [system.defaults] is simply inert off-macOS
-            debug!("defaults: skipping, {}", defaults::unavailable_reason());
-            return Ok(());
-        }
-        let statuses = defaults::status(&defaults).await?;
-        let targets: Vec<_> = statuses
-            .iter()
-            .filter(|s| s.state != DefaultsState::Set)
-            .map(|s| s.request.clone())
-            .collect();
-        let set = statuses.len() - targets.len();
-        if set > 0 {
-            info!("defaults: {set} value(s) already set");
-        }
-        if targets.is_empty() {
-            return Ok(());
-        }
-        let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
-        if !self.dry_run && !self.yes && console::user_attended_stderr() {
-            let msg = format!("defaults: write {}?", list.join(", "));
-            if !crate::ui::prompt::confirm(msg)? {
-                info!("defaults: skipped");
-                return Ok(());
-            }
-        }
-        defaults::apply(&targets, self.dry_run).await?;
-        if !self.dry_run {
-            info!(
-                "defaults: wrote {} — some apps only pick up changes after a relaunch \
-                 (e.g. `killall Dock`)",
-                list.join(", ")
-            );
-        }
-        Ok(())
+/// Apply `[system.defaults]` entries that are unset or differ — shared by
+/// `mise system install` and `mise bootstrap`. Inert off-macOS.
+pub(crate) async fn apply_defaults(
+    defaults: Vec<system::defaults::DefaultsRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    use crate::system::defaults::{self, DefaultsState};
+    if defaults.is_empty() {
+        return Ok(());
     }
+    if !defaults::is_available() {
+        // cross-platform config: [system.defaults] is simply inert off-macOS
+        debug!("defaults: skipping, {}", defaults::unavailable_reason());
+        return Ok(());
+    }
+    let statuses = defaults::status(&defaults).await?;
+    let targets: Vec<_> = statuses
+        .iter()
+        .filter(|s| s.state != DefaultsState::Set)
+        .map(|s| s.request.clone())
+        .collect();
+    let set = statuses.len() - targets.len();
+    if set > 0 {
+        info!("defaults: {set} value(s) already set");
+    }
+    if targets.is_empty() {
+        return Ok(());
+    }
+    let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("defaults: write {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)? {
+            info!("defaults: skipped");
+            return Ok(());
+        }
+    }
+    defaults::apply(&targets, dry_run).await?;
+    if !dry_run {
+        info!(
+            "defaults: wrote {} — some apps only pick up changes after a relaunch \
+             (e.g. `killall Dock`)",
+            list.join(", ")
+        );
+    }
+    Ok(())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

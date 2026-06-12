@@ -3236,12 +3236,12 @@ const completionSpec: Fig.Spec = {
     {
       name: "system",
       description:
-        "[experimental] Manage system packages from `[system.packages]` and files\nfrom `[system.files]`",
+        "[experimental] Manage system packages from `[system.packages]`, files\nfrom `[system.files]`, and macOS defaults from `[system.defaults]`",
       subcommands: [
         {
           name: ["install", "i"],
           description:
-            "Install missing system packages from `[system.packages]` and apply files\nfrom `[system.files]`",
+            "Install missing system packages from `[system.packages]`, apply files\nfrom `[system.files]`, and write macOS defaults from `[system.defaults]`",
           options: [
             {
               name: ["-f", "--force"],
@@ -3288,7 +3288,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["status", "ls"],
           description:
-            "Show the status of system packages from `[system.packages]` and files\nfrom `[system.files]`",
+            "Show the status of system packages from `[system.packages]`, files from\n`[system.files]`, and macOS defaults from `[system.defaults]`",
           options: [
             {
               name: ["-J", "--json"],
@@ -3298,7 +3298,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--missing",
               description:
-                "Exit with code 1 if any configured packages or files are not in their\ndesired state (missing, version mismatch, differs)",
+                "Exit with code 1 if any configured packages, files, or defaults are\nnot in their desired state (missing, version mismatch, differs)",
               isRepeatable: false,
             },
           ],

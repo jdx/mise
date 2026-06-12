@@ -2,7 +2,7 @@ use clap::Subcommand;
 use eyre::Result;
 
 pub(super) mod driver;
-mod install;
+pub(super) mod install;
 mod status;
 mod upgrade;
 #[path = "use.rs"]
