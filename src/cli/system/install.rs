@@ -38,6 +38,18 @@ impl SystemInstall {
         if let Some(only) = &self.manager
             && !mgrs.iter().any(|mp| mp.manager.name() == only)
         {
+            // distinguish "not configured" from "filtered out by settings" —
+            // the aggregation above drops managers excluded by
+            // system_packages.managers before we ever see them
+            if let Some(enabled) = &Settings::get().system_packages.managers
+                && !enabled.contains(only)
+            {
+                bail!(
+                    "manager '{only}' is excluded by the system_packages.managers setting \
+                     (currently: {})",
+                    enabled.join(", ")
+                );
+            }
             bail!("no [system.packages] entries for manager '{only}'");
         }
         if mgrs.is_empty() {

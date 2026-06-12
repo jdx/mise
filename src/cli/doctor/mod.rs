@@ -379,6 +379,7 @@ impl Doctor {
             return None;
         }
         let mut map = serde_json::Map::new();
+        let mut total_missing = 0;
         for mp in mgrs {
             let name = mp.manager.name();
             if !mp.manager.is_available() {
@@ -403,11 +404,7 @@ impl Doctor {
                             )
                         })
                         .count();
-                    if missing > 0 {
-                        self.warnings.push(format!(
-                            "{missing} system package(s) are missing, install them with `mise system install`"
-                        ));
-                    }
+                    total_missing += missing;
                     map.insert(
                         name.into(),
                         serde_json::json!({
@@ -422,6 +419,11 @@ impl Doctor {
                     .push(format!("failed to check {name} system packages: {err}")),
             }
         }
+        if total_missing > 0 {
+            self.warnings.push(format!(
+                "{total_missing} system package(s) are missing, install them with `mise system install`"
+            ));
+        }
         Some(map.into())
     }
 
@@ -434,6 +436,7 @@ impl Doctor {
             return Ok(());
         }
         let mut lines = vec![];
+        let mut total_missing = 0;
         for mp in mgrs {
             let name = mp.manager.name();
             if !mp.manager.is_available() {
@@ -459,16 +462,17 @@ impl Doctor {
                         "{name}: {} requested, {missing} missing",
                         statuses.len()
                     ));
-                    if missing > 0 {
-                        self.warnings.push(format!(
-                            "{missing} system package(s) are missing, install them with `mise system install`"
-                        ));
-                    }
+                    total_missing += missing;
                 }
                 Err(err) => self
                     .warnings
                     .push(format!("failed to check {name} system packages: {err}")),
             }
+        }
+        if total_missing > 0 {
+            self.warnings.push(format!(
+                "{total_missing} system package(s) are missing, install them with `mise system install`"
+            ));
         }
         info::section("system_packages", lines.join("\n"))?;
         Ok(())
