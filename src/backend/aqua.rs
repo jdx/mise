@@ -1012,7 +1012,7 @@ impl AquaBackend {
         let settings = Settings::get();
 
         // Check for GitHub artifact attestations (highest priority)
-        // The registry metadata (enabled flag, signer_workflow) is sufficient for
+        // The registry metadata (enabled flag, predicate_type, signer_workflow) is sufficient for
         // detection at lock-time. Actual cryptographic verification happens at
         // install time (always when locked_verify_provenance/paranoid is enabled,
         // or on first install when the lockfile doesn't yet have provenance).
@@ -1067,11 +1067,14 @@ impl AquaBackend {
         digest: &str,
     ) -> std::result::Result<bool, crate::github::sigstore::DetectError> {
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        crate::github::sigstore::detect_attestations(
+        crate::github::sigstore::detect_attestations_with_predicate_type(
             &pkg.repo_owner,
             &pkg.repo_name,
             github::API_URL,
             digest,
+            pkg.github_artifact_attestations
+                .as_ref()
+                .and_then(|att| att.predicate_type.as_deref()),
             self.use_versions_host_for_github_metadata(&repo),
         )
         .await
@@ -1158,12 +1161,17 @@ impl AquaBackend {
             .as_ref()
             .and_then(|att| att.signer_workflow.as_deref().map(unescape_regex_literal));
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let predicate_type = pkg
+            .github_artifact_attestations
+            .as_ref()
+            .and_then(|att| att.predicate_type.as_deref());
 
-        match crate::github::sigstore::verify_attestation(
+        match crate::github::sigstore::verify_attestation_with_predicate_type(
             artifact_path,
             &pkg.repo_owner,
             &pkg.repo_name,
             signer_workflow.as_deref(),
+            predicate_type,
             None,
             self.use_versions_host_for_github_metadata(&repo),
         )

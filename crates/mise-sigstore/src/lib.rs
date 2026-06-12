@@ -249,7 +249,7 @@ impl AttestationClient {
         Ok(headers)
     }
 
-    pub async fn fetch_attestations(&self, params: FetchParams) -> Result<Vec<Attestation>> {
+    fn attestations_url(&self, params: &FetchParams) -> Result<reqwest::Url> {
         let url = if let Some(repo) = &params.repo {
             format!(
                 "{}/repos/{repo}/attestations/{}",
@@ -266,8 +266,12 @@ impl AttestationClient {
         if let Some(predicate_type) = &params.predicate_type {
             query_params.push(("predicate_type", predicate_type.clone()));
         }
-        let url = reqwest::Url::parse_with_params(&url, query_params)
-            .map_err(|e| AttestationError::Api(format!("Invalid GitHub attestations URL: {e}")))?;
+        reqwest::Url::parse_with_params(&url, query_params)
+            .map_err(|e| AttestationError::Api(format!("Invalid GitHub attestations URL: {e}")))
+    }
+
+    pub async fn fetch_attestations(&self, params: FetchParams) -> Result<Vec<Attestation>> {
+        let url = self.attestations_url(&params)?;
 
         let response = self
             .client
@@ -1332,6 +1336,31 @@ pub async fn calculate_file_digest(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attestations_url_includes_predicate_type() {
+        let client = AttestationClient::builder()
+            .base_url("https://api.github.com")
+            .build()
+            .unwrap();
+        let url = client
+            .attestations_url(&FetchParams {
+                owner: "owner".to_string(),
+                repo: Some("owner/repo".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: Some("https://slsa.dev/provenance/v1".to_string()),
+            })
+            .unwrap();
+        let query: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+
+        assert_eq!(url.path(), "/repos/owner/repo/attestations/sha256:abc");
+        assert_eq!(query.get("per_page").map(String::as_str), Some("30"));
+        assert_eq!(
+            query.get("predicate_type").map(String::as_str),
+            Some("https://slsa.dev/provenance/v1")
+        );
+    }
 
     #[test]
     fn signer_workflow_requires_identity() {
