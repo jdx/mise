@@ -64,14 +64,25 @@ impl<'a> JavaOptions<'a> {
         self.values.str("release_type").unwrap_or("ga")
     }
 
-    fn lockfile_options(&self) -> BTreeMap<String, String> {
+    fn lockfile_options(
+        &self,
+        requested_version: &str,
+        shorthand_vendor: &str,
+    ) -> BTreeMap<String, String> {
         let mut opts = BTreeMap::new();
         let release_type = self.release_type();
         if release_type != "ga" {
             opts.insert("release_type".to_string(), release_type.to_string());
         }
+        if is_shorthand_java_request(requested_version) {
+            opts.insert("shorthand_vendor".to_string(), shorthand_vendor.to_string());
+        }
         opts
     }
+}
+
+fn is_shorthand_java_request(requested_version: &str) -> bool {
+    !requested_version.contains('-')
 }
 
 impl JavaPlugin {
@@ -480,7 +491,8 @@ impl Backend for JavaPlugin {
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         let raw_opts = request.options();
-        JavaOptions::new(&raw_opts).lockfile_options()
+        JavaOptions::new(&raw_opts)
+            .lockfile_options(&request.version(), &Settings::get().java.shorthand_vendor)
     }
 
     async fn resolve_lock_info(
@@ -794,19 +806,45 @@ mod tests {
 
     #[test]
     fn java_options_reads_release_type() {
+        let default_vendor = Settings::get().java.shorthand_vendor.clone();
         let default_opts = ToolVersionOptions::default();
         assert_eq!(JavaOptions::new(&default_opts).release_type(), "ga");
-        assert!(
-            JavaOptions::new(&default_opts)
-                .lockfile_options()
-                .is_empty()
+        assert_eq!(
+            JavaOptions::new(&default_opts).lockfile_options("17", &default_vendor),
+            BTreeMap::from([("shorthand_vendor".to_string(), default_vendor.clone())])
         );
 
         let opts = opts_with_release_type("ea");
         assert_eq!(JavaOptions::new(&opts).release_type(), "ea");
         assert_eq!(
-            JavaOptions::new(&opts).lockfile_options(),
-            BTreeMap::from([("release_type".to_string(), "ea".to_string())])
+            JavaOptions::new(&opts).lockfile_options("17", &default_vendor),
+            BTreeMap::from([
+                ("release_type".to_string(), "ea".to_string()),
+                ("shorthand_vendor".to_string(), default_vendor.clone())
+            ])
+        );
+    }
+
+    #[test]
+    fn java_lockfile_options_include_shorthand_vendor() {
+        let opts = ToolVersionOptions::default();
+
+        assert_eq!(
+            JavaOptions::new(&opts).lockfile_options("17", "temurin"),
+            BTreeMap::from([("shorthand_vendor".to_string(), "temurin".to_string())])
+        );
+        assert_eq!(
+            JavaOptions::new(&opts).lockfile_options("lts", "temurin"),
+            BTreeMap::from([("shorthand_vendor".to_string(), "temurin".to_string())])
+        );
+        assert_eq!(
+            JavaOptions::new(&opts).lockfile_options("17", "openjdk"),
+            BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())])
+        );
+        assert!(
+            JavaOptions::new(&opts)
+                .lockfile_options("temurin-17", "temurin")
+                .is_empty()
         );
     }
 }
