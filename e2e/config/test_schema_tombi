@@ -13,6 +13,7 @@ mise use -g tombi@$TOMBI_VERSION
 
 SCHEMA_PATH="$ROOT/schema/mise.json"
 TASK_SCHEMA_PATH="$ROOT/schema/mise-task.json"
+REGISTRY_TOOL_SCHEMA_PATH="$ROOT/schema/mise-registry-tool.json"
 TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
 TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
 assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
@@ -32,6 +33,10 @@ include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.to
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
 include = ["mise-task-os.toml"]
+
+[[schemas]]
+path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
+include = ["mise-registry-tool.toml"]
 EOF
 
 # Create a mise.toml exercising task properties that were previously broken
@@ -98,6 +103,15 @@ run = "echo ok"
 node = { version = "latest", os = ["linux/x64", "macos/arm64"], profile = "release" }
 TOML
 
+cat >"$HOME/workdir/mise-registry-tool.toml" <<'TOML'
+backends = [
+  { full = "aqua:ImageMagick/ImageMagick", platforms = ["windows-x64"] },
+  { full = "github:owner/repo", platforms = ["linux", "arm64"], options = { platforms = { linux-x64 = { asset_pattern = "tool-linux.tar.gz" }, darwin-aarch64 = { asset_pattern = "tool-darwin.tar.gz" } } } },
+]
+description = "Example tool"
+test = { cmd = "tool --version", expected = "tool {{version}}" }
+TOML
+
 # tombi lint should succeed with no errors (warnings about table order are ok)
 cd "$HOME/workdir"
 assert_succeed "$TOMBI_LINT mise.toml"
@@ -105,6 +119,7 @@ assert_succeed "$TOMBI_LINT mise-age.toml"
 assert_succeed "$TOMBI_LINT mise-env-directives.toml"
 assert_succeed "$TOMBI_LINT mise-os.toml"
 assert_succeed "$TOMBI_LINT mise-task-os.toml"
+assert_succeed "$TOMBI_LINT mise-registry-tool.toml"
 
 # Verify that invalid properties on tasks are rejected
 cat >"$HOME/workdir/mise-bad.toml" <<'TOML'
@@ -128,6 +143,10 @@ include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-directive.toml", 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
 include = ["mise-bad-task-os.toml", "mise-bad-task-tool-extra.toml"]
+
+[[schemas]]
+path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
+include = ["mise-bad-registry-tool.toml"]
 EOF
 
 assert_fail "$TOMBI_LINT mise-bad.toml"
@@ -200,3 +219,12 @@ node = { version = "latest", os = "linux/x64", backend_options = { nested = true
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-task-tool-extra.toml"
+
+cat >"$HOME/workdir/mise-bad-registry-tool.toml" <<'TOML'
+backends = [
+  { full = "github:owner/repo", platforms = ["windows-amd64"] },
+  { full = "github:owner/repo", options = { platforms = { linux-x64-musl = { asset_pattern = "tool-linux.tar.gz" } } } },
+]
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-registry-tool.toml"
