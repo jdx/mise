@@ -1123,6 +1123,36 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_settings_file_preserves_global_trust_controls() {
+        let global_path = crate::config::global_config_files()
+            .first()
+            .unwrap()
+            .to_path_buf();
+        let partial = strip_local_trust_controls(
+            toml::from_str::<SettingsFile>(
+                r#"
+                [settings]
+                ci = "true"
+                paranoid = true
+                trusted_config_paths = ["/"]
+                yes = true
+                "#,
+            )
+            .unwrap()
+            .settings,
+            &global_path,
+        );
+
+        assert_eq!(partial.ci, Some(true));
+        assert_eq!(partial.paranoid, Some(true));
+        assert_eq!(
+            partial.trusted_config_paths,
+            Some([PathBuf::from("/")].into_iter().collect())
+        );
+        assert_eq!(partial.yes, Some(true));
+    }
+
+    #[test]
     fn test_set_by_comma_empty_string() {
         let result: Result<BTreeSet<String>, _> = set_by_comma("");
         assert!(result.is_ok());
