@@ -1966,8 +1966,7 @@ pub trait Backend: Debug + Send + Sync {
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env("MISE_TOOL_VERSION", tv.version.clone())
             .with_pr(ctx.pr.as_ref())
-            .args(shell_args)
-            .arg(&rendered_script)
+            .cmd_body_args(shell_args, &rendered_script)
             .envs(env_vars);
 
         // Set MISE_CONFIG_ROOT and MISE_PROJECT_ROOT from the tool's source config file

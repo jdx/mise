@@ -254,7 +254,10 @@ impl Exec {
         }
 
         time!("exec");
-        exec_program(program, args, env, &sandbox).await
+        // shell_body_mode: true only for the `-c`/`--command` path, where
+        // parse_command synthesized `shell + [flags.., body]`. A positional
+        // command must not be reinterpreted as a shell body.
+        exec_program(program, args, env, &sandbox, self.c.is_some()).await
     }
 }
 
@@ -264,6 +267,7 @@ pub async fn exec_program<T, U>(
     args: U,
     env: BTreeMap<String, String>,
     sandbox: &SandboxConfig,
+    _shell_body_mode: bool,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -349,6 +353,7 @@ pub async fn exec_program<T, U>(
     args: U,
     env: BTreeMap<String, String>,
     sandbox: &SandboxConfig,
+    shell_body_mode: bool,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -408,13 +413,36 @@ where
         std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
     });
     let program = which::which_in(program, lookup_path, cwd)?;
-    let cmd = cmd::cmd(program, args);
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
 
     // Windows does not support exec in the same way as Unix,
     // so we emulate it instead by not handling Ctrl-C and letting
     // the child process deal with it instead.
     win_exec::set_ctrlc_handler()?;
 
+    // `mise exec -c "<cmd>"` spawns the configured shell as `cmd /c <cmd>`. For
+    // cmd, pass the command verbatim so inner double quotes survive (#9355).
+    // Gated on `shell_body_mode` (the `-c`/`--command` path) so a positional
+    // `mise exec -- cmd /c "echo one" two` is not reinterpreted as a shell body.
+    // cwd is intentionally inherited from the process here, matching the duct
+    // fallback below; the resolved `cwd` above governs program lookup only.
+    if shell_body_mode {
+        if let (Some(prog), [.., last]) = (program.to_str(), args.as_slice()) {
+            let flags: Vec<String> = args[..args.len() - 1]
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            let body = last.to_string_lossy();
+            if let Some(mut c) = crate::path::cmd_verbatim_command(prog, &flags, &body) {
+                match c.status()?.code() {
+                    Some(code) => std::process::exit(code),
+                    None => return Err(eyre!("command failed: terminated by signal")),
+                }
+            }
+        }
+    }
+
+    let cmd = cmd::cmd(program, args);
     let res = cmd.unchecked().run()?;
     match res.status.code() {
         Some(code) => {
@@ -430,6 +458,7 @@ pub async fn exec_program<T, U>(
     args: U,
     env: BTreeMap<String, String>,
     _sandbox: &SandboxConfig,
+    _shell_body_mode: bool,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
