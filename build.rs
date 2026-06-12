@@ -673,6 +673,12 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
             Some(v) => lines.push(format!("        deprecated_remove_at: Some({v:?}),")),
             None => lines.push("        deprecated_remove_at: None,".to_string()),
         }
+        lines.push(format!(
+            "        global_only: {},",
+            props
+                .get("global_only")
+                .is_some_and(|v| v.as_bool().unwrap())
+        ));
     };
     for (name, props) in &settings {
         let props = props.as_table().unwrap();
