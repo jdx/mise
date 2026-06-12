@@ -1,5 +1,31 @@
 # Changelog
 
+## [2026.6.5](https://github.com/jdx/mise/compare/v2026.6.4..v2026.6.5) - 2026-06-12
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support GitHub attestation predicate fields by @risu729 in [#10169](https://github.com/jdx/mise/pull/10169)
+- **(aqua)** canonicalize and reject duplicate vars by @risu729 in [#10187](https://github.com/jdx/mise/pull/10187)
+- **(config)** ignore local credential commands by @jdx in [#10356](https://github.com/jdx/mise/pull/10356)
+- **(config)** ignore local trust controls by @jdx in [#10357](https://github.com/jdx/mise/pull/10357)
+- **(schema)** forbid task-only bool fields on task templates by @risu729 in [#10242](https://github.com/jdx/mise/pull/10242)
+- **(schema)** allow registry backend platform selectors by @risu729 in [#10358](https://github.com/jdx/mise/pull/10358)
+- **(task)** require trust for config-less task includes by @jdx in [#10355](https://github.com/jdx/mise/pull/10355)
+
+### 🧪 Testing
+
+- **(windows)** restore github token env in e2e by @jdx in [#10359](https://github.com/jdx/mise/pull/10359)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:deb docker digest to 5b1ef5e by @renovate[bot] in [#10349](https://github.com/jdx/mise/pull/10349)
+- update ghcr.io/jdx/mise:alpine docker digest to 1218930 by @renovate[bot] in [#10348](https://github.com/jdx/mise/pull/10348)
+- update ghcr.io/jdx/mise:rpm docker digest to 5907998 by @renovate[bot] in [#10350](https://github.com/jdx/mise/pull/10350)
+
+### Chore
+
+- **(ci)** bump pr-closer action by @jdx in [#10354](https://github.com/jdx/mise/pull/10354)
+
 ## [2026.6.4](https://github.com/jdx/mise/compare/v2026.6.3..v2026.6.4) - 2026-06-12
 
 ### 🚀 Features
