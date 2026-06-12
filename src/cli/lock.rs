@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
+use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBuilder};
@@ -257,10 +257,7 @@ impl Lock {
     /// Get the before_date from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled during tool request resolution.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(minimum_release_age) = &self.minimum_release_age {
-            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
-        }
-        Ok(None)
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 
     fn is_unfiltered_lock_run(&self) -> bool {

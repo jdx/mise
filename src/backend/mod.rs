@@ -1601,16 +1601,21 @@ pub trait Backend: Debug + Send + Sync {
             let version = latest.version.clone();
             match before_date {
                 Some(before) => {
-                    let versions = self
-                        .list_remote_versions_with_info_with_refresh(config, refresh)
-                        .await?;
-                    fallback_refresh = false;
-                    let info = latest
-                        .created_at
-                        .as_ref()
-                        .map(|_| &latest)
-                        .or_else(|| versions.iter().find(|v| v.version == version));
-                    if latest_stable_candidate_allowed_by_before_date(&version, info, before) {
+                    let allowed = if latest.created_at.is_some() {
+                        latest_stable_candidate_allowed_by_before_date(
+                            &version,
+                            Some(&latest),
+                            before,
+                        )
+                    } else {
+                        let versions = self
+                            .list_remote_versions_with_info_with_refresh(config, refresh)
+                            .await?;
+                        fallback_refresh = false;
+                        let info = versions.iter().find(|v| v.version == version);
+                        latest_stable_candidate_allowed_by_before_date(&version, info, before)
+                    };
+                    if allowed {
                         return Ok(Some(version));
                     }
                 }
@@ -2785,7 +2790,7 @@ mod latest_version_tests {
             Some("3.0.0")
         );
         assert_eq!(backend.stable_calls(), 0);
-        assert_eq!(backend.list_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
     }
 
     #[tokio::test]
