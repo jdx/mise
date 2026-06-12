@@ -10,6 +10,9 @@ use async_trait::async_trait;
 use crate::result::Result;
 
 pub mod apt;
+pub mod brew;
+pub mod dnf;
+pub mod pacman;
 
 /// A single package entry from `[system.packages]`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -79,7 +82,12 @@ pub trait SystemPackageManager: Send + Sync {
 }
 
 pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
-    vec![Arc::new(apt::AptManager::new())]
+    vec![
+        Arc::new(apt::AptManager::new()),
+        Arc::new(brew::BrewManager::new()),
+        Arc::new(dnf::DnfManager::new()),
+        Arc::new(pacman::PacmanManager::new()),
+    ]
 }
 
 pub fn get_manager(name: &str) -> Option<Arc<dyn SystemPackageManager>> {

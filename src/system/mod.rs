@@ -38,8 +38,13 @@ pub struct ManagerPackages {
 /// Additive union, global -> local, deduped preserving first-seen order: a
 /// project config can add requirements on top of the global ones but not
 /// remove them. Unknown managers warn (forward compatibility) and are
-/// skipped.
+/// skipped. The `system_packages.managers` setting restricts which managers
+/// are used at all.
 pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
+    let enabled = crate::config::Settings::get()
+        .system_packages
+        .managers
+        .clone();
     let mut raw: IndexMap<String, Vec<String>> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
@@ -55,14 +60,22 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
         }
     }
     raw.into_iter()
-        .filter_map(|(name, raws)| match packages::get_manager(&name) {
-            Some(manager) => {
-                let requests = raws.iter().map(|r| manager.parse_request(r)).collect();
-                Some(ManagerPackages { manager, requests })
+        .filter_map(|(name, raws)| {
+            if let Some(enabled) = &enabled
+                && !enabled.contains(&name)
+            {
+                debug!("system package manager '{name}' disabled by system_packages.managers");
+                return None;
             }
-            None => {
-                warn!("unknown system package manager '{name}' in [system.packages], ignoring");
-                None
+            match packages::get_manager(&name) {
+                Some(manager) => {
+                    let requests = raws.iter().map(|r| manager.parse_request(r)).collect();
+                    Some(ManagerPackages { manager, requests })
+                }
+                None => {
+                    warn!("unknown system package manager '{name}' in [system.packages], ignoring");
+                    None
+                }
             }
         })
         .collect()

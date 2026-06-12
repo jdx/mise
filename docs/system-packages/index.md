@@ -15,6 +15,15 @@ the OS package manager. Use them for shared libraries and build dependencies
 that dev tools need (`libssl-dev`, `postgresql`, `ffmpeg`), not for the dev
 tools themselves — those belong in `[tools]`.
 
+## Supported package managers
+
+| Manager  | Platform                                 | Page                                   |
+| -------- | ---------------------------------------- | -------------------------------------- |
+| `apt`    | Debian, Ubuntu                           | [apt](/system-packages/apt.html)       |
+| `dnf`    | Fedora, RHEL, CentOS, Rocky, Alma        | [dnf](/system-packages/dnf.html)       |
+| `pacman` | Arch, Manjaro                            | [pacman](/system-packages/pacman.html) |
+| `brew`   | macOS (arm64) — **no Homebrew required** | [brew](/system-packages/brew.html)     |
+
 ## Semantics
 
 - **Declarative and additive** — entries merge across the
@@ -22,7 +31,8 @@ tools themselves — those belong in `[tools]`.
   project can add packages on top of the global list but not remove them.
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are silently skipped, so the same config works across platforms.
-  `apt` entries are ignored on macOS, `brew` entries on Linux.
+  `apt` entries are ignored on macOS, `brew` entries on Linux, `dnf` entries
+  on Ubuntu, and so on.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
   missing, but only `mise system install` ever installs anything.
@@ -40,52 +50,60 @@ mise system install           # install whatever is missing (prompts first)
 mise system install --dry-run # print the commands without running them
 mise system install --yes     # skip the confirmation prompt
 mise system install --manager apt
+mise system install --update  # refresh package manager metadata first
 ```
 
 `mise doctor` also reports configured system packages and warns when any are
 missing.
 
-## apt (Linux)
+## Choosing which managers run
 
-Package state is checked with `dpkg-query`; missing packages are installed
-with `apt-get install -y`. Entries pass through to apt verbatim, so apt's
-native syntax works:
+By default mise acts on every configured manager that is available on the
+current machine. Since availability implies the OS (`apt` only exists on
+Debian-family systems, `brew` only on macOS), this usually does the right
+thing without configuration.
+
+If more than one manager could apply — several package managers installed on
+one machine, or a shared config listing managers you don't want here — pick a
+subset with the [`system_packages.managers`](/configuration/settings.html)
+setting:
 
 ```toml
-[system.packages]
-apt = [
-  "libssl-dev",
-  "curl=8.5.0-2ubuntu10", # version pin
-  "gcc:arm64",            # architecture qualifier
-]
+[settings]
+system_packages.managers = ["apt"]
 ```
 
-If `/var/lib/apt/lists` is empty (fresh containers), mise runs
-`apt-get update` first automatically. Force a refresh with
-`mise system install --update`.
+This composes with [platform-specific config files](/configuration.html)
+(`mise.macos.toml`, `mise.linux.toml`) when you want different selections per
+OS.
 
-### sudo
+## sudo
 
-When not running as root, mise elevates with `sudo`, which prompts for your
-password as usual. This is the only place mise ever elevates privileges, and
-it only happens during an explicit `mise system install`:
+The Linux package managers require root. When not running as root, mise
+elevates with `sudo`, which prompts for your password as usual. This is the
+only place mise ever elevates privileges, and it only happens during an
+explicit `mise system install`:
 
 - already root (containers, CI): no sudo, commands run directly
-- interactive terminal: `sudo apt-get install ...` with a normal sudo prompt
+- interactive terminal: e.g. `sudo apt-get install ...` with a normal sudo
+  prompt
 - non-interactive without passwordless sudo: mise errors and prints the exact
   command to run manually — it never hangs waiting for a password
 - the full command line is logged before it runs
 
 Set [`system_packages.sudo = false`](/configuration/settings.html) to forbid
 elevation entirely; mise will print the command for you to run yourself
-instead.
+instead. The `brew` manager never needs sudo except once to create
+`/opt/homebrew` (see [brew](/system-packages/brew.html)).
 
-## brew (macOS)
+## CI usage
 
-::: warning
-Not yet implemented — coming in a future release.
-:::
+In containers you're typically already root, so no prompts occur:
 
-On macOS, mise will install [Homebrew](https://brew.sh) formulae _without
-requiring brew to be installed_, by downloading bottles directly into
-`/opt/homebrew`. If brew is already installed, mise delegates to it instead.
+```sh
+mise system install --yes
+mise install
+```
+
+`mise system status --missing` exits 1 when packages are missing, which makes
+a convenient CI check without installing anything.

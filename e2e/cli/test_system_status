@@ -4,6 +4,8 @@ cat <<EOF >mise.toml
 [system.packages]
 apt = ["bc"]
 brew = ["jq"]
+dnf = ["bc"]
+pacman = ["bc"]
 EOF
 
 # status renders on any platform; unavailable managers are skipped, not errors

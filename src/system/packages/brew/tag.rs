@@ -1,0 +1,58 @@
+//! Bottle tag selection for arm64 macOS.
+//!
+//! Homebrew builds bottles per macOS version (`arm64_sequoia`, ...). A bottle
+//! built for an older macOS runs on a newer one, so we pick the newest tag
+//! that is <= the host version — the same logic brew uses — falling back to
+//! the version-independent `all` tag.
+
+use std::collections::HashMap;
+use std::sync::LazyLock as Lazy;
+
+use crate::cmd::cmd;
+
+use super::api::BottleFile;
+
+/// macOS major version -> bottle tag suffix, newest first
+const MACOS_VERSIONS: &[(u32, &str)] = &[
+    (26, "tahoe"),
+    (15, "sequoia"),
+    (14, "sonoma"),
+    (13, "ventura"),
+    (12, "monterey"),
+    (11, "big_sur"),
+];
+
+static MACOS_MAJOR: Lazy<u32> = Lazy::new(|| {
+    cmd("sw_vers", ["-productVersion"])
+        .read()
+        .ok()
+        .and_then(|v| v.trim().split('.').next()?.parse().ok())
+        .unwrap_or(0)
+});
+
+/// Bottle tags acceptable on this machine, in preference order
+pub fn candidates() -> Vec<String> {
+    let mut tags: Vec<String> = MACOS_VERSIONS
+        .iter()
+        .filter(|(major, _)| *major <= *MACOS_MAJOR)
+        .map(|(_, name)| format!("arm64_{name}"))
+        .collect();
+    tags.push("all".to_string());
+    tags
+}
+
+/// Pick the best bottle for this machine from a formula's `files` map.
+/// Returns the tag and the bottle entry.
+pub fn select<'a>(files: &'a HashMap<String, BottleFile>) -> Option<(String, &'a BottleFile)> {
+    candidates()
+        .into_iter()
+        .find_map(|tag| files.get(&tag).map(|f| (tag, f)))
+}
+
+/// The host's exact preferred tag (for `variations` lookups)
+pub fn host_tag() -> String {
+    candidates()
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| "all".to_string())
+}

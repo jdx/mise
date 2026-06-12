@@ -1582,6 +1582,13 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "managers": {
+              "description": "[experimental] Restrict which system package managers mise will use.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "sudo": {
               "default": true,
               "description": "[experimental] Allow `mise system install` to elevate with sudo when not running as root.",
@@ -2942,14 +2949,28 @@
               "items": {
                 "type": "string"
               },
-              "description": "apt packages (linux), e.g. \"libssl-dev\" or \"curl=8.5.0-2\""
+              "description": "apt packages (debian/ubuntu), e.g. \"libssl-dev\" or \"curl=8.5.0-2\""
             },
             "brew": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": "Homebrew formulae (macOS), e.g. \"postgresql@17\""
+              "description": "Homebrew formulae (arm64 macOS, no brew required), e.g. \"postgresql@17\""
+            },
+            "dnf": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "dnf packages (fedora/rhel), e.g. \"openssl-devel\""
+            },
+            "pacman": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "pacman packages (arch), e.g. \"base-devel\""
             }
           },
           "additionalProperties": {
