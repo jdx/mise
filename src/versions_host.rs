@@ -227,8 +227,8 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
         return Ok(None);
     }
 
-    // Use TOML format which includes created_at timestamps
-    let url = format!("https://mise-versions.jdx.dev/tools/{}.toml", tool);
+    // Use the static TOML asset which includes created_at timestamps.
+    let url = version_list_url(tool);
     let versions: Vec<VersionInfo> = match HTTP_FETCH
         .get_text_request(&url)
         .headers(&VERSIONS_HOST_HEADERS)
@@ -612,6 +612,10 @@ fn track_install_url(tool: &str) -> String {
     )
 }
 
+fn version_list_url(tool: &str) -> String {
+    format!("https://mise-versions.jdx.dev/data/{}.toml", tool)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -629,6 +633,14 @@ mod tests {
         assert_eq!(
             track_install_url("node"),
             "https://mise-versions.jdx.dev/api/tools/node"
+        );
+    }
+
+    #[test]
+    fn test_version_list_url_uses_static_asset_path() {
+        assert_eq!(
+            version_list_url("node"),
+            "https://mise-versions.jdx.dev/data/node.toml"
         );
     }
 
