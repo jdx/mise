@@ -20,7 +20,7 @@ use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::{ConfigFile, config_trust_root, trust_check};
+use crate::config::config_file::{ConfigFile, config_trust_root, is_path_trusted, trust_check};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
@@ -542,7 +542,12 @@ impl Config {
             // to parse for trusted files. Untrusted non-MiseToml files (like
             // .tool-versions) don't need trust and will parse fine regardless.
             let trust_root = config_file::config_trust_root(&path);
-            if !config_file::is_trusted(&trust_root) && !config_file::is_trusted(&path) {
+            if !config_file::is_trusted(&trust_root)
+                && !config_file::is_trusted(&path)
+                // safe mise.toml files load without a trust marker, so a missing
+                // marker doesn't mean they should be skipped here
+                && !MiseToml::path_is_trust_exempt(&path)
+            {
                 debug!("skipping untrusted tracked config: {}", display_path(&path));
                 continue;
             }
@@ -2533,6 +2538,9 @@ async fn load_file_tasks(
     let config_root = Arc::new(config_root.to_path_buf());
     let cf_root = cf.config_root();
     let task_config_dir = cf.task_config().dir.clone();
+    // a config can only vouch for task include files when it was actually
+    // trusted — safe configs load without trust and cannot vouch for anything
+    let require_task_include_trust = !is_path_trusted(cf.get_path());
 
     for include in includes {
         let paths = if include.starts_with("git::") {
@@ -2547,7 +2555,7 @@ async fn load_file_tasks(
                 &config_root,
                 &task_config_dir,
                 templates,
-                false,
+                require_task_include_trust,
             )
             .await?;
             if is_global_task_include_path(&path) {
@@ -2600,7 +2608,9 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
-    let require_task_include_trust = configs.is_empty();
+    // a config can only vouch for task include files when it was actually
+    // trusted — safe configs load without trust and cannot vouch for anything
+    let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
 
     let (includes, resolve_dir) = configs
         .iter()
@@ -2661,10 +2671,28 @@ pub async fn load_tasks_in_dir(
 }
 
 fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
-    if require_trust && !is_global_task_include_path(path) {
+    if require_trust && !is_global_task_include_path(path) && task_include_requires_trust(path) {
         trust_check(path)?;
     }
     Ok(())
+}
+
+/// Template-free task files are inert at load time: TOML and `#MISE` headers
+/// are only parsed, and the scripts themselves only run on an explicit
+/// `mise run`. Templates are what can execute code while tasks load (via
+/// exec() etc. when task fields render), so only files containing template
+/// syntax need trust. Paranoid mode keeps requiring trust for everything.
+fn task_include_requires_trust(path: &Path) -> bool {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+        return true;
+    }
+    let Ok(body) = file::read_to_string(path) else {
+        // can't read it — fall back to requiring trust
+        return true;
+    };
+    // literal delimiters, plus escaped ones (e.g. `{{`) that decode to
+    // templates after TOML parsing and would render at load time
+    contains_template_syntax(&body) || crate::task::file_has_decoded_template(path, &body)
 }
 
 async fn load_task_file(

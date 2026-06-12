@@ -18,11 +18,13 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value}
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
+use crate::config::config_file::{
+    ConfigFile, TaskConfig, config_trust_root, is_ignored, trust, trust_check,
+};
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap, Config};
+use crate::config::{Alias, AliasMap, Config, Settings};
 use crate::deps::DepsConfig;
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
@@ -273,7 +275,9 @@ impl MiseToml {
     }
 
     pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
-        trust_check(path)?;
+        if !Self::is_trust_exempt(body, path) {
+            trust_check(path)?;
+        }
         trace!("parsing: {}", display_path(path));
         let des = toml::Deserializer::parse(body).map_err(|e| toml_parse_error(&e, body, path))?;
         let de_res = serde_ignored::deserialize(des, |p| {
@@ -300,6 +304,32 @@ impl MiseToml {
         }
         // trace!("{}", rf.dump()?);
         Ok(rf)
+    }
+
+    /// Whether the config file at `path` loads without trust (see
+    /// [`Self::is_trust_exempt`]). Returns false for unreadable files and for
+    /// non-mise.toml files (e.g. `.tool-versions`), which have their own flow.
+    pub fn path_is_trust_exempt(path: &Path) -> bool {
+        file::read_to_string(path).is_ok_and(|body| Self::is_trust_exempt(&body, path))
+    }
+
+    /// Whether this config body can be loaded without trusting the file.
+    ///
+    /// Safe configs cannot execute code or change mise's behavior beyond
+    /// requesting tool versions and defining tasks, so there is nothing to
+    /// gate behind a trust prompt. Anything else — env vars, hooks, settings,
+    /// aliases, templates, tool options like `postinstall`/`install_env` —
+    /// still requires trust.
+    fn is_trust_exempt(body: &str, path: &Path) -> bool {
+        if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+            return false;
+        }
+        // configs the user chose to ignore should stay unloaded rather than
+        // becoming loadable because their content happens to be safe
+        if is_ignored(&config_trust_root(path)) || is_ignored(path) {
+            return false;
+        }
+        is_safe_config_body(body)
     }
 
     fn doc(&self) -> eyre::Result<DocumentMut> {
@@ -1947,6 +1977,67 @@ impl<'de> de::Deserialize<'de> for Alias {
     }
 }
 
+/// A config body is safe to load without trust when nothing in it can execute
+/// code at load time or change mise's behavior without an explicit user
+/// action:
+/// - `min_version` is inert
+/// - `[tools]` entries with plain version strings only matter when the user
+///   runs something like `mise install`. Entries with options (tables) are
+///   excluded because options like `postinstall` and `install_env` run code
+///   or alter the install environment.
+/// - `[tasks]` definitions are inert until the user explicitly runs one
+/// - no Tera template syntax anywhere — templates render while config and
+///   tasks load and can run arbitrary commands via exec()
+fn is_safe_config_body(body: &str) -> bool {
+    // Fast reject: literal Tera delimiters in the raw text.
+    if contains_template_syntax(body) {
+        return false;
+    }
+    let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) else {
+        // let the normal trust + parse flow handle invalid TOML
+        return false;
+    };
+    // The raw-body check above misses escaped delimiters that TOML decodes,
+    // e.g. `"{{ exec(...) }}"` becomes `{{ exec(...) }}`
+    // after parsing and would still render via Tera. Re-check every decoded
+    // string (keys and values, at any depth) so no exec()-capable template
+    // can slip through into tool versions or task fields.
+    if toml_table_has_template(&table) {
+        return false;
+    }
+    table.iter().all(|(key, value)| match key.as_str() {
+        "min_version" | "tasks" => true,
+        "tools" => value.as_table().is_some_and(|tools| {
+            tools.values().all(|version| match version {
+                toml::Value::String(_) => true,
+                toml::Value::Array(versions) => {
+                    versions.iter().all(|v| matches!(v, toml::Value::String(_)))
+                }
+                _ => false,
+            })
+        }),
+        _ => false,
+    })
+}
+
+/// Whether any decoded string (table key or value, at any depth) contains
+/// Tera template syntax. Used to catch escaped delimiters (e.g. `{{`)
+/// that a raw-text scan misses but that still render after TOML parsing.
+pub(crate) fn toml_value_has_template(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::String(s) => contains_template_syntax(s),
+        toml::Value::Array(arr) => arr.iter().any(toml_value_has_template),
+        toml::Value::Table(t) => toml_table_has_template(t),
+        _ => false,
+    }
+}
+
+fn toml_table_has_template(table: &toml::Table) -> bool {
+    table
+        .iter()
+        .any(|(k, v)| contains_template_syntax(k) || toml_value_has_template(v))
+}
+
 fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
     let mut last = None;
     for k in tools.keys() {
@@ -1965,7 +2056,7 @@ fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
 mod tests {
     use std::sync::Arc;
 
-    use indoc::formatdoc;
+    use indoc::{formatdoc, indoc};
     use insta::{assert_debug_snapshot, assert_snapshot};
     use test_log::test;
 
@@ -2574,6 +2665,75 @@ run = 'echo "template"'
 
     fn parse_env(toml: String) -> String {
         parse(toml).env_entries().unwrap().into_iter().join("\n")
+    }
+
+    #[test]
+    fn test_is_safe_config_body() {
+        assert!(is_safe_config_body(""));
+        assert!(is_safe_config_body(indoc! {r#"
+        min_version = "2024.1.1"
+        [tools]
+        node = "20"
+        python = ["3.11", "3.12"]
+        "cargo:eza" = "latest"
+        "#}));
+        // tasks are inert until the user explicitly runs one
+        assert!(is_safe_config_body(indoc! {r#"
+        [tasks.build]
+        run = "cargo build"
+        dir = "src"
+        env = { FOO = "bar" }
+        [tasks.test]
+        depends = ["build"]
+        run = ["cargo test"]
+        "#}));
+
+        // templates can execute commands
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        node = "{{ exec(command='echo 20') }}"
+        "#}));
+        // tool options like postinstall/install_env run code
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        node = { version = "20", postinstall = "corepack enable" }
+        "#}));
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        node = [{ version = "20" }]
+        "#}));
+        // tasks with templates render (and can exec) while loading
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tasks.build]
+        run = "cargo build"
+        description = "{{ exec(command='echo hi') }}"
+        "#}));
+        // escaped Tera delimiters ({ == '{', } == '}') decode to
+        // `{{ exec(...) }}` after TOML parsing and must not bypass the check
+        assert!(!is_safe_config_body(
+            "[tools]\nnode = \"\\u007b\\u007b exec(command='echo 20') \\u007d\\u007d\"\n"
+        ));
+        assert!(!is_safe_config_body(
+            "[tasks.build]\nrun = \"cargo build\"\ndescription = \"\\u007b\\u007b exec(command='echo hi') \\u007d\\u007d\"\n"
+        ));
+        // an escaped delimiter in a key must also be caught
+        assert!(!is_safe_config_body(
+            "[tasks]\n\"\\u007b\\u007b exec() \\u007d\\u007d\" = { run = \"x\" }\n"
+        ));
+        // anything beyond min_version/tools/tasks requires trust
+        for body in [
+            "[env]\nFOO = \"bar\"",
+            "[task_config]\nincludes = [\"tasks.toml\"]",
+            "[hooks]\nenter = \"echo hi\"",
+            "[settings]\nparanoid = false",
+            "[alias]\nnode = \"asdf:foo/bar\"",
+            "[plugins]\nfoo = \"https://example.com/foo.git\"",
+            "env_file = \".env\"",
+        ] {
+            assert!(!is_safe_config_body(body), "should require trust: {body}");
+        }
+        // invalid toml falls back to the normal trust + parse flow
+        assert!(!is_safe_config_body("[tools"));
     }
 
     #[tokio::test]

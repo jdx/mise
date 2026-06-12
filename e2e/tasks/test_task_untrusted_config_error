@@ -5,18 +5,29 @@
 
 # Ensure we start with a clean slate - no trusted configs
 export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
 
-# Create a config file with a task
+# A config that only defines tasks is safe: tasks execute nothing until the
+# user explicitly runs one, so no trust is required
 cat <<EOF >mise.toml
 [tasks.make]
 run = "echo 'hello from task'"
 EOF
 
-# Running a task from an untrusted config should give a helpful error
-# It should either:
+assert_contains "MISE_YES=0 mise run make" "hello from task"
+
+# Unsafe configs (here: [env]) still require trust. Running a task from one
+# should give a helpful error message:
 # 1. Prompt the user to trust the config (when interactive), or
 # 2. Show a clear "config not trusted" error (not "no tasks defined")
-#
+cat <<EOF >mise.toml
+[env]
+FOO = "bar"
+
+[tasks.make]
+run = "echo 'hello from task'"
+EOF
+
 # This test verifies we don't get the misleading "no tasks defined" error
 output=$(MISE_YES=0 mise run make 2>&1 || true)
 
