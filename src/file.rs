@@ -1408,7 +1408,7 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
 
 #[cfg(not(windows))]
 pub fn inspect_7z_contents(_archive: &Path) -> Result<Vec<(String, bool)>> {
-    unimplemented!("7z format not supported on this platform")
+    bail!("7z format not supported on this platform")
 }
 
 /// Determines if strip_components=1 should be applied based on archive structure
@@ -2045,6 +2045,20 @@ mod tests {
 
         assert!(
             format!("{err:#}").contains("untar only supports tar formats"),
+            "{err:#}"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_should_strip_components_7z_errors_on_non_windows() {
+        use tempfile::NamedTempFile;
+
+        let archive = NamedTempFile::new().unwrap();
+        let err = should_strip_components(archive.path(), TarFormat::SevenZip).unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("7z format not supported on this platform"),
             "{err:#}"
         );
     }
