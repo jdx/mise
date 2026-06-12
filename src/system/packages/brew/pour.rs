@@ -273,51 +273,47 @@ fn can_overwrite(dest: &Path) -> bool {
 }
 
 /// Create the opt symlink and (unless keg-only) link the keg's public dirs
-/// into the prefix.
+/// into the prefix. Conflicts are detected before anything is touched, and a
+/// failure partway through removes the links already created — the caller
+/// rolls the keg back on error, and nothing may be left dangling into it.
 pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
     let prefix_path = prefix::prefix();
     let keg = keg_path(name, pkg_version);
-
     // <prefix>/opt/<name> -> ../Cellar/<name>/<version> (always, even keg-only)
     let opt_link = prefix_path.join("opt").join(name);
-    crate::file::create_dir_all(opt_link.parent().unwrap())?;
-    if opt_link.symlink_metadata().is_ok() {
-        crate::file::remove_file(&opt_link)?;
-    }
-    crate::file::make_symlink(&relative_target(&keg, &opt_link), &opt_link)?;
 
+    let mut conflicts: Vec<PathBuf> = vec![];
+    // (dest in prefix, target in keg); opt first
+    let mut links: Vec<(PathBuf, PathBuf)> = vec![(opt_link.clone(), keg.clone())];
     if keg_only {
         debug!(
             "{name} is keg-only, not linking into {}",
             prefix_path.display()
         );
-        return Ok(());
-    }
-
-    let mut conflicts: Vec<PathBuf> = vec![];
-    let mut links: Vec<(PathBuf, PathBuf)> = vec![]; // (dest in prefix, target in keg)
-    for dir in LINK_DIRS {
-        let src_root = keg.join(dir);
-        if !src_root.exists() {
-            continue;
-        }
-        for entry in walkdir::WalkDir::new(&src_root).follow_links(false) {
-            let entry = entry?;
-            if entry.file_type().is_dir() {
+    } else {
+        for dir in LINK_DIRS {
+            let src_root = keg.join(dir);
+            if !src_root.exists() {
                 continue;
             }
-            let rel = entry.path().strip_prefix(&keg)?;
-            let dest = prefix_path.join(rel);
-            if !can_overwrite(&dest) {
-                conflicts.push(dest);
-            } else {
-                links.push((dest, entry.path().to_path_buf()));
+            for entry in walkdir::WalkDir::new(&src_root).follow_links(false) {
+                let entry = entry?;
+                if entry.file_type().is_dir() {
+                    continue;
+                }
+                let rel = entry.path().strip_prefix(&keg)?;
+                let dest = prefix_path.join(rel);
+                if !can_overwrite(&dest) {
+                    conflicts.push(dest);
+                } else {
+                    links.push((dest, entry.path().to_path_buf()));
+                }
             }
         }
     }
     if !conflicts.is_empty() {
-        // the caller rolls the keg back on this error, so don't claim it
-        // remains usable
+        // nothing has been linked yet, and the caller rolls the keg back on
+        // this error — so don't claim it remains usable
         bail!(
             "cannot link {name}: these files already exist and were not created by mise or brew:\n{}\n\
              Remove or rename them, then re-run `mise system install`",
@@ -328,12 +324,33 @@ pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
                 .join("\n"),
         );
     }
-    for (dest, target) in links {
-        crate::file::create_dir_all(dest.parent().unwrap())?;
-        if dest.symlink_metadata().is_ok() {
-            crate::file::remove_file(&dest)?;
+    // remember the previous opt target (upgrades) so a failed link restores it
+    let prev_opt = std::fs::read_link(&opt_link).ok();
+    let mut created: Vec<PathBuf> = vec![];
+    let mut failure: Option<eyre::Report> = None;
+    for (dest, target) in &links {
+        let made = (|| -> Result<()> {
+            crate::file::create_dir_all(dest.parent().unwrap())?;
+            if dest.symlink_metadata().is_ok() {
+                crate::file::remove_file(dest)?;
+            }
+            crate::file::make_symlink(&relative_target(target, dest), dest)?;
+            Ok(())
+        })();
+        if let Err(err) = made {
+            failure = Some(err);
+            break;
         }
-        crate::file::make_symlink(&relative_target(&target, &dest), &dest)?;
+        created.push(dest.clone());
+    }
+    if let Some(err) = failure {
+        for dest in created {
+            let _ = crate::file::remove_file(&dest);
+        }
+        if let Some(prev) = prev_opt {
+            let _ = crate::file::make_symlink(&prev, &opt_link);
+        }
+        return Err(err);
     }
     Ok(())
 }
