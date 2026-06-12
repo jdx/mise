@@ -265,7 +265,8 @@ pub fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> Result<b
 
     // in-place when the new string fits in the old one's slot
     let interp_in_place = match (&interp, &new_interp) {
-        (Some(p), Some(s)) => s.len() + 1 <= p.p_filesz as usize,
+        // the string plus its NUL terminator must fit in the old slot
+        (Some(p), Some(s)) => s.len() < p.p_filesz as usize,
         _ => true, // nothing to move
     };
     let rpath_in_place = match (&old_rpath, &new_rpath_str) {

@@ -116,7 +116,15 @@ pub async fn pour(
     // never leave a half-installed keg: if linking fails (conflicts, IO),
     // remove the keg so the next install retries from scratch
     if let Err(err) = link_keg(name, &pkg_version, rf.formula.keg_only) {
-        let _ = crate::file::remove_all(&keg);
+        if let Err(rm_err) = crate::file::remove_all(&keg) {
+            // a keg left behind here is unlinked but looks installed, so
+            // future installs would skip it — make that state visible
+            warn!(
+                "failed to remove {} after link failure: {rm_err}\n\
+                 remove it manually, then re-run `mise system install`",
+                keg.display()
+            );
+        }
         return Err(err);
     }
     Ok(())
@@ -308,15 +316,16 @@ pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
         }
     }
     if !conflicts.is_empty() {
+        // the caller rolls the keg back on this error, so don't claim it
+        // remains usable
         bail!(
             "cannot link {name}: these files already exist and were not created by mise or brew:\n{}\n\
-             The keg is installed and usable at {}",
+             Remove or rename them, then re-run `mise system install`",
             conflicts
                 .iter()
                 .map(|p| format!("  {}", p.display()))
                 .collect::<Vec<_>>()
                 .join("\n"),
-            keg.display(),
         );
     }
     for (dest, target) in links {

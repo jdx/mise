@@ -66,6 +66,7 @@ pub async fn resolve_closure(roots: &[String]) -> Result<Vec<ResolvedFormula>> {
     let mut sorted: Vec<ResolvedFormula> = vec![];
     let mut done: HashSet<String> = HashSet::new();
     let mut visiting: Vec<String> = vec![];
+    #[allow(clippy::too_many_arguments)]
     fn visit(
         name: &str,
         host_tag: &str,

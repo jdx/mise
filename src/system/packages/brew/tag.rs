@@ -50,7 +50,7 @@ pub fn candidates() -> Vec<String> {
 
 /// Pick the best bottle for this machine from a formula's `files` map.
 /// Returns the tag and the bottle entry.
-pub fn select<'a>(files: &'a HashMap<String, BottleFile>) -> Option<(String, &'a BottleFile)> {
+pub fn select(files: &HashMap<String, BottleFile>) -> Option<(String, &BottleFile)> {
     candidates()
         .into_iter()
         .find_map(|tag| files.get(&tag).map(|f| (tag, f)))

@@ -51,13 +51,10 @@ fn has_path_string(cmd: u32) -> bool {
 fn replace_all(s: &[u8], replacements: &[Replacement]) -> Vec<u8> {
     let mut out = s.to_vec();
     for r in replacements {
-        loop {
-            let Some(pos) = out
-                .windows(r.placeholder.len())
-                .position(|w| w == r.placeholder)
-            else {
-                break;
-            };
+        while let Some(pos) = out
+            .windows(r.placeholder.len())
+            .position(|w| w == r.placeholder)
+        {
             out.splice(pos..pos + r.placeholder.len(), r.value.iter().cloned());
         }
     }
