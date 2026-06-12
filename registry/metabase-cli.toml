@@ -1,0 +1,3 @@
+backends = ["npm:@metabase/cli"]
+description = "Command-line interface for Metabase, the open-source business intelligence platform. Manage questions, dashboards, databases, and other Metabase resources from the terminal"
+test = { cmd = "mb --version", expected = "{{version}}" }
