@@ -13,7 +13,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
-use crate::registry::REGISTRY;
+use crate::registry::{REGISTRY, shorts_for_full};
 use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -1066,12 +1066,13 @@ impl AquaBackend {
         pkg: &AquaPackage,
         digest: &str,
     ) -> std::result::Result<bool, crate::github::sigstore::DetectError> {
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         crate::github::sigstore::detect_attestations(
             &pkg.repo_owner,
             &pkg.repo_name,
             github::API_URL,
             digest,
-            backend_arg_matches_registry_backend(&self.ba),
+            self.use_versions_host_for_github_metadata(&repo),
         )
         .await
     }
@@ -1156,6 +1157,7 @@ impl AquaBackend {
             .github_artifact_attestations
             .as_ref()
             .and_then(|att| att.signer_workflow.as_deref().map(unescape_regex_literal));
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
 
         match crate::github::sigstore::verify_attestation(
             artifact_path,
@@ -1163,7 +1165,7 @@ impl AquaBackend {
             &pkg.repo_name,
             signer_workflow.as_deref(),
             None,
-            backend_arg_matches_registry_backend(&self.ba),
+            self.use_versions_host_for_github_metadata(&repo),
         )
         .await
         {
@@ -1503,10 +1505,10 @@ impl AquaBackend {
     }
 
     fn use_versions_host_for_github_metadata(&self, repo: &str) -> bool {
-        if !backend_arg_matches_registry_backend(&self.ba) {
+        let full = self.ba.full_without_opts();
+        if !backend_arg_matches_registry_backend(&self.ba) && shorts_for_full(&full).is_empty() {
             return false;
         }
-        let full = self.ba.full_without_opts();
         let Some(aqua_id) = full.strip_prefix("aqua:") else {
             return false;
         };
@@ -2749,13 +2751,19 @@ mod tests {
     }
 
     #[test]
-    fn test_use_versions_host_for_github_metadata_only_for_registry_backends() {
+    fn test_use_versions_host_for_github_metadata_only_for_registry_tools() {
         let registry_backend = AquaBackend::from_arg(BackendArg::new(
             "act".to_string(),
             Some("aqua:nektos/act".to_string()),
         ));
         assert!(registry_backend.use_versions_host_for_github_metadata("nektos/act"));
         assert!(!registry_backend.use_versions_host_for_github_metadata("sigstore/foreign"));
+
+        let explicit_registry_backend = AquaBackend::from_arg(BackendArg::new(
+            "nektos/act".to_string(),
+            Some("aqua:nektos/act".to_string()),
+        ));
+        assert!(explicit_registry_backend.use_versions_host_for_github_metadata("nektos/act"));
 
         let subpackage_backend = AquaBackend::from_arg(BackendArg::new(
             "fly".to_string(),
