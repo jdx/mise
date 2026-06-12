@@ -228,6 +228,7 @@ pub struct AquaMinisign {
 #[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
     pub enabled: Option<bool>,
+    pub predicate_type: Option<String>,
     pub signer_workflow: Option<String>,
 }
 
@@ -1316,6 +1317,9 @@ impl AquaGithubArtifactAttestations {
         if let Some(enabled) = other.enabled {
             self.enabled = Some(enabled);
         }
+        if let Some(predicate_type) = other.predicate_type {
+            self.predicate_type = Some(predicate_type);
+        }
         if let Some(signer_workflow) = other.signer_workflow {
             self.signer_workflow = Some(signer_workflow);
         }
@@ -1376,6 +1380,30 @@ packages:
 
         assert_eq!(pkg.replacements.get("386"), Some(&"i686".to_string()));
         assert_eq!(pkg.vars[0].default.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn test_github_artifact_attestations_predicate_type() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - github_artifact_attestations:
+      enabled: true
+      predicate_type: https://slsa.dev/provenance/v1
+      signer_workflow: canonical-workflow.yml
+"#,
+        );
+
+        let attestations = pkg.github_artifact_attestations.unwrap();
+        assert_eq!(attestations.enabled, Some(true));
+        assert_eq!(
+            attestations.predicate_type.as_deref(),
+            Some("https://slsa.dev/provenance/v1")
+        );
+        assert_eq!(
+            attestations.signer_workflow.as_deref(),
+            Some("canonical-workflow.yml")
+        );
     }
 
     #[test]
