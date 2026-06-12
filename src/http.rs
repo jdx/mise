@@ -52,6 +52,7 @@ struct RetryState {
 struct SendOnceOptions {
     use_netrc: bool,
     retry_github_oauth_401: bool,
+    error_for_status: bool,
     retry_state: Option<RetryStateHandle>,
 }
 
@@ -60,14 +61,21 @@ impl SendOnceOptions {
         Self {
             use_netrc,
             retry_github_oauth_401: true,
+            error_for_status: true,
             retry_state,
         }
+    }
+
+    fn allow_error_status(mut self) -> Self {
+        self.error_for_status = false;
+        self
     }
 
     fn recursive_retry(&self) -> Self {
         Self {
             use_netrc: false,
             retry_github_oauth_401: false,
+            error_for_status: self.error_for_status,
             retry_state: self.retry_state.clone(),
         }
     }
@@ -156,6 +164,17 @@ impl Client {
             .await?;
         resp.error_for_status_ref()?;
         Ok(resp)
+    }
+
+    pub async fn get_async_with_headers_allow_error_status<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<Response> {
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
+        let url = url.into_url().unwrap();
+        self.send_with_https_fallback_allow_error_status(Method::GET, url, headers, "GET")
+            .await
     }
 
     pub async fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
@@ -400,6 +419,25 @@ impl Client {
             headers,
             verb_label,
             Settings::get().http_retries,
+            true,
+        )
+        .await
+    }
+
+    async fn send_with_https_fallback_allow_error_status(
+        &self,
+        method: Method,
+        url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+    ) -> Result<Response> {
+        self.send_with_https_fallback_with_retries(
+            method,
+            url,
+            headers,
+            verb_label,
+            Settings::get().http_retries,
+            false,
         )
         .await
     }
@@ -411,6 +449,7 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
         retries: i64,
+        error_for_status: bool,
     ) -> Result<Response> {
         let retry_state = Arc::new(Mutex::new(RetryState {
             headers: headers.clone(),
@@ -428,6 +467,7 @@ impl Client {
                 verb_label,
                 Some(retry_state.clone()),
                 use_netrc,
+                error_for_status,
             )
             .await
         })
@@ -449,7 +489,7 @@ impl Client {
         verb_label: &str,
     ) -> Result<Response> {
         self.send_once_with_https_fallback_with_retry_headers(
-            method, url, headers, verb_label, None, true,
+            method, url, headers, verb_label, None, true, true,
         )
         .await
     }
@@ -462,6 +502,7 @@ impl Client {
         verb_label: &str,
         retry_state: Option<RetryStateHandle>,
         use_netrc: bool,
+        error_for_status: bool,
     ) -> Result<Response> {
         match self
             .send_once_with_retry_headers(
@@ -471,6 +512,7 @@ impl Client {
                 verb_label,
                 retry_state.clone(),
                 use_netrc,
+                error_for_status,
             )
             .await
         {
@@ -485,6 +527,7 @@ impl Client {
                     verb_label,
                     retry_state,
                     use_netrc,
+                    error_for_status,
                 )
                 .await
             }
@@ -500,15 +543,16 @@ impl Client {
         verb_label: &str,
         retry_state: Option<RetryStateHandle>,
         use_netrc: bool,
+        error_for_status: bool,
     ) -> Result<Response> {
-        self.send_once_inner(
-            method,
-            url,
-            headers,
-            verb_label,
-            SendOnceOptions::new(retry_state, use_netrc),
-        )
-        .await
+        let options = SendOnceOptions::new(retry_state, use_netrc);
+        let options = if error_for_status {
+            options
+        } else {
+            options.allow_error_status()
+        };
+        self.send_once_inner(method, url, headers, verb_label, options)
+            .await
     }
 
     async fn send_once_inner(
@@ -603,7 +647,9 @@ impl Client {
                 }
             }
         }
-        if is_authenticated_github_forbidden(&url, &final_headers, &resp) {
+        if options.error_for_status
+            && is_authenticated_github_forbidden(&url, &final_headers, &resp)
+        {
             let status = resp.status();
             let status_error = resp
                 .error_for_status_ref()
@@ -632,7 +678,9 @@ impl Client {
             }
             return Err(status_error.into());
         }
-        resp.error_for_status_ref()?;
+        if options.error_for_status {
+            resp.error_for_status_ref()?;
+        }
         Ok(resp)
     }
 }
@@ -668,6 +716,7 @@ impl TextRequest<'_> {
                 &headers,
                 "GET",
                 self.retries,
+                true,
             )
             .await?;
         let text = resp.text().await?;

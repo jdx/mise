@@ -284,12 +284,12 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
 }
 
 pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
-    let key = format!("{repo}-{tag}").to_kebab_case();
+    let key = format!("{repo}-{tag}-versions-host-true").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     cache
         .get_or_try_init_async_if(
-            async || get_release_(API_URL, repo, tag).await,
+            async || get_release_with_options(API_URL, repo, tag, true).await,
             should_cache_release,
         )
         .await
@@ -359,10 +359,6 @@ fn pick_best_build_revision(releases: Vec<GithubRelease>, version: &str) -> Opti
                 .and_then(|s| s.parse::<u32>().ok())
                 .unwrap_or(0)
         })
-}
-
-async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
-    get_release_with_options(api_url, repo, tag, true).await
 }
 
 async fn get_release_with_options(
@@ -977,6 +973,46 @@ something_else = "value"
             .await
             .unwrap();
         assert_eq!(release.assets.len(), 1);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_versions_host_flag_splits_release_cache() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/versions-host-cache-split-test";
+        let tag = "v1.0.0";
+        let path = format!("/repos/{repo}/releases/tags/{tag}");
+        let true_key = format!("{}-{repo}-{tag}-versions-host-true", server.url()).to_kebab_case();
+
+        {
+            let cache_group = get_release_cache(&true_key).await;
+            let cache = cache_group.get(&true_key).unwrap();
+            cache
+                .write(&GithubRelease {
+                    assets: vec![make_asset("cached-from-versions-host.tar.gz")],
+                    ..make_release(tag)
+                })
+                .unwrap();
+        }
+
+        let direct_release = GithubRelease {
+            assets: vec![make_asset("direct-github-api.tar.gz")],
+            ..make_release(tag)
+        };
+        let mock = server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&direct_release).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, false)
+            .await
+            .unwrap();
+        assert_eq!(release.assets[0].name, "direct-github-api.tar.gz");
         mock.assert_async().await;
     }
 }

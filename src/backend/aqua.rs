@@ -1318,7 +1318,8 @@ impl AquaBackend {
                     minisign_config.repo_name.as_ref(),
                     pkg,
                 );
-                let url = github::get_release(&format!("{repo_owner}/{repo_name}"), v)
+                let url = self
+                    .get_github_release(&format!("{repo_owner}/{repo_name}"), v)
                     .await?
                     .assets
                     .into_iter()
@@ -1501,6 +1502,29 @@ impl AquaBackend {
         }
     }
 
+    fn use_versions_host_for_github_metadata(&self, repo: &str) -> bool {
+        if !backend_arg_matches_registry_backend(&self.ba) {
+            return false;
+        }
+        let full = self.ba.full_without_opts();
+        let Some(aqua_id) = full.strip_prefix("aqua:") else {
+            return false;
+        };
+        let aqua_id = aqua_id.to_ascii_lowercase();
+        let repo = repo.to_ascii_lowercase();
+        aqua_id == repo || aqua_id.starts_with(&format!("{repo}/"))
+    }
+
+    async fn get_github_release(&self, repo: &str, tag: &str) -> Result<github::GithubRelease> {
+        github::get_release_for_url_with_versions_host(
+            github::API_URL,
+            repo,
+            tag,
+            self.use_versions_host_for_github_metadata(repo),
+        )
+        .await
+    }
+
     async fn latest_marked_release_version(&self) -> Result<Option<String>> {
         if Settings::get().offline() {
             trace!("Skipping latest stable version due to offline mode");
@@ -1528,7 +1552,7 @@ impl AquaBackend {
         }
 
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let release = match github::get_release(&repo, "latest").await {
+        let release = match self.get_github_release(&repo, "latest").await {
             Ok(release) => release,
             Err(e) => {
                 debug!(
@@ -1669,7 +1693,7 @@ impl AquaBackend {
         prefer_musl: bool,
     ) -> Result<(String, Option<String>)> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let gh_release = github::get_release(&gh_id, v).await?;
+        let gh_release = self.get_github_release(&gh_id, v).await?;
 
         // Prioritize order of asset_strs
         let asset = select_github_release_asset(&gh_release.assets, &asset_strs, prefer_musl)
@@ -2722,6 +2746,30 @@ mod tests {
             default: None,
             required,
         }
+    }
+
+    #[test]
+    fn test_use_versions_host_for_github_metadata_only_for_registry_backends() {
+        let registry_backend = AquaBackend::from_arg(BackendArg::new(
+            "act".to_string(),
+            Some("aqua:nektos/act".to_string()),
+        ));
+        assert!(registry_backend.use_versions_host_for_github_metadata("nektos/act"));
+        assert!(!registry_backend.use_versions_host_for_github_metadata("sigstore/foreign"));
+
+        let subpackage_backend = AquaBackend::from_arg(BackendArg::new(
+            "fly".to_string(),
+            Some("aqua:concourse/concourse/fly".to_string()),
+        ));
+        assert!(subpackage_backend.use_versions_host_for_github_metadata("concourse/concourse"));
+
+        let direct_backend = AquaBackend::from_arg(BackendArg::new(
+            "aws/session-manager-plugin".to_string(),
+            Some("aqua:aws/session-manager-plugin".to_string()),
+        ));
+        assert!(
+            !direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin")
+        );
     }
 
     #[test]
