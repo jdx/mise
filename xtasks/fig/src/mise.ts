@@ -695,6 +695,29 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
+      name: "bootstrap",
+      description:
+        "[experimental] Set up a machine for the current config in one command",
+      options: [
+        {
+          name: ["-n", "--dry-run"],
+          description: "Print what would happen without installing anything",
+          isRepeatable: false,
+        },
+        {
+          name: ["-y", "--yes"],
+          description: "Skip confirmation prompts",
+          isRepeatable: false,
+        },
+        {
+          name: "--update",
+          description:
+            "Refresh system package manager metadata first (apt: `apt-get update`)",
+          isRepeatable: false,
+        },
+      ],
+    },
+    {
       name: "cache",
       description: "Manage the mise cache",
       subcommands: [
@@ -3213,13 +3236,19 @@ const completionSpec: Fig.Spec = {
     {
       name: "system",
       description:
-        "[experimental] Manage system packages from `[system.packages]` and macOS\ndefaults from `[system.defaults]`",
+        "[experimental] Manage system packages from `[system.packages]` and files\nfrom `[system.files]`",
       subcommands: [
         {
           name: ["install", "i"],
           description:
-            "Install missing system packages from `[system.packages]` and apply macOS\ndefaults from `[system.defaults]`",
+            "Install missing system packages from `[system.packages]` and apply files\nfrom `[system.files]`",
           options: [
+            {
+              name: ["-f", "--force"],
+              description:
+                "Overwrite existing files that conflict with `[system.files]` entries",
+              isRepeatable: false,
+            },
             {
               name: ["-m", "--manager"],
               description:
@@ -3259,7 +3288,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["status", "ls"],
           description:
-            "Show the status of system packages from `[system.packages]` and macOS\ndefaults from `[system.defaults]`",
+            "Show the status of system packages from `[system.packages]` and files\nfrom `[system.files]`",
           options: [
             {
               name: ["-J", "--json"],
@@ -3269,7 +3298,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--missing",
               description:
-                "Exit with code 1 if any configured packages are missing or defaults are out of sync",
+                "Exit with code 1 if any configured packages or files are missing",
               isRepeatable: false,
             },
           ],

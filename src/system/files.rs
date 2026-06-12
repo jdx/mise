@@ -166,14 +166,26 @@ pub fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
     if !req.source.exists() {
         return Ok(FileState::SourceMissing);
     }
+    // render at most once per call — templates may use exec()
+    let rendered = match req.mode {
+        FileMode::Template => Some(render_template(config, req)?),
+        _ => None,
+    };
+    check_rendered(req, rendered.as_deref())
+}
+
+/// [`check`] with template output already rendered, so callers that go on to
+/// write the file render only once (templates may use `exec()`, which must
+/// not run more often than necessary)
+fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState> {
     match req.mode {
         FileMode::Symlink => check_symlink(&req.source, &req.target),
         FileMode::SymlinkEach => check_symlink_each(req),
         FileMode::Copy => check_copy(&req.source, &req.target),
-        FileMode::Template => {
-            let rendered = render_template(config, req)?;
-            check_content(&req.target, rendered.as_bytes())
-        }
+        FileMode::Template => check_content(
+            &req.target,
+            rendered.expect("rendered template content").as_bytes(),
+        ),
     }
 }
 
@@ -235,8 +247,7 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
         Ok(FileState::Missing)
     } else {
         Ok(FileState::Differs(format!(
-            "{applied} of {} files linked",
-            applied + missing
+            "{applied} file(s) linked, {missing} missing"
         )))
     }
 }
@@ -293,6 +304,24 @@ fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
     Ok(rendered)
 }
 
+/// directories a symlink-each entry needs: the target itself plus every
+/// intermediate directory for nested source files
+fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    let mut out = indexmap::IndexSet::new();
+    out.insert(req.target.clone());
+    for (_, target) in walk_source_files(req)? {
+        let mut dir = target.parent();
+        while let Some(d) = dir {
+            if d == req.target {
+                break;
+            }
+            out.insert(d.to_path_buf());
+            dir = d.parent();
+        }
+    }
+    Ok(out.into_iter().collect())
+}
+
 /// every (source file, target path) pair of a symlink-each entry
 fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
     let mut out = vec![];
@@ -320,38 +349,57 @@ pub struct ApplyOpts {
 /// should go) are an error unless `force` is set — content updates for
 /// copy/template entries are not conflicts, overwriting is their job.
 pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<()> {
-    let mut todo = vec![];
+    // pre-rendered template output rides along so it's written as compared,
+    // and exec() in templates runs once per apply
+    let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];
+    let mut missing_sources = vec![];
     let mut conflicts = vec![];
     for req in requests {
-        if check(config, req)? == FileState::Applied {
-            continue;
-        }
+        // report every problem in one pass instead of fix-and-retry
         if !req.source.exists() {
-            bail!(
-                "[system.files].\"{}\": source does not exist: {}",
+            missing_sources.push(format!(
+                "  [system.files].\"{}\": {}",
                 req.target_raw,
                 req.source.display_user()
-            );
+            ));
+            continue;
+        }
+        let rendered = match req.mode {
+            FileMode::Template => Some(render_template(config, req)?),
+            _ => None,
+        };
+        if check_rendered(req, rendered.as_deref())? == FileState::Applied {
+            continue;
         }
         conflicts.extend(find_conflicts(req)?);
-        todo.push(req);
+        todo.push((req, rendered));
     }
-    if todo.is_empty() {
-        info!("files: all files are applied");
-        return Ok(());
+    let mut problems = vec![];
+    if !missing_sources.is_empty() {
+        problems.push(format!(
+            "sources do not exist:\n{}",
+            missing_sources.join("\n")
+        ));
     }
     if !conflicts.is_empty() && !opts.force {
-        bail!(
-            "files: refusing to overwrite existing files (use --force):\n{}",
+        problems.push(format!(
+            "refusing to overwrite existing files (use --force):\n{}",
             conflicts
                 .iter()
                 .map(|p| format!("  {}", p.display_user()))
                 .collect::<Vec<_>>()
                 .join("\n")
-        );
+        ));
+    }
+    if !problems.is_empty() {
+        bail!("files: {}", problems.join("\nfiles: "));
+    }
+    if todo.is_empty() {
+        info!("files: all files are applied");
+        return Ok(());
     }
     if opts.dry_run {
-        for req in &todo {
+        for (req, _) in &todo {
             miseprintln!("{}", describe(req)?);
         }
         return Ok(());
@@ -359,7 +407,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
     if !opts.yes && console::user_attended_stderr() {
         let list = todo
             .iter()
-            .map(|r| r.target_raw.clone())
+            .map(|(r, _)| r.target_raw.clone())
             .collect::<Vec<_>>()
             .join(", ");
         if !prompt::confirm(format!("files: apply {list}?"))? {
@@ -367,13 +415,13 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             return Ok(());
         }
     }
-    for req in &todo {
-        apply_one(config, req)?;
+    for (req, rendered) in &todo {
+        apply_one(req, rendered.as_deref())?;
     }
     info!(
         "files: applied {}",
         todo.iter()
-            .map(|r| r.target_raw.clone())
+            .map(|(r, _)| r.target_raw.clone())
             .collect::<Vec<_>>()
             .join(", ")
     );
@@ -392,6 +440,13 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
             }
         }
         FileMode::SymlinkEach => {
+            // a regular file where the target directory (or a nested one)
+            // should go blocks the whole entry
+            for dir in needed_dirs(req)? {
+                if dir.exists() && !dir.is_dir() {
+                    out.push(dir);
+                }
+            }
             for (_, target) in walk_source_files(req)? {
                 if target.exists() && !target.is_symlink() {
                     out.push(target);
@@ -426,7 +481,7 @@ fn describe(req: &FileRequest) -> Result<String> {
     })
 }
 
-fn apply_one(config: &Config, req: &FileRequest) -> Result<()> {
+fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
     debug!("files: {}", describe(req)?);
     if let Some(parent) = req.target.parent() {
         file::create_dir_all(parent)?;
@@ -437,6 +492,13 @@ fn apply_one(config: &Config, req: &FileRequest) -> Result<()> {
             link_path(&req.source, &req.target)?;
         }
         FileMode::SymlinkEach => {
+            // conflicts were vetted (or --force given): clear anything
+            // blocking a directory we need
+            for dir in needed_dirs(req)? {
+                if dir.exists() && !dir.is_dir() {
+                    remove_existing(&dir)?;
+                }
+            }
             for (source, target) in walk_source_files(req)? {
                 if check_symlink(&source, &target)? == FileState::Applied {
                     continue;
@@ -457,9 +519,9 @@ fn apply_one(config: &Config, req: &FileRequest) -> Result<()> {
             }
         }
         FileMode::Template => {
-            let rendered = render_template(config, req)?;
+            let rendered = rendered.expect("rendered template content");
             remove_existing(&req.target)?;
-            file::write(&req.target, &rendered)?;
+            file::write(&req.target, rendered)?;
             #[cfg(unix)]
             std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
         }

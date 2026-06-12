@@ -57,6 +57,15 @@ assert "cat ~/.gitconfig" "precious"
 assert_succeed "mise system install --yes --force"
 assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
 
+# symlink-each: a real file where the target directory should go is also a
+# conflict, not a raw filesystem error
+rm -rf ~/.local/mybin
+echo "blocker" >~/.local/mybin
+assert_fail "mise system install --yes"
+assert "cat ~/.local/mybin" "blocker"
+assert_succeed "mise system install --yes --force"
+assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
+
 # unknown modes warn but don't fail (forward compatibility)
 cat <<EOF >mise.toml
 [system.files]

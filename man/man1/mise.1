@@ -142,6 +142,9 @@ List built\-in backends
 \fBbin\-paths\fR
 List all the active runtime bin paths
 .TP
+\fBbootstrap\fR
+[experimental] Set up a machine for the current config in one command
+.TP
 \fBcache\fR
 Manage the mise cache
 .TP
@@ -458,16 +461,16 @@ Symlinks all tool versions from an external tool into mise
 Symlinks all ruby tool versions from an external tool into mise
 .TP
 \fBsystem\fR
-[experimental] Manage system packages from `[system.packages]` and macOS
+[experimental] Manage system packages from `[system.packages]` and files
 .TP
 \fBsystem install\fR
-Install missing system packages from `[system.packages]` and apply macOS
+Install missing system packages from `[system.packages]` and apply files
 .RS
 \fIAliases: \fRi
 .RE
 .TP
 \fBsystem status\fR
-Show the status of system packages from `[system.packages]` and macOS
+Show the status of system packages from `[system.packages]` and files
 .RS
 \fIAliases: \fRls
 .RE
@@ -734,6 +737,34 @@ Output executable entries in JSON format (implies \-\-bin\-names)
 \fB<TOOL@VERSION>\fR
 Tool(s) to look up
 e.g.: ruby@3
+.SH "MISE BOOTSTRAP"
+[experimental] Set up a machine for the current config in one command
+
+Runs the bootstrap steps for the current config in order:
+
+1. `mise system install` — install missing `[system.packages]` and apply
+   `[system.files]`
+2. `mise install` — install missing tools from `[tools]`
+3. `mise run bootstrap` — if a task named `bootstrap` is defined
+
+Steps with nothing to do are skipped, so `mise bootstrap` is idempotent
+and safe to re\-run. Use a `bootstrap` task for any project\-specific setup
+that doesn't fit the declarative sections (cloning repos, seeding
+databases, etc.) — it runs with the installed tools on PATH.
+.PP
+\fBUsage:\fR mise bootstrap [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would happen without installing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip confirmation prompts
+.TP
+\fB\-\-update\fR
+Refresh system package manager metadata first (apt: `apt\-get update`)
 .SH "MISE CACHE CLEAR"
 Deletes all cache files in mise
 .PP
@@ -2745,23 +2776,25 @@ Symlinks all ruby tool versions from an external tool into mise
 \fB\-\-brew\fR
 Get tool versions from Homebrew
 .SH "MISE SYSTEM INSTALL"
-Install missing system packages from `[system.packages]` and apply macOS
-defaults from `[system.defaults]`
+Install missing system packages from `[system.packages]` and apply files
+from `[system.files]`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting). On macOS, also writes any
-`[system.defaults]` entries that are unset or differ from the config.
+root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
+entries that aren't in their desired state are applied.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config. Explicit packages and `\-\-manager` scope the run to packages
-only.
+the config — files are skipped in that case, as with `\-\-manager`.
 .PP
 \fBUsage:\fR mise system install [OPTIONS] [<PACKAGE>] ...
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-f, \-\-force\fR
+Overwrite existing files that conflict with `[system.files]` entries
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
 Only install packages for this manager, e.g. `apt` or `brew`
@@ -2780,8 +2813,8 @@ Refresh package manager metadata first (apt: `apt\-get update`)
 \fB<PACKAGE>\fR
 Packages in `manager:package` form; defaults to everything configured in [system.packages]
 .SH "MISE SYSTEM STATUS"
-Show the status of system packages from `[system.packages]` and macOS
-defaults from `[system.defaults]`
+Show the status of system packages from `[system.packages]` and files
+from `[system.files]`
 .PP
 \fBUsage:\fR mise system status [OPTIONS]
 .PP
@@ -2792,7 +2825,7 @@ defaults from `[system.defaults]`
 Output in JSON format
 .TP
 \fB\-\-missing\fR
-Exit with code 1 if any configured packages are missing or defaults are out of sync
+Exit with code 1 if any configured packages or files are missing
 .SH "MISE SYSTEM UPGRADE"
 Upgrade installed system packages from `[system.packages]`
 
