@@ -97,6 +97,10 @@ export default withMermaid(
                 { text: "dnf", link: "/system-packages/dnf" },
                 { text: "pacman", link: "/system-packages/pacman" },
                 { text: "brew", link: "/system-packages/brew" },
+                {
+                  text: "macOS Defaults",
+                  link: "/system-packages/defaults",
+                },
               ],
             },
             {

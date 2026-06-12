@@ -2959,7 +2959,7 @@
     },
     "system": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages)",
+      "description": "[experimental] machine-global bootstrapping (system packages, macOS defaults)",
       "properties": {
         "packages": {
           "type": "object",
@@ -2970,6 +2970,31 @@
           "additionalProperties": {
             "type": "string",
             "description": "version pin in the manager's native format, or \"latest\""
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "description": "macOS user defaults to apply with `mise system install`, keyed by preferences domain (e.g. \"com.apple.dock\", \"NSGlobalDomain\")",
+          "additionalProperties": {
+            "type": "object",
+            "description": "defaults keys and their desired values for this domain",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "description": "desired value, written with the matching `defaults write` type (-bool, -int, -float, -string)"
+            }
           }
         }
       }
