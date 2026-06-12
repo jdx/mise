@@ -7,8 +7,7 @@ use serde::Serialize;
 use crate::backend::{Backend, VersionInfo};
 use crate::cli::args::ToolArg;
 use crate::config::Settings;
-use crate::duration::parse_into_timestamp;
-use crate::install_before::resolve_before_date_for_backend;
+use crate::install_before::{resolve_before_date_for_backend, resolve_cli_minimum_release_age};
 use crate::toolset::{ToolRequest, tool_request};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config::Config};
@@ -91,11 +90,7 @@ impl LsRemote {
         }
         backend::set_strict_metadata(self.strict_metadata);
         let config = Config::get().await?;
-        let before_date = self
-            .minimum_release_age
-            .as_deref()
-            .map(parse_into_timestamp)
-            .transpose()?;
+        let before_date = resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())?;
         if let Some(plugin) = self.get_plugin(&config).await? {
             self.run_single(&config, plugin, before_date).await
         } else {

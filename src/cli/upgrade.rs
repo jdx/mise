@@ -4,8 +4,8 @@ use std::sync::Arc;
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
-use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
+use crate::install_before::resolve_cli_minimum_release_age;
 use crate::semver::split_version_prefix;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
@@ -536,10 +536,7 @@ impl Upgrade {
     /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(minimum_release_age) = &self.minimum_release_age {
-            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
-        }
-        Ok(None)
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 
     async fn warn_if_newer_versions_hidden_by_minimum_release_age(

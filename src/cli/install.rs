@@ -5,8 +5,8 @@ use std::sync::Arc;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::config::Settings;
-use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
+use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::{
     InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset, tool_env_vars,
 };
@@ -341,10 +341,7 @@ impl Install {
     /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(minimum_release_age) = &self.minimum_release_age {
-            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
-        }
-        Ok(None)
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 
     fn get_requested_tool_versions(
