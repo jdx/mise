@@ -366,6 +366,9 @@ impl Doctor {
     }
 
     async fn analyze_system_packages(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        if !Settings::get().experimental {
+            return Ok(());
+        }
         let mgrs = crate::system::packages_from_config(config);
         if mgrs.is_empty() {
             return Ok(());
