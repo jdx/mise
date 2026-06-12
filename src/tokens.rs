@@ -91,8 +91,19 @@ pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Op
             return None;
         }
     };
-    let result = std::process::Command::new(program)
-        .args(args)
+    let mut command = std::process::Command::new(&program);
+    command.args(&args);
+    // On Windows, route a `cmd /c <credential-command>` through the verbatim
+    // builder so inner double quotes survive (#9355). Other shells and Unix keep
+    // the plain Command::new(program).args(args). The command body is the last
+    // element of args (see credential_command_shell_from).
+    #[cfg(windows)]
+    if let Some((body, flags)) = args.split_last() {
+        if let Some(c) = crate::path::cmd_verbatim_command(&program, flags, body) {
+            command = c;
+        }
+    }
+    let result = command
         .env("PATH", &path_without_shims)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("MISE_CREDENTIAL_HOST", host)

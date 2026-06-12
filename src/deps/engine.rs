@@ -771,9 +771,15 @@ impl DepsEngine {
             None => std::env::current_dir()?,
         };
 
-        let mut runner = CmdLineRunner::new(&cmd.program)
-            .args(&cmd.args)
-            .current_dir(cwd);
+        // cmd.args is [shell flags.., run]; route the run body through
+        // cmd_body_args so an inner-quoted command survives `cmd /c` on Windows.
+        // On Unix / non-cmd shells this is byte-identical to .args(&cmd.args).
+        let mut runner = CmdLineRunner::new(&cmd.program);
+        runner = match cmd.args.split_last() {
+            Some((body, flags)) => runner.cmd_body_args(flags, body),
+            None => runner,
+        };
+        runner = runner.current_dir(cwd);
 
         // Apply timeout if configured
         if let Some(timeout) = timeout {
