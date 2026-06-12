@@ -351,6 +351,7 @@ default = "false"
 description = "Set to true if running in a CI environment"
 deserialize_with = "bool_string"
 env = "CI"
+global_only = true
 hide = true
 type = "Bool"
 
@@ -1781,6 +1782,7 @@ docs = """
 Enables extra-secure behavior. See [Paranoid](/paranoid.html).
 """
 env = "MISE_PARANOID"
+global_only = true
 type = "Bool"
 
 [pin]
@@ -2629,6 +2631,7 @@ Set to `["/"]` to trust all config files, effectively disabling the trust mechan
 Paths are separated by the OS path separator when using the environment variable \
 (`:` on Unix, `;` on Windows)."""
 env = "MISE_TRUSTED_CONFIG_PATHS"
+global_only = true
 parse_env = "list_by_os_path_separator"
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
@@ -2753,6 +2756,7 @@ type = "String"
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
 env = "MISE_YES"
+global_only = true
 type = "Bool"
 
 [zig.use_community_mirrors]

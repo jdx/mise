@@ -1099,6 +1099,57 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_settings_file_strips_non_global_trust_controls() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings]
+            ci = "true"
+            paranoid = true
+            trusted_config_paths = ["/"]
+            yes = true
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.ci, None);
+        assert_eq!(partial.paranoid, None);
+        assert_eq!(partial.trusted_config_paths, None);
+        assert_eq!(partial.yes, None);
+    }
+
+    #[test]
+    fn test_global_config_preserves_trust_controls() {
+        let path = Path::new("/tmp/global-config.toml");
+        let mut settings = toml::from_str::<toml::Value>(
+            r#"
+            ci = "true"
+            paranoid = true
+            trusted_config_paths = ["/"]
+            yes = true
+            "#,
+        )
+        .unwrap()
+        .as_table()
+        .unwrap()
+        .clone();
+        strip_local_only_settings(&mut settings, path, true);
+        let partial = settings_partial_from_table(settings);
+
+        assert_eq!(partial.ci, Some(true));
+        assert_eq!(partial.paranoid, Some(true));
+        assert_eq!(
+            partial.trusted_config_paths,
+            Some([PathBuf::from("/")].into_iter().collect())
+        );
+        assert_eq!(partial.yes, Some(true));
+    }
+
+    #[test]
     fn test_set_by_comma_empty_string() {
         let result: Result<BTreeSet<String>, _> = set_by_comma("");
         assert!(result.is_ok());
