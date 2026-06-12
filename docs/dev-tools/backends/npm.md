@@ -14,8 +14,8 @@ similar to how the pipx backend uses `uv` when available.
 If you use `aube`, `pnpm`, or `bun` as the package manager, that package manager
 must also be installed.
 
-When [`minimum_release_age`](/configuration/settings.html#minimum_release_age) is set, the npm backend
-forwards that cutoff to transitive dependency resolution during install. This relies on the
+The npm backend forwards [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
+to transitive dependency resolution during install. This relies on the
 configured package manager supporting its native release-age flag:
 
 - `aube` using its `minimumReleaseAge` setting
@@ -62,7 +62,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ## Settings
 
-Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
+Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environment variable listed.
 
 <script setup>
 import Settings from '/components/settings.vue';

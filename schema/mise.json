@@ -261,16 +261,16 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "type": "array",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "dotenv file to load",
+                        "description": "environment file to load (dotenv, json, yaml, or toml)",
                         "type": "string"
                       },
                       {
@@ -506,13 +506,21 @@
               "description": "Use minisign to verify aqua tool signatures.",
               "type": "boolean"
             },
+            "registries": {
+              "description": "Aqua registry repositories to fetch before the baked-in registry.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "registry_cache_ttl": {
               "description": "How long to cache downloaded aqua registry source files.",
               "type": "string"
             },
             "registry_url": {
-              "description": "URL of an aqua registry repository to fetch.",
-              "type": "string"
+              "description": "[deprecated] URL of an aqua registry repository to fetch.",
+              "type": "string",
+              "deprecated": true
             },
             "slsa": {
               "default": true,
@@ -529,6 +537,10 @@
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
           "type": "boolean",
           "deprecated": true
+        },
+        "auto_env": {
+          "description": "Automatically enable platform config environments (unix, {os}, {os}-{arch}).",
+          "type": "boolean"
         },
         "auto_install": {
           "default": true,
@@ -1083,6 +1095,14 @@
           "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
           "type": "string"
         },
+        "minimum_release_age_excludes": {
+          "default": [],
+          "description": "Tools and backends to exclude from the global/default minimum_release_age setting",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "netrc": {
           "default": true,
           "description": "Use a netrc file for HTTP Basic authentication.",
@@ -1490,7 +1510,7 @@
             },
             "rops": {
               "default": true,
-              "description": "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops.",
+              "description": "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops. Required for TOML SOPS files because the sops CLI does not support TOML.",
               "type": "boolean"
             },
             "strict": {
@@ -1557,6 +1577,24 @@
         "system_config_file": {
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
+        },
+        "system_packages": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "managers": {
+              "description": "[experimental] Restrict which system package managers mise will use.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "sudo": {
+              "default": true,
+              "description": "[experimental] Allow `mise system install` to elevate with sudo when not running as root.",
+              "type": "boolean"
+            }
+          }
         },
         "task": {
           "type": "object",
@@ -1887,13 +1925,13 @@
             "file": {
               "oneOf": [
                 {
-                  "description": "dotenv file to load",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)",
                   "type": "string"
                 },
                 {
-                  "description": "dotenv files to load",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "items": {
-                    "description": "dotenv file to load",
+                    "description": "environment file to load (dotenv, json, yaml, or toml)",
                     "type": "string"
                   },
                   "type": "array"
@@ -2062,12 +2100,23 @@
           "description": "inline hook command to run",
           "type": "string"
         },
+        "run_windows": {
+          "description": "inline hook command to run on Windows",
+          "type": "string"
+        },
         "shell": {
           "description": "inline shell command to use for run hooks, such as \"bash -c\"",
           "type": "string"
         }
       },
-      "required": ["run"],
+      "anyOf": [
+        {
+          "required": ["run"]
+        },
+        {
+          "required": ["run_windows"]
+        }
+      ],
       "type": "object"
     },
     "hook_script_value": {
@@ -2871,6 +2920,18 @@
           "type": "string",
           "description": "User baked into the image config"
         },
+        "user_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Numeric UID assigned to tar layer entries"
+        },
+        "group_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Numeric GID assigned to tar layer entries. Defaults to user_id when unset"
+        },
         "mount_point": {
           "type": "string",
           "description": "Override where mise installs go in the image (default /mise)"
@@ -2895,6 +2956,23 @@
       "$ref": "#/$defs/settings",
       "description": "mise settings",
       "type": "object"
+    },
+    "system": {
+      "type": "object",
+      "description": "[experimental] machine-global bootstrapping (system packages)",
+      "properties": {
+        "packages": {
+          "type": "object",
+          "description": "system packages to install with `mise system install`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_-]+:.+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "description": "version pin in the manager's native format, or \"latest\""
+          }
+        }
+      }
     },
     "task_config": {
       "description": "configuration for task execution and management",

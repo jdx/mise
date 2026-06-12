@@ -105,12 +105,6 @@ impl Platform {
         Ok(())
     }
 
-    /// Check if this platform is compatible with the current system
-    pub fn is_compatible_with_current(&self) -> bool {
-        let current = Self::current();
-        self.os == current.os && self.arch == current.arch
-    }
-
     /// Convert to platform key format used in lockfiles
     pub fn to_key(&self) -> String {
         match &self.qualifier {
@@ -162,16 +156,6 @@ impl Platform {
     /// Check if this is a Linux platform
     pub fn is_linux(&self) -> bool {
         self.os == "linux"
-    }
-
-    /// Check if this uses ARM64 architecture
-    pub fn is_arm64(&self) -> bool {
-        self.arch == "arm64"
-    }
-
-    /// Check if this uses x64 architecture
-    pub fn is_x64(&self) -> bool {
-        self.arch == "x64"
     }
 }
 
@@ -389,15 +373,11 @@ mod tests {
     fn test_platform_helpers() {
         let linux_platform = Platform::parse("linux-arm64").unwrap();
         assert!(linux_platform.is_linux());
-        assert!(linux_platform.is_arm64());
         assert!(!linux_platform.is_windows());
-        assert!(!linux_platform.is_x64());
 
         let windows_platform = Platform::parse("windows-x64").unwrap();
         assert!(windows_platform.is_windows());
-        assert!(windows_platform.is_x64());
         assert!(!windows_platform.is_linux());
-        assert!(!windows_platform.is_arm64());
     }
 
     #[test]

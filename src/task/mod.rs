@@ -741,7 +741,15 @@ impl Task {
         let config = Config::get().await.unwrap();
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        for dir in config::task_includes_for_dir(&project_root, &config.config_files) {
+        let task_includes = match config::task_includes_for_dir(&project_root, &config.config_files)
+        {
+            Ok(includes) => includes,
+            Err(err) => {
+                warn!("failed to resolve task include paths: {err:#}");
+                Vec::new()
+            }
+        };
+        for dir in task_includes {
             if dir.is_dir() && project_root.join(&dir).exists() {
                 return project_root.join(dir);
             }
@@ -944,6 +952,30 @@ impl Task {
         }
         spec.cmd.usage = spec.cmd.usage();
     }
+
+    fn populate_usage_about(&self, spec: &mut usage::Spec) {
+        let has_usage_spec = has_any_args_defined(spec)
+            || has_any_usage_spec(spec)
+            || !self.usage.trim().is_empty()
+            || !spec.cmd.usage.is_empty();
+        if has_usage_spec
+            && !self.description.is_empty()
+            && spec.cmd.help.as_deref() == Some(self.description.as_str())
+        {
+            if spec.about.is_none() {
+                spec.about = Some(
+                    self.description
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+            }
+            if spec.about_long.is_none() && self.description.contains('\n') {
+                spec.about_long = Some(self.description.clone());
+            }
+        }
+    }
     pub async fn parse_usage_spec_with_vars(
         &self,
         config: &Arc<Config>,
@@ -969,6 +1001,7 @@ impl Task {
             (spec, scripts)
         };
         self.populate_spec_metadata(&mut spec);
+        self.populate_usage_about(&mut spec);
         Ok((spec, scripts))
     }
 
@@ -1002,6 +1035,7 @@ impl Task {
                 .await?
         };
         self.populate_spec_metadata(&mut spec);
+        self.populate_usage_about(&mut spec);
         Ok(spec)
     }
 
@@ -1044,7 +1078,10 @@ impl Task {
     }
 
     pub async fn render_markdown(&self, config: &Arc<Config>) -> Result<String> {
-        let spec = self.parse_usage_spec_for_display(config).await?;
+        let mut spec = self.parse_usage_spec_for_display(config).await?;
+        if spec.about.is_some() && spec.cmd.help.as_deref() == Some(self.description.as_str()) {
+            spec.cmd.help = None;
+        }
         let ctx = usage::docs::markdown::MarkdownRenderer::new(spec)
             .with_replace_pre_with_code_fences(true)
             .with_header_level(2);
@@ -2251,7 +2288,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Mutex;
 
-    use crate::task::Task;
+    use crate::task::{RunEntry, Task};
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
@@ -2325,6 +2362,36 @@ mod tests {
 
         assert_eq!(task.allow_read, vec![crate::env::HOME.join("read")]);
         assert_eq!(task.allow_write, vec![crate::env::HOME.join("write")]);
+    }
+
+    #[tokio::test]
+    async fn test_usage_task_description_populates_help_metadata() {
+        let config = Config::get().await.unwrap();
+        let description = indoc::indoc! {"
+            Format the changed files
+
+            If you just want to check the files without automatically fixing them, use the check task.
+        "}
+        .trim()
+        .to_string();
+        let task = Task {
+            name: "format".to_string(),
+            display_name: "format".to_string(),
+            description: description.clone(),
+            usage: r#"arg "<file>""#.to_string(),
+            run: vec![RunEntry::Script("echo {{ usage.file }}".to_string())],
+            ..Default::default()
+        };
+
+        let spec = task.parse_usage_spec_for_display(&config).await.unwrap();
+
+        assert_eq!(spec.about.as_deref(), Some("Format the changed files"));
+        assert_eq!(spec.about_long.as_deref(), Some(description.as_str()));
+        assert_eq!(spec.cmd.help.as_deref(), Some(description.as_str()));
+
+        let help = usage::docs::cli::render_help(&spec, &spec.cmd, true);
+        assert!(help.contains("Format the changed files"));
+        assert!(help.contains("If you just want to check the files"));
     }
 
     #[test]

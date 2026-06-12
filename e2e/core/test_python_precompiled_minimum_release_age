@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+export MISE_PYTHON_COMPILE=0
+
+latest=$(mise latest python)
+filtered=$(mise latest python --minimum-release-age 2025-01-01)
+
+[[ -n $filtered ]] || fail "expected filtered python latest to be non-empty"
+[[ $filtered =~ ^[0-9]+(\.[0-9]+)*$ ]] || fail "expected filtered python latest to be a version, got $filtered"
+[[ $filtered != "$latest" ]] || fail "expected minimum_release_age to hide precompiled python latest $latest"
+
+json=$(mise ls-remote python --json --minimum-release-age 2025-01-01)
+if ! jq -e 'length > 0 and all(.[]; (.created_at != null and .created_at < "2025-01-02T00:00:00Z"))' <<<"$json" >/dev/null; then
+  fail "expected precompiled python versions to include created_at before the cutoff: $json"
+fi

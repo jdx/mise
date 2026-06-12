@@ -53,7 +53,7 @@ with an SDK version, mise will automatically use it:
 Enable idiomatic version file support:
 
 ```sh
-mise settings set idiomatic_version_file_enable_tools dotnet
+mise settings set idiomatic_version_file_enable_tools=dotnet
 ```
 
 ## Isolated Mode
@@ -65,7 +65,7 @@ If you prefer the traditional mise approach where each version gets its own dire
 isolated mode:
 
 ```sh
-mise settings set dotnet.isolated true
+mise settings set dotnet.isolated=true
 ```
 
 In isolated mode each SDK version is installed under `~/.local/share/mise/installs/dotnet/<version>/`,

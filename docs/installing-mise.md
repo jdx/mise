@@ -121,18 +121,16 @@ On Ubuntu 26.04+, mise is available via a PPA:
 
 ```sh
 sudo add-apt-repository -y ppa:jdxcode/mise
-sudo apt update -y
+sudo apt update
 sudo apt install -y mise
 ```
 
-For older Ubuntu/Debian versions:
+On Debian 11+ and Ubuntu 22.04+, mise repository can be enabled with extrepo:
 
 ```sh
-sudo apt update -y && sudo apt install -y curl
-sudo install -dm 755 /etc/apt/keyrings
-curl -fSs https://mise.en.dev/gpg-key.pub | sudo tee /etc/apt/keyrings/mise-archive-keyring.asc 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.en.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
-sudo apt update -y
+sudo apt install -y extrepo
+sudo extrepo enable mise
+sudo apt update
 sudo apt install -y mise
 ```
 
@@ -189,10 +187,10 @@ dnf install mise
 
 [COPR package page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/)
 
-### Snap (Linux, currently in beta)
+### Snap (Linux)
 
 ```sh
-sudo snap install mise --classic --beta
+sudo snap install mise --classic
 ```
 
 [snapcraft.io page](https://snapcraft.io/mise)

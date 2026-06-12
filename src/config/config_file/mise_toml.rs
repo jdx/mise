@@ -30,6 +30,7 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
+use crate::system::SystemTomlConfig;
 use crate::task::{Task, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -37,7 +38,7 @@ use crate::watch_files::WatchFile;
 use crate::{env, file};
 
 use super::diagnostic::toml_parse_error;
-use super::{ConfigFileType, min_version::MinVersionSpec};
+use super::min_version::MinVersionSpec;
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
@@ -175,6 +176,8 @@ pub struct MiseToml {
     deps: Option<DepsConfig>,
     #[serde(default)]
     oci: Option<OciConfig>,
+    #[serde(default)]
+    system: Option<SystemTomlConfig>,
     #[serde(default)]
     vars: EnvList,
     #[serde(default)]
@@ -484,6 +487,33 @@ impl MiseToml {
         Ok(())
     }
 
+    /// Set `[system.packages]."<manager>:<package>" = "<version>"`,
+    /// creating the tables as needed ("latest" means no pin)
+    pub fn update_system_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
+        self.system
+            .get_or_insert_with(Default::default)
+            .packages
+            .insert(spec.to_string(), version.to_string());
+        let mut doc = self.doc_mut()?;
+        let system = doc
+            .get_mut()
+            .unwrap()
+            .entry("system")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        // don't render an empty [system] header above [system.packages]
+        system.set_implicit(true);
+        let packages = system
+            .entry("packages")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        let key = get_key_with_decor(packages, spec);
+        packages.insert_formatted(&key, toml_edit::value(version));
+        Ok(())
+    }
+
     pub fn update_env_age(
         &mut self,
         key: &str,
@@ -585,10 +615,6 @@ impl MiseToml {
 }
 
 impl ConfigFile for MiseToml {
-    fn config_type(&self) -> ConfigFileType {
-        ConfigFileType::MiseToml
-    }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
@@ -915,6 +941,19 @@ impl ConfigFile for MiseToml {
         &self.task_config
     }
 
+    fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
+        self.task_config
+            .includes
+            .as_ref()
+            .map(|includes| {
+                includes
+                    .iter()
+                    .map(|include| self.parse_template(include))
+                    .collect()
+            })
+            .transpose()
+    }
+
     fn experimental_monorepo_root(&self) -> Option<bool> {
         self.experimental_monorepo_root
     }
@@ -981,6 +1020,10 @@ impl ConfigFile for MiseToml {
     fn oci_config(&self) -> Option<OciConfig> {
         self.oci.clone()
     }
+
+    fn system_config(&self) -> Option<SystemTomlConfig> {
+        self.system.clone()
+    }
 }
 
 /// Returns a [`toml_edit::Key`] from the given `key`.
@@ -1004,7 +1047,7 @@ impl Debug for MiseToml {
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
         if let Some(min_version) = &self.min_version {
-            d.field("min_version", &min_version.to_string());
+            d.field("min_version", min_version);
         }
         if !self.env_file.is_empty() {
             d.field("env_file", &self.env_file);
@@ -1056,6 +1099,7 @@ impl Clone for MiseToml {
             watch_files: self.watch_files.clone(),
             deps: self.deps.clone(),
             oci: self.oci.clone(),
+            system: self.system.clone(),
             vars: self.vars.clone(),
             experimental_monorepo_root: self.experimental_monorepo_root,
             monorepo: self.monorepo.clone(),
@@ -1999,6 +2043,64 @@ mod tests {
             "{:#?}",
             cf.to_tool_request_set().unwrap().tools
         )));
+    }
+
+    #[tokio::test]
+    async fn test_system_packages() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [system.packages]
+        "apt:libssl-dev" = "latest"
+        "apt:curl" = "8.5.0-2"
+        "brew:postgresql@17" = "latest"
+        "future-manager:whatever" = "latest"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.system_config().unwrap();
+        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        // unknown managers parse fine (forward compatibility)
+        assert_eq!(
+            system.packages.get("future-manager:whatever").unwrap(),
+            "latest"
+        );
+
+        // no [system] section -> None
+        file::write(&p, "[tools]\n").unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        assert!(cf.system_config().is_none());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_system_package() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        // creates [system.packages] when absent, preserves other sections
+        file::write(&p, "[tools]\njq = \"latest\"\n").unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_system_package("apt:curl", "latest").unwrap();
+        cf.update_system_package("brew:postgresql@17", "latest")
+            .unwrap();
+        // overrides an existing pin in place
+        cf.update_system_package("apt:curl", "8.5.0-2").unwrap();
+        assert_snapshot!(cf.dump().unwrap(), @r#"
+        [tools]
+        jq = "latest"
+
+        [system.packages]
+        "apt:curl" = "8.5.0-2"
+        "brew:postgresql@17" = "latest"
+        "#);
+        let system = cf.system_config().unwrap();
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        file::remove_file(&p).unwrap();
     }
 
     #[tokio::test]

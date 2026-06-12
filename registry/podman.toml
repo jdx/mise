@@ -1,7 +1,7 @@
 description = "Podman: A tool for managing OCI containers and pods"
 
 [[backends]]
-full = "github:containers/podman"
+full = "github:podman-container-tools/podman"
 
 [[backends]]
 full = "asdf:tvon/asdf-podman"

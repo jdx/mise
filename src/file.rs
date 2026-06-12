@@ -149,17 +149,48 @@ pub fn remove_all_with_progress<P: AsRef<Path>>(path: P, pr: &dyn SingleReport) 
 /// Warning: this is the raw `rename(2)`/`fs::rename` behavior. It is atomic on a
 /// single filesystem, but it will fail if `from` and `to` are on different
 /// mounts. If you need a cross-device-safe move, use [`move_file`] instead.
+///
+/// On Windows, retries transient failures (`ERROR_ACCESS_DENIED` / `ERROR_SHARING_VIOLATION`)
+/// that commonly occur when antivirus or the OS still holds handles to files in the source
+/// directory (e.g. after extracting an archive).
 pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
     trace!("mv {} {}", from.display(), to.display());
-    fs::rename(from, to).wrap_err_with(|| {
+    do_rename(from, to).wrap_err_with(|| {
         format!(
             "failed rename: {} -> {}",
             display_path(from),
             display_path(to)
         )
     })
+}
+
+#[cfg(windows)]
+fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
+    const MAX_ATTEMPTS: u32 = 5;
+    let mut last_err = None;
+    for attempt in 0..MAX_ATTEMPTS {
+        match fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) if matches!(e.raw_os_error(), Some(5) | Some(32)) => {
+                // ERROR_ACCESS_DENIED (5) or ERROR_SHARING_VIOLATION (32):
+                // likely a transient lock from antivirus or the OS.
+                // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+                last_err = Some(e);
+                if attempt + 1 < MAX_ATTEMPTS {
+                    std::thread::sleep(std::time::Duration::from_millis(50 * (1 << attempt)));
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_err.unwrap())
+}
+
+#[cfg(not(windows))]
+fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::rename(from, to)
 }
 
 /// Moves a path, falling back to copy+remove when source and destination are on different filesystems.
@@ -171,7 +202,7 @@ pub fn move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
 
-    match fs::rename(from, to) {
+    match do_rename(from, to) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
             if from.is_dir() {

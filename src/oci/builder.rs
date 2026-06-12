@@ -14,7 +14,7 @@ use crate::backend::backend_type::BackendType;
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::oci::OciConfig;
-use crate::oci::layer::{self, LayerBlob};
+use crate::oci::layer::{self, LayerBlob, LayerOwner};
 use crate::oci::layout::ImageLayout;
 use crate::oci::manifest::{self, Descriptor, ImageConfig, ImageManifest, Platform, RootFs};
 use crate::oci::registry;
@@ -31,6 +31,8 @@ pub struct BuildOptions {
     pub tag: Option<String>,
     /// Where mise tools get installed inside the image.
     pub mount_point: Option<String>,
+    /// Numeric owner assigned to every tar entry in generated layers.
+    pub owner: Option<LayerOwner>,
     /// Embed the current mise binary at /usr/local/bin/mise.
     pub include_mise: bool,
 }
@@ -89,6 +91,8 @@ impl Builder {
                  depend on the working directory and mis-resolve tools."
             );
         }
+
+        let owner = resolve_layer_owner(self.opts.owner, &self.oci);
 
         // --- 1. Base image (optional) ---
         let from_ref = self
@@ -191,7 +195,7 @@ impl Builder {
                 );
             }
             let tv_prefix = tool_tar_prefix(&mount_point, tv);
-            let blob = layer::build_layer_from_dir(&install_path, &tv_prefix)
+            let blob = layer::build_layer_from_dir(&install_path, &tv_prefix, owner)
                 .wrap_err_with(|| format!("building layer for {}", tv.style()))?;
             tool_layers.push((tv.ba().short.clone(), tv.version.clone(), blob));
         }
@@ -215,7 +219,7 @@ impl Builder {
                     let bytes = std::fs::read(&exe)
                         .wrap_err_with(|| format!("reading mise binary at {}", exe.display()))?;
                     let files = vec![("usr/local/bin/mise".to_string(), bytes, 0o755u32)];
-                    mise_layer = Some(layer::build_layer_from_files(&files)?);
+                    mise_layer = Some(layer::build_layer_from_files(&files, owner)?);
                 }
                 Err(e) => {
                     warn!("could not locate mise binary to embed in image: {e}");
@@ -231,7 +235,7 @@ impl Builder {
                 config_toml.into_bytes(),
                 0o644u32,
             )];
-            layer::build_layer_from_files(&files)?
+            layer::build_layer_from_files(&files, owner)?
         };
 
         // --- 5. Write all layer blobs into the layout ---
@@ -567,6 +571,14 @@ impl Builder {
     }
 }
 
+fn resolve_layer_owner(opts_owner: Option<LayerOwner>, oci: &OciConfig) -> LayerOwner {
+    opts_owner.unwrap_or_else(|| {
+        let uid = oci.user_id.unwrap_or(0);
+        let gid = oci.group_id.unwrap_or(uid);
+        LayerOwner::new(uid, gid)
+    })
+}
+
 fn reject_unsupported_backends(
     versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
 ) -> Result<()> {
@@ -714,4 +726,78 @@ fn days_to_ymd(days: i64) -> (i64, u32, u32) {
 
 fn sanitize_label(s: &str) -> String {
     s.replace([':', '/'], ".")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_layer_owner_defaults_to_root() {
+        assert_eq!(
+            resolve_layer_owner(None, &OciConfig::default()),
+            LayerOwner::new(0, 0)
+        );
+    }
+
+    #[test]
+    fn resolve_layer_owner_uses_config_with_uid_as_gid_default() {
+        let oci = OciConfig {
+            user_id: Some(1000),
+            ..Default::default()
+        };
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1000));
+    }
+
+    #[test]
+    fn resolve_layer_owner_uses_config_group_id_when_present() {
+        let oci = OciConfig {
+            user_id: Some(1000),
+            group_id: Some(1001),
+            ..Default::default()
+        };
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1001));
+    }
+
+    #[test]
+    fn resolve_layer_owner_uses_merged_config_group_id_from_same_layer() {
+        let mut oci = OciConfig::default();
+        oci.fill_defaults_from(OciConfig {
+            user_id: Some(1000),
+            group_id: Some(1001),
+            ..Default::default()
+        });
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1001));
+    }
+
+    #[test]
+    fn resolve_layer_owner_does_not_inherit_less_specific_group_after_user_override() {
+        let mut oci = OciConfig {
+            user_id: Some(1000),
+            ..Default::default()
+        };
+        oci.fill_defaults_from(OciConfig {
+            group_id: Some(2000),
+            ..Default::default()
+        });
+
+        assert_eq!(resolve_layer_owner(None, &oci), LayerOwner::new(1000, 1000));
+    }
+
+    #[test]
+    fn resolve_layer_owner_cli_value_wins_over_config() {
+        let oci = OciConfig {
+            user_id: Some(1000),
+            group_id: Some(1001),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_layer_owner(Some(LayerOwner::new(2000, 2001)), &oci),
+            LayerOwner::new(2000, 2001)
+        );
+    }
 }

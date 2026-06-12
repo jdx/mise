@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Test Tera rendering and home expansion for task_config.includes.
+
+mkdir -p root-tasks "$HOME/home-tasks" "$HOME/env-home-tasks"
+
+cat >root-tasks/task.toml <<'EOF'
+[root_include]
+run = 'echo "root include"'
+EOF
+
+cat >"$HOME/home-tasks/task.toml" <<'EOF'
+[tilde_include]
+run = 'echo "tilde include"'
+EOF
+
+cat >"$HOME/env-home-tasks/task.toml" <<'EOF'
+[env_home_include]
+run = 'echo "env home include"'
+EOF
+
+cat >mise.toml <<'EOF'
+[task_config]
+includes = [
+    "{{ config_root }}/root-tasks/*.toml",
+    "~/home-tasks/*.toml",
+    "{{ env.HOME }}/env-home-tasks/*.toml",
+]
+EOF
+
+assert_contains "mise tasks" "root_include"
+assert_contains "mise tasks" "tilde_include"
+assert_contains "mise tasks" "env_home_include"
+
+assert "mise run root_include" "root include"
+assert "mise run tilde_include" "tilde include"
+assert "mise run env_home_include" "env home include"

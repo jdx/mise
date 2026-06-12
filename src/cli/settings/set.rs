@@ -84,8 +84,9 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
                 .unwrap();
         }
 
-        let value = match settings.get(key).map(|c| c.as_array()) {
-            Some(Some(array)) if add => {
+        let value = match settings.get(key) {
+            Some(current) if add && current.as_array().is_some() => {
+                let array = current.as_array().unwrap();
                 let mut new_array = array.clone();
                 new_array.extend(value.as_array().unwrap().iter().cloned());
                 match meta.type_ {

@@ -4,9 +4,12 @@ use std::sync::Arc;
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, config_file};
-use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
+use crate::install_before::resolve_cli_minimum_release_age;
+use crate::semver::split_version_prefix;
+use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
+use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
     get_versions_needed_by_tracked_configs_excluding_locks,
@@ -122,6 +125,7 @@ impl Upgrade {
             use_locked_version: false,
             latest_versions: true,
             before_date,
+            before_date_from_default: false,
             offline: false,
             refresh_remote_versions: false,
             inactive: self.inactive,
@@ -140,6 +144,14 @@ impl Upgrade {
         let mut outdated = ts
             .list_outdated_versions_filtered(&config, self.bump, &opts, filter_tools, exclude_tools)
             .await;
+        self.warn_if_newer_versions_hidden_by_minimum_release_age(
+            &config,
+            &ts,
+            &opts,
+            filter_tools,
+            exclude_tools,
+        )
+        .await;
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
         }
@@ -268,6 +280,7 @@ impl Upgrade {
                 use_locked_version: false,
                 latest_versions: true,
                 before_date,
+                before_date_from_default: false,
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: self.inactive,
@@ -523,10 +536,127 @@ impl Upgrade {
     /// Get the minimum_release_age cutoff from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        if let Some(minimum_release_age) = &self.minimum_release_age {
-            return Ok(Some(parse_into_timestamp(minimum_release_age)?));
+        resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
+    }
+
+    async fn warn_if_newer_versions_hidden_by_minimum_release_age(
+        &self,
+        config: &Arc<Config>,
+        ts: &crate::toolset::Toolset,
+        opts: &ResolveOptions,
+        filter_tools: Option<&[ToolArg]>,
+        exclude_tools: Option<&[ToolArg]>,
+    ) {
+        let list_versions = if opts.inactive {
+            match ts.list_all_versions(config).await {
+                Ok(v) => v,
+                Err(err) => {
+                    warn!("Failed to list all versions: {err:#}");
+                    vec![]
+                }
+            }
+        } else {
+            ts.list_current_versions()
+        };
+        let mut warned = HashSet::new();
+        for (_, tv) in list_versions {
+            if let Some(exclude) = exclude_tools
+                && exclude.iter().any(|t| t.ba.as_ref() == tv.ba())
+            {
+                continue;
+            }
+            if let Some(tools) = filter_tools
+                && !tools.iter().any(|t| t.ba.as_ref() == tv.ba())
+            {
+                continue;
+            }
+            let warning_key = format!("{}@{}", tv.ba().short, tv.request.version());
+            if !warned.insert(warning_key) {
+                continue;
+            }
+            let mut opts_with_effective_before_date = opts.clone();
+            if let Err(err) = opts_with_effective_before_date
+                .apply_before_date_for_tool(tv.ba(), tv.request.options().minimum_release_age())
+            {
+                warn!(
+                    "Error resolving minimum_release_age for {}: {err:#}",
+                    tv.ba()
+                );
+                continue;
+            }
+            if opts_with_effective_before_date.before_date.is_none() {
+                continue;
+            }
+            let eligible_latest = self
+                .latest_for_upgrade(config, &tv, &opts_with_effective_before_date)
+                .await;
+            let eligible_latest = match eligible_latest {
+                Ok(latest) => latest,
+                Err(err) => {
+                    warn!("Error getting latest version for {}: {err:#}", tv.ba());
+                    continue;
+                }
+            };
+            let baseline_latest = match self.baseline_latest_for_upgrade(config, &tv, opts).await {
+                Ok(latest) => latest,
+                Err(err) => {
+                    warn!("Error getting latest version for {}: {err:#}", tv.ba());
+                    continue;
+                }
+            };
+            match (eligible_latest, baseline_latest) {
+                (Some(eligible), Some(baseline)) if is_outdated_version(&eligible, &baseline) => {
+                    warn!(
+                        "newer {} release {baseline} ignored by minimum_release_age; latest eligible release is {eligible}",
+                        tv.ba().short
+                    );
+                }
+                (None, Some(baseline)) => {
+                    warn!(
+                        "newer {} release {baseline} ignored by minimum_release_age; no eligible release found",
+                        tv.ba().short
+                    );
+                }
+                _ => {}
+            }
         }
-        Ok(None)
+    }
+
+    async fn latest_for_upgrade(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        opts: &ResolveOptions,
+    ) -> Result<Option<String>> {
+        let backend = tv.backend()?;
+        if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
+            let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+            backend
+                .latest_version(
+                    config,
+                    prefixed_latest_query(&prefix, &prefix_version),
+                    opts.before_date,
+                )
+                .await
+        } else {
+            tv.latest_version_with_opts(config, opts).await.map(Some)
+        }
+    }
+
+    async fn baseline_latest_for_upgrade(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        opts: &ResolveOptions,
+    ) -> Result<Option<String>> {
+        let backend = tv.backend()?;
+        let query = if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
+            let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+            prefixed_latest_query(&prefix, &prefix_version)
+        } else {
+            Some(tv.request.version())
+        };
+        backend.latest_version_unfiltered(config, query).await
     }
 }
 

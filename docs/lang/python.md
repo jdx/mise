@@ -287,7 +287,7 @@ brew link pkg-config
 a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
 additional to that python in mise has a few extra configuration variables.
 
-Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
+Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environment variable.
 
 <script setup>
 import Settings from '/components/settings.vue';

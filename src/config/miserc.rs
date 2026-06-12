@@ -51,6 +51,11 @@ pub fn get_env() -> Option<&'static Vec<String>> {
     get().env.as_ref()
 }
 
+/// Get the auto_env value from miserc, if set.
+pub fn get_auto_env() -> Option<bool> {
+    get().auto_env
+}
+
 /// Get the ceiling_paths value from miserc, if set.
 pub fn get_ceiling_paths() -> Option<&'static BTreeSet<PathBuf>> {
     get().ceiling_paths.as_ref()
@@ -147,6 +152,9 @@ fn load_miserc_settings() -> Result<MisercSettings> {
 fn merge_settings(target: &mut MisercSettings, source: MisercSettings) {
     if source.env.is_some() {
         target.env = source.env;
+    }
+    if source.auto_env.is_some() {
+        target.auto_env = source.auto_env;
     }
     if source.ceiling_paths.is_some() {
         target.ceiling_paths = source.ceiling_paths;

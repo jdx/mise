@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+# Disabled: Forgejo tests are flaky due to intermittent API issues (same reason
+# e2e/backend/test_forgejo is disabled). Kept here, ready to enable, so the forgejo
+# `matching`/`matching_regex` path has e2e parity with gitlab the moment the forgejo
+# API is reliable enough to re-enable. Until then, the forgejo plumbing is covered by
+# the unit test backend::github::tests::test_matching_plumbing_parity_across_git_backends
+# (which exercises the Forgejo backend type's option accessors, lockfile serialization,
+# and install-time-key inheritance) and by the passing gitlab e2e, which shares the
+# same AssetMatcher.
+exit 0
+
+# Test the `matching` / `matching_regex` options on the FORGEJO backend.
+#
+# Mirrors e2e/backend/test_gitlab_matching: forgejo:roele/mise-test-fixtures v1.0.0
+# ships THREE assets (fd-8.7.0.tar.gz, hello-world-1.0.0.tar.gz,
+# hello-world-2.0.0.tar.gz), none carrying OS/arch tokens, so the shortest-name
+# tiebreak picks fd-8.7.0.tar.gz by default. `matching` narrows the candidate set
+# BEFORE autodetection, proving the filter changes selection on the SEPARATE
+# resolve_forgejo_asset_url_for_target path.
+
+export MISE_EXPERIMENTAL=1
+
+# A matching value that excludes every asset must FAIL asset selection on the
+# forgejo path with an error naming the filter — proving `matching` is parsed and
+# threaded into resolve_forgejo_asset_url_for_target, not silently ignored. Run
+# BEFORE any successful install (install dir is keyed by repo+version, not by the
+# matching value, so an installed version would make `mise install` a no-op).
+assert_fail 'mise install "forgejo:roele/mise-test-fixtures[matching=does-not-exist]@1.0.0"' "filtered by matching"
+
+# A syntactically invalid matching_regex (unclosed group) must be a hard error on
+# the forgejo path, not silently ignored.
+assert_fail 'mise install "forgejo:roele/mise-test-fixtures[matching_regex=hello(]@1.0.0"' "invalid matching_regex"
+
+# matching=hello-world narrows to the two hello-world-* assets; the tiebreak picks
+# hello-world-1.0.0.tar.gz (NOT the default fd-8.7.0.tar.gz), and it runs.
+cat <<EOF >mise.toml
+[tools]
+"forgejo:roele/mise-test-fixtures" = { version = "1.0.0", matching = "hello-world", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+mise uninstall forgejo:roele/mise-test-fixtures
+
+# matching_regex selects on the forgejo path too: ^hello-world-1 matches only
+# hello-world-1.0.0.tar.gz.
+cat <<EOF >mise.toml
+[tools]
+"forgejo:roele/mise-test-fixtures" = { version = "1.0.0", matching_regex = "^hello-world-1", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+mise install
+assert_contains "mise x -- hello-world" "hello world"

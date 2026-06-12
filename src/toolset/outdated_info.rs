@@ -214,7 +214,7 @@ impl Display for OutdatedInfo {
     }
 }
 
-fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
+pub(crate) fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
     let prefix = prefix.trim();
     if prefix.is_empty()
         || prefix_version.is_empty()

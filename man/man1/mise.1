@@ -457,6 +457,33 @@ Symlinks all tool versions from an external tool into mise
 \fBsync ruby\fR
 Symlinks all ruby tool versions from an external tool into mise
 .TP
+\fBsystem\fR
+[experimental] Manage system packages from `[system.packages]`
+.TP
+\fBsystem install\fR
+Install missing system packages from `[system.packages]`
+.RS
+\fIAliases: \fRi
+.RE
+.TP
+\fBsystem status\fR
+Show the status of system packages from `[system.packages]`
+.RS
+\fIAliases: \fRls
+.RE
+.TP
+\fBsystem upgrade\fR
+Upgrade installed system packages from `[system.packages]`
+.RS
+\fIAliases: \fRup
+.RE
+.TP
+\fBsystem use\fR
+Add system packages to [system.packages] and install them
+.RS
+\fIAliases: \fRu
+.RE
+.TP
 \fBtasks\fR
 Manage tasks
 .RS
@@ -1608,6 +1635,11 @@ Where to place tool installs inside the image (default: /mise)
 .TP
 \fB\-\-no\-mise\fR
 Do not embed the currently\-running mise binary at /usr/local/bin/mise
+.TP
+\fB\-\-owner\fR \fI<UID[:GID]>\fR
+UID[:GID] to assign to every tar entry in generated layers
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 .SH "MISE OCI PUSH"
 [experimental] Build an OCI image and push it to a registry
 
@@ -1641,6 +1673,11 @@ Override in\-image mount point (ignored with \-\-image\-dir)
 .TP
 \fB\-\-no\-mise\fR
 Don't embed the mise binary (ignored with \-\-image\-dir)
+.TP
+\fB\-\-owner\fR \fI<UID[:GID]>\fR
+UID[:GID] to assign to every tar entry when building (conflicts with \-\-image\-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 .TP
 \fB\-\-tool\fR \fI<TOOL>\fR
 Force the push tool (`auto`, `skopeo`, `crane`). Default `auto`
@@ -1695,6 +1732,11 @@ Override in\-image mount point (ignored with \-\-image\-dir)
 .TP
 \fB\-\-no\-mise\fR
 Don't embed the mise binary (ignored with \-\-image\-dir)
+.TP
+\fB\-\-owner\fR \fI<UID[:GID]>\fR
+UID[:GID] to assign to every tar entry when building (conflicts with \-\-image\-dir)
+
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 .TP
 \fB\-\-volume\fR \fI<HOST:CONTAINER>\fR
 Bind\-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
@@ -2702,6 +2744,116 @@ Symlinks all ruby tool versions from an external tool into mise
 .TP
 \fB\-\-brew\fR
 Get tool versions from Homebrew
+.SH "MISE SYSTEM INSTALL"
+Install missing system packages from `[system.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config.
+.PP
+\fBUsage:\fR mise system install [OPTIONS] [<PACKAGE>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only install packages for this manager, e.g. `apt` or `brew`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-\-update\fR
+Refresh package manager metadata first (apt: `apt\-get update`)
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [system.packages]
+.SH "MISE SYSTEM STATUS"
+Show the status of system packages from `[system.packages]`
+.PP
+\fBUsage:\fR mise system status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured packages are missing
+.SH "MISE SYSTEM UPGRADE"
+Upgrade installed system packages from `[system.packages]`
+
+Refreshes package manager metadata and upgrades the configured packages
+that are already installed: apt/dnf/pacman upgrade to the newest available
+version (apt and dnf honor a version pinned in config), brew pours the
+formula's current bottle and replaces the old keg. Packages that are not
+installed yet are skipped — use `mise system install` for those.
+
+Packages can also be given explicitly in `manager:package` form.
+.PP
+\fBUsage:\fR mise system upgrade [OPTIONS] [<PACKAGE>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only upgrade packages for this manager, e.g. `apt` or `brew`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [system.packages]
+.SH "MISE SYSTEM USE"
+Add system packages to [system.packages] and install them
+
+Like `mise use` for tools: writes `"manager:package" = "version"` entries
+to mise.toml (the local config by default, the global one with `\-g`) and
+then installs whatever is missing.
+
+Versions are pinned with `@`: `mise system use apt:curl@8.5.0\-2`. Without
+`@` (or with `@latest`) no pin is written. brew formulae version through
+their names instead (`brew:postgresql@17`), so `@` is always part of the
+formula name there.
+.PP
+\fBUsage:\fR mise system use [OPTIONS] <PACKAGE> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Write to the config file for this environment (mise.<ENV>.toml)
+.TP
+\fB\-g, \-\-global\fR
+Write to the global config (~/.config/mise/config.toml) instead of the local one
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without writing config or installing
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package[@version]` form
 .SH "MISE TASKS"
 Manage tasks
 .PP
@@ -3145,6 +3297,9 @@ GitHub token
 .TP
 \fB\-\-raw\fR
 Print only the token value
+.TP
+\fB\-\-refresh\fR
+[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh\-token grant or a new device\-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
 .TP
 \fB\-\-unmask\fR
 Show the full unmasked token

@@ -31,6 +31,29 @@ assert "mise env | grep -v PATH" "export B=2"
 
 cat <<EOF >mise.toml
 [env]
+_.file = 'c.toml'
+EOF
+cat <<EOF >c.toml
+C = "see"
+D = 2
+E = true
+EOF
+assert "mise env | grep -v PATH" "export C=see
+export D=2
+export E=true"
+
+cat <<EOF >mise.toml
+[env]
+_.file = 'nested.toml'
+EOF
+cat <<EOF >nested.toml
+[DATABASE]
+HOST = "localhost"
+EOF
+assert_fail "mise env" "unsupported toml value"
+
+cat <<EOF >mise.toml
+[env]
 _.file = ['a', 'b.json']
 EOF
 echo 'export A=1' >a

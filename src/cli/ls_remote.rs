@@ -7,8 +7,7 @@ use serde::Serialize;
 use crate::backend::{Backend, VersionInfo};
 use crate::cli::args::ToolArg;
 use crate::config::Settings;
-use crate::duration::parse_into_timestamp;
-use crate::install_before::resolve_before_date_for_backend;
+use crate::install_before::{resolve_before_date_for_backend, resolve_cli_minimum_release_age};
 use crate::toolset::{ToolRequest, tool_request};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config::Config};
@@ -91,11 +90,7 @@ impl LsRemote {
         }
         backend::set_strict_metadata(self.strict_metadata);
         let config = Config::get().await?;
-        let before_date = self
-            .minimum_release_age
-            .as_deref()
-            .map(parse_into_timestamp)
-            .transpose()?;
+        let before_date = resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())?;
         if let Some(plugin) = self.get_plugin(&config).await? {
             self.run_single(&config, plugin, before_date).await
         } else {
@@ -123,13 +118,16 @@ impl LsRemote {
         };
         let matches_prefix = |v: &str| prefix.as_ref().is_none_or(|p| v.starts_with(p));
 
-        let versions = filter_versions_by_date(
-            plugin.list_remote_versions_with_info(config).await?,
-            before_date,
-        )
-        .into_iter()
-        .filter(|v| matches_prefix(&v.version))
-        .collect::<Vec<_>>();
+        let versions_matching_prefix = plugin
+            .list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .filter(|v| matches_prefix(&v.version))
+            .collect::<Vec<_>>();
+        let hidden_versions = before_date
+            .map(|before| VersionInfo::count_hidden_by_date(&versions_matching_prefix, before))
+            .unwrap_or_default();
+        let versions = filter_versions_by_date(versions_matching_prefix, before_date);
 
         if self.json {
             miseprintln!("{}", serde_json::to_string(&versions)?);
@@ -137,20 +135,23 @@ impl LsRemote {
             for v in versions {
                 miseprintln!("{}", v.version);
             }
+            warn_if_versions_hidden_by_minimum_release_age(plugin.id(), hidden_versions);
         }
         Ok(())
     }
 
     async fn run_all(self, config: &Arc<Config>, before_date: Option<Timestamp>) -> Result<()> {
         let mut versions = vec![];
+        let mut hidden_versions = 0;
         for b in backend::list() {
             let tool = b.id().to_string();
             let before_date =
                 resolve_before_date_for_backend(config, b.as_ref(), before_date).await?;
-            for v in filter_versions_by_date(
-                b.list_remote_versions_with_info(config).await?,
-                before_date,
-            ) {
+            let all_versions = b.list_remote_versions_with_info(config).await?;
+            if let Some(before) = before_date {
+                hidden_versions += VersionInfo::count_hidden_by_date(&all_versions, before);
+            }
+            for v in filter_versions_by_date(all_versions, before_date) {
                 versions.push(VersionOutputAll {
                     tool: tool.clone(),
                     version: v.version,
@@ -167,6 +168,7 @@ impl LsRemote {
             for v in versions {
                 miseprintln!("{}@{}", v.tool, v.version);
             }
+            warn_if_versions_hidden_by_minimum_release_age("tools", hidden_versions);
         }
         Ok(())
     }
@@ -185,6 +187,14 @@ impl LsRemote {
             None => Ok(None),
         }
     }
+}
+
+fn warn_if_versions_hidden_by_minimum_release_age(tool: &str, hidden_versions: usize) {
+    if hidden_versions == 0 {
+        return;
+    }
+    let s = if hidden_versions == 1 { "" } else { "s" };
+    warn!("{hidden_versions} newer {tool} release{s} hidden by minimum_release_age");
 }
 
 fn filter_versions_by_date(

@@ -181,4 +181,23 @@ EOF
 
 assert "mise run build" "cargo build"
 
+# Test templates apply to tasks defined in included tasks.toml files
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."template:failing-task"]
+run = "echo from template && exit 1"
+
+[task_config]
+includes = ["tasks.toml"]
+EOF
+
+cat <<'EOF' >tasks.toml
+[failing-task]
+extends = "template:failing-task"
+EOF
+
+assert_fail "mise run failing-task" "from template"
+
 echo '' >mise.toml

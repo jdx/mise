@@ -240,7 +240,7 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
         if !cfg!(windows)
             && let Some(cwd) = &*dirs::CWD
         {
-            let includes = config::task_includes_for_dir(cwd, &config.config_files);
+            let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
             let non_exec_files = find_non_executable_task_files(&includes);
             if !non_exec_files.is_empty() {
                 let dirs_with_files: Vec<String> = includes
@@ -271,7 +271,7 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
         );
     }
     if let Some(cwd) = &*dirs::CWD {
-        let includes = config::task_includes_for_dir(cwd, &config.config_files);
+        let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
         let path = includes
             .iter()
             .map(|d| d.join(name))

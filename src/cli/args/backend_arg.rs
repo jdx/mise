@@ -5,8 +5,7 @@ use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{
-    EPHEMERAL_OPT_KEYS, ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options,
-    serialize_tool_options, try_parse_tool_options,
+    ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options, try_parse_tool_options,
 };
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
@@ -444,23 +443,6 @@ impl BackendArg {
         }
     }
 
-    pub fn full_with_opts(&self) -> String {
-        let full = self.full();
-        if split_bracketed_opts(&full).is_some() {
-            return full;
-        }
-        if let Some(opts) = self.explicit_opts()
-            && let Some(opts_str) = serialize_tool_options(
-                opts.opts
-                    .iter()
-                    .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str())),
-            )
-        {
-            return format!("{full}[{opts_str}]");
-        }
-        full
-    }
-
     pub fn full_without_opts(&self) -> String {
         let full = self.full();
         if let Some((name, _)) = split_bracketed_opts(&full) {
@@ -844,76 +826,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_full_with_opts_appends_and_filters() {
-        let _config = Config::get().await.unwrap();
-
-        // start with a normal full like "npm:prettier" and attach opts via set_opts
-        let mut fa: BackendArg = "npm:prettier".into();
-        fa.set_opts(Some(parse_tool_options("a=1,postinstall=ignored,b=2")));
-        // postinstall should be filtered out, remaining order preserved
-        assert_str_eq!("npm:prettier[a=1,b=2]", fa.full_with_opts());
-
-        fa = "http:hello-lock".into();
-        fa.set_opts(Some(parse_tool_options("url=https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin")));
-        // install_env should be filtered out, remaining order preserved
-        assert_str_eq!(
-            "http:hello-lock[url=https://mise.en.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
-            fa.full_with_opts()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_full_with_opts_round_trips_comma_strings() {
-        let _config = Config::get().await.unwrap();
-
-        let mut opts = ToolVersionOptions::default();
-        opts.opts.insert(
-            "query".to_string(),
-            toml::Value::String("first,second=value".to_string()),
-        );
-
-        let mut fa: BackendArg = "http:hello-lock".into();
-        fa.set_opts(Some(opts));
-
-        let serialized = fa.full_with_opts();
-        assert_str_eq!(r#"http:hello-lock[query="first,second=value"]"#, serialized);
-
-        let reparsed: BackendArg = serialized.as_str().into();
-        let reparsed_opts = reparsed.opts();
-        assert_eq!(reparsed_opts.get("query"), Some("first,second=value"));
-        assert!(!reparsed_opts.contains_key("second"));
-    }
-
-    #[tokio::test]
-    async fn test_full_with_opts_round_trips_strings_with_quotes_and_brackets() {
-        let _config = Config::get().await.unwrap();
-
-        let mut opts = ToolVersionOptions::default();
-        opts.opts.insert(
-            "pattern".to_string(),
-            toml::Value::String(r#"a"b"#.to_string()),
-        );
-        opts.opts.insert(
-            "bin_path".to_string(),
-            toml::Value::String("bin[debug]".to_string()),
-        );
-
-        let mut fa: BackendArg = "http:hello-lock".into();
-        fa.set_opts(Some(opts));
-
-        let serialized = fa.full_with_opts();
-        assert_str_eq!(
-            r#"http:hello-lock[pattern='a"b',bin_path="bin[debug]"]"#,
-            serialized
-        );
-
-        let reparsed: BackendArg = serialized.as_str().into();
-        let reparsed_opts = reparsed.opts();
-        assert_eq!(reparsed_opts.get("pattern"), Some(r#"a"b"#));
-        assert_eq!(reparsed_opts.get("bin_path"), Some("bin[debug]"));
-    }
-
-    #[tokio::test]
     async fn test_split_bracketed_opts_ignores_quoted_brackets() {
         let _config = Config::get().await.unwrap();
 
@@ -925,70 +837,6 @@ mod tests {
             "http:hello-lock",
             strip_opts(r#"http:hello-lock[pattern='a"b',bin_path="bin[debug]"]"#)
         );
-    }
-
-    #[tokio::test]
-    async fn test_full_with_opts_omits_empty_brackets_for_complex_opts() {
-        let _config = Config::get().await.unwrap();
-
-        let mut opts = ToolVersionOptions::default();
-        opts.opts.insert(
-            "targets".to_string(),
-            toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
-        );
-
-        let mut fa: BackendArg = "npm:prettier".into();
-        fa.set_opts(Some(opts));
-
-        assert_str_eq!("npm:prettier", fa.full_with_opts());
-    }
-
-    #[tokio::test]
-    async fn test_full_with_opts_preserves_existing_brackets() {
-        let _config = Config::get().await.unwrap();
-
-        // when the full already contains options brackets, full_with_opts should return it unchanged
-        let mut fa = BackendArg::new_raw(
-            "node".to_string(),
-            Some("node[foo=bar]".to_string()),
-            "node".to_string(),
-            None,
-            BackendResolution::new(true),
-        );
-        assert_str_eq!("node[foo=bar]", fa.full_with_opts());
-
-        fa = BackendArg::new_raw(
-            "gitlab:jdxcode/mise-test-fixtures".to_string(),
-            Some("gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]".to_string()),
-            "gitlab:jdxcode/mise-test-fixtures".to_string(),
-            None,
-            BackendResolution::new(true),
-        );
-        assert_str_eq!(
-            "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
-            fa.full_with_opts()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_full_with_opts_omits_install_manifest_opts() {
-        let _config = Config::get().await.unwrap();
-
-        let mut opts = std::collections::BTreeMap::new();
-        opts.insert(
-            "version_json_path".to_string(),
-            toml::Value::String(".manifest".to_string()),
-        );
-        let fa = BackendArg::from(crate::toolset::install_state::InstallStateTool {
-            short: "http:hello".to_string(),
-            full: Some("http:hello".to_string()),
-            versions: vec!["1.0.0".to_string()],
-            explicit_backend: true,
-            opts,
-            installs_path: None,
-        });
-
-        assert_str_eq!("http:hello", fa.full_with_opts());
     }
 
     #[tokio::test]

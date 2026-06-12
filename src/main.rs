@@ -85,6 +85,7 @@ mod shims;
 mod shorthands;
 mod sops;
 mod sysconfig;
+mod system;
 pub(crate) mod task;
 pub(crate) mod tera;
 pub(crate) mod timeout;

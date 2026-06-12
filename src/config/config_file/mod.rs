@@ -75,7 +75,6 @@ pub trait ConfigFile: Debug + Send + Sync {
             None => None,
         }
     }
-    fn config_type(&self) -> ConfigFileType;
     fn config_root(&self) -> PathBuf {
         config_root::config_root(self.get_path())
     }
@@ -113,6 +112,10 @@ pub trait ConfigFile: Debug + Send + Sync {
         &DEFAULT_TASK_CONFIG
     }
 
+    fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
+        Ok(self.task_config().includes.clone())
+    }
+
     fn task_templates(&self) -> IndexMap<String, TaskTemplate> {
         IndexMap::new()
     }
@@ -143,6 +146,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     }
 
     fn oci_config(&self) -> Option<crate::oci::OciConfig> {
+        None
+    }
+
+    fn system_config(&self) -> Option<crate::system::SystemTomlConfig> {
         None
     }
 }

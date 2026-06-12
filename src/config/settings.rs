@@ -250,6 +250,16 @@ fn warn_deprecated(key: &str) {
     }
 }
 
+fn normalize_hidden_config_aliases(mut partial: SettingsPartial) -> SettingsPartial {
+    if let Some(v) = partial.install_before.take() {
+        warn_deprecated("install_before");
+        if partial.minimum_release_age.is_none() {
+            partial.minimum_release_age = Some(v);
+        }
+    }
+    partial
+}
+
 impl Settings {
     pub fn parse_default_package_line(package: &str) -> Option<String> {
         let package = package.split('#').next().unwrap_or_default().trim();
@@ -276,7 +286,9 @@ impl Settings {
 
         // Initial pass to obtain cd option
         let mut sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+            .preloaded(normalize_hidden_config_aliases(
+                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
+            ))
             .env();
 
         let mut settings = sb.load()?;
@@ -290,7 +302,9 @@ impl Settings {
 
         // Reload settings after current directory option processed
         sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+            .preloaded(normalize_hidden_config_aliases(
+                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
+            ))
             .env();
         for file in Self::all_settings_files() {
             sb = sb.preloaded(file);
@@ -457,6 +471,12 @@ impl Settings {
         if self.shorthands_file.is_some() {
             warn_deprecated("shorthands_file");
         }
+        if let Some(registry_url) = self.aqua.registry_url.take() {
+            warn_deprecated("aqua.registry_url");
+            if self.aqua.registries.is_none() {
+                self.aqua.registries = Some(vec![registry_url]);
+            }
+        }
     }
 
     pub fn add_cli_matches(cli: &Cli) {
@@ -514,7 +534,7 @@ impl Settings {
         let raw = file::read_to_string(path)?;
         let settings_file: SettingsFile = toml::from_str(&raw)?;
 
-        Ok(settings_file.settings)
+        Ok(normalize_hidden_config_aliases(settings_file.settings))
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
@@ -1104,6 +1124,84 @@ mod tests {
         let settings = Settings::get();
         assert_eq!(settings.minimum_release_age.as_deref(), Some("7d"));
         Settings::reset(None);
+    }
+
+    #[test]
+    fn test_minimum_release_age_hidden_alias_wins_over_install_before() {
+        let mut partial = SettingsPartial::empty();
+        partial.install_before = Some("7d".to_string());
+        partial.minimum_release_age = Some("3d".to_string());
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert_eq!(settings.minimum_release_age.as_deref(), Some("3d"));
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_aqua_registry_url_accepts_single_string() {
+        let settings_file: SettingsFile = toml::from_str(
+            r#"
+            [settings]
+            aqua.registry_url = "https://example.com/registry"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            settings_file.settings.aqua.registry_url,
+            Some("https://example.com/registry".to_string())
+        );
+    }
+
+    #[test]
+    fn test_aqua_registries_accepts_list() {
+        let settings_file: SettingsFile = toml::from_str(
+            r#"
+            [settings]
+            aqua.registries = [
+              "https://example.com/first",
+              "https://example.com/second",
+            ]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            settings_file.settings.aqua.registries,
+            Some(vec![
+                "https://example.com/first".to_string(),
+                "https://example.com/second".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_aqua_registry_url_sets_registries() {
+        let mut settings = Settings::default();
+        settings.aqua.registry_url = Some("https://example.com/legacy".to_string());
+
+        settings.set_hidden_configs();
+
+        assert_eq!(settings.aqua.registry_url, None);
+        assert_eq!(
+            settings.aqua.registries,
+            Some(vec!["https://example.com/legacy".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_aqua_registries_overrides_registry_url() {
+        let mut settings = Settings::default();
+        settings.aqua.registry_url = Some("https://example.com/legacy".to_string());
+        settings.aqua.registries = Some(vec!["https://example.com/new".to_string()]);
+
+        settings.set_hidden_configs();
+
+        assert_eq!(settings.aqua.registry_url, None);
+        assert_eq!(
+            settings.aqua.registries,
+            Some(vec!["https://example.com/new".to_string()])
+        );
     }
 
     #[test]

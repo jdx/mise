@@ -1895,6 +1895,15 @@ const completionSpec: Fig.Spec = {
                 "Do not embed the currently-running mise binary at /usr/local/bin/mise",
               isRepeatable: false,
             },
+            {
+              name: "--owner",
+              description:
+                "UID[:GID] to assign to every tar entry in generated layers",
+              isRepeatable: false,
+              args: {
+                name: "uid[:gid]",
+              },
+            },
           ],
         },
         {
@@ -1941,6 +1950,15 @@ const completionSpec: Fig.Spec = {
               description:
                 "Don't embed the mise binary (ignored with --image-dir)",
               isRepeatable: false,
+            },
+            {
+              name: "--owner",
+              description:
+                "UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "uid[:gid]",
+              },
             },
             {
               name: "--tool",
@@ -2023,6 +2041,15 @@ const completionSpec: Fig.Spec = {
               description:
                 "Don't embed the mise binary (ignored with --image-dir)",
               isRepeatable: false,
+            },
+            {
+              name: "--owner",
+              description:
+                "UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)",
+              isRepeatable: false,
+              args: {
+                name: "uid[:gid]",
+              },
             },
             {
               name: "--volume",
@@ -3184,6 +3211,154 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
+      name: "system",
+      description:
+        "[experimental] Manage system packages from `[system.packages]`",
+      subcommands: [
+        {
+          name: ["install", "i"],
+          description:
+            "Install missing system packages from `[system.packages]`",
+          options: [
+            {
+              name: ["-m", "--manager"],
+              description:
+                "Only install packages for this manager, e.g. `apt` or `brew`",
+              isRepeatable: false,
+              args: {
+                name: "manager",
+                suggestions: ["apt", "brew", "dnf", "pacman"],
+              },
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the commands that would run without running them",
+              isRepeatable: false,
+            },
+            {
+              name: ["-y", "--yes"],
+              description: "Skip the confirmation prompt",
+              isRepeatable: false,
+            },
+            {
+              name: "--update",
+              description:
+                "Refresh package manager metadata first (apt: `apt-get update`)",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "package",
+            description:
+              "Packages in `manager:package` form; defaults to everything configured in [system.packages]",
+            isOptional: true,
+            isVariadic: true,
+          },
+        },
+        {
+          name: ["status", "ls"],
+          description:
+            "Show the status of system packages from `[system.packages]`",
+          options: [
+            {
+              name: ["-J", "--json"],
+              description: "Output in JSON format",
+              isRepeatable: false,
+            },
+            {
+              name: "--missing",
+              description:
+                "Exit with code 1 if any configured packages are missing",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
+          name: ["upgrade", "up"],
+          description:
+            "Upgrade installed system packages from `[system.packages]`",
+          options: [
+            {
+              name: ["-m", "--manager"],
+              description:
+                "Only upgrade packages for this manager, e.g. `apt` or `brew`",
+              isRepeatable: false,
+              args: {
+                name: "manager",
+                suggestions: ["apt", "brew", "dnf", "pacman"],
+              },
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the commands that would run without running them",
+              isRepeatable: false,
+            },
+            {
+              name: ["-y", "--yes"],
+              description: "Skip the confirmation prompt",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "package",
+            description:
+              "Packages in `manager:package` form; defaults to everything configured in [system.packages]",
+            isOptional: true,
+            isVariadic: true,
+          },
+        },
+        {
+          name: ["use", "u"],
+          description:
+            "Add system packages to [system.packages] and install them",
+          options: [
+            {
+              name: ["-e", "--env"],
+              description:
+                "Write to the config file for this environment (mise.<ENV>.toml)",
+              isRepeatable: false,
+              args: {
+                name: "env",
+              },
+            },
+            {
+              name: ["-g", "--global"],
+              description:
+                "Write to the global config (~/.config/mise/config.toml) instead of the local one",
+              isRepeatable: false,
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the commands that would run without writing config or installing",
+              isRepeatable: false,
+            },
+            {
+              name: ["-p", "--path"],
+              description: "Write to this config file or directory",
+              isRepeatable: false,
+              args: {
+                name: "path",
+                template: "filepaths",
+              },
+            },
+            {
+              name: ["-y", "--yes"],
+              description: "Skip the confirmation prompt",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "package",
+            description: "Packages in `manager:package[@version]` form",
+            isVariadic: true,
+          },
+        },
+      ],
+    },
+    {
       name: ["tasks", "t"],
       description: "Manage tasks",
       subcommands: [
@@ -3823,6 +3998,12 @@ const completionSpec: Fig.Spec = {
             {
               name: "--raw",
               description: "Print only the token value",
+              isRepeatable: false,
+            },
+            {
+              name: "--refresh",
+              description:
+                "[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire",
               isRepeatable: false,
             },
             {

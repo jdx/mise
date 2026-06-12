@@ -66,9 +66,10 @@ pub async fn verify_attestation(
     repo: &str,
     expected_workflow: Option<&str>,
     api_url: Option<&str>,
+    use_versions_host: bool,
 ) -> AttestationResult<bool> {
     let mut digest = None;
-    if use_versions_host_for_attestations(api_url) {
+    if use_versions_host_for_attestations(api_url, use_versions_host) {
         let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
         match crate::versions_host::github_attestations(
             &format!("{owner}/{repo}"),
@@ -171,8 +172,9 @@ pub async fn detect_attestations(
     repo: &str,
     api_url: &str,
     digest: &str,
+    use_versions_host: bool,
 ) -> Result<bool, DetectError> {
-    if use_versions_host_for_attestations(Some(api_url)) {
+    if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
         match crate::versions_host::github_attestations(&format!("{owner}/{repo}"), digest).await {
             Ok(Some(attestations)) => {
                 trace!(
@@ -198,9 +200,9 @@ pub async fn detect_attestations(
     Ok(!attestations.is_empty())
 }
 
-fn use_versions_host_for_attestations(api_url: Option<&str>) -> bool {
+fn use_versions_host_for_attestations(api_url: Option<&str>, use_versions_host: bool) -> bool {
     let settings = crate::config::Settings::get();
-    if settings.prefer_offline() || !settings.use_versions_host {
+    if !use_versions_host || settings.prefer_offline() || !settings.use_versions_host {
         return false;
     }
 
@@ -469,8 +471,23 @@ mod tests {
     fn test_use_versions_host_for_attestations_respects_setting() {
         let _settings = SettingsGuard::with_versions_host(None, Some(false));
 
-        assert!(!use_versions_host_for_attestations(Some(
-            crate::github::API_URL
-        )));
+        assert!(!use_versions_host_for_attestations(
+            Some(crate::github::API_URL),
+            true
+        ));
+    }
+
+    #[test]
+    fn test_use_versions_host_for_attestations_respects_registry_gate() {
+        let _settings = SettingsGuard::with_versions_host(None, Some(true));
+
+        assert!(!use_versions_host_for_attestations(
+            Some(crate::github::API_URL),
+            false
+        ));
+        assert!(use_versions_host_for_attestations(
+            Some(crate::github::API_URL),
+            true
+        ));
     }
 }

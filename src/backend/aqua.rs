@@ -13,7 +13,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
-use crate::registry::REGISTRY;
+use crate::registry::{REGISTRY, shorts_for_full};
 use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{
-    backend::{Backend, MISE_BINS_DIR, strict_metadata},
+    backend::{Backend, MISE_BINS_DIR, backend_arg_matches_registry_backend, strict_metadata},
     config::Config,
 };
 use crate::{file, github, minisign};
@@ -1066,11 +1066,13 @@ impl AquaBackend {
         pkg: &AquaPackage,
         digest: &str,
     ) -> std::result::Result<bool, crate::github::sigstore::DetectError> {
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         crate::github::sigstore::detect_attestations(
             &pkg.repo_owner,
             &pkg.repo_name,
             github::API_URL,
             digest,
+            self.use_versions_host_for_github_metadata(&repo),
         )
         .await
     }
@@ -1155,6 +1157,7 @@ impl AquaBackend {
             .github_artifact_attestations
             .as_ref()
             .and_then(|att| att.signer_workflow.as_deref().map(unescape_regex_literal));
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
 
         match crate::github::sigstore::verify_attestation(
             artifact_path,
@@ -1162,6 +1165,7 @@ impl AquaBackend {
             &pkg.repo_name,
             signer_workflow.as_deref(),
             None,
+            self.use_versions_host_for_github_metadata(&repo),
         )
         .await
         {
@@ -1316,7 +1320,8 @@ impl AquaBackend {
                     minisign_config.repo_name.as_ref(),
                     pkg,
                 );
-                let url = github::get_release(&format!("{repo_owner}/{repo_name}"), v)
+                let url = self
+                    .get_github_release(&format!("{repo_owner}/{repo_name}"), v)
                     .await?
                     .assets
                     .into_iter()
@@ -1499,6 +1504,29 @@ impl AquaBackend {
         }
     }
 
+    fn use_versions_host_for_github_metadata(&self, repo: &str) -> bool {
+        let full = self.ba.full_without_opts();
+        if !backend_arg_matches_registry_backend(&self.ba) && shorts_for_full(&full).is_empty() {
+            return false;
+        }
+        let Some(aqua_id) = full.strip_prefix("aqua:") else {
+            return false;
+        };
+        let aqua_id = aqua_id.to_ascii_lowercase();
+        let repo = repo.to_ascii_lowercase();
+        aqua_id == repo || aqua_id.starts_with(&format!("{repo}/"))
+    }
+
+    async fn get_github_release(&self, repo: &str, tag: &str) -> Result<github::GithubRelease> {
+        github::get_release_for_url_with_versions_host(
+            github::API_URL,
+            repo,
+            tag,
+            self.use_versions_host_for_github_metadata(repo),
+        )
+        .await
+    }
+
     async fn latest_marked_release_version(&self) -> Result<Option<String>> {
         if Settings::get().offline() {
             trace!("Skipping latest stable version due to offline mode");
@@ -1526,7 +1554,7 @@ impl AquaBackend {
         }
 
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let release = match github::get_release(&repo, "latest").await {
+        let release = match self.get_github_release(&repo, "latest").await {
             Ok(release) => release,
             Err(e) => {
                 debug!(
@@ -1667,7 +1695,7 @@ impl AquaBackend {
         prefer_musl: bool,
     ) -> Result<(String, Option<String>)> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let gh_release = github::get_release(&gh_id, v).await?;
+        let gh_release = self.get_github_release(&gh_id, v).await?;
 
         // Prioritize order of asset_strs
         let asset = select_github_release_asset(&gh_release.assets, &asset_strs, prefer_musl)
@@ -2295,7 +2323,7 @@ impl AquaBackend {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
             make_executable = true;
-        } else if format.starts_with("tar") {
+        } else if format.starts_with("tar") || (format == "7z" && cfg!(windows)) {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
             make_executable = true;
         } else if format == "zip" {
@@ -2720,6 +2748,36 @@ mod tests {
             default: None,
             required,
         }
+    }
+
+    #[test]
+    fn test_use_versions_host_for_github_metadata_only_for_registry_tools() {
+        let registry_backend = AquaBackend::from_arg(BackendArg::new(
+            "act".to_string(),
+            Some("aqua:nektos/act".to_string()),
+        ));
+        assert!(registry_backend.use_versions_host_for_github_metadata("nektos/act"));
+        assert!(!registry_backend.use_versions_host_for_github_metadata("sigstore/foreign"));
+
+        let explicit_registry_backend = AquaBackend::from_arg(BackendArg::new(
+            "nektos/act".to_string(),
+            Some("aqua:nektos/act".to_string()),
+        ));
+        assert!(explicit_registry_backend.use_versions_host_for_github_metadata("nektos/act"));
+
+        let subpackage_backend = AquaBackend::from_arg(BackendArg::new(
+            "fly".to_string(),
+            Some("aqua:concourse/concourse/fly".to_string()),
+        ));
+        assert!(subpackage_backend.use_versions_host_for_github_metadata("concourse/concourse"));
+
+        let direct_backend = AquaBackend::from_arg(BackendArg::new(
+            "aws/session-manager-plugin".to_string(),
+            Some("aqua:aws/session-manager-plugin".to_string()),
+        ));
+        assert!(
+            !direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin")
+        );
     }
 
     #[test]

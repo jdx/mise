@@ -138,4 +138,41 @@ assert_contains "mise tasks" "ripgrep"
 assert_succeed "mise run local_task"
 assert_succeed "mise run ripgrep"
 
+mise cache clear # Clear cache to force redownload
+
+#################################################################################
+# Test remote git directory includes that contain toml task files
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "git::${LOCAL_GIT_URL}//xtasks/lint"
+]
+EOF
+
+# Tasks defined inside tasks.toml in the remote directory should be loaded
+# alongside the executable script tasks.
+assert_contains "mise tasks" "ripgrep"
+assert_contains "mise tasks" "toml_task"
+assert_contains "mise tasks" "toml_table_task"
+assert_contains "mise run toml_task" "toml_task executed"
+assert_contains "mise run toml_table_task" "toml_table_task executed"
+
+mise cache clear # Clear cache to force redownload
+
+#################################################################################
+# Test remote git includes that point directly at a toml file
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "git::${LOCAL_GIT_URL}//xtasks/standalone/standalone.toml"
+]
+EOF
+
+assert_contains "mise tasks" "standalone_task"
+assert_contains "mise run standalone_task" "standalone_task executed"
+
 echo "All tests passed!"

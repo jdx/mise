@@ -148,58 +148,13 @@ Don't do this inside of scripts because mise may add a command in a future versi
 
 ## Software verification
 
-mise provides **native software verification** for aqua tools without requiring external dependencies. For aqua tools, Cosign/Minisign signatures, SLSA provenance, and GitHub artifact attestations are verified automatically using mise's built-in implementation.
-
-For other verification needs (like GPG), you can install additional tools:
-
-```sh
-brew install gpg
-# Note: cosign and slsa-verifier are no longer needed for aqua tools
-# mise now handles verification natively
-```
-
-To configure aqua verification (all enabled by default):
-
-```sh
-# Disable specific verification methods if needed
-export MISE_AQUA_COSIGN=false
-export MISE_AQUA_SLSA=false
-export MISE_AQUA_GITHUB_ATTESTATIONS=false
-export MISE_AQUA_MINISIGN=false
-```
+See [Security](/security.html#software-verification) for mise's software verification controls,
+including aqua signatures, SLSA provenance, and GitHub artifact attestations.
 
 ## Minimum release age
 
-To limit supply chain risk, you can restrict mise to only install versions released before a certain date or duration. This is similar to Renovate's [minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/) concept — newly published versions are ignored until they've been available for a configurable amount of time.
-
-```toml
-# mise.toml
-[settings]
-minimum_release_age = "7d"  # only install versions released more than 7 days ago
-```
-
-Supports relative durations (`7d`, `6m`, `1y`) and absolute dates (`2024-06-01`). For most backends, this only affects fuzzy version resolution (e.g., `node@20` or `latest`) — explicitly pinned versions like `node@22.5.0` bypass the filter.
-
-For `npm:` and `pipx:` tools, the same cutoff is also forwarded to transitive dependency resolution
-during install. Refer to the
-[npm backend docs](/dev-tools/backends/npm.html) and [pipx backend docs](/dev-tools/backends/pipx.html)
-for package-manager support details.
-
-You can also set `minimum_release_age` per-tool to override the global setting:
-
-```toml
-# mise.toml
-[settings]
-minimum_release_age = "7d"  # default for all tools
-
-[tools.trivy]
-version = "latest"
-minimum_release_age = "1d"  # trivy updates are time-sensitive, use a shorter window
-```
-
-Precedence: `--minimum-release-age` CLI flag > per-tool `minimum_release_age` > global `minimum_release_age` setting.
-
-See [`minimum_release_age`](/configuration/settings.html#minimum_release_age) for more details.
+See [Security](/security.html#minimum-release-age) for supply-chain delay controls, backend support,
+and transitive dependency filtering behavior.
 
 ## [`mise up --bump`](/cli/upgrade.html)
 

@@ -250,6 +250,15 @@ assert_contains() {
   fi
 }
 
+assert_contains_text() {
+  local actual="$1"
+  if [[ $actual == *"$2"* ]]; then
+    ok "[text] '$2' is in output"
+  else
+    fail "[text] expected '$2' to be in output"
+  fi
+}
+
 assert_not_contains() {
   local actual
   actual="$(quiet_assert_succeed "$1")"
@@ -257,6 +266,15 @@ assert_not_contains() {
     ok "[$1] '$2' is not in output"
   else
     fail "[$1] expected '$2' not to be in '$actual'"
+  fi
+}
+
+assert_not_contains_text() {
+  local actual="$1"
+  if [[ $actual != *"$2"* ]]; then
+    ok "[text] '$2' is not in output"
+  else
+    fail "[text] expected '$2' not to be in output"
   fi
 }
 

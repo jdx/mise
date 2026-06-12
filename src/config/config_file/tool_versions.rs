@@ -17,8 +17,6 @@ use crate::file::display_path;
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
-use super::ConfigFileType;
-
 // python 3.11.0 3.10.0
 // shellcheck 0.9.0
 // shfmt 3.6.0
@@ -154,10 +152,6 @@ impl Display for ToolVersions {
 }
 
 impl ConfigFile for ToolVersions {
-    fn config_type(&self) -> ConfigFileType {
-        ConfigFileType::ToolVersions
-    }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }

@@ -86,10 +86,11 @@ impl Usage {
             promote_orphan_shorts(tasks_run);
         }
 
-        // Require usage >= 3.4, the release that ships the jdx/usage#649 parser fix
-        // (see jdx/usage#652). This guards old `usage` CLIs from silently
-        // re-triggering the mise#10069 mis-parse without the fix.
-        let min_version = r#"min_usage_version "3.4""#;
+        // Require usage >= 3.5, the release that ships zsh colon completion
+        // fixes for task names and insert strings (see jdx/usage#666 and
+        // jdx/usage#670). This guards old `usage` CLIs from silently
+        // re-triggering the broken colon completion behavior.
+        let min_version = r#"min_usage_version "3.5""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
         println!("{min_version}\n{}\n{extra}", spec.to_string().trim());
         Ok(())
