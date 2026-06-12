@@ -164,8 +164,9 @@ impl VfoxPlugin {
         file::unzip(
             &temp_archive,
             &self.plugin_path,
-            &file::ZipOptions {
+            &file::ExtractOptions {
                 strip_components: if strip_components { 1 } else { 0 },
+                ..Default::default()
             },
         )?;
         Ok(())

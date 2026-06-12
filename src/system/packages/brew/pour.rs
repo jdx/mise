@@ -9,7 +9,7 @@ use super::api::BottleFile;
 use super::prefix;
 use super::relocate;
 use super::resolve::ResolvedFormula;
-use crate::file::{TarFormat, TarOptions};
+use crate::file::{ExtractOptions, TarFormat};
 use crate::result::Result;
 use crate::ui::progress_report::SingleReport;
 
@@ -93,8 +93,8 @@ pub async fn pour(
     crate::file::untar(
         tarball,
         &scratch,
-        &TarOptions {
-            format: TarFormat::TarGz,
+        TarFormat::TarGz,
+        &ExtractOptions {
             strip_components: 0,
             pr: Some(pr),
             preserve_mtime: true,

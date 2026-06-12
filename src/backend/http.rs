@@ -393,14 +393,7 @@ impl HttpBackend {
             pr.set_message(format!("extract {}", file_info.file_name()));
         }
 
-        file::untar(
-            file_path,
-            &dest_file,
-            &file::TarOptions {
-                pr,
-                ..file::TarOptions::new(file_info.format)
-            },
-        )?;
+        file::decompress_file(file_path, &dest_file, file_info.format)?;
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
@@ -443,22 +436,23 @@ impl HttpBackend {
             opts.strip_components().and_then(|s| s.parse().ok());
 
         // Auto-detect strip_components=1 for single-directory archives
+        let can_probe_strip = file_info.format != file::TarFormat::SevenZip || cfg!(windows);
         if strip_components.is_none()
             && opts.bin_path().is_none()
+            && can_probe_strip
             && file::should_strip_components(file_path, file_info.format).unwrap_or(false)
         {
             debug!("Auto-detected single directory archive, using strip_components=1");
             strip_components = Some(1);
         }
 
-        let tar_opts = file::TarOptions {
-            format: file_info.format,
+        let extract_opts = file::ExtractOptions {
             strip_components: strip_components.unwrap_or(0),
             pr,
             preserve_mtime: false,
         };
 
-        file::untar(file_path, dest, &tar_opts)?;
+        file::extract_archive(file_path, dest, file_info.format, &extract_opts)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = opts.rename_exe() {

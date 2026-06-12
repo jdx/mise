@@ -483,11 +483,7 @@ impl SPMBackend {
         self.verify_checksum(ctx, tv, &download_path)?;
 
         ctx.pr.set_message(format!("extract {}", asset.name));
-        file::untar(
-            &download_path,
-            &bundle_dir,
-            &file::TarOptions::new(file::TarFormat::Zip),
-        )?;
+        file::unzip(&download_path, &bundle_dir, &Default::default())?;
 
         let triples = swift_target_triples(ctx, self, tv).await?;
         let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;
