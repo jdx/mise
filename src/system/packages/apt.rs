@@ -62,7 +62,18 @@ fn parse_dpkg_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageSta
             if let Some(arch) = parts.next() {
                 installed.insert(format!("{name}:{arch}"), (status, version));
             }
-            installed.insert(name.to_string(), (status, version));
+            // a package can be present for several architectures
+            // (multi-arch); a bare-name request is satisfied by any
+            // installed arch, so never let a deinstalled foreign arch
+            // overwrite an installed entry
+            installed
+                .entry(name.to_string())
+                .and_modify(|entry| {
+                    if entry.0 != "installed" {
+                        *entry = (status, version);
+                    }
+                })
+                .or_insert((status, version));
         }
     }
     requests
@@ -211,6 +222,26 @@ mod tests {
                 installed: "8.5.0-2".to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_parse_dpkg_query_multiarch_bare_name() {
+        let mgr = AptManager::new();
+        let requests = vec![req(&mgr, "libssl3")];
+        // installed for amd64, deinstalled for i386 — the bare request is
+        // satisfied regardless of which line dpkg-query prints last
+        for output in [
+            "libssl3\tinstalled\t3.0.2\tamd64\nlibssl3\tdeinstall\t3.0.1\ti386\n",
+            "libssl3\tdeinstall\t3.0.1\ti386\nlibssl3\tinstalled\t3.0.2\tamd64\n",
+        ] {
+            let statuses = parse_dpkg_query(output, &requests);
+            assert_eq!(
+                statuses[0].state,
+                PackageState::Installed {
+                    version: "3.0.2".to_string()
+                }
+            );
+        }
     }
 
     #[test]
