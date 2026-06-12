@@ -8,14 +8,13 @@
 
 Runs the bootstrap steps for the current config in order:
 
-1. `mise system install` — install missing `[system.packages]`, apply
-   `[system.files]`, and write `[system.defaults]` (macOS)
+1. `mise system install` — install missing `[system.packages]` and apply
+   `[system.files]` and `[[system.edits]]`
 2. `mise install` — install missing tools from `[tools]`
 3. `mise run bootstrap` — if a task named `bootstrap` is defined
 
-The declarative steps converge — anything already in its desired state
-is skipped, so re-running is safe. The `bootstrap` task runs on every
-invocation; keep it idempotent. Use it for any project-specific setup
+Steps with nothing to do are skipped, so `mise bootstrap` is idempotent
+and safe to re-run. Use a `bootstrap` task for any project-specific setup
 that doesn't fit the declarative sections (cloning repos, seeding
 databases, etc.) — it runs with the installed tools on PATH.
 

@@ -10,7 +10,8 @@ use crate::system::packages::PackageState;
 use crate::ui::table::MiseTable;
 
 /// Show the status of system packages from `[system.packages]`, files from
-/// `[system.files]`, and macOS defaults from `[system.defaults]`
+/// `[system.files]`, edits from `[[system.edits]]`, and macOS defaults from
+/// `[system.defaults]`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemStatus {
@@ -131,6 +132,37 @@ impl SystemStatus {
                 ]);
             }
         }
+        let edits = system::edits::edits_from_config(&config);
+        let mut edit_rows: Vec<Vec<String>> = vec![];
+        let mut json_edits = vec![];
+        for req in &edits {
+            let state = match system::edits::check(&config, req) {
+                Ok(state) => state,
+                // e.g. a template that fails to render — visible, not fatal
+                Err(err) => FileState::Differs(format!("{err}")),
+            };
+            let state_str = match &state {
+                FileState::Applied => "applied".to_string(),
+                FileState::Missing => "missing".to_string(),
+                FileState::SourceMissing => "source missing".to_string(),
+                FileState::Differs(reason) => format!("differs ({reason})"),
+            };
+            any_missing |= state != FileState::Applied;
+            if self.json {
+                json_edits.push(json!({
+                    "path": req.path_raw,
+                    "edit": req.describe_op(),
+                    "state": match &state {
+                        FileState::Applied => "applied",
+                        FileState::Missing => "missing",
+                        FileState::SourceMissing => "source_missing",
+                        FileState::Differs(_) => "differs",
+                    },
+                }));
+            } else {
+                edit_rows.push(vec![req.path_raw.clone(), req.describe_op(), state_str]);
+            }
+        }
         let defaults = system::defaults_from_config(&config);
         let mut defaults_rows: Vec<Vec<String>> = vec![];
         if !defaults.is_empty() {
@@ -195,11 +227,16 @@ impl SystemStatus {
         }
         if self.json {
             json_out.insert("files".to_string(), json!(json_files));
+            json_out.insert("edits".to_string(), json!(json_edits));
             miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
         } else {
-            if rows.is_empty() && file_rows.is_empty() && defaults_rows.is_empty() {
+            if rows.is_empty()
+                && file_rows.is_empty()
+                && edit_rows.is_empty()
+                && defaults_rows.is_empty()
+            {
                 info!(
-                    "nothing configured in [system.packages], [system.files], or [system.defaults]"
+                    "nothing configured in [system.packages], [system.files], [[system.edits]], or [system.defaults]"
                 );
             }
             if !rows.is_empty() {
@@ -213,6 +250,13 @@ impl SystemStatus {
             if !file_rows.is_empty() {
                 let mut table = MiseTable::new(false, &["Target", "Mode", "Source", "State"]);
                 for row in file_rows {
+                    table.add_row(row);
+                }
+                table.print()?;
+            }
+            if !edit_rows.is_empty() {
+                let mut table = MiseTable::new(false, &["File", "Edit", "State"]);
+                for row in edit_rows {
                     table.add_row(row);
                 }
                 table.print()?;

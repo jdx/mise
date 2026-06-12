@@ -20,6 +20,7 @@ use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
 
 pub mod defaults;
+pub mod edits;
 pub mod files;
 pub mod packages;
 pub(crate) mod sudo;
@@ -41,6 +42,9 @@ pub struct SystemTomlConfig {
     /// target path -> source (see [`files`])
     #[serde(default)]
     pub files: IndexMap<String, files::FileTomlEntry>,
+    /// edits to files mise doesn't own (see [`edits`])
+    #[serde(default)]
+    pub edits: Vec<edits::EditTomlEntry>,
 }
 
 /// Packages for one manager, aggregated across the config hierarchy

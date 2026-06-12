@@ -2959,8 +2959,46 @@
     },
     "system": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages, files, macOS defaults)",
+      "description": "[experimental] machine-global bootstrapping (system packages, files, edits, macOS defaults)",
       "properties": {
+        "edits": {
+          "type": "array",
+          "description": "edits to files mise doesn't own, applied with `mise system install`: a marker-delimited block or a single line per entry",
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "file to edit (absolute or ~/)"
+              },
+              "id": {
+                "type": "string",
+                "description": "marker identity for blocks, so one file can hold several blocks; default \"mise\""
+              },
+              "block": {
+                "type": "string",
+                "description": "block content, maintained between marker comments"
+              },
+              "source": {
+                "type": "string",
+                "description": "block content from a file, relative to this config file"
+              },
+              "template": {
+                "type": "boolean",
+                "description": "render the block content through the mise template engine"
+              },
+              "line": {
+                "type": "string",
+                "description": "exact line to ensure exists (appended if absent)"
+              },
+              "comment": {
+                "type": "string",
+                "description": "comment prefix for the marker lines; inferred from the file extension when omitted"
+              }
+            }
+          }
+        },
         "files": {
           "type": "object",
           "description": "files to apply with `mise system install`, keyed by target path (e.g. \"~/.gitconfig\"); sources resolve relative to this config file",

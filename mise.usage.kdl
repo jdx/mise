@@ -286,14 +286,13 @@ cmd bootstrap help="[experimental] Set up a machine for the current config in on
 
 Runs the bootstrap steps for the current config in order:
 
-1. `mise system install` — install missing `[system.packages]`, apply
-   `[system.files]`, and write `[system.defaults]` (macOS)
+1. `mise system install` — install missing `[system.packages]` and apply
+   `[system.files]` and `[[system.edits]]`
 2. `mise install` — install missing tools from `[tools]`
 3. `mise run bootstrap` — if a task named `bootstrap` is defined
 
-The declarative steps converge — anything already in its desired state
-is skipped, so re-running is safe. The `bootstrap` task runs on every
-invocation; keep it idempotent. Use it for any project-specific setup
+Steps with nothing to do are skipped, so `mise bootstrap` is idempotent
+and safe to re-run. Use a `bootstrap` task for any project-specific setup
 that doesn't fit the declarative sections (cloning repos, seeding
 databases, etc.) — it runs with the installed tools on PATH.
 """#
@@ -2880,39 +2879,39 @@ Examples:
 }
 cmd system subcommand_required=#true help=#"""
 [experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, and macOS defaults from `[system.defaults]`
+from `[system.files]`, and edits from `[[system.edits]]`
 """# {
     long_help #"""
 [experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, and macOS defaults from `[system.defaults]`
+from `[system.files]`, and edits from `[[system.edits]]`
 
 System packages are machine-global packages installed by the OS package
 manager (apt, dnf, pacman) or mise's Homebrew-bottle installer (brew).
 System files are config files (dotfiles) symlinked, copied, or rendered
-to machine-global paths. macOS defaults are user preferences written
-with `defaults write`. Unlike `[tools]`, none of these are version-pinned
-per-project and they are only ever acted on when explicitly requested
-with `mise system install`.
+to machine-global paths. System edits manage one piece of a file
+something else owns — a marker-delimited block or a single line. Unlike
+`[tools]`, none of these are version-pinned per-project and all are only
+ever acted on when explicitly requested with `mise system install`.
 """#
     cmd install help=#"""
-Install missing system packages from `[system.packages]`, apply files
-from `[system.files]`, and write macOS defaults from `[system.defaults]`
+Install missing system packages from `[system.packages]` and apply files
+from `[system.files]` and edits from `[[system.edits]]`
 """# {
         alias i
         long_help #"""
-Install missing system packages from `[system.packages]`, apply files
-from `[system.files]`, and write macOS defaults from `[system.defaults]`
+Install missing system packages from `[system.packages]` and apply files
+from `[system.files]` and edits from `[[system.edits]]`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
 root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
-entries that aren't in their desired state are applied, and on macOS any
-`[system.defaults]` entries that are unset or differ are written.
+and `[[system.edits]]` entries that aren't in their desired state are
+applied.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config. Explicit packages and `--manager` scope the run to packages
-only.
+the config — files and edits are skipped in that case, as with
+`--manager`.
 """#
         after_long_help #"""
 Examples:
@@ -2936,7 +2935,7 @@ Examples:
     }
     cmd status help=#"""
 Show the status of system packages from `[system.packages]`, files from
-`[system.files]`, and macOS defaults from `[system.defaults]`
+`[system.files]`, and edits from `[[system.edits]]`
 """# {
         alias ls
         after_long_help #"""
@@ -2944,13 +2943,13 @@ Examples:
 
     $ mise system status
     $ mise system status --json
-    $ mise system status --missing # exit 1 if anything is out of sync
+    $ mise system status --missing # exit 1 if anything is missing
 
 """#
         flag "-J --json" help="Output in JSON format"
         flag --missing help=#"""
-Exit with code 1 if any configured packages, files, or defaults are
-not in their desired state (missing, version mismatch, differs)
+Exit with code 1 if any configured packages or files are not in their
+desired state (missing, version mismatch, differs)
 """#
     }
     cmd upgrade help="Upgrade installed system packages from `[system.packages]`" {
