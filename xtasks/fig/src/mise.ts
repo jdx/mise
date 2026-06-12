@@ -3315,9 +3315,24 @@ const completionSpec: Fig.Spec = {
             "Add system packages to [system.packages] and install them",
           options: [
             {
+              name: ["-e", "--env"],
+              description:
+                "Write to the config file for this environment (mise.<ENV>.toml)",
+              isRepeatable: false,
+              args: {
+                name: "env",
+              },
+            },
+            {
               name: ["-g", "--global"],
               description:
                 "Write to the global config (~/.config/mise/config.toml) instead of the local one",
+              isRepeatable: false,
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the commands that would run without writing config or installing",
               isRepeatable: false,
             },
             {
@@ -3328,21 +3343,6 @@ const completionSpec: Fig.Spec = {
                 name: "path",
                 template: "filepaths",
               },
-            },
-            {
-              name: ["-e", "--env"],
-              description:
-                "Write to the config file for this environment (mise.<ENV>.toml)",
-              isRepeatable: false,
-              args: {
-                name: "env",
-              },
-            },
-            {
-              name: ["-n", "--dry-run"],
-              description:
-                "Print the commands that would run without writing config or installing",
-              isRepeatable: false,
             },
             {
               name: ["-y", "--yes"],

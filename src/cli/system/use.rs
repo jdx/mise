@@ -28,22 +28,22 @@ pub struct SystemUse {
     #[clap(value_name = "PACKAGE", required = true)]
     packages: Vec<String>,
 
+    /// Write to the config file for this environment (mise.<ENV>.toml)
+    #[clap(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
+    env: Option<String>,
+
     /// Write to the global config (~/.config/mise/config.toml) instead of the
     /// local one
     #[clap(long, short)]
     global: bool,
 
-    /// Write to this config file or directory
-    #[clap(long, short, value_name = "PATH", conflicts_with = "global")]
-    path: Option<PathBuf>,
-
-    /// Write to the config file for this environment (mise.<ENV>.toml)
-    #[clap(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
-    env: Option<String>,
-
     /// Print the commands that would run without writing config or installing
     #[clap(long, short = 'n')]
     dry_run: bool,
+
+    /// Write to this config file or directory
+    #[clap(long, short, value_name = "PATH", conflicts_with = "global")]
+    path: Option<PathBuf>,
 
     /// Skip the confirmation prompt
     #[clap(long, short)]

@@ -2075,6 +2075,7 @@ mod tests {
         file::write(&p, "[tools]\n").unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         assert!(cf.system_config().is_none());
+        file::remove_file(&p).unwrap();
     }
 
     #[tokio::test]
@@ -2099,6 +2100,7 @@ mod tests {
         "#);
         let system = cf.system_config().unwrap();
         assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        file::remove_file(&p).unwrap();
     }
 
     #[tokio::test]

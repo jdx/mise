@@ -24,21 +24,21 @@ Packages in `manager:package[@version]` form
 
 ## Flags
 
-### `-g --global`
-
-Write to the global config (~/.config/mise/config.toml) instead of the local one
-
-### `-p --path <PATH>`
-
-Write to this config file or directory
-
 ### `-e --env <ENV>`
 
 Write to the config file for this environment (mise.&lt;ENV>.toml)
 
+### `-g --global`
+
+Write to the global config (~/.config/mise/config.toml) instead of the local one
+
 ### `-n --dry-run`
 
 Print the commands that would run without writing config or installing
+
+### `-p --path <PATH>`
+
+Write to this config file or directory
 
 ### `-y --yes`
 

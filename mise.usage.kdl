@@ -2956,14 +2956,14 @@ Examples:
     $ mise system use apt:curl@8.5.0-2
 
 """#
-        flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one"
-        flag "-p --path" help="Write to this config file or directory" {
-            arg <PATH>
-        }
         flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
             arg <ENV>
         }
+        flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one"
         flag "-n --dry-run" help="Print the commands that would run without writing config or installing"
+        flag "-p --path" help="Write to this config file or directory" {
+            arg <PATH>
+        }
         flag "-y --yes" help="Skip the confirmation prompt"
         arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
     }
