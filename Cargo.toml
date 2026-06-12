@@ -182,7 +182,7 @@ siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
 supports-hyperlinks = "3"
 sys-info = "0.9"
-tabled = { version = "0.20", features = ["ansi"] }
+tabled = { version = "0.21", features = ["ansi"] }
 taplo = "0.14"
 tar = "0.4"
 tempfile = "3"
