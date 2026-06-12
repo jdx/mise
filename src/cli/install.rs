@@ -135,23 +135,30 @@ impl Install {
         if mgrs.is_empty() {
             return;
         }
-        let _ = crate::file::touch_file(&checked);
         let mut missing = 0;
+        let mut all_queries_ok = true;
         for mp in mgrs {
             if !mp.manager.is_available() {
                 continue;
             }
-            if let Ok(statuses) = mp.manager.installed(&mp.requests).await {
-                missing += statuses
-                    .iter()
-                    .filter(|s| {
-                        !matches!(
-                            s.state,
-                            crate::system::packages::PackageState::Installed { .. }
-                        )
-                    })
-                    .count();
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    missing += statuses
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s.state,
+                                crate::system::packages::PackageState::Installed { .. }
+                            )
+                        })
+                        .count();
+                }
+                // a transient query failure must not start the 24h throttle
+                Err(_) => all_queries_ok = false,
             }
+        }
+        if all_queries_ok {
+            let _ = crate::file::touch_file(&checked);
         }
         if missing > 0 {
             hint!(

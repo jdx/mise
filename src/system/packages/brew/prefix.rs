@@ -223,7 +223,13 @@ pub fn bootstrap(dry_run: bool) -> Result<()> {
         if !writable(&prefix) {
             bail!("{} is still not writable after bootstrap", prefix.display());
         }
-    } else if !dry_run {
+    } else if dry_run {
+        // prefix is ours but subdirs are missing — show what a real run
+        // would create (no sudo needed)
+        for dir in &missing_subdirs {
+            miseprintln!("mkdir -p {}", dir.display());
+        }
+    } else {
         // prefix is ours, just fill in missing subdirs
         for dir in missing_subdirs {
             crate::file::create_dir_all(&dir)?;
