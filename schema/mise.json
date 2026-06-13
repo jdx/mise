@@ -3317,11 +3317,11 @@
                       },
                       "start": {
                         "type": "boolean",
-                        "description": "restart the service after writing it"
+                        "description": "restart the service after writing it; when false, stop the service after writing it"
                       },
                       "wanted_by": {
                         "type": "array",
-                        "description": "write WantedBy entries in the [Install] section and enable the unit; an empty array skips enablement",
+                        "description": "write WantedBy entries in the [Install] section and enable the unit; an empty array disables previous enablement",
                         "items": {
                           "type": "string"
                         }

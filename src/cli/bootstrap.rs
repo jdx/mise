@@ -656,12 +656,10 @@ impl BootstrapSystemdStatus {
                 let statuses = system::systemd::status(&units).await?;
                 let mut json_entries = vec![];
                 for s in statuses {
+                    let desired = s.is_desired();
                     let state = match &s.state {
                         SystemdState::Active => "active",
-                        SystemdState::Inactive => {
-                            any_missing = true;
-                            "inactive"
-                        }
+                        SystemdState::Inactive => "inactive",
                         SystemdState::Differs => {
                             any_missing = true;
                             "differs"
@@ -671,6 +669,9 @@ impl BootstrapSystemdStatus {
                             "missing"
                         }
                     };
+                    if !desired {
+                        any_missing = true;
+                    }
                     if self.json {
                         json_entries.push(json!({
                             "name": s.request.name,
@@ -678,6 +679,7 @@ impl BootstrapSystemdStatus {
                             "path": s.path,
                             "active": s.active,
                             "enabled": s.enabled,
+                            "desired": desired,
                             "state": state,
                         }));
                     } else {

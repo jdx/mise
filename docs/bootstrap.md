@@ -18,7 +18,9 @@ one-time machine setup.
 2. `mise dotfiles apply` applies `[dotfiles]`.
 3. `mise bootstrap macos-defaults apply` writes `[bootstrap.macos.defaults]`.
 4. `mise bootstrap launchd apply` writes and loads `[bootstrap.macos.launchd.agents]`.
-5. `mise bootstrap systemd apply` writes and starts `[bootstrap.linux.systemd.units]`.
+5. `mise bootstrap systemd apply` converges `[bootstrap.linux.systemd.units]`
+   by writing unit files, enabling/disabling them, and starting/stopping them
+   as configured.
 6. `mise bootstrap user apply` applies `[bootstrap.user]`.
 7. `mise install` installs missing `[tools]`.
 8. `mise run bootstrap` runs a task named `bootstrap`, if one exists.

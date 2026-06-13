@@ -42,9 +42,9 @@ managed with `systemctl --user`. Unit names may contain letters, numbers, `.`,
 
 `exec_start` and `working_directory` expand bare `~` and `~/` to the current
 user's home directory before writing the service file. `wanted_by` defaults to
-`["default.target"]`; set `wanted_by = []` to write the unit without enabling
-it. `start` defaults to `true`; set `start = false` to write and enable without
-starting the unit.
+`["default.target"]`; set `wanted_by = []` to write the unit and disable any
+previous enablement. `start` defaults to `true`; set `start = false` to write
+and enable without keeping the unit running.
 
 ## Semantics
 
@@ -57,6 +57,9 @@ starting the unit.
 - **User services only** — mise writes to `~/.config/systemd/user` and uses
   `systemctl --user`. System services in `/etc/systemd/system` are not
   supported.
+- **Target user only** — run mise as the user that owns the services, with an
+  active systemd user bus. `sudo mise` is skipped because `systemctl --user`
+  would target the wrong user manager.
 - **Manual application only** — mise never writes or starts systemd services
   implicitly; only `mise bootstrap systemd apply` and `mise bootstrap` do.
 
@@ -74,4 +77,5 @@ mise bootstrap systemd apply --yes     # skip the confirmation prompt
 
 `status` reports each unit as `active`, `inactive`, `differs`, or `missing`.
 `apply` rewrites changed service files, runs `systemctl --user daemon-reload`,
-enables units with `wanted_by`, and restarts them when `start = true`.
+enables units with `wanted_by`, disables units with `wanted_by = []`, and
+restarts them when `start = true` or stops them when `start = false`.

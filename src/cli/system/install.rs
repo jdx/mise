@@ -198,7 +198,7 @@ pub(crate) async fn apply_systemd(
     dry_run: bool,
     yes: bool,
 ) -> Result<()> {
-    use crate::system::systemd::{self, SystemdState};
+    use crate::system::systemd;
     if units.is_empty() {
         return Ok(());
     }
@@ -209,19 +209,19 @@ pub(crate) async fn apply_systemd(
     let statuses = systemd::status(&units).await?;
     let targets: Vec<_> = statuses
         .iter()
-        .filter(|s| s.state != SystemdState::Active)
+        .filter(|s| !s.is_desired())
         .map(|s| s.request.clone())
         .collect();
-    let active = statuses.len() - targets.len();
-    if active > 0 {
-        info!("systemd: {active} unit(s) already active");
+    let applied = statuses.len() - targets.len();
+    if applied > 0 {
+        info!("systemd: {applied} unit(s) already applied");
     }
     if targets.is_empty() {
         return Ok(());
     }
     let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
-        let msg = format!("systemd: install/start {}?", list.join(", "));
+        let msg = format!("systemd: apply {}?", list.join(", "));
         if !crate::ui::prompt::confirm(msg)? {
             info!("systemd: skipped");
             return Ok(());
@@ -229,7 +229,7 @@ pub(crate) async fn apply_systemd(
     }
     systemd::apply(&targets, dry_run).await?;
     if !dry_run {
-        info!("systemd: installed/started {}", list.join(", "));
+        info!("systemd: applied {}", list.join(", "));
     }
     Ok(())
 }

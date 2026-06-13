@@ -5,10 +5,13 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
 use indexmap::IndexMap;
 use serde::Deserialize;
+
+const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct SystemdTomlConfig {
@@ -73,6 +76,16 @@ pub struct SystemdStatus {
     pub state: SystemdState,
 }
 
+impl SystemdStatus {
+    pub fn is_desired(&self) -> bool {
+        match self.state {
+            SystemdState::Active => self.request.start,
+            SystemdState::Inactive => !self.request.start,
+            SystemdState::Differs | SystemdState::Missing => false,
+        }
+    }
+}
+
 impl SystemdRequest {
     pub fn from_toml(name: String, config: SystemdTomlConfig) -> Result<Self> {
         if !valid_name(&name) {
@@ -112,14 +125,23 @@ impl std::fmt::Display for SystemdRequest {
 }
 
 pub fn is_available() -> bool {
-    cfg!(target_os = "linux") && crate::file::which("systemctl").is_some()
+    cfg!(target_os = "linux")
+        && crate::file::which("systemctl").is_some()
+        && sudo_invoking_user().is_none()
+        && user_bus_available()
 }
 
 pub fn unavailable_reason() -> String {
-    if cfg!(target_os = "linux") {
-        "`systemctl` not found".to_string()
-    } else {
+    if !cfg!(target_os = "linux") {
         "only available on linux".to_string()
+    } else if crate::file::which("systemctl").is_none() {
+        "`systemctl` not found".to_string()
+    } else if sudo_invoking_user().is_some() {
+        "`systemctl --user` cannot target SUDO_USER; run mise as the target user".to_string()
+    } else if !user_bus_available() {
+        "systemd user bus not available".to_string()
+    } else {
+        "systemd unavailable".to_string()
     }
 }
 
@@ -127,20 +149,31 @@ pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
     let mut out = vec![];
     for req in requests {
         let path = unit_path(req);
-        let active = is_active(&req.unit).await?;
-        let enabled = is_enabled(&req.unit).await?;
-        let state = match std::fs::read_to_string(&path) {
-            Ok(current) if normalize(&current) == normalize(&render_unit(req)) => {
-                if active {
-                    SystemdState::Active
-                } else {
-                    SystemdState::Inactive
-                }
+        let current = match std::fs::read_to_string(&path) {
+            Ok(current) => current,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                out.push(SystemdStatus {
+                    request: req.clone(),
+                    path,
+                    active: false,
+                    enabled: false,
+                    state: SystemdState::Missing,
+                });
+                continue;
             }
-            Ok(_) => SystemdState::Differs,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => SystemdState::Missing,
             Err(err) => return Err(err.into()),
         };
+        let active = is_active(&req.unit).await?;
+        let enabled = is_enabled(&req.unit).await?;
+        let desired_enabled = !req.wanted_by.is_empty();
+        let state =
+            if normalize(&current) != normalize(&render_unit(req)) || enabled != desired_enabled {
+                SystemdState::Differs
+            } else if active {
+                SystemdState::Active
+            } else {
+                SystemdState::Inactive
+            };
         out.push(SystemdStatus {
             request: req.clone(),
             path,
@@ -153,10 +186,9 @@ pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
 }
 
 pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
-    for req in requests {
-        let path = unit_path(req);
-        let unit = render_unit(req);
-        if dry_run {
+    if dry_run {
+        for req in requests {
+            let path = unit_path(req);
             miseprintln!(
                 "{}",
                 shell_words::join([
@@ -166,12 +198,23 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
                 ])
             );
             miseprintln!("write {}", shell_words::join([path.display().to_string()]));
+        }
+        miseprintln!(
+            "{}",
+            shell_words::join([
+                "systemctl".to_string(),
+                "--user".to_string(),
+                "daemon-reload".to_string(),
+            ])
+        );
+        for req in requests {
             miseprintln!(
                 "{}",
                 shell_words::join([
                     "systemctl".to_string(),
                     "--user".to_string(),
-                    "daemon-reload".to_string(),
+                    "disable".to_string(),
+                    req.unit.clone(),
                 ])
             );
             if !req.wanted_by.is_empty() {
@@ -195,17 +238,39 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
                         req.unit.clone(),
                     ])
                 );
+            } else {
+                miseprintln!(
+                    "{}",
+                    shell_words::join([
+                        "systemctl".to_string(),
+                        "--user".to_string(),
+                        "stop".to_string(),
+                        req.unit.clone(),
+                    ])
+                );
             }
-            continue;
         }
-        std::fs::create_dir_all(user_units_dir())?;
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(user_units_dir())?;
+    for req in requests {
+        disable_unit(&req.unit).await?;
+    }
+    for req in requests {
+        let path = unit_path(req);
+        let unit = render_unit(req);
         std::fs::write(&path, unit)?;
-        systemctl(&["daemon-reload".to_string()]).await?;
+    }
+    systemctl(&["daemon-reload".to_string()]).await?;
+    for req in requests {
         if !req.wanted_by.is_empty() {
             systemctl(&["enable".to_string(), req.unit.clone()]).await?;
         }
         if req.start {
             systemctl(&["restart".to_string(), req.unit.clone()]).await?;
+        } else {
+            systemctl(&["stop".to_string(), req.unit.clone()]).await?;
         }
     }
     Ok(())
@@ -295,6 +360,27 @@ fn normalize(value: &str) -> String {
     value.replace("\r\n", "\n").trim_end().to_string()
 }
 
+fn user_bus_available() -> bool {
+    if crate::env::var("DBUS_SESSION_BUS_ADDRESS").is_ok_and(|v| !v.is_empty()) {
+        return true;
+    }
+    crate::env::var("XDG_RUNTIME_DIR")
+        .map(|dir| Path::new(&dir).join("bus").exists())
+        .unwrap_or(false)
+}
+
+fn sudo_invoking_user() -> Option<String> {
+    if crate::system::sudo::is_root()
+        && let Ok(sudo_user) = crate::env::var("SUDO_USER")
+        && !sudo_user.is_empty()
+        && sudo_user != "root"
+    {
+        Some(sudo_user)
+    } else {
+        None
+    }
+}
+
 async fn is_active(unit: &str) -> Result<bool> {
     systemctl_status(&[
         "is-active".to_string(),
@@ -315,27 +401,42 @@ async fn is_enabled(unit: &str) -> Result<bool> {
 
 async fn systemctl_status(args: &[String]) -> Result<bool> {
     debug!("$ systemctl --user {}", shell_words::join(args));
-    let status = tokio::process::Command::new("systemctl")
-        .arg("--user")
+    let mut cmd = tokio::process::Command::new("systemctl");
+    cmd.arg("--user")
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await?;
-    Ok(status.success())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(SYSTEMCTL_TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| eyre!("`systemctl --user {}` timed out", shell_words::join(args)))??;
+    if output.status.success() {
+        return Ok(true);
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        debug!(
+            "`systemctl --user {}` exited non-zero: {}",
+            shell_words::join(args),
+            stderr
+        );
+    }
+    Ok(false)
 }
 
 async fn systemctl(args: &[String]) -> Result<()> {
     debug!("$ systemctl --user {}", shell_words::join(args));
-    let output = tokio::process::Command::new("systemctl")
-        .arg("--user")
+    let mut cmd = tokio::process::Command::new("systemctl");
+    cmd.arg("--user")
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
-        .await?;
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(SYSTEMCTL_TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| eyre!("`systemctl --user {}` timed out", shell_words::join(args)))??;
     if !output.status.success() {
         bail!(
             "`systemctl --user {}` failed: {}",
@@ -344,6 +445,25 @@ async fn systemctl(args: &[String]) -> Result<()> {
         );
     }
     Ok(())
+}
+
+async fn disable_unit(unit: &str) -> Result<()> {
+    match systemctl(&["disable".to_string(), unit.to_string()]).await {
+        Ok(()) => Ok(()),
+        Err(err) if disable_unit_error_is_noop(&err.to_string()) => {
+            debug!("systemd: ignoring disable for {unit}: {err}");
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn disable_unit_error_is_noop(error: &str) -> bool {
+    error.contains("does not exist")
+        || error.contains("not loaded")
+        || error.contains("no [Install] section")
+        || error.contains("has no installation config")
+        || error.contains("is a static unit")
 }
 
 #[cfg(test)]
@@ -392,13 +512,10 @@ mod tests {
         assert!(unit.contains("After=network-online.target\n"));
         assert!(unit.contains("Wants=network-online.target\n"));
         assert!(unit.contains(&format!(
-            "ExecStart={}/.local/bin/sync --watch\n",
-            crate::dirs::HOME.display()
+            "ExecStart={}\n",
+            expand_path_string("~/.local/bin/sync --watch")
         )));
-        assert!(unit.contains(&format!(
-            "WorkingDirectory={}\n",
-            crate::dirs::HOME.display()
-        )));
+        assert!(unit.contains(&format!("WorkingDirectory={}\n", expand_path_string("~"))));
         assert!(unit.contains("Environment=\"PATH=/usr/bin:/bin\"\n"));
         assert!(unit.contains("Environment=\"QUOTED=hello \\\"there\\\"\"\n"));
         assert!(unit.contains("Restart=on-failure\n"));
@@ -406,5 +523,46 @@ mod tests {
         assert!(unit.contains("StandardOutput=append:%h/.local/state/sync.log\n"));
         assert!(unit.contains("StandardError=journal\n"));
         assert!(unit.contains("[Install]\nWantedBy=default.target\n"));
+    }
+
+    #[test]
+    fn test_systemd_status_desired_state() {
+        let request = SystemdRequest::from_toml(
+            "sync".to_string(),
+            SystemdTomlConfig {
+                exec_start: Some("true".to_string()),
+                start: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let active = SystemdStatus {
+            request: request.clone(),
+            path: PathBuf::new(),
+            active: true,
+            enabled: true,
+            state: SystemdState::Active,
+        };
+        assert!(active.is_desired());
+
+        let mut stopped_request = request.clone();
+        stopped_request.start = false;
+        let active_stopped = SystemdStatus {
+            request: stopped_request.clone(),
+            path: PathBuf::new(),
+            active: true,
+            enabled: true,
+            state: SystemdState::Active,
+        };
+        assert!(!active_stopped.is_desired());
+
+        let inactive_stopped = SystemdStatus {
+            request: stopped_request,
+            path: PathBuf::new(),
+            active: false,
+            enabled: true,
+            state: SystemdState::Inactive,
+        };
+        assert!(inactive_stopped.is_desired());
     }
 }
