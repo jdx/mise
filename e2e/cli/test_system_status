@@ -29,6 +29,9 @@ EOF
 assert_succeed "mise system status"
 assert_contains "mise system status 2>&1" "invalid system package spec"
 
+# tapped formulae must not proxy to the brew CLI
+assert_fail "mise system install --dry-run brew:owner/tap/formula" "refusing to proxy to \`brew\`"
+
 # empty [system.packages] section
 cat <<EOF >mise.toml
 [system.packages]

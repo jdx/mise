@@ -26,9 +26,6 @@ pub struct PackageRequest {
     /// manager renders this into its native pin syntax at install time
     /// (apt: `name=version`, dnf: `name-version`).
     pub version: Option<String>,
-    /// manager-specific source URL. Currently used by brew tapped formulae:
-    /// `[system.brew.taps]` can attach a git URL to `owner/tap/formula`.
-    pub tap_url: Option<String>,
 }
 
 impl std::fmt::Display for PackageRequest {

@@ -203,7 +203,6 @@ mod tests {
         PackageRequest {
             name: name.to_string(),
             version: version.map(str::to_string),
-            tap_url: None,
         }
     }
 

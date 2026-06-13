@@ -21,7 +21,6 @@ with `chsh -s`.
 
 ## Subcommands
 
-- [`mise system brew <SUBCOMMAND>`](/cli/system/brew.md)
 - [`mise system install [FLAGS] [PACKAGE]…`](/cli/system/install.md)
 - [`mise system status [-J --json] [--missing]`](/cli/system/status.md)
 - [`mise system upgrade [FLAGS] [PACKAGE]…`](/cli/system/upgrade.md)

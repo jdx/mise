@@ -20,39 +20,18 @@ bottle. Formulae without a usable bottle are built from source, also without
 Homebrew (see [Source formulae](#source-formulae)). mise never shells out to
 `brew` for homebrew/core formulae.
 
-Third-party taps are supported when Homebrew itself is installed. Tapped
-formulae are delegated to a real `brew` command; use the same
-fully-qualified formula name you would pass to `brew install`:
-
-```toml
-[system.packages]
-"brew:railwaycat/emacsmacport/emacs-mac" = "latest"
-```
-
-For non-GitHub taps, or taps whose URL cannot be inferred by Homebrew, add a
-tap source. This mirrors `[plugins]`: the key is the tap name and the value
-is the git URL.
+Third-party taps are not installed yet. `[system.brew.taps]` can record tap
+URLs in shared config for future direct tap support, but mise will not proxy
+to a `brew` executable:
 
 ```toml
 [system.brew.taps]
 "acme/tools" = "https://git.example.com/acme/homebrew-tools.git"
-
-[system.packages]
-"brew:acme/tools/widget" = "latest"
 ```
 
-Before installing or upgrading tapped formulae, mise runs `brew tap` for any
-configured tap URL and then `brew update-if-needed` so the tap is current.
-
-You can also manage taps imperatively, matching `mise plugins install` /
-`mise plugins uninstall`: these commands shell out to Homebrew and do not
-modify `mise.toml`.
-
-```sh
-mise system brew tap railwaycat/emacsmacport
-mise system brew tap acme/tools https://git.example.com/acme/homebrew-tools.git
-mise system brew untap acme/tools
-```
+Fully-qualified third-party tap formulae such as
+`brew:railwaycat/emacsmacport/emacs-mac` fail with an explicit unsupported
+message until mise can resolve and install them directly.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
@@ -164,11 +143,11 @@ operation.
 
 ## Limitations
 
-- **Formulae only.** Casks (GUI apps) and `brew services` are not
-  implemented.
-- **Tapped formulae require Homebrew.** mise's direct bottle/source installer
-  is only for homebrew/core. Fully-qualified third-party tap formulae are
-  delegated to a real `brew` command.
+- **homebrew/core formulae only.** Casks (GUI apps), `brew services`, and
+  third-party tap formulae are not implemented.
+- **No `brew` executable proxying.** Unsupported Homebrew features fail
+  rather than shelling out to Homebrew. This keeps `brew` usable on machines
+  without Homebrew installed.
 - **Source builds cover the common formula shapes.** mise's formula shim
   implements the widely-used subset of the DSL (see
   [Source formulae](#source-formulae)); formulae that reach beyond it fail
