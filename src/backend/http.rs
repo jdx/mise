@@ -83,16 +83,13 @@ impl FileInfo {
         let file_name = effective_path.file_name().unwrap().to_string_lossy();
         let format = file::ExtractionFormat::from_file_name(&file_name);
 
-        let extension = format
-            .extension()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                effective_path
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string()
-            });
+        let extension = format.extension().unwrap_or_else(|| {
+            effective_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string()
+        });
 
         let is_compressed_binary = !format.is_archive() && format != file::ExtractionFormat::Raw;
 
