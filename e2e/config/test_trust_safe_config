@@ -34,7 +34,26 @@ MISE_YES=0 mise install tiny
 assert_contains "MISE_YES=0 mise ls tiny" "3.1.0"
 assert_no_trust_marker "safe config should not be silently trusted"
 
+# safe config tool pins still prompt before installing non-registry plugin URLs
+cat <<'EOF' >mise.toml
+[tools]
+"vfox:attacker/evil" = "latest"
+EOF
+output=$(MISE_YES=0 mise install 2>&1 || true)
+echo "$output" | grep -q "community-developed plugin" || fail "expected community plugin prompt, got: $output"
+echo "$output" | grep -q "github.com/attacker/evil" || fail "expected attacker plugin URL, got: $output"
+assert_no_trust_marker "community plugin prompt should not trust config"
+
 # config tasks only execute on explicit `mise run`, so they don't need trust
+cat <<'EOF' >mise.toml
+min_version = "2024.1.1"
+
+[tools]
+tiny = "3.1.0"
+
+[tasks.hi]
+run = "echo task-ran-without-trust"
+EOF
 assert_contains "MISE_YES=0 mise run hi" "task-ran-without-trust"
 
 # template-free file tasks are inert at load time and runnable without trust
