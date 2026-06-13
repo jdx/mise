@@ -4,24 +4,20 @@ outline: [1, 3]
 
 # Contributing
 
-Before submitting a PR, unless it's something obvious, consider creating a
-[discussion](https://github.com/jdx/mise/discussions)
-or simply mention what you plan to do in the
-[Discord](https://discord.gg/UBa7pJUN7Z).
-PRs are often either rejected or need to change significantly after submission
-so make sure before you start working on something it won't be a wasted effort.
-
 ## Contribution Expectations
 
-Before opening a PR, unless it is something obvious, consider creating a
-discussion or mentioning what you plan to do in
-[Discord](https://discord.gg/UBa7pJUN7Z). The important part is to settle the
-direction before much review happens. mise has a specific scope and design
-taste. I am comfortable saying no to changes that do not clearly fit.
+mise has a specific scope and design taste. Before opening a PR, unless it is
+something obvious, start a
+[discussion](https://github.com/jdx/mise/discussions) or mention what you plan
+to do in [Discord](https://discord.gg/UBa7pJUN7Z). The important part is to
+settle the direction before much implementation or review happens. PRs are
+often either rejected or need to change significantly after submission, so make
+sure the idea fits before you invest too much time.
 
-Before I review a PR, CI must be passing and all automated AI review comments
-must be addressed. If those are still open, assume I will wait to look at the
-PR.
+Before I review a PR, CI must be passing, the PR title must follow
+[Conventional Commits](#conventional-commits), and all automated AI review
+comments must be addressed. If any of those are still open, assume I will wait
+to look at the PR.
 
 If I am on the fence about a contribution, I will probably reject it for that
 reason alone. If I did not do this, mise would suffer from feature bloat. I
@@ -32,31 +28,24 @@ contributors.
 I get hundreds of PRs per week across my projects, so I do not have time to
 respond to every PR with detailed context. A rejection may be brief.
 
-## Contributing Guidelines
+## Pull Request Checklist
 
-1. **Before starting**: Create a discussion or discuss in Discord for non-obvious changes
-2. **Test thoroughly**: Ensure both unit and E2E tests pass
-3. **Follow conventions**: Use existing code style and patterns
-4. **Update documentation**: Add/update docs for new features
-
-### Pull Request Workflow
-
-1. **PR titles**: Must follow conventional commit format (validated
-   automatically)
+1. **Discuss first**: Use GitHub Discussions or Discord for non-obvious changes
+2. **Use a conventional title**: PR titles are validated automatically
    - For new tools in registry: Use `registry: add tool-name (backend:full/name)`
-2. **Formatting and linting**: Run the repo formatting and lint tasks before
-   opening a PR
-3. **CI checks**: All tests must pass across Linux, macOS, and Windows
-4. **Coverage**: New code should maintain or improve test coverage
-5. **Dependencies**: New dependencies are validated with cargo-deny
+3. **Run local checks**: Run `mise run render` and `mise run lint-fix` before
+   opening a PR when relevant
+4. **Test thoroughly**: Ensure the relevant unit and E2E tests pass
+5. **Update documentation**: Add or update docs for user-facing changes
+6. **Keep dependencies healthy**: New dependencies are validated with cargo-deny
 
 ### Development Tips
 
 1. **Disable mise during development**: If you use mise in your shell, disable
    it when running tests to avoid conflicts
 2. **Test specific features**: Use `cargo test test_name` for targeted testing
-4. **Update snapshots**: Use `mise run snapshots` when changing test outputs
-5. **Rate limiting**: Set `MISE_GITHUB_TOKEN` to avoid GitHub API rate limits
+3. **Update snapshots**: Use `mise run snapshots` when changing test outputs
+4. **Rate limiting**: Set `MISE_GITHUB_TOKEN` to avoid GitHub API rate limits
    during development
 
 ## Packaging and Self-Update Instructions
