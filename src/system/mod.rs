@@ -3,7 +3,9 @@
 //! This is `[bootstrap.packages]` — declarative system packages installed
 //! by `mise bootstrap packages install` — `[dotfiles]` — declarative config
 //! files applied by `mise dotfiles apply` — `[bootstrap.macos.defaults]`
-//! — declarative macOS user defaults — and `[bootstrap.user].login_shell`.
+//! — declarative macOS user defaults — `[bootstrap.macos.launchd.agents]`
+//! — declarative macOS LaunchAgents — `[bootstrap.user].login_shell` — and
+//! `[bootstrap.hooks]` bootstrap phase hooks.
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
@@ -14,8 +16,7 @@ use eyre::bail;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::config::Config;
-use crate::config::ConfigMap;
+use crate::config::{Config, ConfigMap};
 use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
@@ -23,6 +24,7 @@ use crate::system::packages::{PackageRequest, SystemPackageManager};
 pub mod defaults;
 pub mod edits;
 pub mod files;
+pub mod hooks;
 pub mod launchd;
 pub mod login_shell;
 pub mod packages;
@@ -45,6 +47,10 @@ pub struct BootstrapTomlConfig {
     /// Homebrew-specific bootstrap package config.
     #[serde(default)]
     pub brew: SystemBrewTomlConfig,
+    /// Bootstrap phase hooks. Values stay raw TOML so newer hook shapes can
+    /// warn and be skipped without rejecting the whole config.
+    #[serde(default)]
+    pub hooks: IndexMap<String, toml::Value>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -314,6 +320,29 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
         }
     }
     shell.map(|shell| login_shell::LoginShellRequest { shell })
+}
+
+/// Aggregate `[bootstrap.hooks]` across all loaded config files.
+///
+/// Hooks are additive and ordered global -> local. A hook value can be a string
+/// command, an array of string commands, or a table with a `run` string/array.
+pub fn hooks_from_config(config: &Config) -> Vec<hooks::BootstrapHook> {
+    hooks_from_config_files(&config.config_files)
+}
+
+pub(crate) fn hooks_from_config_files(config_files: &ConfigMap) -> Vec<hooks::BootstrapHook> {
+    let mut out = vec![];
+    for cf in config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (phase, value) in sys.hooks {
+                match hooks::BootstrapHook::from_toml(&phase, value) {
+                    Ok(hooks) => out.extend(hooks),
+                    Err(err) => warn!("[bootstrap.hooks.{phase}]: {err}"),
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Build [`ManagerPackages`] from explicit CLI specs, attaching configured
