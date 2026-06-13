@@ -123,17 +123,12 @@ fn reject_unsupported_system_defaults(config_files: &ConfigMap) -> Result<()> {
         let Some(system) = cf.bootstrap_config() else {
             continue;
         };
-        defaults += system
-            .macos
-            .defaults
-            .values()
-            .map(|v| v.as_table().map_or(1, |t| t.len()))
-            .sum::<usize>();
+        defaults += system::macos_defaults_entry_count(&system.macos);
     }
 
     if defaults > 0 {
         bail!(
-            "mise oci does not support [bootstrap.macos.defaults] (found {defaults} default entries); \
+            "mise oci does not support [bootstrap.macos.*] defaults (found {defaults} default entries); \
              macOS defaults do not apply to OCI images."
         );
     }

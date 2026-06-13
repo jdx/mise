@@ -315,6 +315,26 @@ pub fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
     out
 }
 
+/// Count macOS defaults declared in one config file, including friendly
+/// sections that compile into raw defaults entries.
+pub fn macos_defaults_entry_count(macos: &BootstrapMacosTomlConfig) -> usize {
+    let mut friendly: IndexMap<(String, String), toml::Value> = IndexMap::new();
+    let mut raw: IndexMap<(String, String), toml::Value> = IndexMap::new();
+    let mut malformed_domains = 0usize;
+    merge_friendly_macos_defaults(&mut friendly, macos);
+    for (domain, entries) in &macos.defaults {
+        match entries {
+            toml::Value::Table(entries) => {
+                for (key, value) in entries {
+                    raw.insert((domain.clone(), key.clone()), value.clone());
+                }
+            }
+            _ => malformed_domains += 1,
+        }
+    }
+    merge_raw_over_friendly_macos_defaults(friendly, raw).len() + malformed_domains
+}
+
 fn merge_raw_over_friendly_macos_defaults(
     mut friendly: IndexMap<(String, String), toml::Value>,
     raw: IndexMap<(String, String), toml::Value>,
@@ -1100,5 +1120,19 @@ mod tests {
             merged.get(&("com.apple.dock".into(), "autohide".into())),
             Some(&toml::Value::Boolean(true))
         );
+    }
+
+    #[test]
+    fn test_macos_defaults_entry_count_includes_friendly_defaults() {
+        let mut macos = BootstrapMacosTomlConfig::default();
+        macos.dock.insert("autohide".into(), tv("true"));
+        macos.trackpad.insert("tap_to_click".into(), tv("true"));
+        macos.defaults.insert(
+            "com.apple.dock".into(),
+            tv(r#"{ autohide = false, tilesize = 48 }"#),
+        );
+        macos.defaults.insert("malformed".into(), tv("true"));
+
+        assert_eq!(macos_defaults_entry_count(&macos), 5);
     }
 }
