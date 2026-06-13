@@ -79,7 +79,7 @@ downloads and runs the pinned mise binary for the project.
 Beyond `[tools]`, mise can declare the rest of the machine setup needed for
 a project or workstation, and [`mise bootstrap`](/cli/bootstrap.html)
 converges it in one command — system packages, then dotfiles, then macOS
-defaults, then login shell, then tools, then a
+defaults, then LaunchAgents, then login shell, then tools, then a
 `bootstrap` task if you define one:
 
 ```toml
@@ -95,8 +95,15 @@ defaults, then login shell, then tools, then a
 [bootstrap.macos.defaults]                    # macOS defaults write
 "com.apple.dock" = { autohide = true }
 
+[bootstrap.macos.launchd.agents.my-sync]      # macOS user LaunchAgents
+program = "~/.local/bin/my-sync"
+run_at_load = true
+
 [bootstrap.user]                       # current user's login shell
 login_shell = "/bin/zsh"
+
+[bootstrap.hooks.post-defaults]        # optional phase hooks
+run = "killall Dock || true"
 
 [tasks.bootstrap]                      # anything else, with tools on PATH
 run = "gh auth status || gh auth login"
@@ -109,10 +116,13 @@ mise bootstrap --yes   # new laptop or container -> ready to work
 Everything is declarative and idempotent: re-running skips whatever is
 already in its desired state, `mise bootstrap packages status --missing` and
 `mise dotfiles status --missing` make CI checks, and nothing is ever applied
-implicitly. See
+implicitly. The exceptions are `[bootstrap.hooks]` and `[tasks.bootstrap]`,
+which are imperative commands run during `mise bootstrap` and may have side
+effects; treat hook commands as non-idempotent unless they are written to
+converge safely. See
 [Bootstrap](/bootstrap.html), [Bootstrap Packages](/bootstrap/packages/),
 [Dotfiles](/dotfiles.html), [macOS Defaults](/bootstrap/macos-defaults.html),
-and [User Login Shell](/bootstrap/user.html).
+[launchd](/bootstrap/launchd.html), and [User Login Shell](/bootstrap/user.html).
 
 ## Installation via zsh zinit
 

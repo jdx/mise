@@ -2215,6 +2215,12 @@ mod tests {
 
         [bootstrap.brew.taps]
         "railwaycat/emacsmacport" = "https://github.com/railwaycat/homebrew-emacsmacport"
+
+        [bootstrap.hooks.pre-packages]
+        run = "echo preparing"
+
+        [bootstrap.hooks.post-tools]
+        run = ["echo one", "echo two"]
         "#,
         )
         .unwrap();
@@ -2227,6 +2233,8 @@ mod tests {
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
         );
+        assert!(system.hooks.get("pre-packages").unwrap().is_table());
+        assert!(system.hooks.get("post-tools").unwrap().is_table());
         assert_eq!(system.user.login_shell, None);
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
@@ -2292,6 +2300,45 @@ mod tests {
             &toml::Value::String("left".into())
         );
         assert!(dock.get("future-array").unwrap().is_array());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_macos_launchd_agents() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.macos.launchd.agents.my-sync]
+        program = "~/.local/bin/my-sync"
+        args = ["--watch"]
+        run_at_load = true
+        start_interval = 300
+        environment = { PATH = "/usr/bin:/bin" }
+        working_directory = "~"
+        stdout_path = "~/Library/Logs/my-sync.log"
+        kickstart = true
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        let agent = system.macos.launchd.agents.get("my-sync").unwrap();
+        assert_eq!(agent.program.as_deref(), Some("~/.local/bin/my-sync"));
+        assert_eq!(agent.args, vec!["--watch"]);
+        assert!(agent.run_at_load);
+        assert_eq!(agent.start_interval, Some(300));
+        assert_eq!(
+            agent.environment.get("PATH").map(String::as_str),
+            Some("/usr/bin:/bin")
+        );
+        assert_eq!(agent.working_directory.as_deref(), Some("~"));
+        assert_eq!(
+            agent.stdout_path.as_deref(),
+            Some("~/Library/Logs/my-sync.log")
+        );
+        assert!(agent.kickstart);
         file::remove_file(&p).unwrap();
     }
 

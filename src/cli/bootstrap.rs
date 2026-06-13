@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use eyre::Result;
 use serde_json::json;
 
@@ -5,9 +7,13 @@ use super::install::Install;
 use super::run;
 use super::system::driver::{self, Action, DriverOpts};
 use super::system::{install, status, upgrade, r#use};
-use crate::config::{Config, Settings};
+use crate::config::{self, Config, Settings};
+use crate::dirs;
 use crate::system;
 use crate::system::defaults::DefaultsState;
+use crate::system::files::{FileMode, FileRequest};
+use crate::system::hooks::{self, BootstrapHookPhase};
+use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
 use crate::ui::table::MiseTable;
 use clap::Subcommand;
@@ -16,15 +22,23 @@ use clap::Subcommand;
 ///
 /// Runs the bootstrap steps for the current config in order:
 ///
+/// 0. `[bootstrap.hooks.pre-packages]` — optional setup hook
 /// 1. `mise bootstrap packages install` — install missing
 ///    `[bootstrap.packages]`
+///    then `[bootstrap.hooks.post-packages]`
 /// 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
 /// 3. `mise bootstrap macos-defaults apply` — write
 ///    `[bootstrap.macos.defaults]` entries (macOS)
-/// 4. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+///    surrounded by `pre-defaults`/`post-defaults` hooks
+/// 4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+/// 5. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ///    (Unix)
-/// 5. `mise install` — install missing tools from `[tools]`
-/// 6. `mise run bootstrap` — if a task named `bootstrap` is defined
+///    surrounded by `pre-user`/`post-user` hooks
+/// 6. `mise install` — install missing tools from `[tools]`
+///    surrounded by `pre-tools`/`post-tools` hooks
+/// 7. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 8. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -52,6 +66,7 @@ pub struct Bootstrap {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Launchd(BootstrapLaunchd),
     MacosDefaults(BootstrapMacosDefaults),
     Packages(BootstrapPackages),
     User(BootstrapUser),
@@ -111,6 +126,42 @@ struct BootstrapMacosDefaultsStatus {
     missing: bool,
 }
 
+/// Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapLaunchd {
+    #[clap(subcommand)]
+    command: BootstrapLaunchdCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapLaunchdCommands {
+    Apply(BootstrapLaunchdApply),
+    Status(BootstrapLaunchdStatus),
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapLaunchdApply {
+    /// Print the commands that would run without running them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapLaunchdStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured LaunchAgent is not in its desired state
+    #[clap(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
 /// Manage current-user bootstrap settings from `[bootstrap.user]`
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
@@ -153,8 +204,11 @@ impl Bootstrap {
         if let Some(command) = self.command {
             return command.run().await;
         }
-        let config = Config::get().await?;
+        let mut config = Config::get().await?;
+        let mut hooks = system::hooks_from_config(&config);
 
+        self.run_hooks(&hooks, BootstrapHookPhase::PrePackages)
+            .await?;
         let mgrs = system::packages_from_config(&config);
         if mgrs.is_empty() {
             debug!("bootstrap: no [bootstrap.packages] configured, skipping");
@@ -169,7 +223,11 @@ impl Bootstrap {
             };
             driver::run(mgrs, Action::Install, &opts).await?;
         }
+        self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
+            .await?;
 
+        self.run_hooks(&hooks, BootstrapHookPhase::PreDotfiles)
+            .await?;
         let files = system::files::files_from_config(&config);
         if files.is_empty() {
             debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
@@ -198,7 +256,17 @@ impl Bootstrap {
             };
             system::edits::apply(&config, &edits, &opts)?;
         }
+        if self.dry_run {
+            hooks = self.hooks_after_dotfiles_dry_run(&config, &files)?;
+        } else {
+            config = Config::reset().await?;
+            hooks = system::hooks_from_config(&config);
+        }
+        self.run_hooks(&hooks, BootstrapHookPhase::PostDotfiles)
+            .await?;
 
+        self.run_hooks(&hooks, BootstrapHookPhase::PreDefaults)
+            .await?;
         let defaults = system::defaults_from_config(&config);
         if defaults.is_empty() {
             debug!("bootstrap: no [bootstrap.macos.defaults] configured, skipping");
@@ -206,7 +274,18 @@ impl Bootstrap {
             info!("bootstrap: system defaults");
             install::apply_defaults(defaults, self.dry_run, self.yes).await?;
         }
+        self.run_hooks(&hooks, BootstrapHookPhase::PostDefaults)
+            .await?;
 
+        let agents = system::launchd_from_config(&config);
+        if agents.is_empty() {
+            debug!("bootstrap: no [bootstrap.macos.launchd.agents] configured, skipping");
+        } else {
+            info!("bootstrap: launchd agents");
+            install::apply_launchd(agents, self.dry_run, self.yes).await?;
+        }
+
+        self.run_hooks(&hooks, BootstrapHookPhase::PreUser).await?;
         let login_shell = system::login_shell_from_config(&config);
         if login_shell.is_none() {
             debug!("bootstrap: no [bootstrap.user].login_shell configured, skipping");
@@ -214,13 +293,18 @@ impl Bootstrap {
             info!("bootstrap: login shell");
             install::apply_login_shell(login_shell, self.dry_run, self.yes)?;
         }
+        self.run_hooks(&hooks, BootstrapHookPhase::PostUser).await?;
 
+        self.run_hooks(&hooks, BootstrapHookPhase::PreTools).await?;
         info!("bootstrap: tools");
         Install::new_bare(self.dry_run).run().await?;
+        if !self.dry_run {
+            config = Config::reset().await?;
+            hooks = system::hooks_from_config(&config);
+        }
+        self.run_hooks(&hooks, BootstrapHookPhase::PostTools)
+            .await?;
 
-        // installs may have changed the env (and `mise install` resets config
-        // internally), so re-fetch before looking up tasks
-        let config = Config::get().await?;
         let tasks = config.tasks().await?;
         if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
             info!("bootstrap: running `bootstrap` task");
@@ -228,7 +312,42 @@ impl Bootstrap {
         } else {
             debug!("bootstrap: no `bootstrap` task defined, skipping");
         }
+        self.run_hooks(&hooks, BootstrapHookPhase::Final).await?;
         Ok(())
+    }
+
+    async fn run_hooks(
+        &self,
+        hooks: &[hooks::BootstrapHook],
+        phase: BootstrapHookPhase,
+    ) -> Result<()> {
+        hooks::run_phase(hooks, phase, self.dry_run).await
+    }
+
+    fn hooks_after_dotfiles_dry_run(
+        &self,
+        config: &Config,
+        files: &[FileRequest],
+    ) -> Result<Vec<hooks::BootstrapHook>> {
+        let mut config_files = config.config_files.clone();
+        for file in files {
+            if !is_mise_config_target(&file.target) || !file.source.is_file() {
+                continue;
+            }
+            match parse_dotfile_mise_config(config, file) {
+                Ok(cf) => {
+                    config_files.insert(file.target.clone(), cf);
+                }
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{}\": failed to parse config source {}: {err}",
+                        file.target_raw,
+                        file.source.display()
+                    );
+                }
+            }
+        }
+        Ok(system::hooks_from_config_files(&config_files))
     }
 
     async fn run_task(&self, task: &str) -> Result<()> {
@@ -277,9 +396,35 @@ impl Bootstrap {
     }
 }
 
+fn parse_dotfile_mise_config(
+    config: &Config,
+    file: &FileRequest,
+) -> Result<Arc<dyn config::config_file::ConfigFile>> {
+    let body = match file.mode {
+        FileMode::Template => system::files::render_template(config, file)?,
+        _ => crate::file::read_to_string(&file.source)?,
+    };
+    Ok(Arc::new(
+        config::config_file::mise_toml::MiseToml::from_str(&body, &file.target)?,
+    ))
+}
+
+fn is_mise_config_target(path: &std::path::Path) -> bool {
+    path.starts_with(*dirs::CONFIG)
+        || path.starts_with(*dirs::SYSTEM_CONFIG)
+        || config::DEFAULT_CONFIG_FILENAMES.iter().any(|filename| {
+            filename.ends_with(".toml") && !filename.contains('*') && path.ends_with(filename)
+        })
+        || (path.extension().is_some_and(|ext| ext == "toml")
+            && path
+                .parent()
+                .is_some_and(|parent| parent.ends_with(".config/mise/conf.d")))
+}
+
 impl Commands {
     async fn run(self) -> Result<()> {
         match self {
+            Self::Launchd(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
@@ -308,6 +453,110 @@ impl BootstrapMacosDefaults {
             BootstrapMacosDefaultsCommands::Apply(cmd) => cmd.run().await,
             BootstrapMacosDefaultsCommands::Status(cmd) => cmd.run().await,
         }
+    }
+}
+
+impl BootstrapLaunchd {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapLaunchdCommands::Apply(cmd) => cmd.run().await,
+            BootstrapLaunchdCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapLaunchdApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_launchd(system::launchd_from_config(&config), self.dry_run, self.yes).await
+    }
+}
+
+impl BootstrapLaunchdStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let agents = system::launchd_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        if !agents.is_empty() {
+            if !system::launchd::is_available() {
+                let reason = system::launchd::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "launchd".to_string(),
+                        json!({ "available": false, "reason": reason }),
+                    );
+                } else {
+                    for req in &agents {
+                        rows.push(vec![
+                            req.name.clone(),
+                            req.label.clone(),
+                            "".to_string(),
+                            format!("skipped ({reason})"),
+                        ]);
+                    }
+                }
+            } else {
+                let statuses = system::launchd::status(&agents).await?;
+                let mut json_entries = vec![];
+                for s in statuses {
+                    let state = match &s.state {
+                        LaunchdState::Loaded => "loaded",
+                        LaunchdState::Unloaded => {
+                            any_missing = true;
+                            "unloaded"
+                        }
+                        LaunchdState::Differs => {
+                            any_missing = true;
+                            "differs"
+                        }
+                        LaunchdState::Missing => {
+                            any_missing = true;
+                            "missing"
+                        }
+                    };
+                    if self.json {
+                        json_entries.push(json!({
+                            "name": s.request.name,
+                            "label": s.request.label,
+                            "path": s.path,
+                            "loaded": s.loaded,
+                            "state": state,
+                        }));
+                    } else {
+                        rows.push(vec![
+                            s.request.name.clone(),
+                            s.request.label.clone(),
+                            s.path.display().to_string(),
+                            state.to_string(),
+                        ]);
+                    }
+                }
+                if self.json {
+                    json_out.insert(
+                        "launchd".to_string(),
+                        json!({ "available": true, "agents": json_entries }),
+                    );
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.macos.launchd.agents]");
+        } else {
+            let mut table = MiseTable::new(false, &["Name", "Label", "Path", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            crate::exit(1);
+        }
+        Ok(())
     }
 }
 
@@ -513,6 +762,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap</bold>                    # packages + dotfiles + tools + bootstrap task
     $ <bold>mise bootstrap packages install --yes</bold>
     $ <bold>mise bootstrap macos-defaults status</bold>
+    $ <bold>mise bootstrap launchd apply --dry-run</bold>
     $ <bold>mise bootstrap user apply --dry-run</bold>
 "#
 );

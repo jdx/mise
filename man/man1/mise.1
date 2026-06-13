@@ -145,6 +145,13 @@ List all the active runtime bin paths
 \fBbootstrap\fR
 [experimental] Set up a machine for the current config in one command
 .TP
+\fBbootstrap launchd\fR
+Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+.TP
+\fBbootstrap launchd apply\fR
+.TP
+\fBbootstrap launchd status\fR
+.TP
 \fBbootstrap macos\-defaults\fR
 Manage macOS defaults from `[bootstrap.macos.defaults]`
 .TP
@@ -786,15 +793,23 @@ e.g.: ruby@3
 
 Runs the bootstrap steps for the current config in order:
 
+0. `[bootstrap.hooks.pre\-packages]` — optional setup hook
 1. `mise bootstrap packages install` — install missing
    `[bootstrap.packages]`
+   then `[bootstrap.hooks.post\-packages]`
 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+   surrounded by `pre\-dotfiles`/`post\-dotfiles` hooks
 3. `mise bootstrap macos\-defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
-4. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+   surrounded by `pre\-defaults`/`post\-defaults` hooks
+4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+5. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
-5. `mise install` — install missing tools from `[tools]`
-6. `mise run bootstrap` — if a task named `bootstrap` is defined
+   surrounded by `pre\-user`/`post\-user` hooks
+6. `mise install` — install missing tools from `[tools]`
+   surrounded by `pre\-tools`/`post\-tools` hooks
+7. `mise run bootstrap` — if a task named `bootstrap` is defined
+8. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re\-running is safe. The `bootstrap` task runs on every
@@ -815,6 +830,28 @@ Skip confirmation prompts
 .TP
 \fB\-\-update\fR
 Refresh system package manager metadata first (apt: `apt\-get update`)
+.SH "MISE BOOTSTRAP LAUNCHD APPLY"
+\fBUsage:\fR mise bootstrap launchd apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP LAUNCHD STATUS"
+\fBUsage:\fR mise bootstrap launchd status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured LaunchAgent is not in its desired state
 .SH "MISE BOOTSTRAP MACOS-DEFAULTS APPLY"
 \fBUsage:\fR mise bootstrap macos\-defaults apply [OPTIONS]
 .PP

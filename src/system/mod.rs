@@ -3,7 +3,9 @@
 //! This is `[bootstrap.packages]` — declarative system packages installed
 //! by `mise bootstrap packages install` — `[dotfiles]` — declarative config
 //! files applied by `mise dotfiles apply` — `[bootstrap.macos.defaults]`
-//! — declarative macOS user defaults — and `[bootstrap.user].login_shell`.
+//! — declarative macOS user defaults — `[bootstrap.macos.launchd.agents]`
+//! — declarative macOS LaunchAgents — `[bootstrap.user].login_shell` — and
+//! `[bootstrap.hooks]` bootstrap phase hooks.
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
@@ -14,14 +16,16 @@ use eyre::bail;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::config::Config;
-use crate::config::ConfigMap;
+use crate::config::{Config, ConfigMap};
 use crate::system::defaults::{DefaultsRequest, DefaultsValue};
+use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
 
 pub mod defaults;
 pub mod edits;
 pub mod files;
+pub mod hooks;
+pub mod launchd;
 pub mod login_shell;
 pub mod packages;
 pub(crate) mod sudo;
@@ -43,6 +47,10 @@ pub struct BootstrapTomlConfig {
     /// Homebrew-specific bootstrap package config.
     #[serde(default)]
     pub brew: SystemBrewTomlConfig,
+    /// Bootstrap phase hooks. Values stay raw TOML so newer hook shapes can
+    /// warn and be skipped without rejecting the whole config.
+    #[serde(default)]
+    pub hooks: IndexMap<String, toml::Value>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -60,6 +68,18 @@ pub struct BootstrapMacosTomlConfig {
     /// instead of failing the whole config.
     #[serde(default)]
     pub defaults: IndexMap<String, toml::Value>,
+    /// `[bootstrap.macos.launchd.agents.<name>]`: declarative macOS user
+    /// LaunchAgents rendered to ~/Library/LaunchAgents.
+    #[serde(default)]
+    pub launchd: BootstrapMacosLaunchdTomlConfig,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct BootstrapMacosLaunchdTomlConfig {
+    /// User LaunchAgents, keyed by a short stable name. mise gives these a
+    /// `dev.mise.<name>` label when rendering the plist.
+    #[serde(default)]
+    pub agents: IndexMap<String, LaunchdTomlConfig>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -258,6 +278,31 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
     out
 }
 
+/// Aggregate `[bootstrap.macos.launchd.agents]` across all loaded config files.
+///
+/// Agent names union global -> local; a more local config replaces the full
+/// agent declaration from a global config. Invalid entries warn and are
+/// skipped.
+pub fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
+    let mut merged: IndexMap<String, LaunchdTomlConfig> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (name, agent) in sys.macos.launchd.agents {
+                merged.insert(name, agent);
+            }
+        }
+    }
+    let mut out = vec![];
+    for (name, agent) in merged {
+        match LaunchdRequest::from_toml(name, agent) {
+            Ok(request) => out.push(request),
+            Err(err) => warn!("[bootstrap.macos.launchd.agents]: {err}"),
+        }
+    }
+    out
+}
+
 /// Desired login shell from the most local config that declares it.
 pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShellRequest> {
     let mut shell = None;
@@ -281,6 +326,29 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
         }
     }
     shell.map(|shell| login_shell::LoginShellRequest { shell })
+}
+
+/// Aggregate `[bootstrap.hooks]` across all loaded config files.
+///
+/// Hooks are additive and ordered global -> local. A hook value can be a string
+/// command, an array of string commands, or a table with a `run` string/array.
+pub fn hooks_from_config(config: &Config) -> Vec<hooks::BootstrapHook> {
+    hooks_from_config_files(&config.config_files)
+}
+
+pub(crate) fn hooks_from_config_files(config_files: &ConfigMap) -> Vec<hooks::BootstrapHook> {
+    let mut out = vec![];
+    for cf in config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (phase, value) in sys.hooks {
+                match hooks::BootstrapHook::from_toml(&phase, value) {
+                    Ok(hooks) => out.extend(hooks),
+                    Err(err) => warn!("[bootstrap.hooks.{phase}]: {err}"),
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Build [`ManagerPackages`] from explicit CLI specs, attaching configured

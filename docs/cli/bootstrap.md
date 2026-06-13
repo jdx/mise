@@ -8,15 +8,23 @@
 
 Runs the bootstrap steps for the current config in order:
 
+0. `[bootstrap.hooks.pre-packages]` — optional setup hook
 1. `mise bootstrap packages install` — install missing
    `[bootstrap.packages]`
+   then `[bootstrap.hooks.post-packages]`
 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+   surrounded by `pre-dotfiles`/`post-dotfiles` hooks
 3. `mise bootstrap macos-defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
-4. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+   surrounded by `pre-defaults`/`post-defaults` hooks
+4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+5. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
-5. `mise install` — install missing tools from `[tools]`
-6. `mise run bootstrap` — if a task named `bootstrap` is defined
+   surrounded by `pre-user`/`post-user` hooks
+6. `mise install` — install missing tools from `[tools]`
+   surrounded by `pre-tools`/`post-tools` hooks
+7. `mise run bootstrap` — if a task named `bootstrap` is defined
+8. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -40,6 +48,7 @@ Refresh system package manager metadata first (apt: `apt-get update`)
 
 ## Subcommands
 
+- [`mise bootstrap launchd <SUBCOMMAND>`](/cli/bootstrap/launchd.md)
 - [`mise bootstrap macos-defaults <SUBCOMMAND>`](/cli/bootstrap/macos-defaults.md)
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
@@ -50,5 +59,6 @@ Examples:
 mise bootstrap                    # packages + dotfiles + tools + bootstrap task
 mise bootstrap packages install --yes
 mise bootstrap macos-defaults status
+mise bootstrap launchd apply --dry-run
 mise bootstrap user apply --dry-run
 ```

@@ -286,15 +286,23 @@ cmd bootstrap help="[experimental] Set up a machine for the current config in on
 
 Runs the bootstrap steps for the current config in order:
 
+0. `[bootstrap.hooks.pre-packages]` — optional setup hook
 1. `mise bootstrap packages install` — install missing
    `[bootstrap.packages]`
+   then `[bootstrap.hooks.post-packages]`
 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+   surrounded by `pre-dotfiles`/`post-dotfiles` hooks
 3. `mise bootstrap macos-defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
-4. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+   surrounded by `pre-defaults`/`post-defaults` hooks
+4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+5. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
-5. `mise install` — install missing tools from `[tools]`
-6. `mise run bootstrap` — if a task named `bootstrap` is defined
+   surrounded by `pre-user`/`post-user` hooks
+6. `mise install` — install missing tools from `[tools]`
+   surrounded by `pre-tools`/`post-tools` hooks
+7. `mise run bootstrap` — if a task named `bootstrap` is defined
+8. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -308,12 +316,23 @@ Examples:
     $ mise bootstrap                    # packages + dotfiles + tools + bootstrap task
     $ mise bootstrap packages install --yes
     $ mise bootstrap macos-defaults status
+    $ mise bootstrap launchd apply --dry-run
     $ mise bootstrap user apply --dry-run
 
 """#
     flag "-n --dry-run" help="Print what would happen without installing anything"
     flag "-y --yes" help="Skip confirmation prompts"
     flag --update help="Refresh system package manager metadata first (apt: `apt-get update`)"
+    cmd launchd subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured LaunchAgent is not in its desired state"
+        }
+    }
     cmd macos-defaults subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" {
         cmd apply {
             flag "-n --dry-run" help="Print the commands that would run without running them"
