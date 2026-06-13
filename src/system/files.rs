@@ -713,6 +713,7 @@ pub struct ApplyOpts {
     /// replace conflicting targets (existing real files where a symlink
     /// should go, or type mismatches) instead of erroring
     pub force: bool,
+    pub force_hint: &'static str,
     pub yes: bool,
 }
 
@@ -779,7 +780,8 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
     }
     if !conflicts.is_empty() && !opts.force {
         problems.push(format!(
-            "refusing to overwrite existing files (use --force):\n{}",
+            "refusing to overwrite existing files ({}):\n{}",
+            opts.force_hint,
             conflicts
                 .iter()
                 .map(|p| format!("  {}", p.display_user()))
@@ -835,20 +837,35 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
 /// content overwrites by copy/template (those are the declared intent) or
 /// re-pointing symlinks (always mise-owned territory)
 fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    let regular_files_have_same_content = |source: &Path, target: &Path| -> Result<bool> {
+        if !source.is_file() || !target.is_file() {
+            return Ok(false);
+        }
+        if source.metadata()?.len() != target.metadata()?.len() {
+            return Ok(false);
+        }
+        Ok(file::read(source)? == file::read(target)?)
+    };
+
     // on Windows, file "symlinks" are applied as copies (see `link_path`),
     // so existing regular-file targets are routine content updates there,
     // not conflicts — only a type mismatch blocks
-    let file_link_conflicts = |source: &Path, target: &Path| {
+    let file_link_conflicts = |source: &Path, target: &Path| -> Result<bool> {
         if cfg!(windows) && source.is_file() {
-            target.exists() && target.is_dir()
+            Ok(target.exists() && target.is_dir())
         } else {
-            target.exists() && !target.is_symlink()
+            if !target.exists() || target.is_symlink() {
+                return Ok(false);
+            }
+            // If this equality check cannot read either side, keep the
+            // conservative conflict path so --force can still handle it.
+            Ok(!regular_files_have_same_content(source, target).unwrap_or(false))
         }
     };
     let mut out = vec![];
     match req.mode {
         FileMode::Symlink => {
-            if file_link_conflicts(&req.source, &req.target) {
+            if file_link_conflicts(&req.source, &req.target)? {
                 out.push(req.target.clone());
             }
         }
@@ -861,7 +878,7 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                 }
             }
             for (source, target) in walk_source_files(req)? {
-                if file_link_conflicts(&source, &target) {
+                if file_link_conflicts(&source, &target)? {
                     out.push(target);
                 }
             }
