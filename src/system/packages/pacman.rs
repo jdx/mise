@@ -73,7 +73,7 @@ fn parse_pacman_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageS
         .collect()
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl SystemPackageManager for PacmanManager {
     fn name(&self) -> &'static str {
         "pacman"

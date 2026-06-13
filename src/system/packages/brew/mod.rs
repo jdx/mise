@@ -4,11 +4,16 @@
 //! (/opt/homebrew on arm64 macOS, /home/linuxbrew/.linuxbrew on Linux) —
 //! fetching metadata from formulae.brew.sh, downloading bottles from
 //! ghcr.io, and doing the same relocation/codesigning work `brew` does at
-//! pour time. mise never shells out to brew; the receipts it writes are
-//! brew-compatible, so a real Homebrew sees mise-poured kegs as its own.
+//! pour time. mise never shells out to brew to pour a bottle; the receipts
+//! it writes are brew-compatible, so a real Homebrew sees mise-poured kegs
+//! as its own.
 //!
-//! Scope: formulae only. Taps require evaluating Ruby and are unsupported;
-//! casks and services are not implemented.
+//! Formulae without a usable bottle are built from source, still without
+//! Homebrew: mise provisions a mise-managed ruby and evaluates the formula
+//! with its own Formula-DSL shim (see source.rs and shim.rb).
+//!
+//! Scope: formulae only. Casks and services are not implemented; taps are
+//! unsupported (only homebrew/core formulae are served by the API).
 
 use async_trait::async_trait;
 use eyre::bail;
@@ -26,6 +31,7 @@ mod pour;
 mod prefix;
 mod relocate;
 mod resolve;
+mod source;
 mod state;
 mod tag;
 
@@ -72,19 +78,38 @@ impl BrewManager {
             info!("brew: all formulae already poured");
             return Ok(());
         }
+        // formulae without a usable bottle are built from source by
+        // evaluating their Ruby with mise's formula shim; reject the ones
+        // the builder can't handle before any work happens
+        let source_builds: Vec<_> = to_pour
+            .iter()
+            .filter(|rf| !source::has_bottle(&rf.formula))
+            .collect();
+        for rf in &source_builds {
+            source::check_buildable(&rf.formula)?;
+        }
         if opts.dry_run {
             prefix::bootstrap(true)?;
             for rf in &to_pour {
-                miseprintln!(
-                    "pour {}/{} ({})",
-                    rf.formula.name,
-                    rf.formula.pkg_version()?,
-                    if rf.on_request {
-                        "requested"
-                    } else {
-                        "dependency"
-                    },
-                );
+                let origin = if rf.on_request {
+                    "requested"
+                } else {
+                    "dependency"
+                };
+                if source::has_bottle(&rf.formula) {
+                    miseprintln!(
+                        "pour {}/{} ({origin})",
+                        rf.formula.name,
+                        rf.formula.pkg_version()?,
+                    );
+                } else {
+                    miseprintln!(
+                        "build {}/{} from source ({origin}, {})",
+                        rf.formula.name,
+                        rf.formula.pkg_version()?,
+                        source::missing_bottle_reason(&rf.formula),
+                    );
+                }
             }
             return Ok(());
         }
@@ -97,41 +122,68 @@ impl BrewManager {
         }
         prefix::bootstrap(false)?;
         prefix::setup_linux_runtime()?;
+        if !source_builds.is_empty() {
+            info!(
+                "brew: building from source (no bottle for this machine): {}",
+                source_builds
+                    .iter()
+                    .map(|rf| rf.formula.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+        }
         let mpr = MultiProgressReport::get();
+        // overall [cur/total] header above the per-formula clx jobs, same as
+        // tool installs (no-op when only one formula is being installed)
+        mpr.init_footer(false, "install", to_pour.len());
         let mut ledger = state::Ledger::load();
         for rf in &to_pour {
             let name = &rf.formula.name;
             let pkg_version = rf.formula.pkg_version()?;
-            let Some(files) = rf.formula.bottle_files() else {
-                bail!("{name} has no bottles (source-only formulae are unsupported)");
-            };
-            let Some((tag, bottle)) = tag::select(files) else {
-                bail!(
-                    "{name} has no bottle for this machine (available: {})",
-                    files.keys().cloned().collect::<Vec<_>>().join(", "),
-                );
-            };
             let pr: Box<dyn SingleReport> = mpr.add(&format!("brew:{name}"));
-            let poured = async {
-                let tarball = fetch::fetch_bottle(name, &pkg_version, bottle, Some(&*pr)).await?;
-                pour::pour(rf, &tag, bottle, &tarball, &closure, &*pr).await
-            }
-            .await;
-            if let Err(err) = poured {
-                pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
-                return Err(err);
-            }
-            ledger.record(name, &pkg_version, rf.on_request);
+            // branch on the same predicate the upfront classification used
+            let bottle = if source::has_bottle(&rf.formula) {
+                rf.formula.bottle_files().and_then(tag::select)
+            } else {
+                None
+            };
+            let installed = match bottle {
+                Some((tag, bottle)) => {
+                    async {
+                        let tarball =
+                            fetch::fetch_bottle(name, &pkg_version, bottle, Some(&*pr)).await?;
+                        pour::pour(rf, &tag, bottle, &tarball, &closure, &*pr).await?;
+                        Ok(pkg_version.clone())
+                    }
+                    .await
+                }
+                None => source::build(rf, &closure, &*pr)
+                    .await
+                    .map(|()| pkg_version.clone()),
+            };
+            let version = match installed {
+                Ok(version) => version,
+                Err(err) => {
+                    pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
+                    // render the final progress state so the error that
+                    // propagates from here isn't masked by live jobs
+                    mpr.footer_finish();
+                    return Err(err);
+                }
+            };
+            ledger.record(name, &version, rf.on_request);
             ledger.save()?;
-            pr.finish_with_message(pkg_version.clone());
+            pr.finish_with_message(version);
+            mpr.footer_inc(1);
         }
+        mpr.footer_finish();
         // a glibc poured in this run repoints <prefix>/lib/ld.so at it
         prefix::setup_linux_runtime()?;
         Ok(())
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl SystemPackageManager for BrewManager {
     fn name(&self) -> &'static str {
         "brew"

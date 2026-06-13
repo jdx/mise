@@ -128,7 +128,7 @@ pub async fn pour(
             .wrap_err_with(|| format!("failed to re-sign relocated binaries for {name}"))?;
     }
 
-    write_receipt(rf, tag, &tmp, &report, closure)?;
+    write_receipt(rf, tag, &tmp, &report, closure, true)?;
 
     pr.set_message("link".to_string());
     if keg.exists() {
@@ -179,13 +179,16 @@ fn bottled_by_homebrew_at_least(keg: &Path, min: (u64, u64, u64)) -> bool {
 }
 
 /// brew-compatible INSTALL_RECEIPT.json so a later-installed real Homebrew
-/// adopts these kegs (brew list/upgrade/uninstall all work)
-fn write_receipt(
+/// adopts these kegs (brew list/upgrade/uninstall all work). Written for
+/// both poured bottles and source-built kegs; `poured_from_bottle`
+/// distinguishes them the same way brew's own tab does.
+pub fn write_receipt(
     rf: &ResolvedFormula,
     tag: &str,
     keg: &Path,
     report: &relocate::RelocationReport,
     closure: &[ResolvedFormula],
+    poured_from_bottle: bool,
 ) -> Result<()> {
     let runtime_dependencies: Vec<serde_json::Value> = closure
         .iter()
@@ -219,8 +222,8 @@ fn write_receipt(
         "homebrew_version": "5.1.15 (mise)",
         "used_options": [],
         "unused_options": [],
-        "built_as_bottle": true,
-        "poured_from_bottle": true,
+        "built_as_bottle": poured_from_bottle,
+        "poured_from_bottle": poured_from_bottle,
         "loaded_from_api": true,
         "installed_as_dependency": !rf.on_request,
         "installed_on_request": rf.on_request,

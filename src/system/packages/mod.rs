@@ -63,7 +63,11 @@ pub struct InstallOpts {
     pub update: bool,
 }
 
-#[async_trait]
+// `?Send`: the brew manager's source-build path drives the toolset
+// machinery (to provision ruby), which holds non-Send shell state across
+// awaits. The driver awaits managers sequentially on one task, so the
+// futures never cross threads.
+#[async_trait(?Send)]
 pub trait SystemPackageManager: Send + Sync {
     /// config key, e.g. "apt", "brew"
     fn name(&self) -> &'static str;

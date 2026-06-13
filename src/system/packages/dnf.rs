@@ -53,7 +53,7 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
         .collect()
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl SystemPackageManager for DnfManager {
     fn name(&self) -> &'static str {
         "dnf"

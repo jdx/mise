@@ -15,13 +15,28 @@ pub struct ResolvedFormula {
     pub on_request: bool,
 }
 
-/// the `variations` entry that applies to the bottle that will actually be
-/// poured — the selected bottle tag, which may be older than the host's
-fn dep_tag(formula: &Formula, host_tag: &str) -> String {
-    formula
-        .bottle_files()
-        .and_then(|files| tag::select(files).map(|(tag, _)| tag))
-        .unwrap_or_else(|| host_tag.to_string())
+/// The `variations` entry that applies to what will actually be installed:
+/// the selected bottle tag (which may be older than the host's), or the
+/// host's own tag for formulae that will be built from source. Shared with
+/// source.rs so the build environment walks the same dependency lists this
+/// resolution installed.
+pub fn dep_tag(formula: &Formula, host_tag: &str) -> String {
+    if super::source::has_bottle(formula)
+        && let Some((tag, _)) = formula.bottle_files().and_then(tag::select)
+    {
+        return tag;
+    }
+    host_tag.to_string()
+}
+
+/// dependencies that must be installed before this formula: runtime deps
+/// always, plus build deps when the formula will be built from source
+fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a String> {
+    let mut deps: Vec<&String> = formula.dependencies_for(tag).iter().collect();
+    if !super::source::has_bottle(formula) {
+        deps.extend(formula.build_dependencies_for(tag));
+    }
+    deps
 }
 
 /// Resolve the runtime closure of `roots` into install order (dependencies
@@ -49,7 +64,7 @@ pub async fn resolve_closure(roots: &[String]) -> Result<Vec<ResolvedFormula>> {
                 }
                 if !formulae.contains_key(&c) {
                     let tag = dep_tag(&formula, &host_tag);
-                    for dep in formula.dependencies_for(&tag) {
+                    for dep in install_deps(&formula, &tag) {
                         queue.push((dep.clone(), false));
                     }
                     formulae.insert(c.clone(), formula);
@@ -91,7 +106,7 @@ pub async fn resolve_closure(roots: &[String]) -> Result<Vec<ResolvedFormula>> {
         };
         visiting.push(name.to_string());
         let tag = dep_tag(formula, host_tag);
-        for dep in formula.dependencies_for(&tag) {
+        for dep in install_deps(formula, &tag) {
             let dep_name = canonical.get(dep).cloned().unwrap_or_else(|| dep.clone());
             visit(
                 &dep_name, host_tag, formulae, canonical, done, visiting, on_request, sorted,
