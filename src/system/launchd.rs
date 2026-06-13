@@ -302,12 +302,11 @@ fn current_uid() -> u32 {
 }
 
 fn current_uid_from(euid: u32, sudo_uid: Option<&str>) -> u32 {
-    if euid == 0 {
-        if let Some(uid) = sudo_uid.and_then(|uid| uid.parse::<u32>().ok()) {
-            if uid != 0 {
-                return uid;
-            }
-        }
+    if euid == 0
+        && let Some(uid) = sudo_uid.and_then(|uid| uid.parse::<u32>().ok())
+        && uid != 0
+    {
+        return uid;
     }
     euid
 }
