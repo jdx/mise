@@ -1,5 +1,60 @@
 # Changelog
 
+## [2026.6.6](https://github.com/jdx/mise/compare/v2026.6.5..v2026.6.6) - 2026-06-13
+
+### 🚀 Features
+
+- **(bootstrap)** add dotfiles workflow by @jdx in [#10376](https://github.com/jdx/mise/pull/10376)
+- **(bootstrap)** support brew taps and casks directly by @jdx in [#10383](https://github.com/jdx/mise/pull/10383)
+- **(config)** load safe mise.toml files without trust by @jdx in [#10360](https://github.com/jdx/mise/pull/10360)
+- **(oci)** apply system files and apt packages by @jdx in [#10373](https://github.com/jdx/mise/pull/10373)
+- **(system)** add [system.defaults] for declarative macOS defaults by @jdx in [#10363](https://github.com/jdx/mise/pull/10363)
+- **(system)** build source formulae from source with a native formula DSL shim by @jdx in [#10364](https://github.com/jdx/mise/pull/10364)
+- **(system)** support wildcards in system files by @jdx in [#10374](https://github.com/jdx/mise/pull/10374)
+- **(system)** support custom brew taps by @jdx in [#10375](https://github.com/jdx/mise/pull/10375)
+- **(system)** add login shell bootstrap support by @jdx in [#10377](https://github.com/jdx/mise/pull/10377)
+- add `mise bootstrap` and declarative `[system.files]` by @jdx in [#10365](https://github.com/jdx/mise/pull/10365)
+- add `[system.edits]` for editing files mise doesn't own by @jdx in [#10368](https://github.com/jdx/mise/pull/10368)
+
+### 🐛 Bug Fixes
+
+- **(http)** show github 403 response diagnostics by @jdx in [#10382](https://github.com/jdx/mise/pull/10382)
+
+### 🚜 Refactor
+
+- **(file)** split extraction helpers and harden format handling by @risu729 in [#10274](https://github.com/jdx/mise/pull/10274)
+
+### 📚 Documentation
+
+- **(settings)** document 24h default for minimum_release_age by @ThijsdeJong-TomTom in [#10366](https://github.com/jdx/mise/pull/10366)
+- link to all sponsors by @jdx in [#10369](https://github.com/jdx/mise/pull/10369)
+- add more tips and tricks entries by @jdx in [#10370](https://github.com/jdx/mise/pull/10370)
+- clarify contribution fit by @jdx in [#10378](https://github.com/jdx/mise/pull/10378)
+- make contributing guide canonical by @jdx in [#10380](https://github.com/jdx/mise/pull/10380)
+
+### ⚡ Performance
+
+- **(versions-host)** fetch version lists from static assets by @jdx in [#10361](https://github.com/jdx/mise/pull/10361)
+
+### Chore
+
+- graduate stable features from experimental by @jdx in [#10371](https://github.com/jdx/mise/pull/10371)
+- remove stale cargo-deny advisory ignores by @jdx in [#10372](https://github.com/jdx/mise/pull/10372)
+
+### New Contributors
+
+- @ThijsdeJong-TomTom made their first contribution in [#10366](https://github.com/jdx/mise/pull/10366)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (5)
+
+- [`oracle.com/sqlcl`](https://github.com/jasonlyle88/sqlcl-releases)
+- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc)
+- [`suzuki-shunsuke/docfresh`](https://github.com/suzuki-shunsuke/docfresh)
+- [`suzuki-shunsuke/ghaperf`](https://github.com/suzuki-shunsuke/ghaperf)
+- [`suzuki-shunsuke/ghir`](https://github.com/suzuki-shunsuke/ghir)
+
 ## [2026.6.5](https://github.com/jdx/mise/compare/v2026.6.4..v2026.6.5) - 2026-06-12
 
 ### 🐛 Bug Fixes

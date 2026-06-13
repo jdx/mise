@@ -70581,10 +70581,23 @@ packages:
           - amd64
   - type: http
     name: oracle.com/sqlcl
+    repo_owner: jasonlyle88
+    repo_name: sqlcl-releases
     url: https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-{{.Version}}.zip
+    format: zip
+    link: https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/
+    description: Oracle SQLcl command-line interface for Oracle Database
     files:
       - name: sql
         src: sqlcl/bin/sql
+    checksum:
+      type: github_release
+      asset: sqlcl-{{.Version}}.zip.sha256
+      algorithm: sha256
+      file_format: regexp
+      pattern:
+        checksum: ^(\b[A-Fa-f0-9]{64}\b)
+        file: "^\\b[A-Fa-f0-9]{64}\\b\\s+(\\S+)$"
   - type: github_release
     repo_owner: orangekame3
     repo_name: stree
@@ -71579,15 +71592,16 @@ packages:
     repo_owner: oxc-project
     repo_name: oxc
     description: The linter for oxc
+    version_filter: 'Version matches "^apps_v" || Version matches "^oxlint_v"'
+    files:
+      - name: oxlint
+        src: "{{.AssetWithoutExt}}"
     version_constraint: "false"
-    version_prefix: oxlint_v
     version_overrides:
-      - version_constraint: semver(">= 1.17.0")
-        error_message: |
-          aqua can't support oxlint 1.17.0 or later. 
-          > Newer versions of Oxlint require node.js. There isn’t a native executable alternative anymore.
-          https://github.com/oxc-project/oxc/discussions/14452#discussioncomment-14631344
+      - version_constraint: Version in ["apps_v1.47.0", "oxlint_v0.0.9", "oxlint_v0.1.1"]
+        no_asset: true
       - version_constraint: semver("<= 0.0.8")
+        version_prefix: oxlint_v
         asset: oxlint-{{.OS}}-{{.Arch}}
         files:
           - name: oxlint
@@ -71595,9 +71609,8 @@ packages:
         replacements:
           amd64: x64
           windows: win32
-      - version_constraint: Version == "oxlint_v0.0.9"
-        no_asset: true
       - version_constraint: semver("<= 0.0.19")
+        version_prefix: oxlint_v
         asset: oxlint-{{.OS}}-{{.Arch}}
         files:
           - name: oxlint
@@ -71605,9 +71618,8 @@ packages:
         replacements:
           amd64: x64
           windows: win32
-      - version_constraint: Version == "oxlint_v0.1.1"
-        no_asset: true
       - version_constraint: semver("<= 0.2.2")
+        version_prefix: oxlint_v
         asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         files:
@@ -71619,7 +71631,8 @@ packages:
         replacements:
           amd64: x64
           windows: win32
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.17.0")
+        version_prefix: oxlint_v
         asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         files:
@@ -71636,6 +71649,62 @@ packages:
         replacements:
           amd64: x64
           windows: win32
+      - version_constraint: semver(">= 1.17.0")
+        version_prefix: oxlint_v
+        error_message: |
+          This version is unavailable.
+          < 1.17.0: The version prefix is oxlint_v e.g. oxlint_v1.16.0
+          >= 1.17.0, < 1.28.0: These versions are unavailable
+          >= 1.28.0: The version prefix is apps_v e.g. apps_v1.28.0
+      - version_constraint: semver("< 1.28.0")
+        version_prefix: apps_v
+        error_message: |
+          The version was too old. Please ugrade to 1.28.0 or later.
+          < 1.17.0: The version prefix is oxlint_v
+          >= 1.17.0, < 1.28.0: These versions are unavailable
+          >= 1.28.0: The version prefix is apps_v
+      - version_constraint: semver("<= 1.43.0")
+        version_prefix: apps_v
+        asset: oxlint-{{.OS}}-{{.Arch}}-gnu.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: darwin
+            asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: semver("<= 1.51.0")
+        version_prefix: apps_v
+        asset: oxlint-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.53.0")
+        version_prefix: apps_v
+        no_asset: true
+      - version_constraint: "true"
+        version_prefix: apps_v
+        asset: oxlint-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: oxipng
     repo_name: oxipng
@@ -87027,7 +87096,7 @@ packages:
     description: Make document maintainable, reusable, and testable
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.2.0")
         asset: docfresh_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -87038,6 +87107,30 @@ packages:
             bundle:
               type: github_release
               asset: docfresh_checksums.txt.bundle
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: docfresh_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: docfresh_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: docfresh_checksums.txt.sigstore.json
             opts:
               - --certificate-identity-regexp
               - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
@@ -87145,7 +87238,7 @@ packages:
     description: ghaperf is a CLI to analyze the performance of GitHub Actions using GitHub API and raw job logs
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.1.1")
         asset: ghaperf_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -87161,6 +87254,28 @@ packages:
             bundle:
               type: github_release
               asset: ghaperf_checksums.txt.bundle
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: "true"
+        asset: ghaperf_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ghaperf_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+            bundle:
+              type: github_release
+              asset: ghaperf_checksums.txt.sigstore.json
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
@@ -87269,7 +87384,7 @@ packages:
     description: ghir is a CLI making past GitHub Releases immutable
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.0.3")
         asset: ghir_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -87291,8 +87406,30 @@ packages:
           asset: multiple.intoto.jsonl
         github_artifact_attestations:
           signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
-        github_immutable_release: true
-        github_release_attestations: true
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: ghir_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ghir_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: ghir_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
         overrides:
           - goos: windows
             format: zip
