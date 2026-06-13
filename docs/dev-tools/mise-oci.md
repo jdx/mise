@@ -70,7 +70,10 @@ jq = "1.8.1"
 3. **One layer per tool**, each rooted at
    `/mise/installs/<plugin>/<version>/`. Annotated with
    `dev.mise.tool.short` and `dev.mise.tool.version`.
-4. **Synthesized `/etc/mise/config.toml`** referencing `/mise` as the data
+4. **Configured apt `[system.packages]`**, if any, installed into the base
+   rootfs and emitted as one package layer.
+5. **Configured `[system.files]`**, if any, baked as image files.
+6. **Synthesized `/etc/mise/config.toml`** referencing `/mise` as the data
    directory.
 
 Bumping `node` from `20.10` to `20.11` only invalidates the node layer.
@@ -203,6 +206,38 @@ CLI flags override the `[oci]` section. The `[oci]` section overrides the
 
 When `mise.toml` files are layered (global + project), sections are merged
 field-by-field with the more specific file winning per field.
+
+### `[system]` in OCI images
+
+`mise oci build` applies project-scoped `[system.packages]` and
+`[system.files]` entries to the image. This is the OCI equivalent of the
+declarative parts of `mise bootstrap` / `mise system install`.
+Pass `--include-global` to also include `[system.packages]` and
+`[system.files]` from global configs.
+
+```toml
+[system.packages]
+"apt:curl" = "latest"
+
+[system.files]
+"/etc/profile.d/project.sh" = { source = "profile.sh", mode = "copy" }
+"~/.config/app/config.toml" = { source = "config.toml", mode = "template" }
+```
+
+For packages, OCI builds currently support `apt:` entries with a Debian/Ubuntu
+base image. mise unpacks the base image into a temporary rootfs, calls the
+host `apt-get` to install into that rootfs, then emits the filesystem changes
+as one OCI layer annotated with `dev.mise.system.packages=apt`. Other system
+package managers are rejected for OCI builds for now.
+
+For image builds, `symlink` and `symlink-each` entries are copied as file
+content. Host symlinks would usually point back to the checkout path and be
+broken inside the container, so the image receives the resolved contents
+instead. Targets beginning with `~/` are written under `/root/`.
+
+`[system.defaults]` and the imperative `bootstrap` task are not run by
+`mise oci build`. macOS defaults do not apply to Linux OCI images, and
+container-specific startup work belongs in the image entrypoint or command.
 
 ### Settings
 

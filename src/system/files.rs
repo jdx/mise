@@ -25,7 +25,7 @@ use itertools::Itertools;
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::config::Config;
+use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
 use crate::ui::prompt;
@@ -111,11 +111,18 @@ pub enum FileState {
 /// global -> local; a more local config overrides an entry for the same
 /// target. Malformed entries and unknown modes warn and are skipped.
 pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
+    files_from_config_files(&config.config_files)
+}
+
+/// Aggregate `[system.files]` across a specific set of config files. This is
+/// used by OCI builds, which intentionally scope config to project files by
+/// default instead of blindly inheriting global dotfiles.
+pub fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
     // keyed by the *expanded* target so "~/.gitconfig" in one config and
     // its absolute spelling in another are one entry, not two
     let mut merged: IndexMap<PathBuf, FileRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for (path, cf) in config.config_files.iter().rev() {
+    for (path, cf) in config_files.iter().rev() {
         let Some(sys) = cf.system_config() else {
             continue;
         };
@@ -534,7 +541,7 @@ fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
     }
 }
 
-fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
+pub fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
     let raw = file::read_to_string(&req.source)?;
     let mut tera = crate::tera::get_tera(Some(&req.base));
     let rendered = tera.render_str(&raw, &config.tera_ctx).map_err(|err| {

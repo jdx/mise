@@ -10,6 +10,7 @@ pub mod builder;
 pub mod layer;
 pub mod layout;
 pub mod manifest;
+pub mod packages;
 pub mod registry;
 
 use indexmap::IndexMap;
