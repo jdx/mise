@@ -13,7 +13,7 @@ use crate::env;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
-use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
+use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
 use console::style;
@@ -44,6 +44,8 @@ pub struct ToolVersion {
     pub install_path: Option<PathBuf>,
     /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
+    /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
+    pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
 }
 
 impl ToolVersion {
@@ -68,6 +70,7 @@ impl ToolVersion {
             lock_platforms: Default::default(),
             install_path: None,
             conda_packages: Default::default(),
+            pkgx_packages: Default::default(),
         }
     }
 

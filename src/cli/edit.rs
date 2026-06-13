@@ -82,6 +82,7 @@ impl BackendProvider for MiseBackendProvider {
                 BackendType::Go => ("go", Some("Install Go modules")),
                 BackendType::Npm => ("npm", Some("Install npm packages globally")),
                 BackendType::Pipx => ("pipx", Some("Install Python CLI tools")),
+                BackendType::Pkgx => ("pkgx", Some("Install pkgx pantry packages")),
                 BackendType::Spm => ("spm", Some("Install Swift packages")),
                 BackendType::Http => ("http", Some("Download files from HTTP URLs")),
                 BackendType::S3 => ("s3", Some("Download from S3 buckets")),
