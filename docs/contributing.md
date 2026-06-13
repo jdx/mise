@@ -11,6 +11,27 @@ or simply mention what you plan to do in the
 PRs are often either rejected or need to change significantly after submission
 so make sure before you start working on something it won't be a wasted effort.
 
+## Contribution Expectations
+
+Before opening a PR, unless it is something obvious, consider creating a
+discussion or mentioning what you plan to do in
+[Discord](https://discord.gg/UBa7pJUN7Z). The important part is to settle the
+direction before much review happens. mise has a specific scope and design
+taste. I am comfortable saying no to changes that do not clearly fit.
+
+Before I review a PR, CI must be passing and all automated AI review comments
+must be addressed. If those are still open, assume I will wait to look at the
+PR.
+
+If I am on the fence about a contribution, I will probably reject it for that
+reason alone. If I did not do this, mise and the rest of these projects would
+suffer from feature bloat. I may also reject a PR if the quality is poor enough
+that I do not have confidence the contributor can get it across the finish line.
+I do not have time to coach contributors.
+
+I get hundreds of PRs per week across my projects, so I do not have time to
+respond to every PR with detailed context. A rejection may be brief.
+
 ## Contributing Guidelines
 
 1. **Before starting**: Create a discussion or discuss in Discord for non-obvious changes
@@ -23,7 +44,8 @@ so make sure before you start working on something it won't be a wasted effort.
 1. **PR titles**: Must follow conventional commit format (validated
    automatically)
    - For new tools in registry: Use `registry: add tool-name (backend:full/name)`
-2. **Auto-formatting**: Code will be automatically formatted by autofix.ci
+2. **Formatting and linting**: Run the repo formatting and lint tasks before
+   opening a PR
 3. **CI checks**: All tests must pass across Linux, macOS, and Windows
 4. **Coverage**: New code should maintain or improve test coverage
 5. **Dependencies**: New dependencies are validated with cargo-deny
@@ -556,11 +578,12 @@ BREAKING CHANGE: The old configuration format is no longer supported
 mise uses several automated workflows to maintain code quality and streamline
 development:
 
-### Automated Code Formatting
+### Formatting and Linting
 
-- **autofix.ci**: Automatically formats code and fixes linting issues in PRs
-- Runs `mise run render` and `mise run lint-fix` automatically
-- Commits fixes directly to the PR branch
+- Run `mise run render` and `mise run lint-fix` before opening a PR
+- Generated docs, completions, and snapshots should be committed with the
+  change that requires them
+- PRs with formatting or lint failures should be fixed by the contributor
 
 ### PR Title Validation
 
