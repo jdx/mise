@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# Test that core:erlang resolves lockfile URLs and records kerl fallback mode.
+export MISE_LOCKFILE=1
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "Skipping Linux-specific test on non-Linux OS"
+  exit 0
+fi
+if type -P ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; then
+  echo "Skipping Erlang precompiled lockfile test on musl Linux"
+  exit 0
+fi
+
+detect_platform
+CURRENT_PLATFORM="$MISE_PLATFORM"
+if [[ -z $CURRENT_PLATFORM ]]; then
+  echo "Failed to detect platform: MISE_PLATFORM is empty" >&2
+  exit 1
+fi
+
+cat <<'EOF' >mise.toml
+[tools]
+erlang = "28.3"
+EOF
+
+rm -f mise.lock
+mise uninstall erlang@28.3 2>/dev/null || true
+
+export ImageOS=ubuntu24
+mise lock --platform "$CURRENT_PLATFORM"
+
+assert_contains "cat mise.lock" '[[tools.erlang]]'
+assert_contains "cat mise.lock" 'version = "28.3"'
+assert_contains "cat mise.lock" '[tools.erlang.options]'
+assert_contains "cat mise.lock" 'precompiled = "if_available"'
+assert_contains "cat mise.lock" 'precompiled_os = "ubuntu-24.04"'
+assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+assert_matches "cat mise.lock" 'url = "https://builds\.hex\.pm/builds/otp/(amd64|arm64)/ubuntu-24\.04/OTP-28\.3\.tar\.gz"'
+
+assert "mise install --locked --dry-run"
+
+rm -f mise.lock
+export ImageOS=nobara-43
+mise lock --platform "$CURRENT_PLATFORM"
+
+assert_contains "cat mise.lock" '[[tools.erlang]]'
+assert_contains "cat mise.lock" 'version = "28.3"'
+assert_contains "cat mise.lock" '[tools.erlang.options]'
+assert_contains "cat mise.lock" 'precompiled = "if_available"'
+assert_not_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+assert_not_contains "cat mise.lock" 'url = '
+
+assert "mise install --locked --dry-run"
