@@ -427,7 +427,26 @@ impl AssetPicker {
         score
     }
 
+    /// Returns the part of the asset used for platform (OS/arch/libc) detection,
+    /// with the tool's own name stripped from the front when it is known. This
+    /// prevents OS/arch tokens that happen to appear in the tool name (e.g. the
+    /// "arch" in "go-arch-lint", or the "win" in "win-tool") from being matched
+    /// as the asset's platform. Falls back to the full asset when no preferred
+    /// name is set or the asset does not start with it.
+    fn platform_part<'a>(&self, asset: &'a str) -> &'a str {
+        let Some(preferred_name) = self.preferred_name.as_deref() else {
+            return asset;
+        };
+        match asset.get(..preferred_name.len()) {
+            Some(prefix) if prefix.eq_ignore_ascii_case(preferred_name) => {
+                &asset[preferred_name.len()..]
+            }
+            _ => asset,
+        }
+    }
+
     fn score_os_match(&self, asset: &str) -> i32 {
+        let asset = self.platform_part(asset);
         for (os, pattern) in OS_PATTERNS.iter() {
             if pattern.is_match(asset) {
                 return if os.matches_target(&self.target_os) {
@@ -450,6 +469,7 @@ impl AssetPicker {
     }
 
     fn score_arch_match(&self, asset: &str) -> i32 {
+        let asset = self.platform_part(asset);
         for (arch, pattern) in ARCH_PATTERNS.iter() {
             if pattern.is_match(asset) {
                 return if arch.matches_target(&self.target_arch) {
@@ -477,6 +497,7 @@ impl AssetPicker {
     }
 
     fn score_libc_match(&self, asset: &str) -> i32 {
+        let asset = self.platform_part(asset);
         for (libc, pattern) in LIBC_PATTERNS.iter() {
             if pattern.is_match(asset) {
                 return if libc.matches_target(&self.target_libc) {
@@ -1315,6 +1336,64 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             .pick_best_asset(&assets)
             .unwrap();
         assert_eq!(picked, "tool-1.0.0-mingw-w64-x86_64.zip");
+    }
+
+    #[test]
+    fn test_asset_picker_tool_name_with_distro_alias() {
+        // Regression for #10208: a tool whose name contains a Linux distro alias
+        // (e.g. "go-arch-lint" -> "arch") must not have every asset classified as
+        // Linux. The tool name is stripped before platform detection, so the alias
+        // in the name does not shadow each asset's real OS token.
+        let assets = vec![
+            "go-arch-lint_1.15.0_darwin_amd64.tar.gz".to_string(),
+            "go-arch-lint_1.15.0_darwin_arm64.tar.gz".to_string(),
+            "go-arch-lint_1.15.0_linux_amd64.tar.gz".to_string(),
+            "go-arch-lint_1.15.0_linux_arm64.tar.gz".to_string(),
+            "go-arch-lint_1.15.0_windows_amd64.zip".to_string(),
+        ];
+
+        let picked = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .with_preferred_name("go-arch-lint")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "go-arch-lint_1.15.0_darwin_arm64.tar.gz");
+
+        let picked = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("go-arch-lint")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "go-arch-lint_1.15.0_windows_amd64.zip");
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("go-arch-lint")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "go-arch-lint_1.15.0_linux_amd64.tar.gz");
+    }
+
+    #[test]
+    fn test_asset_picker_tool_name_with_os_token_keeps_distro_asset() {
+        // Reverse guard: a tool whose name contains an OS token (e.g. "win" in
+        // "win-tool") must not cause its Linux distro-alias asset to be detected as
+        // that OS. Stripping the tool name before platform detection avoids moving
+        // the #10208 problem onto another name/alias combination.
+        let assets = vec![
+            "win-tool-ubuntu-x64.tar.gz".to_string(),
+            "win-tool-macos-x64.tar.gz".to_string(),
+            "win-tool-windows-x64.zip".to_string(),
+        ];
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("win-tool")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "win-tool-ubuntu-x64.tar.gz");
+
+        let picked = AssetPicker::with_libc("macos".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("win-tool")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "win-tool-macos-x64.tar.gz");
     }
 
     #[test]
