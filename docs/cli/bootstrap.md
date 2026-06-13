@@ -10,7 +10,7 @@ Runs the bootstrap steps for the current config in order:
 
 1. `mise system install` — install missing `[system.packages]`, apply
    `[system.files]` and `[system.edits]`, and write `[system.defaults]`
-   (macOS)
+   (macOS) and `[system].login_shell`
 2. `mise install` — install missing tools from `[tools]`
 3. `mise run bootstrap` — if a task named `bootstrap` is defined
 

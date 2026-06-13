@@ -2,13 +2,14 @@
 //!
 //! This is `[system.packages]` — declarative system packages installed by
 //! `mise system install` — `[system.files]` — declarative config files
-//! (dotfiles) — and `[system.defaults]` — declarative macOS user defaults,
-//! all applied by the same command. These are intentionally not part of
-//! `[tools]`: they're unversioned, machine-global, and managed by the OS
-//! package manager (or mise's own Homebrew-bottle installer), plain
-//! filesystem operations, or macOS `defaults`, not mise's per-project
-//! toolset.
+//! (dotfiles) — `[system.defaults]` — declarative macOS user defaults, and
+//! `[system].login_shell`, all applied by the same command. These are
+//! intentionally not part of `[tools]`: they're unversioned, machine-global,
+//! and managed by the OS package manager (or mise's own Homebrew-bottle
+//! installer), plain filesystem operations, macOS `defaults`, or system user
+//! account tooling, not mise's per-project toolset.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use eyre::bail;
@@ -23,6 +24,7 @@ use crate::system::packages::{PackageRequest, SystemPackageManager};
 pub mod defaults;
 pub mod edits;
 pub mod files;
+pub mod login_shell;
 pub mod packages;
 pub(crate) mod sudo;
 
@@ -47,6 +49,9 @@ pub struct SystemTomlConfig {
     /// (see [`edits`])
     #[serde(default)]
     pub edits: IndexMap<String, IndexMap<String, edits::EditTomlEntry>>,
+    /// desired login shell for the current user, applied with `chsh -s`
+    #[serde(default)]
+    pub login_shell: Option<String>,
     /// Homebrew-specific system config.
     #[serde(default)]
     pub brew: SystemBrewTomlConfig,
@@ -232,6 +237,28 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
         }
     }
     out
+}
+
+/// Desired login shell from the most local config that declares it.
+pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShellRequest> {
+    let mut shell = None;
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.system_config()
+            && let Some(login_shell) = sys.login_shell
+        {
+            if login_shell.trim().is_empty() {
+                warn!("[system].login_shell: must not be empty, ignoring entry");
+                continue;
+            }
+            if !Path::new(&login_shell).is_absolute() {
+                warn!("[system].login_shell: shell must be an absolute path, ignoring entry");
+                continue;
+            }
+            shell = Some(login_shell);
+        }
+    }
+    shell.map(|shell| login_shell::LoginShellRequest { shell })
 }
 
 /// Build [`ManagerPackages`] from explicit CLI specs, attaching configured

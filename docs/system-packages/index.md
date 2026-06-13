@@ -30,7 +30,8 @@ themselves — those belong in `[tools]`.
 
 The `[system]` section can also declare
 [macOS defaults](/system-packages/defaults.html) (`[system.defaults]`),
-applied by the same `mise system install` command.
+[login shells](/system-login-shell.html) (`[system].login_shell`), applied
+by the same `mise system install` command.
 
 ## Supported package managers
 
@@ -57,6 +58,15 @@ applied by the same `mise system install` command.
   missing, but only `mise system install` ever installs anything.
 - **Unknown managers are ignored with a warning** so configs using managers
   from newer mise versions still parse.
+
+For current-user login shell setup, use `[system].login_shell`:
+
+```toml
+[system]
+login_shell = "/bin/zsh"
+```
+
+See [System Login Shell](/system-login-shell.html) for details.
 
 ## Commands
 

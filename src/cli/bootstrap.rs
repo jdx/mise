@@ -12,7 +12,7 @@ use crate::system;
 ///
 /// 1. `mise system install` — install missing `[system.packages]`, apply
 ///    `[system.files]` and `[system.edits]`, and write `[system.defaults]`
-///    (macOS)
+///    (macOS) and `[system].login_shell`
 /// 2. `mise install` — install missing tools from `[tools]`
 /// 3. `mise run bootstrap` — if a task named `bootstrap` is defined
 ///
@@ -90,6 +90,14 @@ impl Bootstrap {
         } else {
             info!("bootstrap: system defaults");
             super::system::install::apply_defaults(defaults, self.dry_run, self.yes).await?;
+        }
+
+        let login_shell = system::login_shell_from_config(&config);
+        if login_shell.is_none() {
+            debug!("bootstrap: no [system].login_shell configured, skipping");
+        } else {
+            info!("bootstrap: login shell");
+            super::system::install::apply_login_shell(login_shell, self.dry_run, self.yes)?;
         }
 
         info!("bootstrap: tools");
