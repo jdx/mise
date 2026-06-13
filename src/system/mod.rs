@@ -16,6 +16,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::config::Config;
+use crate::config::ConfigMap;
 use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
 
@@ -152,10 +153,22 @@ pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<P
 /// `system_packages.managers` setting restricts which managers are used at
 /// all.
 pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
-    let mut merged: IndexMap<String, String> = IndexMap::new();
     let brew_taps = brew_taps_from_config(config);
+    packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps)
+}
+
+/// Aggregate `[system.packages]` across a specific set of config files.
+pub fn packages_from_config_files(config_files: &ConfigMap) -> Vec<ManagerPackages> {
+    packages_from_config_files_with_brew_taps(config_files, &IndexMap::new())
+}
+
+fn packages_from_config_files_with_brew_taps(
+    config_files: &ConfigMap,
+    brew_taps: &IndexMap<String, String>,
+) -> Vec<ManagerPackages> {
+    let mut merged: IndexMap<String, String> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for cf in config.config_files.values().rev() {
+    for cf in config_files.values().rev() {
         if let Some(sys) = cf.system_config() {
             for (spec, version) in sys.packages {
                 merged.insert(spec, version);
