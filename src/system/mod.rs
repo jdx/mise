@@ -42,9 +42,10 @@ pub struct SystemTomlConfig {
     /// target path -> source (see [`files`])
     #[serde(default)]
     pub files: IndexMap<String, files::FileTomlEntry>,
-    /// edits to files mise doesn't own (see [`edits`])
+    /// edits to files mise doesn't own, keyed by target path then edit id
+    /// (see [`edits`])
     #[serde(default)]
-    pub edits: Vec<edits::EditTomlEntry>,
+    pub edits: IndexMap<String, IndexMap<String, edits::EditTomlEntry>>,
 }
 
 /// Packages for one manager, aggregated across the config hierarchy

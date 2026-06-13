@@ -3236,12 +3236,12 @@ const completionSpec: Fig.Spec = {
     {
       name: "system",
       description:
-        "[experimental] Manage system packages from `[system.packages]`, files\nfrom `[system.files]`, edits from `[[system.edits]]`, and macOS defaults\nfrom `[system.defaults]`",
+        "[experimental] Manage system packages from `[system.packages]`, files\nfrom `[system.files]`, edits from `[system.edits]`, and macOS defaults\nfrom `[system.defaults]`",
       subcommands: [
         {
           name: ["install", "i"],
           description:
-            "Install missing system packages from `[system.packages]`, apply files\nfrom `[system.files]` and edits from `[[system.edits]]`, and write macOS\ndefaults from `[system.defaults]`",
+            "Install missing system packages from `[system.packages]`, apply files\nfrom `[system.files]` and edits from `[system.edits]`, and write macOS\ndefaults from `[system.defaults]`",
           options: [
             {
               name: ["-f", "--force"],
@@ -3288,7 +3288,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["status", "ls"],
           description:
-            "Show the status of system packages from `[system.packages]`, files from\n`[system.files]`, edits from `[[system.edits]]`, and macOS defaults from\n`[system.defaults]`",
+            "Show the status of system packages from `[system.packages]`, files from\n`[system.files]`, edits from `[system.edits]`, and macOS defaults from\n`[system.defaults]`",
           options: [
             {
               name: ["-J", "--json"],

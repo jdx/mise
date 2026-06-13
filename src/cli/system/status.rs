@@ -10,7 +10,7 @@ use crate::system::packages::PackageState;
 use crate::ui::table::MiseTable;
 
 /// Show the status of system packages from `[system.packages]`, files from
-/// `[system.files]`, edits from `[[system.edits]]`, and macOS defaults from
+/// `[system.files]`, edits from `[system.edits]`, and macOS defaults from
 /// `[system.defaults]`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
@@ -236,7 +236,7 @@ impl SystemStatus {
                 && defaults_rows.is_empty()
             {
                 info!(
-                    "nothing configured in [system.packages], [system.files], [[system.edits]], or [system.defaults]"
+                    "nothing configured in [system.packages], [system.files], [system.edits], or [system.defaults]"
                 );
             }
             if !rows.is_empty() {

@@ -90,9 +90,8 @@ a `bootstrap` task if you define one:
 "~/.gitconfig" = "dotfiles/gitconfig"
 "~/.config/nvim" = "dotfiles/nvim"
 
-[[system.edits]]                       # one piece of a file you don't own
-path = "~/.zshrc"
-block = 'eval "$(mise activate zsh)"'
+[system.edits]                         # one piece of a file you don't own
+"~/.zshrc".activate = 'eval "$(mise activate zsh)"'
 
 [system.defaults]                      # macOS defaults write
 "com.apple.dock.autohide" = true

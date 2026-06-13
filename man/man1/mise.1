@@ -743,7 +743,7 @@ e.g.: ruby@3
 Runs the bootstrap steps for the current config in order:
 
 1. `mise system install` — install missing `[system.packages]`, apply
-   `[system.files]` and `[[system.edits]]`, and write `[system.defaults]`
+   `[system.files]` and `[system.edits]`, and write `[system.defaults]`
    (macOS)
 2. `mise install` — install missing tools from `[tools]`
 3. `mise run bootstrap` — if a task named `bootstrap` is defined
@@ -2779,13 +2779,13 @@ Symlinks all ruby tool versions from an external tool into mise
 Get tool versions from Homebrew
 .SH "MISE SYSTEM INSTALL"
 Install missing system packages from `[system.packages]`, apply files
-from `[system.files]` and edits from `[[system.edits]]`, and write macOS
+from `[system.files]` and edits from `[system.edits]`, and write macOS
 defaults from `[system.defaults]`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
 root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
-and `[[system.edits]]` entries that aren't in their desired state are
+and `[system.edits]` entries that aren't in their desired state are
 applied, and on macOS any `[system.defaults]` entries that are unset or
 differ are written.
 
@@ -2820,7 +2820,7 @@ Refresh package manager metadata first (apt: `apt\-get update`)
 Packages in `manager:package` form; defaults to everything configured in [system.packages]
 .SH "MISE SYSTEM STATUS"
 Show the status of system packages from `[system.packages]`, files from
-`[system.files]`, edits from `[[system.edits]]`, and macOS defaults from
+`[system.files]`, edits from `[system.edits]`, and macOS defaults from
 `[system.defaults]`
 .PP
 \fBUsage:\fR mise system status [OPTIONS]

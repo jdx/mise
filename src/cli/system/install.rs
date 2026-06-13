@@ -5,13 +5,13 @@ use crate::config::{Config, Settings};
 use crate::system;
 
 /// Install missing system packages from `[system.packages]`, apply files
-/// from `[system.files]` and edits from `[[system.edits]]`, and write macOS
+/// from `[system.files]` and edits from `[system.edits]`, and write macOS
 /// defaults from `[system.defaults]`
 ///
 /// Checks which configured packages are missing and installs them with the
 /// system package manager. This may elevate with sudo when not running as
 /// root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
-/// and `[[system.edits]]` entries that aren't in their desired state are
+/// and `[system.edits]` entries that aren't in their desired state are
 /// applied, and on macOS any `[system.defaults]` entries that are unset or
 /// differ are written.
 ///

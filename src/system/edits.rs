@@ -1,19 +1,18 @@
-//! `[[system.edits]]` — declarative edits to files mise doesn't own,
+//! `[system.edits]` — declarative edits to files mise doesn't own,
 //! applied by `mise system install` or `mise bootstrap`.
 //!
 //! Where `[system.files]` manages whole files, an edit owns one small piece
 //! of a file something else owns — the `mise activate` line in a shell rc,
-//! an entry in /etc/hosts:
+//! an entry in /etc/hosts. Entries are keyed by target path (like
+//! `[system.files]`), then by an id naming each edit within the file:
 //!
 //! ```toml
-//! [[system.edits]]
-//! path = "~/.zshrc"
-//! id = "activate"                        # marker identity, default "mise"
-//! block = 'eval "$(mise activate zsh)"'  # or source = "...", template = true
-//!
-//! [[system.edits]]
-//! path = "/etc/hosts"
-//! line = "127.0.0.1 dev.local"
+//! [system.edits]
+//! "~/.zshrc" = {
+//!   activate = 'eval "$(mise activate zsh)"',  # string = inline block
+//!   aliases = { source = "snippets/aliases.sh" },
+//! }
+//! "/etc/hosts" = { dev = { line = "127.0.0.1 dev.local" } }
 //! ```
 //!
 //! A `block` is delimited by marker comments in the target file —
@@ -23,8 +22,8 @@
 //! exact line exists, appending it if absent.
 //!
 //! Entries merge across the config hierarchy as a union keyed by
-//! `(path, id)` for blocks and `(path, line)` for lines; a more local config
-//! overrides a block with the same id.
+//! `(path, id)` — a more local config overrides an edit with the same id,
+//! exactly like `[system.files]` overrides by target.
 
 use std::path::{Path, PathBuf};
 
@@ -38,15 +37,22 @@ use crate::path::PathExt;
 use crate::system::files::FileState;
 use crate::ui::prompt;
 
-/// one `[[system.edits]]` entry as written in mise.toml. Operations stay
-/// loosely typed so configs using operations from newer mise versions still
-/// parse (entries with no recognized operation warn and are skipped)
+/// one `[system.edits]` entry as written in mise.toml, keyed by
+/// `path -> id`. Operations stay loosely typed so configs using operations
+/// from newer mise versions still parse (entries with no recognized
+/// operation warn and are skipped)
 #[derive(Debug, Clone, Deserialize)]
-pub struct EditTomlEntry {
-    pub path: String,
-    /// marker identity for blocks; default "mise"
-    #[serde(default)]
-    pub id: Option<String>,
+#[serde(untagged)]
+pub enum EditTomlEntry {
+    /// `activate = 'eval "$(mise activate zsh)"'` — inline block content
+    Block(String),
+    /// `aliases = { source = "...", template = true }` /
+    /// `dev = { line = "..." }`
+    Table(EditTomlTable),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EditTomlTable {
     /// inline block content
     #[serde(default)]
     pub block: Option<String>,
@@ -76,7 +82,6 @@ pub enum BlockSource {
 #[derive(Debug, Clone)]
 pub enum EditOp {
     Block {
-        id: String,
         source: BlockSource,
         template: bool,
         comment: String,
@@ -93,6 +98,9 @@ pub struct EditRequest {
     pub path_raw: String,
     /// absolute target path (`~` expanded)
     pub path: PathBuf,
+    /// the entry's key within its file: merge identity and, for blocks, the
+    /// marker name
+    pub id: String,
     pub op: EditOp,
     /// directory of the declaring config file — base dir for relative
     /// sources and template functions like `exec` and `read_file`
@@ -103,16 +111,15 @@ impl EditRequest {
     /// short operation label for status tables and dry-run output
     pub fn describe_op(&self) -> String {
         match &self.op {
-            EditOp::Block { id, .. } => format!("block:{id}"),
-            EditOp::Line { line } => format!("line:{line}"),
+            EditOp::Block { .. } => format!("block:{}", self.id),
+            EditOp::Line { .. } => format!("line:{}", self.id),
         }
     }
 }
 
-/// Aggregate `[[system.edits]]` across all loaded config files. Entries
-/// union global -> local, keyed by `(path, id)` for blocks and
-/// `(path, line)` for lines; a more local config overrides a block with the
-/// same id. Malformed entries warn and are skipped.
+/// Aggregate `[system.edits]` across all loaded config files. Entries union
+/// global -> local, keyed by `(path, id)`; a more local config overrides an
+/// edit with the same id. Malformed entries warn and are skipped.
 pub fn edits_from_config(config: &Config) -> Vec<EditRequest> {
     let mut merged: IndexMap<String, EditRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
@@ -121,38 +128,65 @@ pub fn edits_from_config(config: &Config) -> Vec<EditRequest> {
             continue;
         };
         let base = cf_path.parent().unwrap_or(Path::new(".")).to_path_buf();
-        for entry in sys.edits {
-            match resolve_entry(entry, &base) {
-                Ok((key, req)) => {
-                    merged.insert(key, req);
+        for (path_raw, entries) in sys.edits {
+            for (id, entry) in entries {
+                match resolve_entry(&path_raw, id, entry, &base) {
+                    Ok(req) => {
+                        merged.insert(format!("{}\u{0}{}", req.path.display(), req.id), req);
+                    }
+                    Err(err) => warn!("[system.edits]: {err}"),
                 }
-                Err(err) => warn!("[[system.edits]]: {err}"),
             }
         }
     }
     merged.into_values().collect()
 }
 
-fn resolve_entry(entry: EditTomlEntry, base: &Path) -> Result<(String, EditRequest)> {
-    let path_raw = entry.path.clone();
-    let path = file::replace_path(&path_raw);
+fn resolve_entry(
+    path_raw: &str,
+    id: String,
+    entry: EditTomlEntry,
+    base: &Path,
+) -> Result<EditRequest> {
+    let path = file::replace_path(path_raw);
     if path.is_relative() {
         bail!("path \"{path_raw}\" must be absolute or start with ~/, ignoring entry");
     }
+    // ids end up inside marker lines — keep them to characters that can't
+    // collide with the marker syntax itself
+    if id.is_empty() || !id.chars().all(|c| c.is_alphanumeric() || "_-.".contains(c)) {
+        bail!(
+            "\"{path_raw}\".{id:?}: ids may only contain letters, digits, '_', '-', and '.', ignoring entry"
+        );
+    }
+    let entry = match entry {
+        EditTomlEntry::Block(inline) => EditTomlTable {
+            block: Some(inline),
+            source: None,
+            template: None,
+            line: None,
+            comment: None,
+        },
+        EditTomlEntry::Table(table) => table,
+    };
     let is_block = entry.block.is_some() || entry.source.is_some();
-    let (key, op) = match (&is_block, &entry.line) {
+    let op = match (&is_block, &entry.line) {
         (true, Some(_)) => {
-            bail!("\"{path_raw}\": block/source and line are mutually exclusive, ignoring entry")
+            bail!(
+                "\"{path_raw}\".{id}: block/source and line are mutually exclusive, ignoring entry"
+            )
         }
         (false, None) => {
             bail!(
-                "\"{path_raw}\": no recognized operation (block, source, or line), ignoring entry"
+                "\"{path_raw}\".{id}: no recognized operation (block, source, or line), ignoring entry"
             )
         }
         (true, None) => {
             let source = match (entry.block, entry.source) {
                 (Some(_), Some(_)) => {
-                    bail!("\"{path_raw}\": block and source are mutually exclusive, ignoring entry")
+                    bail!(
+                        "\"{path_raw}\".{id}: block and source are mutually exclusive, ignoring entry"
+                    )
                 }
                 (Some(inline), None) => BlockSource::Inline(inline),
                 (None, Some(src)) => {
@@ -165,34 +199,24 @@ fn resolve_entry(entry: EditTomlEntry, base: &Path) -> Result<(String, EditReque
                 }
                 (None, None) => unreachable!("is_block"),
             };
-            let id = entry.id.unwrap_or_else(|| "mise".to_string());
             let comment = entry
                 .comment
                 .unwrap_or_else(|| infer_comment(&path).to_string());
-            (
-                format!("{}\u{0}block:{id}", path.display()),
-                EditOp::Block {
-                    id,
-                    source,
-                    template: entry.template.unwrap_or(false),
-                    comment,
-                },
-            )
+            EditOp::Block {
+                source,
+                template: entry.template.unwrap_or(false),
+                comment,
+            }
         }
-        (false, Some(line)) => (
-            format!("{}\u{0}line:{line}", path.display()),
-            EditOp::Line { line: line.clone() },
-        ),
+        (false, Some(line)) => EditOp::Line { line: line.clone() },
     };
-    Ok((
-        key,
-        EditRequest {
-            path_raw,
-            path,
-            op,
-            base: base.to_path_buf(),
-        },
-    ))
+    Ok(EditRequest {
+        path_raw: path_raw.to_string(),
+        path,
+        id,
+        op,
+        base: base.to_path_buf(),
+    })
 }
 
 /// comment prefix for marker lines, by file extension; `#` covers most
@@ -269,7 +293,6 @@ fn find_block(
 /// per check/apply cycle (templates may use exec())
 fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>> {
     let EditOp::Block {
-        id,
         source,
         template,
         comment,
@@ -277,6 +300,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     else {
         return Ok(None);
     };
+    let id = &req.id;
     let raw = match source {
         BlockSource::Inline(s) => s.clone(),
         BlockSource::File(p) => file::read_to_string(p)?,
@@ -285,8 +309,9 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
         let mut tera = crate::tera::get_tera(Some(&req.base));
         tera.render_str(&raw, &config.tera_ctx).map_err(|err| {
             eyre::eyre!(
-                "[[system.edits]] \"{}\": failed to render template: {err}",
-                req.path_raw
+                "[system.edits].\"{}\".{}: failed to render template: {err}",
+                req.path_raw,
+                req.id
             )
         })?
     } else {
@@ -298,8 +323,9 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     for pat in [format!(">>> mise:{id} >>>"), format!("<<< mise:{id} <<<")] {
         if content.lines().any(|l| is_marker_line(l, &pat, comment)) {
             bail!(
-                "[[system.edits]] \"{}\": block content may not contain its own marker lines",
-                req.path_raw
+                "[system.edits].\"{}\".{}: block content may not contain its own marker lines",
+                req.path_raw,
+                req.id
             );
         }
     }
@@ -359,7 +385,7 @@ fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
     let text = file::read_to_string(&req.path)?;
     let lines: Vec<&str> = text.lines().collect();
     match &req.op {
-        EditOp::Block { id, comment, .. } => match find_block(&lines, id, comment) {
+        EditOp::Block { comment, .. } => match find_block(&lines, &req.id, comment) {
             Err(reason) => Ok(Some(EditCheck::Blocked(reason))),
             Ok(None) => Ok(Some(EditCheck::State(FileState::Missing))),
             Ok(Some(_)) => Ok(None),
@@ -375,9 +401,10 @@ fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
 /// content comparison for a block whose markers exist ([`precheck`]
 /// returned None)
 fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
-    let EditOp::Block { id, comment, .. } = &req.op else {
+    let EditOp::Block { comment, .. } = &req.op else {
         unreachable!("only blocks reach a content comparison");
     };
+    let id = &req.id;
     let text = file::read_to_string(&req.path)?;
     let lines: Vec<&str> = text.lines().collect();
     match find_block(&lines, id, comment) {
@@ -542,7 +569,8 @@ fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
     };
     let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
     match &req.op {
-        EditOp::Block { id, comment, .. } => {
+        EditOp::Block { comment, .. } => {
+            let id = &req.id;
             let desired = desired.expect("resolved block content");
             let mut block = vec![begin_marker(comment, id)];
             // a desired of "" means an empty block, not a blank line

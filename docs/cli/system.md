@@ -5,7 +5,7 @@
 - **Source code**: [`src/cli/system/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/mod.rs)
 
 [experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, edits from `[[system.edits]]`, and macOS defaults
+from `[system.files]`, edits from `[system.edits]`, and macOS defaults
 from `[system.defaults]`
 
 System packages are machine-global packages installed by the OS package

@@ -1,23 +1,36 @@
 # System Edits <Badge type="warning" text="experimental" />
 
-Where [System Files](/system-files.html) manages whole files, `[[system.edits]]`
+Where [System Files](/system-files.html) manages whole files, `[system.edits]`
 manages one small piece of a file something else owns — the `mise activate`
-line in your shell rc, an entry in `/etc/hosts`:
+line in your shell rc, an entry in `/etc/hosts`. Entries are keyed by target
+path, then by an id naming each edit within the file:
 
 ```toml
-[[system.edits]]
-path = "~/.zshrc"
-id = "activate"                        # marker identity, default "mise"
-block = 'eval "$(mise activate zsh)"'
+[system.edits]
+"~/.zshrc" = {
+  activate = 'eval "$(mise activate zsh)"',
+  aliases = '''
+alias ll='ls -l'
+alias la='ls -la'
+''',
+}
+"/etc/hosts" = { dev = { line = "127.0.0.1 dev.local" } }
+```
 
-[[system.edits]]
-path = "/etc/hosts"
-line = "127.0.0.1 dev.local"
+A string value is inline block content (TOML multiline strings keep larger
+blocks readable); a table value spells out the operation. Dotted keys work
+too when you prefer one entry per line:
+
+```toml
+[system.edits]
+"~/.zshrc".activate = 'eval "$(mise activate zsh)"'
+"~/.gitconfig".identity = { source = "snippets/git-identity.tmpl", template = true }
 ```
 
 ## Blocks
 
-A `block` is delimited by marker comments in the target file:
+A `block` is delimited by marker comments in the target file, named by the
+entry's id:
 
 ```sh
 # >>> mise:activate >>> managed by mise — do not edit between markers
@@ -31,29 +44,18 @@ appends the block if absent), and everything else in the file is untouched.
 Content can come from three places:
 
 ```toml
-[[system.edits]]
-path = "~/.zshrc"
-block = "..."                  # inline
-
-[[system.edits]]
-path = "~/.zshrc"
-id = "aliases"
-source = "snippets/aliases.sh" # from a file, relative to this config file
-
-[[system.edits]]
-path = "~/.gitconfig"
-id = "identity"
-source = "snippets/git-identity.tmpl"
-template = true                # rendered with the mise template engine
+[system.edits."~/.zshrc"]
+activate = "..."                                    # inline (string shorthand)
+aliases = { source = "snippets/aliases.sh" }        # from a file, relative to this config
+prompt = { source = "snippets/prompt.tmpl", template = true } # rendered with the template engine
 ```
 
-`id` distinguishes multiple blocks in one file and appears in the markers;
-it defaults to `mise`. The marker comment prefix is inferred from the file
-extension (`#` for shell/config files, `--` for Lua, `//` for C-like
-languages, `;` for INI, `"` for vim) and can be overridden with
-`comment = "..."`. Files that can't hold line comments at all (strict JSON,
-XML) aren't a fit for blocks — use [System Files](/system-files.html) to own
-the whole file instead.
+Ids may contain letters, digits, `_`, `-`, and `.`. The marker comment
+prefix is inferred from the file extension (`#` for shell/config files,
+`--` for Lua, `//` for C-like languages, `;` for INI, `"` for vim) and can
+be overridden with `comment = "..."`. Files that can't hold line comments
+at all (strict JSON, XML) aren't a fit for blocks — use
+[System Files](/system-files.html) to own the whole file instead.
 
 Detecting whether a template block has drifted requires rendering it, so
 `mise system status` (and a real install) evaluates templates — including
@@ -66,7 +68,8 @@ template rendering and lists those entries as `(if changed)`.
 A `line` ensures an exact line exists somewhere in the file, appending it at
 the end if absent. It never modifies or removes other lines, which is what
 makes it safely idempotent — use it for files where a three-line marker
-block is overkill or comments aren't tolerated.
+block is overkill or comments aren't tolerated. The id is only a label (and
+the merge identity); it isn't written to the file.
 
 ## Semantics
 
@@ -74,8 +77,9 @@ Edits follow the same rules as the rest of [`[system]`](/system-packages/):
 
 - **Declarative and additive** — entries merge across the
   [config hierarchy](/configuration.html) (global → project) as a union,
-  keyed by `(path, id)` for blocks and `(path, line)` for lines; a more
-  local config overrides a block with the same id.
+  keyed by `(path, id)`; a more local config overrides an edit with the
+  same id, exactly like [System Files](/system-files.html) overrides by
+  target.
 - **Manual application only** — nothing is written implicitly. Only
   `mise system install` (or [`mise bootstrap`](/cli/bootstrap.html)) applies
   edits.

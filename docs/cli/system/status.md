@@ -6,7 +6,7 @@
 - **Source code**: [`src/cli/system/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/status.rs)
 
 Show the status of system packages from `[system.packages]`, files from
-`[system.files]`, edits from `[[system.edits]]`, and macOS defaults from
+`[system.files]`, edits from `[system.edits]`, and macOS defaults from
 `[system.defaults]`
 
 ## Flags

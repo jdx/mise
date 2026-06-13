@@ -9,7 +9,7 @@ mod upgrade;
 mod r#use;
 
 /// [experimental] Manage system packages from `[system.packages]`, files
-/// from `[system.files]`, edits from `[[system.edits]]`, and macOS defaults
+/// from `[system.files]`, edits from `[system.edits]`, and macOS defaults
 /// from `[system.defaults]`
 ///
 /// System packages are machine-global packages installed by the OS package

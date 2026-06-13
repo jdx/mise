@@ -11,7 +11,7 @@ use crate::system;
 /// Runs the bootstrap steps for the current config in order:
 ///
 /// 1. `mise system install` — install missing `[system.packages]`, apply
-///    `[system.files]` and `[[system.edits]]`, and write `[system.defaults]`
+///    `[system.files]` and `[system.edits]`, and write `[system.defaults]`
 ///    (macOS)
 /// 2. `mise install` — install missing tools from `[tools]`
 /// 3. `mise run bootstrap` — if a task named `bootstrap` is defined
@@ -74,7 +74,7 @@ impl Bootstrap {
 
         let edits = system::edits::edits_from_config(&config);
         if edits.is_empty() {
-            debug!("bootstrap: no [[system.edits]] configured, skipping");
+            debug!("bootstrap: no [system.edits] configured, skipping");
         } else {
             info!("bootstrap: system edits");
             let opts = system::edits::ApplyOpts {
