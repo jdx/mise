@@ -246,9 +246,9 @@ impl SystemPackageManager for MasManager {
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if let Some(p) = pkgs.iter().find(|p| !is_adam_id(&p.name)) {
-            bail!("mas update requires a numeric ADAM ID ('{p}'); use `mas search` to find it");
+            bail!("mas upgrade requires a numeric ADAM ID ('{p}'); use `mas search` to find it");
         }
-        let mut args = vec!["update".to_string()];
+        let mut args = vec!["upgrade".to_string()];
         args.extend(pkgs.iter().map(|p| p.name.clone()));
         if opts.dry_run {
             miseprintln!("mas {}", args.join(" "));
@@ -262,7 +262,7 @@ impl SystemPackageManager for MasManager {
             .await?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("mas update failed: {}", stderr.trim());
+            bail!("mas upgrade failed: {}", stderr.trim());
         }
         Ok(())
     }

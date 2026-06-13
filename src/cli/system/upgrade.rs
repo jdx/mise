@@ -10,7 +10,7 @@ use crate::system;
 /// that are already installed: apt/dnf/pacman upgrade to the newest available
 /// version (apt and dnf honor a version pinned in config), brew pours the
 /// formula's current bottle and replaces the old keg, brew-cask installs
-/// the current cask artifact, and mas updates App Store apps. Packages that
+/// the current cask artifact, and mas upgrades App Store apps. Packages that
 /// are not installed yet are skipped — use `mise bootstrap packages install`
 /// for those.
 ///

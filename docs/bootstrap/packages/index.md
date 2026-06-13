@@ -113,7 +113,7 @@ pinned entries are skipped with a warning). Packages that aren't installed
 yet are skipped — that's `mise bootstrap packages install`'s job. For brew
 this pours the formula's current bottle and replaces the old keg; for
 brew-cask this installs the current cask artifact; for mas this runs
-`mas update`.
+`mas upgrade`.
 
 `mise doctor` also reports configured system packages and warns when any are
 missing.
