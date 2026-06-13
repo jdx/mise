@@ -7,7 +7,7 @@ use serde_json::Value;
 use walkdir::WalkDir;
 
 use super::prefix;
-use crate::file::{self, ExtractOptions, TarFormat};
+use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::http::HTTP_FETCH;
 use crate::result::Result;
@@ -231,7 +231,7 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
     if filename.ends_with(".dmg") {
         file::un_dmg(archive, &extract_dir)?;
     } else {
-        let format = TarFormat::from_file_name(filename);
+        let format = ExtractionFormat::from_file_name(filename);
         if !format.is_archive() {
             bail!(
                 "brew-cask:{}: unsupported archive type for {}",

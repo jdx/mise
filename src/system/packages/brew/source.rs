@@ -21,7 +21,7 @@ use super::resolve::ResolvedFormula;
 use super::tag;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::{ExtractOptions, TarFormat};
+use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP_FETCH;
 use crate::result::Result;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
@@ -275,7 +275,7 @@ fn stage_source(archive: &Path, build_root: &Path, basename: &str) -> Result<Pat
     crate::file::create_dir_all(&stage)?;
     // `basename` is the upstream file name — the cache entry's own name
     // carries a checksum prefix that must not leak into the build tree
-    let format = TarFormat::from_file_name(basename);
+    let format = ExtractionFormat::from_file_name(basename);
     if format.is_archive() {
         crate::file::extract_archive(archive, &stage, format, &ExtractOptions::default())
             .wrap_err_with(|| format!("failed to extract {}", archive.display()))?;

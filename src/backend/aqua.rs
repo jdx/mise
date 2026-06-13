@@ -7,7 +7,7 @@ use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
-use crate::file::{ExtractOptions, TarFormat};
+use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
@@ -1302,7 +1302,7 @@ impl AquaBackend {
         v: &str,
     ) -> Result<bool> {
         let format = pkg.format(v, os(), arch())?;
-        let format = Self::effective_archive_format(pkg, format)?;
+        let format = Self::effective_extraction_format(pkg, format)?;
         if !format.is_archive() {
             return Err(eyre!(
                 "SLSA provenance subject mismatch and content-level fallback is only supported for archives"
@@ -2295,17 +2295,21 @@ impl AquaBackend {
         }
     }
 
-    fn effective_archive_format(pkg: &AquaPackage, format: &str) -> Result<TarFormat> {
-        let archive_format = TarFormat::from_ext(format);
-        if archive_format == TarFormat::Raw && !matches!(format, "" | "raw" | "dmg" | "pkg") {
+    fn effective_extraction_format(pkg: &AquaPackage, format: &str) -> Result<ExtractionFormat> {
+        let extraction_format = ExtractionFormat::from_ext(format);
+        if extraction_format == ExtractionFormat::Raw
+            && !matches!(format, "" | "raw" | "dmg" | "pkg")
+        {
             bail!("unsupported aqua package format: {format}");
         }
-        if pkg.r#type == AquaPackageType::GithubArchive && archive_format == TarFormat::Raw {
+        if pkg.r#type == AquaPackageType::GithubArchive
+            && extraction_format == ExtractionFormat::Raw
+        {
             // The aqua registry can omit format for GitHub-generated archive downloads.
             // Historically Raw reached untar/open_tar, which treated it as gzip-tar.
-            Ok(TarFormat::TarGz)
+            Ok(ExtractionFormat::TarGz)
         } else {
-            Ok(archive_format)
+            Ok(extraction_format)
         }
     }
 
@@ -2354,10 +2358,15 @@ impl AquaBackend {
             pr: Some(ctx.pr.as_ref()),
             ..Default::default()
         };
-        let archive_format = Self::effective_archive_format(pkg, format)?;
+        let extraction_format = Self::effective_extraction_format(pkg, format)?;
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
-            file::extract_archive(&tarball_path, &install_path, archive_format, &extract_opts)?;
+            file::extract_archive(
+                &tarball_path,
+                &install_path,
+                extraction_format,
+                &extract_opts,
+            )?;
             make_executable = true;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
             if let Some(parent) = first_bin_path.parent() {
@@ -2375,11 +2384,16 @@ impl AquaBackend {
             file::un_dmg(&tarball_path, &install_path)?;
         } else if format == "pkg" {
             file::un_pkg(&tarball_path, &install_path)?;
-        } else if archive_format.is_compressed_file() {
-            file::decompress_file(&tarball_path, first_bin_path, archive_format)?;
+        } else if extraction_format.is_compressed_file() {
+            file::decompress_file(&tarball_path, first_bin_path, extraction_format)?;
             make_executable = true;
         } else {
-            file::extract_archive(&tarball_path, &install_path, archive_format, &extract_opts)?;
+            file::extract_archive(
+                &tarball_path,
+                &install_path,
+                extraction_format,
+                &extract_opts,
+            )?;
             make_executable = true;
         }
 

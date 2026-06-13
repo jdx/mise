@@ -22,7 +22,7 @@ use std::sync::LazyLock;
 use super::platform_target::PlatformTarget;
 use super::platform_tokens::is_platform_or_version_token;
 use super::static_helpers::get_filename_from_url;
-use crate::file::TarFormat;
+use crate::file::ExtractionFormat;
 use crate::http::HTTP;
 
 // ========== Platform Detection Types (from asset_detector) ==========
@@ -522,9 +522,9 @@ impl AssetPicker {
     }
 
     fn score_format_preferences(&self, asset: &str) -> i32 {
-        let format = TarFormat::from_file_name(asset);
+        let format = ExtractionFormat::from_file_name(asset);
 
-        if format == TarFormat::Zip {
+        if format == ExtractionFormat::Zip {
             if self.target_os == "windows" {
                 return 15;
             } else {
