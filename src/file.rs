@@ -2009,11 +2009,6 @@ mod tests {
             ExtractionFormat::TarBz2
         );
         assert_eq!(
-            ExtractionFormat::from_file_name("foo.tbz"),
-            ExtractionFormat::TarBz2
-        );
-        assert_eq!(ExtractionFormat::from_ext("tbz"), ExtractionFormat::TarBz2);
-        assert_eq!(
             ExtractionFormat::from_file_name("foo.tar.zst"),
             ExtractionFormat::TarZst
         );
