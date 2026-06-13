@@ -44,10 +44,12 @@ appends the block if absent), and everything else in the file is untouched.
 Content can come from three places:
 
 ```toml
-[system.edits."~/.zshrc"]
-activate = "..."                                    # inline (string shorthand)
-aliases = { source = "snippets/aliases.sh" }        # from a file, relative to this config
-prompt = { source = "snippets/prompt.tmpl", template = true } # rendered with the template engine
+[system.edits]
+"~/.zshrc" = {
+  activate = "...",                                  # inline (string shorthand)
+  aliases = { source = "snippets/aliases.sh" },      # from a file, relative to this config
+  prompt = { source = "snippets/prompt.tmpl", template = true }, # rendered with the template engine
+}
 ```
 
 Ids may contain letters, digits, `_`, `-`, and `.`. The marker comment
