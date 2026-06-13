@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 
 use async_trait::async_trait;
-use eyre::bail;
+use eyre::{Result as EyreResult, bail, eyre};
 use serde_json::Value;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
@@ -68,19 +68,32 @@ fn parse_mas_json_value(value: &Value) -> Option<InstalledApp> {
     })
 }
 
-fn parse_mas_json(output: &str) -> Vec<InstalledApp> {
+fn parse_mas_json(output: &str) -> EyreResult<Vec<InstalledApp>> {
     let output = output.trim();
     if output.is_empty() {
-        return vec![];
+        return Ok(vec![]);
     }
     if let Ok(Value::Array(values)) = serde_json::from_str::<Value>(output) {
-        return values.iter().filter_map(parse_mas_json_value).collect();
+        let apps: Vec<_> = values.iter().filter_map(parse_mas_json_value).collect();
+        if apps.is_empty() && !values.is_empty() {
+            bail!("mas list --json returned no parseable app objects");
+        }
+        return Ok(apps);
     }
-    output
+    let mut apps = vec![];
+    for line in output
         .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter_map(|value| parse_mas_json_value(&value))
-        .collect()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        let value = serde_json::from_str::<Value>(line)
+            .map_err(|err| eyre!("mas list --json returned invalid JSON: {err}"))?;
+        match parse_mas_json_value(&value) {
+            Some(app) => apps.push(app),
+            None => bail!("mas list --json returned an app object without an ID and version"),
+        }
+    }
+    Ok(apps)
 }
 
 fn parse_mas_text(output: &str) -> Vec<InstalledApp> {
@@ -151,7 +164,7 @@ async fn mas_list() -> Result<Vec<InstalledApp>> {
         .await?;
     if json_output.status.success() {
         let stdout = String::from_utf8_lossy(&json_output.stdout);
-        return Ok(parse_mas_json(&stdout));
+        return parse_mas_json(&stdout);
     }
 
     debug!("$ mas list");
@@ -209,6 +222,9 @@ impl SystemPackageManager for MasManager {
         if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
             bail!("mas cannot install a pinned version ('{p}')");
         }
+        if let Some(p) = pkgs.iter().find(|p| !is_adam_id(&p.name)) {
+            bail!("mas install requires a numeric ADAM ID ('{p}'); use `mas search` to find it");
+        }
         let mut args = vec!["install".to_string()];
         args.extend(pkgs.iter().map(|p| p.name.clone()));
         if opts.dry_run {
@@ -216,18 +232,22 @@ impl SystemPackageManager for MasManager {
             return Ok(());
         }
         debug!("$ mas {}", args.join(" "));
-        let status = tokio::process::Command::new("mas")
+        let output = tokio::process::Command::new("mas")
             .args(&args)
             .stdin(Stdio::null())
-            .status()
+            .output()
             .await?;
-        if !status.success() {
-            bail!("mas install failed");
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("mas install failed: {}", stderr.trim());
         }
         Ok(())
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if let Some(p) = pkgs.iter().find(|p| !is_adam_id(&p.name)) {
+            bail!("mas update requires a numeric ADAM ID ('{p}'); use `mas search` to find it");
+        }
         let mut args = vec!["update".to_string()];
         args.extend(pkgs.iter().map(|p| p.name.clone()));
         if opts.dry_run {
@@ -235,16 +255,21 @@ impl SystemPackageManager for MasManager {
             return Ok(());
         }
         debug!("$ mas {}", args.join(" "));
-        let status = tokio::process::Command::new("mas")
+        let output = tokio::process::Command::new("mas")
             .args(&args)
             .stdin(Stdio::null())
-            .status()
+            .output()
             .await?;
-        if !status.success() {
-            bail!("mas update failed");
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("mas update failed: {}", stderr.trim());
         }
         Ok(())
     }
+}
+
+pub(crate) fn is_adam_id(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_digit())
 }
 
 #[cfg(test)]
@@ -264,7 +289,8 @@ mod tests {
         let apps = parse_mas_json(
             r#"{"adamID":497799835,"bundleID":"com.apple.dt.Xcode","version":"16.2"}
 {"adamID":"409203825","bundleID":"com.apple.Numbers","version":"14.4"}"#,
-        );
+        )
+        .unwrap();
         assert_eq!(apps.len(), 2);
         let statuses = statuses_from_apps(
             &apps,
@@ -300,7 +326,8 @@ mod tests {
     fn test_parse_mas_json_array() {
         let apps = parse_mas_json(
             r#"[{"id":497799835,"bundleIdentifier":"com.apple.dt.Xcode","version":"16.2"}]"#,
-        );
+        )
+        .unwrap();
         assert_eq!(
             apps,
             vec![InstalledApp {
@@ -322,5 +349,18 @@ mod tests {
                 version: "16.2".to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_parse_mas_json_rejects_invalid_json() {
+        assert!(parse_mas_json("not json").is_err());
+        assert!(parse_mas_json(r#"[{"adamID":497799835}]"#).is_err());
+    }
+
+    #[test]
+    fn test_is_adam_id() {
+        assert!(is_adam_id("497799835"));
+        assert!(!is_adam_id(""));
+        assert!(!is_adam_id("com.apple.dt.Xcode"));
     }
 }

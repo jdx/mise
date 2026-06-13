@@ -6,12 +6,11 @@ Mac App Store apps via the [`mas`](https://github.com/mas-cli/mas) CLI.
 [bootstrap.packages]
 "brew:mas" = "latest"
 "mas:497799835" = "latest"       # Xcode
-"mas:com.apple.dt.Xcode" = "latest"
 ```
 
 `mas` apps are part of `[bootstrap.packages]`, just like apt packages,
 Homebrew formulae, and casks. The package name is the App Store app ID:
-either a numeric ADAM ID or a bundle ID accepted by `mas`.
+a numeric ADAM ID accepted by `mas install` and `mas update`.
 
 mise does not install `mas` implicitly. Install it yourself first, for
 example with the built-in brew manager:
@@ -39,6 +38,8 @@ mise bootstrap packages upgrade --manager mas
 
 `mise bootstrap packages install` runs `mas install <id>` for missing apps.
 `mise bootstrap packages upgrade` runs `mas update <id>` for installed apps.
+Both commands require numeric ADAM IDs; bundle identifiers such as
+`com.apple.dt.Xcode` are not valid package names.
 
 ## Caveats
 

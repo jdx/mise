@@ -21,7 +21,7 @@ use crate::system::packages::PackageRequest;
 /// `@` (or with `@latest`) no pin is written. brew formulae and casks
 /// version through their names instead (for example `brew:postgresql@17`,
 /// `brew-cask:temurin@17`), where `@` is part of the Homebrew name rather than
-/// a mise version selector. mas app IDs are also treated as opaque package names.
+/// a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "u", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemUse {
