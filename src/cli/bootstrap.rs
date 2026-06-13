@@ -1,20 +1,30 @@
 use eyre::Result;
+use serde_json::json;
 
 use super::install::Install;
 use super::run;
 use super::system::driver::{self, Action, DriverOpts};
+use super::system::{install, status, upgrade, r#use};
 use crate::config::{Config, Settings};
 use crate::system;
+use crate::system::defaults::DefaultsState;
+use crate::system::login_shell::LoginShellState;
+use crate::ui::table::MiseTable;
+use clap::Subcommand;
 
 /// [experimental] Set up a machine for the current config in one command
 ///
 /// Runs the bootstrap steps for the current config in order:
 ///
-/// 1. `mise system install` — install missing `[system.packages]`, apply
-///    `[system.files]` and `[system.edits]`, write `[system.defaults]`
-///    (macOS), and set `[system].login_shell` (Unix)
-/// 2. `mise install` — install missing tools from `[tools]`
-/// 3. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 1. `mise bootstrap packages install` — install missing
+///    `[bootstrap.packages]`
+/// 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+/// 3. `mise bootstrap macos-defaults apply` — write
+///    `[bootstrap.macos.defaults]` entries (macOS)
+/// 4. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+///    (Unix)
+/// 5. `mise install` — install missing tools from `[tools]`
+/// 6. `mise run bootstrap` — if a task named `bootstrap` is defined
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -24,6 +34,9 @@ use crate::system;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Bootstrap {
+    #[clap(subcommand)]
+    command: Option<Commands>,
+
     /// Print what would happen without installing anything
     #[clap(long, short = 'n')]
     dry_run: bool,
@@ -37,14 +50,114 @@ pub struct Bootstrap {
     update: bool,
 }
 
+#[derive(Debug, Subcommand)]
+enum Commands {
+    MacosDefaults(BootstrapMacosDefaults),
+    Packages(BootstrapPackages),
+    User(BootstrapUser),
+}
+
+/// Manage bootstrap system packages from `[bootstrap.packages]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapPackages {
+    #[clap(subcommand)]
+    command: BootstrapPackagesCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapPackagesCommands {
+    #[cfg(unix)]
+    Brew(super::system::brew::SystemBrew),
+    Install(install::SystemInstall),
+    Status(status::SystemStatus),
+    Upgrade(upgrade::SystemUpgrade),
+    Use(r#use::SystemUse),
+}
+
+/// Manage macOS defaults from `[bootstrap.macos.defaults]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapMacosDefaults {
+    #[clap(subcommand)]
+    command: BootstrapMacosDefaultsCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapMacosDefaultsCommands {
+    Apply(BootstrapMacosDefaultsApply),
+    Status(BootstrapMacosDefaultsStatus),
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapMacosDefaultsApply {
+    /// Print the commands that would run without running them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapMacosDefaultsStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured defaults are not in their desired state
+    #[clap(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+/// Manage current-user bootstrap settings from `[bootstrap.user]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapUser {
+    #[clap(subcommand)]
+    command: BootstrapUserCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapUserCommands {
+    Apply(BootstrapUserApply),
+    Status(BootstrapUserStatus),
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapUserApply {
+    /// Print the commands that would run without running them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapUserStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured user setting is not in its desired state
+    #[clap(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
 impl Bootstrap {
     pub async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise bootstrap")?;
+        if let Some(command) = self.command {
+            return command.run().await;
+        }
         let config = Config::get().await?;
 
         let mgrs = system::packages_from_config(&config);
         if mgrs.is_empty() {
-            debug!("bootstrap: no [system.packages] configured, skipping");
+            debug!("bootstrap: no [bootstrap.packages] configured, skipping");
         } else {
             info!("bootstrap: system packages");
             let opts = DriverOpts {
@@ -59,13 +172,14 @@ impl Bootstrap {
 
         let files = system::files::files_from_config(&config);
         if files.is_empty() {
-            debug!("bootstrap: no [system.files] configured, skipping");
+            debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
         } else {
-            info!("bootstrap: system files");
+            info!("bootstrap: dotfiles");
             let opts = system::files::ApplyOpts {
                 dry_run: self.dry_run,
+                verbose: false,
                 // conflicts shouldn't be steamrolled by a bootstrap;
-                // `mise system install --force` is the explicit way
+                // `mise dotfiles apply --force` is the explicit way
                 force: false,
                 yes: self.yes,
             };
@@ -74,11 +188,12 @@ impl Bootstrap {
 
         let edits = system::edits::edits_from_config(&config);
         if edits.is_empty() {
-            debug!("bootstrap: no [system.edits] configured, skipping");
+            debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
         } else {
-            info!("bootstrap: system edits");
+            info!("bootstrap: dotfile edits");
             let opts = system::edits::ApplyOpts {
                 dry_run: self.dry_run,
+                verbose: false,
                 yes: self.yes,
             };
             system::edits::apply(&config, &edits, &opts)?;
@@ -86,18 +201,18 @@ impl Bootstrap {
 
         let defaults = system::defaults_from_config(&config);
         if defaults.is_empty() {
-            debug!("bootstrap: no [system.defaults] configured, skipping");
+            debug!("bootstrap: no [bootstrap.macos.defaults] configured, skipping");
         } else {
             info!("bootstrap: system defaults");
-            super::system::install::apply_defaults(defaults, self.dry_run, self.yes).await?;
+            install::apply_defaults(defaults, self.dry_run, self.yes).await?;
         }
 
         let login_shell = system::login_shell_from_config(&config);
         if login_shell.is_none() {
-            debug!("bootstrap: no [system].login_shell configured, skipping");
+            debug!("bootstrap: no [bootstrap.user].login_shell configured, skipping");
         } else {
             info!("bootstrap: login shell");
-            super::system::install::apply_login_shell(login_shell, self.dry_run, self.yes)?;
+            install::apply_login_shell(login_shell, self.dry_run, self.yes)?;
         }
 
         info!("bootstrap: tools");
@@ -162,11 +277,242 @@ impl Bootstrap {
     }
 }
 
+impl Commands {
+    async fn run(self) -> Result<()> {
+        match self {
+            Self::MacosDefaults(cmd) => cmd.run().await,
+            Self::Packages(cmd) => cmd.run().await,
+            Self::User(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapPackages {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            #[cfg(unix)]
+            BootstrapPackagesCommands::Brew(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Install(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Status(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Upgrade(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Use(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapMacosDefaults {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapMacosDefaultsCommands::Apply(cmd) => cmd.run().await,
+            BootstrapMacosDefaultsCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapMacosDefaultsApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_defaults(
+            system::defaults_from_config(&config),
+            self.dry_run,
+            self.yes,
+        )
+        .await
+    }
+}
+
+impl BootstrapMacosDefaultsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let defaults = system::defaults_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        if !defaults.is_empty() {
+            if !system::defaults::is_available() {
+                let reason = system::defaults::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "macos_defaults".to_string(),
+                        json!({ "available": false, "reason": reason }),
+                    );
+                } else {
+                    for req in &defaults {
+                        rows.push(vec![
+                            req.domain.clone(),
+                            req.key.clone(),
+                            req.value.to_string(),
+                            "".to_string(),
+                            format!("skipped ({reason})"),
+                        ]);
+                    }
+                }
+            } else {
+                let statuses = system::defaults::status(&defaults).await?;
+                let mut json_entries = vec![];
+                for s in statuses {
+                    let (current, state) = match &s.state {
+                        DefaultsState::Set => (s.request.value.to_string(), "set"),
+                        DefaultsState::Differs { current } => {
+                            any_missing = true;
+                            (current.clone(), "differs")
+                        }
+                        DefaultsState::Unset => {
+                            any_missing = true;
+                            ("".to_string(), "unset")
+                        }
+                    };
+                    if self.json {
+                        json_entries.push(json!({
+                            "domain": s.request.domain,
+                            "key": s.request.key,
+                            "value": s.request.value.to_json(),
+                            "current": current,
+                            "state": state,
+                        }));
+                    } else {
+                        rows.push(vec![
+                            s.request.domain.clone(),
+                            s.request.key.clone(),
+                            s.request.value.to_string(),
+                            current,
+                            state.to_string(),
+                        ]);
+                    }
+                }
+                if self.json {
+                    json_out.insert(
+                        "macos_defaults".to_string(),
+                        json!({ "available": true, "entries": json_entries }),
+                    );
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.macos.defaults]");
+        } else {
+            let mut table = MiseTable::new(false, &["Domain", "Key", "Value", "Current", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            crate::exit(1);
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapUser {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapUserCommands::Apply(cmd) => cmd.run().await,
+            BootstrapUserCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapUserApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_login_shell(
+            system::login_shell_from_config(&config),
+            self.dry_run,
+            self.yes,
+        )
+    }
+}
+
+impl BootstrapUserStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let login_shell = system::login_shell_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        if let Some(req) = login_shell {
+            if !system::login_shell::is_available() {
+                let reason = system::login_shell::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "login_shell".to_string(),
+                        json!({
+                            "available": false,
+                            "reason": reason,
+                            "shell": req.shell,
+                        }),
+                    );
+                } else {
+                    rows.push(vec![
+                        req.shell,
+                        "".to_string(),
+                        format!("skipped ({reason})"),
+                    ]);
+                }
+            } else {
+                let status = system::login_shell::status(&req)?;
+                let state = match &status.state {
+                    LoginShellState::Set => "set",
+                    LoginShellState::Differs { .. } => {
+                        any_missing = true;
+                        "differs"
+                    }
+                    LoginShellState::MissingFromShells { .. } => {
+                        any_missing = true;
+                        "missing from /etc/shells"
+                    }
+                };
+                if self.json {
+                    json_out.insert(
+                        "login_shell".to_string(),
+                        json!({
+                            "available": true,
+                            "shell": status.request.shell,
+                            "user": status.user,
+                            "current": status.current,
+                            "shell_listed": status.shell_listed,
+                            "state": state,
+                        }),
+                    );
+                } else {
+                    rows.push(vec![
+                        status.request.shell,
+                        status.current,
+                        state.to_string(),
+                    ]);
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.user]");
+        } else {
+            let mut table = MiseTable::new(false, &["Shell", "Current", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            crate::exit(1);
+        }
+        Ok(())
+    }
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap</bold>            # system packages + tools + bootstrap task
-    $ <bold>mise bootstrap --yes</bold>      # don't prompt before installing system packages
-    $ <bold>mise bootstrap --dry-run</bold>  # show what would happen
+    $ <bold>mise bootstrap</bold>                    # packages + dotfiles + tools + bootstrap task
+    $ <bold>mise bootstrap packages install --yes</bold>
+    $ <bold>mise bootstrap macos-defaults status</bold>
+    $ <bold>mise bootstrap user apply --dry-run</bold>
 "#
 );

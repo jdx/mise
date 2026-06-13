@@ -27,6 +27,17 @@ export const commands: { [key: string]: Command } = {
   },
   bootstrap: {
     hide: false,
+    subcommands: {
+      "macos-defaults": {
+        hide: false,
+      },
+      packages: {
+        hide: false,
+      },
+      user: {
+        hide: false,
+      },
+    },
   },
   cache: {
     hide: false,
@@ -97,6 +108,23 @@ export const commands: { [key: string]: Command } = {
     hide: false,
     subcommands: {
       path: {
+        hide: false,
+      },
+    },
+  },
+  dotfiles: {
+    hide: false,
+    subcommands: {
+      add: {
+        hide: false,
+      },
+      apply: {
+        hide: false,
+      },
+      edit: {
+        hide: false,
+      },
+      status: {
         hide: false,
       },
     },
@@ -312,26 +340,6 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
       ruby: {
-        hide: false,
-      },
-    },
-  },
-  system: {
-    hide: false,
-    subcommands: {
-      brew: {
-        hide: false,
-      },
-      install: {
-        hide: false,
-      },
-      status: {
-        hide: false,
-      },
-      upgrade: {
-        hide: false,
-      },
-      use: {
         hide: false,
       },
     },

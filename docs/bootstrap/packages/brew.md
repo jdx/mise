@@ -4,7 +4,7 @@ Homebrew formulae from `homebrew/core` — **without requiring Homebrew to be
 installed**.
 
 ```toml
-[system.packages]
+[bootstrap.packages]
 "brew:postgresql@17" = "latest"
 "brew:ffmpeg" = "latest"
 "brew:imagemagick" = "latest"
@@ -25,7 +25,7 @@ formulae are delegated to a real `brew` command; use the same
 fully-qualified formula name you would pass to `brew install`:
 
 ```toml
-[system.packages]
+[bootstrap.packages]
 "brew:railwaycat/emacsmacport/emacs-mac" = "latest"
 ```
 
@@ -34,10 +34,10 @@ tap source. This mirrors `[plugins]`: the key is the tap name and the value
 is the git URL.
 
 ```toml
-[system.brew.taps]
+[bootstrap.brew.taps]
 "acme/tools" = "https://git.example.com/acme/homebrew-tools.git"
 
-[system.packages]
+[bootstrap.packages]
 "brew:acme/tools/widget" = "latest"
 ```
 
@@ -49,9 +49,9 @@ You can also manage taps imperatively, matching `mise plugins install` /
 modify `mise.toml`.
 
 ```sh
-mise system brew tap railwaycat/emacsmacport
-mise system brew tap acme/tools https://git.example.com/acme/homebrew-tools.git
-mise system brew untap acme/tools
+mise bootstrap packages brew tap railwaycat/emacsmacport
+mise bootstrap packages brew tap acme/tools https://git.example.com/acme/homebrew-tools.git
+mise bootstrap packages brew untap acme/tools
 ```
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
@@ -155,7 +155,7 @@ gcc/make on Linux), exactly as they would under plain Homebrew.
 
 ## Upgrades
 
-`mise system upgrade` re-resolves the configured formulae against the
+`mise bootstrap packages upgrade` re-resolves the configured formulae against the
 formulae.brew.sh API and pours any whose current version differs from the
 linked keg — the new keg replaces the old one and the links are repointed,
 the same dance `brew upgrade` does. Since bottles only exist for a formula's
@@ -175,7 +175,7 @@ operation.
   with a clear error naming the unsupported feature.
 - **Use canonical formula names.** `postgresql@17` is a formula name, not a
   mise version pin — the API's current stable version decides what gets
-  installed. Aliases (`postgres`) install correctly but `mise system status`
+  installed. Aliases (`postgres`) install correctly but `mise bootstrap packages status`
   can't track them; mise warns and tells you the canonical name.
 - `PATH` is up to you: `<prefix>/bin` must be on `PATH` to use linked
   binaries, just like with Homebrew itself.

@@ -70,9 +70,9 @@ jq = "1.8.1"
 3. **One layer per tool**, each rooted at
    `/mise/installs/<plugin>/<version>/`. Annotated with
    `dev.mise.tool.short` and `dev.mise.tool.version`.
-4. **Configured apt `[system.packages]`**, if any, installed into the base
+4. **Configured apt `[bootstrap.packages]`**, if any, installed into the base
    rootfs and emitted as one package layer.
-5. **Configured `[system.files]`**, if any, baked as image files.
+5. **Configured `[dotfiles]`**, if any, baked as image files.
 6. **Synthesized `/etc/mise/config.toml`** referencing `/mise` as the data
    directory.
 
@@ -207,19 +207,19 @@ CLI flags override the `[oci]` section. The `[oci]` section overrides the
 When `mise.toml` files are layered (global + project), sections are merged
 field-by-field with the more specific file winning per field.
 
-### `[system]` in OCI images
+### `[bootstrap]` and `[dotfiles]` in OCI images
 
-`mise oci build` applies project-scoped `[system.packages]` and
-`[system.files]` entries to the image. This is the OCI equivalent of the
-declarative parts of `mise bootstrap` / `mise system install`.
-Pass `--include-global` to also include `[system.packages]` and
-`[system.files]` from global configs.
+`mise oci build` applies project-scoped `[bootstrap.packages]` and
+`[dotfiles]` entries to the image. This is the OCI equivalent of the
+declarative package and dotfile parts of `mise bootstrap`.
+Pass `--include-global` to also include `[bootstrap.packages]` and
+`[dotfiles]` from global configs.
 
 ```toml
-[system.packages]
+[bootstrap.packages]
 "apt:curl" = "latest"
 
-[system.files]
+[dotfiles]
 "/etc/profile.d/project.sh" = { source = "profile.sh", mode = "copy" }
 "~/.config/app/config.toml" = { source = "config.toml", mode = "template" }
 ```
@@ -235,7 +235,7 @@ content. Host symlinks would usually point back to the checkout path and be
 broken inside the container, so the image receives the resolved contents
 instead. Targets beginning with `~/` are written under `/root/`.
 
-`[system.defaults]` and the imperative `bootstrap` task are not run by
+`[bootstrap.macos.defaults]` and the imperative `bootstrap` task are not run by
 `mise oci build`. macOS defaults do not apply to Linux OCI images, and
 container-specific startup work belongs in the image entrypoint or command.
 

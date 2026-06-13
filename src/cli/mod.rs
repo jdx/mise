@@ -22,6 +22,7 @@ mod current;
 mod deactivate;
 mod direnv;
 mod doctor;
+mod dotfiles;
 mod en;
 mod env;
 pub mod exec;
@@ -217,6 +218,7 @@ pub enum Commands {
     Current(current::Current),
     Deactivate(deactivate::Deactivate),
     Direnv(direnv::Direnv),
+    Dotfiles(dotfiles::Dotfiles),
     Doctor(doctor::Doctor),
     En(en::En),
     Env(env::Env),
@@ -257,7 +259,6 @@ pub enum Commands {
     ShellAlias(shell_alias::ShellAlias),
     Sponsors(sponsors::Sponsors),
     Sync(sync::Sync),
-    System(system::System),
     Tasks(tasks::Tasks),
     TestTool(test_tool::TestTool),
     Token(token::Token),
@@ -292,6 +293,7 @@ impl Commands {
             Self::Current(cmd) => cmd.run().await,
             Self::Deactivate(cmd) => cmd.run(),
             Self::Direnv(cmd) => cmd.run().await,
+            Self::Dotfiles(cmd) => cmd.run().await,
             Self::Doctor(cmd) => cmd.run().await,
             Self::En(cmd) => cmd.run().await,
             Self::Env(cmd) => cmd.run().await,
@@ -332,7 +334,6 @@ impl Commands {
             Self::ShellAlias(cmd) => cmd.run().await,
             Self::Sponsors(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run().await,
-            Self::System(cmd) => cmd.run().await,
             Self::Tasks(cmd) => cmd.run().await,
             Self::TestTool(cmd) => cmd.run().await,
             Self::Token(cmd) => cmd.run().await,

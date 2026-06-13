@@ -15,17 +15,17 @@ esac
 trap 'rm -rf /home/linuxbrew' EXIT
 
 cat <<EOF >mise.toml
-[system.packages]
+[bootstrap.packages]
 "brew:xz" = "latest"
 EOF
 
-assert_contains "mise system status" "missing"
+assert_contains "mise bootstrap packages status" "missing"
 
-mise system install --yes
-assert_contains "mise system status" "installed"
+mise bootstrap packages install --yes
+assert_contains "mise bootstrap packages status" "installed"
 
 # the poured binary runs at the canonical prefix (relocation + linking worked)
 assert_contains "/home/linuxbrew/.linuxbrew/bin/xz --version" "xz"
 
 # idempotent
-assert_contains "mise system install --yes 2>&1" "already"
+assert_contains "mise bootstrap packages install --yes 2>&1" "already"

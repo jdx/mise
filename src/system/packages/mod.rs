@@ -1,4 +1,4 @@
-//! System package managers (apt, brew) for the `[system.packages]` config section.
+//! System package managers (apt, brew) for the `[bootstrap.packages]` config section.
 //!
 //! These are machine-global, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -15,7 +15,7 @@ pub mod brew;
 pub mod dnf;
 pub mod pacman;
 
-/// A single package entry from `[system.packages]` — the part after the
+/// A single package entry from `[bootstrap.packages]` — the part after the
 /// `manager:` prefix of a `"manager:package" = "version"` config entry.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PackageRequest {
@@ -27,7 +27,7 @@ pub struct PackageRequest {
     /// (apt: `name=version`, dnf: `name-version`).
     pub version: Option<String>,
     /// manager-specific source URL. Currently used by brew tapped formulae:
-    /// `[system.brew.taps]` can attach a git URL to `owner/tap/formula`.
+    /// `[bootstrap.brew.taps]` can attach a git URL to `owner/tap/formula`.
     pub tap_url: Option<String>,
 }
 

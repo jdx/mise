@@ -1,10 +1,10 @@
-# System Packages <Badge type="warning" text="experimental" />
+# Bootstrap Packages <Badge type="warning" text="experimental" />
 
 mise can ensure machine-global system packages are installed via the
-`[system.packages]` section of `mise.toml`:
+`[bootstrap.packages]` section of `mise.toml`:
 
 ```toml
-[system.packages]
+[bootstrap.packages]
 "apt:libssl-dev" = "latest"
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
@@ -16,9 +16,8 @@ and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
 pages).
 
-mise can also place machine-global config files (dotfiles) — see
-[System Files](/system-files.html), which follows the same rules and shares
-the same commands.
+mise can also place config files (dotfiles) — see
+[Dotfiles](/dotfiles.html), which uses `mise dotfiles` commands.
 
 System packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are installed
@@ -28,19 +27,20 @@ itself. Use them for shared libraries and build dependencies that dev tools
 need (`libssl-dev`, `postgresql`, `ffmpeg`), not for the dev tools
 themselves — those belong in `[tools]`.
 
-The `[system]` section can also declare
-[macOS defaults](/system-packages/defaults.html) (`[system.defaults]`),
-[login shells](/system-login-shell.html) (`[system].login_shell`), applied
-by the same `mise system install` command.
+The `[bootstrap]` section can also declare
+[macOS defaults](/bootstrap/macos-defaults.html) (`[bootstrap.macos.defaults]`),
+applied by `mise bootstrap macos-defaults apply`. Current-user
+[login shells](/bootstrap/user.html) (`[bootstrap.user].login_shell`) are
+applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html).
 
 ## Supported package managers
 
-| Manager  | Platform                                                       | Page                                   |
-| -------- | -------------------------------------------------------------- | -------------------------------------- |
-| `apt`    | Debian, Ubuntu                                                 | [apt](/system-packages/apt.html)       |
-| `dnf`    | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/system-packages/dnf.html)       |
-| `pacman` | Arch, Manjaro                                                  | [pacman](/system-packages/pacman.html) |
-| `brew`   | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/system-packages/brew.html)     |
+| Manager  | Platform                                                       | Page                                      |
+| -------- | -------------------------------------------------------------- | ----------------------------------------- |
+| `apt`    | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)       |
+| `dnf`    | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)       |
+| `pacman` | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html) |
+| `brew`   | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)     |
 
 ## Semantics
 
@@ -51,59 +51,59 @@ by the same `mise system install` command.
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are not acted on, so the same config works across platforms: `apt`
   entries are ignored on macOS, `dnf` entries on Ubuntu, and so on (`brew`
-  works on both macOS and Linux). `mise system status` and `mise doctor`
+  works on both macOS and Linux). `mise bootstrap packages status` and `mise doctor`
   still list unavailable managers so nothing is silently invisible.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
-  missing, but only `mise system install` ever installs anything.
+  missing, but only `mise bootstrap packages install` ever installs anything.
 - **Unknown managers are ignored with a warning** so configs using managers
   from newer mise versions still parse.
 
-For current-user login shell setup, use `[system].login_shell`:
+For current-user login shell setup, use `[bootstrap.user].login_shell`:
 
 ```toml
-[system]
+[bootstrap.user]
 login_shell = "/bin/zsh"
 ```
 
-See [System Login Shell](/system-login-shell.html) for details.
+See [User Login Shell](/bootstrap/user.html) for details.
 
 ## Commands
 
 ```sh
-mise system status            # table of requested vs installed packages
-mise system status --json     # machine-readable
-mise system status --missing  # exit 1 if anything is out of sync (CI check)
+mise bootstrap packages status            # table of requested vs installed packages
+mise bootstrap packages status --json     # machine-readable
+mise bootstrap packages status --missing  # exit 1 if anything is out of sync (CI check)
 
-mise system install           # install whatever is missing (prompts first)
-mise system install apt:curl  # install specific packages (configured or not)
-mise system install --dry-run # print the commands without running them
-mise system install --yes     # skip the confirmation prompt
-mise system install --manager apt
-mise system install --update  # refresh package manager metadata first
+mise bootstrap packages install           # install whatever is missing (prompts first)
+mise bootstrap packages install apt:curl  # install specific packages (configured or not)
+mise bootstrap packages install --dry-run # print the commands without running them
+mise bootstrap packages install --yes     # skip the confirmation prompt
+mise bootstrap packages install --manager apt
+mise bootstrap packages install --update  # refresh package manager metadata first
 
-mise system use apt:curl brew:jq   # add to [system.packages] and install
-mise system use -g brew:ffmpeg     # write to the global config instead
-mise system use apt:curl@8.5.0-2   # pin a version (brew pins via the
+mise bootstrap packages use apt:curl brew:jq   # add to [bootstrap.packages] and install
+mise bootstrap packages use -g brew:ffmpeg     # write to the global config instead
+mise bootstrap packages use apt:curl@8.5.0-2   # pin a version (brew pins via the
                                    # formula name: brew:postgresql@17)
 
-mise system upgrade           # upgrade installed packages to current versions
-mise system upgrade --manager brew
+mise bootstrap packages upgrade           # upgrade installed packages to current versions
+mise bootstrap packages upgrade --manager brew
 ```
 
-`mise system use` is `mise use` for system packages: it writes
+`mise bootstrap packages use` is `mise use` for system packages: it writes
 `"manager:package" = "version"` entries to mise.toml (the local file by
 default, the global one with `-g`) and installs whatever is missing. Entries
 for managers that aren't available on the current machine are written without
 installing — that's how a shared config picks up `apt:` lines authored on a
 Mac.
 
-`mise system upgrade` refreshes package manager metadata and upgrades the
+`mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available
 version — apt and dnf also honor a version pinned in config (pacman and brew
-[can't install pins](/system-packages/pacman.html), so pinned entries are
+[can't install pins](/bootstrap/packages/pacman.html), so pinned entries are
 skipped with a warning). Packages that aren't installed yet are skipped —
-that's `mise system install`'s job. For brew this pours the formula's current
+that's `mise bootstrap packages install`'s job. For brew this pours the formula's current
 bottle and replaces the old keg.
 
 `mise doctor` also reports configured system packages and warns when any are
@@ -134,8 +134,8 @@ OS.
 
 The Linux package managers require root. When not running as root, mise
 elevates with `sudo`, which prompts for your password as usual. The same
-sudo path is used when `[system].login_shell` needs to add a shell to
-`/etc/shells`, and it only happens during an explicit `mise system install`:
+sudo path is used when `[bootstrap.user].login_shell` needs to add a shell to
+`/etc/shells`, and it only happens during an explicit `mise bootstrap`:
 
 - already root (containers, CI): no sudo, commands run directly
 - interactive terminal: e.g. `sudo apt-get install ...` with a normal sudo
@@ -147,14 +147,14 @@ sudo path is used when `[system].login_shell` needs to add a shell to
 Set [`system_packages.sudo = false`](/configuration/settings.html) to forbid
 elevation entirely; mise will print the command for you to run yourself
 instead. The `brew` manager never needs sudo except once to create
-`/opt/homebrew` (see [brew](/system-packages/brew.html)).
+`/opt/homebrew` (see [brew](/bootstrap/packages/brew.html)).
 
 ## CI usage
 
 In containers you're typically already root, so no prompts occur:
 
 ```sh
-mise system install --yes
+mise bootstrap packages install --yes
 mise install
 ```
 
@@ -162,5 +162,5 @@ mise install
 named `bootstrap` afterwards, if one is defined) — one command to set up a
 fresh machine or container.
 
-`mise system status --missing` exits 1 when packages are missing, which makes
+`mise bootstrap packages status --missing` exits 1 when packages are missing, which makes
 a convenient CI check without installing anything.

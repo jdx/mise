@@ -48,7 +48,7 @@ pub enum Commands {
     Path(path::Path),
 }
 
-/// outcome of the `[system.defaults]` doctor check
+/// outcome of the `[bootstrap.macos.defaults]` doctor check
 enum SystemDefaultsDiagnosis {
     Unavailable {
         requested: usize,
@@ -64,7 +64,7 @@ enum SystemDefaultsDiagnosis {
     },
 }
 
-/// outcome of the `[system].login_shell` doctor check
+/// outcome of the `[bootstrap.user].login_shell` doctor check
 enum SystemLoginShellDiagnosis {
     Unavailable {
         reason: String,
@@ -469,13 +469,13 @@ impl Doctor {
         }
         if total_missing > 0 {
             self.warnings.push(format!(
-                "{total_missing} system package(s) are missing, install them with `mise system install`"
+                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages install`"
             ));
         }
         Some(map.into())
     }
 
-    /// Shared `[system.defaults]` check for the text and JSON doctor paths.
+    /// Shared `[bootstrap.macos.defaults]` check for the text and JSON doctor paths.
     /// Pushes the relevant warnings; returns None when nothing is configured.
     async fn check_system_defaults(
         &mut self,
@@ -503,7 +503,7 @@ impl Doctor {
                     .count();
                 if out_of_sync > 0 {
                     self.warnings.push(format!(
-                        "{out_of_sync} macOS default(s) are out of sync, apply them with `mise system install`"
+                        "{out_of_sync} macOS default(s) are out of sync, apply them with `mise bootstrap macos-defaults apply`"
                     ));
                 }
                 Some(SystemDefaultsDiagnosis::Checked {
@@ -567,7 +567,7 @@ impl Doctor {
         Ok(())
     }
 
-    /// Shared `[system].login_shell` check for the text and JSON doctor paths.
+    /// Shared `[bootstrap.user].login_shell` check for the text and JSON doctor paths.
     /// Pushes the relevant warnings; returns None when nothing is configured.
     async fn check_system_login_shell(
         &mut self,
@@ -588,7 +588,7 @@ impl Doctor {
                 let out_of_sync = status.state != crate::system::login_shell::LoginShellState::Set;
                 if out_of_sync {
                     self.warnings.push(
-                        "login shell is out of sync, apply it with `mise system install`"
+                        "login shell is out of sync, apply it with `mise bootstrap user apply`"
                             .to_string(),
                     );
                 }
@@ -705,7 +705,7 @@ impl Doctor {
         }
         if total_missing > 0 {
             self.warnings.push(format!(
-                "{total_missing} system package(s) are missing, install them with `mise system install`"
+                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages install`"
             ));
         }
         info::section("system_packages", lines.join("\n"))?;

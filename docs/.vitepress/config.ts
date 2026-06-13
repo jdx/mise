@@ -137,34 +137,31 @@ export default withMermaid(
           ],
         },
         {
-          text: "System (experimental)",
+          text: "Bootstrap (experimental)",
           items: [
+            { text: "Overview", link: "/bootstrap" },
             {
-              text: "System Packages",
-              link: "/system-packages/",
+              text: "Bootstrap Packages",
+              link: "/bootstrap/packages/",
               collapsed: true,
               items: [
-                { text: "apt", link: "/system-packages/apt" },
-                { text: "dnf", link: "/system-packages/dnf" },
-                { text: "pacman", link: "/system-packages/pacman" },
-                { text: "brew", link: "/system-packages/brew" },
+                { text: "apt", link: "/bootstrap/packages/apt" },
+                { text: "dnf", link: "/bootstrap/packages/dnf" },
+                { text: "pacman", link: "/bootstrap/packages/pacman" },
+                { text: "brew", link: "/bootstrap/packages/brew" },
               ],
             },
             {
-              text: "System Files (dotfiles)",
-              link: "/system-files",
-            },
-            {
-              text: "System Edits",
-              link: "/system-edits",
+              text: "Dotfiles",
+              link: "/dotfiles",
             },
             {
               text: "macOS Defaults",
-              link: "/system-packages/defaults",
+              link: "/bootstrap/macos-defaults",
             },
             {
-              text: "mise bootstrap",
-              link: "/cli/bootstrap",
+              text: "User Login Shell",
+              link: "/bootstrap/user",
             },
           ],
         },

@@ -3,7 +3,7 @@
 System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 
 ```toml
-[system.packages]
+[bootstrap.packages]
 "pacman:openssl" = "latest"
 "pacman:base-devel" = "latest"
 ```
@@ -13,12 +13,12 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 - Package state is checked with `pacman -Q` (read-only, never elevates).
 - Missing packages are installed with `pacman -S --noconfirm --needed`,
   elevated with sudo when necessary (see
-  [sudo](/system-packages/index.html#sudo)). `--needed` makes installs
+  [sudo](/bootstrap/packages/#sudo)). `--needed` makes installs
   idempotent.
 - If `/var/lib/pacman/sync` contains no databases (fresh containers), mise
   runs `pacman -Sy` automatically before installing. Force a refresh with
-  `mise system install --update`.
-- `mise system upgrade` runs `pacman -Sy` and then upgrades only the
+  `mise bootstrap packages install --update`.
+- `mise bootstrap packages upgrade` runs `pacman -Sy` and then upgrades only the
   configured packages. Note that Arch officially supports only full-system
   upgrades (`pacman -Syu`) — upgrading individual packages is a
   [partial upgrade](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported),
@@ -26,8 +26,8 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 
 ::: warning
 Arch repositories only carry the latest version of each package, so pacman
-entries cannot be installed at a pinned version — `mise system install`
-skips pinned entries with a warning, though `mise system status` still
+entries cannot be installed at a pinned version — `mise bootstrap packages install`
+skips pinned entries with a warning, though `mise bootstrap packages status` still
 reports a `version mismatch` for them. AUR packages are not supported (they
 require an AUR helper and building from source).
 :::

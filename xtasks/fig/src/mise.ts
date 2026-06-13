@@ -698,6 +698,281 @@ const completionSpec: Fig.Spec = {
       name: "bootstrap",
       description:
         "[experimental] Set up a machine for the current config in one command",
+      subcommands: [
+        {
+          name: "macos-defaults",
+          description:
+            "Manage macOS defaults from `[bootstrap.macos.defaults]`",
+          subcommands: [
+            {
+              name: "apply",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: "status",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured defaults are not in their desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+          ],
+        },
+        {
+          name: "packages",
+          description:
+            "Manage bootstrap system packages from `[bootstrap.packages]`",
+          subcommands: [
+            {
+              name: "brew",
+              description: "Manage Homebrew taps used by bootstrap packages",
+              subcommands: [
+                {
+                  name: "tap",
+                  description: "Tap a Homebrew formula repository",
+                  options: [
+                    {
+                      name: ["-n", "--dry-run"],
+                      description:
+                        "Print the command that would run without running it",
+                      isRepeatable: false,
+                    },
+                  ],
+                  args: [
+                    {
+                      name: "tap",
+                      description: "Tap name, e.g. `owner/repo`",
+                    },
+                    {
+                      name: "url",
+                      description:
+                        "Git URL for non-GitHub or otherwise custom taps",
+                      isOptional: true,
+                    },
+                  ],
+                },
+                {
+                  name: ["untap", "remove", "rm"],
+                  description: "Untap Homebrew formula repositories",
+                  options: [
+                    {
+                      name: ["-n", "--dry-run"],
+                      description:
+                        "Print the command that would run without running it",
+                      isRepeatable: false,
+                    },
+                  ],
+                  args: {
+                    name: "taps",
+                    description: "Tap name(s), e.g. `owner/repo`",
+                    isVariadic: true,
+                  },
+                },
+              ],
+            },
+            {
+              name: ["install", "i"],
+              description:
+                "Install missing system packages from `[bootstrap.packages]`",
+              options: [
+                {
+                  name: ["-m", "--manager"],
+                  description:
+                    "Only install packages for this manager, e.g. `apt` or `brew`",
+                  isRepeatable: false,
+                  args: {
+                    name: "manager",
+                    suggestions: ["apt", "brew", "dnf", "pacman"],
+                  },
+                },
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--update",
+                  description:
+                    "Refresh package manager metadata first (apt: `apt-get update`)",
+                  isRepeatable: false,
+                },
+              ],
+              args: {
+                name: "package",
+                description:
+                  "Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]",
+                isOptional: true,
+                isVariadic: true,
+              },
+            },
+            {
+              name: ["status", "ls"],
+              description:
+                "Show the status of system packages from `[bootstrap.packages]`",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured packages are not in their desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: ["upgrade", "up"],
+              description:
+                "Upgrade installed bootstrap packages from `[bootstrap.packages]`",
+              options: [
+                {
+                  name: ["-m", "--manager"],
+                  description:
+                    "Only upgrade packages for this manager, e.g. `apt` or `brew`",
+                  isRepeatable: false,
+                  args: {
+                    name: "manager",
+                    suggestions: ["apt", "brew", "dnf", "pacman"],
+                  },
+                },
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+              args: {
+                name: "package",
+                description:
+                  "Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]",
+                isOptional: true,
+                isVariadic: true,
+              },
+            },
+            {
+              name: ["use", "u"],
+              description:
+                "Add bootstrap packages to [bootstrap.packages] and install them",
+              options: [
+                {
+                  name: ["-e", "--env"],
+                  description:
+                    "Write to the config file for this environment (mise.<ENV>.toml)",
+                  isRepeatable: false,
+                  args: {
+                    name: "env",
+                  },
+                },
+                {
+                  name: ["-g", "--global"],
+                  description:
+                    "Write to the global config (~/.config/mise/config.toml) instead of the local one",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without writing config or installing",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-p", "--path"],
+                  description: "Write to this config file or directory",
+                  isRepeatable: false,
+                  args: {
+                    name: "path",
+                    template: "filepaths",
+                  },
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+              args: {
+                name: "package",
+                description: "Packages in `manager:package[@version]` form",
+                isVariadic: true,
+              },
+            },
+          ],
+        },
+        {
+          name: "user",
+          description:
+            "Manage current-user bootstrap settings from `[bootstrap.user]`",
+          subcommands: [
+            {
+              name: "apply",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: "status",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured user setting is not in its desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
       options: [
         {
           name: ["-n", "--dry-run"],
@@ -891,6 +1166,168 @@ const completionSpec: Fig.Spec = {
     {
       name: "deactivate",
       description: "Disable mise for current shell session",
+    },
+    {
+      name: "dotfiles",
+      description: "[experimental] Manage dotfiles from `[dotfiles]`",
+      subcommands: [
+        {
+          name: "add",
+          description: "Add or update dotfiles in `[dotfiles]`",
+          options: [
+            {
+              name: ["-f", "--force"],
+              description: "Overwrite existing sources without prompting",
+              isRepeatable: false,
+            },
+            {
+              name: ["-g", "--global"],
+              description: "Write to the global config",
+              isRepeatable: false,
+            },
+            {
+              name: ["-l", "--local"],
+              description:
+                "Write to the local config instead of the global config",
+              isRepeatable: false,
+            },
+            {
+              name: ["-m", "--mode"],
+              description: "Dotfile mode to write",
+              isRepeatable: false,
+              args: {
+                name: "mode",
+              },
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the config/source updates without writing anything",
+              isRepeatable: false,
+            },
+            {
+              name: ["-p", "--path"],
+              description: "Write to this config file or directory",
+              isRepeatable: false,
+              args: {
+                name: "path",
+                template: "filepaths",
+              },
+            },
+            {
+              name: ["-s", "--source"],
+              description: "Source path to use for a single target",
+              isRepeatable: false,
+              args: {
+                name: "path",
+                template: "filepaths",
+              },
+            },
+            {
+              name: ["-y", "--yes"],
+              description: "Skip the confirmation prompt",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "target",
+            description: "Targets to add or update",
+            isVariadic: true,
+          },
+        },
+        {
+          name: "apply",
+          description: "Apply dotfiles from `[dotfiles]`",
+          options: [
+            {
+              name: ["-f", "--force"],
+              description:
+                "Overwrite existing files that conflict with whole-file dotfile entries",
+              isRepeatable: false,
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the actions that would run without writing anything",
+              isRepeatable: false,
+            },
+            {
+              name: ["-y", "--yes"],
+              description: "Skip the confirmation prompt",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "target",
+            description: "Only apply these targets",
+            isOptional: true,
+            isVariadic: true,
+          },
+        },
+        {
+          name: "edit",
+          description: "Edit a managed dotfile source",
+          options: [
+            {
+              name: "--apply",
+              description: "Apply this target after the editor exits",
+              isRepeatable: false,
+            },
+            {
+              name: ["-m", "--mode"],
+              description:
+                "Dotfile mode to use if the target is not yet managed",
+              isRepeatable: false,
+              args: {
+                name: "mode",
+              },
+            },
+            {
+              name: ["-s", "--source"],
+              description:
+                "Source path to use if the target is not yet managed",
+              isRepeatable: false,
+              args: {
+                name: "path",
+                template: "filepaths",
+              },
+            },
+            {
+              name: ["-y", "--yes"],
+              description:
+                "Skip the confirmation prompt when adding an unmanaged target",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "target",
+            description: "Target to edit",
+          },
+        },
+        {
+          name: ["status", "ls"],
+          description: "Show the status of dotfiles from `[dotfiles]`",
+          options: [
+            {
+              name: ["-J", "--json"],
+              description: "Output in JSON format",
+              isRepeatable: false,
+            },
+            {
+              name: "--missing",
+              description:
+                "Exit with code 1 if any configured dotfiles are not in their desired\nstate (missing, source missing, differs)",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "target",
+            description: "Only show these targets",
+            isOptional: true,
+            isVariadic: true,
+          },
+        },
+      ],
     },
     {
       name: ["doctor", "dr"],
@@ -3227,207 +3664,6 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
           ],
-        },
-      ],
-    },
-    {
-      name: "system",
-      description:
-        "[experimental] Manage system packages from `[system.packages]`, files\nfrom `[system.files]`, edits from `[system.edits]`, macOS defaults\nfrom `[system.defaults]`, and Unix login shell from `[system].login_shell`",
-      subcommands: [
-        {
-          name: "brew",
-          description: "Manage Homebrew taps used by system packages",
-          subcommands: [
-            {
-              name: "tap",
-              description: "Tap a Homebrew formula repository",
-              options: [
-                {
-                  name: ["-n", "--dry-run"],
-                  description:
-                    "Print the command that would run without running it",
-                  isRepeatable: false,
-                },
-              ],
-              args: [
-                {
-                  name: "tap",
-                  description: "Tap name, e.g. `owner/repo`",
-                },
-                {
-                  name: "url",
-                  description:
-                    "Git URL for non-GitHub or otherwise custom taps",
-                  isOptional: true,
-                },
-              ],
-            },
-            {
-              name: ["untap", "remove", "rm"],
-              description: "Untap Homebrew formula repositories",
-              options: [
-                {
-                  name: ["-n", "--dry-run"],
-                  description:
-                    "Print the command that would run without running it",
-                  isRepeatable: false,
-                },
-              ],
-              args: {
-                name: "taps",
-                description: "Tap name(s), e.g. `owner/repo`",
-                isVariadic: true,
-              },
-            },
-          ],
-        },
-        {
-          name: ["install", "i"],
-          description:
-            "Install missing system packages from `[system.packages]`, apply files\nfrom `[system.files]` and edits from `[system.edits]`, write macOS\ndefaults from `[system.defaults]`, and set Unix login shell from\n`[system].login_shell`",
-          options: [
-            {
-              name: ["-f", "--force"],
-              description:
-                "Overwrite existing files that conflict with `[system.files]` entries",
-              isRepeatable: false,
-            },
-            {
-              name: ["-m", "--manager"],
-              description:
-                "Only install packages for this manager, e.g. `apt` or `brew`",
-              isRepeatable: false,
-              args: {
-                name: "manager",
-                suggestions: ["apt", "brew", "dnf", "pacman"],
-              },
-            },
-            {
-              name: ["-n", "--dry-run"],
-              description:
-                "Print the commands that would run without running them",
-              isRepeatable: false,
-            },
-            {
-              name: ["-y", "--yes"],
-              description: "Skip the confirmation prompt",
-              isRepeatable: false,
-            },
-            {
-              name: "--update",
-              description:
-                "Refresh package manager metadata first (apt: `apt-get update`)",
-              isRepeatable: false,
-            },
-          ],
-          args: {
-            name: "package",
-            description:
-              "Packages in `manager:package` form; defaults to everything configured in [system.packages]",
-            isOptional: true,
-            isVariadic: true,
-          },
-        },
-        {
-          name: ["status", "ls"],
-          description:
-            "Show the status of system packages from `[system.packages]`, files from\n`[system.files]`, edits from `[system.edits]`, and macOS defaults from\n`[system.defaults]`, and Unix login shell from `[system].login_shell`",
-          options: [
-            {
-              name: ["-J", "--json"],
-              description: "Output in JSON format",
-              isRepeatable: false,
-            },
-            {
-              name: "--missing",
-              description:
-                "Exit with code 1 if any configured packages, files, edits, defaults, or\nlogin shell are not in their desired state",
-              isRepeatable: false,
-            },
-          ],
-        },
-        {
-          name: ["upgrade", "up"],
-          description:
-            "Upgrade installed system packages from `[system.packages]`",
-          options: [
-            {
-              name: ["-m", "--manager"],
-              description:
-                "Only upgrade packages for this manager, e.g. `apt` or `brew`",
-              isRepeatable: false,
-              args: {
-                name: "manager",
-                suggestions: ["apt", "brew", "dnf", "pacman"],
-              },
-            },
-            {
-              name: ["-n", "--dry-run"],
-              description:
-                "Print the commands that would run without running them",
-              isRepeatable: false,
-            },
-            {
-              name: ["-y", "--yes"],
-              description: "Skip the confirmation prompt",
-              isRepeatable: false,
-            },
-          ],
-          args: {
-            name: "package",
-            description:
-              "Packages in `manager:package` form; defaults to everything configured in [system.packages]",
-            isOptional: true,
-            isVariadic: true,
-          },
-        },
-        {
-          name: ["use", "u"],
-          description:
-            "Add system packages to [system.packages] and install them",
-          options: [
-            {
-              name: ["-e", "--env"],
-              description:
-                "Write to the config file for this environment (mise.<ENV>.toml)",
-              isRepeatable: false,
-              args: {
-                name: "env",
-              },
-            },
-            {
-              name: ["-g", "--global"],
-              description:
-                "Write to the global config (~/.config/mise/config.toml) instead of the local one",
-              isRepeatable: false,
-            },
-            {
-              name: ["-n", "--dry-run"],
-              description:
-                "Print the commands that would run without writing config or installing",
-              isRepeatable: false,
-            },
-            {
-              name: ["-p", "--path"],
-              description: "Write to this config file or directory",
-              isRepeatable: false,
-              args: {
-                name: "path",
-                template: "filepaths",
-              },
-            },
-            {
-              name: ["-y", "--yes"],
-              description: "Skip the confirmation prompt",
-              isRepeatable: false,
-            },
-          ],
-          args: {
-            name: "package",
-            description: "Packages in `manager:package[@version]` form",
-            isVariadic: true,
-          },
         },
       ],
     },

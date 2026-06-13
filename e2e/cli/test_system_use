@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 
-# `mise system use` config-writing works on any platform — managers that
+# `mise bootstrap packages use` config-writing works on any platform — managers that
 # aren't available on this machine are added to the config without installing
 # (brew specs are avoided here: even a dry-run resolves the formula closure
 # over the network)
 
 # dry-run prints what would be written without creating the file
-assert_contains "mise system use --dry-run apt:zlib1g-dev" '"apt:zlib1g-dev" = "latest"'
+assert_contains "mise bootstrap packages use --dry-run apt:zlib1g-dev" '"apt:zlib1g-dev" = "latest"'
 assert_fail "cat mise.toml"
 
 # version pins use @, like mise use
-assert_contains "mise system use --dry-run apt:curl@8.5.0-2" '"apt:curl" = "8.5.0-2"'
+assert_contains "mise bootstrap packages use --dry-run apt:curl@8.5.0-2" '"apt:curl" = "8.5.0-2"'
 
 # bad specs and unknown managers fail before anything is written
-assert_fail "mise system use noprefix"
-assert_fail "mise system use not-a-real-manager:pkg"
+assert_fail "mise bootstrap packages use noprefix"
+assert_fail "mise bootstrap packages use not-a-real-manager:pkg"
 assert_fail "cat mise.toml"
 
 # writes the entry even when the manager isn't available on this machine
 # (guarded so a real Arch box doesn't actually install ripgrep)
 if ! command -v pacman >/dev/null; then
-  assert_succeed "mise system use --yes pacman:ripgrep"
+  assert_succeed "mise bootstrap packages use --yes pacman:ripgrep"
   assert_contains "cat mise.toml" '"pacman:ripgrep" = "latest"'
 fi

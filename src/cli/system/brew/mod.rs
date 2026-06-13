@@ -1,13 +1,13 @@
 use clap::Subcommand;
 use eyre::Result;
 
-mod tap;
-mod untap;
+pub(super) mod tap;
+pub(super) mod untap;
 
-/// Manage Homebrew taps used by system packages
+/// Manage Homebrew taps used by bootstrap packages
 ///
 /// These commands shell out to Homebrew and do not modify `mise.toml`. Use
-/// `[system.brew.taps]` when you want tap sources shared in config.
+/// `[bootstrap.brew.taps]` when you want tap sources shared in config.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct SystemBrew {
@@ -23,7 +23,7 @@ enum Commands {
 
 impl SystemBrew {
     pub async fn run(self) -> Result<()> {
-        crate::config::Settings::get().ensure_experimental("mise system")?;
+        crate::config::Settings::get().ensure_experimental("mise bootstrap")?;
         match self.command {
             Commands::Tap(cmd) => cmd.run().await,
             Commands::Untap(cmd) => cmd.run().await,

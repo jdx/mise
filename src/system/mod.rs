@@ -1,13 +1,11 @@
-//! `[system]` config section: machine-global bootstrapping.
+//! `[bootstrap]` config section: machine-global bootstrapping.
 //!
-//! This is `[system.packages]` — declarative system packages installed by
-//! `mise system install` — `[system.files]` — declarative config files
-//! (dotfiles) — `[system.defaults]` — declarative macOS user defaults, and
-//! `[system].login_shell`, all applied by the same command. These are
-//! intentionally not part of `[tools]`: they're unversioned, machine-global,
-//! and managed by the OS package manager (or mise's own Homebrew-bottle
-//! installer), plain filesystem operations, macOS `defaults`, or system user
-//! account tooling, not mise's per-project toolset.
+//! This is `[bootstrap.packages]` — declarative system packages installed
+//! by `mise bootstrap packages install` — `[dotfiles]` — declarative config
+//! files applied by `mise dotfiles apply` — `[bootstrap.macos.defaults]`
+//! — declarative macOS user defaults — and `[bootstrap.user].login_shell`.
+//! These are intentionally not part of `[tools]`: they're unversioned,
+//! machine-global settings and resources, not mise's per-project toolset.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -28,43 +26,55 @@ pub mod login_shell;
 pub mod packages;
 pub(crate) mod sudo;
 
-/// `[system]` as parsed from a single mise.toml
+/// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct SystemTomlConfig {
+pub struct BootstrapTomlConfig {
     /// `"manager:package"` -> version (`"latest"` or a manager-native pin).
     /// String-keyed so configs using managers from newer mise versions (dnf,
     /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
     pub packages: IndexMap<String, String>,
-    /// `[system.defaults.<domain>]` -> key -> value. Values stay raw TOML so
-    /// shapes from newer mise versions (arrays, dicts) parse fine on older
-    /// ones; the domain level is also raw so a malformed section warns
-    /// instead of failing the whole config.
+    /// macOS-specific bootstrap config.
     #[serde(default)]
-    pub defaults: IndexMap<String, toml::Value>,
-    /// target path -> source (see [`files`])
+    pub macos: BootstrapMacosTomlConfig,
+    /// User-specific bootstrap config.
     #[serde(default)]
-    pub files: IndexMap<String, files::FileTomlEntry>,
-    /// edits to files mise doesn't own, keyed by target path then edit id
-    /// (see [`edits`])
-    #[serde(default)]
-    pub edits: IndexMap<String, IndexMap<String, edits::EditTomlEntry>>,
-    /// desired login shell for the current user, applied with `chsh -s`
-    #[serde(default)]
-    pub login_shell: Option<String>,
-    /// Homebrew-specific system config.
+    pub user: BootstrapUserTomlConfig,
+    /// Homebrew-specific bootstrap package config.
     #[serde(default)]
     pub brew: SystemBrewTomlConfig,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
+pub struct BootstrapUserTomlConfig {
+    /// desired login shell for the current user, applied with `chsh -s`
+    #[serde(default)]
+    pub login_shell: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct BootstrapMacosTomlConfig {
+    /// `[bootstrap.macos.defaults.<domain>]` -> key -> value. Values stay raw TOML so
+    /// shapes from newer mise versions (arrays, dicts) parse fine on older
+    /// ones; the domain level is also raw so a malformed section warns
+    /// instead of failing the whole config.
+    #[serde(default)]
+    pub defaults: IndexMap<String, toml::Value>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct SystemBrewTomlConfig {
-    /// `[system.brew.taps]`: `owner/tap` -> git URL. Like `[plugins]`,
+    /// `[bootstrap.brew.taps]`: `owner/tap` -> git URL. Like `[plugins]`,
     /// this lets shared config name non-GitHub or otherwise custom tap
     /// remotes while package entries stay focused on formulae.
     #[serde(default)]
     pub taps: IndexMap<String, String>,
 }
+
+/// `[dotfiles]` as parsed from a single mise.toml.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(transparent)]
+pub struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
 
 /// Packages for one manager, aggregated across the config hierarchy
 pub struct ManagerPackages {
@@ -90,7 +100,7 @@ pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
     }
 }
 
-/// Split a `mise system use` spec `manager:package[@version]` into its parts.
+/// Split a `mise bootstrap packages use` spec `manager:package[@version]` into its parts.
 ///
 /// `@version` mirrors `mise use tool@version`; `@latest` (or no `@`) means no
 /// pin. brew is exempt from `@` parsing: `@` is part of brew formula *names*
@@ -132,7 +142,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
 }
 
 /// Build [`ManagerPackages`] from already-parsed requests (used by
-/// `mise system use`, where version pins come from the CLI spec). Unknown or
+/// `mise bootstrap packages use`, where version pins come from the CLI spec). Unknown or
 /// settings-excluded managers are hard errors.
 pub fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
@@ -150,7 +160,7 @@ pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<P
     }
 }
 
-/// Aggregate `[system.packages]` across all loaded config files.
+/// Aggregate `[bootstrap.packages]` across all loaded config files.
 ///
 /// Keys union global -> local; a more local config overrides the version pin
 /// of a key the global config declared. Malformed keys and unknown managers
@@ -162,7 +172,7 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
     packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps)
 }
 
-/// Aggregate `[system.packages]` across a specific set of config files.
+/// Aggregate `[bootstrap.packages]` across a specific set of config files.
 pub fn packages_from_config_files(config_files: &ConfigMap) -> Vec<ManagerPackages> {
     packages_from_config_files_with_brew_taps(config_files, &IndexMap::new())
 }
@@ -174,7 +184,7 @@ fn packages_from_config_files_with_brew_taps(
     let mut merged: IndexMap<String, String> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config_files.values().rev() {
-        if let Some(sys) = cf.system_config() {
+        if let Some(sys) = cf.bootstrap_config() {
             for (spec, version) in sys.packages {
                 merged.insert(spec, version);
             }
@@ -196,13 +206,13 @@ fn packages_from_config_files_with_brew_taps(
                     tap_url,
                 });
             }
-            Err(err) => warn!("[system.packages]: {err}"),
+            Err(err) => warn!("[bootstrap.packages]: {err}"),
         }
     }
     resolve_managers(by_mgr, false).expect("non-strict resolve is infallible")
 }
 
-/// Aggregate `[system.defaults]` across all loaded config files.
+/// Aggregate `[bootstrap.macos.defaults]` across all loaded config files.
 ///
 /// (domain, key) pairs union global -> local; a more local config overrides
 /// the value a global config declared. Unsupported value shapes warn
@@ -211,8 +221,8 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
     let mut merged: IndexMap<(String, String), toml::Value> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
-        if let Some(sys) = cf.system_config() {
-            for (domain, entries) in sys.defaults {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (domain, entries) in sys.macos.defaults {
                 match entries {
                     toml::Value::Table(entries) => {
                         for (key, value) in entries {
@@ -220,7 +230,7 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
                         }
                     }
                     _ => warn!(
-                        "[system.defaults]: expected a table of key/value pairs for domain '{domain}'"
+                        "[bootstrap.macos.defaults]: expected a table of key/value pairs for domain '{domain}'"
                     ),
                 }
             }
@@ -231,7 +241,7 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
         match DefaultsValue::from_toml(&value) {
             Some(value) => out.push(DefaultsRequest { domain, key, value }),
             None => warn!(
-                "[system.defaults]: unsupported value type for {domain} {key} \
+                "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
                  (expected bool, integer, float, or string)"
             ),
         }
@@ -244,16 +254,18 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
     let mut shell = None;
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
-        if let Some(sys) = cf.system_config()
-            && let Some(login_shell) = sys.login_shell
+        if let Some(sys) = cf.bootstrap_config()
+            && let Some(login_shell) = sys.user.login_shell
         {
             let login_shell = login_shell.trim().to_string();
             if login_shell.is_empty() {
-                warn!("[system].login_shell: must not be empty, ignoring entry");
+                warn!("[bootstrap.user].login_shell: must not be empty, ignoring entry");
                 continue;
             }
             if !Path::new(&login_shell).is_absolute() {
-                warn!("[system].login_shell: shell must be an absolute path, ignoring entry");
+                warn!(
+                    "[bootstrap.user].login_shell: shell must be an absolute path, ignoring entry"
+                );
                 continue;
             }
             shell = Some(login_shell);
@@ -311,7 +323,7 @@ pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
 fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
     let mut brew_taps: IndexMap<String, String> = IndexMap::new();
     for cf in config.config_files.values().rev() {
-        if let Some(sys) = cf.system_config() {
+        if let Some(sys) = cf.bootstrap_config() {
             for (tap, url) in sys.brew.taps {
                 brew_taps.insert(tap, url);
             }
@@ -346,14 +358,16 @@ fn resolve_managers(
             }),
             None => {
                 if strict {
-                    bail!("unknown system package manager '{name}'");
+                    bail!("unknown bootstrap package manager '{name}'");
                 }
                 // brew is compiled out on Windows — not unknown, just
                 // unsupported there
                 if cfg!(windows) && name == "brew" {
                     debug!("system package manager 'brew' is not supported on windows");
                 } else {
-                    warn!("unknown system package manager '{name}' in [system.packages], ignoring");
+                    warn!(
+                        "unknown bootstrap package manager '{name}' in [bootstrap.packages], ignoring"
+                    );
                 }
             }
         }

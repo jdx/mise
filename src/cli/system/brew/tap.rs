@@ -25,7 +25,7 @@ impl SystemBrewTap {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise system brew tap railwaycat/emacsmacport</bold>
-    $ <bold>mise system brew tap acme/tools https://git.example.com/acme/homebrew-tools.git</bold>
+    $ <bold>mise bootstrap packages brew tap railwaycat/emacsmacport</bold>
+    $ <bold>mise bootstrap packages brew tap acme/tools https://git.example.com/acme/homebrew-tools.git</bold>
 "#
 );

@@ -286,11 +286,15 @@ cmd bootstrap help="[experimental] Set up a machine for the current config in on
 
 Runs the bootstrap steps for the current config in order:
 
-1. `mise system install` — install missing `[system.packages]`, apply
-   `[system.files]` and `[system.edits]`, write `[system.defaults]`
-   (macOS), and set `[system].login_shell` (Unix)
-2. `mise install` — install missing tools from `[tools]`
-3. `mise run bootstrap` — if a task named `bootstrap` is defined
+1. `mise bootstrap packages install` — install missing
+   `[bootstrap.packages]`
+2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+3. `mise bootstrap macos-defaults apply` — write
+   `[bootstrap.macos.defaults]` entries (macOS)
+4. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+   (Unix)
+5. `mise install` — install missing tools from `[tools]`
+6. `mise run bootstrap` — if a task named `bootstrap` is defined
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -301,14 +305,178 @@ databases, etc.) — it runs with the installed tools on PATH.
     after_long_help #"""
 Examples:
 
-    $ mise bootstrap            # system packages + tools + bootstrap task
-    $ mise bootstrap --yes      # don't prompt before installing system packages
-    $ mise bootstrap --dry-run  # show what would happen
+    $ mise bootstrap                    # packages + dotfiles + tools + bootstrap task
+    $ mise bootstrap packages install --yes
+    $ mise bootstrap macos-defaults status
+    $ mise bootstrap user apply --dry-run
 
 """#
     flag "-n --dry-run" help="Print what would happen without installing anything"
     flag "-y --yes" help="Skip confirmation prompts"
     flag --update help="Refresh system package manager metadata first (apt: `apt-get update`)"
+    cmd macos-defaults subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured defaults are not in their desired state"
+        }
+    }
+    cmd packages subcommand_required=#true help="Manage bootstrap system packages from `[bootstrap.packages]`" {
+        cmd brew subcommand_required=#true help="Manage Homebrew taps used by bootstrap packages" {
+            long_help #"""
+Manage Homebrew taps used by bootstrap packages
+
+These commands shell out to Homebrew and do not modify `mise.toml`. Use
+`[bootstrap.brew.taps]` when you want tap sources shared in config.
+"""#
+            cmd tap help="Tap a Homebrew formula repository" {
+                after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages brew tap railwaycat/emacsmacport
+    $ mise bootstrap packages brew tap acme/tools https://git.example.com/acme/homebrew-tools.git
+
+"""#
+                flag "-n --dry-run" help="Print the command that would run without running it"
+                arg <TAP> help="Tap name, e.g. `owner/repo`"
+                arg "[URL]" help="Git URL for non-GitHub or otherwise custom taps" required=#false
+            }
+            cmd untap help="Untap Homebrew formula repositories" {
+                alias remove rm
+                after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages brew untap railwaycat/emacsmacport
+
+"""#
+                flag "-n --dry-run" help="Print the command that would run without running it"
+                arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
+            }
+        }
+        cmd install help="Install missing system packages from `[bootstrap.packages]`" {
+            alias i
+            long_help #"""
+Install missing system packages from `[bootstrap.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config. Explicit packages and `--manager` scope the run to packages
+only.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages install
+    $ mise bootstrap packages install apt:curl brew:jq
+    $ mise bootstrap packages install --dry-run
+    $ mise bootstrap packages install --manager apt --yes
+
+"""#
+            flag "-m --manager" help="Only install packages for this manager, e.g. `apt` or `brew`" {
+                arg <MANAGER> {
+                    choices apt brew dnf pacman
+                }
+            }
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+            flag --update help="Refresh package manager metadata first (apt: `apt-get update`)"
+            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
+        }
+        cmd status help="Show the status of system packages from `[bootstrap.packages]`" {
+            alias ls
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages status
+    $ mise bootstrap packages status --json
+    $ mise bootstrap packages status --missing # exit 1 if anything is out of sync
+
+"""#
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured packages are not in their desired state"
+        }
+        cmd upgrade help="Upgrade installed bootstrap packages from `[bootstrap.packages]`" {
+            alias up
+            long_help #"""
+Upgrade installed bootstrap packages from `[bootstrap.packages]`
+
+Refreshes package manager metadata and upgrades the configured packages
+that are already installed: apt/dnf/pacman upgrade to the newest available
+version (apt and dnf honor a version pinned in config), brew pours the
+formula's current bottle and replaces the old keg. Packages that are not
+installed yet are skipped — use `mise bootstrap packages install` for those.
+
+Packages can also be given explicitly in `manager:package` form.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages upgrade
+    $ mise bootstrap packages upgrade brew:postgresql@17
+    $ mise bootstrap packages upgrade --manager apt --yes
+    $ mise bootstrap packages upgrade --dry-run
+
+"""#
+            flag "-m --manager" help="Only upgrade packages for this manager, e.g. `apt` or `brew`" {
+                arg <MANAGER> {
+                    choices apt brew dnf pacman
+                }
+            }
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
+        }
+        cmd use help="Add bootstrap packages to [bootstrap.packages] and install them" {
+            alias u
+            long_help #"""
+Add bootstrap packages to [bootstrap.packages] and install them
+
+Like `mise use` for tools: writes `"manager:package" = "version"` entries
+to mise.toml (the local config by default, the global one with `-g`) and
+then installs whatever is missing.
+
+Versions are pinned with `@`: `mise bootstrap packages use apt:curl@8.5.0-2`. Without
+`@` (or with `@latest`) no pin is written. brew formulae version through
+their names instead (`brew:postgresql@17`), so `@` is always part of the
+formula name there.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap packages use apt:curl brew:jq
+    $ mise bootstrap packages use -g brew:postgresql@17
+    $ mise bootstrap packages use apt:curl@8.5.0-2
+
+"""#
+            flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
+                arg <ENV>
+            }
+            flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one"
+            flag "-n --dry-run" help="Print the commands that would run without writing config or installing"
+            flag "-p --path" help="Write to this config file or directory" {
+                arg <PATH>
+            }
+            flag "-y --yes" help="Skip the confirmation prompt"
+            arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
+        }
+    }
+    cmd user subcommand_required=#true help="Manage current-user bootstrap settings from `[bootstrap.user]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured user setting is not in its desired state"
+        }
+    }
 }
 cmd cache help="Manage the mise cache" {
     long_help #"""
@@ -535,6 +703,107 @@ for direnv to consume.
 [internal] This is an internal command that writes an envrc file
 for direnv to consume.
 """#
+}
+cmd dotfiles subcommand_required=#true help="[experimental] Manage dotfiles from `[dotfiles]`" {
+    long_help #"""
+[experimental] Manage dotfiles from `[dotfiles]`
+
+Dotfiles are config files symlinked, copied, or rendered to target paths,
+plus marker-delimited blocks or single lines in files mise doesn't own.
+Unlike `[tools]`, dotfiles are only acted on when explicitly requested with
+`mise dotfiles apply` or `mise bootstrap`.
+"""#
+    cmd add help="Add or update dotfiles in `[dotfiles]`" {
+        long_help #"""
+Add or update dotfiles in `[dotfiles]`
+
+If the target is already managed, this updates its source from the live
+target. Otherwise it creates a `[dotfiles]` entry and seeds the source
+under `dotfiles.root` unless `--source` is provided.
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles add ~/.zshrc
+    $ mise dotfiles add --mode copy ~/.config/starship.toml
+    $ mise dotfiles add --source dotfiles/gitconfig ~/.gitconfig
+
+"""#
+        flag "-f --force" help="Overwrite existing sources without prompting"
+        flag "-g --global" help="Write to the global config"
+        flag "-l --local" help="Write to the local config instead of the global config"
+        flag "-m --mode" help="Dotfile mode to write" {
+            arg <MODE>
+        }
+        flag "-n --dry-run" help="Print the config/source updates without writing anything"
+        flag "-p --path" help="Write to this config file or directory" {
+            arg <PATH>
+        }
+        flag "-s --source" help="Source path to use for a single target" {
+            arg <PATH>
+        }
+        flag "-y --yes" help="Skip the confirmation prompt"
+        arg <TARGET>… help="Targets to add or update" var=#true
+    }
+    cmd apply help="Apply dotfiles from `[dotfiles]`" {
+        long_help #"""
+Apply dotfiles from `[dotfiles]`
+
+Applies configured whole-file entries and edits that aren't in their
+desired state. Whole-file entries may symlink, copy, or render templates.
+Edit entries manage a marker-delimited block or a single line in a file
+mise doesn't otherwise own.
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles apply
+    $ mise dotfiles apply --dry-run
+    $ mise dotfiles apply --dry-run --verbose
+    $ mise dotfiles apply --force --yes
+
+"""#
+        flag "-f --force" help="Overwrite existing files that conflict with whole-file dotfile entries"
+        flag "-n --dry-run" help="Print the actions that would run without writing anything"
+        flag "-y --yes" help="Skip the confirmation prompt"
+        arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
+    }
+    cmd edit help="Edit a managed dotfile source" {
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles edit ~/.zshrc
+    $ mise dotfiles edit --apply ~/.config/starship.toml
+
+"""#
+        flag --apply help="Apply this target after the editor exits"
+        flag "-m --mode" help="Dotfile mode to use if the target is not yet managed" {
+            arg <MODE>
+        }
+        flag "-s --source" help="Source path to use if the target is not yet managed" {
+            arg <PATH>
+        }
+        flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
+        arg <TARGET> help="Target to edit"
+    }
+    cmd status help="Show the status of dotfiles from `[dotfiles]`" {
+        alias ls
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles status
+    $ mise dotfiles status ~/.zshrc
+    $ mise dotfiles status --json
+    $ mise dotfiles status --missing # exit 1 if anything is out of sync
+
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --missing help=#"""
+Exit with code 1 if any configured dotfiles are not in their desired
+state (missing, source missing, differs)
+"""#
+        arg "[TARGET]…" help="Only show these targets" required=#false var=#true
+    }
 }
 cmd doctor help="Check mise installation for possible problems" {
     alias dr
@@ -2875,189 +3144,6 @@ Examples:
 
 """#
         flag --brew help="Get tool versions from Homebrew"
-    }
-}
-cmd system subcommand_required=#true help=#"""
-[experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, edits from `[system.edits]`, macOS defaults
-from `[system.defaults]`, and Unix login shell from `[system].login_shell`
-"""# {
-    long_help #"""
-[experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, edits from `[system.edits]`, macOS defaults
-from `[system.defaults]`, and Unix login shell from `[system].login_shell`
-
-System packages are machine-global packages installed by the OS package
-manager (apt, dnf, pacman) or mise's Homebrew-bottle installer (brew).
-System files are config files (dotfiles) symlinked, copied, or rendered
-to machine-global paths. System edits manage one piece of a file
-something else owns — a marker-delimited block or a single line. macOS
-defaults are user preferences written with `defaults write`. Unlike
-`[tools]`, none of these are version-pinned per-project and they are only
-ever acted on when explicitly requested with `mise system install` (or
-`mise bootstrap`). Login shell changes are current-user settings applied
-with `chsh -s`.
-"""#
-    cmd brew subcommand_required=#true help="Manage Homebrew taps used by system packages" {
-        long_help #"""
-Manage Homebrew taps used by system packages
-
-These commands shell out to Homebrew and do not modify `mise.toml`. Use
-`[system.brew.taps]` when you want tap sources shared in config.
-"""#
-        cmd tap help="Tap a Homebrew formula repository" {
-            after_long_help #"""
-Examples:
-
-    $ mise system brew tap railwaycat/emacsmacport
-    $ mise system brew tap acme/tools https://git.example.com/acme/homebrew-tools.git
-
-"""#
-            flag "-n --dry-run" help="Print the command that would run without running it"
-            arg <TAP> help="Tap name, e.g. `owner/repo`"
-            arg "[URL]" help="Git URL for non-GitHub or otherwise custom taps" required=#false
-        }
-        cmd untap help="Untap Homebrew formula repositories" {
-            alias remove rm
-            after_long_help #"""
-Examples:
-
-    $ mise system brew untap railwaycat/emacsmacport
-
-"""#
-            flag "-n --dry-run" help="Print the command that would run without running it"
-            arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
-        }
-    }
-    cmd install help=#"""
-Install missing system packages from `[system.packages]`, apply files
-from `[system.files]` and edits from `[system.edits]`, write macOS
-defaults from `[system.defaults]`, and set Unix login shell from
-`[system].login_shell`
-"""# {
-        alias i
-        long_help #"""
-Install missing system packages from `[system.packages]`, apply files
-from `[system.files]` and edits from `[system.edits]`, write macOS
-defaults from `[system.defaults]`, and set Unix login shell from
-`[system].login_shell`
-
-Checks which configured packages are missing and installs them with the
-system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
-and `[system.edits]` entries that aren't in their desired state are
-applied, on macOS any `[system.defaults]` entries that are unset or
-differ are written, and on Unix `[system].login_shell` is added to
-`/etc/shells` if needed before `chsh -s` applies it.
-
-Packages can also be given explicitly in `manager:package` form (e.g.
-`apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config. Explicit packages and `--manager` scope the run to packages
-only.
-"""#
-        after_long_help #"""
-Examples:
-
-    $ mise system install
-    $ mise system install apt:curl brew:jq
-    $ mise system install --dry-run
-    $ mise system install --manager apt --yes
-
-"""#
-        flag "-f --force" help="Overwrite existing files that conflict with `[system.files]` entries"
-        flag "-m --manager" help="Only install packages for this manager, e.g. `apt` or `brew`" {
-            arg <MANAGER> {
-                choices apt brew dnf pacman
-            }
-        }
-        flag "-n --dry-run" help="Print the commands that would run without running them"
-        flag "-y --yes" help="Skip the confirmation prompt"
-        flag --update help="Refresh package manager metadata first (apt: `apt-get update`)"
-        arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [system.packages]" required=#false var=#true
-    }
-    cmd status help=#"""
-Show the status of system packages from `[system.packages]`, files from
-`[system.files]`, edits from `[system.edits]`, and macOS defaults from
-`[system.defaults]`, and Unix login shell from `[system].login_shell`
-"""# {
-        alias ls
-        after_long_help #"""
-Examples:
-
-    $ mise system status
-    $ mise system status --json
-    $ mise system status --missing # exit 1 if anything is out of sync
-
-"""#
-        flag "-J --json" help="Output in JSON format"
-        flag --missing help=#"""
-Exit with code 1 if any configured packages, files, edits, defaults, or
-login shell are not in their desired state
-"""#
-    }
-    cmd upgrade help="Upgrade installed system packages from `[system.packages]`" {
-        alias up
-        long_help #"""
-Upgrade installed system packages from `[system.packages]`
-
-Refreshes package manager metadata and upgrades the configured packages
-that are already installed: apt/dnf/pacman upgrade to the newest available
-version (apt and dnf honor a version pinned in config), brew pours the
-formula's current bottle and replaces the old keg. Packages that are not
-installed yet are skipped — use `mise system install` for those.
-
-Packages can also be given explicitly in `manager:package` form.
-"""#
-        after_long_help #"""
-Examples:
-
-    $ mise system upgrade
-    $ mise system upgrade brew:postgresql@17
-    $ mise system upgrade --manager apt --yes
-    $ mise system upgrade --dry-run
-
-"""#
-        flag "-m --manager" help="Only upgrade packages for this manager, e.g. `apt` or `brew`" {
-            arg <MANAGER> {
-                choices apt brew dnf pacman
-            }
-        }
-        flag "-n --dry-run" help="Print the commands that would run without running them"
-        flag "-y --yes" help="Skip the confirmation prompt"
-        arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [system.packages]" required=#false var=#true
-    }
-    cmd use help="Add system packages to [system.packages] and install them" {
-        alias u
-        long_help #"""
-Add system packages to [system.packages] and install them
-
-Like `mise use` for tools: writes `"manager:package" = "version"` entries
-to mise.toml (the local config by default, the global one with `-g`) and
-then installs whatever is missing.
-
-Versions are pinned with `@`: `mise system use apt:curl@8.5.0-2`. Without
-`@` (or with `@latest`) no pin is written. brew formulae version through
-their names instead (`brew:postgresql@17`), so `@` is always part of the
-formula name there.
-"""#
-        after_long_help #"""
-Examples:
-
-    $ mise system use apt:curl brew:jq
-    $ mise system use -g brew:postgresql@17
-    $ mise system use apt:curl@8.5.0-2
-
-"""#
-        flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
-            arg <ENV>
-        }
-        flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one"
-        flag "-n --dry-run" help="Print the commands that would run without writing config or installing"
-        flag "-p --path" help="Write to this config file or directory" {
-            arg <PATH>
-        }
-        flag "-y --yes" help="Skip the confirmation prompt"
-        arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
     }
 }
 cmd tasks help="Manage tasks" {

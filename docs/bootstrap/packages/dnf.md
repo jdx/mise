@@ -4,7 +4,7 @@ System packages for RedHat-family Linux (Fedora, RHEL, CentOS Stream, Rocky,
 Alma, ...).
 
 ```toml
-[system.packages]
+[bootstrap.packages]
 "dnf:openssl-devel" = "latest"
 "dnf:postgresql-server" = "latest"
 "dnf:bash" = "5.2.26-3.fc40" # version or version-release pin
@@ -14,13 +14,13 @@ Alma, ...).
 
 - Package state is checked with `rpm -q` (read-only, never elevates).
 - Missing packages are installed with `dnf install -y`, elevated with sudo
-  when necessary (see [sudo](/system-packages/index.html#sudo)).
+  when necessary (see [sudo](/bootstrap/packages/#sudo)).
 - Version pins are passed to dnf as its native `name-version` /
   `name-version-release` syntax; a version-only pin is satisfied by any
   release of that version.
-- `mise system install --update` adds `--refresh` to force a metadata
+- `mise bootstrap packages install --update` adds `--refresh` to force a metadata
   refresh; otherwise dnf manages its own metadata expiry.
-- `mise system upgrade` runs `dnf upgrade -y --refresh` for the configured
+- `mise bootstrap packages upgrade` runs `dnf upgrade -y --refresh` for the configured
   packages — only already-installed packages are touched.
 
 ::: info
