@@ -156,6 +156,7 @@ async fn apply_target(target: &str) -> Result<()> {
             dry_run: false,
             verbose: false,
             force: false,
+            force_hint: "use `mise dotfiles apply --force`",
             yes: true,
         };
         system::files::apply(&config, &files, &opts)?;

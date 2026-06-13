@@ -48,6 +48,10 @@ Skip confirmation prompts
 
 Refresh system package manager metadata first (apt: `apt-get update`)
 
+### `--force-dotfiles`
+
+Overwrite existing files that conflict with whole-file dotfile entries
+
 ## Subcommands
 
 - [`mise bootstrap launchd <SUBCOMMAND>`](/cli/bootstrap/launchd.md)
@@ -60,6 +64,7 @@ Examples:
 
 ```
 mise bootstrap                    # packages + dotfiles + tools + bootstrap task
+mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap packages install --yes
 mise bootstrap macos-defaults status
 mise bootstrap launchd apply --dry-run

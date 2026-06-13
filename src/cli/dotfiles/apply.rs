@@ -66,6 +66,7 @@ impl DotfilesApply {
                 dry_run: self.dry_run,
                 verbose: Settings::get().verbose,
                 force: self.force,
+                force_hint: "use --force",
                 yes: self.yes,
             };
             system::files::apply(&config, &files, &opts)?;

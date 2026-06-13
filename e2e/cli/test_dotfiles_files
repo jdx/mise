@@ -151,6 +151,10 @@ assert "cat ~/.local/copydir/unmanaged" "keep me"
 
 # a real file where a symlink should go is a conflict: not clobbered
 rm ~/.gitconfig
+cat dotfiles/gitconfig >~/.gitconfig
+assert_succeed "mise dotfiles apply --yes"
+assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
+rm ~/.gitconfig
 echo "precious" >~/.gitconfig
 assert_fail "mise dotfiles apply --yes"
 assert "cat ~/.gitconfig" "precious"
