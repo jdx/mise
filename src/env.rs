@@ -892,6 +892,16 @@ pub fn vars_safe() -> impl Iterator<Item = (String, String)> {
     })
 }
 
+/// Safe wrapper around std::env::args() that handles invalid UTF-8 gracefully.
+/// std::env::args() panics if any argument contains invalid UTF-8; this uses
+/// args_os() and lossily converts each argument (invalid sequences become U+FFFD).
+/// Unlike vars_safe() the conversion is lossy rather than skipping, so argument
+/// positions are preserved and a malformed argv yields a normal "unknown command"
+/// error instead of crashing.
+pub fn args_safe() -> Vec<String> {
+    args_os().map(|a| a.to_string_lossy().to_string()).collect()
+}
+
 pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("cd {}", display_path(path));

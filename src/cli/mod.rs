@@ -440,8 +440,12 @@ fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usiz
                 let flag_name = arg.split('=').next().unwrap();
                 flags_with_values.iter().any(|f| f == flag_name)
             }
-        } else if arg.len() >= 2 {
-            let flag_name = &arg[..2];
+        } else if let Some(flag_name) = arg.get(..2) {
+            // `arg.get(..2)` (not `&arg[..2]`) avoids panicking when the arg is
+            // not valid UTF-8 in the first place: args are read lossily, so a
+            // malformed byte becomes a multi-byte U+FFFD and byte index 2 may not
+            // be a char boundary. A short flag is always ASCII, so a non-ASCII
+            // prefix simply matches no value-taking flag.
             flags_with_values.iter().any(|f| f == flag_name)
         } else {
             false

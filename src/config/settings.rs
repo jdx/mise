@@ -373,9 +373,15 @@ impl Settings {
                 settings.trace = true;
             }
         }
-        let args = env::args().collect_vec();
-        // handle the special case of `mise -v` which should show version, not set verbose
-        if settings.verbose && !(args.len() == 2 && args[1] == "-v") {
+        // handle the special case of `mise -v` which should show version, not set verbose.
+        // Use the args mise was invoked with (already captured safely in Cli::run and kept
+        // in sync with internal re-dispatch like `mise asdf ...`) rather than re-reading the
+        // process argv. See also Settings::no_config().
+        let is_version_flag = {
+            let args = env::ARGS.read().unwrap();
+            args.len() == 2 && args[1] == "-v"
+        };
+        if settings.verbose && !is_version_flag {
             settings.quiet = false;
             if settings.log_level != "trace" {
                 settings.log_level = "debug".to_string();
