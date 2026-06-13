@@ -465,13 +465,7 @@ impl AquaPackage {
 
     /// Detect the format of an archive based on its filename
     fn detect_format(&self, asset_name: &str) -> &'static str {
-        let formats = [
-            "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2",
-            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "7z", "gz", "bz2", "lz4", "sz", "xz",
-            "zst", "dmg", "pkg", "rar", "tar",
-        ];
-
-        for format in formats {
+        for &format in AQUA_ASSET_FORMATS {
             if asset_name.ends_with(&format!(".{format}")) {
                 return format;
             }
@@ -873,6 +867,19 @@ fn split_version_prefix(version: &str) -> (String, String) {
         )
 }
 
+const AQUA_ASSET_FORMATS: &[&str] = &[
+    "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2", "tgz",
+    "tlz4", "tsz", "txz", "tar.zst", "zip", "7z", "gz", "bz2", "lz4", "sz", "xz", "zst", "dmg",
+    "pkg", "rar", "tar",
+];
+
+fn asset_without_ext(asset: &str) -> &str {
+    AQUA_ASSET_FORMATS
+        .iter()
+        .find_map(|format| asset.strip_suffix(format)?.strip_suffix('.'))
+        .unwrap_or(asset)
+}
+
 impl AquaFile {
     fn template_ctx(
         &self,
@@ -882,18 +889,7 @@ impl AquaFile {
         arch: &str,
     ) -> Result<HashMap<String, String>> {
         let asset = pkg.asset(v, os, arch)?;
-        let asset = asset.strip_suffix(".tar.gz").unwrap_or(&asset);
-        let asset = asset.strip_suffix(".tar.xz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tar.bz2").unwrap_or(asset);
-        let asset = asset.strip_suffix(".gz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".xz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".bz2").unwrap_or(asset);
-        let asset = asset.strip_suffix(".zip").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tar").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tgz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".txz").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tbz2").unwrap_or(asset);
-        let asset = asset.strip_suffix(".tbz").unwrap_or(asset);
+        let asset = asset_without_ext(&asset);
 
         let mut ctx = HashMap::new();
         ctx.insert("AssetWithoutExt".to_string(), asset.to_string());
@@ -1413,6 +1409,56 @@ packages:
 
         let result = file.src(&pkg, "8.14.3", "darwin", "arm64").unwrap();
         assert_eq!(result, Some("gradle-8.14.3/bin/gradle".to_string()));
+    }
+
+    #[test]
+    fn test_aqua_file_src_asset_without_ext_strips_zst() {
+        let pkg = AquaPackage {
+            repo_owner: "openai".to_string(),
+            repo_name: "codex".to_string(),
+            asset: "codex-{{.Arch}}-{{.OS}}.exe.{{.Format}}".to_string(),
+            format: "zst".to_string(),
+            replacements: HashMap::from([
+                ("amd64".to_string(), "x86_64".to_string()),
+                ("windows".to_string(), "pc-windows-msvc".to_string()),
+            ]),
+            ..Default::default()
+        };
+        let file = AquaFile {
+            name: "codex".to_string(),
+            src: Some("{{.AssetWithoutExt}}".to_string()),
+            ..Default::default()
+        };
+
+        let result = file.src(&pkg, "0.133.0", "windows", "amd64").unwrap();
+
+        assert_eq!(result, Some("codex-x86_64-pc-windows-msvc.exe".to_string()));
+    }
+
+    #[test]
+    fn test_asset_without_ext_uses_aqua_asset_formats() {
+        assert_eq!(
+            asset_without_ext("tfcmt_linux_amd64.tar.gz"),
+            "tfcmt_linux_amd64"
+        );
+        assert_eq!(
+            asset_without_ext("tfcmt_linux_amd64.tgz"),
+            "tfcmt_linux_amd64"
+        );
+        assert_eq!(
+            asset_without_ext("tfcmt_linux_amd64.tbz"),
+            "tfcmt_linux_amd64"
+        );
+        assert_eq!(asset_without_ext("tool.tar.br"), "tool");
+        assert_eq!(
+            asset_without_ext("codex-x86_64-pc-windows-msvc.exe.zst"),
+            "codex-x86_64-pc-windows-msvc.exe"
+        );
+        assert_eq!(asset_without_ext("tfcmt.js"), "tfcmt.js");
+        assert_eq!(
+            asset_without_ext("tfcmt_windows_amd64.exe"),
+            "tfcmt_windows_amd64.exe"
+        );
     }
 
     #[test]
