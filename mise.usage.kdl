@@ -286,11 +286,12 @@ cmd bootstrap help="[experimental] Set up a machine for the current config in on
 
 Runs the bootstrap steps for the current config in order:
 
-1. `mise system install` — install missing `[system.packages]`, apply
-   `[system.files]` and `[system.edits]`, write `[system.defaults]`
-   (macOS), and set `[system].login_shell` (Unix)
-2. `mise install` — install missing tools from `[tools]`
-3. `mise run bootstrap` — if a task named `bootstrap` is defined
+1. `mise system install` — install missing `[system.packages]` and write
+   `[system.defaults]` (macOS)
+2. `mise dotfiles install` — apply dotfiles from `[dotfiles]`
+3. set `[system].login_shell` (Unix)
+4. `mise install` — install missing tools from `[tools]`
+5. `mise run bootstrap` — if a task named `bootstrap` is defined
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -535,6 +536,54 @@ for direnv to consume.
 [internal] This is an internal command that writes an envrc file
 for direnv to consume.
 """#
+}
+cmd dotfiles subcommand_required=#true help="[experimental] Manage dotfiles from `[dotfiles]`" {
+    long_help #"""
+[experimental] Manage dotfiles from `[dotfiles]`
+
+Dotfiles are config files symlinked, copied, or rendered to target paths,
+plus marker-delimited blocks or single lines in files mise doesn't own.
+Unlike `[tools]`, dotfiles are only acted on when explicitly requested with
+`mise dotfiles install` or `mise bootstrap`.
+"""#
+    cmd install help="Apply dotfiles from `[dotfiles]`" {
+        alias i
+        long_help #"""
+Apply dotfiles from `[dotfiles]`
+
+Applies configured whole-file entries and edits that aren't in their
+desired state. Whole-file entries may symlink, copy, or render templates.
+Edit entries manage a marker-delimited block or a single line in a file
+mise doesn't otherwise own.
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles install
+    $ mise dotfiles install --dry-run
+    $ mise dotfiles install --force --yes
+
+"""#
+        flag "-f --force" help="Overwrite existing files that conflict with whole-file dotfile entries"
+        flag "-n --dry-run" help="Print the actions that would run without writing anything"
+        flag "-y --yes" help="Skip the confirmation prompt"
+    }
+    cmd status help="Show the status of dotfiles from `[dotfiles]`" {
+        alias ls
+        after_long_help #"""
+Examples:
+
+    $ mise dotfiles status
+    $ mise dotfiles status --json
+    $ mise dotfiles status --missing # exit 1 if anything is out of sync
+
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --missing help=#"""
+Exit with code 1 if any configured dotfiles are not in their desired
+state (missing, source missing, differs)
+"""#
+    }
 }
 cmd doctor help="Check mise installation for possible problems" {
     alias dr
@@ -2878,25 +2927,19 @@ Examples:
     }
 }
 cmd system subcommand_required=#true help=#"""
-[experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, edits from `[system.edits]`, macOS defaults
-from `[system.defaults]`, and Unix login shell from `[system].login_shell`
+[experimental] Manage system packages from `[system.packages]`, macOS
+defaults from `[system.defaults]`, and inspect `[system].login_shell`
 """# {
     long_help #"""
-[experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, edits from `[system.edits]`, macOS defaults
-from `[system.defaults]`, and Unix login shell from `[system].login_shell`
+[experimental] Manage system packages from `[system.packages]`, macOS
+defaults from `[system.defaults]`, and inspect `[system].login_shell`
 
 System packages are machine-global packages installed by the OS package
 manager (apt, dnf, pacman) or mise's Homebrew-bottle installer (brew).
-System files are config files (dotfiles) symlinked, copied, or rendered
-to machine-global paths. System edits manage one piece of a file
-something else owns — a marker-delimited block or a single line. macOS
-defaults are user preferences written with `defaults write`. Unlike
-`[tools]`, none of these are version-pinned per-project and they are only
-ever acted on when explicitly requested with `mise system install` (or
-`mise bootstrap`). Login shell changes are current-user settings applied
-with `chsh -s`.
+macOS defaults are user preferences written with `defaults write`. Unlike
+`[tools]`, packages and defaults are not version-pinned per-project and
+are only acted on when explicitly requested with `mise system install` or
+`mise bootstrap`. Login shell changes are applied by `mise bootstrap`.
 """#
     cmd brew subcommand_required=#true help="Manage Homebrew taps used by system packages" {
         long_help #"""
@@ -2930,25 +2973,18 @@ Examples:
         }
     }
     cmd install help=#"""
-Install missing system packages from `[system.packages]`, apply files
-from `[system.files]` and edits from `[system.edits]`, write macOS
-defaults from `[system.defaults]`, and set Unix login shell from
-`[system].login_shell`
+Install missing system packages from `[system.packages]` and write macOS
+defaults from `[system.defaults]`
 """# {
         alias i
         long_help #"""
-Install missing system packages from `[system.packages]`, apply files
-from `[system.files]` and edits from `[system.edits]`, write macOS
-defaults from `[system.defaults]`, and set Unix login shell from
-`[system].login_shell`
+Install missing system packages from `[system.packages]` and write macOS
+defaults from `[system.defaults]`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
-and `[system.edits]` entries that aren't in their desired state are
-applied, on macOS any `[system.defaults]` entries that are unset or
-differ are written, and on Unix `[system].login_shell` is added to
-`/etc/shells` if needed before `chsh -s` applies it.
+root (see the `system_packages.sudo` setting). On macOS, any
+`[system.defaults]` entries that are unset or differ are written.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -2964,7 +3000,6 @@ Examples:
     $ mise system install --manager apt --yes
 
 """#
-        flag "-f --force" help="Overwrite existing files that conflict with `[system.files]` entries"
         flag "-m --manager" help="Only install packages for this manager, e.g. `apt` or `brew`" {
             arg <MANAGER> {
                 choices apt brew dnf pacman
@@ -2976,9 +3011,9 @@ Examples:
         arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [system.packages]" required=#false var=#true
     }
     cmd status help=#"""
-Show the status of system packages from `[system.packages]`, files from
-`[system.files]`, edits from `[system.edits]`, and macOS defaults from
-`[system.defaults]`, and Unix login shell from `[system].login_shell`
+Show the status of system packages from `[system.packages]`, macOS
+defaults from `[system.defaults]`, and Unix login shell from
+`[system].login_shell`
 """# {
         alias ls
         after_long_help #"""
@@ -2991,8 +3026,8 @@ Examples:
 """#
         flag "-J --json" help="Output in JSON format"
         flag --missing help=#"""
-Exit with code 1 if any configured packages, files, edits, defaults, or
-login shell are not in their desired state
+Exit with code 1 if any configured packages, defaults, or login shell
+are not in their desired state
 """#
     }
     cmd upgrade help="Upgrade installed system packages from `[system.packages]`" {

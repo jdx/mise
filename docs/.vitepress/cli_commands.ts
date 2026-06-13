@@ -101,6 +101,17 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  dotfiles: {
+    hide: false,
+    subcommands: {
+      install: {
+        hide: false,
+      },
+      status: {
+        hide: false,
+      },
+    },
+  },
   edit: {
     hide: false,
   },

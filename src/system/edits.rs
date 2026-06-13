@@ -1,18 +1,16 @@
-//! `[system.edits]` — declarative edits to files mise doesn't own,
-//! applied by `mise system install` or `mise bootstrap`.
+//! `[dotfiles]` — declarative edits to files mise doesn't own,
+//! applied by `mise dotfiles install` or `mise bootstrap`.
 //!
-//! Where `[system.files]` manages whole files, an edit owns one small piece
+//! Where whole-file dotfile entries manage whole files, an edit owns one small piece
 //! of a file something else owns — the `mise activate` line in a shell rc,
-//! an entry in /etc/hosts. Entries are keyed by target path (like
-//! `[system.files]`), then by an id naming each edit within the file:
+//! an entry in /etc/hosts. Entries are keyed by target path plus an id naming
+//! each edit within the file:
 //!
 //! ```toml
-//! [system.edits]
-//! "~/.zshrc" = {
-//!   activate = 'eval "$(mise activate zsh)"',  # string = inline block
-//!   aliases = { source = "snippets/aliases.sh" },
-//! }
-//! "/etc/hosts" = { dev = { line = "127.0.0.1 dev.local" } }
+//! [dotfiles]
+//! "~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
+//! "~/.zshrc/aliases" = { source = "snippets/aliases.sh" }
+//! "/etc/hosts/dev" = { line = "127.0.0.1 dev.local" }
 //! ```
 //!
 //! A `block` is delimited by marker comments in the target file —
@@ -23,7 +21,7 @@
 //!
 //! Entries merge across the config hierarchy as a union keyed by
 //! `(path, id)` — a more local config overrides an edit with the same id,
-//! exactly like `[system.files]` overrides by target.
+//! exactly like whole-file entries override by target.
 
 use std::path::{Path, PathBuf};
 
@@ -37,8 +35,7 @@ use crate::path::PathExt;
 use crate::system::files::FileState;
 use crate::ui::prompt;
 
-/// one `[system.edits]` entry as written in mise.toml, keyed by
-/// `path -> id`. Operations stay loosely typed so configs using operations
+/// one `[dotfiles]` edit entry as written in mise.toml. Operations stay loosely typed so configs using operations
 /// from newer mise versions still parse (entries with no recognized
 /// operation warn and are skipped)
 #[derive(Debug, Clone, Deserialize)]
@@ -119,29 +116,57 @@ impl EditRequest {
     }
 }
 
-/// Aggregate `[system.edits]` across all loaded config files. Entries union
-/// global -> local, keyed by `(path, id)`; a more local config overrides an
-/// edit with the same id. Malformed entries warn and are skipped.
+/// Aggregate edit `[dotfiles]` entries across all loaded config files. Entries
+/// union global -> local, keyed by `(path, id)`; a more local config overrides
+/// an edit with the same id. Malformed entries warn and are skipped.
 pub fn edits_from_config(config: &Config) -> Vec<EditRequest> {
     let mut merged: IndexMap<String, EditRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for (cf_path, cf) in config.config_files.iter().rev() {
-        let Some(sys) = cf.system_config() else {
+        let base = cf_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let Some(dotfiles) = cf.dotfiles_config() else {
             continue;
         };
-        let base = cf_path.parent().unwrap_or(Path::new(".")).to_path_buf();
-        for (path_raw, entries) in sys.edits {
-            for (id, entry) in entries {
-                match resolve_entry(&path_raw, id, entry, &base) {
+        for (path_and_id, value) in dotfiles.0 {
+            let Some(entry) = edit_entry_from_toml(&path_and_id, value) else {
+                continue;
+            };
+            match split_edit_key(&path_and_id) {
+                Some((path_raw, id)) => match resolve_entry(&path_raw, id, entry, &base) {
                     Ok(req) => {
                         merged.insert(format!("{}\u{0}{}", req.path.display(), req.id), req);
                     }
-                    Err(err) => warn!("[system.edits]: {err}"),
-                }
+                    Err(err) => warn!("[dotfiles]: {err}"),
+                },
+                None => warn!(
+                    "[dotfiles].\"{path_and_id}\": edit entries must end with an id path segment"
+                ),
             }
         }
     }
     merged.into_values().collect()
+}
+
+fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTomlEntry> {
+    match &value {
+        toml::Value::Table(table) if !table.contains_key("mode") => {}
+        _ => return None,
+    }
+    match value.try_into() {
+        Ok(entry) => Some(entry),
+        Err(err) => {
+            warn!("[dotfiles].\"{path_and_id}\": invalid edit entry: {err}");
+            None
+        }
+    }
+}
+
+fn split_edit_key(path_and_id: &str) -> Option<(String, String)> {
+    let (path, id) = path_and_id.rsplit_once('/')?;
+    if path.is_empty() || path == "~" || path == "/" || id.is_empty() {
+        return None;
+    }
+    Some((path.to_string(), id.to_string()))
 }
 
 fn resolve_entry(
@@ -330,7 +355,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
         let mut tera = crate::tera::get_tera(Some(&req.base));
         tera.render_str(&raw, &config.tera_ctx).map_err(|err| {
             eyre::eyre!(
-                "[system.edits].\"{}\".{}: failed to render template: {err}",
+                "[dotfiles].\"{}/{}\": failed to render template: {err}",
                 req.path_raw,
                 req.id
             )
@@ -344,7 +369,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     for pat in [format!(">>> mise:{id} >>>"), format!("<<< mise:{id} <<<")] {
         if content.lines().any(|l| is_marker_line(l, &pat, comment)) {
             bail!(
-                "[system.edits].\"{}\".{}: block content may not contain its own marker lines",
+                "[dotfiles].\"{}/{}\": block content may not contain its own marker lines",
                 req.path_raw,
                 req.id
             );
@@ -357,7 +382,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 ///
 /// Note: comparing a template block against existing markers requires
 /// rendering it, so this can run the template engine — including `exec()` —
-/// from `mise system status`. That's the same trust model as `[env]`
+/// from `mise dotfiles status`. That's the same trust model as `[env]`
 /// templates. Rendering only happens once every render-free outcome (symlink
 /// target, missing file, absent or corrupted markers) has been ruled out,
 /// and `--dry-run` skips template rendering entirely (see [`apply`]).
@@ -396,7 +421,7 @@ enum EditCheck {
 /// has been consulted, so blocked entries never execute template code
 fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
     // edits write through symlinks into whatever they point at (often a
-    // [system.files] source) — surface that instead of silently doing it
+    // dotfile source) — surface that instead of silently doing it
     if req.path.is_symlink() {
         return Ok(Some(EditCheck::Blocked(SYMLINK_REASON.into())));
     }
@@ -498,7 +523,7 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
         }
         // rendering can run exec() — a dry run must not execute anything,
         // so template blocks are listed without computing their content
-        // (same policy as [system.files])
+        // (same policy as template file entries)
         if opts.dry_run && matches!(&req.op, EditOp::Block { template: true, .. }) {
             todo.push((req, None));
             continue;

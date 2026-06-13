@@ -893,6 +893,52 @@ const completionSpec: Fig.Spec = {
       description: "Disable mise for current shell session",
     },
     {
+      name: "dotfiles",
+      description: "[experimental] Manage dotfiles from `[dotfiles]`",
+      subcommands: [
+        {
+          name: ["install", "i"],
+          description: "Apply dotfiles from `[dotfiles]`",
+          options: [
+            {
+              name: ["-f", "--force"],
+              description:
+                "Overwrite existing files that conflict with whole-file dotfile entries",
+              isRepeatable: false,
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Print the actions that would run without writing anything",
+              isRepeatable: false,
+            },
+            {
+              name: ["-y", "--yes"],
+              description: "Skip the confirmation prompt",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
+          name: ["status", "ls"],
+          description: "Show the status of dotfiles from `[dotfiles]`",
+          options: [
+            {
+              name: ["-J", "--json"],
+              description: "Output in JSON format",
+              isRepeatable: false,
+            },
+            {
+              name: "--missing",
+              description:
+                "Exit with code 1 if any configured dotfiles are not in their desired\nstate (missing, source missing, differs)",
+              isRepeatable: false,
+            },
+          ],
+        },
+      ],
+    },
+    {
       name: ["doctor", "dr"],
       description: "Check mise installation for possible problems",
       subcommands: [
@@ -3233,7 +3279,7 @@ const completionSpec: Fig.Spec = {
     {
       name: "system",
       description:
-        "[experimental] Manage system packages from `[system.packages]`, files\nfrom `[system.files]`, edits from `[system.edits]`, macOS defaults\nfrom `[system.defaults]`, and Unix login shell from `[system].login_shell`",
+        "[experimental] Manage system packages from `[system.packages]`, macOS\ndefaults from `[system.defaults]`, and inspect `[system].login_shell`",
       subcommands: [
         {
           name: "brew",
@@ -3285,14 +3331,8 @@ const completionSpec: Fig.Spec = {
         {
           name: ["install", "i"],
           description:
-            "Install missing system packages from `[system.packages]`, apply files\nfrom `[system.files]` and edits from `[system.edits]`, write macOS\ndefaults from `[system.defaults]`, and set Unix login shell from\n`[system].login_shell`",
+            "Install missing system packages from `[system.packages]` and write macOS\ndefaults from `[system.defaults]`",
           options: [
-            {
-              name: ["-f", "--force"],
-              description:
-                "Overwrite existing files that conflict with `[system.files]` entries",
-              isRepeatable: false,
-            },
             {
               name: ["-m", "--manager"],
               description:
@@ -3332,7 +3372,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["status", "ls"],
           description:
-            "Show the status of system packages from `[system.packages]`, files from\n`[system.files]`, edits from `[system.edits]`, and macOS defaults from\n`[system.defaults]`, and Unix login shell from `[system].login_shell`",
+            "Show the status of system packages from `[system.packages]`, macOS\ndefaults from `[system.defaults]`, and Unix login shell from\n`[system].login_shell`",
           options: [
             {
               name: ["-J", "--json"],
@@ -3342,7 +3382,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--missing",
               description:
-                "Exit with code 1 if any configured packages, files, edits, defaults, or\nlogin shell are not in their desired state",
+                "Exit with code 1 if any configured packages, defaults, or login shell\nare not in their desired state",
               isRepeatable: false,
             },
           ],

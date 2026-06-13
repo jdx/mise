@@ -4,20 +4,15 @@
 - **Usage**: `mise system <SUBCOMMAND>`
 - **Source code**: [`src/cli/system/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/mod.rs)
 
-[experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, edits from `[system.edits]`, macOS defaults
-from `[system.defaults]`, and Unix login shell from `[system].login_shell`
+[experimental] Manage system packages from `[system.packages]`, macOS
+defaults from `[system.defaults]`, and inspect `[system].login_shell`
 
 System packages are machine-global packages installed by the OS package
 manager (apt, dnf, pacman) or mise's Homebrew-bottle installer (brew).
-System files are config files (dotfiles) symlinked, copied, or rendered
-to machine-global paths. System edits manage one piece of a file
-something else owns — a marker-delimited block or a single line. macOS
-defaults are user preferences written with `defaults write`. Unlike
-`[tools]`, none of these are version-pinned per-project and they are only
-ever acted on when explicitly requested with `mise system install` (or
-`mise bootstrap`). Login shell changes are current-user settings applied
-with `chsh -s`.
+macOS defaults are user preferences written with `defaults write`. Unlike
+`[tools]`, packages and defaults are not version-pinned per-project and
+are only acted on when explicitly requested with `mise system install` or
+`mise bootstrap`. Login shell changes are applied by `mise bootstrap`.
 
 ## Subcommands
 

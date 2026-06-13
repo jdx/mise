@@ -9,7 +9,7 @@ echo "two" >dotfiles/bin/two
 echo "sum = {{ 1 + 1 }}" >dotfiles/ssh_config.tmpl
 
 cat <<EOF >mise.toml
-[system.files]
+[dotfiles]
 "~/.gitconfig" = "dotfiles/gitconfig"
 "~/.config/starship.toml" = { source = "dotfiles/starship.toml", mode = "copy" }
 "~/.ssh/config" = { source = "dotfiles/ssh_config.tmpl", mode = "template" }
@@ -18,14 +18,18 @@ cat <<EOF >mise.toml
 EOF
 
 # everything is missing before applying
-assert_contains "mise system status" "missing"
-assert_fail "mise system status --missing"
+assert_contains "mise dotfiles status" "missing"
+assert_fail "mise dotfiles status --missing"
 
-# dry-run prints actions without writing anything
-assert_contains "mise system install --dry-run" "ln -sf"
+# system commands do not manage dotfiles
+assert_succeed "mise system install --yes"
 assert_fail "cat ~/.gitconfig"
 
-assert_succeed "mise system install --yes"
+# dry-run prints actions without writing anything
+assert_contains "mise dotfiles install --dry-run" "ln -sf"
+assert_fail "cat ~/.gitconfig"
+
+assert_succeed "mise dotfiles install --yes"
 assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
 assert "cat ~/.config/starship.toml" "starship config"
 assert "cat ~/.ssh/config" "sum = 2"
@@ -46,7 +50,7 @@ cat <<EOF >>mise.toml
 "~/.local/classes/theme-[ab].conf" = { source = "dotfiles/classes/theme-[ab].conf", mode = "copy" }
 "~/.local/tree/**/*.conf" = "dotfiles/tree/**/*.conf"
 EOF
-assert_succeed "mise system install --yes"
+assert_succeed "mise dotfiles install --yes"
 assert "cat ~/.config/bat.conf" "bat config"
 assert "cat ~/.local/question/app1.conf" "question config"
 assert "cat ~/.local/classes/theme-a.conf" "class config"
@@ -57,30 +61,30 @@ assert "readlink ~/.local/tree/nested/tool.conf" "$PWD/dotfiles/tree/nested/tool
 cat <<EOF >>mise.toml
 "~/.config/missing-*.conf" = "dotfiles/config/missing-*.conf"
 EOF
-assert_succeed "mise system status"
-assert_contains "mise system status 2>&1" "source pattern matched no files"
-assert_succeed "mise system install --yes"
+assert_succeed "mise dotfiles status"
+assert_contains "mise dotfiles status 2>&1" "source pattern matched no files"
+assert_succeed "mise dotfiles install --yes"
 
 # symlink-each leaves room for files mise doesn't manage
 touch ~/.local/mybin/unmanaged
 
 # idempotent: everything reports applied and re-running is a no-op
-assert_succeed "mise system status --missing"
-assert_contains "mise system status" "applied"
-assert_contains "mise system install --yes 2>&1" "all files are applied"
+assert_succeed "mise dotfiles status --missing"
+assert_contains "mise dotfiles status" "applied"
+assert_contains "mise dotfiles install --yes 2>&1" "all files are applied"
 assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
 
 # copy entries pick up source changes on reapply
 echo "starship v2" >dotfiles/starship.toml
-assert_contains "mise system status" "differs"
-assert_succeed "mise system install --yes"
+assert_contains "mise dotfiles status" "differs"
+assert_succeed "mise dotfiles install --yes"
 assert "cat ~/.config/starship.toml" "starship v2"
 
 # template permission drift is detected and repaired
 chmod 644 ~/.ssh/config
 chmod 600 dotfiles/ssh_config.tmpl
-assert_contains "mise system status" "permissions differ"
-assert_succeed "mise system install --yes"
+assert_contains "mise dotfiles status" "permissions differ"
+assert_succeed "mise dotfiles install --yes"
 case "$(uname -s)" in
   Darwin) assert "stat -f %Lp ~/.ssh/config" "600" ;;
   *) assert "stat -c %a ~/.ssh/config" "600" ;;
@@ -91,9 +95,9 @@ mkdir -p dotfiles/emptydir
 cat <<EOF >>mise.toml
 "~/.local/emptydir" = { source = "dotfiles/emptydir", mode = "copy" }
 EOF
-assert_succeed "mise system install --yes"
+assert_succeed "mise dotfiles install --yes"
 assert_directory_exists "$HOME/.local/emptydir"
-assert_succeed "mise system status --missing"
+assert_succeed "mise dotfiles status --missing"
 
 # same for symlink-each, including a blocking file being a --force-able
 # conflict rather than silently reported applied
@@ -102,10 +106,10 @@ cat <<EOF >>mise.toml
 "~/.local/emptylinks" = { source = "dotfiles/emptylinks", mode = "symlink-each" }
 EOF
 echo "blocker" >~/.local/emptylinks
-assert_fail "mise system install --yes"
-assert_succeed "mise system install --yes --force"
+assert_fail "mise dotfiles install --yes"
+assert_succeed "mise dotfiles install --yes --force"
 assert_directory_exists "$HOME/.local/emptylinks"
-assert_succeed "mise system status --missing"
+assert_succeed "mise dotfiles status --missing"
 
 # dry-run never renders templates (exec() in a template must not run)
 cat <<EOF >dotfiles/exec.tmpl
@@ -114,79 +118,79 @@ EOF
 cat <<EOF >>mise.toml
 "~/.local/exec-out" = { source = "dotfiles/exec.tmpl", mode = "template" }
 EOF
-assert_succeed "mise system install --dry-run"
+assert_succeed "mise dotfiles install --dry-run"
 assert_fail "ls exec-ran"
 
 # a dangling symlink at a copy target is replaced, not an IO error
 rm ~/.config/starship.toml
 ln -s /nonexistent-source ~/.config/starship.toml
-assert_contains "mise system status" "differs"
-assert_succeed "mise system install --yes"
+assert_contains "mise dotfiles status" "differs"
+assert_succeed "mise dotfiles install --yes"
 assert "cat ~/.config/starship.toml" "starship v2"
 
 # directory copies are additive: unmanaged files survive a reapply
 cat <<EOF >>mise.toml
 "~/.local/copydir" = { source = "dotfiles/bin", mode = "copy" }
 EOF
-assert_succeed "mise system install --yes"
+assert_succeed "mise dotfiles install --yes"
 assert "cat ~/.local/copydir/one" "one"
 echo "keep me" >~/.local/copydir/unmanaged
 echo "one v2" >dotfiles/bin/one
-assert_succeed "mise system install --yes"
+assert_succeed "mise dotfiles install --yes"
 assert "cat ~/.local/copydir/one" "one v2"
 assert "cat ~/.local/copydir/unmanaged" "keep me"
 
 # a real file where a symlink should go is a conflict: not clobbered
 rm ~/.gitconfig
 echo "precious" >~/.gitconfig
-assert_fail "mise system install --yes"
+assert_fail "mise dotfiles install --yes"
 assert "cat ~/.gitconfig" "precious"
 # --force replaces it
-assert_succeed "mise system install --yes --force"
+assert_succeed "mise dotfiles install --yes --force"
 assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
 
 # symlink-each: a real file where the target directory should go is also a
 # conflict, not a raw filesystem error
 rm -rf ~/.local/mybin
 echo "blocker" >~/.local/mybin
-assert_fail "mise system install --yes"
+assert_fail "mise dotfiles install --yes"
 assert "cat ~/.local/mybin" "blocker"
-assert_succeed "mise system install --yes --force"
+assert_succeed "mise dotfiles install --yes --force"
 assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
 
 # unknown modes warn but don't fail (forward compatibility)
 cat <<EOF >mise.toml
-[system.files]
+[dotfiles]
 "~/.gitconfig" = { source = "dotfiles/gitconfig", mode = "hardlink" }
 EOF
-assert_succeed "mise system status"
-assert_contains "mise system status 2>&1" "unknown mode"
+assert_succeed "mise dotfiles status"
+assert_contains "mise dotfiles status 2>&1" "unknown mode"
 
 # relative targets warn but don't fail
 cat <<EOF >mise.toml
-[system.files]
+[dotfiles]
 "relative/path" = "dotfiles/gitconfig"
 EOF
-assert_succeed "mise system status"
-assert_contains "mise system status 2>&1" "must be absolute"
+assert_succeed "mise dotfiles status"
+assert_contains "mise dotfiles status 2>&1" "must be absolute"
 
 # missing sources are visible in status and error on install
 cat <<EOF >mise.toml
-[system.files]
+[dotfiles]
 "~/.missing" = "dotfiles/does-not-exist"
 EOF
-assert_contains "mise system status" "source missing"
-assert_fail "mise system install --yes"
+assert_contains "mise dotfiles status" "source missing"
+assert_fail "mise dotfiles install --yes"
 
 # all problems are reported in one pass: a broken template doesn't hide a
 # missing source (or vice versa)
 echo "{{ not_a_real_function() }}" >dotfiles/bad.tmpl
 cat <<EOF >mise.toml
-[system.files]
+[dotfiles]
 "~/.broken" = { source = "dotfiles/bad.tmpl", mode = "template" }
 "~/.missing" = "dotfiles/does-not-exist"
 EOF
-assert_fail "mise system install --yes"
-install_out="$(mise system install --yes 2>&1 || true)"
+assert_fail "mise dotfiles install --yes"
+install_out="$(mise dotfiles install --yes 2>&1 || true)"
 assert_contains_text "$install_out" "sources do not exist"
 assert_contains_text "$install_out" "failed to render"

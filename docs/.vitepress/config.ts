@@ -151,11 +151,11 @@ export default withMermaid(
               ],
             },
             {
-              text: "System Files (dotfiles)",
+              text: "Dotfile Files",
               link: "/system-files",
             },
             {
-              text: "System Edits",
+              text: "Dotfile Edits",
               link: "/system-edits",
             },
             {

@@ -74,24 +74,23 @@ mise generate task-stubs --mise-bin ./bin/mise
 The generated task stubs behave like small project commands, while `bin/mise`
 downloads and runs the pinned mise binary for the project.
 
-## Machine bootstrapping with `[system]` <Badge type="warning" text="experimental" />
+## Machine bootstrapping <Badge type="warning" text="experimental" />
 
-Beyond `[tools]`, the `[system]` config section can declare everything else a
-machine needs, and [`mise bootstrap`](/cli/bootstrap.html) converges all of
-it in one command — system packages, then files and edits, then tools, then
-a `bootstrap` task if you define one:
+Beyond `[tools]`, mise can declare the rest of the machine setup needed for
+a project or workstation, and [`mise bootstrap`](/cli/bootstrap.html)
+converges it in one command — system packages, then dotfiles, then login
+shell, then tools, then a
+`bootstrap` task if you define one:
 
 ```toml
 [system.packages]                      # OS packages (apt/dnf/pacman/brew)
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
 
-[system.files]                         # dotfiles: symlink/copy/template
+[dotfiles]                             # dotfiles: symlink/copy/template
 "~/.gitconfig" = "dotfiles/gitconfig"
 "~/.config/nvim" = "dotfiles/nvim"
-
-[system.edits]                         # one piece of a file you don't own
-"~/.zshrc".activate = 'eval "$(mise activate zsh)"'
+"~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
 
 [system.defaults]                      # macOS defaults write
 "com.apple.dock.autohide" = true
@@ -108,10 +107,11 @@ mise bootstrap --yes   # new laptop or container -> ready to work
 ```
 
 Everything is declarative and idempotent: re-running skips whatever is
-already in its desired state, `mise system status --missing` makes a CI
-check, and nothing is ever applied implicitly. See
-[System Packages](/system-packages/), [System Files](/system-files.html),
-[System Edits](/system-edits.html), and
+already in its desired state, `mise system status --missing` and
+`mise dotfiles status --missing` make CI checks, and nothing is ever applied
+implicitly. See
+[System Packages](/system-packages/), [Dotfile Files](/system-files.html),
+[Dotfile Edits](/system-edits.html), and
 [macOS Defaults](/system-packages/defaults.html), and
 [System Login Shell](/system-login-shell.html).
 

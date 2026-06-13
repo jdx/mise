@@ -2,17 +2,15 @@ use eyre::Result;
 use serde_json::json;
 
 use crate::config::{Config, Settings};
-use crate::path::PathExt;
 use crate::system;
 use crate::system::defaults::DefaultsState;
-use crate::system::files::FileState;
 use crate::system::login_shell::LoginShellState;
 use crate::system::packages::PackageState;
 use crate::ui::table::MiseTable;
 
-/// Show the status of system packages from `[system.packages]`, files from
-/// `[system.files]`, edits from `[system.edits]`, and macOS defaults from
-/// `[system.defaults]`, and Unix login shell from `[system].login_shell`
+/// Show the status of system packages from `[system.packages]`, macOS
+/// defaults from `[system.defaults]`, and Unix login shell from
+/// `[system].login_shell`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemStatus {
@@ -20,8 +18,8 @@ pub struct SystemStatus {
     #[clap(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured packages, files, edits, defaults, or
-    /// login shell are not in their desired state
+    /// Exit with code 1 if any configured packages, defaults, or login shell
+    /// are not in their desired state
     #[clap(long, verbatim_doc_comment)]
     missing: bool,
 }
@@ -94,74 +92,6 @@ impl SystemStatus {
                     name.to_string(),
                     json!({ "available": true, "packages": json_pkgs }),
                 );
-            }
-        }
-        let files = system::files::files_from_config(&config);
-        let mut file_rows: Vec<Vec<String>> = vec![];
-        let mut json_files = vec![];
-        for req in &files {
-            let state = match system::files::check(&config, req) {
-                Ok(state) => state,
-                // e.g. a template that fails to render — visible, not fatal
-                Err(err) => FileState::Differs(format!("{err}")),
-            };
-            let state_str = match &state {
-                FileState::Applied => "applied".to_string(),
-                FileState::Missing => "missing".to_string(),
-                FileState::SourceMissing => "source missing".to_string(),
-                FileState::Differs(reason) => format!("differs ({reason})"),
-            };
-            any_missing |= state != FileState::Applied;
-            if self.json {
-                json_files.push(json!({
-                    "target": req.target_raw,
-                    "source": req.source.display_user(),
-                    "mode": req.mode.name(),
-                    "state": match &state {
-                        FileState::Applied => "applied",
-                        FileState::Missing => "missing",
-                        FileState::SourceMissing => "source_missing",
-                        FileState::Differs(_) => "differs",
-                    },
-                }));
-            } else {
-                file_rows.push(vec![
-                    req.target_raw.clone(),
-                    req.mode.name().to_string(),
-                    req.source.display_user(),
-                    state_str,
-                ]);
-            }
-        }
-        let edits = system::edits::edits_from_config(&config);
-        let mut edit_rows: Vec<Vec<String>> = vec![];
-        let mut json_edits = vec![];
-        for req in &edits {
-            let state = match system::edits::check(&config, req) {
-                Ok(state) => state,
-                // e.g. a template that fails to render — visible, not fatal
-                Err(err) => FileState::Differs(format!("{err}")),
-            };
-            let state_str = match &state {
-                FileState::Applied => "applied".to_string(),
-                FileState::Missing => "missing".to_string(),
-                FileState::SourceMissing => "source missing".to_string(),
-                FileState::Differs(reason) => format!("differs ({reason})"),
-            };
-            any_missing |= state != FileState::Applied;
-            if self.json {
-                json_edits.push(json!({
-                    "path": req.path_raw,
-                    "edit": req.describe_op(),
-                    "state": match &state {
-                        FileState::Applied => "applied",
-                        FileState::Missing => "missing",
-                        FileState::SourceMissing => "source_missing",
-                        FileState::Differs(_) => "differs",
-                    },
-                }));
-            } else {
-                edit_rows.push(vec![req.path_raw.clone(), req.describe_op(), state_str]);
             }
         }
         let defaults = system::defaults_from_config(&config);
@@ -282,38 +212,17 @@ impl SystemStatus {
             }
         }
         if self.json {
-            json_out.insert("files".to_string(), json!(json_files));
-            json_out.insert("edits".to_string(), json!(json_edits));
             miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
         } else {
-            if rows.is_empty()
-                && file_rows.is_empty()
-                && edit_rows.is_empty()
-                && defaults_rows.is_empty()
-                && login_shell_rows.is_empty()
-            {
+            if rows.is_empty() && defaults_rows.is_empty() && login_shell_rows.is_empty() {
                 info!(
-                    "nothing configured in [system.packages], [system.files], [system.edits], [system.defaults], or [system].login_shell"
+                    "nothing configured in [system.packages], [system.defaults], or [system].login_shell"
                 );
             }
             if !rows.is_empty() {
                 let mut table =
                     MiseTable::new(false, &["Manager", "Package", "Installed", "State"]);
                 for row in rows {
-                    table.add_row(row);
-                }
-                table.print()?;
-            }
-            if !file_rows.is_empty() {
-                let mut table = MiseTable::new(false, &["Target", "Mode", "Source", "State"]);
-                for row in file_rows {
-                    table.add_row(row);
-                }
-                table.print()?;
-            }
-            if !edit_rows.is_empty() {
-                let mut table = MiseTable::new(false, &["File", "Edit", "State"]);
-                for row in edit_rows {
                     table.add_row(row);
                 }
                 table.print()?;

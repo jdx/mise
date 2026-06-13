@@ -8,11 +8,12 @@
 
 Runs the bootstrap steps for the current config in order:
 
-1. `mise system install` — install missing `[system.packages]`, apply
-   `[system.files]` and `[system.edits]`, write `[system.defaults]`
-   (macOS), and set `[system].login_shell` (Unix)
-2. `mise install` — install missing tools from `[tools]`
-3. `mise run bootstrap` — if a task named `bootstrap` is defined
+1. `mise system install` — install missing `[system.packages]` and write
+   `[system.defaults]` (macOS)
+2. `mise dotfiles install` — apply dotfiles from `[dotfiles]`
+3. set `[system].login_shell` (Unix)
+4. `mise install` — install missing tools from `[tools]`
+5. `mise run bootstrap` — if a task named `bootstrap` is defined
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every

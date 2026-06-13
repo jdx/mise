@@ -1,11 +1,11 @@
-//! `[system.files]` — declarative config files (dotfiles) applied by
-//! `mise system install` or `mise bootstrap`.
+//! `[dotfiles]` — declarative config files (dotfiles) applied by
+//! `mise dotfiles install` or `mise bootstrap`.
 //!
 //! Entries are keyed by target path and point at a source file or directory,
 //! resolved relative to the config file that declares them:
 //!
 //! ```toml
-//! [system.files]
+//! [dotfiles]
 //! "~/.gitconfig" = "dotfiles/gitconfig"                  # symlink (default)
 //! "~/.config/foo.toml" = { source = "foo.toml", mode = "copy" }
 //! "~/.ssh/config" = { source = "ssh.tmpl", mode = "template" }
@@ -66,7 +66,7 @@ impl FileMode {
     }
 }
 
-/// one `[system.files]` entry as written in mise.toml
+/// one `[dotfiles]` whole-file entry as written in mise.toml
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum FileTomlEntry {
@@ -107,9 +107,9 @@ pub enum FileState {
     SourceMissing,
 }
 
-/// Aggregate `[system.files]` across all loaded config files. Keys union
-/// global -> local; a more local config overrides an entry for the same
-/// target. Malformed entries and unknown modes warn and are skipped.
+/// Aggregate whole-file `[dotfiles]` entries across all loaded config files.
+/// Keys union global -> local; a more local config overrides an entry for the
+/// same target. Malformed entries and unknown modes warn and are skipped.
 pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
     files_from_config_files(&config.config_files)
 }
@@ -123,46 +123,71 @@ pub fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
     let mut merged: IndexMap<PathBuf, FileRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for (path, cf) in config_files.iter().rev() {
-        let Some(sys) = cf.system_config() else {
+        let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let Some(dotfiles) = cf.dotfiles_config() else {
             continue;
         };
-        let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-        for (target_raw, entry) in sys.files {
-            let (source, mode) = match entry {
-                FileTomlEntry::Source(source) => (source, None),
-                FileTomlEntry::Table { source, mode } => (source, mode),
-            };
-            let mode = match mode.as_deref() {
-                None => FileMode::Symlink,
-                Some(m) => match FileMode::parse(m) {
-                    Some(m) => m,
-                    None => {
-                        warn!(
-                            "[system.files].\"{target_raw}\": unknown mode '{m}', ignoring entry"
-                        );
-                        continue;
-                    }
-                },
-            };
-            let target = file::replace_path(&target_raw);
-            if target.is_relative() {
-                warn!(
-                    "[system.files].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
-                );
+        for (target_raw, value) in dotfiles.0 {
+            let Some(entry) = file_entry_from_toml(&target_raw, value) else {
                 continue;
-            }
-            let source = file::replace_path(&source);
-            let source = if source.is_relative() {
-                base.join(source)
-            } else {
-                source
             };
-            for req in expand_request(target_raw, target, source, mode, base.clone()) {
-                merged.insert(req.target.clone(), req);
-            }
+            merge_file_entry(target_raw, entry, &base, &mut merged);
         }
     }
     merged.into_values().collect()
+}
+
+fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileTomlEntry> {
+    match &value {
+        toml::Value::String(_) => {}
+        toml::Value::Table(table) if table.contains_key("mode") => {}
+        _ => return None,
+    }
+    match value.try_into() {
+        Ok(entry) => Some(entry),
+        Err(err) => {
+            warn!("[dotfiles].\"{target_raw}\": invalid file entry: {err}");
+            None
+        }
+    }
+}
+
+fn merge_file_entry(
+    target_raw: String,
+    entry: FileTomlEntry,
+    base: &Path,
+    merged: &mut IndexMap<PathBuf, FileRequest>,
+) {
+    let (source, mode) = match entry {
+        FileTomlEntry::Source(source) => (source, None),
+        FileTomlEntry::Table { source, mode } => (source, mode),
+    };
+    let mode = match mode.as_deref() {
+        None => FileMode::Symlink,
+        Some(m) => match FileMode::parse(m) {
+            Some(m) => m,
+            None => {
+                warn!("[dotfiles].\"{target_raw}\": unknown mode '{m}', ignoring entry");
+                return;
+            }
+        },
+    };
+    let target = file::replace_path(&target_raw);
+    if target.is_relative() {
+        warn!(
+            "[dotfiles].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
+        );
+        return;
+    }
+    let source = file::replace_path(&source);
+    let source = if source.is_relative() {
+        base.join(source)
+    } else {
+        source
+    };
+    for req in expand_request(target_raw, target, source, mode, base.to_path_buf()) {
+        merged.insert(req.target.clone(), req);
+    }
 }
 
 fn expand_request(
@@ -189,7 +214,7 @@ fn expand_request(
                 Ok(path) => Some(path),
                 Err(err) => {
                     warn!(
-                        "[system.files].\"{target_raw}\": error reading source pattern {source_pattern}: {err}"
+                        "[dotfiles].\"{target_raw}\": error reading source pattern {source_pattern}: {err}"
                     );
                     None
                 }
@@ -197,12 +222,12 @@ fn expand_request(
             .sorted()
             .collect_vec(),
         Err(err) => {
-            warn!("[system.files].\"{target_raw}\": invalid source pattern: {err}");
+            warn!("[dotfiles].\"{target_raw}\": invalid source pattern: {err}");
             return vec![];
         }
     };
     if matches.is_empty() {
-        warn!("[system.files].\"{target_raw}\": source pattern matched no files, ignoring entry");
+        warn!("[dotfiles].\"{target_raw}\": source pattern matched no files, ignoring entry");
         return vec![];
     }
 
@@ -210,7 +235,7 @@ fn expand_request(
     if !is_glob_pattern(&target) {
         if matches.len() > 1 {
             warn!(
-                "[system.files].\"{target_raw}\": source pattern matched multiple paths but target has no wildcard, ignoring entry"
+                "[dotfiles].\"{target_raw}\": source pattern matched multiple paths but target has no wildcard, ignoring entry"
             );
             return vec![];
         }
@@ -229,13 +254,13 @@ fn expand_request(
             let captures = match wildcard_captures(&source_pattern, &matched_source) {
                 Ok(captures) => captures,
                 Err(err) => {
-                    warn!("[system.files].\"{target_raw}\": {err}");
+                    warn!("[dotfiles].\"{target_raw}\": {err}");
                     return None;
                 }
             };
             let Some(target_path) = expand_target_pattern(&target_pattern, &captures) else {
                 warn!(
-                    "[system.files].\"{target_raw}\": target wildcard count does not match source pattern, ignoring {}",
+                    "[dotfiles].\"{target_raw}\": target wildcard count does not match source pattern, ignoring {}",
                     matched_source.display_user()
                 );
                 return None;
@@ -546,7 +571,7 @@ pub fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
     let mut tera = crate::tera::get_tera(Some(&req.base));
     let rendered = tera.render_str(&raw, &config.tera_ctx).map_err(|err| {
         eyre::eyre!(
-            "[system.files].\"{}\": failed to render template {}: {err}",
+            "[dotfiles].\"{}\": failed to render template {}: {err}",
             req.target_raw,
             req.source.display_user()
         )
@@ -610,7 +635,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
         // render or check failure on one entry must not hide the rest
         if !req.source.exists() {
             missing_sources.push(format!(
-                "  [system.files].\"{}\": {}",
+                "  [dotfiles].\"{}\": {}",
                 req.target_raw,
                 req.source.display_user()
             ));
@@ -638,7 +663,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             Ok(FileState::Applied) => continue,
             Ok(_) => {}
             Err(err) => {
-                broken.push(format!("  [system.files].\"{}\": {err}", req.target_raw));
+                broken.push(format!("  [dotfiles].\"{}\": {err}", req.target_raw));
                 continue;
             }
         }

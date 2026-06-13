@@ -22,6 +22,7 @@ mod current;
 mod deactivate;
 mod direnv;
 mod doctor;
+mod dotfiles;
 mod en;
 mod env;
 pub mod exec;
@@ -217,6 +218,7 @@ pub enum Commands {
     Current(current::Current),
     Deactivate(deactivate::Deactivate),
     Direnv(direnv::Direnv),
+    Dotfiles(dotfiles::Dotfiles),
     Doctor(doctor::Doctor),
     En(en::En),
     Env(env::Env),
@@ -292,6 +294,7 @@ impl Commands {
             Self::Current(cmd) => cmd.run().await,
             Self::Deactivate(cmd) => cmd.run(),
             Self::Direnv(cmd) => cmd.run().await,
+            Self::Dotfiles(cmd) => cmd.run().await,
             Self::Doctor(cmd) => cmd.run().await,
             Self::En(cmd) => cmd.run().await,
             Self::Env(cmd) => cmd.run().await,

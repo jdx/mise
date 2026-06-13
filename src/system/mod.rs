@@ -1,13 +1,12 @@
 //! `[system]` config section: machine-global bootstrapping.
 //!
 //! This is `[system.packages]` — declarative system packages installed by
-//! `mise system install` — `[system.files]` — declarative config files
-//! (dotfiles) — `[system.defaults]` — declarative macOS user defaults, and
-//! `[system].login_shell`, all applied by the same command. These are
-//! intentionally not part of `[tools]`: they're unversioned, machine-global,
-//! and managed by the OS package manager (or mise's own Homebrew-bottle
-//! installer), plain filesystem operations, macOS `defaults`, or system user
-//! account tooling, not mise's per-project toolset.
+//! `mise system install` — `[dotfiles]` — declarative config files
+//! (dotfiles) applied by `mise dotfiles apply` — `[system.defaults]`
+//! — declarative macOS user defaults — and `[system].login_shell`, applied
+//! by `mise bootstrap`. These are intentionally not part of `[tools]`:
+//! they're unversioned, machine-global settings and resources, not mise's
+//! per-project toolset.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -42,13 +41,6 @@ pub struct SystemTomlConfig {
     /// instead of failing the whole config.
     #[serde(default)]
     pub defaults: IndexMap<String, toml::Value>,
-    /// target path -> source (see [`files`])
-    #[serde(default)]
-    pub files: IndexMap<String, files::FileTomlEntry>,
-    /// edits to files mise doesn't own, keyed by target path then edit id
-    /// (see [`edits`])
-    #[serde(default)]
-    pub edits: IndexMap<String, IndexMap<String, edits::EditTomlEntry>>,
     /// desired login shell for the current user, applied with `chsh -s`
     #[serde(default)]
     pub login_shell: Option<String>,
@@ -65,6 +57,11 @@ pub struct SystemBrewTomlConfig {
     #[serde(default)]
     pub taps: IndexMap<String, String>,
 }
+
+/// `[dotfiles]` as parsed from a single mise.toml.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(transparent)]
+pub struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
 
 /// Packages for one manager, aggregated across the config hierarchy
 pub struct ManagerPackages {

@@ -5,9 +5,9 @@
 - **Aliases**: `ls`
 - **Source code**: [`src/cli/system/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/status.rs)
 
-Show the status of system packages from `[system.packages]`, files from
-`[system.files]`, edits from `[system.edits]`, and macOS defaults from
-`[system.defaults]`, and Unix login shell from `[system].login_shell`
+Show the status of system packages from `[system.packages]`, macOS
+defaults from `[system.defaults]`, and Unix login shell from
+`[system].login_shell`
 
 ## Flags
 
@@ -17,8 +17,8 @@ Output in JSON format
 
 ### `--missing`
 
-Exit with code 1 if any configured packages, files, edits, defaults, or
-login shell are not in their desired state
+Exit with code 1 if any configured packages, defaults, or login shell
+are not in their desired state
 
 Examples:
 

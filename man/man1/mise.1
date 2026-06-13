@@ -190,6 +190,21 @@ Set the value of a setting in a mise.toml file
 \fBdeactivate\fR
 Disable mise for current shell session
 .TP
+\fBdotfiles\fR
+[experimental] Manage dotfiles from `[dotfiles]`
+.TP
+\fBdotfiles install\fR
+Apply dotfiles from `[dotfiles]`
+.RS
+\fIAliases: \fRi
+.RE
+.TP
+\fBdotfiles status\fR
+Show the status of dotfiles from `[dotfiles]`
+.RS
+\fIAliases: \fRls
+.RE
+.TP
 \fBdoctor\fR
 Check mise installation for possible problems
 .RS
@@ -461,7 +476,7 @@ Symlinks all tool versions from an external tool into mise
 Symlinks all ruby tool versions from an external tool into mise
 .TP
 \fBsystem\fR
-[experimental] Manage system packages from `[system.packages]`, files
+[experimental] Manage system packages from `[system.packages]`, macOS
 .TP
 \fBsystem brew\fR
 Manage Homebrew taps used by system packages
@@ -476,13 +491,13 @@ Untap Homebrew formula repositories
 .RE
 .TP
 \fBsystem install\fR
-Install missing system packages from `[system.packages]`, apply files
+Install missing system packages from `[system.packages]` and write macOS
 .RS
 \fIAliases: \fRi
 .RE
 .TP
 \fBsystem status\fR
-Show the status of system packages from `[system.packages]`, files from
+Show the status of system packages from `[system.packages]`, macOS
 .RS
 \fIAliases: \fRls
 .RE
@@ -754,11 +769,12 @@ e.g.: ruby@3
 
 Runs the bootstrap steps for the current config in order:
 
-1. `mise system install` — install missing `[system.packages]`, apply
-   `[system.files]` and `[system.edits]`, write `[system.defaults]`
-   (macOS), and set `[system].login_shell` (Unix)
-2. `mise install` — install missing tools from `[tools]`
-3. `mise run bootstrap` — if a task named `bootstrap` is defined
+1. `mise system install` — install missing `[system.packages]` and write
+   `[system.defaults]` (macOS)
+2. `mise dotfiles install` — apply dotfiles from `[dotfiles]`
+3. set `[system].login_shell` (Unix)
+4. `mise install` — install missing tools from `[tools]`
+5. `mise run bootstrap` — if a task named `bootstrap` is defined
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re\-running is safe. The `bootstrap` task runs on every
@@ -918,6 +934,41 @@ The path of the config to display
 .TP
 \fB<VALUE>\fR
 The value to set the key to (optional if provided as KEY=VALUE)
+.SH "MISE DOTFILES INSTALL"
+Apply dotfiles from `[dotfiles]`
+
+Applies configured whole\-file entries and edits that aren't in their
+desired state. Whole\-file entries may symlink, copy, or render templates.
+Edit entries manage a marker\-delimited block or a single line in a file
+mise doesn't otherwise own.
+.PP
+\fBUsage:\fR mise dotfiles install [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-f, \-\-force\fR
+Overwrite existing files that conflict with whole\-file dotfile entries
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the actions that would run without writing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE DOTFILES STATUS"
+Show the status of dotfiles from `[dotfiles]`
+.PP
+\fBUsage:\fR mise dotfiles status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured dotfiles are not in their desired
+state (missing, source missing, differs)
 .SH "MISE DOCTOR"
 Check mise installation for possible problems
 .PP
@@ -2823,18 +2874,13 @@ Print the command that would run without running it
 \fB<TAPS>\fR
 Tap name(s), e.g. `owner/repo`
 .SH "MISE SYSTEM INSTALL"
-Install missing system packages from `[system.packages]`, apply files
-from `[system.files]` and edits from `[system.edits]`, write macOS
-defaults from `[system.defaults]`, and set Unix login shell from
-`[system].login_shell`
+Install missing system packages from `[system.packages]` and write macOS
+defaults from `[system.defaults]`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
-and `[system.edits]` entries that aren't in their desired state are
-applied, on macOS any `[system.defaults]` entries that are unset or
-differ are written, and on Unix `[system].login_shell` is added to
-`/etc/shells` if needed before `chsh \-s` applies it.
+root (see the `system_packages.sudo` setting). On macOS, any
+`[system.defaults]` entries that are unset or differ are written.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -2845,9 +2891,6 @@ only.
 .PP
 \fBOptions:\fR
 .PP
-.TP
-\fB\-f, \-\-force\fR
-Overwrite existing files that conflict with `[system.files]` entries
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
 Only install packages for this manager, e.g. `apt` or `brew`
@@ -2866,9 +2909,9 @@ Refresh package manager metadata first (apt: `apt\-get update`)
 \fB<PACKAGE>\fR
 Packages in `manager:package` form; defaults to everything configured in [system.packages]
 .SH "MISE SYSTEM STATUS"
-Show the status of system packages from `[system.packages]`, files from
-`[system.files]`, edits from `[system.edits]`, and macOS defaults from
-`[system.defaults]`, and Unix login shell from `[system].login_shell`
+Show the status of system packages from `[system.packages]`, macOS
+defaults from `[system.defaults]`, and Unix login shell from
+`[system].login_shell`
 .PP
 \fBUsage:\fR mise system status [OPTIONS]
 .PP
@@ -2879,8 +2922,8 @@ Show the status of system packages from `[system.packages]`, files from
 Output in JSON format
 .TP
 \fB\-\-missing\fR
-Exit with code 1 if any configured packages, files, edits, defaults, or
-login shell are not in their desired state
+Exit with code 1 if any configured packages, defaults, or login shell
+are not in their desired state
 .SH "MISE SYSTEM UPGRADE"
 Upgrade installed system packages from `[system.packages]`
 

@@ -16,9 +16,9 @@ and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
 pages).
 
-mise can also place machine-global config files (dotfiles) — see
-[System Files](/system-files.html), which follows the same rules and shares
-the same commands.
+mise can also place config files (dotfiles) — see
+[Dotfile Files](/system-files.html), which follows the same rules but uses
+`mise dotfiles` commands.
 
 System packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are installed
@@ -30,8 +30,9 @@ themselves — those belong in `[tools]`.
 
 The `[system]` section can also declare
 [macOS defaults](/system-packages/defaults.html) (`[system.defaults]`),
-[login shells](/system-login-shell.html) (`[system].login_shell`), applied
-by the same `mise system install` command.
+applied by the same `mise system install` command. Current-user
+[login shells](/system-login-shell.html) (`[system].login_shell`) are
+applied by [`mise bootstrap`](/cli/bootstrap.html).
 
 ## Supported package managers
 
@@ -135,7 +136,7 @@ OS.
 The Linux package managers require root. When not running as root, mise
 elevates with `sudo`, which prompts for your password as usual. The same
 sudo path is used when `[system].login_shell` needs to add a shell to
-`/etc/shells`, and it only happens during an explicit `mise system install`:
+`/etc/shells`, and it only happens during an explicit `mise bootstrap`:
 
 - already root (containers, CI): no sudo, commands run directly
 - interactive terminal: e.g. `sudo apt-get install ...` with a normal sudo

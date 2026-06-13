@@ -32,7 +32,7 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::system::SystemTomlConfig;
+use crate::system::{DotfilesTomlConfig, SystemTomlConfig};
 use crate::task::{Task, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -180,6 +180,8 @@ pub struct MiseToml {
     oci: Option<OciConfig>,
     #[serde(default)]
     system: Option<SystemTomlConfig>,
+    #[serde(default)]
+    dotfiles: Option<DotfilesTomlConfig>,
     #[serde(default)]
     vars: EnvList,
     #[serde(default)]
@@ -1054,6 +1056,10 @@ impl ConfigFile for MiseToml {
     fn system_config(&self) -> Option<SystemTomlConfig> {
         self.system.clone()
     }
+
+    fn dotfiles_config(&self) -> Option<DotfilesTomlConfig> {
+        self.dotfiles.clone()
+    }
 }
 
 /// Returns a [`toml_edit::Key`] from the given `key`.
@@ -1130,6 +1136,7 @@ impl Clone for MiseToml {
             deps: self.deps.clone(),
             oci: self.oci.clone(),
             system: self.system.clone(),
+            dotfiles: self.dotfiles.clone(),
             vars: self.vars.clone(),
             monorepo_root: self.monorepo_root,
             monorepo: self.monorepo.clone(),
