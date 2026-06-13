@@ -15,6 +15,7 @@ use crate::system::files::{FileMode, FileRequest};
 use crate::system::hooks::{self, BootstrapHookPhase};
 use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
+use crate::system::systemd::SystemdState;
 use crate::ui::table::MiseTable;
 use clap::Subcommand;
 
@@ -32,13 +33,15 @@ use clap::Subcommand;
 ///    `[bootstrap.macos.defaults]` entries (macOS)
 ///    surrounded by `pre-defaults`/`post-defaults` hooks
 /// 4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-/// 5. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+/// 5. `mise bootstrap systemd apply` — install/start systemd user services
+///    (Linux)
+/// 6. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ///    (Unix)
 ///    surrounded by `pre-user`/`post-user` hooks
-/// 6. `mise install` — install missing tools from `[tools]`
+/// 7. `mise install` — install missing tools from `[tools]`
 ///    surrounded by `pre-tools`/`post-tools` hooks
-/// 7. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 8. `[bootstrap.hooks.final]` — optional final hook
+/// 8. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 9. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -69,6 +72,7 @@ enum Commands {
     Launchd(BootstrapLaunchd),
     MacosDefaults(BootstrapMacosDefaults),
     Packages(BootstrapPackages),
+    Systemd(BootstrapSystemd),
     User(BootstrapUser),
 }
 
@@ -158,6 +162,42 @@ struct BootstrapLaunchdStatus {
     json: bool,
 
     /// Exit with code 1 if any configured LaunchAgent is not in its desired state
+    #[clap(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+/// Manage systemd user services from `[bootstrap.linux.systemd.units]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapSystemd {
+    #[clap(subcommand)]
+    command: BootstrapSystemdCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapSystemdCommands {
+    Apply(BootstrapSystemdApply),
+    Status(BootstrapSystemdStatus),
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapSystemdApply {
+    /// Print the commands that would run without running them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapSystemdStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured systemd user service is not in its desired state
     #[clap(long, verbatim_doc_comment)]
     missing: bool,
 }
@@ -285,7 +325,16 @@ impl Bootstrap {
             install::apply_launchd(agents, self.dry_run, self.yes).await?;
         }
 
+        let units = system::systemd_from_config(&config);
+        if units.is_empty() {
+            debug!("bootstrap: no [bootstrap.linux.systemd.units] configured, skipping");
+        } else {
+            info!("bootstrap: systemd user services");
+            install::apply_systemd(units, self.dry_run, self.yes).await?;
+        }
+
         self.run_hooks(&hooks, BootstrapHookPhase::PreUser).await?;
+
         let login_shell = system::login_shell_from_config(&config);
         if login_shell.is_none() {
             debug!("bootstrap: no [bootstrap.user].login_shell configured, skipping");
@@ -427,6 +476,7 @@ impl Commands {
             Self::Launchd(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
+            Self::Systemd(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
         }
     }
@@ -548,6 +598,113 @@ impl BootstrapLaunchdStatus {
             info!("nothing configured in [bootstrap.macos.launchd.agents]");
         } else {
             let mut table = MiseTable::new(false, &["Name", "Label", "Path", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            crate::exit(1);
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapSystemd {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapSystemdCommands::Apply(cmd) => cmd.run().await,
+            BootstrapSystemdCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapSystemdApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_systemd(system::systemd_from_config(&config), self.dry_run, self.yes).await
+    }
+}
+
+impl BootstrapSystemdStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let units = system::systemd_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        if !units.is_empty() {
+            if !system::systemd::is_available() {
+                let reason = system::systemd::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "systemd".to_string(),
+                        json!({ "available": false, "reason": reason }),
+                    );
+                } else {
+                    for req in &units {
+                        rows.push(vec![
+                            req.name.clone(),
+                            req.unit.clone(),
+                            "".to_string(),
+                            format!("skipped ({reason})"),
+                        ]);
+                    }
+                }
+            } else {
+                let statuses = system::systemd::status(&units).await?;
+                let mut json_entries = vec![];
+                for s in statuses {
+                    let desired = s.is_desired();
+                    let state = match &s.state {
+                        SystemdState::Active => "active",
+                        SystemdState::Inactive => "inactive",
+                        SystemdState::Differs => {
+                            any_missing = true;
+                            "differs"
+                        }
+                        SystemdState::Missing => {
+                            any_missing = true;
+                            "missing"
+                        }
+                    };
+                    if !desired {
+                        any_missing = true;
+                    }
+                    if self.json {
+                        json_entries.push(json!({
+                            "name": s.request.name,
+                            "unit": s.request.unit,
+                            "path": s.path,
+                            "active": s.active,
+                            "enabled": s.enabled,
+                            "desired": desired,
+                            "state": state,
+                        }));
+                    } else {
+                        rows.push(vec![
+                            s.request.name.clone(),
+                            s.request.unit.clone(),
+                            s.path.display().to_string(),
+                            state.to_string(),
+                        ]);
+                    }
+                }
+                if self.json {
+                    json_out.insert(
+                        "systemd".to_string(),
+                        json!({ "available": true, "units": json_entries }),
+                    );
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.linux.systemd.units]");
+        } else {
+            let mut table = MiseTable::new(false, &["Name", "Unit", "Path", "State"]);
             for row in rows {
                 table.add_row(row);
             }
@@ -763,6 +920,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap packages install --yes</bold>
     $ <bold>mise bootstrap macos-defaults status</bold>
     $ <bold>mise bootstrap launchd apply --dry-run</bold>
+    $ <bold>mise bootstrap systemd apply --dry-run</bold>
     $ <bold>mise bootstrap user apply --dry-run</bold>
 "#
 );

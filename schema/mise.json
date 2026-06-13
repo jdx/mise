@@ -3247,6 +3247,93 @@
             }
           }
         },
+        "linux": {
+          "type": "object",
+          "description": "Linux-specific bootstrap config",
+          "properties": {
+            "systemd": {
+              "type": "object",
+              "description": "systemd user service bootstrap config",
+              "properties": {
+                "units": {
+                  "type": "object",
+                  "description": "systemd user services to write and start with `mise bootstrap systemd apply`",
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z0-9._@-]+$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "description": {
+                        "type": "string",
+                        "description": "write Description in the [Unit] section"
+                      },
+                      "after": {
+                        "type": "array",
+                        "description": "write After dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "wants": {
+                        "type": "array",
+                        "description": "write Wants dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "exec_start": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": ".*\\S.*",
+                        "description": "write ExecStart in the [Service] section"
+                      },
+                      "environment": {
+                        "type": "object",
+                        "description": "environment variables for Environment entries",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "working_directory": {
+                        "type": "string",
+                        "description": "write WorkingDirectory in the [Service] section"
+                      },
+                      "restart": {
+                        "type": "string",
+                        "description": "write Restart in the [Service] section"
+                      },
+                      "restart_sec": {
+                        "type": "string",
+                        "description": "write RestartSec in the [Service] section"
+                      },
+                      "standard_output": {
+                        "type": "string",
+                        "description": "write StandardOutput in the [Service] section"
+                      },
+                      "standard_error": {
+                        "type": "string",
+                        "description": "write StandardError in the [Service] section"
+                      },
+                      "start": {
+                        "type": "boolean",
+                        "description": "restart the service after writing it; when false, stop the service after writing it"
+                      },
+                      "wanted_by": {
+                        "type": "array",
+                        "description": "write WantedBy entries in the [Install] section and enable the unit; an empty array disables previous enablement",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["exec_start"]
+                  }
+                }
+              }
+            }
+          }
+        },
         "user": {
           "type": "object",
           "description": "current-user bootstrap settings",

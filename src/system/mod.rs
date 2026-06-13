@@ -4,8 +4,9 @@
 //! by `mise bootstrap packages install` — `[dotfiles]` — declarative config
 //! files applied by `mise dotfiles apply` — `[bootstrap.macos.defaults]`
 //! — declarative macOS user defaults — `[bootstrap.macos.launchd.agents]`
-//! — declarative macOS LaunchAgents — `[bootstrap.user].login_shell` — and
-//! `[bootstrap.hooks]` bootstrap phase hooks.
+//! — declarative macOS LaunchAgents — `[bootstrap.linux.systemd.units]`
+//! — declarative Linux systemd user services — `[bootstrap.user].login_shell`
+//! — and `[bootstrap.hooks]` bootstrap phase hooks.
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
@@ -20,6 +21,7 @@ use crate::config::{Config, ConfigMap};
 use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
+use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
 
 pub mod defaults;
 pub mod edits;
@@ -29,6 +31,7 @@ pub mod launchd;
 pub mod login_shell;
 pub mod packages;
 pub(crate) mod sudo;
+pub mod systemd;
 
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -41,6 +44,9 @@ pub struct BootstrapTomlConfig {
     /// macOS-specific bootstrap config.
     #[serde(default)]
     pub macos: BootstrapMacosTomlConfig,
+    /// Linux-specific bootstrap config.
+    #[serde(default)]
+    pub linux: BootstrapLinuxTomlConfig,
     /// User-specific bootstrap config.
     #[serde(default)]
     pub user: BootstrapUserTomlConfig,
@@ -92,6 +98,22 @@ pub struct BootstrapMacosLaunchdTomlConfig {
     /// `dev.mise.<name>` label when rendering the plist.
     #[serde(default)]
     pub agents: IndexMap<String, LaunchdTomlConfig>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct BootstrapLinuxTomlConfig {
+    /// `[bootstrap.linux.systemd.units.<name>]`: declarative systemd user
+    /// services rendered to ~/.config/systemd/user.
+    #[serde(default)]
+    pub systemd: BootstrapLinuxSystemdTomlConfig,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct BootstrapLinuxSystemdTomlConfig {
+    /// User services, keyed by a short stable name. mise gives these a
+    /// `dev.mise.<name>.service` unit name when rendering the unit file.
+    #[serde(default)]
+    pub units: IndexMap<String, SystemdTomlConfig>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -711,6 +733,30 @@ fn merge_trackpad_defaults(
             _ => warn!("[bootstrap.macos.trackpad].{key}: unknown key, ignoring entry"),
         }
     }
+}
+
+/// Aggregate `[bootstrap.linux.systemd.units]` across all loaded config files.
+///
+/// Unit names union global -> local; a more local config replaces the full
+/// unit declaration from a global config. Invalid entries warn and are skipped.
+pub fn systemd_from_config(config: &Config) -> Vec<SystemdRequest> {
+    let mut merged: IndexMap<String, SystemdTomlConfig> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (name, unit) in sys.linux.systemd.units {
+                merged.insert(name, unit);
+            }
+        }
+    }
+    let mut out = vec![];
+    for (name, unit) in merged {
+        match SystemdRequest::from_toml(name, unit) {
+            Ok(request) => out.push(request),
+            Err(err) => warn!("[bootstrap.linux.systemd.units]: {err}"),
+        }
+    }
+    out
 }
 
 /// Desired login shell from the most local config that declares it.

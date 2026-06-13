@@ -1017,6 +1017,45 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
+          name: "systemd",
+          description:
+            "Manage systemd user services from `[bootstrap.linux.systemd.units]`",
+          subcommands: [
+            {
+              name: "apply",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: "status",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured systemd user service is not in its desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+          ],
+        },
+        {
           name: "user",
           description:
             "Manage current-user bootstrap settings from `[bootstrap.user]`",
