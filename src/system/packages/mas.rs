@@ -162,10 +162,18 @@ async fn mas_list() -> Result<Vec<InstalledApp>> {
         .stderr(Stdio::piped())
         .output()
         .await?;
-    if json_output.status.success() {
+    let json_err = if json_output.status.success() {
         let stdout = String::from_utf8_lossy(&json_output.stdout);
-        return parse_mas_json(&stdout);
-    }
+        match parse_mas_json(&stdout) {
+            Ok(apps) => return Ok(apps),
+            Err(err) => {
+                debug!("mas list --json parse failed: {err}");
+                Some(err.to_string())
+            }
+        }
+    } else {
+        None
+    };
 
     debug!("$ mas list");
     let text_output = tokio::process::Command::new("mas")
@@ -181,7 +189,7 @@ async fn mas_list() -> Result<Vec<InstalledApp>> {
         bail!(
             "mas list failed: {}",
             if text_stderr.trim().is_empty() {
-                json_stderr.trim()
+                json_err.as_deref().unwrap_or_else(|| json_stderr.trim())
             } else {
                 text_stderr.trim()
             }
