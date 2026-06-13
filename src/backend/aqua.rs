@@ -2834,6 +2834,52 @@ mod tests {
     }
 
     #[test]
+    fn test_effective_extraction_format_accepts_unsupported_aqua_formats() {
+        let pkg = AquaPackage::default();
+
+        for (format, expected) in [
+            ("tar.br", ExtractionFormat::TarBr),
+            ("tbr", ExtractionFormat::TarBr),
+            ("br", ExtractionFormat::Br),
+            ("tar.lz4", ExtractionFormat::TarLz4),
+            ("tlz4", ExtractionFormat::TarLz4),
+            ("lz4", ExtractionFormat::Lz4),
+            ("tar.sz", ExtractionFormat::TarSz),
+            ("tsz", ExtractionFormat::TarSz),
+            ("sz", ExtractionFormat::Sz),
+            ("rar", ExtractionFormat::Rar),
+        ] {
+            assert_eq!(
+                AquaBackend::effective_extraction_format(&pkg, format).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_effective_extraction_format_rejects_unknown_aqua_formats() {
+        let pkg = AquaPackage::default();
+
+        let err = AquaBackend::effective_extraction_format(&pkg, "definitely-unknown").unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("unsupported aqua package format: definitely-unknown"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn test_github_archive_omitted_format_defaults_to_targz() {
+        let mut pkg = AquaPackage::default();
+        pkg.r#type = AquaPackageType::GithubArchive;
+
+        assert_eq!(
+            AquaBackend::effective_extraction_format(&pkg, "").unwrap(),
+            ExtractionFormat::TarGz
+        );
+    }
+
+    #[test]
     fn test_version_candidates_include_prefixed_v_tag() {
         let candidates = version_candidates("1.2.3", Some("tool/"))
             .into_iter()
