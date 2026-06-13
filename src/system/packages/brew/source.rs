@@ -106,7 +106,7 @@ pub async fn build(
 
     pr.set_message("resolve ruby".to_string());
     let ruby = ruby_bin().await?;
-    let formula_rb = fetch_formula_rb(formula, pr).await?;
+    let formula_rb = fetch_formula_rb(rf, pr).await?;
     let archive = fetch_source(formula, pr).await?;
 
     let build_root = crate::dirs::CACHE
@@ -141,8 +141,7 @@ pub async fn build(
             &formula_rb,
         ))
         .with_pr(pr);
-    // CmdLineRunner::execute blocks, and builds can run for many minutes
-    let built = tokio::task::block_in_place(|| cmd.execute());
+    let built = cmd.execute_async().await;
     if let Err(err) = built {
         let _ = crate::file::remove_all(&keg);
         return Err(err.wrap_err(format!("failed to build {name} {pkg_version} from source")));
@@ -214,7 +213,8 @@ async fn ruby_bin() -> Result<PathBuf> {
 
 /// Download the formula's .rb from homebrew/core, pinned to the commit the
 /// API metadata was generated from and verified against its sha256.
-async fn fetch_formula_rb(formula: &Formula, pr: &dyn SingleReport) -> Result<PathBuf> {
+async fn fetch_formula_rb(rf: &ResolvedFormula, pr: &dyn SingleReport) -> Result<PathBuf> {
+    let formula = &rf.formula;
     // all guaranteed present by check_buildable
     let rb_path = formula.ruby_source_path.as_ref().unwrap();
     let sha256 = formula
@@ -228,7 +228,12 @@ async fn fetch_formula_rb(formula: &Formula, pr: &dyn SingleReport) -> Result<Pa
     if dest.exists() && crate::hash::ensure_checksum(&dest, sha256, None, "sha256").is_ok() {
         return Ok(dest);
     }
-    let url = format!("{HOMEBREW_CORE_RAW}/{commit}/{rb_path}");
+    let raw_base = rf
+        .tap_raw_base
+        .as_deref()
+        .map(|base| base.trim_end_matches("/HEAD"))
+        .unwrap_or(HOMEBREW_CORE_RAW);
+    let url = format!("{raw_base}/{commit}/{rb_path}");
     pr.set_message(format!("download {rb_path}"));
     HTTP_FETCH.download_file(&url, &dest, Some(pr)).await?;
     crate::hash::ensure_checksum(&dest, sha256, Some(pr), "sha256")?;
@@ -454,6 +459,7 @@ mod tests {
         }
         Formula {
             name: "test".to_string(),
+            tap: None,
             aliases: vec![],
             versions: Versions {
                 stable: Some("1.0.0".to_string()),

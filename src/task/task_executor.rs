@@ -1235,11 +1235,9 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
-        // Apply sandbox async (DNS resolution for macOS) before blocking execute
+        // Apply sandbox async (DNS resolution for macOS) before spawning.
         cmd.apply_sandbox().await?;
-        // cmd.execute() is blocking (calls cp.wait()), so use block_in_place
-        // to avoid starving the tokio runtime while holding the TASK_RUNTIME_LOCK guard.
-        tokio::task::block_in_place(|| cmd.execute())?;
+        cmd.execute_async().await?;
         trace!("{prefix} exited successfully");
         Ok(())
     }

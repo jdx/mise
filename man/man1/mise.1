@@ -159,10 +159,10 @@ Manage bootstrap system packages from `[bootstrap.packages]`
 Manage Homebrew taps used by bootstrap packages
 .TP
 \fBbootstrap packages brew tap\fR
-Tap a Homebrew formula repository
+Add a Homebrew tap URL to [bootstrap.brew.taps]
 .TP
 \fBbootstrap packages brew untap\fR
-Untap Homebrew formula repositories
+Remove Homebrew tap URLs from [bootstrap.brew.taps]
 .RS
 \fIAliases: \fRremove, rm
 .RE
@@ -838,15 +838,21 @@ Output in JSON format
 \fB\-\-missing\fR
 Exit with code 1 if any configured defaults are not in their desired state
 .SH "MISE BOOTSTRAP PACKAGES BREW TAP"
-Tap a Homebrew formula repository
+Add a Homebrew tap URL to [bootstrap.brew.taps]
 .PP
 \fBUsage:\fR mise bootstrap packages brew tap [OPTIONS] <TAP> [<URL>]
 .PP
 \fBOptions:\fR
 .PP
 .TP
+\fB\-l, \-\-local\fR
+Write to the local config instead of the global config
+.TP
 \fB\-n, \-\-dry\-run\fR
-Print the command that would run without running it
+Print the config change without writing it
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
 \fBArguments:\fR
 .PP
 .TP
@@ -854,17 +860,23 @@ Print the command that would run without running it
 Tap name, e.g. `owner/repo`
 .TP
 \fB<URL>\fR
-Git URL for non\-GitHub or otherwise custom taps
+GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew\-<repo>.git
 .SH "MISE BOOTSTRAP PACKAGES BREW UNTAP"
-Untap Homebrew formula repositories
+Remove Homebrew tap URLs from [bootstrap.brew.taps]
 .PP
 \fBUsage:\fR mise bootstrap packages brew untap [OPTIONS] <TAPS> ...
 .PP
 \fBOptions:\fR
 .PP
 .TP
+\fB\-l, \-\-local\fR
+Write to the local config instead of the global config
+.TP
 \fB\-n, \-\-dry\-run\fR
-Print the command that would run without running it
+Print the config change without writing it
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
 \fBArguments:\fR
 .PP
 .TP
@@ -888,7 +900,7 @@ only.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only install packages for this manager, e.g. `apt` or `brew`
+Only install packages for this manager, e.g. `apt`, `brew`, or `brew\-cask`
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
@@ -922,8 +934,9 @@ Upgrade installed bootstrap packages from `[bootstrap.packages]`
 Refreshes package manager metadata and upgrades the configured packages
 that are already installed: apt/dnf/pacman upgrade to the newest available
 version (apt and dnf honor a version pinned in config), brew pours the
-formula's current bottle and replaces the old keg. Packages that are not
-installed yet are skipped — use `mise bootstrap packages install` for those.
+formula's current bottle and replaces the old keg, and brew\-cask installs
+the current cask artifact. Packages that are not installed yet are skipped
+— use `mise bootstrap packages install` for those.
 
 Packages can also be given explicitly in `manager:package` form.
 .PP
@@ -933,7 +946,7 @@ Packages can also be given explicitly in `manager:package` form.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only upgrade packages for this manager, e.g. `apt` or `brew`
+Only upgrade packages for this manager, e.g. `apt`, `brew`, or `brew\-cask`
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
@@ -953,9 +966,10 @@ to mise.toml (the local config by default, the global one with `\-g`) and
 then installs whatever is missing.
 
 Versions are pinned with `@`: `mise bootstrap packages use apt:curl@8.5.0\-2`. Without
-`@` (or with `@latest`) no pin is written. brew formulae version through
-their names instead (`brew:postgresql@17`), so `@` is always part of the
-formula name there.
+`@` (or with `@latest`) no pin is written. brew formulae and casks
+version through their names instead (for example `brew:postgresql@17`,
+`brew\-cask:temurin@17`), where `@` is part of the Homebrew name rather than
+a mise version selector.
 .PP
 \fBUsage:\fR mise bootstrap packages use [OPTIONS] <PACKAGE> ...
 .PP

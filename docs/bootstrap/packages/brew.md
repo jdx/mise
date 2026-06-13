@@ -1,13 +1,13 @@
 # brew <Badge type="warning" text="experimental" />
 
-Homebrew formulae from `homebrew/core` — **without requiring Homebrew to be
-installed**.
+Homebrew formulae and casks — **without requiring Homebrew to be installed**.
 
 ```toml
 [bootstrap.packages]
 "brew:postgresql@17" = "latest"
 "brew:ffmpeg" = "latest"
 "brew:imagemagick" = "latest"
+"brew-cask:firefox" = "latest"
 ```
 
 mise installs [homebrew/core](https://formulae.brew.sh) formulae directly
@@ -20,39 +20,57 @@ bottle. Formulae without a usable bottle are built from source, also without
 Homebrew (see [Source formulae](#source-formulae)). mise never shells out to
 `brew` for homebrew/core formulae.
 
-Third-party taps are supported when Homebrew itself is installed. Tapped
-formulae are delegated to a real `brew` command; use the same
-fully-qualified formula name you would pass to `brew install`:
+Third-party taps are supported directly when the tap publishes Homebrew API
+metadata (`api/formula/<name>.json` or `api/cask/<token>.json`). Use the same
+fully-qualified name you would pass to Homebrew:
 
 ```toml
 [bootstrap.packages]
 "brew:railwaycat/emacsmacport/emacs-mac" = "latest"
+"brew-cask:owner/tap/app" = "latest"
 ```
 
-For non-GitHub taps, or taps whose URL cannot be inferred by Homebrew, add a
-tap source. This mirrors `[plugins]`: the key is the tap name and the value
-is the git URL.
+For taps whose GitHub URL cannot be inferred, add a tap source. This mirrors
+`[plugins]`: the key is the tap name and the value is the GitHub git URL.
 
 ```toml
 [bootstrap.brew.taps]
-"acme/tools" = "https://git.example.com/acme/homebrew-tools.git"
+"acme/tools" = "https://github.com/acme/homebrew-tools.git"
 
 [bootstrap.packages]
 "brew:acme/tools/widget" = "latest"
+"brew-cask:acme/tools/widget-app" = "latest"
 ```
 
-Before installing or upgrading tapped formulae, mise runs `brew tap` for any
-configured tap URL and then `brew update-if-needed` so the tap is current.
-
-You can also manage taps imperatively, matching `mise plugins install` /
-`mise plugins uninstall`: these commands shell out to Homebrew and do not
-modify `mise.toml`.
+`mise bootstrap packages brew tap` and `mise bootstrap packages brew untap`
+manage `[bootstrap.brew.taps]` in `mise.toml`; they do not mutate a Homebrew
+installation. Non-GitHub taps are not currently supported because mise needs
+direct raw access to the generated API metadata.
 
 ```sh
 mise bootstrap packages brew tap railwaycat/emacsmacport
-mise bootstrap packages brew tap acme/tools https://git.example.com/acme/homebrew-tools.git
+mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git
 mise bootstrap packages brew untap acme/tools
 ```
+
+## Casks
+
+Casks use the `brew-cask:` manager. mise fetches cask metadata directly from
+the Homebrew cask API (or from tap API metadata), downloads the artifact,
+verifies its sha256 when the cask provides one, extracts the archive, and
+installs app bundles into `/Applications` while recording the version under
+`<prefix>/Caskroom`.
+
+```toml
+[bootstrap.packages]
+"brew-cask:firefox" = "latest"
+"brew-cask:homebrew/cask/visual-studio-code" = "latest"
+```
+
+`brew-cask` currently supports app-bundle casks (`app` artifacts) from dmg,
+zip, and tar archives. Casks that only install pkg installers, preflight
+scripts, services, or other cask artifact types fail with a clear unsupported
+artifact error instead of delegating to Homebrew.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
@@ -164,11 +182,10 @@ operation.
 
 ## Limitations
 
-- **Formulae only.** Casks (GUI apps) and `brew services` are not
-  implemented.
-- **Tapped formulae require Homebrew.** mise's direct bottle/source installer
-  is only for homebrew/core. Fully-qualified third-party tap formulae are
-  delegated to a real `brew` command.
+- **Cask artifact coverage is intentionally narrow.** `brew-cask` supports
+  app bundles from common archive formats. Other artifact types fail
+  explicitly.
+- **`brew services` is not implemented.**
 - **Source builds cover the common formula shapes.** mise's formula shim
   implements the widely-used subset of the DSL (see
   [Source formulae](#source-formulae)); formulae that reach beyond it fail

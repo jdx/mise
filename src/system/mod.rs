@@ -64,9 +64,9 @@ pub struct BootstrapMacosTomlConfig {
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct SystemBrewTomlConfig {
-    /// `[bootstrap.brew.taps]`: `owner/tap` -> git URL. Like `[plugins]`,
-    /// this lets shared config name non-GitHub or otherwise custom tap
-    /// remotes while package entries stay focused on formulae.
+    /// `[bootstrap.brew.taps]`: `owner/tap` -> GitHub git URL. Like
+    /// `[plugins]`, this lets shared config name tap remotes while package
+    /// entries stay focused on formulae/casks.
     #[serde(default)]
     pub taps: IndexMap<String, String>,
 }
@@ -103,12 +103,13 @@ pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
 /// Split a `mise bootstrap packages use` spec `manager:package[@version]` into its parts.
 ///
 /// `@version` mirrors `mise use tool@version`; `@latest` (or no `@`) means no
-/// pin. brew is exempt from `@` parsing: `@` is part of brew formula *names*
-/// (`postgresql@17` — that name IS brew's versioning mechanism), and brew
-/// bottles can't be installed at a pinned version anyway.
+/// pin. brew and brew-cask are exempt from `@` parsing: `@` is part of
+/// Homebrew names (`postgresql@17` — that name IS brew's versioning
+/// mechanism), and bottles/casks can't be installed at a pinned version
+/// anyway.
 pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
     let (mgr, rest) = parse_spec(spec)?;
-    if mgr == "brew" {
+    if is_brew_manager(&mgr) {
         return Ok((
             mgr,
             PackageRequest {
@@ -152,11 +153,13 @@ pub fn packages_from_requests(
 
 pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<PackageRequest>>) {
     let brew_taps = brew_taps_from_config(config);
-    let Some(requests) = by_mgr.get_mut("brew") else {
-        return;
-    };
-    for request in requests {
-        request.tap_url = brew_tap_name(&request.name).and_then(|tap| brew_taps.get(tap).cloned());
+    for mgr in ["brew", "brew-cask"] {
+        if let Some(requests) = by_mgr.get_mut(mgr) {
+            for request in requests {
+                request.tap_url =
+                    brew_tap_name(&request.name).and_then(|tap| brew_taps.get(tap).cloned());
+            }
+        }
     }
 }
 
@@ -195,7 +198,7 @@ fn packages_from_config_files_with_brew_taps(
         match parse_spec(&spec) {
             Ok((mgr, name)) => {
                 let version = (version != "latest").then_some(version);
-                let tap_url = if mgr == "brew" {
+                let tap_url = if is_brew_manager(&mgr) {
                     brew_tap_name(&name).and_then(|tap| brew_taps.get(tap).cloned())
                 } else {
                     None
@@ -287,7 +290,7 @@ pub fn packages_from_specs_with_config(
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
-        let tap_url = if mgr == "brew" {
+        let tap_url = if is_brew_manager(&mgr) {
             brew_tap_name(&name).and_then(|tap| brew_taps.get(tap).cloned())
         } else {
             None
@@ -313,11 +316,15 @@ pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
     if parts.next().is_some() || owner.is_empty() || tap.is_empty() || formula.is_empty() {
         return None;
     }
-    if owner == "homebrew" && tap == "core" {
+    if owner == "homebrew" && (tap == "core" || tap == "cask") {
         None
     } else {
         name.rsplit_once('/').map(|(tap, _)| tap)
     }
+}
+
+fn is_brew_manager(mgr: &str) -> bool {
+    matches!(mgr, "brew" | "brew-cask")
 }
 
 fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
@@ -407,6 +414,11 @@ mod tests {
         assert_eq!(req.name, "postgresql@17");
         assert_eq!(req.version, None);
 
+        let (mgr, req) = parse_use_spec("brew-cask:temurin@17").unwrap();
+        assert_eq!(mgr, "brew-cask");
+        assert_eq!(req.name, "temurin@17");
+        assert_eq!(req.version, None);
+
         assert!(parse_use_spec("apt:curl@").is_err());
         assert!(parse_use_spec("noprefix").is_err());
     }
@@ -418,6 +430,7 @@ mod tests {
             Some("railwaycat/emacsmacport")
         );
         assert_eq!(brew_tap_name("homebrew/core/jq"), None);
+        assert_eq!(brew_tap_name("homebrew/cask/firefox"), None);
         assert_eq!(brew_tap_name("jq"), None);
         assert_eq!(brew_tap_name("too/many/slashes/here"), None);
     }

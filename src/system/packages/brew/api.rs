@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use eyre::{WrapErr, eyre};
+use eyre::{WrapErr, bail, eyre};
 use serde::Deserialize;
 
 use crate::http::HTTP_FETCH;
@@ -13,6 +13,8 @@ const API_BASE: &str = "https://formulae.brew.sh/api";
 #[derive(Debug, Clone, Deserialize)]
 pub struct Formula {
     pub name: String,
+    #[serde(default)]
+    pub tap: Option<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
     pub versions: Versions,
@@ -140,10 +142,103 @@ pub async fn formula(name: &str) -> Result<Formula> {
     HTTP_FETCH
         .json_cached::<Formula, _>(url)
         .await
+        .wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
+}
+
+pub async fn formula_with_tap_name(
+    name: &str,
+    tap_name: Option<&str>,
+    tap_url: Option<&str>,
+) -> Result<Formula> {
+    let Some((owner, tap, formula_name)) = split_tap_name(name).or_else(|| {
+        let (owner, tap) = split_tap(tap_name?)?;
+        Some((owner, tap, name))
+    }) else {
+        return formula(name).await;
+    };
+    if owner == "homebrew" && tap == "core" {
+        return formula(formula_name).await;
+    }
+    let Some(url) = tap_formula_api_url(owner, tap, formula_name, tap_url) else {
+        bail!(
+            "brew: tapped formula '{name}' needs a GitHub tap URL in [bootstrap.brew.taps] \
+             so mise can fetch metadata directly without the brew CLI"
+        );
+    };
+    HTTP_FETCH
+        .json_cached::<Formula, _>(url)
+        .await
         .wrap_err_with(|| {
             format!(
-                "failed to fetch Homebrew formula '{name}'. mise only supports homebrew/core formulae \
-                 (third-party taps require Homebrew itself)"
+                "failed to fetch Homebrew tap formula '{name}' directly. \
+                 The tap must publish API metadata at api/formula/{formula_name}.json; \
+                 mise will not proxy to the brew CLI"
             )
         })
+}
+
+pub(super) fn tap_name(name: &str) -> Option<String> {
+    let (owner, tap, _) = split_tap_name(name)?;
+    if owner == "homebrew" && tap == "core" {
+        None
+    } else {
+        Some(format!("{owner}/{tap}"))
+    }
+}
+
+fn split_tap(name: &str) -> Option<(&str, &str)> {
+    let mut parts = name.split('/');
+    let owner = parts.next()?;
+    let tap = parts.next()?;
+    if parts.next().is_some() || owner.is_empty() || tap.is_empty() {
+        None
+    } else {
+        Some((owner, tap))
+    }
+}
+
+pub(super) fn split_tap_name(name: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = name.split('/');
+    let owner = parts.next()?;
+    let tap = parts.next()?;
+    let formula = parts.next()?;
+    if parts.next().is_some() || owner.is_empty() || tap.is_empty() || formula.is_empty() {
+        None
+    } else {
+        Some((owner, tap, formula))
+    }
+}
+
+fn tap_formula_api_url(
+    owner: &str,
+    tap: &str,
+    formula: &str,
+    tap_url: Option<&str>,
+) -> Option<String> {
+    let repo = tap_raw_base(owner, tap, tap_url)?;
+    Some(format!("{repo}/api/formula/{formula}.json"))
+}
+
+pub(super) fn tap_raw_base(owner: &str, tap: &str, tap_url: Option<&str>) -> Option<String> {
+    match tap_url {
+        Some(url) => github_raw_base(url),
+        None => Some(format!(
+            "https://raw.githubusercontent.com/{owner}/homebrew-{tap}/HEAD"
+        )),
+    }
+}
+
+pub(super) fn github_raw_base(url: &str) -> Option<String> {
+    let url = url.trim_end_matches(".git").trim_end_matches('/');
+    let rest = url.strip_prefix("https://github.com/")?;
+    let mut parts = rest.split('/');
+    let owner = parts.next()?;
+    let repo = parts.next()?;
+    if parts.next().is_some() || owner.is_empty() || repo.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "https://raw.githubusercontent.com/{owner}/{repo}/HEAD"
+        ))
+    }
 }
