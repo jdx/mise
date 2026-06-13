@@ -170,7 +170,7 @@ fn resolve_entry(entry: EditTomlEntry, base: &Path) -> Result<(String, EditReque
                 .comment
                 .unwrap_or_else(|| infer_comment(&path).to_string());
             (
-                format!("{path_raw}\u{0}block:{id}"),
+                format!("{}\u{0}block:{id}", path.display()),
                 EditOp::Block {
                     id,
                     source,
@@ -180,7 +180,7 @@ fn resolve_entry(entry: EditTomlEntry, base: &Path) -> Result<(String, EditReque
             )
         }
         (false, Some(line)) => (
-            format!("{path_raw}\u{0}line:{line}"),
+            format!("{}\u{0}line:{line}", path.display()),
             EditOp::Line { line: line.clone() },
         ),
     };
@@ -218,15 +218,17 @@ fn end_marker(comment: &str, id: &str) -> String {
 }
 
 /// a line is a marker only when the pattern sits at the start of the line,
-/// preceded by at most a short comment token (`# `, `// `, `-- `, `<!-- `) —
-/// content that merely *mentions* a marker (`echo ">>> mise:x >>>"`, docs)
-/// must not count as one
-fn is_marker_line(line: &str, pat: &str) -> bool {
+/// preceded by either the configured comment token or at most a short
+/// generic one (`# `, `// `, `-- `, `<!-- `) — content that merely
+/// *mentions* a marker (`echo ">>> mise:x >>>"`, docs) must not count as one
+fn is_marker_line(line: &str, pat: &str, comment: &str) -> bool {
     let trimmed = line.trim_start();
     match trimmed.find(pat) {
         Some(idx) => {
-            let prefix = &trimmed[..idx];
-            prefix.len() <= 8 && !prefix.chars().any(|c| c.is_alphanumeric())
+            let prefix = trimmed[..idx].trim();
+            // the configured comment always counts, however exotic (`REM`),
+            // so markers we write are always markers we can find again
+            prefix == comment || (prefix.len() <= 8 && !prefix.chars().any(|c| c.is_alphanumeric()))
         }
         None => false,
     }
@@ -234,19 +236,23 @@ fn is_marker_line(line: &str, pat: &str) -> bool {
 
 /// locate an id's marker pair in the file's lines: Ok(None) = no markers,
 /// Ok(Some((begin, end))) = line indexes, Err = corrupted markers
-fn find_block(lines: &[&str], id: &str) -> std::result::Result<Option<(usize, usize)>, String> {
+fn find_block(
+    lines: &[&str],
+    id: &str,
+    comment: &str,
+) -> std::result::Result<Option<(usize, usize)>, String> {
     let begin_pat = format!(">>> mise:{id} >>>");
     let end_pat = format!("<<< mise:{id} <<<");
     let begins: Vec<usize> = lines
         .iter()
         .enumerate()
-        .filter(|(_, l)| is_marker_line(l, &begin_pat))
+        .filter(|(_, l)| is_marker_line(l, &begin_pat, comment))
         .map(|(i, _)| i)
         .collect();
     let ends: Vec<usize> = lines
         .iter()
         .enumerate()
-        .filter(|(_, l)| is_marker_line(l, &end_pat))
+        .filter(|(_, l)| is_marker_line(l, &end_pat, comment))
         .map(|(i, _)| i)
         .collect();
     match (begins.as_slice(), ends.as_slice()) {
@@ -266,7 +272,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
         id,
         source,
         template,
-        ..
+        comment,
     } = &req.op
     else {
         return Ok(None);
@@ -290,7 +296,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     // a block containing its own marker lines would write a file that can't
     // be parsed back — refuse up front instead of corrupting on reapply
     for pat in [format!(">>> mise:{id} >>>"), format!("<<< mise:{id} <<<")] {
-        if content.lines().any(|l| is_marker_line(l, &pat)) {
+        if content.lines().any(|l| is_marker_line(l, &pat, comment)) {
             bail!(
                 "[[system.edits]] \"{}\": block content may not contain its own marker lines",
                 req.path_raw
@@ -317,45 +323,56 @@ pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
         return Ok(FileState::SourceMissing);
     }
     let desired = desired_content(config, req)?;
-    check_resolved(req, desired.as_deref())
+    Ok(match check_resolved(req, desired.as_deref())? {
+        EditCheck::State(state) => state,
+        EditCheck::Blocked(reason) => FileState::Differs(reason),
+    })
+}
+
+const SYMLINK_REASON: &str = "target is a symlink; edit the real file instead";
+
+/// outcome of inspecting one edit: an ordinary state, or a condition mise
+/// refuses to apply automatically (corrupted markers, symlink target)
+enum EditCheck {
+    State(FileState),
+    Blocked(String),
 }
 
 /// [`check`] with block content already resolved, so callers that go on to
 /// write the file resolve and render only once
-fn check_resolved(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
+fn check_resolved(req: &EditRequest, desired: Option<&str>) -> Result<EditCheck> {
     // edits write through symlinks into whatever they point at (often a
     // [system.files] source) — surface that instead of silently doing it
     if req.path.is_symlink() {
-        return Ok(FileState::Differs(
-            "target is a symlink; edit the real file instead".into(),
-        ));
+        return Ok(EditCheck::Blocked(SYMLINK_REASON.into()));
     }
     if !req.path.exists() {
-        return Ok(FileState::Missing);
+        return Ok(EditCheck::State(FileState::Missing));
     }
     let text = file::read_to_string(&req.path)?;
     let lines: Vec<&str> = text.lines().collect();
-    match &req.op {
-        EditOp::Block { id, .. } => match find_block(&lines, id) {
-            Err(reason) => Ok(FileState::Differs(reason)),
-            Ok(None) => Ok(FileState::Missing),
+    let state = match &req.op {
+        EditOp::Block { id, comment, .. } => match find_block(&lines, id, comment) {
+            Err(reason) => return Ok(EditCheck::Blocked(reason)),
+            Ok(None) => FileState::Missing,
             Ok(Some((begin, end))) => {
                 let current = lines[begin + 1..end].join("\n");
                 if current == desired.expect("resolved block content") {
-                    Ok(FileState::Applied)
+                    FileState::Applied
                 } else {
-                    Ok(FileState::Differs("block content differs".into()))
+                    FileState::Differs("block content differs".into())
                 }
             }
         },
         EditOp::Line { line } => {
             if lines.contains(&line.as_str()) {
-                Ok(FileState::Applied)
+                FileState::Applied
             } else {
-                Ok(FileState::Missing)
+                FileState::Missing
             }
         }
-    }
+    };
+    Ok(EditCheck::State(state))
 }
 
 pub struct ApplyOpts {
@@ -391,7 +408,7 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
         if opts.dry_run && is_template {
             if req.path.is_symlink() {
                 problems.push(format!(
-                    "  \"{}\" ({}): target is a symlink; edit the real file instead",
+                    "  \"{}\" ({}): {SYMLINK_REASON}",
                     req.path_raw,
                     req.describe_op()
                 ));
@@ -402,10 +419,8 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
         }
         let desired = desired_content(config, req)?;
         match check_resolved(req, desired.as_deref())? {
-            FileState::Applied => continue,
-            FileState::Differs(reason)
-                if reason.contains("marker") || reason.contains("symlink") =>
-            {
+            EditCheck::State(FileState::Applied) => continue,
+            EditCheck::Blocked(reason) => {
                 problems.push(format!(
                     "  \"{}\" ({}): {reason}",
                     req.path_raw,
@@ -413,7 +428,7 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
                 ));
                 continue;
             }
-            _ => todo.push((req, desired)),
+            EditCheck::State(_) => todo.push((req, desired)),
         }
     }
     if !problems.is_empty() {
@@ -485,7 +500,11 @@ fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
                 block.extend(desired.lines().map(|l| l.to_string()));
             }
             block.push(end_marker(comment, id));
-            match find_block(&lines.iter().map(|l| l.as_str()).collect::<Vec<_>>(), id) {
+            match find_block(
+                &lines.iter().map(|l| l.as_str()).collect::<Vec<_>>(),
+                id,
+                comment,
+            ) {
                 // markers are rewritten too, so a changed comment style or
                 // marker wording converges on reapply
                 Ok(Some((begin, end))) => {
@@ -529,26 +548,31 @@ mod tests {
             "# <<< mise:a <<<",
             "after",
         ];
-        assert_eq!(find_block(&lines, "a"), Ok(Some((1, 3))));
-        assert_eq!(find_block(&lines, "b"), Ok(None));
+        assert_eq!(find_block(&lines, "a", "#"), Ok(Some((1, 3))));
+        assert_eq!(find_block(&lines, "b", "#"), Ok(None));
         // ids are delimited — "a" must not match "ab"
         let lines = vec!["# >>> mise:ab >>>", "# <<< mise:ab <<<"];
-        assert_eq!(find_block(&lines, "a"), Ok(None));
+        assert_eq!(find_block(&lines, "a", "#"), Ok(None));
         // content that mentions a marker mid-line is not a marker
         let lines = vec![
             "# >>> mise:a >>>",
             r#"echo "keep the >>> mise:a >>> line intact""#,
             "# <<< mise:a <<<",
         ];
-        assert_eq!(find_block(&lines, "a"), Ok(Some((0, 2))));
+        assert_eq!(find_block(&lines, "a", "#"), Ok(Some((0, 2))));
         // ...but indented comment markers still count
         let lines = vec!["  # >>> mise:a >>>", "  # <<< mise:a <<<"];
-        assert_eq!(find_block(&lines, "a"), Ok(Some((0, 1))));
+        assert_eq!(find_block(&lines, "a", "#"), Ok(Some((0, 1))));
         let lines = vec!["<!-- >>> mise:a >>>", "<!-- <<< mise:a <<<"];
-        assert_eq!(find_block(&lines, "a"), Ok(Some((0, 1))));
+        assert_eq!(find_block(&lines, "a", "#"), Ok(Some((0, 1))));
         let lines = vec!["# >>> mise:a >>>"];
-        assert!(find_block(&lines, "a").is_err());
+        assert!(find_block(&lines, "a", "#").is_err());
         let lines = vec!["# <<< mise:a <<<", "# >>> mise:a >>>"];
-        assert!(find_block(&lines, "a").is_err());
+        assert!(find_block(&lines, "a", "#").is_err());
+        // an exotic configured comment token (alphanumeric, like batch REM)
+        // is always recognized, so written markers can be found again
+        let lines = vec!["REM >>> mise:a >>>", "REM <<< mise:a <<<"];
+        assert_eq!(find_block(&lines, "a", "REM"), Ok(Some((0, 1))));
+        assert_eq!(find_block(&lines, "a", "#"), Ok(None));
     }
 }
