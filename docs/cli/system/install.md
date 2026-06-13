@@ -5,13 +5,14 @@
 - **Aliases**: `i`
 - **Source code**: [`src/cli/system/install.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/install.rs)
 
-Install missing system packages from `[system.packages]` and apply macOS
-defaults from `[system.defaults]`
+Install missing system packages from `[system.packages]`, apply files
+from `[system.files]`, and write macOS defaults from `[system.defaults]`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting). On macOS, also writes any
-`[system.defaults]` entries that are unset or differ from the config.
+root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
+entries that aren't in their desired state are applied, and on macOS any
+`[system.defaults]` entries that are unset or differ are written.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -25,6 +26,10 @@ only.
 Packages in `manager:package` form; defaults to everything configured in [system.packages]
 
 ## Flags
+
+### `-f --force`
+
+Overwrite existing files that conflict with `[system.files]` entries
 
 ### `-m --manager <MANAGER>`
 

@@ -16,6 +16,10 @@ and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
 pages).
 
+mise can also place machine-global config files (dotfiles) — see
+[System Files](/system-files.html), which follows the same rules and shares
+the same commands.
+
 System packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are installed
 machine-globally by the platform's package manager — or, for `brew`, by
@@ -59,7 +63,7 @@ applied by the same `mise system install` command.
 ```sh
 mise system status            # table of requested vs installed packages
 mise system status --json     # machine-readable
-mise system status --missing  # exit 1 if anything is missing (CI check)
+mise system status --missing  # exit 1 if anything is out of sync (CI check)
 
 mise system install           # install whatever is missing (prompts first)
 mise system install apt:curl  # install specific packages (configured or not)
@@ -143,6 +147,10 @@ In containers you're typically already root, so no prompts occur:
 mise system install --yes
 mise install
 ```
+
+[`mise bootstrap --yes`](/cli/bootstrap.html) combines both (and runs a task
+named `bootstrap` afterwards, if one is defined) — one command to set up a
+fresh machine or container.
 
 `mise system status --missing` exits 1 when packages are missing, which makes
 a convenient CI check without installing anything.

@@ -2959,8 +2959,42 @@
     },
     "system": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages, macOS defaults)",
+      "description": "[experimental] machine-global bootstrapping (system packages, files, macOS defaults)",
       "properties": {
+        "files": {
+          "type": "object",
+          "description": "files to apply with `mise system install`, keyed by target path (e.g. \"~/.gitconfig\"); sources resolve relative to this config file",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "source path, symlinked to the target"
+              },
+              {
+                "type": "object",
+                "required": ["source"],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "description": "source file or directory"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "description": "how to apply the source to the target: symlink (default), symlink-each, copy, or template; unknown modes from newer mise versions warn and are skipped",
+                    "anyOf": [
+                      {
+                        "enum": ["symlink", "symlink-each", "copy", "template"]
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
         "packages": {
           "type": "object",
           "description": "system packages to install with `mise system install`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",

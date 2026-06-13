@@ -104,6 +104,10 @@ export default withMermaid(
               ],
             },
             {
+              text: "System Files (experimental)",
+              link: "/system-files",
+            },
+            {
               text: "Backend Architecture",
               link: "/dev-tools/backend_architecture",
             },

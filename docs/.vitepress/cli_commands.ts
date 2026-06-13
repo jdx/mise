@@ -25,6 +25,9 @@ export const commands: { [key: string]: Command } = {
   "bin-paths": {
     hide: false,
   },
+  bootstrap: {
+    hide: false,
+  },
   cache: {
     hide: false,
     subcommands: {
