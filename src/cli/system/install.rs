@@ -191,6 +191,49 @@ pub(crate) async fn apply_launchd(
     Ok(())
 }
 
+/// Apply `[bootstrap.linux.systemd.units]` entries that are missing, changed,
+/// or inactive. Inert off-Linux.
+pub(crate) async fn apply_systemd(
+    units: Vec<system::systemd::SystemdRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    use crate::system::systemd::{self, SystemdState};
+    if units.is_empty() {
+        return Ok(());
+    }
+    if !systemd::is_available() {
+        debug!("systemd: skipping, {}", systemd::unavailable_reason());
+        return Ok(());
+    }
+    let statuses = systemd::status(&units).await?;
+    let targets: Vec<_> = statuses
+        .iter()
+        .filter(|s| s.state != SystemdState::Active)
+        .map(|s| s.request.clone())
+        .collect();
+    let active = statuses.len() - targets.len();
+    if active > 0 {
+        info!("systemd: {active} unit(s) already active");
+    }
+    if targets.is_empty() {
+        return Ok(());
+    }
+    let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("systemd: install/start {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)? {
+            info!("systemd: skipped");
+            return Ok(());
+        }
+    }
+    systemd::apply(&targets, dry_run).await?;
+    if !dry_run {
+        info!("systemd: installed/started {}", list.join(", "));
+    }
+    Ok(())
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 

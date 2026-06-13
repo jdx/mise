@@ -296,13 +296,15 @@ Runs the bootstrap steps for the current config in order:
    `[bootstrap.macos.defaults]` entries (macOS)
    surrounded by `pre-defaults`/`post-defaults` hooks
 4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-5. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+5. `mise bootstrap systemd apply` — install/start systemd user services
+   (Linux)
+6. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
    surrounded by `pre-user`/`post-user` hooks
-6. `mise install` — install missing tools from `[tools]`
+7. `mise install` — install missing tools from `[tools]`
    surrounded by `pre-tools`/`post-tools` hooks
-7. `mise run bootstrap` — if a task named `bootstrap` is defined
-8. `[bootstrap.hooks.final]` — optional final hook
+8. `mise run bootstrap` — if a task named `bootstrap` is defined
+9. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -317,6 +319,7 @@ Examples:
     $ mise bootstrap packages install --yes
     $ mise bootstrap macos-defaults status
     $ mise bootstrap launchd apply --dry-run
+    $ mise bootstrap systemd apply --dry-run
     $ mise bootstrap user apply --dry-run
 
 """#
@@ -497,6 +500,16 @@ Examples:
             }
             flag "-y --yes" help="Skip the confirmation prompt"
             arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
+        }
+    }
+    cmd systemd subcommand_required=#true help="Manage systemd user services from `[bootstrap.linux.systemd.units]`" {
+        cmd apply {
+            flag "-n --dry-run" help="Print the commands that would run without running them"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if any configured systemd user service is not in its desired state"
         }
     }
     cmd user subcommand_required=#true help="Manage current-user bootstrap settings from `[bootstrap.user]`" {

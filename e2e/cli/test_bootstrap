@@ -52,6 +52,16 @@ EOF
 assert_succeed "mise bootstrap --dry-run"
 assert_contains "mise bootstrap launchd status" "skipped"
 
+# systemd user services are declarative and safe to inspect in dry-runs
+cat <<EOF >mise.toml
+[bootstrap.linux.systemd.units.my-sync]
+description = "sync files"
+exec_start = "~/.local/bin/my-sync --watch"
+restart = "on-failure"
+EOF
+assert_succeed "mise bootstrap --dry-run"
+assert_contains "mise bootstrap systemd status" "my-sync"
+
 # unavailable system package managers are skipped, not errors
 cat <<EOF >mise.toml
 [bootstrap.packages]
