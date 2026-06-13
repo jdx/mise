@@ -33,6 +33,34 @@ assert "readlink ~/.config/nvim" "$PWD/dotfiles/nvim"
 assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
 assert "readlink ~/.local/mybin/two" "$PWD/dotfiles/bin/two"
 
+# wildcard sources expand to concrete target paths using matching target wildcards
+mkdir -p dotfiles/config dotfiles/question dotfiles/classes dotfiles/tree/nested
+echo "bat config" >dotfiles/config/bat.conf
+echo "question config" >dotfiles/question/app1.conf
+echo "class config" >dotfiles/classes/theme-a.conf
+echo "root config" >dotfiles/tree/root.conf
+echo "tool config" >dotfiles/tree/nested/tool.conf
+cat <<EOF >>mise.toml
+"~/.config/*.conf" = { source = "dotfiles/config/*.conf", mode = "copy" }
+"~/.local/question/app?.conf" = { source = "dotfiles/question/app?.conf", mode = "copy" }
+"~/.local/classes/theme-[ab].conf" = { source = "dotfiles/classes/theme-[ab].conf", mode = "copy" }
+"~/.local/tree/**/*.conf" = "dotfiles/tree/**/*.conf"
+EOF
+assert_succeed "mise system install --yes"
+assert "cat ~/.config/bat.conf" "bat config"
+assert "cat ~/.local/question/app1.conf" "question config"
+assert "cat ~/.local/classes/theme-a.conf" "class config"
+assert "readlink ~/.local/tree/root.conf" "$PWD/dotfiles/tree/root.conf"
+assert "readlink ~/.local/tree/nested/tool.conf" "$PWD/dotfiles/tree/nested/tool.conf"
+
+# empty wildcard sources are skipped instead of blocking unrelated entries
+cat <<EOF >>mise.toml
+"~/.config/missing-*.conf" = "dotfiles/config/missing-*.conf"
+EOF
+assert_succeed "mise system status"
+assert_contains "mise system status 2>&1" "source pattern matched no files"
+assert_succeed "mise system install --yes"
+
 # symlink-each leaves room for files mise doesn't manage
 touch ~/.local/mybin/unmanaged
 
@@ -49,6 +77,7 @@ assert_succeed "mise system install --yes"
 assert "cat ~/.config/starship.toml" "starship v2"
 
 # template permission drift is detected and repaired
+chmod 644 ~/.ssh/config
 chmod 600 dotfiles/ssh_config.tmpl
 assert_contains "mise system status" "permissions differ"
 assert_succeed "mise system install --yes"

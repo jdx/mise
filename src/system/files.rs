@@ -21,6 +21,8 @@ use std::path::{Path, PathBuf};
 
 use eyre::{Result, bail};
 use indexmap::IndexMap;
+use itertools::Itertools;
+use regex::Regex;
 use serde::Deserialize;
 
 use crate::config::Config;
@@ -148,19 +150,221 @@ pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
             } else {
                 source
             };
-            merged.insert(
-                target.clone(),
-                FileRequest {
-                    target_raw,
-                    target,
-                    source,
-                    mode,
-                    base: base.clone(),
-                },
-            );
+            for req in expand_request(target_raw, target, source, mode, base.clone()) {
+                merged.insert(req.target.clone(), req);
+            }
         }
     }
     merged.into_values().collect()
+}
+
+fn expand_request(
+    target_raw: String,
+    target: PathBuf,
+    source: PathBuf,
+    mode: FileMode,
+    base: PathBuf,
+) -> Vec<FileRequest> {
+    if !is_glob_pattern(&source) {
+        return vec![FileRequest {
+            target_raw,
+            target,
+            source,
+            mode,
+            base,
+        }];
+    }
+
+    let source_pattern = source.to_string_lossy().to_string();
+    let matches = match glob::glob(&source_pattern) {
+        Ok(paths) => paths
+            .filter_map(|path| match path {
+                Ok(path) => Some(path),
+                Err(err) => {
+                    warn!(
+                        "[system.files].\"{target_raw}\": error reading source pattern {source_pattern}: {err}"
+                    );
+                    None
+                }
+            })
+            .sorted()
+            .collect_vec(),
+        Err(err) => {
+            warn!("[system.files].\"{target_raw}\": invalid source pattern: {err}");
+            return vec![];
+        }
+    };
+    if matches.is_empty() {
+        warn!("[system.files].\"{target_raw}\": source pattern matched no files, ignoring entry");
+        return vec![];
+    }
+
+    let target_pattern = target.to_string_lossy().to_string();
+    if !is_glob_pattern(&target) {
+        if matches.len() > 1 {
+            warn!(
+                "[system.files].\"{target_raw}\": source pattern matched multiple paths but target has no wildcard, ignoring entry"
+            );
+            return vec![];
+        }
+        return vec![FileRequest {
+            target_raw,
+            target,
+            source: matches[0].clone(),
+            mode,
+            base,
+        }];
+    }
+
+    matches
+        .into_iter()
+        .filter_map(|matched_source| {
+            let captures = match wildcard_captures(&source_pattern, &matched_source) {
+                Ok(captures) => captures,
+                Err(err) => {
+                    warn!("[system.files].\"{target_raw}\": {err}");
+                    return None;
+                }
+            };
+            let Some(target_path) = expand_target_pattern(&target_pattern, &captures) else {
+                warn!(
+                    "[system.files].\"{target_raw}\": target wildcard count does not match source pattern, ignoring {}",
+                    matched_source.display_user()
+                );
+                return None;
+            };
+            Some(FileRequest {
+                target_raw: target_path.display_user().to_string(),
+                target: target_path,
+                source: matched_source,
+                mode,
+                base: base.clone(),
+            })
+        })
+        .collect()
+}
+
+fn is_glob_pattern(path: &Path) -> bool {
+    path.to_string_lossy()
+        .chars()
+        .any(|c| matches!(c, '*' | '?' | '['))
+}
+
+fn wildcard_captures(pattern: &str, path: &Path) -> Result<Vec<String>> {
+    let path = normalize_path_separators(&path.to_string_lossy());
+    let re = wildcard_regex(pattern)?;
+    let Some(captures) = re.captures(&path) else {
+        bail!("source pattern did not match {path}");
+    };
+    Ok((1..captures.len())
+        .map(|i| {
+            captures
+                .get(i)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default()
+        })
+        .collect())
+}
+
+fn wildcard_regex(pattern: &str) -> Result<Regex> {
+    let mut re = String::from("^");
+    let pattern = normalize_path_separators(pattern);
+    let mut chars = pattern.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '*' if chars.peek() == Some(&'*') => {
+                chars.next();
+                if chars.peek() == Some(&'/') {
+                    chars.next();
+                    // Glob `**/` can match zero directories. Capture the
+                    // directory body without the trailing slash so target
+                    // expansion can omit the slash when the capture is empty.
+                    re.push_str("(?:(.*)/)?");
+                } else {
+                    re.push_str("(.*)");
+                }
+            }
+            '*' => re.push_str("([^/]*)"),
+            '?' => re.push_str("([^/])"),
+            '[' => {
+                let Some(class) = read_glob_class(&mut chars) else {
+                    re.push_str("\\[");
+                    continue;
+                };
+                re.push('(');
+                re.push_str(&class);
+                re.push(')');
+            }
+            _ => re.push_str(&regex::escape(&ch.to_string())),
+        }
+    }
+    re.push('$');
+    Ok(Regex::new(&re)?)
+}
+
+fn expand_target_pattern(pattern: &str, captures: &[String]) -> Option<PathBuf> {
+    let mut out = String::new();
+    let pattern = normalize_path_separators(pattern);
+    let mut chars = pattern.chars().peekable();
+    let mut captures = captures.iter();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '*' if chars.peek() == Some(&'*') => {
+                chars.next();
+                let capture = normalize_path_separators(captures.next()?);
+                if chars.peek() == Some(&'/') {
+                    chars.next();
+                    if !capture.is_empty() {
+                        out.push_str(&capture);
+                        out.push('/');
+                    }
+                } else {
+                    out.push_str(&capture);
+                }
+            }
+            '*' => out.push_str(&normalize_path_separators(captures.next()?)),
+            '?' => out.push_str(&normalize_path_separators(captures.next()?)),
+            '[' => {
+                read_glob_class(&mut chars)?;
+                out.push_str(&normalize_path_separators(captures.next()?));
+            }
+            _ => out.push(ch),
+        }
+    }
+    if captures.next().is_some() {
+        return None;
+    }
+    Some(PathBuf::from(native_path_separators(&out)))
+}
+
+fn normalize_path_separators(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+fn native_path_separators(path: &str) -> String {
+    if std::path::MAIN_SEPARATOR == '/' {
+        path.to_string()
+    } else {
+        path.replace('/', std::path::MAIN_SEPARATOR_STR)
+    }
+}
+
+fn read_glob_class<I>(chars: &mut std::iter::Peekable<I>) -> Option<String>
+where
+    I: Iterator<Item = char>,
+{
+    let mut class = String::from("[");
+    if chars.peek() == Some(&'!') {
+        chars.next();
+        class.push('^');
+    }
+    for ch in chars.by_ref() {
+        class.push(ch);
+        if ch == ']' {
+            return Some(class);
+        }
+    }
+    None
 }
 
 /// Current state of one entry on this machine.
@@ -661,5 +865,88 @@ mod tests {
         assert_eq!(FileMode::parse("copy"), Some(FileMode::Copy));
         assert_eq!(FileMode::parse("template"), Some(FileMode::Template));
         assert_eq!(FileMode::parse("hardlink"), None);
+    }
+
+    #[test]
+    fn test_wildcard_target_expansion() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/*.toml",
+            Path::new("/repo/dotfiles/config/starship.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/*.toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/starship.toml"));
+    }
+
+    #[test]
+    fn test_recursive_wildcard_target_expansion() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/**/*.toml",
+            Path::new("/repo/dotfiles/config/a/b/tool.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/**/*.toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/a/b/tool.toml"));
+    }
+
+    #[test]
+    fn test_recursive_wildcard_matches_zero_directories() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/**/*.toml",
+            Path::new("/repo/dotfiles/config/tool.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/**/*.toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/tool.toml"));
+    }
+
+    #[test]
+    fn test_question_mark_target_expansion() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/app?.toml",
+            Path::new("/repo/dotfiles/config/app1.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/app?.toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/app1.toml"));
+    }
+
+    #[test]
+    fn test_character_class_target_expansion() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/theme-[ab].toml",
+            Path::new("/repo/dotfiles/config/theme-a.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/theme-[ab].toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/theme-a.toml"));
+    }
+
+    #[test]
+    fn test_windows_separator_wildcard_expansion() {
+        let captures = wildcard_captures(
+            r"C:\repo\dotfiles\config\*.toml",
+            Path::new(r"C:\repo\dotfiles\config\starship.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern(r"C:\Users\me\.config\*.toml", &captures).unwrap();
+        assert_eq!(
+            target,
+            PathBuf::from(native_path_separators("C:/Users/me/.config/starship.toml"))
+        );
+    }
+
+    #[test]
+    fn test_windows_separator_recursive_wildcard_expansion() {
+        let captures = wildcard_captures(
+            r"C:\repo\dotfiles\config\**\*.toml",
+            Path::new(r"C:\repo\dotfiles\config\tool.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern(r"C:\Users\me\.config\**\*.toml", &captures).unwrap();
+        assert_eq!(
+            target,
+            PathBuf::from(native_path_separators("C:/Users/me/.config/tool.toml"))
+        );
     }
 }
