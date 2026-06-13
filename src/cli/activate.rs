@@ -102,10 +102,14 @@ impl Activate {
     fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let exe_dir = mise_bin.parent().unwrap();
         let mut prelude = vec![];
-        // For shells with native path dedup/reorder (fish), always emit path commands
-        // using MovePrependEnv so entries get moved to front on re-source (e.g. VS Code).
-        // For other shells, keep the is_dir_in_path guard to avoid PATH growth on re-source.
-        if let Some(p) = self.shims_prepend_path(shell, exe_dir) {
+        // The shims dir is always (move-)prepended so it stays at the front of PATH
+        // even when activation is re-sourced (e.g. VS Code terminals) — see #8757.
+        // The mise executable's own dir only needs to be present so `mise` is
+        // callable, so it uses the guarded prepend: this avoids re-prepending (and
+        // thereby reordering) a system dir such as /usr/bin that is already in PATH
+        // for deb/rpm installs, which would otherwise move it ahead of
+        // /usr/local/bin (#10264).
+        if let Some(p) = self.prepend_path(exe_dir) {
             prelude.push(p);
         }
         if let Some(p) = self.shims_prepend_path(shell, &dirs::SHIMS) {
@@ -165,9 +169,10 @@ impl Activate {
         }
     }
 
-    /// Used by activate_shims. Always prepends the path to the front, even if
-    /// already present (accepting a duplicate entry). For shells with native path
-    /// dedup (fish), uses MovePrependEnv to reorder without duplicating.
+    /// Used by activate_shims for the shims directory. Always prepends the path to
+    /// the front, even if already present (accepting a duplicate entry), so the
+    /// shims dir wins on re-source. For shells with native path dedup (fish), uses
+    /// MovePrependEnv to reorder without duplicating.
     fn shims_prepend_path(&self, shell: &dyn Shell, p: &Path) -> Option<ActivatePrelude> {
         if !is_dir_not_in_nix(p) || p.is_relative() {
             return None;
