@@ -748,16 +748,13 @@ impl Backend for NodePlugin {
         let settings = Settings::get();
         let node = &settings.node;
 
-        opts.insert("mirror_url".to_string(), node.mirror_url().to_string());
+        let mirror = node.mirror_url();
+        if mirror.as_str() != DEFAULT_NODE_MIRROR_URL {
+            opts.insert("mirror_url".to_string(), mirror.to_string());
+        }
 
-        let compile = match node.compile {
-            Some(true) => "true",
-            Some(false) => "false",
-            None => "auto",
-        };
-        opts.insert("compile".to_string(), compile.to_string());
-
-        if node.compile != Some(false) {
+        if node.compile == Some(true) {
+            opts.insert("compile".to_string(), "true".to_string());
             if let Some(cflags) = node.cflags().filter(|cflags| !cflags.is_empty()) {
                 opts.insert("cflags".to_string(), cflags);
             }
@@ -769,8 +766,7 @@ impl Backend for NodePlugin {
             {
                 opts.insert("configure_opts".to_string(), configure_opts);
             }
-            let make = node.make.clone().unwrap_or_else(|| "make".into());
-            if !make.is_empty() {
+            if let Some(make) = node.make.clone().filter(|make| make != "make") {
                 opts.insert("make".to_string(), make);
             }
             if let Some(make_opts) = node
@@ -789,23 +785,11 @@ impl Backend for NodePlugin {
             {
                 opts.insert("make_install_opts".to_string(), make_install_opts);
             }
-            let ninja = node
-                .ninja
-                .map(|ninja| ninja.to_string())
-                .unwrap_or_else(|| "auto".to_string());
-            opts.insert("ninja".to_string(), ninja);
-            let concurrency = node
-                .concurrency
-                .map(|concurrency| std::cmp::max(concurrency, 1).to_string())
-                .or_else(|| {
-                    if node.ninja == Some(true) {
-                        None
-                    } else {
-                        Some("auto".to_string())
-                    }
-                });
-            if let Some(concurrency) = concurrency {
-                opts.insert("concurrency".to_string(), concurrency);
+            if let Some(ninja) = node.ninja {
+                opts.insert("ninja".to_string(), ninja.to_string());
+            }
+            if let Some(concurrency) = node.concurrency.map(|concurrency| std::cmp::max(concurrency, 1)) {
+                opts.insert("concurrency".to_string(), concurrency.to_string());
             }
         }
 
@@ -1078,17 +1062,10 @@ mod tests {
     }
 
     #[test]
-    fn test_node_lockfile_options_include_default_settings() {
+    fn test_node_lockfile_options_omit_default_precompiled_settings() {
         let opts = resolve_node_lockfile_options(|_| {});
 
-        assert_eq!(
-            opts.get("mirror_url").map(String::as_str),
-            Some(DEFAULT_NODE_MIRROR_URL)
-        );
-        assert_eq!(opts.get("compile").map(String::as_str), Some("auto"));
-        assert_eq!(opts.get("concurrency").map(String::as_str), Some("auto"));
-        assert_eq!(opts.get("make").map(String::as_str), Some("make"));
-        assert_eq!(opts.get("ninja").map(String::as_str), Some("auto"));
+        assert!(opts.is_empty());
     }
 
     #[test]
@@ -1102,7 +1079,6 @@ mod tests {
         assert_eq!(
             opts,
             BTreeMap::from([
-                ("compile".to_string(), "false".to_string()),
                 ("flavor".to_string(), "musl".to_string()),
                 (
                     "mirror_url".to_string(),
@@ -1116,7 +1092,6 @@ mod tests {
     fn test_node_lockfile_options_include_source_build_settings() {
         let opts = resolve_node_lockfile_options(|settings| {
             settings.node.compile = Some(true);
-            settings.node.mirror_url = Some(DEFAULT_NODE_MIRROR_URL.to_string());
             settings.node.cflags = Some("-O2".to_string());
             settings.node.configure_opts = Some("--openssl-no-asm".to_string());
             settings.node.make = Some("gmake".to_string());
@@ -1136,10 +1111,6 @@ mod tests {
                 ("make".to_string(), "gmake".to_string()),
                 ("make_install_opts".to_string(), "--no-strip".to_string()),
                 ("make_opts".to_string(), "-s".to_string()),
-                (
-                    "mirror_url".to_string(),
-                    DEFAULT_NODE_MIRROR_URL.to_string()
-                ),
                 ("ninja".to_string(), "false".to_string()),
             ])
         );
