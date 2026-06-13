@@ -120,7 +120,7 @@ data.
 
 ## Hooks
 
-Hooks run only during explicit `mise bootstrap` invocations. They may be
+Hooks run only during explicit `mise bootstrap` invocations. A hook can be
 specified as a command string, an array of command strings, or a table with a
 `run` field. They use the same default inline shell setting as tasks, stop the
 bootstrap if they fail, and print the command instead of running it during

@@ -66,7 +66,13 @@ pub struct BootstrapHook {
 impl BootstrapHook {
     pub fn from_toml(phase_raw: &str, value: toml::Value) -> Result<Vec<Self>> {
         let Some(phase) = BootstrapHookPhase::parse(phase_raw) else {
-            bail!("unknown bootstrap hook phase");
+            let valid = BootstrapHookPhase::iter()
+                .map(|phase| phase.as_str())
+                .collect::<Vec<_>>();
+            bail!(
+                "unknown bootstrap hook phase {phase_raw:?}; valid phases are: {}",
+                valid.join(", ")
+            );
         };
         let runs = match value {
             toml::Value::String(run) => vec![run],
@@ -119,14 +125,17 @@ pub async fn run_phase(
     }
     info!("bootstrap: {phase} hooks");
     let shell = Settings::get().default_inline_shell()?;
+    let Some((program, shell_args)) = shell.split_first() else {
+        bail!("default inline shell args must not be empty");
+    };
     for hook in phase_hooks {
         if dry_run {
             miseprintln!("{} {}", shell.join(" "), shell_words::quote(&hook.run));
             continue;
         }
         info!("$ {}", hook.run);
-        crate::cmd::CmdLineRunner::new(&shell[0])
-            .cmd_body_args(&shell[1..], &hook.run)
+        crate::cmd::CmdLineRunner::new(program)
+            .cmd_body_args(shell_args, &hook.run)
             .raw(true)
             .execute_async()
             .await?;
@@ -149,6 +158,16 @@ mod tests {
             Some(BootstrapHookPhase::PostTools)
         );
         assert_eq!(BootstrapHookPhase::parse("nope"), None);
+    }
+
+    #[test]
+    fn unknown_phase_error_lists_valid_phases() {
+        let err = BootstrapHook::from_toml("pre-things", toml::Value::String("echo nope".into()))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("pre-things"));
+        assert!(msg.contains("pre-packages"));
+        assert!(msg.contains("final"));
     }
 
     #[test]

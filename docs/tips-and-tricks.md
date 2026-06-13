@@ -116,7 +116,10 @@ mise bootstrap --yes   # new laptop or container -> ready to work
 Everything is declarative and idempotent: re-running skips whatever is
 already in its desired state, `mise bootstrap packages status --missing` and
 `mise dotfiles status --missing` make CI checks, and nothing is ever applied
-implicitly. See
+implicitly. The exceptions are `[bootstrap.hooks]` and `[tasks.bootstrap]`,
+which are imperative commands run during `mise bootstrap` and may have side
+effects; treat hook commands as non-idempotent unless they are written to
+converge safely. See
 [Bootstrap](/bootstrap.html), [Bootstrap Packages](/bootstrap/packages/),
 [Dotfiles](/dotfiles.html), [macOS Defaults](/bootstrap/macos-defaults.html),
 [launchd](/bootstrap/launchd.html), and [User Login Shell](/bootstrap/user.html).
