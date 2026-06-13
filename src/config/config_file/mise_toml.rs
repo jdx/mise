@@ -2215,6 +2215,12 @@ mod tests {
 
         [bootstrap.brew.taps]
         "railwaycat/emacsmacport" = "https://github.com/railwaycat/homebrew-emacsmacport"
+
+        [bootstrap.hooks.pre-packages]
+        run = "echo preparing"
+
+        [bootstrap.hooks.post-tools]
+        run = ["echo one", "echo two"]
         "#,
         )
         .unwrap();
@@ -2227,6 +2233,8 @@ mod tests {
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
         );
+        assert!(system.hooks.get("pre-packages").unwrap().is_table());
+        assert!(system.hooks.get("post-tools").unwrap().is_table());
         assert_eq!(system.user.login_shell, None);
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
