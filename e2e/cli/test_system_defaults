@@ -4,11 +4,28 @@ cat <<EOF >mise.toml
 [bootstrap.macos.defaults]
 NSGlobalDomain = { KeyRepeat = 2 }
 "com.apple.dock" = { autohide = true, tilesize = 48, orientation = "left" }
+
+[bootstrap.macos.dock]
+show_recents = false
+
+[bootstrap.macos.finder]
+show_all_files = true
+preferred_view_style = "list"
+
+[bootstrap.macos.keyboard]
+initial_key_repeat = 15
+
+[bootstrap.macos.trackpad]
+tap_to_click = true
 EOF
 
 # status renders on any platform; on non-macOS entries are skipped, not errors
 assert_succeed "mise bootstrap macos-defaults status"
 assert_contains "mise bootstrap macos-defaults status" "com.apple.dock"
+assert_contains "mise bootstrap macos-defaults status" "show-recents"
+assert_contains "mise bootstrap macos-defaults status" "AppleShowAllFiles"
+assert_contains "mise bootstrap macos-defaults status" "InitialKeyRepeat"
+assert_contains "mise bootstrap macos-defaults status" "Clicking"
 assert_contains "mise bootstrap macos-defaults status --json" '"macos_defaults"'
 if [[ $(uname) != "Darwin" ]]; then
   assert_contains "mise bootstrap macos-defaults status" "skipped"
@@ -37,6 +54,19 @@ autohide = true
 EOF
 assert_succeed "mise bootstrap macos-defaults status"
 assert_contains "mise bootstrap macos-defaults status 2>&1" "expected a table"
+
+# friendly defaults validate keys and enum values
+cat <<EOF >mise.toml
+[bootstrap.macos.dock]
+orientation = "top"
+future_key = true
+
+[bootstrap.macos.finder]
+preferred_view_style = "coverflow"
+EOF
+assert_succeed "mise bootstrap macos-defaults status"
+assert_contains "mise bootstrap macos-defaults status 2>&1" "invalid value"
+assert_contains "mise bootstrap macos-defaults status 2>&1" "unknown key"
 
 # empty [bootstrap.macos.defaults] section
 cat <<EOF >mise.toml

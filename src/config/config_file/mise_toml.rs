@@ -2277,6 +2277,19 @@ mod tests {
         [bootstrap.macos.defaults]
         NSGlobalDomain = { KeyRepeat = 2, ApplePressAndHoldEnabled = false }
         "com.apple.dock" = { autohide = true, tilesize = 48, magnification-scale = 1.5, orientation = "left", future-array = [1, 2] }
+
+        [bootstrap.macos.dock]
+        show_recents = false
+
+        [bootstrap.macos.finder]
+        show_all_files = true
+        preferred_view_style = "list"
+
+        [bootstrap.macos.keyboard]
+        initial_key_repeat = 15
+
+        [bootstrap.macos.trackpad]
+        tap_to_click = true
         "#,
         )
         .unwrap();
@@ -2300,6 +2313,26 @@ mod tests {
             &toml::Value::String("left".into())
         );
         assert!(dock.get("future-array").unwrap().is_array());
+        assert_eq!(
+            system.macos.dock.get("show_recents").unwrap(),
+            &toml::Value::Boolean(false)
+        );
+        assert_eq!(
+            system.macos.finder.get("show_all_files").unwrap(),
+            &toml::Value::Boolean(true)
+        );
+        assert_eq!(
+            system.macos.finder.get("preferred_view_style").unwrap(),
+            &toml::Value::String("list".into())
+        );
+        assert_eq!(
+            system.macos.keyboard.get("initial_key_repeat").unwrap(),
+            &toml::Value::Integer(15)
+        );
+        assert_eq!(
+            system.macos.trackpad.get("tap_to_click").unwrap(),
+            &toml::Value::Boolean(true)
+        );
         file::remove_file(&p).unwrap();
     }
 
