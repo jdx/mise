@@ -78,6 +78,17 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      systemd: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       user: {
         hide: false,
         subcommands: {

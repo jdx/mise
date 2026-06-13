@@ -3124,4 +3124,53 @@ run = 'echo "template"'
         assert!(!dump.contains("os"), "empty os should not be written back");
         file::remove_file(&p).unwrap();
     }
+
+    #[tokio::test]
+    async fn test_bootstrap_linux_systemd_units() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.linux.systemd.units.my-sync]
+        description = "sync files"
+        after = ["network-online.target"]
+        wants = ["network-online.target"]
+        exec_start = "~/.local/bin/my-sync --watch"
+        environment = { PATH = "/usr/bin:/bin" }
+        working_directory = "~"
+        restart = "on-failure"
+        restart_sec = "5s"
+        standard_output = "append:%h/.local/state/my-sync.log"
+        wanted_by = ["default.target"]
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        let unit = system.linux.systemd.units.get("my-sync").unwrap();
+        assert_eq!(unit.description.as_deref(), Some("sync files"));
+        assert_eq!(unit.after, vec!["network-online.target"]);
+        assert_eq!(unit.wants, vec!["network-online.target"]);
+        assert_eq!(
+            unit.exec_start.as_deref(),
+            Some("~/.local/bin/my-sync --watch")
+        );
+        assert_eq!(
+            unit.environment.get("PATH").map(String::as_str),
+            Some("/usr/bin:/bin")
+        );
+        assert_eq!(unit.working_directory.as_deref(), Some("~"));
+        assert_eq!(unit.restart.as_deref(), Some("on-failure"));
+        assert_eq!(unit.restart_sec.as_deref(), Some("5s"));
+        assert_eq!(
+            unit.standard_output.as_deref(),
+            Some("append:%h/.local/state/my-sync.log")
+        );
+        assert_eq!(
+            unit.wanted_by.as_deref(),
+            Some(["default.target".to_string()].as_slice())
+        );
+        file::remove_file(&p).unwrap();
+    }
 }

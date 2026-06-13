@@ -33,7 +33,9 @@ The `[bootstrap]` section can also declare
 [macOS defaults](/bootstrap/macos-defaults.html) (`[bootstrap.macos.defaults]`),
 applied by `mise bootstrap macos-defaults apply`, and macOS
 [LaunchAgents](/bootstrap/launchd.html) (`[bootstrap.macos.launchd.agents]`),
-applied by `mise bootstrap launchd apply`. Current-user
+applied by `mise bootstrap launchd apply`. Linux user services live in
+[systemd](/bootstrap/systemd.html) (`[bootstrap.linux.systemd.units]`),
+applied by `mise bootstrap systemd apply`. Current-user
 [login shells](/bootstrap/user.html) (`[bootstrap.user].login_shell`) are
 applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html).
 

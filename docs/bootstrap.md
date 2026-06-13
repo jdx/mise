@@ -1,14 +1,14 @@
 # Bootstrap <Badge type="warning" text="experimental" />
 
 `mise bootstrap` sets up the machine-level pieces around a mise config: OS
-packages, dotfiles, macOS defaults, macOS LaunchAgents, the user's login
-shell, tools, and any final project-specific task. You can also add hooks that
-run at named points in the bootstrap sequence.
+packages, dotfiles, macOS defaults, macOS LaunchAgents, Linux systemd user
+services, the user's login shell, tools, and any final project-specific task.
+You can also add hooks that run at named points in the bootstrap sequence.
 
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
-formulae, shell rc files, editor config, macOS preferences, and one-time
-machine setup.
+formulae, shell rc files, editor config, macOS preferences, user services, and
+one-time machine setup.
 
 ## How it runs
 
@@ -18,10 +18,13 @@ machine setup.
 2. `mise dotfiles apply` applies `[dotfiles]`.
 3. `mise bootstrap macos-defaults apply` writes `[bootstrap.macos.defaults]`.
 4. `mise bootstrap launchd apply` writes and loads `[bootstrap.macos.launchd.agents]`.
-5. `mise bootstrap user apply` applies `[bootstrap.user]`.
-6. `mise install` installs missing `[tools]`.
-7. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
-8. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+5. `mise bootstrap systemd apply` converges `[bootstrap.linux.systemd.units]`
+   by writing unit files, enabling/disabling them, and starting/stopping them
+   as configured.
+6. `mise bootstrap user apply` applies `[bootstrap.user]`.
+7. `mise install` installs missing `[tools]`.
+8. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
+9. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Hook phases can also run before and after the built-in steps:
 `pre-packages`, `post-packages`, `pre-dotfiles`, `post-dotfiles`,
@@ -67,6 +70,11 @@ program = "~/.local/bin/my-sync"
 args = ["--watch"]
 run_at_load = true
 
+[bootstrap.linux.systemd.units.my-sync]
+description = "sync files"
+exec_start = "~/.local/bin/my-sync --watch"
+restart = "on-failure"
+
 [bootstrap.user]
 login_shell = "/bin/zsh"
 
@@ -108,6 +116,7 @@ mise dotfiles apply --dry-run
 mise dotfiles apply --dry-run --verbose
 mise bootstrap macos-defaults status
 mise bootstrap launchd status
+mise bootstrap systemd status
 mise bootstrap user status
 ```
 
@@ -124,6 +133,7 @@ place but should not install anything during that check.
 | `[bootstrap.macos.*]`              | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
 | `[bootstrap.macos.defaults]`       | macOS user preferences written through `defaults write`       |
 | `[bootstrap.macos.launchd.agents]` | macOS user LaunchAgents written and loaded with `launchctl`   |
+| `[bootstrap.linux.systemd.units]`  | Linux systemd user services managed with `systemctl --user`   |
 | `[bootstrap.user]`                 | Current-user settings such as `login_shell`                   |
 | `[bootstrap.hooks]`                | Commands that run at named bootstrap phases                   |
 | `[tools]`                          | Versioned dev tools managed by mise                           |

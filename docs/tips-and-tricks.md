@@ -103,6 +103,10 @@ show_pathbar = true
 program = "~/.local/bin/my-sync"
 run_at_load = true
 
+[bootstrap.linux.systemd.units.my-sync]       # Linux systemd user services
+exec_start = "~/.local/bin/my-sync --watch"
+restart = "on-failure"
+
 [bootstrap.user]                       # current user's login shell
 login_shell = "/bin/zsh"
 
@@ -126,7 +130,8 @@ effects; treat hook commands as non-idempotent unless they are written to
 converge safely. See
 [Bootstrap](/bootstrap.html), [Bootstrap Packages](/bootstrap/packages/),
 [Dotfiles](/dotfiles.html), [macOS Defaults](/bootstrap/macos-defaults.html),
-[launchd](/bootstrap/launchd.html), and [User Login Shell](/bootstrap/user.html).
+[launchd](/bootstrap/launchd.html), [systemd](/bootstrap/systemd.html), and
+[User Login Shell](/bootstrap/user.html).
 
 ## Installation via zsh zinit
 

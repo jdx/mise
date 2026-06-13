@@ -198,6 +198,13 @@ Add bootstrap packages to [bootstrap.packages] and install them
 \fIAliases: \fRu
 .RE
 .TP
+\fBbootstrap systemd\fR
+Manage systemd user services from `[bootstrap.linux.systemd.units]`
+.TP
+\fBbootstrap systemd apply\fR
+.TP
+\fBbootstrap systemd status\fR
+.TP
 \fBbootstrap user\fR
 Manage current\-user bootstrap settings from `[bootstrap.user]`
 .TP
@@ -803,13 +810,15 @@ Runs the bootstrap steps for the current config in order:
    `[bootstrap.macos.defaults]` entries (macOS)
    surrounded by `pre\-defaults`/`post\-defaults` hooks
 4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
-5. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+5. `mise bootstrap systemd apply` — install/start systemd user services
+   (Linux)
+6. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
    (Unix)
    surrounded by `pre\-user`/`post\-user` hooks
-6. `mise install` — install missing tools from `[tools]`
+7. `mise install` — install missing tools from `[tools]`
    surrounded by `pre\-tools`/`post\-tools` hooks
-7. `mise run bootstrap` — if a task named `bootstrap` is defined
-8. `[bootstrap.hooks.final]` — optional final hook
+8. `mise run bootstrap` — if a task named `bootstrap` is defined
+9. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re\-running is safe. The `bootstrap` task runs on every
@@ -1033,6 +1042,28 @@ Skip the confirmation prompt
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package[@version]` form
+.SH "MISE BOOTSTRAP SYSTEMD APPLY"
+\fBUsage:\fR mise bootstrap systemd apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP SYSTEMD STATUS"
+\fBUsage:\fR mise bootstrap systemd status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured systemd user service is not in its desired state
 .SH "MISE BOOTSTRAP USER APPLY"
 \fBUsage:\fR mise bootstrap user apply [OPTIONS]
 .PP
