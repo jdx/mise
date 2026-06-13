@@ -6,15 +6,18 @@ cat <<EOF >mise.toml
 EOF
 assert_succeed "mise bootstrap --yes"
 
-# bootstrap applies system files, installs tools, and runs the `bootstrap`
-# task afterwards, with the installed tools on PATH
+# bootstrap applies system files and edits, installs tools, and runs the
+# `bootstrap` task afterwards, with the installed tools on PATH
 echo "gitconfig content" >gitconfig
-cat <<EOF >mise.toml
+cat <<'EOF' >mise.toml
 [tools]
 tiny = "1.0.0"
 
 [system.files]
 "~/.gitconfig" = "gitconfig"
+
+[system.edits]
+"~/.zshrc".activate = 'eval "$(mise activate zsh)"'
 
 # the task only succeeds if the installed tool is on PATH
 [tasks.bootstrap]
@@ -24,6 +27,7 @@ assert_succeed "mise bootstrap --yes"
 assert "cat bootstrap_ran" "task-done"
 assert_contains "mise ls tiny" "1.0.0"
 assert "readlink ~/.gitconfig" "$PWD/gitconfig"
+assert_contains "cat ~/.zshrc" ">>> mise:activate >>>"
 
 # idempotent: re-running is fine
 assert_succeed "mise bootstrap --yes"
