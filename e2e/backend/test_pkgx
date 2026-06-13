@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+detect_platform
+
+cat <<EOF >mise.toml
+[tools]
+"pkgx:stedolan.github.io/jq" = "1.7.1"
+EOF
+
+assert_fail_contains "MISE_EXPERIMENTAL=0 mise ls-remote pkgx:stedolan.github.io/jq 2>&1" "pkgx backend is experimental"
+assert_fail_contains "mise install --locked 2>&1" "is not in the lockfile"
+
+cat <<EOF >mise.lock
+[[tools."pkgx:stedolan.github.io/jq"]]
+version = "1.7.1"
+backend = "pkgx:stedolan.github.io/jq"
+EOF
+assert_fail_contains "mise install --locked 2>&1" "No lockfile URL found"
+rm -f mise.lock
+
+mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" '[[tools."pkgx:stedolan.github.io/jq"]]'
+assert_contains "cat mise.lock" 'version = "1.7.1"'
+assert_contains "cat mise.lock" 'backend = "pkgx:stedolan.github.io/jq"'
+assert_contains "cat mise.lock" "platforms.$MISE_PLATFORM"
+assert_contains "cat mise.lock" 'url = "https://dist.pkgx.dev/stedolan.github.io/jq/'
+assert_contains "cat mise.lock" 'pkgx_deps = ["github.com/kkos/oniguruma@'
+assert_contains "cat mise.lock" 'pkgx_provides = ["bin/jq"]'
+assert_contains "cat mise.lock" "[pkgx-packages.$MISE_PLATFORM.\"github.com/kkos/oniguruma@"
+assert_contains "cat mise.lock" 'pkgx_provides = ["bin/onig-config"]'
+
+mise install --locked
+assert_contains "mise x -- jq --version" "jq-1.7.1"

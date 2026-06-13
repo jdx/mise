@@ -924,34 +924,51 @@ pub fn decompress_file(input: &Path, dest: &Path, format: ExtractionFormat) -> R
         ExtractionFormat::Xz => un_xz(input, dest),
         ExtractionFormat::Zst => un_zst(input, dest),
         ExtractionFormat::Bz2 => un_bz2(input, dest),
+        ExtractionFormat::Br | ExtractionFormat::Lz4 | ExtractionFormat::Sz => {
+            bail!("{format} format not supported")
+        }
         _ => bail!("unsupported compressed file format: {}", format),
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
 pub enum ExtractionFormat {
-    #[strum(serialize = "tar.gz", serialize = "tgz")]
+    #[strum(to_string = "tar.gz", serialize = "tgz")]
     TarGz,
     #[strum(serialize = "gz")]
     Gz,
-    #[strum(serialize = "tar.xz", serialize = "txz")]
+    #[strum(to_string = "tar.xz", serialize = "txz")]
     TarXz,
     #[strum(serialize = "xz")]
     Xz,
-    #[strum(serialize = "tar.bz2", serialize = "tbz2", serialize = "tbz")]
+    #[strum(to_string = "tar.bz2", serialize = "tbz2", serialize = "tbz")]
     TarBz2,
     #[strum(serialize = "bz2")]
     Bz2,
-    #[strum(serialize = "tar.zst", serialize = "tzst")]
+    #[strum(to_string = "tar.zst", serialize = "tzst")]
     TarZst,
     #[strum(serialize = "zst")]
     Zst,
     #[strum(serialize = "tar")]
     Tar,
-    #[strum(serialize = "zip", serialize = "vsix")]
+    #[strum(to_string = "zip", serialize = "vsix")]
     Zip,
     #[strum(serialize = "7z")]
     SevenZip,
+    #[strum(to_string = "tar.br", serialize = "tbr")]
+    TarBr,
+    #[strum(serialize = "br")]
+    Br,
+    #[strum(to_string = "tar.lz4", serialize = "tlz4")]
+    TarLz4,
+    #[strum(serialize = "lz4")]
+    Lz4,
+    #[strum(to_string = "tar.sz", serialize = "tsz")]
+    TarSz,
+    #[strum(serialize = "sz")]
+    Sz,
+    #[strum(serialize = "rar")]
+    Rar,
     #[strum(serialize = "raw")]
     Raw,
 }
@@ -962,25 +979,28 @@ impl ExtractionFormat {
 
         if let Some(idx) = filename.rfind(".tar.") {
             let ext = &filename[idx + 1..];
-            let fmt = Self::from_ext(ext);
-            if fmt != ExtractionFormat::Raw {
+            if let Some(fmt) = Self::from_ext(ext) {
                 return fmt;
             }
         }
 
         if let Some(ext) = Path::new(&filename).extension().and_then(|s| s.to_str()) {
-            Self::from_ext(ext)
+            Self::from_ext(ext).unwrap_or(ExtractionFormat::Raw)
         } else {
             ExtractionFormat::Raw
         }
     }
 
-    pub fn from_ext(ext: &str) -> Self {
-        ext.to_lowercase().parse().unwrap_or(ExtractionFormat::Raw)
+    pub fn from_ext(ext: &str) -> Option<Self> {
+        ext.to_lowercase().parse().ok()
     }
 
     pub fn is_archive(&self) -> bool {
-        self.is_tar_archive() || matches!(self, ExtractionFormat::Zip | ExtractionFormat::SevenZip)
+        self.is_tar_archive()
+            || matches!(
+                self,
+                ExtractionFormat::Zip | ExtractionFormat::SevenZip | ExtractionFormat::Rar
+            )
     }
 
     pub fn is_tar_archive(&self) -> bool {
@@ -991,6 +1011,9 @@ impl ExtractionFormat {
                 | ExtractionFormat::TarBz2
                 | ExtractionFormat::TarZst
                 | ExtractionFormat::Tar
+                | ExtractionFormat::TarBr
+                | ExtractionFormat::TarLz4
+                | ExtractionFormat::TarSz
         )
     }
 
@@ -1001,24 +1024,14 @@ impl ExtractionFormat {
                 | ExtractionFormat::Xz
                 | ExtractionFormat::Bz2
                 | ExtractionFormat::Zst
+                | ExtractionFormat::Br
+                | ExtractionFormat::Lz4
+                | ExtractionFormat::Sz
         )
     }
 
-    pub fn extension(&self) -> Option<&'static str> {
-        match self {
-            ExtractionFormat::TarGz => Some("tar.gz"),
-            ExtractionFormat::Gz => Some("gz"),
-            ExtractionFormat::TarXz => Some("tar.xz"),
-            ExtractionFormat::Xz => Some("xz"),
-            ExtractionFormat::TarBz2 => Some("tar.bz2"),
-            ExtractionFormat::Bz2 => Some("bz2"),
-            ExtractionFormat::TarZst => Some("tar.zst"),
-            ExtractionFormat::Zst => Some("zst"),
-            ExtractionFormat::Tar => Some("tar"),
-            ExtractionFormat::Zip => Some("zip"),
-            ExtractionFormat::SevenZip => Some("7z"),
-            ExtractionFormat::Raw => None,
-        }
+    pub fn extension(&self) -> Option<String> {
+        (*self != ExtractionFormat::Raw).then(|| self.to_string())
     }
 }
 
@@ -1051,6 +1064,9 @@ pub fn extract_archive(
         | ExtractionFormat::TarBz2
         | ExtractionFormat::TarZst
         | ExtractionFormat::Tar
+        | ExtractionFormat::TarBr
+        | ExtractionFormat::TarLz4
+        | ExtractionFormat::TarSz
         | ExtractionFormat::Raw => untar(archive, dest, format, opts),
         ExtractionFormat::Zip => unzip(archive, dest, opts),
         ExtractionFormat::SevenZip => {
@@ -1066,9 +1082,13 @@ pub fn extract_archive(
         ExtractionFormat::Gz
         | ExtractionFormat::Xz
         | ExtractionFormat::Bz2
-        | ExtractionFormat::Zst => {
+        | ExtractionFormat::Zst
+        | ExtractionFormat::Br
+        | ExtractionFormat::Lz4
+        | ExtractionFormat::Sz => {
             bail!("extract_archive does not support compressed single-file format: {format}")
         }
+        ExtractionFormat::Rar => bail!("rar format not supported"),
     }
 }
 
@@ -1186,14 +1206,21 @@ fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io:
         ExtractionFormat::TarBz2 => Box::new(BzDecoder::new(f)),
         ExtractionFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
         ExtractionFormat::Tar => Box::new(f),
+        ExtractionFormat::TarBr | ExtractionFormat::TarLz4 | ExtractionFormat::TarSz => {
+            bail!("{format} format not supported")
+        }
         ExtractionFormat::Gz
         | ExtractionFormat::Xz
         | ExtractionFormat::Bz2
-        | ExtractionFormat::Zst => {
+        | ExtractionFormat::Zst
+        | ExtractionFormat::Br
+        | ExtractionFormat::Lz4
+        | ExtractionFormat::Sz => {
             bail!("{} is not a tar archive", format)
         }
         ExtractionFormat::Zip => bail!("zip format not supported"),
         ExtractionFormat::SevenZip => bail!("7z format not supported"),
+        ExtractionFormat::Rar => bail!("rar format not supported"),
     })
 }
 
@@ -1502,7 +1529,10 @@ pub fn archive_content_files(
         | ExtractionFormat::TarXz
         | ExtractionFormat::TarBz2
         | ExtractionFormat::TarZst
-        | ExtractionFormat::Tar => {
+        | ExtractionFormat::Tar
+        | ExtractionFormat::TarBr
+        | ExtractionFormat::TarLz4
+        | ExtractionFormat::TarSz => {
             archive_content_files_tar(archive_path, format, strip_components)
         }
         ExtractionFormat::Zip => archive_content_files_zip(archive_path, strip_components),
@@ -1513,9 +1543,13 @@ pub fn archive_content_files(
         | ExtractionFormat::Xz
         | ExtractionFormat::Bz2
         | ExtractionFormat::Zst
+        | ExtractionFormat::Br
+        | ExtractionFormat::Lz4
+        | ExtractionFormat::Sz
         | ExtractionFormat::Raw => {
             bail!("content-level SLSA verification only supports archive formats")
         }
+        ExtractionFormat::Rar => bail!("rar format not supported"),
     }
 }
 
@@ -2012,7 +2046,10 @@ mod tests {
             ExtractionFormat::from_file_name("foo.tbz"),
             ExtractionFormat::TarBz2
         );
-        assert_eq!(ExtractionFormat::from_ext("tbz"), ExtractionFormat::TarBz2);
+        assert_eq!(
+            ExtractionFormat::from_ext("tbz"),
+            Some(ExtractionFormat::TarBz2)
+        );
         assert_eq!(
             ExtractionFormat::from_file_name("foo.tar.zst"),
             ExtractionFormat::TarZst
@@ -2038,6 +2075,46 @@ mod tests {
             ExtractionFormat::SevenZip
         );
         assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.br"),
+            ExtractionFormat::TarBr
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tbr"),
+            ExtractionFormat::TarBr
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.br"),
+            ExtractionFormat::Br
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.lz4"),
+            ExtractionFormat::TarLz4
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tlz4"),
+            ExtractionFormat::TarLz4
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.lz4"),
+            ExtractionFormat::Lz4
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.sz"),
+            ExtractionFormat::TarSz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tsz"),
+            ExtractionFormat::TarSz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.sz"),
+            ExtractionFormat::Sz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.rar"),
+            ExtractionFormat::Rar
+        );
+        assert_eq!(
             ExtractionFormat::from_file_name("foo.gz"),
             ExtractionFormat::Gz
         );
@@ -2061,6 +2138,50 @@ mod tests {
             ExtractionFormat::from_file_name("foo.txt"),
             ExtractionFormat::Raw
         );
+    }
+
+    #[test]
+    fn test_unsupported_extraction_formats_are_classified() {
+        for (ext, expected) in [
+            ("tar.br", ExtractionFormat::TarBr),
+            ("tbr", ExtractionFormat::TarBr),
+            ("br", ExtractionFormat::Br),
+            ("tar.lz4", ExtractionFormat::TarLz4),
+            ("tlz4", ExtractionFormat::TarLz4),
+            ("lz4", ExtractionFormat::Lz4),
+            ("tar.sz", ExtractionFormat::TarSz),
+            ("tsz", ExtractionFormat::TarSz),
+            ("sz", ExtractionFormat::Sz),
+            ("rar", ExtractionFormat::Rar),
+        ] {
+            assert_eq!(ExtractionFormat::from_ext(ext), Some(expected));
+        }
+        assert_eq!(ExtractionFormat::from_ext("unknown"), None);
+
+        assert!(ExtractionFormat::TarBr.is_archive());
+        assert!(ExtractionFormat::TarLz4.is_archive());
+        assert!(ExtractionFormat::TarSz.is_archive());
+        assert!(ExtractionFormat::Rar.is_archive());
+        assert!(ExtractionFormat::Br.is_compressed_file());
+        assert!(ExtractionFormat::Lz4.is_compressed_file());
+        assert!(ExtractionFormat::Sz.is_compressed_file());
+    }
+
+    #[test]
+    fn test_extraction_format_extension_uses_canonical_display() {
+        for (format, expected) in [
+            (ExtractionFormat::TarGz, Some("tar.gz")),
+            (ExtractionFormat::TarXz, Some("tar.xz")),
+            (ExtractionFormat::TarBz2, Some("tar.bz2")),
+            (ExtractionFormat::TarZst, Some("tar.zst")),
+            (ExtractionFormat::TarBr, Some("tar.br")),
+            (ExtractionFormat::TarLz4, Some("tar.lz4")),
+            (ExtractionFormat::TarSz, Some("tar.sz")),
+            (ExtractionFormat::Zip, Some("zip")),
+            (ExtractionFormat::Raw, None),
+        ] {
+            assert_eq!(format.extension().as_deref(), expected);
+        }
     }
 
     #[test]
@@ -2161,6 +2282,41 @@ mod tests {
             format!("{err:#}").contains("untar only supports tar formats"),
             "{err:#}"
         );
+    }
+
+    #[test]
+    fn test_unsupported_extraction_formats_error_clearly() {
+        use tempfile::NamedTempFile;
+        use tempfile::tempdir;
+
+        let archive = NamedTempFile::new().unwrap();
+        let dest = tempdir().unwrap();
+
+        let err = extract_archive(
+            archive.path(),
+            dest.path(),
+            ExtractionFormat::TarBr,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("tar.br format not supported"));
+
+        let err = extract_archive(
+            archive.path(),
+            dest.path(),
+            ExtractionFormat::Rar,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("rar format not supported"));
+
+        let err = decompress_file(
+            archive.path(),
+            dest.path().join("tool").as_path(),
+            ExtractionFormat::Lz4,
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("lz4 format not supported"));
     }
 
     #[cfg(not(windows))]

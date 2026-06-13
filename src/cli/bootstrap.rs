@@ -62,6 +62,10 @@ pub struct Bootstrap {
     #[clap(long, short)]
     yes: bool,
 
+    /// Overwrite existing files that conflict with whole-file dotfile entries
+    #[clap(long)]
+    force_dotfiles: bool,
+
     /// Refresh system package manager metadata first (apt: `apt-get update`)
     #[clap(long)]
     update: bool,
@@ -276,9 +280,8 @@ impl Bootstrap {
             let opts = system::files::ApplyOpts {
                 dry_run: self.dry_run,
                 verbose: false,
-                // conflicts shouldn't be steamrolled by a bootstrap;
-                // `mise dotfiles apply --force` is the explicit way
-                force: false,
+                force: self.force_dotfiles,
+                force_hint: "use --force-dotfiles or run `mise dotfiles apply --force`",
                 yes: self.yes,
             };
             system::files::apply(&config, &files, &opts)?;
@@ -917,6 +920,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise bootstrap</bold>                    # packages + dotfiles + tools + bootstrap task
+    $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
     $ <bold>mise bootstrap packages install --yes</bold>
     $ <bold>mise bootstrap macos-defaults status</bold>
     $ <bold>mise bootstrap launchd apply --dry-run</bold>

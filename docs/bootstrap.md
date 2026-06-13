@@ -104,6 +104,10 @@ For a dry run:
 mise bootstrap --dry-run
 ```
 
+By default, bootstrap refuses dotfile conflicts rather than replacing local
+files. Use `mise bootstrap --force-dotfiles` when you explicitly want the
+dotfiles phase to replace conflicting whole-file dotfile targets.
+
 ## Inspecting State
 
 Use the narrower commands when you want to inspect one part of the bootstrap

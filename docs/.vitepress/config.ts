@@ -129,6 +129,7 @@ export default withMermaid(
                 { text: "http", link: "/dev-tools/backends/http" },
                 { text: "npm", link: "/dev-tools/backends/npm" },
                 { text: "pipx", link: "/dev-tools/backends/pipx" },
+                { text: "pkgx", link: "/dev-tools/backends/pkgx" },
                 { text: "spm", link: "/dev-tools/backends/spm" },
                 { text: "ubi", link: "/dev-tools/backends/ubi" },
                 { text: "vfox", link: "/dev-tools/backends/vfox" },
