@@ -24,10 +24,10 @@ must be addressed. If those are still open, assume I will wait to look at the
 PR.
 
 If I am on the fence about a contribution, I will probably reject it for that
-reason alone. If I did not do this, mise and the rest of these projects would
-suffer from feature bloat. I may also reject a PR if the quality is poor enough
-that I do not have confidence the contributor can get it across the finish line.
-I do not have time to coach contributors.
+reason alone. If I did not do this, mise would suffer from feature bloat. I
+may also reject a PR if the quality is poor enough that I do not have confidence
+the contributor can get it across the finish line. I do not have time to coach
+contributors.
 
 I get hundreds of PRs per week across my projects, so I do not have time to
 respond to every PR with detailed context. A rejection may be brief.
