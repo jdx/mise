@@ -700,6 +700,45 @@ const completionSpec: Fig.Spec = {
         "[experimental] Set up a machine for the current config in one command",
       subcommands: [
         {
+          name: "launchd",
+          description:
+            "Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`",
+          subcommands: [
+            {
+              name: "apply",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the commands that would run without running them",
+                  isRepeatable: false,
+                },
+                {
+                  name: ["-y", "--yes"],
+                  description: "Skip the confirmation prompt",
+                  isRepeatable: false,
+                },
+              ],
+            },
+            {
+              name: "status",
+              options: [
+                {
+                  name: ["-J", "--json"],
+                  description: "Output in JSON format",
+                  isRepeatable: false,
+                },
+                {
+                  name: "--missing",
+                  description:
+                    "Exit with code 1 if any configured LaunchAgent is not in its desired state",
+                  isRepeatable: false,
+                },
+              ],
+            },
+          ],
+        },
+        {
           name: "macos-defaults",
           description:
             "Manage macOS defaults from `[bootstrap.macos.defaults]`",

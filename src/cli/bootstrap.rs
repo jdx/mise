@@ -8,6 +8,7 @@ use super::system::{install, status, upgrade, r#use};
 use crate::config::{Config, Settings};
 use crate::system;
 use crate::system::defaults::DefaultsState;
+use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
 use crate::ui::table::MiseTable;
 use clap::Subcommand;
@@ -21,10 +22,11 @@ use clap::Subcommand;
 /// 2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
 /// 3. `mise bootstrap macos-defaults apply` — write
 ///    `[bootstrap.macos.defaults]` entries (macOS)
-/// 4. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+/// 4. `mise bootstrap launchd apply` — install/load macOS LaunchAgents
+/// 5. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ///    (Unix)
-/// 5. `mise install` — install missing tools from `[tools]`
-/// 6. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 6. `mise install` — install missing tools from `[tools]`
+/// 7. `mise run bootstrap` — if a task named `bootstrap` is defined
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -52,6 +54,7 @@ pub struct Bootstrap {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Launchd(BootstrapLaunchd),
     MacosDefaults(BootstrapMacosDefaults),
     Packages(BootstrapPackages),
     User(BootstrapUser),
@@ -107,6 +110,42 @@ struct BootstrapMacosDefaultsStatus {
     json: bool,
 
     /// Exit with code 1 if any configured defaults are not in their desired state
+    #[clap(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+/// Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapLaunchd {
+    #[clap(subcommand)]
+    command: BootstrapLaunchdCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapLaunchdCommands {
+    Apply(BootstrapLaunchdApply),
+    Status(BootstrapLaunchdStatus),
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapLaunchdApply {
+    /// Print the commands that would run without running them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapLaunchdStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured LaunchAgent is not in its desired state
     #[clap(long, verbatim_doc_comment)]
     missing: bool,
 }
@@ -207,6 +246,14 @@ impl Bootstrap {
             install::apply_defaults(defaults, self.dry_run, self.yes).await?;
         }
 
+        let agents = system::launchd_from_config(&config);
+        if agents.is_empty() {
+            debug!("bootstrap: no [bootstrap.macos.launchd.agents] configured, skipping");
+        } else {
+            info!("bootstrap: launchd agents");
+            install::apply_launchd(agents, self.dry_run, self.yes).await?;
+        }
+
         let login_shell = system::login_shell_from_config(&config);
         if login_shell.is_none() {
             debug!("bootstrap: no [bootstrap.user].login_shell configured, skipping");
@@ -280,6 +327,7 @@ impl Bootstrap {
 impl Commands {
     async fn run(self) -> Result<()> {
         match self {
+            Self::Launchd(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
@@ -308,6 +356,110 @@ impl BootstrapMacosDefaults {
             BootstrapMacosDefaultsCommands::Apply(cmd) => cmd.run().await,
             BootstrapMacosDefaultsCommands::Status(cmd) => cmd.run().await,
         }
+    }
+}
+
+impl BootstrapLaunchd {
+    async fn run(self) -> Result<()> {
+        Settings::get().ensure_experimental("mise bootstrap")?;
+        match self.command {
+            BootstrapLaunchdCommands::Apply(cmd) => cmd.run().await,
+            BootstrapLaunchdCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapLaunchdApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_launchd(system::launchd_from_config(&config), self.dry_run, self.yes).await
+    }
+}
+
+impl BootstrapLaunchdStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let agents = system::launchd_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        if !agents.is_empty() {
+            if !system::launchd::is_available() {
+                let reason = system::launchd::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "launchd".to_string(),
+                        json!({ "available": false, "reason": reason }),
+                    );
+                } else {
+                    for req in &agents {
+                        rows.push(vec![
+                            req.name.clone(),
+                            req.label.clone(),
+                            "".to_string(),
+                            format!("skipped ({reason})"),
+                        ]);
+                    }
+                }
+            } else {
+                let statuses = system::launchd::status(&agents).await?;
+                let mut json_entries = vec![];
+                for s in statuses {
+                    let state = match &s.state {
+                        LaunchdState::Loaded => "loaded",
+                        LaunchdState::Unloaded => {
+                            any_missing = true;
+                            "unloaded"
+                        }
+                        LaunchdState::Differs => {
+                            any_missing = true;
+                            "differs"
+                        }
+                        LaunchdState::Missing => {
+                            any_missing = true;
+                            "missing"
+                        }
+                    };
+                    if self.json {
+                        json_entries.push(json!({
+                            "name": s.request.name,
+                            "label": s.request.label,
+                            "path": s.path,
+                            "loaded": s.loaded,
+                            "state": state,
+                        }));
+                    } else {
+                        rows.push(vec![
+                            s.request.name.clone(),
+                            s.request.label.clone(),
+                            s.path.display().to_string(),
+                            state.to_string(),
+                        ]);
+                    }
+                }
+                if self.json {
+                    json_out.insert(
+                        "launchd".to_string(),
+                        json!({ "available": true, "agents": json_entries }),
+                    );
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.macos.launchd.agents]");
+        } else {
+            let mut table = MiseTable::new(false, &["Name", "Label", "Path", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            crate::exit(1);
+        }
+        Ok(())
     }
 }
 
@@ -513,6 +665,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap</bold>                    # packages + dotfiles + tools + bootstrap task
     $ <bold>mise bootstrap packages install --yes</bold>
     $ <bold>mise bootstrap macos-defaults status</bold>
+    $ <bold>mise bootstrap launchd apply --dry-run</bold>
     $ <bold>mise bootstrap user apply --dry-run</bold>
 "#
 );

@@ -28,14 +28,66 @@ export const commands: { [key: string]: Command } = {
   bootstrap: {
     hide: false,
     subcommands: {
+      launchd: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       "macos-defaults": {
         hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
       },
       packages: {
         hide: false,
+        subcommands: {
+          brew: {
+            hide: false,
+            subcommands: {
+              tap: {
+                hide: false,
+              },
+              untap: {
+                hide: false,
+              },
+            },
+          },
+          install: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+          upgrade: {
+            hide: false,
+          },
+          use: {
+            hide: false,
+          },
+        },
       },
       user: {
         hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
       },
     },
   },

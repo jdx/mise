@@ -148,6 +148,49 @@ pub(crate) fn apply_login_shell(
     Ok(())
 }
 
+/// Apply `[bootstrap.macos.launchd.agents]` entries that are missing, changed,
+/// or not loaded. Inert off-macOS.
+pub(crate) async fn apply_launchd(
+    agents: Vec<system::launchd::LaunchdRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    use crate::system::launchd::{self, LaunchdState};
+    if agents.is_empty() {
+        return Ok(());
+    }
+    if !launchd::is_available() {
+        debug!("launchd: skipping, {}", launchd::unavailable_reason());
+        return Ok(());
+    }
+    let statuses = launchd::status(&agents).await?;
+    let targets: Vec<_> = statuses
+        .iter()
+        .filter(|s| s.state != LaunchdState::Loaded)
+        .map(|s| s.request.clone())
+        .collect();
+    let loaded = statuses.len() - targets.len();
+    if loaded > 0 {
+        info!("launchd: {loaded} agent(s) already loaded");
+    }
+    if targets.is_empty() {
+        return Ok(());
+    }
+    let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("launchd: install/load {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)? {
+            info!("launchd: skipped");
+            return Ok(());
+        }
+    }
+    launchd::apply(&targets, dry_run).await?;
+    if !dry_run {
+        info!("launchd: installed/loaded {}", list.join(", "));
+    }
+    Ok(())
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
