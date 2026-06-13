@@ -124,6 +124,17 @@ rm snippet.txt
 assert_contains "mise system status" "source missing"
 assert_fail "mise system install --yes"
 
+# two entries with different ids but identical line text don't write the
+# line twice in one batch
+cat <<'EOF' >mise.toml
+[system.edits]
+"~/dup.conf".a = { line = "same line" }
+"~/dup.conf".b = { line = "same line" }
+EOF
+assert_succeed "mise system install --yes"
+assert "grep -c 'same line' ~/dup.conf" "1"
+assert_succeed "mise system status --missing"
+
 # all problems are reported in one pass: a broken template doesn't hide a
 # missing source
 cat <<'EOF' >mise.toml

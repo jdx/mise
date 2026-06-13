@@ -595,7 +595,14 @@ fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
                 ),
             }
         }
-        EditOp::Line { line } => lines.push(line.clone()),
+        EditOp::Line { line } => {
+            // an earlier entry in the same batch may have just written an
+            // identical line (two ids, same text) — stay idempotent against
+            // the file's current content, not the state at plan time
+            if !lines.iter().any(|l| l == line) {
+                lines.push(line.clone());
+            }
+        }
     }
     let mut out = lines.join("\n");
     out.push('\n');
