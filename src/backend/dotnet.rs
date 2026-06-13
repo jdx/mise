@@ -59,7 +59,11 @@ impl Backend for DotnetBackend {
 
         let feed: NugetFeedSearch = HTTP_FETCH
             .json(format!(
-                "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
+                // semVerLevel=2.0.0 matches the official dotnet CLI: without it NuGet's
+                // search API hides packages whose versions are all SemVer 2.0.0 (e.g.
+                // roslyn-language-server), and omits SemVer2 versions from the returned
+                // version arrays of packages that are visible.
+                "{}?q={}&packageType=dotnettool&take=1&prerelease={}&semVerLevel=2.0.0",
                 feed_url,
                 &self.tool_name(),
                 true

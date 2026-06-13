@@ -23,3 +23,12 @@ assert_contains "mise ls-remote 'dotnet:GitVersion.Tool[prerelease=true]'" "-bet
 mise cache clear
 
 assert_contains "MISE_DOTNET_PACKAGE_FLAGS=prerelease mise ls-remote dotnet:GitVersion.Tool" "-beta"
+
+mise cache clear
+
+# Regression test for #10283: packages whose versions are all SemVer 2.0.0 (e.g.
+# roslyn-language-server) are hidden by NuGet's search API unless semVerLevel=2.0.0
+# is sent. Without that parameter the take=1 search returns a different package and
+# this errors with "Tool roslyn-language-server not found". Published NuGet versions
+# are immutable, so the asserted version is stable.
+assert_contains "mise ls-remote 'dotnet:roslyn-language-server[prerelease=true]'" "5.5.0-2.26103.6"
