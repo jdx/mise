@@ -33,8 +33,8 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, Toolset, install_state,
-    is_outdated_version,
+    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset,
+    install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -81,6 +81,7 @@ pub mod vfox;
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
+pub type IdiomaticVersion = (String, Option<ToolVersionOptions>);
 pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
@@ -1786,6 +1787,52 @@ pub trait Backend: Debug + Send + Sync {
             );
         }
         self._parse_idiomatic_file(path).await
+    }
+
+    /// Parses an idiomatic version file to extract versions plus backend options
+    /// implied by that file.
+    async fn parse_idiomatic_file_with_options(
+        &self,
+        path: &Path,
+    ) -> eyre::Result<Vec<(String, ToolVersionOptions)>> {
+        let versions =
+            if crate::config::config_file::idiomatic_version::package_json::is_package_json(path) {
+                crate::config::config_file::idiomatic_version::package_json::parse(path, self.id())?
+                    .into_iter()
+                    .map(|version| (version, None))
+                    .collect()
+            } else {
+                self._parse_idiomatic_file_with_options(path).await?
+            };
+        let options = self.ba().opts();
+        Ok(versions
+            .into_iter()
+            .map(|(version, file_options)| {
+                let mut options = options.clone();
+                if let Some(file_options) = file_options {
+                    options.apply_overrides(&file_options);
+                }
+                (version, options)
+            })
+            .collect())
+    }
+
+    /// Backend-specific implementation for `parse_idiomatic_file_with_options`.
+    /// Backends overriding this should only parse the file and return options
+    /// implied by the file itself. Return `None` when a parsed version has no
+    /// file-specific options. The public wrapper merges any returned options
+    /// with `self.ba().opts()` so registry, alias, and backend defaults are
+    /// preserved centrally.
+    async fn _parse_idiomatic_file_with_options(
+        &self,
+        path: &Path,
+    ) -> eyre::Result<Vec<IdiomaticVersion>> {
+        Ok(self
+            .parse_idiomatic_file(path)
+            .await?
+            .into_iter()
+            .map(|version| (version, None))
+            .collect())
     }
 
     /// Backend-specific implementation for `parse_idiomatic_file`.
