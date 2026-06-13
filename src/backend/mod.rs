@@ -68,6 +68,7 @@ pub mod jq;
 pub mod npm;
 pub(crate) mod options;
 pub mod pipx;
+pub mod pkgx;
 pub mod platform_target;
 mod platform_tokens;
 pub mod s3;
@@ -363,6 +364,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
+        BackendType::Pkgx => Some(Arc::new(pkgx::PkgxBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
@@ -393,6 +395,7 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Npm => npm::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
+        BackendType::Pkgx => pkgx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),
         BackendType::Spm => spm::install_time_option_keys(),
         _ => vec![],
