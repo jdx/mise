@@ -178,3 +178,11 @@ cat <<'EOF' >mise.toml
 EOF
 assert_succeed "mise system status"
 assert_contains "mise system status 2>&1" "unknown template engine"
+
+# a multi-line line value can never converge — rejected, use a block instead
+cat <<'EOF' >mise.toml
+[system.edits]
+"~/x.conf".multi = { line = "first\nsecond" }
+EOF
+assert_succeed "mise system status"
+assert_contains "mise system status 2>&1" "line may not contain a newline"

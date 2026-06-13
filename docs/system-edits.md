@@ -74,8 +74,9 @@ template rendering and lists those entries as `(if changed)`.
 A `line` ensures an exact line exists somewhere in the file, appending it at
 the end if absent. It never modifies or removes other lines, which is what
 makes it safely idempotent — use it for files where a three-line marker
-block is overkill or comments aren't tolerated. The id is only a label (and
-the merge identity); it isn't written to the file.
+block is overkill or comments aren't tolerated. The value must be a single
+line (no embedded newline); use a block for multi-line content. The id is
+only a label (and the merge identity); it isn't written to the file.
 
 ## Semantics
 

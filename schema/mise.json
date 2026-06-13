@@ -2967,6 +2967,9 @@
           "additionalProperties": {
             "type": "object",
             "description": "edits for one file, keyed by id",
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9_.-]+$"
+            },
             "additionalProperties": {
               "oneOf": [
                 {

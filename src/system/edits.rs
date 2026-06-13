@@ -219,7 +219,17 @@ fn resolve_entry(
                 comment,
             }
         }
-        (false, Some(line)) => EditOp::Line { line: line.clone() },
+        (false, Some(line)) => {
+            // a "line" is matched against the file's individual lines, so an
+            // embedded newline could never converge — use a block for
+            // multi-line content
+            if line.contains('\n') {
+                bail!(
+                    "\"{path_raw}\".{id}: line may not contain a newline; use a block for multi-line content, ignoring entry"
+                )
+            }
+            EditOp::Line { line: line.clone() }
+        }
     };
     Ok(EditRequest {
         path_raw: path_raw.to_string(),
