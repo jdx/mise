@@ -60,3 +60,21 @@ cat <<EOF >mise.toml
 "pacman:bc" = "latest"
 EOF
 assert_succeed "mise bootstrap --dry-run"
+
+# dotfiles can add config that contributes hooks to later phases in the same run
+mkdir -p dotfiles/mise
+cat <<'EOF' >dotfiles/mise/config.toml
+[bootstrap.hooks.post-dotfiles]
+run = "echo post-dotfiles > post_dotfiles_hook_ran"
+
+[bootstrap.hooks.final]
+run = "echo final > final_hook_ran"
+EOF
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.config/mise/config.toml" = "dotfiles/mise/config.toml"
+EOF
+rm -f post_dotfiles_hook_ran final_hook_ran
+assert_succeed "mise bootstrap --yes"
+assert "cat post_dotfiles_hook_ran" "post-dotfiles"
+assert "cat final_hook_ran" "final"
