@@ -847,7 +847,11 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
             if !(target.exists() && !target.is_symlink()) {
                 return Ok(false);
             }
-            if source.is_file() && target.is_file() && file::read(source)? == file::read(target)? {
+            if source.is_file()
+                && target.is_file()
+                && source.metadata()?.len() == target.metadata()?.len()
+                && file::read(source)? == file::read(target)?
+            {
                 return Ok(false);
             }
             Ok(true)

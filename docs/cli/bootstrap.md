@@ -44,13 +44,13 @@ Print what would happen without installing anything
 
 Skip confirmation prompts
 
-### `--update`
-
-Refresh system package manager metadata first (apt: `apt-get update`)
-
 ### `--force-dotfiles`
 
 Overwrite existing files that conflict with whole-file dotfile entries
+
+### `--update`
+
+Refresh system package manager metadata first (apt: `apt-get update`)
 
 ## Subcommands
 

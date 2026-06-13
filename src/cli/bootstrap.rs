@@ -62,13 +62,13 @@ pub struct Bootstrap {
     #[clap(long, short)]
     yes: bool,
 
-    /// Refresh system package manager metadata first (apt: `apt-get update`)
-    #[clap(long)]
-    update: bool,
-
     /// Overwrite existing files that conflict with whole-file dotfile entries
     #[clap(long)]
     force_dotfiles: bool,
+
+    /// Refresh system package manager metadata first (apt: `apt-get update`)
+    #[clap(long)]
+    update: bool,
 }
 
 #[derive(Debug, Subcommand)]
