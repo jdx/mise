@@ -437,10 +437,21 @@ impl AssetPicker {
         let Some(preferred_name) = self.preferred_name.as_deref() else {
             return asset;
         };
-        match asset.get(..preferred_name.len()) {
-            Some(prefix) if prefix.eq_ignore_ascii_case(preferred_name) => {
-                &asset[preferred_name.len()..]
-            }
+        let Some(prefix) = asset.get(..preferred_name.len()) else {
+            return asset;
+        };
+        if !prefix.eq_ignore_ascii_case(preferred_name) {
+            return asset;
+        }
+        let rest = &asset[preferred_name.len()..];
+        // Only strip when the tool name is a complete leading token, i.e. it ends
+        // at a separator or version boundary. Otherwise the prefix would cut
+        // through a longer first token (e.g. preferred_name "win" inside
+        // "windows-...") and corrupt detection. Mirrors the boundary handling in
+        // asset_matches_preferred_name.
+        match rest.chars().next() {
+            None => rest,
+            Some(c) if c == '-' || c == '_' || c == '.' || c.is_ascii_digit() => rest,
             _ => asset,
         }
     }
@@ -1394,6 +1405,45 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             .pick_best_asset(&assets)
             .unwrap();
         assert_eq!(picked, "win-tool-macos-x64.tar.gz");
+
+        // Complete the round-trip: the Windows target still resolves its asset.
+        let picked = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("win-tool")
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "win-tool-windows-x64.zip");
+    }
+
+    #[test]
+    fn test_platform_part_only_strips_at_token_boundary() {
+        // A tool name that is a prefix of an OS token (e.g. "win" inside "windows")
+        // must NOT be stripped mid-token, or the OS evidence is lost. With the
+        // boundary guard the full token is kept and the OS still scores as a match
+        // (without it, "windows-x64.zip" would be cut to "dows-x64.zip" -> OS 0).
+        let picker = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("win");
+        assert_eq!(picker.score_os_match("windows-x64.zip"), 100);
+
+        // The boundary cases that should still strip: separators, a version digit,
+        // and end-of-string.
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("tool");
+        assert_eq!(
+            picker.platform_part("tool-linux-x64.tar.gz"),
+            "-linux-x64.tar.gz"
+        );
+        assert_eq!(
+            picker.platform_part("tool_linux_x64.tar.gz"),
+            "_linux_x64.tar.gz"
+        );
+        assert_eq!(picker.platform_part("tool.linux.x64"), ".linux.x64");
+        assert_eq!(picker.platform_part("tool1.2.3-linux"), "1.2.3-linux");
+        assert_eq!(picker.platform_part("tool"), "");
+        // No boundary -> not stripped.
+        assert_eq!(
+            picker.platform_part("toolkit-linux-x64"),
+            "toolkit-linux-x64"
+        );
     }
 
     #[test]
