@@ -473,12 +473,7 @@ impl AquaPackage {
 
         for format in formats {
             if asset_name.ends_with(&format!(".{format}")) {
-                return match format {
-                    "tgz" => "tar.gz",
-                    "txz" => "tar.xz",
-                    "tbz2" | "tbz" => "tar.bz2",
-                    _ => format,
-                };
+                return format;
             }
         }
         "raw"
@@ -573,12 +568,7 @@ impl AquaPackage {
             };
             self.detect_format(&asset)
         } else {
-            match self.format.as_str() {
-                "tgz" => "tar.gz",
-                "txz" => "tar.xz",
-                "tbz2" | "tbz" => "tar.bz2",
-                format => format,
-            }
+            &self.format
         };
         Ok(format)
     }
@@ -1607,6 +1597,41 @@ packages:
         let format = pkg.format("1.0.0", "windows", "amd64").unwrap();
 
         assert_eq!(format, "7z");
+    }
+
+    #[test]
+    fn test_format_detects_literal_aqua_aliases() {
+        let cases = [
+            ("tool-{{.Version}}.tgz", "tgz"),
+            ("tool-{{.Version}}.txz", "txz"),
+            ("tool-{{.Version}}.tbz", "tbz"),
+            ("tool-{{.Version}}.tbz2", "tbz2"),
+        ];
+
+        for (asset, expected) in cases {
+            let pkg = AquaPackage {
+                asset: asset.to_string(),
+                ..Default::default()
+            };
+
+            let format = pkg.format("1.0.0", "linux", "amd64").unwrap();
+
+            assert_eq!(format, expected);
+        }
+    }
+
+    #[test]
+    fn test_format_preserves_explicit_aqua_aliases() {
+        for format in ["tgz", "txz", "tbz", "tbz2"] {
+            let pkg = AquaPackage {
+                format: format.to_string(),
+                ..Default::default()
+            };
+
+            let detected = pkg.format("1.0.0", "linux", "amd64").unwrap();
+
+            assert_eq!(detected, format);
+        }
     }
 
     #[test]
