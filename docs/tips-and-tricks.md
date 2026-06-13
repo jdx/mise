@@ -102,6 +102,9 @@ run_at_load = true
 [bootstrap.user]                       # current user's login shell
 login_shell = "/bin/zsh"
 
+[bootstrap.hooks.post-defaults]        # optional phase hooks
+run = "killall Dock || true"
+
 [tasks.bootstrap]                      # anything else, with tools on PATH
 run = "gh auth status || gh auth login"
 ```
