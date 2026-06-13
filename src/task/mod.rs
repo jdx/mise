@@ -478,7 +478,7 @@ pub struct Task {
     #[serde(default)]
     pub allow_env: Vec<String>,
 
-    /// Name of the task template to extend (requires experimental = true)
+    /// Name of the task template to extend
     #[serde(default)]
     pub extends: Option<String>,
 

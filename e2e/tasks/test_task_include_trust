@@ -43,7 +43,7 @@ fi
 rm -rf mise-tasks
 
 cat <<'EOF' >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [monorepo]
 config_roots = ["pkg"]

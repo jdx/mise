@@ -77,7 +77,6 @@ async fn execute(
     shell: Option<&str>,
     files: Vec<&PathBuf>,
 ) -> Result<()> {
-    Settings::get().ensure_experimental("watch_file_hooks")?;
     let modified_files_var = files
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))
@@ -144,7 +143,6 @@ async fn execute_task(
     task_name: &str,
     files: Vec<&PathBuf>,
 ) -> Result<()> {
-    Settings::get().ensure_experimental("watch_file_hooks")?;
     let modified_files_var = files
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))

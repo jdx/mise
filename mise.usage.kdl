@@ -657,28 +657,28 @@ Number of jobs to run in parallel
         arg <JOBS>
     }
     flag --allow-env help=#"""
-[experimental] Allow specific env var through (implies --deny-env for everything else)
+Allow specific env var through (implies --deny-env for everything else)
 Supports wildcards, e.g. --allow-env='MYAPP_*'
 """# var=#true {
         arg <VAR>
     }
     flag --allow-net help=#"""
-[experimental] Allow network to specific host (implies --deny-net for everything else)
+Allow network to specific host (implies --deny-net for everything else)
 macOS only in v1; on Linux falls back to allowing all network
 """# var=#true {
         arg <HOST>
     }
-    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+    flag --allow-read help="Allow reads from specific path (implies --deny-read for everything else)" var=#true {
         arg <PATH>
     }
-    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+    flag --allow-write help="Allow writes to specific path (implies --deny-write for everything else)" var=#true {
         arg <PATH>
     }
-    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
-    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
-    flag --deny-net help="[experimental] Block all network access"
-    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
-    flag --deny-write help="[experimental] Block all filesystem writes"
+    flag --deny-all help="Block reads, writes, network, and env vars"
+    flag --deny-env help="Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="Block all network access"
+    flag --deny-read help="Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-deps help="Skip automatic dependency preparation"
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
@@ -1036,7 +1036,7 @@ Examples:
 """#
         flag --oauth help="Force native GitHub OAuth device flow instead of normal token resolution"
         flag --raw help="Print only the token value"
-        flag --refresh help="[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow"
+        flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
@@ -1192,18 +1192,18 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
         arg <MINIMUM_RELEASE_AGE>
     }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
-    flag --shared help="[experimental] Install tool(s) to a shared directory" {
+    flag --shared help="Install tool(s) to a shared directory" {
         long_help #"""
-[experimental] Install tool(s) to a shared directory
+Install tool(s) to a shared directory
 
 Installs to the specified directory instead of the default install location.
 May require elevated permissions depending on the path.
 """#
         arg <SHARED>
     }
-    flag --system help="[experimental] Install tool(s) to the system-wide shared directory" {
+    flag --system help="Install tool(s) to the system-wide shared directory" {
         long_help #"""
-[experimental] Install tool(s) to the system-wide shared directory
+Install tool(s) to the system-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
@@ -1518,9 +1518,9 @@ The version prefix to use when querying the latest version
 same as the first argument after the "@"
 """# required=#false
 }
-cmd mcp help="[experimental] Run Model Context Protocol (MCP) server" {
+cmd mcp help="Run Model Context Protocol (MCP) server" {
     long_help #"""
-[experimental] Run Model Context Protocol (MCP) server
+Run Model Context Protocol (MCP) server
 
 This command starts an MCP server that exposes mise functionality
 to AI assistants over stdin/stdout using JSON-RPC protocol.
@@ -1557,9 +1557,7 @@ Examples:
         "mise": {
           "command": "mise",
           "args": ["mcp"],
-          "env": {
-            "MISE_EXPERIMENTAL": "1"
-          }
+          "env": {}
         }
       }
     }
@@ -2380,25 +2378,25 @@ Or it can be overridden with the `shell` property on a task.
         arg <TOOL@VERSION>
     }
     flag --allow-env help=#"""
-[experimental] Allow specific env var through (implies --deny-env for everything else)
+Allow specific env var through (implies --deny-env for everything else)
 Supports wildcards, e.g. --allow-env='MYAPP_*'
 """# var=#true {
         arg <VAR>
     }
-    flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+    flag --allow-net help="Allow network to specific host (implies --deny-net for everything else)" var=#true {
         arg <HOST>
     }
-    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+    flag --allow-read help="Allow reads from specific path (implies --deny-read for everything else)" var=#true {
         arg <PATH>
     }
-    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+    flag --allow-write help="Allow writes to specific path (implies --deny-write for everything else)" var=#true {
         arg <PATH>
     }
-    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
-    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
-    flag --deny-net help="[experimental] Block all network access"
-    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
-    flag --deny-write help="[experimental] Block all filesystem writes"
+    flag --deny-all help="Block reads, writes, network, and env vars"
+    flag --deny-env help="Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="Block all network access"
+    flag --deny-read help="Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use cache on remote tasks"
     flag --no-deps help="Skip automatic dependency preparation"
@@ -3316,25 +3314,25 @@ Or it can be overridden with the `shell` property on a task.
             arg <TOOL@VERSION>
         }
         flag --allow-env help=#"""
-[experimental] Allow specific env var through (implies --deny-env for everything else)
+Allow specific env var through (implies --deny-env for everything else)
 Supports wildcards, e.g. --allow-env='MYAPP_*'
 """# var=#true {
             arg <VAR>
         }
-        flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+        flag --allow-net help="Allow network to specific host (implies --deny-net for everything else)" var=#true {
             arg <HOST>
         }
-        flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+        flag --allow-read help="Allow reads from specific path (implies --deny-read for everything else)" var=#true {
             arg <PATH>
         }
-        flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+        flag --allow-write help="Allow writes to specific path (implies --deny-write for everything else)" var=#true {
             arg <PATH>
         }
-        flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
-        flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
-        flag --deny-net help="[experimental] Block all network access"
-        flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
-        flag --deny-write help="[experimental] Block all filesystem writes"
+        flag --deny-all help="Block reads, writes, network, and env vars"
+        flag --deny-env help="Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+        flag --deny-net help="Block all network access"
+        flag --deny-read help="Block filesystem reads (system libs and tool dirs still accessible)"
+        flag --deny-write help="Block all filesystem writes"
         flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use cache on remote tasks"
         flag --no-deps help="Skip automatic dependency preparation"
@@ -3470,9 +3468,9 @@ Examples:
     github.com: gho_…xxxx (source: GitHub OAuth)
 
 """#
-        flag --oauth help="[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources"
+        flag --oauth help="Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources"
         flag --raw help="Print only the token value"
-        flag --refresh help="[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire"
+        flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }

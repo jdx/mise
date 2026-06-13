@@ -287,7 +287,7 @@ List installed and active tool versions
 List runtime versions available for install.
 .TP
 \fBmcp\fR
-[experimental] Run Model Context Protocol (MCP) server
+Run Model Context Protocol (MCP) server
 .TP
 \fBoci\fR
 [experimental] Build OCI container images from a mise.toml
@@ -1005,33 +1005,33 @@ Number of jobs to run in parallel
 [default: 4]
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
-[experimental] Allow specific env var through (implies \-\-deny\-env for everything else)
+Allow specific env var through (implies \-\-deny\-env for everything else)
 Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
-[experimental] Allow network to specific host (implies \-\-deny\-net for everything else)
+Allow network to specific host (implies \-\-deny\-net for everything else)
 macOS only in v1; on Linux falls back to allowing all network
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
-[experimental] Allow reads from specific path (implies \-\-deny\-read for everything else)
+Allow reads from specific path (implies \-\-deny\-read for everything else)
 .TP
 \fB\-\-allow\-write\fR \fI<PATH>\fR
-[experimental] Allow writes to specific path (implies \-\-deny\-write for everything else)
+Allow writes to specific path (implies \-\-deny\-write for everything else)
 .TP
 \fB\-\-deny\-all\fR
-[experimental] Block reads, writes, network, and env vars
+Block reads, writes, network, and env vars
 .TP
 \fB\-\-deny\-env\fR
-[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
 .TP
 \fB\-\-deny\-net\fR
-[experimental] Block all network access
+Block all network access
 .TP
 \fB\-\-deny\-read\fR
-[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+Block filesystem reads (system libs and tool dirs still accessible)
 .TP
 \fB\-\-deny\-write\fR
-[experimental] Block all filesystem writes
+Block all filesystem writes
 .TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
@@ -1404,13 +1404,13 @@ Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
 .TP
 \fB\-\-shared\fR \fI<SHARED>\fR
-[experimental] Install tool(s) to a shared directory
+Install tool(s) to a shared directory
 
 Installs to the specified directory instead of the default install location.
 May require elevated permissions depending on the path.
 .TP
 \fB\-\-system\fR
-[experimental] Install tool(s) to the system\-wide shared directory
+Install tool(s) to the system\-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
@@ -2305,32 +2305,32 @@ Don't show any output except for errors
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
-[experimental] Allow specific env var through (implies \-\-deny\-env for everything else)
+Allow specific env var through (implies \-\-deny\-env for everything else)
 Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
-[experimental] Allow network to specific host (implies \-\-deny\-net for everything else)
+Allow network to specific host (implies \-\-deny\-net for everything else)
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
-[experimental] Allow reads from specific path (implies \-\-deny\-read for everything else)
+Allow reads from specific path (implies \-\-deny\-read for everything else)
 .TP
 \fB\-\-allow\-write\fR \fI<PATH>\fR
-[experimental] Allow writes to specific path (implies \-\-deny\-write for everything else)
+Allow writes to specific path (implies \-\-deny\-write for everything else)
 .TP
 \fB\-\-deny\-all\fR
-[experimental] Block reads, writes, network, and env vars
+Block reads, writes, network, and env vars
 .TP
 \fB\-\-deny\-env\fR
-[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
 .TP
 \fB\-\-deny\-net\fR
-[experimental] Block all network access
+Block all network access
 .TP
 \fB\-\-deny\-read\fR
-[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+Block filesystem reads (system libs and tool dirs still accessible)
 .TP
 \fB\-\-deny\-write\fR
-[experimental] Block all filesystem writes
+Block all filesystem writes
 .TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
@@ -3186,32 +3186,32 @@ Don't show any output except for errors
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
-[experimental] Allow specific env var through (implies \-\-deny\-env for everything else)
+Allow specific env var through (implies \-\-deny\-env for everything else)
 Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
-[experimental] Allow network to specific host (implies \-\-deny\-net for everything else)
+Allow network to specific host (implies \-\-deny\-net for everything else)
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
-[experimental] Allow reads from specific path (implies \-\-deny\-read for everything else)
+Allow reads from specific path (implies \-\-deny\-read for everything else)
 .TP
 \fB\-\-allow\-write\fR \fI<PATH>\fR
-[experimental] Allow writes to specific path (implies \-\-deny\-write for everything else)
+Allow writes to specific path (implies \-\-deny\-write for everything else)
 .TP
 \fB\-\-deny\-all\fR
-[experimental] Block reads, writes, network, and env vars
+Block reads, writes, network, and env vars
 .TP
 \fB\-\-deny\-env\fR
-[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
 .TP
 \fB\-\-deny\-net\fR
-[experimental] Block all network access
+Block all network access
 .TP
 \fB\-\-deny\-read\fR
-[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+Block filesystem reads (system libs and tool dirs still accessible)
 .TP
 \fB\-\-deny\-write\fR
-[experimental] Block all filesystem writes
+Block all filesystem writes
 .TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
@@ -3334,13 +3334,13 @@ GitHub token
 .PP
 .TP
 \fB\-\-oauth\fR
-[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device\-code flow), bypassing other token sources
+Resolve only via the native GitHub OAuth source (cache, refresh, or device\-code flow), bypassing other token sources
 .TP
 \fB\-\-raw\fR
 Print only the token value
 .TP
 \fB\-\-refresh\fR
-[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh\-token grant or a new device\-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
+Mint a fresh OAuth token even if the cached one has not expired, via the refresh\-token grant or a new device\-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
 .TP
 \fB\-\-unmask\fR
 Show the full unmasked token

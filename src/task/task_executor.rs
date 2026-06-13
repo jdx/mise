@@ -1050,7 +1050,6 @@ impl TaskExecutor {
         let raw = self.raw(Some(task));
         let sandbox = self.build_sandbox_for_task(task, &config).await?;
         let env = if sandbox.is_active() {
-            Settings::get().ensure_experimental("sandbox")?;
             &sandbox.filter_env(env)
         } else {
             env

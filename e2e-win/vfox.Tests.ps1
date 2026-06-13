@@ -1,7 +1,6 @@
 Describe 'vfox' {
     BeforeAll {
-        # vfox-npm is a custom backend which requires experimental mode
-        $env:MISE_EXPERIMENTAL = "1"
+        # vfox-npm exercises custom backend support
     }
 
     It 'executes vfox backend command execution' {

@@ -198,7 +198,6 @@ async fn refresh_cached_token(
 
 async fn token_async(req: TokenRequest) -> Result<String> {
     let settings = Settings::get();
-    settings.ensure_experimental("native GitHub OAuth")?;
     let client_id = settings.github.oauth_client_id.trim();
     let scopes = settings.github.oauth_scopes.trim();
     if client_id.is_empty() {

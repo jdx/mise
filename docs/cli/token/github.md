@@ -18,7 +18,7 @@ GitHub hostname
 
 ### `--oauth`
 
-[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources
+Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources
 
 ### `--raw`
 
@@ -26,7 +26,7 @@ Print only the token value
 
 ### `--refresh`
 
-[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
+Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
 
 ### `--unmask`
 

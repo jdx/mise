@@ -14,7 +14,7 @@
 export MISE_EXPERIMENTAL=1
 
 cat <<'EOF' >mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [settings]
 experimental = true

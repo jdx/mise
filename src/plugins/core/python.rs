@@ -500,12 +500,6 @@ impl PythonPlugin {
         let raw_opts = tv.request.options();
         let opts = PythonOptions::new(&raw_opts);
         if let Some(virtualenv) = opts.virtualenv() {
-            if !Settings::get().experimental {
-                warn!(
-                    "please enable experimental mode with `mise settings experimental=true` \
-                    to use python virtualenv activation"
-                );
-            }
             let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
             if !virtualenv.is_absolute() {
                 // TODO: use the path of the config file that specified python, not the top one like this
