@@ -109,12 +109,13 @@ pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
 /// anyway. mas uses numeric ADAM IDs only.
 pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
     let (mgr, rest) = parse_spec(spec)?;
-    validate_package_name(&mgr, &rest)?;
+    let rest = normalize_use_spec_package_name(&mgr, &rest)?;
+    validate_package_name(&mgr, rest)?;
     if is_opaque_package_manager(&mgr) {
         return Ok((
             mgr,
             PackageRequest {
-                name: rest,
+                name: rest.to_string(),
                 version: None,
                 tap_url: None,
             },
@@ -135,7 +136,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
         None => Ok((
             mgr,
             PackageRequest {
-                name: rest,
+                name: rest.to_string(),
                 version: None,
                 tap_url: None,
             },
@@ -337,6 +338,18 @@ fn is_opaque_package_manager(mgr: &str) -> bool {
     is_brew_manager(mgr) || mgr == "mas"
 }
 
+fn normalize_use_spec_package_name<'a>(mgr: &str, name: &'a str) -> eyre::Result<&'a str> {
+    if mgr == "mas"
+        && let Some(name) = name.strip_suffix("@latest")
+    {
+        if name.is_empty() {
+            bail!("invalid system package spec: expected '<manager>:<package>[@version]'");
+        }
+        return Ok(name);
+    }
+    Ok(name)
+}
+
 fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
     if mgr == "mas" && !packages::mas::is_adam_id(name) {
         bail!("mas app IDs must be numeric ADAM IDs (e.g. \"mas:497799835\")");
@@ -437,6 +450,11 @@ mod tests {
         assert_eq!(req.version, None);
 
         let (mgr, req) = parse_use_spec("mas:497799835").unwrap();
+        assert_eq!(mgr, "mas");
+        assert_eq!(req.name, "497799835");
+        assert_eq!(req.version, None);
+
+        let (mgr, req) = parse_use_spec("mas:497799835@latest").unwrap();
         assert_eq!(mgr, "mas");
         assert_eq!(req.name, "497799835");
         assert_eq!(req.version, None);

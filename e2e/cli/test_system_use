@@ -14,7 +14,9 @@ assert_contains "mise bootstrap packages use --dry-run apt:curl@8.5.0-2" '"apt:c
 
 # mas uses numeric ADAM IDs
 assert_contains "mise bootstrap packages use --dry-run mas:497799835" '"mas:497799835" = "latest"'
+assert_contains "mise bootstrap packages use --dry-run mas:497799835@latest" '"mas:497799835" = "latest"'
 assert_fail "mise bootstrap packages use --dry-run mas:com.apple.dt.Xcode"
+assert_fail "mise bootstrap packages use --dry-run mas:497799835@1"
 
 # bad specs and unknown managers fail before anything is written
 assert_fail "mise bootstrap packages use noprefix"
