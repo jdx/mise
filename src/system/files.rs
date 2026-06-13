@@ -837,6 +837,16 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
 /// content overwrites by copy/template (those are the declared intent) or
 /// re-pointing symlinks (always mise-owned territory)
 fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    let regular_files_have_same_content = |source: &Path, target: &Path| -> Result<bool> {
+        if !source.is_file() || !target.is_file() {
+            return Ok(false);
+        }
+        if source.metadata()?.len() != target.metadata()?.len() {
+            return Ok(false);
+        }
+        Ok(file::read(source)? == file::read(target)?)
+    };
+
     // on Windows, file "symlinks" are applied as copies (see `link_path`),
     // so existing regular-file targets are routine content updates there,
     // not conflicts — only a type mismatch blocks
@@ -847,14 +857,9 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
             if !target.exists() || target.is_symlink() {
                 return Ok(false);
             }
-            if source.is_file()
-                && target.is_file()
-                && source.metadata()?.len() == target.metadata()?.len()
-                && file::read(source)? == file::read(target)?
-            {
-                return Ok(false);
-            }
-            Ok(true)
+            // If this equality check cannot read either side, keep the
+            // conservative conflict path so --force can still handle it.
+            Ok(!regular_files_have_same_content(source, target).unwrap_or(false))
         }
     };
     let mut out = vec![];
