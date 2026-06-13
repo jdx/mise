@@ -138,14 +138,16 @@ pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
 /// pin. brew and brew-cask are exempt from `@` parsing: `@` is part of
 /// Homebrew names (`postgresql@17` — that name IS brew's versioning
 /// mechanism), and bottles/casks can't be installed at a pinned version
-/// anyway.
+/// anyway. mas uses numeric ADAM IDs only.
 pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
     let (mgr, rest) = parse_spec(spec)?;
-    if is_brew_manager(&mgr) {
+    let rest = normalize_use_spec_package_name(&mgr, &rest)?;
+    validate_package_name(&mgr, rest)?;
+    if is_opaque_package_manager(&mgr) {
         return Ok((
             mgr,
             PackageRequest {
-                name: rest,
+                name: rest.to_string(),
                 version: None,
                 tap_url: None,
             },
@@ -166,7 +168,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
         None => Ok((
             mgr,
             PackageRequest {
-                name: rest,
+                name: rest.to_string(),
                 version: None,
                 tap_url: None,
             },
@@ -230,6 +232,10 @@ fn packages_from_config_files_with_brew_taps(
         match parse_spec(&spec) {
             Ok((mgr, name)) => {
                 let version = (version != "latest").then_some(version);
+                if let Err(err) = validate_package_name(&mgr, &name) {
+                    warn!("[bootstrap.packages]: {err}");
+                    continue;
+                }
                 let tap_url = if is_brew_manager(&mgr) {
                     brew_tap_name(&name).and_then(|tap| brew_taps.get(tap).cloned())
                 } else {
@@ -768,6 +774,7 @@ pub fn packages_from_specs_with_config(
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
+        validate_package_name(&mgr, &name)?;
         let tap_url = if is_brew_manager(&mgr) {
             brew_tap_name(&name).and_then(|tap| brew_taps.get(tap).cloned())
         } else {
@@ -803,6 +810,29 @@ pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
 
 fn is_brew_manager(mgr: &str) -> bool {
     matches!(mgr, "brew" | "brew-cask")
+}
+
+fn is_opaque_package_manager(mgr: &str) -> bool {
+    is_brew_manager(mgr) || mgr == "mas"
+}
+
+fn normalize_use_spec_package_name<'a>(mgr: &str, name: &'a str) -> eyre::Result<&'a str> {
+    if mgr == "mas"
+        && let Some(name) = name.strip_suffix("@latest")
+    {
+        if name.is_empty() {
+            bail!("invalid system package spec: expected '<manager>:<package>[@version]'");
+        }
+        return Ok(name);
+    }
+    Ok(name)
+}
+
+fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
+    if mgr == "mas" && !packages::mas::is_adam_id(name) {
+        bail!("mas app IDs must be numeric ADAM IDs (e.g. \"mas:497799835\")");
+    }
+    Ok(())
 }
 
 fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
@@ -900,6 +930,19 @@ mod tests {
         assert_eq!(mgr, "brew-cask");
         assert_eq!(req.name, "temurin@17");
         assert_eq!(req.version, None);
+
+        let (mgr, req) = parse_use_spec("mas:497799835").unwrap();
+        assert_eq!(mgr, "mas");
+        assert_eq!(req.name, "497799835");
+        assert_eq!(req.version, None);
+
+        let (mgr, req) = parse_use_spec("mas:497799835@latest").unwrap();
+        assert_eq!(mgr, "mas");
+        assert_eq!(req.name, "497799835");
+        assert_eq!(req.version, None);
+
+        assert!(parse_use_spec("mas:com.example.App").is_err());
+        assert!(parse_use_spec("mas:497799835@1").is_err());
 
         assert!(parse_use_spec("apt:curl@").is_err());
         assert!(parse_use_spec("noprefix").is_err());

@@ -21,7 +21,7 @@ use crate::system::packages::PackageRequest;
 /// `@` (or with `@latest`) no pin is written. brew formulae and casks
 /// version through their names instead (for example `brew:postgresql@17`,
 /// `brew-cask:temurin@17`), where `@` is part of the Homebrew name rather than
-/// a mise version selector.
+/// a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "u", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemUse {
@@ -141,7 +141,7 @@ impl SystemUse {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap packages use apt:curl brew:jq brew-cask:firefox</bold>
+    $ <bold>mise bootstrap packages use apt:curl brew:jq brew-cask:firefox mas:497799835</bold>
     $ <bold>mise bootstrap packages use -g brew:postgresql@17</bold>
     $ <bold>mise bootstrap packages use apt:curl@8.5.0-2</bold>
 "#

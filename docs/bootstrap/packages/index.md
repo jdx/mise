@@ -10,6 +10,7 @@ mise can ensure machine-global system packages are installed via the
 "brew:postgresql@17" = "latest"
 "brew:ffmpeg" = "latest"
 "brew-cask:firefox" = "latest"
+"mas:497799835" = "latest"
 ```
 
 Each entry is keyed `"manager:package"` — the manager prefix is required —
@@ -45,6 +46,7 @@ applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html
 | `pacman`    | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html) |
 | `brew`      | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)     |
 | `brew-cask` | macOS — **no Homebrew required**                               | [brew](/bootstrap/packages/brew.html)     |
+| `mas`       | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)       |
 
 ## Semantics
 
@@ -55,8 +57,9 @@ applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are not acted on, so the same config works across platforms: `apt`
   entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
-  works on both macOS and Linux; `brew-cask` works on macOS. Status commands
-  still list unavailable managers so nothing is silently invisible.
+  works on both macOS and Linux; `brew-cask` works on macOS; `mas` works on
+  macOS when the `mas` CLI is on `PATH`. Status commands still list
+  unavailable managers so nothing is silently invisible.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
   missing, but only `mise bootstrap packages install` ever installs anything.
@@ -86,7 +89,7 @@ mise bootstrap packages install --yes     # skip the confirmation prompt
 mise bootstrap packages install --manager apt
 mise bootstrap packages install --update  # refresh package manager metadata first
 
-mise bootstrap packages use apt:curl brew:jq brew-cask:firefox  # add and install
+mise bootstrap packages use apt:curl brew:jq brew-cask:firefox mas:497799835
 mise bootstrap packages use -g brew:ffmpeg                      # write globally
 mise bootstrap packages use apt:curl@8.5.0-2   # pin a version (brew pins via the
                                    # formula name: brew:postgresql@17)
@@ -94,6 +97,7 @@ mise bootstrap packages use apt:curl@8.5.0-2   # pin a version (brew pins via th
 mise bootstrap packages upgrade           # upgrade installed packages to current versions
 mise bootstrap packages upgrade --manager brew
 mise bootstrap packages upgrade --manager brew-cask
+mise bootstrap packages upgrade --manager mas
 ```
 
 `mise bootstrap packages use` is `mise use` for system packages: it writes
@@ -106,11 +110,12 @@ Mac.
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available
 version — apt and dnf also honor a version pinned in config (pacman, brew,
-and brew-cask [can't install pins](/bootstrap/packages/pacman.html), so
+brew-cask, and mas [can't install pins](/bootstrap/packages/pacman.html), so
 pinned entries are skipped with a warning). Packages that aren't installed
 yet are skipped — that's `mise bootstrap packages install`'s job. For brew
 this pours the formula's current bottle and replaces the old keg; for
-brew-cask this installs the current cask artifact.
+brew-cask this installs the current cask artifact; for mas this runs
+`mas upgrade`.
 
 `mise doctor` also reports configured system packages and warns when any are
 missing.

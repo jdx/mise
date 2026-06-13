@@ -26,7 +26,7 @@ Packages in `manager:package` form; defaults to everything configured in [bootst
 
 ### `-m --manager <MANAGER>`
 
-Only install packages for this manager, e.g. `apt`, `brew`, or `brew-cask`
+Only install packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`
 
 **Choices:**
 
@@ -34,6 +34,7 @@ Only install packages for this manager, e.g. `apt`, `brew`, or `brew-cask`
 - `brew`
 - `brew-cask`
 - `dnf`
+- `mas`
 - `pacman`
 
 ### `-n --dry-run`
@@ -52,7 +53,7 @@ Examples:
 
 ```
 mise bootstrap packages install
-mise bootstrap packages install apt:curl brew:jq brew-cask:firefox
+mise bootstrap packages install apt:curl brew:jq brew-cask:firefox mas:497799835
 mise bootstrap packages install --dry-run
 mise bootstrap packages install --manager apt --yes
 ```

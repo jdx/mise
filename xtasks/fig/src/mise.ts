@@ -867,11 +867,18 @@ const completionSpec: Fig.Spec = {
                 {
                   name: ["-m", "--manager"],
                   description:
-                    "Only install packages for this manager, e.g. `apt`, `brew`, or `brew-cask`",
+                    "Only install packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`",
                   isRepeatable: false,
                   args: {
                     name: "manager",
-                    suggestions: ["apt", "brew", "brew-cask", "dnf", "pacman"],
+                    suggestions: [
+                      "apt",
+                      "brew",
+                      "brew-cask",
+                      "dnf",
+                      "mas",
+                      "pacman",
+                    ],
                   },
                 },
                 {
@@ -926,11 +933,18 @@ const completionSpec: Fig.Spec = {
                 {
                   name: ["-m", "--manager"],
                   description:
-                    "Only upgrade packages for this manager, e.g. `apt`, `brew`, or `brew-cask`",
+                    "Only upgrade packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`",
                   isRepeatable: false,
                   args: {
                     name: "manager",
-                    suggestions: ["apt", "brew", "brew-cask", "dnf", "pacman"],
+                    suggestions: [
+                      "apt",
+                      "brew",
+                      "brew-cask",
+                      "dnf",
+                      "mas",
+                      "pacman",
+                    ],
                   },
                 },
                 {

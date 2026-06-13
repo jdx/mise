@@ -937,7 +937,7 @@ only.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only install packages for this manager, e.g. `apt`, `brew`, or `brew\-cask`
+Only install packages for this manager, e.g. `apt`, `brew`, `brew\-cask`, or `mas`
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
@@ -971,9 +971,10 @@ Upgrade installed bootstrap packages from `[bootstrap.packages]`
 Refreshes package manager metadata and upgrades the configured packages
 that are already installed: apt/dnf/pacman upgrade to the newest available
 version (apt and dnf honor a version pinned in config), brew pours the
-formula's current bottle and replaces the old keg, and brew\-cask installs
-the current cask artifact. Packages that are not installed yet are skipped
-— use `mise bootstrap packages install` for those.
+formula's current bottle and replaces the old keg, brew\-cask installs
+the current cask artifact, and mas upgrades App Store apps. Packages that
+are not installed yet are skipped — use `mise bootstrap packages install`
+for those.
 
 Packages can also be given explicitly in `manager:package` form.
 .PP
@@ -983,7 +984,7 @@ Packages can also be given explicitly in `manager:package` form.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only upgrade packages for this manager, e.g. `apt`, `brew`, or `brew\-cask`
+Only upgrade packages for this manager, e.g. `apt`, `brew`, `brew\-cask`, or `mas`
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
@@ -1006,7 +1007,7 @@ Versions are pinned with `@`: `mise bootstrap packages use apt:curl@8.5.0\-2`. W
 `@` (or with `@latest`) no pin is written. brew formulae and casks
 version through their names instead (for example `brew:postgresql@17`,
 `brew\-cask:temurin@17`), where `@` is part of the Homebrew name rather than
-a mise version selector.
+a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 .PP
 \fBUsage:\fR mise bootstrap packages use [OPTIONS] <PACKAGE> ...
 .PP

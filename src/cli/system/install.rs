@@ -22,8 +22,8 @@ pub struct SystemInstall {
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
 
-    /// Only install packages for this manager, e.g. `apt`, `brew`, or `brew-cask`
-    #[clap(long, short, value_parser = ["apt", "brew", "brew-cask", "dnf", "pacman"])]
+    /// Only install packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`
+    #[clap(long, short, value_parser = ["apt", "brew", "brew-cask", "dnf", "mas", "pacman"])]
     manager: Option<String>,
 
     /// Print the commands that would run without running them
@@ -195,7 +195,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise bootstrap packages install</bold>
-    $ <bold>mise bootstrap packages install apt:curl brew:jq brew-cask:firefox</bold>
+    $ <bold>mise bootstrap packages install apt:curl brew:jq brew-cask:firefox mas:497799835</bold>
     $ <bold>mise bootstrap packages install --dry-run</bold>
     $ <bold>mise bootstrap packages install --manager apt --yes</bold>
 "#
