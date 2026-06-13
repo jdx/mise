@@ -253,11 +253,12 @@ fn packages_from_config_files_with_brew_taps(
 /// the value a global config declared. Unsupported value shapes warn
 /// (forward compatibility) and are skipped.
 pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
-    let mut friendly: IndexMap<(String, String), toml::Value> = IndexMap::new();
-    let mut raw: IndexMap<(String, String), toml::Value> = IndexMap::new();
+    let mut merged: IndexMap<(String, String), toml::Value> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
+            let mut friendly: IndexMap<(String, String), toml::Value> = IndexMap::new();
+            let mut raw: IndexMap<(String, String), toml::Value> = IndexMap::new();
             merge_friendly_macos_defaults(&mut friendly, &sys.macos);
             for (domain, entries) in sys.macos.defaults {
                 match entries {
@@ -271,9 +272,11 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
                     ),
                 }
             }
+            for (key, value) in merge_raw_over_friendly_macos_defaults(friendly, raw) {
+                merged.insert(key, value);
+            }
         }
     }
-    let merged = merge_raw_over_friendly_macos_defaults(friendly, raw);
     let mut out = vec![];
     for ((domain, key), value) in merged {
         match DefaultsValue::from_toml(&value) {
@@ -340,13 +343,39 @@ fn insert_friendly_default(
     defaults_key: &str,
     value: toml::Value,
     expected: fn(&toml::Value) -> bool,
+    expected_type: &str,
 ) {
     if expected(&value) {
         out.insert((domain.to_string(), defaults_key.to_string()), value);
     } else {
         warn!(
             "[bootstrap.macos.{section}].{key}: unsupported value type \
-             (expected bool, integer, float, or string)"
+             (expected {expected_type})"
+        );
+    }
+}
+
+fn insert_friendly_multi_domain_default(
+    out: &mut IndexMap<(String, String), toml::Value>,
+    section: &str,
+    key: &str,
+    domains: &[&str],
+    defaults_key: &str,
+    value: toml::Value,
+    expected: fn(&toml::Value) -> bool,
+    expected_type: &str,
+) {
+    if expected(&value) {
+        for domain in domains {
+            out.insert(
+                (domain.to_string(), defaults_key.to_string()),
+                value.clone(),
+            );
+        }
+    } else {
+        warn!(
+            "[bootstrap.macos.{section}].{key}: unsupported value type \
+             (expected {expected_type})"
         );
     }
 }
@@ -373,6 +402,7 @@ fn merge_dock_defaults(
                 "autohide",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             "orientation" => match value {
                 toml::Value::String(s) if matches!(s.as_str(), "bottom" | "left" | "right") => {
@@ -397,6 +427,7 @@ fn merge_dock_defaults(
                 "tilesize",
                 value.clone(),
                 is_integer,
+                "integer",
             ),
             "magnification" => insert_friendly_default(
                 out,
@@ -406,6 +437,7 @@ fn merge_dock_defaults(
                 "magnification",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             "largesize" => insert_friendly_default(
                 out,
@@ -415,6 +447,7 @@ fn merge_dock_defaults(
                 "largesize",
                 value.clone(),
                 is_integer,
+                "integer",
             ),
             "show_recents" => insert_friendly_default(
                 out,
@@ -424,6 +457,7 @@ fn merge_dock_defaults(
                 "show-recents",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             "mru_spaces" => insert_friendly_default(
                 out,
@@ -433,6 +467,7 @@ fn merge_dock_defaults(
                 "mru-spaces",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             _ => warn!("[bootstrap.macos.dock].{key}: unknown key, ignoring entry"),
         }
@@ -453,6 +488,7 @@ fn merge_finder_defaults(
                 "AppleShowAllFiles",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             "show_pathbar" => insert_friendly_default(
                 out,
@@ -462,6 +498,7 @@ fn merge_finder_defaults(
                 "ShowPathbar",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             "show_status_bar" => insert_friendly_default(
                 out,
@@ -471,6 +508,7 @@ fn merge_finder_defaults(
                 "ShowStatusBar",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             "show_extensions_warning" => insert_friendly_default(
                 out,
@@ -480,6 +518,7 @@ fn merge_finder_defaults(
                 "FXEnableExtensionChangeWarning",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             "preferred_view_style" => match value {
                 toml::Value::String(s) => {
@@ -529,6 +568,7 @@ fn merge_keyboard_defaults(
                 "KeyRepeat",
                 value.clone(),
                 is_integer,
+                "integer",
             ),
             "initial_key_repeat" => insert_friendly_default(
                 out,
@@ -538,6 +578,7 @@ fn merge_keyboard_defaults(
                 "InitialKeyRepeat",
                 value.clone(),
                 is_integer,
+                "integer",
             ),
             "press_and_hold" => insert_friendly_default(
                 out,
@@ -547,6 +588,7 @@ fn merge_keyboard_defaults(
                 "ApplePressAndHoldEnabled",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             "fn_state" => insert_friendly_default(
                 out,
@@ -556,6 +598,7 @@ fn merge_keyboard_defaults(
                 "com.apple.keyboard.fnState",
                 value.clone(),
                 is_bool,
+                "bool",
             ),
             _ => warn!("[bootstrap.macos.keyboard].{key}: unknown key, ignoring entry"),
         }
@@ -568,38 +611,32 @@ fn merge_trackpad_defaults(
 ) {
     for (key, value) in entries {
         match key.as_str() {
-            "tap_to_click" => {
-                for domain in [
+            "tap_to_click" => insert_friendly_multi_domain_default(
+                out,
+                "trackpad",
+                key,
+                &[
                     "com.apple.AppleMultitouchTrackpad",
                     "com.apple.driver.AppleBluetoothMultitouch.trackpad",
-                ] {
-                    insert_friendly_default(
-                        out,
-                        "trackpad",
-                        key,
-                        domain,
-                        "Clicking",
-                        value.clone(),
-                        is_bool,
-                    );
-                }
-            }
-            "three_finger_drag" => {
-                for domain in [
+                ],
+                "Clicking",
+                value.clone(),
+                is_bool,
+                "bool",
+            ),
+            "three_finger_drag" => insert_friendly_multi_domain_default(
+                out,
+                "trackpad",
+                key,
+                &[
                     "com.apple.AppleMultitouchTrackpad",
                     "com.apple.driver.AppleBluetoothMultitouch.trackpad",
-                ] {
-                    insert_friendly_default(
-                        out,
-                        "trackpad",
-                        key,
-                        domain,
-                        "TrackpadThreeFingerDrag",
-                        value.clone(),
-                        is_bool,
-                    );
-                }
-            }
+                ],
+                "TrackpadThreeFingerDrag",
+                value.clone(),
+                is_bool,
+                "bool",
+            ),
             _ => warn!("[bootstrap.macos.trackpad].{key}: unknown key, ignoring entry"),
         }
     }
@@ -987,6 +1024,36 @@ mod tests {
         assert_eq!(
             merged.get(&("com.apple.dock".into(), "tilesize".into())),
             Some(&toml::Value::Integer(48))
+        );
+    }
+
+    #[test]
+    fn test_local_friendly_macos_defaults_override_global_raw_defaults() {
+        let mut merged = IndexMap::new();
+
+        let global_friendly = IndexMap::new();
+        let mut global_raw = IndexMap::new();
+        global_raw.insert(
+            ("com.apple.dock".into(), "autohide".into()),
+            toml::Value::Boolean(false),
+        );
+        for (key, value) in merge_raw_over_friendly_macos_defaults(global_friendly, global_raw) {
+            merged.insert(key, value);
+        }
+
+        let mut local_friendly = IndexMap::new();
+        local_friendly.insert(
+            ("com.apple.dock".into(), "autohide".into()),
+            toml::Value::Boolean(true),
+        );
+        let local_raw = IndexMap::new();
+        for (key, value) in merge_raw_over_friendly_macos_defaults(local_friendly, local_raw) {
+            merged.insert(key, value);
+        }
+
+        assert_eq!(
+            merged.get(&("com.apple.dock".into(), "autohide".into())),
+            Some(&toml::Value::Boolean(true))
         );
     }
 }

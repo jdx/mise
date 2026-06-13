@@ -37,44 +37,44 @@ setting.
 
 `[bootstrap.macos.dock]` supports:
 
-| Key             | Raw default                       |
-| --------------- | --------------------------------- |
-| `autohide`      | `com.apple.dock.autohide`         |
-| `orientation`   | `com.apple.dock.orientation`      |
-| `tilesize`      | `com.apple.dock.tilesize`         |
-| `magnification` | `com.apple.dock.magnification`    |
-| `largesize`     | `com.apple.dock.largesize`        |
-| `show_recents`  | `com.apple.dock.show-recents`     |
-| `mru_spaces`    | `com.apple.dock.mru-spaces`       |
+| Key             | Raw default                    |
+| --------------- | ------------------------------ |
+| `autohide`      | `com.apple.dock.autohide`      |
+| `orientation`   | `com.apple.dock.orientation`   |
+| `tilesize`      | `com.apple.dock.tilesize`      |
+| `magnification` | `com.apple.dock.magnification` |
+| `largesize`     | `com.apple.dock.largesize`     |
+| `show_recents`  | `com.apple.dock.show-recents`  |
+| `mru_spaces`    | `com.apple.dock.mru-spaces`    |
 
 `orientation` must be `bottom`, `left`, or `right`.
 
 `[bootstrap.macos.finder]` supports:
 
-| Key                       | Raw default                                      |
-| ------------------------- | ------------------------------------------------ |
-| `show_all_files`          | `com.apple.finder.AppleShowAllFiles`             |
-| `show_pathbar`            | `com.apple.finder.ShowPathbar`                   |
-| `show_status_bar`         | `com.apple.finder.ShowStatusBar`                 |
+| Key                       | Raw default                                       |
+| ------------------------- | ------------------------------------------------- |
+| `show_all_files`          | `com.apple.finder.AppleShowAllFiles`              |
+| `show_pathbar`            | `com.apple.finder.ShowPathbar`                    |
+| `show_status_bar`         | `com.apple.finder.ShowStatusBar`                  |
 | `show_extensions_warning` | `com.apple.finder.FXEnableExtensionChangeWarning` |
-| `preferred_view_style`    | `com.apple.finder.FXPreferredViewStyle`          |
+| `preferred_view_style`    | `com.apple.finder.FXPreferredViewStyle`           |
 
 `preferred_view_style` must be `icon`, `list`, `column`, or `gallery`.
 
 `[bootstrap.macos.keyboard]` supports:
 
-| Key                  | Raw default                                      |
-| -------------------- | ------------------------------------------------ |
-| `key_repeat`         | `NSGlobalDomain.KeyRepeat`                       |
-| `initial_key_repeat` | `NSGlobalDomain.InitialKeyRepeat`                |
-| `press_and_hold`     | `NSGlobalDomain.ApplePressAndHoldEnabled`        |
-| `fn_state`           | `NSGlobalDomain.com.apple.keyboard.fnState`      |
+| Key                  | Raw default                                 |
+| -------------------- | ------------------------------------------- |
+| `key_repeat`         | `NSGlobalDomain.KeyRepeat`                  |
+| `initial_key_repeat` | `NSGlobalDomain.InitialKeyRepeat`           |
+| `press_and_hold`     | `NSGlobalDomain.ApplePressAndHoldEnabled`   |
+| `fn_state`           | `NSGlobalDomain.com.apple.keyboard.fnState` |
 
 `[bootstrap.macos.trackpad]` supports:
 
-| Key                 | Raw defaults |
-| ------------------- | ------------ |
-| `tap_to_click`      | `com.apple.AppleMultitouchTrackpad.Clicking`, `com.apple.driver.AppleBluetoothMultitouch.trackpad.Clicking` |
+| Key                 | Raw defaults                                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `tap_to_click`      | `com.apple.AppleMultitouchTrackpad.Clicking`, `com.apple.driver.AppleBluetoothMultitouch.trackpad.Clicking`                               |
 | `three_finger_drag` | `com.apple.AppleMultitouchTrackpad.TrackpadThreeFingerDrag`, `com.apple.driver.AppleBluetoothMultitouch.trackpad.TrackpadThreeFingerDrag` |
 
 Unknown friendly keys, invalid enum values, and unsupported value types warn
