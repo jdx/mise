@@ -247,7 +247,8 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
         if let Some(sys) = cf.system_config()
             && let Some(login_shell) = sys.login_shell
         {
-            if login_shell.trim().is_empty() {
+            let login_shell = login_shell.trim().to_string();
+            if login_shell.is_empty() {
                 warn!("[system].login_shell: must not be empty, ignoring entry");
                 continue;
             }

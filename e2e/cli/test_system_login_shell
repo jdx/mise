@@ -36,7 +36,7 @@ login_shell = "/tmp/global-shell"
 EOF
 cat <<EOF >mise.toml
 [system]
-login_shell = "/tmp/local-shell"
+login_shell = " /tmp/local-shell "
 EOF
 assert_contains "mise system status --json | jq -r '.login_shell.shell'" "/tmp/local-shell"
 rm "$MISE_CONFIG_DIR/config.toml"

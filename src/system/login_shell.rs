@@ -118,13 +118,18 @@ fn display_shell(shell: PathBuf) -> String {
 
 #[cfg(unix)]
 fn chsh_args(request: &LoginShellRequest, user: &nix::unistd::User) -> Vec<String> {
+    chsh_args_for_user_name(request, &user.name)
+}
+
+#[cfg(unix)]
+fn chsh_args_for_user_name(request: &LoginShellRequest, user_name: &str) -> Vec<String> {
     let mut args = vec!["-s".to_string(), request.shell.clone()];
     if nix::unistd::geteuid().is_root()
         && let Ok(sudo_user) = crate::env::var("SUDO_USER")
         && !sudo_user.is_empty()
         && sudo_user != "root"
     {
-        args.push(user.name.clone());
+        args.push(user_name.to_string());
     }
     args
 }
@@ -173,7 +178,14 @@ fn ensure_shell_listed(shell: &str, dry_run: bool) -> Result<()> {
         path.to_string_lossy().to_string(),
     ];
     if dry_run {
-        miseprintln!("sh {}", shell_words::join(&args));
+        if can_append_shell_directly(&path) {
+            miseprintln!("sh {}", shell_words::join(&args));
+        } else {
+            miseprintln!(
+                "{}",
+                shell_words::join(crate::system::sudo::argv("sh", &args))
+            );
+        }
         return Ok(());
     }
     match append_shell_directly(&path, shell) {
@@ -198,6 +210,10 @@ fn append_shell_directly(path: &PathBuf, shell: &str) -> std::io::Result<()> {
         writeln!(file)?;
     }
     writeln!(file, "{shell}")
+}
+
+fn can_append_shell_directly(path: &PathBuf) -> bool {
+    OpenOptions::new().append(true).open(path).is_ok()
 }
 
 #[cfg(test)]
@@ -240,22 +256,11 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_chsh_args_for_root_sudo_user() {
-        use std::ffi::CString;
-
         unsafe { std::env::set_var("SUDO_USER", "alice") };
-        let user = nix::unistd::User {
-            name: "alice".to_string(),
-            passwd: CString::new("x").unwrap(),
-            uid: nix::unistd::Uid::from_raw(1000),
-            gid: nix::unistd::Gid::from_raw(1000),
-            gecos: CString::new("").unwrap(),
-            dir: PathBuf::from("/home/alice"),
-            shell: PathBuf::from("/bin/bash"),
-        };
         let request = LoginShellRequest {
             shell: "/bin/zsh".to_string(),
         };
-        let args = chsh_args(&request, &user);
+        let args = chsh_args_for_user_name(&request, "alice");
         if nix::unistd::geteuid().is_root() {
             assert_eq!(args, vec!["-s", "/bin/zsh", "alice"]);
         } else {
