@@ -2297,11 +2297,10 @@ impl AquaBackend {
 
     fn effective_extraction_format(pkg: &AquaPackage, format: &str) -> Result<ExtractionFormat> {
         let extraction_format = ExtractionFormat::from_ext(format);
-        if extraction_format == ExtractionFormat::Raw
-            && !matches!(format, "" | "raw" | "dmg" | "pkg")
-        {
+        if extraction_format.is_none() && !matches!(format, "" | "dmg" | "pkg") {
             bail!("unsupported aqua package format: {format}");
         }
+        let extraction_format = extraction_format.unwrap_or(ExtractionFormat::Raw);
         if pkg.r#type == AquaPackageType::GithubArchive
             && extraction_format == ExtractionFormat::Raw
         {

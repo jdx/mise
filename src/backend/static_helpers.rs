@@ -402,7 +402,7 @@ pub fn install_artifact(
     // Use ExtractionFormat for format detection
     // Check for explicit format option first, then fall back to file extension
     let format = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
-        file::ExtractionFormat::from_ext(&format_opt)
+        file::ExtractionFormat::from_ext(&format_opt).unwrap_or(file::ExtractionFormat::Raw)
     } else {
         file::ExtractionFormat::from_file_name(
             &file_path.file_name().unwrap_or_default().to_string_lossy(),
