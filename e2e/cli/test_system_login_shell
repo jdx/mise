@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
+mkdir -p "$HOME/bin"
+export CHSH_LOG="$PWD/chsh.log"
+rm -f "$CHSH_LOG"
 cat <<'EOF' >"$HOME/bin/chsh"
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$CHSH_LOG"
 EOF
 chmod +x "$HOME/bin/chsh"
-export CHSH_LOG="$PWD/chsh.log"
 export MISE_TEST_SHELLS_FILE="$PWD/shells"
 
 cat <<EOF >mise.toml

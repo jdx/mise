@@ -7,7 +7,7 @@
 
 Show the status of system packages from `[system.packages]`, files from
 `[system.files]`, edits from `[system.edits]`, and macOS defaults from
-`[system.defaults]`, and `[system].login_shell`
+`[system.defaults]`, and Unix login shell from `[system].login_shell`
 
 ## Flags
 
@@ -17,8 +17,8 @@ Output in JSON format
 
 ### `--missing`
 
-Exit with code 1 if any configured packages, files, defaults, or login
-shell are not in their desired state (missing, version mismatch, differs)
+Exit with code 1 if any configured packages, files, edits, defaults, or
+login shell are not in their desired state
 
 Examples:
 

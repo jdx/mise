@@ -44,17 +44,7 @@ pub fn status(request: &LoginShellRequest) -> Result<LoginShellStatus> {
     let user = target_user()?;
     let current = display_shell(user.shell);
     let shell_listed = shell_is_listed(&request.shell)?;
-    let state = if current == request.shell && shell_listed {
-        LoginShellState::Set
-    } else if current == request.shell {
-        LoginShellState::MissingFromShells {
-            current: current.clone(),
-        }
-    } else {
-        LoginShellState::Differs {
-            current: current.clone(),
-        }
-    };
+    let state = login_shell_state(&current, &request.shell, shell_listed);
     Ok(LoginShellStatus {
         request: request.clone(),
         user: user.name,
@@ -62,6 +52,20 @@ pub fn status(request: &LoginShellRequest) -> Result<LoginShellStatus> {
         shell_listed,
         state,
     })
+}
+
+fn login_shell_state(current: &str, requested: &str, shell_listed: bool) -> LoginShellState {
+    if current == requested && shell_listed {
+        LoginShellState::Set
+    } else if current == requested {
+        LoginShellState::MissingFromShells {
+            current: current.to_string(),
+        }
+    } else {
+        LoginShellState::Differs {
+            current: current.to_string(),
+        }
+    }
 }
 
 pub fn apply(request: &LoginShellRequest, dry_run: bool) -> Result<()> {
@@ -207,27 +211,18 @@ mod tests {
 
     #[test]
     fn test_status_state_set_and_differs() {
-        let request = LoginShellRequest {
-            shell: "/bin/zsh".to_string(),
-        };
-        let set = if "/bin/zsh" == request.shell {
-            LoginShellState::Set
-        } else {
-            LoginShellState::Differs {
-                current: "/bin/zsh".to_string(),
-            }
-        };
-        assert_eq!(set, LoginShellState::Set);
-
-        let differs = if "/bin/bash" == request.shell {
-            LoginShellState::Set
-        } else {
-            LoginShellState::Differs {
-                current: "/bin/bash".to_string(),
-            }
-        };
         assert_eq!(
-            differs,
+            login_shell_state("/bin/zsh", "/bin/zsh", true),
+            LoginShellState::Set
+        );
+        assert_eq!(
+            login_shell_state("/bin/zsh", "/bin/zsh", false),
+            LoginShellState::MissingFromShells {
+                current: "/bin/zsh".to_string()
+            }
+        );
+        assert_eq!(
+            login_shell_state("/bin/bash", "/bin/zsh", true),
             LoginShellState::Differs {
                 current: "/bin/bash".to_string()
             }

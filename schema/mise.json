@@ -2963,6 +2963,7 @@
       "properties": {
         "login_shell": {
           "type": "string",
+          "pattern": "^/",
           "description": "current user's desired login shell, applied with `chsh -s`; must be an absolute path"
         },
         "edits": {

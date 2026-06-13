@@ -7,7 +7,8 @@
 
 Install missing system packages from `[system.packages]`, apply files
 from `[system.files]` and edits from `[system.edits]`, write macOS
-defaults from `[system.defaults]`, and set `[system].login_shell`
+defaults from `[system.defaults]`, and set Unix login shell from
+`[system].login_shell`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as

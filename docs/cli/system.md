@@ -6,7 +6,7 @@
 
 [experimental] Manage system packages from `[system.packages]`, files
 from `[system.files]`, edits from `[system.edits]`, macOS defaults
-from `[system.defaults]`, and `[system].login_shell`
+from `[system.defaults]`, and Unix login shell from `[system].login_shell`
 
 System packages are machine-global packages installed by the OS package
 manager (apt, dnf, pacman) or mise's Homebrew-bottle installer (brew).
