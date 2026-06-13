@@ -3,7 +3,8 @@
 //! Entries are rendered to `~/Library/LaunchAgents/dev.mise.<name>.plist` and
 //! loaded with `launchctl bootstrap gui/$UID ...` when explicitly applied.
 
-use std::path::PathBuf;
+use std::io::Cursor;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use eyre::{Result, bail};
@@ -119,7 +120,7 @@ pub async fn status(requests: &[LaunchdRequest]) -> Result<Vec<LaunchdStatus>> {
         let path = plist_path(req);
         let loaded = is_loaded(&req.label).await?;
         let state = match std::fs::read(&path) {
-            Ok(current) if current == render_plist(req)? => {
+            Ok(current) if plist_matches(&current, req) => {
                 if loaded {
                     LaunchdState::Loaded
                 } else {
@@ -157,7 +158,7 @@ pub async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<()> {
             );
             miseprintln!("write {}", shell_words::join([path.display().to_string()]));
             miseprintln!(
-                "{} || true",
+                "{}",
                 shell_words::join([
                     "launchctl".to_string(),
                     "bootout".to_string(),
@@ -196,13 +197,8 @@ pub async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<()> {
             continue;
         }
         std::fs::create_dir_all(launch_agents_dir())?;
-        let _ = launchctl(&[
-            "bootout".to_string(),
-            domain.clone(),
-            path.to_string_lossy().to_string(),
-        ])
-        .await;
         std::fs::write(&path, plist)?;
+        bootout(&domain, &path).await?;
         launchctl(&[
             "bootstrap".to_string(),
             domain.clone(),
@@ -218,6 +214,12 @@ pub async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<()> {
 }
 
 pub fn render_plist(request: &LaunchdRequest) -> Result<Vec<u8>> {
+    let mut out = vec![];
+    plist::to_writer_xml(&mut out, &plist_value(request))?;
+    Ok(out)
+}
+
+fn plist_value(request: &LaunchdRequest) -> Value {
     let mut dict = Dictionary::new();
     dict.insert("Label".into(), Value::String(request.label.clone()));
     let mut program_args = vec![Value::String(expand_path_string(&request.program))];
@@ -257,9 +259,14 @@ pub fn render_plist(request: &LaunchdRequest) -> Result<Vec<u8>> {
             Value::String(expand_path_string(path)),
         );
     }
-    let mut out = vec![];
-    plist::to_writer_xml(&mut out, &Value::Dictionary(dict))?;
-    Ok(out)
+    Value::Dictionary(dict)
+}
+
+fn plist_matches(current: &[u8], request: &LaunchdRequest) -> bool {
+    match Value::from_reader_xml(Cursor::new(current)) {
+        Ok(current) => current == plist_value(request),
+        Err(_) => false,
+    }
 }
 
 fn valid_name(name: &str) -> bool {
@@ -283,12 +290,26 @@ fn launchctl_domain() -> String {
 
 #[cfg(unix)]
 fn current_uid() -> u32 {
-    nix::unistd::geteuid().as_raw()
+    current_uid_from(
+        nix::unistd::geteuid().as_raw(),
+        crate::env::var("SUDO_UID").ok().as_deref(),
+    )
 }
 
 #[cfg(not(unix))]
 fn current_uid() -> u32 {
     0
+}
+
+fn current_uid_from(euid: u32, sudo_uid: Option<&str>) -> u32 {
+    if euid == 0 {
+        if let Some(uid) = sudo_uid.and_then(|uid| uid.parse::<u32>().ok()) {
+            if uid != 0 {
+                return uid;
+            }
+        }
+    }
+    euid
 }
 
 fn expand_path_string(path: &str) -> String {
@@ -331,6 +352,28 @@ async fn launchctl(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+async fn bootout(domain: &str, path: &Path) -> Result<()> {
+    let args = [
+        "bootout".to_string(),
+        domain.to_string(),
+        path.to_string_lossy().to_string(),
+    ];
+    match launchctl(&args).await {
+        Ok(()) => Ok(()),
+        Err(err) if bootout_missing_error(&err.to_string()) => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+fn bootout_missing_error(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("no such process")
+        || error.contains("could not find specified service")
+        || error.contains("could not find service")
+        || error.contains("service is not loaded")
+        || error.contains("not in domain")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,21 +402,87 @@ mod tests {
             program: "/bin/echo".to_string(),
             args: vec!["hello".to_string()],
             run_at_load: true,
-            keep_alive: false,
+            keep_alive: true,
             start_interval: Some(60),
             environment,
             working_directory: Some("~".to_string()),
             stdout_path: Some("~/Library/Logs/sync.log".to_string()),
-            stderr_path: None,
+            stderr_path: Some("~/Library/Logs/sync.err.log".to_string()),
             kickstart: false,
         };
-        let plist = String::from_utf8(render_plist(&request).unwrap()).unwrap();
-        assert!(plist.contains("<key>Label</key>"));
-        assert!(plist.contains("<string>dev.mise.sync</string>"));
-        assert!(plist.contains("<key>ProgramArguments</key>"));
-        assert!(plist.contains("<key>StartInterval</key>"));
-        assert!(plist.contains("<integer>60</integer>"));
-        assert!(plist.contains("<key>EnvironmentVariables</key>"));
-        assert!(plist.contains(&format!("<string>{}</string>", crate::dirs::HOME.display())));
+        let plist = render_plist(&request).unwrap();
+        let dict = match Value::from_reader_xml(Cursor::new(plist.as_slice())).unwrap() {
+            Value::Dictionary(dict) => dict,
+            value => panic!("expected dictionary, got {value:?}"),
+        };
+        assert_eq!(
+            dict.get("Label"),
+            Some(&Value::String("dev.mise.sync".to_string()))
+        );
+        assert_eq!(dict.get("RunAtLoad"), Some(&Value::Boolean(true)));
+        assert_eq!(dict.get("KeepAlive"), Some(&Value::Boolean(true)));
+        assert_eq!(dict.get("StartInterval"), Some(&Value::Integer(60.into())));
+        assert_eq!(
+            dict.get("WorkingDirectory"),
+            Some(&Value::String(
+                crate::dirs::HOME.to_string_lossy().to_string()
+            ))
+        );
+        assert_eq!(
+            dict.get("StandardOutPath"),
+            Some(&Value::String(
+                crate::dirs::HOME
+                    .join("Library/Logs/sync.log")
+                    .to_string_lossy()
+                    .to_string()
+            ))
+        );
+        assert_eq!(
+            dict.get("StandardErrorPath"),
+            Some(&Value::String(
+                crate::dirs::HOME
+                    .join("Library/Logs/sync.err.log")
+                    .to_string_lossy()
+                    .to_string()
+            ))
+        );
+        match dict.get("ProgramArguments") {
+            Some(Value::Array(args)) => {
+                assert_eq!(args[0], Value::String("/bin/echo".to_string()));
+                assert_eq!(args[1], Value::String("hello".to_string()));
+            }
+            value => panic!("expected ProgramArguments array, got {value:?}"),
+        }
+        match dict.get("EnvironmentVariables") {
+            Some(Value::Dictionary(env)) => {
+                assert_eq!(
+                    env.get("PATH"),
+                    Some(&Value::String("/usr/bin:/bin".to_string()))
+                );
+            }
+            value => panic!("expected EnvironmentVariables dictionary, got {value:?}"),
+        }
+        assert!(plist_matches(&plist, &request));
+    }
+
+    #[test]
+    fn test_current_uid_prefers_sudo_uid_for_root() {
+        assert_eq!(current_uid_from(0, Some("501")), 501);
+        assert_eq!(current_uid_from(0, Some("0")), 0);
+        assert_eq!(current_uid_from(0, Some("not-a-uid")), 0);
+        assert_eq!(current_uid_from(1000, Some("501")), 1000);
+    }
+
+    #[test]
+    fn test_bootout_missing_errors() {
+        assert!(bootout_missing_error(
+            "`launchctl bootout gui/501 foo` failed: No such process"
+        ));
+        assert!(bootout_missing_error(
+            "`launchctl bootout gui/501 foo` failed: Could not find specified service"
+        ));
+        assert!(!bootout_missing_error(
+            "`launchctl bootout gui/501 foo` failed: Boot-out failed: 5: Input/output error"
+        ));
     }
 }
