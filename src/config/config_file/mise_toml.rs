@@ -2296,6 +2296,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_bootstrap_macos_launchd_agents() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.macos.launchd.agents.my-sync]
+        program = "~/.local/bin/my-sync"
+        args = ["--watch"]
+        run_at_load = true
+        start_interval = 300
+        environment = { PATH = "/usr/bin:/bin" }
+        working_directory = "~"
+        stdout_path = "~/Library/Logs/my-sync.log"
+        kickstart = true
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        let agent = system.macos.launchd.agents.get("my-sync").unwrap();
+        assert_eq!(agent.program.as_deref(), Some("~/.local/bin/my-sync"));
+        assert_eq!(agent.args, vec!["--watch"]);
+        assert!(agent.run_at_load);
+        assert_eq!(agent.start_interval, Some(300));
+        assert_eq!(
+            agent.environment.get("PATH").map(String::as_str),
+            Some("/usr/bin:/bin")
+        );
+        assert_eq!(agent.working_directory.as_deref(), Some("~"));
+        assert_eq!(
+            agent.stdout_path.as_deref(),
+            Some("~/Library/Logs/my-sync.log")
+        );
+        assert!(agent.kickstart);
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
     async fn test_update_bootstrap_package() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");

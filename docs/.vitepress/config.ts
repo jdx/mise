@@ -160,6 +160,10 @@ export default withMermaid(
               link: "/bootstrap/macos-defaults",
             },
             {
+              text: "launchd",
+              link: "/bootstrap/launchd",
+            },
+            {
               text: "User Login Shell",
               link: "/bootstrap/user",
             },

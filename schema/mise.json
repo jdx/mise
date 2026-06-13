@@ -3033,7 +3033,7 @@
     },
     "bootstrap": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages, macOS defaults, login shell)",
+      "description": "[experimental] machine-global bootstrapping (system packages, macOS defaults, launchd agents, login shell)",
       "properties": {
         "packages": {
           "type": "object",
@@ -3072,6 +3072,74 @@
                     }
                   ],
                   "description": "desired value, written with the matching `defaults write` type (-bool, -int, -float, -string)"
+                }
+              }
+            },
+            "launchd": {
+              "type": "object",
+              "description": "macOS launchd bootstrap config",
+              "properties": {
+                "agents": {
+                  "type": "object",
+                  "description": "macOS user LaunchAgents to write and load with `mise bootstrap launchd apply`",
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z0-9._-]+$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "program": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": ".*\\S.*",
+                        "description": "program path for ProgramArguments[0]"
+                      },
+                      "args": {
+                        "type": "array",
+                        "description": "additional ProgramArguments entries",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "run_at_load": {
+                        "type": "boolean",
+                        "description": "write RunAtLoad"
+                      },
+                      "keep_alive": {
+                        "type": "boolean",
+                        "description": "write KeepAlive"
+                      },
+                      "start_interval": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "write StartInterval in seconds"
+                      },
+                      "environment": {
+                        "type": "object",
+                        "description": "environment variables for EnvironmentVariables",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "working_directory": {
+                        "type": "string",
+                        "description": "write WorkingDirectory"
+                      },
+                      "stdout_path": {
+                        "type": "string",
+                        "description": "write StandardOutPath"
+                      },
+                      "stderr_path": {
+                        "type": "string",
+                        "description": "write StandardErrorPath"
+                      },
+                      "kickstart": {
+                        "type": "boolean",
+                        "description": "run `launchctl kickstart -k` after loading the agent"
+                      }
+                    },
+                    "required": ["program"]
+                  }
                 }
               }
             }

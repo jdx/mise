@@ -79,7 +79,7 @@ downloads and runs the pinned mise binary for the project.
 Beyond `[tools]`, mise can declare the rest of the machine setup needed for
 a project or workstation, and [`mise bootstrap`](/cli/bootstrap.html)
 converges it in one command — system packages, then dotfiles, then macOS
-defaults, then login shell, then tools, then a
+defaults, then LaunchAgents, then login shell, then tools, then a
 `bootstrap` task if you define one:
 
 ```toml
@@ -94,6 +94,10 @@ defaults, then login shell, then tools, then a
 
 [bootstrap.macos.defaults]                    # macOS defaults write
 "com.apple.dock" = { autohide = true }
+
+[bootstrap.macos.launchd.agents.my-sync]      # macOS user LaunchAgents
+program = "~/.local/bin/my-sync"
+run_at_load = true
 
 [bootstrap.user]                       # current user's login shell
 login_shell = "/bin/zsh"
@@ -112,7 +116,7 @@ already in its desired state, `mise bootstrap packages status --missing` and
 implicitly. See
 [Bootstrap](/bootstrap.html), [Bootstrap Packages](/bootstrap/packages/),
 [Dotfiles](/dotfiles.html), [macOS Defaults](/bootstrap/macos-defaults.html),
-and [User Login Shell](/bootstrap/user.html).
+[launchd](/bootstrap/launchd.html), and [User Login Shell](/bootstrap/user.html).
 
 ## Installation via zsh zinit
 

@@ -5382,6 +5382,7 @@ dependencies = [
  "petgraph",
  "phf 0.13.1",
  "phf_codegen 0.13.1",
+ "plist",
  "pretty_assertions",
  "rand 0.10.1",
  "rattler",

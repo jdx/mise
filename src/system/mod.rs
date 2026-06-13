@@ -17,11 +17,13 @@ use serde::Deserialize;
 use crate::config::Config;
 use crate::config::ConfigMap;
 use crate::system::defaults::{DefaultsRequest, DefaultsValue};
+use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
 
 pub mod defaults;
 pub mod edits;
 pub mod files;
+pub mod launchd;
 pub mod login_shell;
 pub mod packages;
 pub(crate) mod sudo;
@@ -60,6 +62,18 @@ pub struct BootstrapMacosTomlConfig {
     /// instead of failing the whole config.
     #[serde(default)]
     pub defaults: IndexMap<String, toml::Value>,
+    /// `[bootstrap.macos.launchd.agents.<name>]`: declarative macOS user
+    /// LaunchAgents rendered to ~/Library/LaunchAgents.
+    #[serde(default)]
+    pub launchd: BootstrapMacosLaunchdTomlConfig,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct BootstrapMacosLaunchdTomlConfig {
+    /// User LaunchAgents, keyed by a short stable name. mise gives these a
+    /// `dev.mise.<name>` label when rendering the plist.
+    #[serde(default)]
+    pub agents: IndexMap<String, LaunchdTomlConfig>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -247,6 +261,31 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
                 "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
                  (expected bool, integer, float, or string)"
             ),
+        }
+    }
+    out
+}
+
+/// Aggregate `[bootstrap.macos.launchd.agents]` across all loaded config files.
+///
+/// Agent names union global -> local; a more local config replaces the full
+/// agent declaration from a global config. Invalid entries warn and are
+/// skipped.
+pub fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
+    let mut merged: IndexMap<String, LaunchdTomlConfig> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (name, agent) in sys.macos.launchd.agents {
+                merged.insert(name, agent);
+            }
+        }
+    }
+    let mut out = vec![];
+    for (name, agent) in merged {
+        match LaunchdRequest::from_toml(name, agent) {
+            Ok(request) => out.push(request),
+            Err(err) => warn!("[bootstrap.macos.launchd.agents]: {err}"),
         }
     }
     out
