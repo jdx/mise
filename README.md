@@ -29,7 +29,8 @@
 </p>
 
 <p align="center">
-  Sponsored by <a href="https://37signals.com">37signals</a>.
+  Sponsored by <a href="https://37signals.com">37signals</a>.<br>
+  <a href="https://en.dev/sponsors.html">View all sponsors</a>.
 </p>
 
 <hr />
