@@ -417,10 +417,19 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
             }
             continue;
         }
-        let desired = desired_content(config, req)?;
-        match check_resolved(req, desired.as_deref())? {
-            EditCheck::State(FileState::Applied) => continue,
-            EditCheck::Blocked(reason) => {
+        // a render or check failure on one entry must not hide problems
+        // with the others — keep evaluating, like status does
+        let desired = match desired_content(config, req) {
+            Ok(desired) => desired,
+            // already carries the entry's context
+            Err(err) => {
+                problems.push(format!("  {err}"));
+                continue;
+            }
+        };
+        match check_resolved(req, desired.as_deref()) {
+            Ok(EditCheck::State(FileState::Applied)) => continue,
+            Ok(EditCheck::Blocked(reason)) => {
                 problems.push(format!(
                     "  \"{}\" ({}): {reason}",
                     req.path_raw,
@@ -428,7 +437,15 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
                 ));
                 continue;
             }
-            EditCheck::State(_) => todo.push((req, desired)),
+            Ok(EditCheck::State(_)) => todo.push((req, desired)),
+            Err(err) => {
+                problems.push(format!(
+                    "  \"{}\" ({}): {err}",
+                    req.path_raw,
+                    req.describe_op()
+                ));
+                continue;
+            }
         }
     }
     if !problems.is_empty() {

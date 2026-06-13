@@ -155,6 +155,23 @@ rm snippet.txt
 assert_contains "mise system status" "source missing"
 assert_fail "mise system install --yes"
 
+# all problems are reported in one pass: a broken template doesn't hide a
+# missing source
+cat <<'EOF' >mise.toml
+[[system.edits]]
+path = "~/broken.conf"
+block = "{{ not_a_real_function() }}"
+template = true
+
+[[system.edits]]
+path = "~/missing.conf"
+source = "no-such-snippet.txt"
+EOF
+assert_fail "mise system install --yes"
+install_out="$(mise system install --yes 2>&1 || true)"
+assert_contains_text "$install_out" "failed to render"
+assert_contains_text "$install_out" "source does not exist"
+
 # invalid entries warn but don't fail (forward compatibility)
 cat <<'EOF' >mise.toml
 [[system.edits]]
