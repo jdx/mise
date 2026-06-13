@@ -99,36 +99,32 @@ async fn resolve_closure_pairs(
         let canonical_key = match known {
             Some(c) => c,
             None => {
-                let (formula, effective_tap_name, effective_tap_url) =
-                    match api::formula_with_tap_name(
-                        &key.name,
-                        key.tap_name.as_deref(),
-                        key.tap_url.as_deref(),
-                    )
-                    .await
+                let (formula, effective_tap_name, effective_tap_url) = match fetch_formula(
+                    &key, requested,
+                )
+                .await
+                {
+                    Ok(formula) => {
+                        let effective_tap_name = match formula.tap.as_deref() {
+                            Some("homebrew/core") => None,
+                            Some(tap) => Some(tap.to_string()),
+                            None => key.tap_name.clone(),
+                        };
+                        let effective_tap_url =
+                            effective_tap_name.as_ref().and(key.tap_url.clone());
+                        (formula, effective_tap_name, effective_tap_url)
+                    }
+                    Err(err)
+                        if key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() =>
                     {
-                        Ok(formula) => {
-                            let effective_tap_name = match formula.tap.as_deref() {
-                                Some("homebrew/core") => None,
-                                Some(tap) => Some(tap.to_string()),
-                                None => key.tap_name.clone(),
-                            };
-                            let effective_tap_url =
-                                effective_tap_name.as_ref().and(key.tap_url.clone());
-                            (formula, effective_tap_name, effective_tap_url)
-                        }
-                        Err(err)
-                            if key.tap_name.is_some()
-                                && api::split_tap_name(&key.name).is_none() =>
-                        {
-                            debug!(
-                                "brew: {} unavailable in tap metadata ({err}); falling back to core metadata",
-                                key.name
-                            );
-                            (api::formula(&key.name).await?, None, None)
-                        }
-                        Err(err) => return Err(err),
-                    };
+                        debug!(
+                            "brew: {} unavailable in tap metadata ({err}); falling back to core metadata",
+                            key.name
+                        );
+                        (api::formula(&key.name).await?, None, None)
+                    }
+                    Err(err) => return Err(err),
+                };
                 let c = formula.name.clone();
                 let canonical_key = FormulaKey::new(
                     c.clone(),
@@ -238,6 +234,21 @@ async fn resolve_closure_pairs(
         )?;
     }
     Ok(sorted)
+}
+
+async fn fetch_formula(key: &FormulaKey, requested: bool) -> Result<Formula> {
+    if !requested && key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() {
+        match api::formula(&key.name).await {
+            Ok(formula) => return Ok(formula),
+            Err(err) => {
+                debug!(
+                    "brew: {} unavailable in core metadata ({err}); trying parent tap metadata",
+                    key.name
+                );
+            }
+        }
+    }
+    api::formula_with_tap_name(&key.name, key.tap_name.as_deref(), key.tap_url.as_deref()).await
 }
 
 fn tap_raw_base(key: &FormulaKey) -> Option<String> {

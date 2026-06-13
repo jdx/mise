@@ -73,12 +73,15 @@ impl BrewCaskManager {
         let stage = extract_archive(&cask, &archive, pr)?;
         let caskroom_token = caskroom_token_dir(&cask.token);
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
-        file::remove_all(&caskroom)?;
-        file::create_dir_all(&caskroom)?;
+        let tmp_caskroom = caskroom_tmp_dir(&cask);
+        file::remove_all(&tmp_caskroom)?;
+        file::create_dir_all(&tmp_caskroom)?;
         for app in &apps {
-            install_app(&stage, &caskroom, app)?;
+            install_app(&stage, &tmp_caskroom, app)?;
         }
-        write_receipt(&caskroom, &cask, &apps)?;
+        write_receipt(&tmp_caskroom, &cask, &apps)?;
+        file::remove_all(&caskroom)?;
+        file::rename(&tmp_caskroom, &caskroom)?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
         file::remove_all(stage)?;
         Ok(cask.version)
@@ -432,6 +435,11 @@ fn caskroom_token_dir(token: &str) -> PathBuf {
 
 fn caskroom_version_dir(token: &str, version: &str) -> PathBuf {
     caskroom_token_dir(token).join(version)
+}
+
+fn caskroom_tmp_dir(cask: &Cask) -> PathBuf {
+    let key = format!("{}-{}", cask.token, cask.version);
+    caskroom_token_dir(&cask.token).join(format!(".mise-tmp-{}", hash::hash_to_str(&key)))
 }
 
 fn remove_stale_versions(token_dir: &Path, current_version: &str) -> Result<()> {
