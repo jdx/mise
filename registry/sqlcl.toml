@@ -1,0 +1,3 @@
+description = "Oracle SQLcl command-line interface for Oracle Database"
+backends = ["aqua:oracle.com/sqlcl"]
+test = { cmd = "sql -V", expected = "SQLcl", tools = ["java"] }
