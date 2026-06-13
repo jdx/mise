@@ -167,8 +167,9 @@ template = true
 path = "~/missing.conf"
 source = "no-such-snippet.txt"
 EOF
-assert_fail "mise system install --yes"
-install_out="$(mise system install --yes 2>&1 || true)"
+if install_out="$(mise system install --yes 2>&1)"; then
+  fail "[mise system install --yes] expected failure"
+fi
 assert_contains_text "$install_out" "failed to render"
 assert_contains_text "$install_out" "source does not exist"
 

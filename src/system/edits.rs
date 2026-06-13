@@ -308,11 +308,12 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 
 /// Current state of one edit on this machine.
 ///
-/// Note: computing a template block's state requires rendering it, so this
-/// runs the template engine — including `exec()` — from `mise system
-/// status`. That's the same trust model as `[env]` templates; only
-/// `--dry-run` promises to execute nothing and therefore skips template
-/// checks entirely (see [`apply`]).
+/// Note: comparing a template block against existing markers requires
+/// rendering it, so this can run the template engine — including `exec()` —
+/// from `mise system status`. That's the same trust model as `[env]`
+/// templates. Rendering only happens once every render-free outcome (symlink
+/// target, missing file, absent or corrupted markers) has been ruled out,
+/// and `--dry-run` skips template rendering entirely (see [`apply`]).
 pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
     if let EditOp::Block {
         source: BlockSource::File(p),
@@ -322,11 +323,14 @@ pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
     {
         return Ok(FileState::SourceMissing);
     }
-    let desired = desired_content(config, req)?;
-    Ok(match check_resolved(req, desired.as_deref())? {
-        EditCheck::State(state) => state,
-        EditCheck::Blocked(reason) => FileState::Differs(reason),
-    })
+    match precheck(req)? {
+        Some(EditCheck::State(state)) => Ok(state),
+        Some(EditCheck::Blocked(reason)) => Ok(FileState::Differs(reason)),
+        None => {
+            let desired = desired_content(config, req)?;
+            block_state(req, desired.as_deref())
+        }
+    }
 }
 
 const SYMLINK_REASON: &str = "target is a symlink; edit the real file instead";
@@ -338,41 +342,56 @@ enum EditCheck {
     Blocked(String),
 }
 
-/// [`check`] with block content already resolved, so callers that go on to
-/// write the file resolve and render only once
-fn check_resolved(req: &EditRequest, desired: Option<&str>) -> Result<EditCheck> {
+/// everything that can be decided without rendered content: symlink targets,
+/// file existence, marker integrity, and line presence. Returns Ok(None)
+/// when the entry's markers exist and a content comparison (which may
+/// require rendering) is still needed — callers must not render before this
+/// has been consulted, so blocked entries never execute template code
+fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
     // edits write through symlinks into whatever they point at (often a
     // [system.files] source) — surface that instead of silently doing it
     if req.path.is_symlink() {
-        return Ok(EditCheck::Blocked(SYMLINK_REASON.into()));
+        return Ok(Some(EditCheck::Blocked(SYMLINK_REASON.into())));
     }
     if !req.path.exists() {
-        return Ok(EditCheck::State(FileState::Missing));
+        return Ok(Some(EditCheck::State(FileState::Missing)));
     }
     let text = file::read_to_string(&req.path)?;
     let lines: Vec<&str> = text.lines().collect();
-    let state = match &req.op {
+    match &req.op {
         EditOp::Block { id, comment, .. } => match find_block(&lines, id, comment) {
-            Err(reason) => return Ok(EditCheck::Blocked(reason)),
-            Ok(None) => FileState::Missing,
-            Ok(Some((begin, end))) => {
-                let current = lines[begin + 1..end].join("\n");
-                if current == desired.expect("resolved block content") {
-                    FileState::Applied
-                } else {
-                    FileState::Differs("block content differs".into())
-                }
-            }
+            Err(reason) => Ok(Some(EditCheck::Blocked(reason))),
+            Ok(None) => Ok(Some(EditCheck::State(FileState::Missing))),
+            Ok(Some(_)) => Ok(None),
         },
-        EditOp::Line { line } => {
-            if lines.contains(&line.as_str()) {
-                FileState::Applied
+        EditOp::Line { line } => Ok(Some(EditCheck::State(if lines.contains(&line.as_str()) {
+            FileState::Applied
+        } else {
+            FileState::Missing
+        }))),
+    }
+}
+
+/// content comparison for a block whose markers exist ([`precheck`]
+/// returned None)
+fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
+    let EditOp::Block { id, comment, .. } = &req.op else {
+        unreachable!("only blocks reach a content comparison");
+    };
+    let text = file::read_to_string(&req.path)?;
+    let lines: Vec<&str> = text.lines().collect();
+    match find_block(&lines, id, comment) {
+        Ok(Some((begin, end))) => {
+            let current = lines[begin + 1..end].join("\n");
+            if current == desired.expect("resolved block content") {
+                Ok(FileState::Applied)
             } else {
-                FileState::Missing
+                Ok(FileState::Differs("block content differs".into()))
             }
         }
-    };
-    Ok(EditCheck::State(state))
+        // precheck just vetted the markers; a race is a plain differs
+        _ => Ok(FileState::Differs("markers changed during check".into())),
+    }
 }
 
 pub struct ApplyOpts {
@@ -401,43 +420,13 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
             ));
             continue;
         }
-        // rendering can run exec() — a dry run must not execute anything,
-        // so template blocks are listed without computing their state (same
-        // policy as [system.files])
-        let is_template = matches!(&req.op, EditOp::Block { template: true, .. });
-        if opts.dry_run && is_template {
-            if req.path.is_symlink() {
-                problems.push(format!(
-                    "  \"{}\" ({}): {SYMLINK_REASON}",
-                    req.path_raw,
-                    req.describe_op()
-                ));
-            } else {
-                todo.push((req, None));
-            }
-            continue;
-        }
         // a render or check failure on one entry must not hide problems
-        // with the others — keep evaluating, like status does
-        let desired = match desired_content(config, req) {
-            Ok(desired) => desired,
-            // already carries the entry's context
-            Err(err) => {
-                problems.push(format!("  {err}"));
-                continue;
-            }
-        };
-        match check_resolved(req, desired.as_deref()) {
-            Ok(EditCheck::State(FileState::Applied)) => continue,
-            Ok(EditCheck::Blocked(reason)) => {
-                problems.push(format!(
-                    "  \"{}\" ({}): {reason}",
-                    req.path_raw,
-                    req.describe_op()
-                ));
-                continue;
-            }
-            Ok(EditCheck::State(_)) => todo.push((req, desired)),
+        // with the others — keep evaluating, like status does. Render-free
+        // outcomes (symlink target, marker integrity, line presence) are
+        // decided first so blocked or already-applied entries never execute
+        // template code
+        let pre = match precheck(req) {
+            Ok(pre) => pre,
             Err(err) => {
                 problems.push(format!(
                     "  \"{}\" ({}): {err}",
@@ -446,6 +435,50 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
                 ));
                 continue;
             }
+        };
+        match &pre {
+            Some(EditCheck::Blocked(reason)) => {
+                problems.push(format!(
+                    "  \"{}\" ({}): {reason}",
+                    req.path_raw,
+                    req.describe_op()
+                ));
+                continue;
+            }
+            Some(EditCheck::State(FileState::Applied)) => continue,
+            _ => {}
+        }
+        // rendering can run exec() — a dry run must not execute anything,
+        // so template blocks are listed without computing their content
+        // (same policy as [system.files])
+        if opts.dry_run && matches!(&req.op, EditOp::Block { template: true, .. }) {
+            todo.push((req, None));
+            continue;
+        }
+        let desired = match desired_content(config, req) {
+            Ok(desired) => desired,
+            // already carries the entry's context
+            Err(err) => {
+                problems.push(format!("  {err}"));
+                continue;
+            }
+        };
+        match pre {
+            // markers exist: compare content to see if anything would change
+            None => match block_state(req, desired.as_deref()) {
+                Ok(FileState::Applied) => continue,
+                Ok(_) => todo.push((req, desired)),
+                Err(err) => {
+                    problems.push(format!(
+                        "  \"{}\" ({}): {err}",
+                        req.path_raw,
+                        req.describe_op()
+                    ));
+                    continue;
+                }
+            },
+            // missing — needs applying
+            Some(_) => todo.push((req, desired)),
         }
     }
     if !problems.is_empty() {

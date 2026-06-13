@@ -89,9 +89,11 @@ Edits follow the same rules as the rest of [`[system]`](/system-packages/):
   whatever the link points at (often a `[system.files]` source), so point
   the edit at the real file instead.
 
-Removing an entry from config leaves its block in the file (mise keeps no
-state database); delete the marker block by hand. The markers name mise and
-the id, so it's always clear where a block came from.
+Removing an entry from config leaves its block or line in the file (mise
+keeps no state database); delete it by hand. Blocks at least carry their
+provenance — the markers name mise and the id — while a stray line looks
+like any other, which is a reason to prefer blocks for anything
+non-obvious.
 
 ## Commands
 
@@ -105,8 +107,9 @@ mise system install --yes     # skip the confirmation prompt
 ```
 
 `mise system status` reports each edit as `applied`, `missing` (no markers
-or line yet), or `differs` (block content changed, corrupted markers, or a
-symlink target).
+or line yet), `differs` (block content changed, corrupted markers, or a
+symlink target), or `source missing` (a block whose `source` file doesn't
+exist).
 
 ## Root-owned files
 

@@ -19,7 +19,8 @@ mod r#use;
 /// something else owns — a marker-delimited block or a single line. macOS
 /// defaults are user preferences written with `defaults write`. Unlike
 /// `[tools]`, none of these are version-pinned per-project and they are only
-/// ever acted on when explicitly requested with `mise system install`.
+/// ever acted on when explicitly requested with `mise system install` (or
+/// `mise bootstrap`).
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct System {
