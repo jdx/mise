@@ -242,9 +242,9 @@ fn points_at_same_file(target: &Path, source: &Path) -> bool {
 
 fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
     if !req.source.is_dir() {
+        // callers add the entry's context (status row / apply error list)
         bail!(
-            "[system.files].\"{}\": mode symlink-each requires the source to be a directory: {}",
-            req.target_raw,
+            "mode symlink-each requires the source to be a directory: {}",
             req.source.display_user()
         );
     }
@@ -380,9 +380,11 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
     // and exec() in templates runs once per apply
     let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];
     let mut missing_sources = vec![];
+    let mut broken = vec![];
     let mut conflicts = vec![];
     for req in requests {
-        // report every problem in one pass instead of fix-and-retry
+        // report every problem in one pass instead of fix-and-retry — a
+        // render or check failure on one entry must not hide the rest
         if !req.source.exists() {
             missing_sources.push(format!(
                 "  [system.files].\"{}\": {}",
@@ -399,11 +401,23 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             continue;
         }
         let rendered = match req.mode {
-            FileMode::Template => Some(render_template(config, req)?),
+            FileMode::Template => match render_template(config, req) {
+                Ok(rendered) => Some(rendered),
+                // already carries the entry's context
+                Err(err) => {
+                    broken.push(format!("  {err}"));
+                    continue;
+                }
+            },
             _ => None,
         };
-        if check_rendered(req, rendered.as_deref())? == FileState::Applied {
-            continue;
+        match check_rendered(req, rendered.as_deref()) {
+            Ok(FileState::Applied) => continue,
+            Ok(_) => {}
+            Err(err) => {
+                broken.push(format!("  [system.files].\"{}\": {err}", req.target_raw));
+                continue;
+            }
         }
         conflicts.extend(find_conflicts(req)?);
         todo.push((req, rendered));
@@ -414,6 +428,9 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             "sources do not exist:\n{}",
             missing_sources.join("\n")
         ));
+    }
+    if !broken.is_empty() {
+        problems.push(format!("entries with errors:\n{}", broken.join("\n")));
     }
     if !conflicts.is_empty() && !opts.force {
         problems.push(format!(

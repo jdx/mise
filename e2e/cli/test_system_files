@@ -136,3 +136,16 @@ cat <<EOF >mise.toml
 EOF
 assert_contains "mise system status" "source missing"
 assert_fail "mise system install --yes"
+
+# all problems are reported in one pass: a broken template doesn't hide a
+# missing source (or vice versa)
+echo "{{ not_a_real_function() }}" >dotfiles/bad.tmpl
+cat <<EOF >mise.toml
+[system.files]
+"~/.broken" = { source = "dotfiles/bad.tmpl", mode = "template" }
+"~/.missing" = "dotfiles/does-not-exist"
+EOF
+assert_fail "mise system install --yes"
+install_out="$(mise system install --yes 2>&1 || true)"
+assert_contains_text "$install_out" "sources do not exist"
+assert_contains_text "$install_out" "failed to render"
