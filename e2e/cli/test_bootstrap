@@ -75,6 +75,10 @@ cat <<EOF >mise.toml
 "~/.config/mise/config.toml" = "dotfiles/mise/config.toml"
 EOF
 rm -f post_dotfiles_hook_ran final_hook_ran
+assert_contains "mise bootstrap --dry-run" "echo post-dotfiles > post_dotfiles_hook_ran"
+assert_contains "mise bootstrap --dry-run" "echo final > final_hook_ran"
+assert_fail "cat post_dotfiles_hook_ran"
+assert_fail "cat final_hook_ran"
 assert_succeed "mise bootstrap --yes"
 assert "cat post_dotfiles_hook_ran" "post-dotfiles"
 assert "cat final_hook_ran" "final"

@@ -16,8 +16,7 @@ use eyre::bail;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::config::Config;
-use crate::config::ConfigMap;
+use crate::config::{Config, ConfigMap};
 use crate::system::defaults::{DefaultsRequest, DefaultsValue};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
@@ -328,8 +327,12 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
 /// Hooks are additive and ordered global -> local. A hook value can be a string
 /// command, an array of string commands, or a table with a `run` string/array.
 pub fn hooks_from_config(config: &Config) -> Vec<hooks::BootstrapHook> {
+    hooks_from_config_files(&config.config_files)
+}
+
+pub(crate) fn hooks_from_config_files(config_files: &ConfigMap) -> Vec<hooks::BootstrapHook> {
     let mut out = vec![];
-    for cf in config.config_files.values().rev() {
+    for cf in config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (phase, value) in sys.hooks {
                 match hooks::BootstrapHook::from_toml(&phase, value) {
