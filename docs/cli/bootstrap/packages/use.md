@@ -15,7 +15,7 @@ Versions are pinned with `@`: `mise bootstrap packages use apt:curl@8.5.0-2`. Wi
 `@` (or with `@latest`) no pin is written. brew formulae and casks
 version through their names instead (for example `brew:postgresql@17`,
 `brew-cask:temurin@17`), where `@` is part of the Homebrew name rather than
-a mise version selector.
+a mise version selector. mas app IDs are also treated as opaque package names.
 
 ## Arguments
 
@@ -48,7 +48,7 @@ Skip the confirmation prompt
 Examples:
 
 ```
-mise bootstrap packages use apt:curl brew:jq brew-cask:firefox
+mise bootstrap packages use apt:curl brew:jq brew-cask:firefox mas:497799835
 mise bootstrap packages use -g brew:postgresql@17
 mise bootstrap packages use apt:curl@8.5.0-2
 ```

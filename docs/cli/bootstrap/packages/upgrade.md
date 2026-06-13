@@ -10,9 +10,10 @@ Upgrade installed bootstrap packages from `[bootstrap.packages]`
 Refreshes package manager metadata and upgrades the configured packages
 that are already installed: apt/dnf/pacman upgrade to the newest available
 version (apt and dnf honor a version pinned in config), brew pours the
-formula's current bottle and replaces the old keg, and brew-cask installs
-the current cask artifact. Packages that are not installed yet are skipped
-— use `mise bootstrap packages install` for those.
+formula's current bottle and replaces the old keg, brew-cask installs
+the current cask artifact, and mas updates App Store apps. Packages that
+are not installed yet are skipped — use `mise bootstrap packages install`
+for those.
 
 Packages can also be given explicitly in `manager:package` form.
 
@@ -26,7 +27,7 @@ Packages in `manager:package` form; defaults to everything configured in [bootst
 
 ### `-m --manager <MANAGER>`
 
-Only upgrade packages for this manager, e.g. `apt`, `brew`, or `brew-cask`
+Only upgrade packages for this manager, e.g. `apt`, `brew`, `brew-cask`, or `mas`
 
 **Choices:**
 
@@ -34,6 +35,7 @@ Only upgrade packages for this manager, e.g. `apt`, `brew`, or `brew-cask`
 - `brew`
 - `brew-cask`
 - `dnf`
+- `mas`
 - `pacman`
 
 ### `-n --dry-run`
@@ -50,6 +52,7 @@ Examples:
 mise bootstrap packages upgrade
 mise bootstrap packages upgrade brew:postgresql@17
 mise bootstrap packages upgrade --manager brew-cask
+mise bootstrap packages upgrade --manager mas
 mise bootstrap packages upgrade --manager apt --yes
 mise bootstrap packages upgrade --dry-run
 ```

@@ -106,10 +106,10 @@ pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
 /// pin. brew and brew-cask are exempt from `@` parsing: `@` is part of
 /// Homebrew names (`postgresql@17` — that name IS brew's versioning
 /// mechanism), and bottles/casks can't be installed at a pinned version
-/// anyway.
+/// anyway. mas app IDs are opaque too: bundle IDs may contain `@`.
 pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
     let (mgr, rest) = parse_spec(spec)?;
-    if is_brew_manager(&mgr) {
+    if is_opaque_package_manager(&mgr) {
         return Ok((
             mgr,
             PackageRequest {
@@ -327,6 +327,10 @@ fn is_brew_manager(mgr: &str) -> bool {
     matches!(mgr, "brew" | "brew-cask")
 }
 
+fn is_opaque_package_manager(mgr: &str) -> bool {
+    is_brew_manager(mgr) || mgr == "mas"
+}
+
 fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
     let mut brew_taps: IndexMap<String, String> = IndexMap::new();
     for cf in config.config_files.values().rev() {
@@ -417,6 +421,16 @@ mod tests {
         let (mgr, req) = parse_use_spec("brew-cask:temurin@17").unwrap();
         assert_eq!(mgr, "brew-cask");
         assert_eq!(req.name, "temurin@17");
+        assert_eq!(req.version, None);
+
+        let (mgr, req) = parse_use_spec("mas:497799835").unwrap();
+        assert_eq!(mgr, "mas");
+        assert_eq!(req.name, "497799835");
+        assert_eq!(req.version, None);
+
+        let (mgr, req) = parse_use_spec("mas:com.example.App@beta").unwrap();
+        assert_eq!(mgr, "mas");
+        assert_eq!(req.name, "com.example.App@beta");
         assert_eq!(req.version, None);
 
         assert!(parse_use_spec("apt:curl@").is_err());
