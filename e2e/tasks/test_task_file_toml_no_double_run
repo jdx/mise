@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Regression for #10298: a TOML task `hello` whose `file` points at a script in an
+# auto-discovered file-task dir (`mise-tasks/hello.sh`) must run the script once,
+# not twice. Previously the task matcher treated the exact name "hello" and the
+# extension-stripped file-task "hello.sh" as equal matches for `mise run hello`,
+# so both ran concurrently.
+
+mkdir -p mise-tasks
+cat >mise-tasks/hello.sh <<'EOF'
+#!/usr/bin/env bash
+echo "ran-hello-marker"
+EOF
+chmod +x mise-tasks/hello.sh
+
+cat >mise.toml <<'EOF'
+[tasks.hello]
+file = "mise-tasks/hello.sh"
+EOF
+
+mise trust
+
+out="$(mise run hello 2>&1 || true)"
+assert_contains_text "$out" "ran-hello-marker"
+
+count="$(printf '%s\n' "$out" | grep -c 'ran-hello-marker' || true)"
+if [[ $count != "1" ]]; then
+  echo "FAIL: expected the script to run exactly once, but 'ran-hello-marker' appeared $count time(s):"
+  printf '%s\n' "$out"
+  exit 1
+fi
+
+# The auto-discovered file task ("hello.sh") must not also run.
+assert_not_contains_text "$out" "[hello.sh]"

@@ -2071,12 +2071,21 @@ where
             }
             // If it doesn't contain wildcards or ':', it's a simple task name
             if !pat.contains('*') && !pat.contains("...") && !pat.contains(':') {
+                // Prefer exact name matches; only fall back to extension-stripped
+                // matches when there is no exact match. Otherwise a TOML task
+                // "hello" and an auto-discovered file task "hello.sh" would both
+                // match `mise run hello` and run the script twice (#10298).
+                let exact: Vec<&T> = self
+                    .iter()
+                    .filter(|(k, _)| k.as_str() == pat)
+                    .map(|(_, v)| v)
+                    .collect();
+                if !exact.is_empty() {
+                    return Ok(exact);
+                }
                 return Ok(self
                     .iter()
-                    .filter(|(k, _)| {
-                        // Check if task name exactly matches, or matches without extension
-                        k.as_str() == pat || strip_extension(k) == pat
-                    })
+                    .filter(|(k, _)| strip_extension(k) == pat)
                     .map(|(_, v)| v)
                     .collect());
             }
@@ -2159,73 +2168,91 @@ where
             (None, None)
         };
 
-        // === Match tasks with extension stripping ===
-        Ok(self
-            .iter()
-            .filter(|(k, _)| {
-                // Split task name into path and task parts
-                let key_parts: Vec<&str> = k.splitn(2, ':').collect();
-                let (key_path, key_task) = match key_parts.as_slice() {
+        // === Match tasks ===
+        // Whether a key matches the pattern. `allow_ext_strip` enables the
+        // extension-stripped fallback for the task part; we run an exact pass first
+        // and only fall back to stripping when nothing matched exactly, so a toml
+        // task `//pkg:hello` is not joined by a file task `//pkg:hello.sh` for the
+        // pattern `//pkg:hello` (which would run the script twice — #10298). The
+        // path part and wildcard (`*`) task patterns are unaffected by the flag.
+        let entry_matches = |k: &str, allow_ext_strip: bool| -> bool {
+            // Split task name into path and task parts
+            let key_parts: Vec<&str> = k.splitn(2, ':').collect();
+            let (key_path, key_task) = match key_parts.as_slice() {
+                [path, task] => (*path, *task),
+                [path] => (*path, ""),
+                _ => (k, ""),
+            };
+
+            // Match path part with ellipsis support
+            let path_matches = if let Some(ref matcher) = path_matcher {
+                matcher.is_match(key_path)
+            } else {
+                false
+            };
+
+            // Match task part with asterisk support and (optional) extension stripping.
+            // When the pattern explicitly uses a wildcard after `:` (e.g., "test:*"),
+            // require the key to actually have a task part (i.e., contain a `:`
+            // separator). This prevents "test" from matching "test:*", which would
+            // cause circular dependencies. Implicit wildcards (bare names like "test")
+            // should still match the exact task.
+            let task_matches = if task_glob == "*" {
+                !has_explicit_task_glob || !key_task.is_empty()
+            } else if let Some(ref matcher) = task_matcher {
+                matcher.is_match(key_task)
+                    || (allow_ext_strip && matcher.is_match(strip_extension(key_task)))
+            } else {
+                false
+            };
+
+            // Try matching without // prefix for relative patterns
+            let relative_match = if !pat.starts_with("//") {
+                let stripped_key = k.strip_prefix("//").unwrap_or(k);
+                let stripped_parts: Vec<&str> = stripped_key.splitn(2, ':').collect();
+                let (stripped_path, stripped_task) = match stripped_parts.as_slice() {
                     [path, task] => (*path, *task),
                     [path] => (*path, ""),
-                    _ => (k.as_str(), ""),
+                    _ => (stripped_key, ""),
                 };
 
-                // Match path part with ellipsis support
-                let path_matches = if let Some(ref matcher) = path_matcher {
-                    matcher.is_match(key_path)
+                let rel_path_matches = if let Some(ref matcher) = rel_path_matcher {
+                    matcher.is_match(stripped_path)
                 } else {
                     false
                 };
 
-                // Match task part with asterisk support and extension stripping
-                // When the pattern explicitly uses a wildcard after `:` (e.g., "test:*"),
-                // require the key to actually have a task part (i.e., contain a `:`
-                // separator). This prevents "test" from matching "test:*", which would
-                // cause circular dependencies. Implicit wildcards (bare names like "test")
-                // should still match the exact task.
-                let task_matches = if task_glob == "*" {
-                    !has_explicit_task_glob || !key_task.is_empty()
-                } else if let Some(ref matcher) = task_matcher {
-                    // Check exact match OR match without extension
-                    matcher.is_match(key_task) || matcher.is_match(strip_extension(key_task))
+                let rel_task_matches = if task_glob == "*" {
+                    !has_explicit_task_glob || !stripped_task.is_empty()
+                } else if let Some(ref matcher) = rel_task_matcher {
+                    matcher.is_match(stripped_task)
+                        || (allow_ext_strip && matcher.is_match(strip_extension(stripped_task)))
                 } else {
                     false
                 };
 
-                // Try matching without // prefix for relative patterns
-                let relative_match = if !pat.starts_with("//") {
-                    let stripped_key = k.strip_prefix("//").unwrap_or(k);
-                    let stripped_parts: Vec<&str> = stripped_key.splitn(2, ':').collect();
-                    let (stripped_path, stripped_task) = match stripped_parts.as_slice() {
-                        [path, task] => (*path, *task),
-                        [path] => (*path, ""),
-                        _ => (stripped_key, ""),
-                    };
+                rel_path_matches && rel_task_matches
+            } else {
+                false
+            };
 
-                    let rel_path_matches = if let Some(ref matcher) = rel_path_matcher {
-                        matcher.is_match(stripped_path)
-                    } else {
-                        false
-                    };
+            (path_matches && task_matches) || relative_match
+        };
 
-                    let rel_task_matches = if task_glob == "*" {
-                        !has_explicit_task_glob || !stripped_task.is_empty()
-                    } else if let Some(ref matcher) = rel_task_matcher {
-                        // Check exact match OR match without extension
-                        matcher.is_match(stripped_task)
-                            || matcher.is_match(strip_extension(stripped_task))
-                    } else {
-                        false
-                    };
-
-                    rel_path_matches && rel_task_matches
-                } else {
-                    false
-                };
-
-                (path_matches && task_matches) || relative_match
-            })
+        // Prefer exact task-name matches; fall back to extension-stripped matches
+        // only when no key matched exactly.
+        let exact: Vec<&T> = self
+            .iter()
+            .filter(|(k, _)| entry_matches(k.as_str(), false))
+            .map(|(_, t)| t)
+            .unique()
+            .collect();
+        if !exact.is_empty() {
+            return Ok(exact);
+        }
+        Ok(self
+            .iter()
+            .filter(|(k, _)| entry_matches(k.as_str(), true))
             .map(|(_, t)| t)
             .unique()
             .collect())
@@ -3517,6 +3544,64 @@ echo "test"
         // Bare name "test" should still match the "test" task (implicit wildcard)
         let matches = tasks.get_matching("test").unwrap();
         assert!(matches.contains(&&"test".to_string()));
+    }
+
+    #[test]
+    fn test_get_matching_prefers_exact_over_extension_stripped() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        // #10298: a TOML task "hello" and an auto-discovered file task "hello.sh"
+        // coexist; `mise run hello` must match only the exact "hello", not also
+        // "hello.sh" (which would run the script twice).
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("hello".to_string(), "hello".to_string());
+        tasks.insert("hello.sh".to_string(), "hello.sh".to_string());
+
+        let matches = tasks.get_matching("hello").unwrap();
+        assert_eq!(matches, vec![&"hello".to_string()]);
+
+        // Exact match for the file task's own name still works.
+        let matches = tasks.get_matching("hello.sh").unwrap();
+        assert_eq!(matches, vec![&"hello.sh".to_string()]);
+
+        // Extension-stripped fallback still applies when there is no exact match
+        // (e.g. `mise run build` runs a `build.js` file task).
+        let mut only_file: BTreeMap<String, String> = BTreeMap::new();
+        only_file.insert("build.js".to_string(), "build.js".to_string());
+        let matches = only_file.get_matching("build").unwrap();
+        assert_eq!(matches, vec![&"build.js".to_string()]);
+    }
+
+    #[test]
+    fn test_get_matching_prefers_exact_monorepo() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        // #10298 in monorepo form: `//pkg:hello` (toml) and `//pkg:hello.sh` (file)
+        // coexist; the monorepo pattern must match only the exact task part, not
+        // also the extension-stripped file task.
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("//pkg:hello".to_string(), "//pkg:hello".to_string());
+        tasks.insert("//pkg:hello.sh".to_string(), "//pkg:hello.sh".to_string());
+
+        let matches = tasks.get_matching("//pkg:hello").unwrap();
+        assert_eq!(matches, vec![&"//pkg:hello".to_string()]);
+
+        let matches = tasks.get_matching("//pkg:hello.sh").unwrap();
+        assert_eq!(matches, vec![&"//pkg:hello.sh".to_string()]);
+
+        // Extension-stripped fallback still applies in monorepo form when there is
+        // no exact match (e.g. `//pkg:migrate` resolving a `migrate.sh` file task).
+        let mut only_file: BTreeMap<String, String> = BTreeMap::new();
+        only_file.insert(
+            "//pkg:migrate.sh".to_string(),
+            "//pkg:migrate.sh".to_string(),
+        );
+        let matches = only_file.get_matching("//pkg:migrate").unwrap();
+        assert_eq!(matches, vec![&"//pkg:migrate.sh".to_string()]);
     }
 
     #[test]
