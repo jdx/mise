@@ -1989,7 +1989,7 @@ impl UnifiedGitBackend {
     ) -> Result<bool> {
         let raw_opts = tv.request.options();
         let format = if let Some(format_opt) = lookup_with_fallback(&raw_opts, "format") {
-            file::ExtractionFormat::from_ext(&format_opt)
+            file::ExtractionFormat::from_ext(&format_opt).unwrap_or(file::ExtractionFormat::Raw)
         } else {
             file::ExtractionFormat::from_file_name(
                 &file_path.file_name().unwrap_or_default().to_string_lossy(),

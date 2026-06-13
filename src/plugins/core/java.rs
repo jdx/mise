@@ -232,8 +232,7 @@ impl JavaPlugin {
         let format = m
             .file_type
             .as_deref()
-            .map(ExtractionFormat::from_ext)
-            .filter(|f| *f != ExtractionFormat::Raw)
+            .and_then(ExtractionFormat::from_ext)
             .unwrap_or_else(|| ExtractionFormat::from_file_name(&filename));
         file::extract_archive(
             tarball_path,

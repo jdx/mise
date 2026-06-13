@@ -979,21 +979,20 @@ impl ExtractionFormat {
 
         if let Some(idx) = filename.rfind(".tar.") {
             let ext = &filename[idx + 1..];
-            let fmt = Self::from_ext(ext);
-            if fmt != ExtractionFormat::Raw {
+            if let Some(fmt) = Self::from_ext(ext) {
                 return fmt;
             }
         }
 
         if let Some(ext) = Path::new(&filename).extension().and_then(|s| s.to_str()) {
-            Self::from_ext(ext)
+            Self::from_ext(ext).unwrap_or(ExtractionFormat::Raw)
         } else {
             ExtractionFormat::Raw
         }
     }
 
-    pub fn from_ext(ext: &str) -> Self {
-        ext.to_lowercase().parse().unwrap_or(ExtractionFormat::Raw)
+    pub fn from_ext(ext: &str) -> Option<Self> {
+        ext.to_lowercase().parse().ok()
     }
 
     pub fn is_archive(&self) -> bool {
@@ -2067,7 +2066,10 @@ mod tests {
             ExtractionFormat::from_file_name("foo.tbz"),
             ExtractionFormat::TarBz2
         );
-        assert_eq!(ExtractionFormat::from_ext("tbz"), ExtractionFormat::TarBz2);
+        assert_eq!(
+            ExtractionFormat::from_ext("tbz"),
+            Some(ExtractionFormat::TarBz2)
+        );
         assert_eq!(
             ExtractionFormat::from_file_name("foo.tar.zst"),
             ExtractionFormat::TarZst
@@ -2172,9 +2174,9 @@ mod tests {
             ("sz", ExtractionFormat::Sz),
             ("rar", ExtractionFormat::Rar),
         ] {
-            assert_eq!(ExtractionFormat::from_ext(ext), expected);
-            assert_ne!(ExtractionFormat::from_ext(ext), ExtractionFormat::Raw);
+            assert_eq!(ExtractionFormat::from_ext(ext), Some(expected));
         }
+        assert_eq!(ExtractionFormat::from_ext("unknown"), None);
 
         assert!(ExtractionFormat::TarBr.is_archive());
         assert!(ExtractionFormat::TarLz4.is_archive());
