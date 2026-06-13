@@ -9,6 +9,7 @@ mise can ensure machine-global system packages are installed via the
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
 "brew:ffmpeg" = "latest"
+"brew-cask:firefox" = "latest"
 ```
 
 Each entry is keyed `"manager:package"` — the manager prefix is required —
@@ -21,11 +22,11 @@ mise can also place config files (dotfiles) — see
 
 System packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are installed
-machine-globally by the platform's package manager — or, for `brew`, by
-mise's built-in Homebrew bottle installer, which doesn't require Homebrew
-itself. Use them for shared libraries and build dependencies that dev tools
-need (`libssl-dev`, `postgresql`, `ffmpeg`), not for the dev tools
-themselves — those belong in `[tools]`.
+machine-globally by the platform's package manager — or, for `brew` and
+`brew-cask`, by mise's built-in Homebrew installers, which don't require
+Homebrew itself. Use them for shared libraries, build dependencies, and
+machine-global GUI apps (`libssl-dev`, `postgresql`, `ffmpeg`, `firefox`),
+not for project dev tools — those belong in `[tools]`.
 
 The `[bootstrap]` section can also declare
 [macOS defaults](/bootstrap/macos-defaults.html) (`[bootstrap.macos.defaults]`),
@@ -35,12 +36,13 @@ applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html
 
 ## Supported package managers
 
-| Manager  | Platform                                                       | Page                                      |
-| -------- | -------------------------------------------------------------- | ----------------------------------------- |
-| `apt`    | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)       |
-| `dnf`    | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)       |
-| `pacman` | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html) |
-| `brew`   | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)     |
+| Manager     | Platform                                                       | Page                                      |
+| ----------- | -------------------------------------------------------------- | ----------------------------------------- |
+| `apt`       | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)       |
+| `dnf`       | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)       |
+| `pacman`    | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html) |
+| `brew`      | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)     |
+| `brew-cask` | macOS — **no Homebrew required**                               | [brew](/bootstrap/packages/brew.html)     |
 
 ## Semantics
 
@@ -50,8 +52,8 @@ applied by `mise bootstrap user apply` or [`mise bootstrap`](/cli/bootstrap.html
   global entry's version pin) but not remove them.
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are not acted on, so the same config works across platforms: `apt`
-  entries are ignored on macOS, `dnf` entries on Ubuntu, and so on (`brew`
-  works on both macOS and Linux). `mise bootstrap packages status` and `mise doctor`
+  entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
+  works on both macOS and Linux; `brew-cask` works on macOS. Status commands
   still list unavailable managers so nothing is silently invisible.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
@@ -82,13 +84,14 @@ mise bootstrap packages install --yes     # skip the confirmation prompt
 mise bootstrap packages install --manager apt
 mise bootstrap packages install --update  # refresh package manager metadata first
 
-mise bootstrap packages use apt:curl brew:jq   # add to [bootstrap.packages] and install
-mise bootstrap packages use -g brew:ffmpeg     # write to the global config instead
+mise bootstrap packages use apt:curl brew:jq brew-cask:firefox  # add and install
+mise bootstrap packages use -g brew:ffmpeg                      # write globally
 mise bootstrap packages use apt:curl@8.5.0-2   # pin a version (brew pins via the
                                    # formula name: brew:postgresql@17)
 
 mise bootstrap packages upgrade           # upgrade installed packages to current versions
 mise bootstrap packages upgrade --manager brew
+mise bootstrap packages upgrade --manager brew-cask
 ```
 
 `mise bootstrap packages use` is `mise use` for system packages: it writes
@@ -100,11 +103,12 @@ Mac.
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available
-version — apt and dnf also honor a version pinned in config (pacman and brew
-[can't install pins](/bootstrap/packages/pacman.html), so pinned entries are
-skipped with a warning). Packages that aren't installed yet are skipped —
-that's `mise bootstrap packages install`'s job. For brew this pours the formula's current
-bottle and replaces the old keg.
+version — apt and dnf also honor a version pinned in config (pacman, brew,
+and brew-cask [can't install pins](/bootstrap/packages/pacman.html), so
+pinned entries are skipped with a warning). Packages that aren't installed
+yet are skipped — that's `mise bootstrap packages install`'s job. For brew
+this pours the formula's current bottle and replaces the old keg; for
+brew-cask this installs the current cask artifact.
 
 `mise doctor` also reports configured system packages and warns when any are
 missing.

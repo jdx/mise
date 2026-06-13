@@ -1,4 +1,4 @@
-//! System package managers (apt, brew) for the `[bootstrap.packages]` config section.
+//! System package managers (apt, brew, brew-cask) for the `[bootstrap.packages]` config section.
 //!
 //! These are machine-global, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -20,14 +20,15 @@ pub mod pacman;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PackageRequest {
     /// package name as written in the spec (apt: may carry an `:arch`
-    /// qualifier like "gcc:arm64"; brew: full formula name incl. "@17")
+    /// qualifier like "gcc:arm64"; brew/brew-cask: full name incl. "@17")
     pub name: String,
     /// version pin from the config value (`"latest"` parses to None). Each
     /// manager renders this into its native pin syntax at install time
     /// (apt: `name=version`, dnf: `name-version`).
     pub version: Option<String>,
-    /// manager-specific source URL. Currently used by brew tapped formulae:
-    /// `[bootstrap.brew.taps]` can attach a git URL to `owner/tap/formula`.
+    /// manager-specific source URL. Currently used by brew tapped formulae
+    /// and casks: `[bootstrap.brew.taps]` can attach a git URL to
+    /// `owner/tap/name`.
     pub tap_url: Option<String>,
 }
 
@@ -113,6 +114,8 @@ pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(apt::AptManager::new()),
         #[cfg(unix)]
         Arc::new(brew::BrewManager::new()),
+        #[cfg(unix)]
+        Arc::new(brew::BrewCaskManager::new()),
         Arc::new(dnf::DnfManager::new()),
         Arc::new(pacman::PacmanManager::new()),
     ]

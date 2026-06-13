@@ -9,8 +9,9 @@ use crate::system;
 /// Refreshes package manager metadata and upgrades the configured packages
 /// that are already installed: apt/dnf/pacman upgrade to the newest available
 /// version (apt and dnf honor a version pinned in config), brew pours the
-/// formula's current bottle and replaces the old keg. Packages that are not
-/// installed yet are skipped — use `mise bootstrap packages install` for those.
+/// formula's current bottle and replaces the old keg, and brew-cask installs
+/// the current cask artifact. Packages that are not installed yet are skipped
+/// — use `mise bootstrap packages install` for those.
 ///
 /// Packages can also be given explicitly in `manager:package` form.
 #[derive(Debug, clap::Args)]
@@ -21,8 +22,8 @@ pub struct SystemUpgrade {
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
 
-    /// Only upgrade packages for this manager, e.g. `apt` or `brew`
-    #[clap(long, short, value_parser = ["apt", "brew", "dnf", "pacman"])]
+    /// Only upgrade packages for this manager, e.g. `apt`, `brew`, or `brew-cask`
+    #[clap(long, short, value_parser = ["apt", "brew", "brew-cask", "dnf", "pacman"])]
     manager: Option<String>,
 
     /// Print the commands that would run without running them
@@ -62,6 +63,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise bootstrap packages upgrade</bold>
     $ <bold>mise bootstrap packages upgrade brew:postgresql@17</bold>
+    $ <bold>mise bootstrap packages upgrade --manager brew-cask</bold>
     $ <bold>mise bootstrap packages upgrade --manager apt --yes</bold>
     $ <bold>mise bootstrap packages upgrade --dry-run</bold>
 "#

@@ -6,10 +6,10 @@
 
 Manage Homebrew taps used by bootstrap packages
 
-These commands shell out to Homebrew and do not modify `mise.toml`. Use
-`[bootstrap.brew.taps]` when you want tap sources shared in config.
+These commands edit `[bootstrap.brew.taps]` so tapped formulae and casks
+can be fetched directly by mise without a Homebrew installation.
 
 ## Subcommands
 
-- [`mise bootstrap packages brew tap [-n --dry-run] <TAP> [URL]`](/cli/bootstrap/packages/brew/tap.md)
-- [`mise bootstrap packages brew untap [-n --dry-run] <TAPS>…`](/cli/bootstrap/packages/brew/untap.md)
+- [`mise bootstrap packages brew tap [FLAGS] <TAP> [URL]`](/cli/bootstrap/packages/brew/tap.md)
+- [`mise bootstrap packages brew untap [FLAGS] <TAPS>…`](/cli/bootstrap/packages/brew/untap.md)

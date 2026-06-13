@@ -546,6 +546,63 @@ impl MiseToml {
         Ok(())
     }
 
+    /// Set `[bootstrap.brew.taps]."<owner>/<tap>" = "<url>"`, creating the
+    /// tables as needed.
+    pub fn update_bootstrap_brew_tap(&mut self, tap: &str, url: &str) -> eyre::Result<()> {
+        self.bootstrap
+            .get_or_insert_with(Default::default)
+            .brew
+            .taps
+            .insert(tap.to_string(), url.to_string());
+        let mut doc = self.doc_mut()?;
+        let bootstrap = doc
+            .get_mut()
+            .unwrap()
+            .entry("bootstrap")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        bootstrap.set_implicit(true);
+        let brew = bootstrap
+            .entry("brew")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        brew.set_implicit(true);
+        let taps = brew
+            .entry("taps")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+        let key = get_key_with_decor(taps, tap);
+        taps.insert_formatted(&key, toml_edit::value(url));
+        Ok(())
+    }
+
+    pub fn remove_bootstrap_brew_tap(&mut self, tap: &str) -> eyre::Result<()> {
+        if let Some(bootstrap) = &mut self.bootstrap {
+            bootstrap.brew.taps.shift_remove(tap);
+        }
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(bootstrap) = doc.get_mut("bootstrap").and_then(|v| v.as_table_mut())
+            && let Some(brew) = bootstrap.get_mut("brew").and_then(|v| v.as_table_mut())
+            && let Some(taps) = brew.get_mut("taps").and_then(|v| v.as_table_mut())
+        {
+            taps.remove(tap);
+            if taps.is_empty() {
+                brew.remove("taps");
+                if brew.is_empty() {
+                    bootstrap.remove("brew");
+                    if bootstrap.is_empty() {
+                        doc.remove("bootstrap");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn update_env_age(
         &mut self,
         key: &str,

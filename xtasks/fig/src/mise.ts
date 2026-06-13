@@ -749,13 +749,28 @@ const completionSpec: Fig.Spec = {
               subcommands: [
                 {
                   name: "tap",
-                  description: "Tap a Homebrew formula repository",
+                  description:
+                    "Add a Homebrew tap URL to [bootstrap.brew.taps]",
                   options: [
                     {
-                      name: ["-n", "--dry-run"],
+                      name: ["-l", "--local"],
                       description:
-                        "Print the command that would run without running it",
+                        "Write to the local config instead of the global config",
                       isRepeatable: false,
+                    },
+                    {
+                      name: ["-n", "--dry-run"],
+                      description: "Print the config change without writing it",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: ["-p", "--path"],
+                      description: "Write to this config file or directory",
+                      isRepeatable: false,
+                      args: {
+                        name: "path",
+                        template: "filepaths",
+                      },
                     },
                   ],
                   args: [
@@ -766,20 +781,35 @@ const completionSpec: Fig.Spec = {
                     {
                       name: "url",
                       description:
-                        "Git URL for non-GitHub or otherwise custom taps",
+                        "GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew-<repo>.git",
                       isOptional: true,
                     },
                   ],
                 },
                 {
                   name: ["untap", "remove", "rm"],
-                  description: "Untap Homebrew formula repositories",
+                  description:
+                    "Remove Homebrew tap URLs from [bootstrap.brew.taps]",
                   options: [
                     {
-                      name: ["-n", "--dry-run"],
+                      name: ["-l", "--local"],
                       description:
-                        "Print the command that would run without running it",
+                        "Write to the local config instead of the global config",
                       isRepeatable: false,
+                    },
+                    {
+                      name: ["-n", "--dry-run"],
+                      description: "Print the config change without writing it",
+                      isRepeatable: false,
+                    },
+                    {
+                      name: ["-p", "--path"],
+                      description: "Write to this config file or directory",
+                      isRepeatable: false,
+                      args: {
+                        name: "path",
+                        template: "filepaths",
+                      },
                     },
                   ],
                   args: {
@@ -798,11 +828,11 @@ const completionSpec: Fig.Spec = {
                 {
                   name: ["-m", "--manager"],
                   description:
-                    "Only install packages for this manager, e.g. `apt` or `brew`",
+                    "Only install packages for this manager, e.g. `apt`, `brew`, or `brew-cask`",
                   isRepeatable: false,
                   args: {
                     name: "manager",
-                    suggestions: ["apt", "brew", "dnf", "pacman"],
+                    suggestions: ["apt", "brew", "brew-cask", "dnf", "pacman"],
                   },
                 },
                 {
@@ -857,11 +887,11 @@ const completionSpec: Fig.Spec = {
                 {
                   name: ["-m", "--manager"],
                   description:
-                    "Only upgrade packages for this manager, e.g. `apt` or `brew`",
+                    "Only upgrade packages for this manager, e.g. `apt`, `brew`, or `brew-cask`",
                   isRepeatable: false,
                   args: {
                     name: "manager",
-                    suggestions: ["apt", "brew", "dnf", "pacman"],
+                    suggestions: ["apt", "brew", "brew-cask", "dnf", "pacman"],
                   },
                 },
                 {

@@ -125,6 +125,7 @@ jobs:
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features
+      - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - run: sccache --show-stats
         if: always()
 
