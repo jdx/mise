@@ -55,6 +55,12 @@ languages, `;` for INI, `"` for vim) and can be overridden with
 XML) aren't a fit for blocks — use [System Files](/system-files.html) to own
 the whole file instead.
 
+Detecting whether a template block has drifted requires rendering it, so
+`mise system status` (and a real install) evaluates templates — including
+any `exec()` calls — from your trusted config, just like `[env]` templates.
+`--dry-run` is the exception: it promises to execute nothing, so it skips
+template rendering and lists those entries as `(if changed)`.
+
 ## Lines
 
 A `line` ensures an exact line exists somewhere in the file, appending it at

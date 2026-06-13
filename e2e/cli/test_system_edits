@@ -25,6 +25,12 @@ block = "require('mise')"
 path = "~/rendered.conf"
 block = "sum = {{ 1 + 1 }}"
 template = true
+
+[[system.edits]]
+path = "~/execd.conf"
+id = "execd"
+block = '{{ exec(command="touch $HOME/exec-ran") }}ok'
+template = true
 EOF
 
 # everything is missing before applying
@@ -32,9 +38,15 @@ assert_contains "mise system status" "missing"
 assert_contains "mise system status" "block:activate"
 assert_fail "mise system status --missing"
 
-# dry-run prints actions without writing anything
-assert_contains "mise system install --dry-run" "block:activate"
+# dry-run prints actions without writing anything; template blocks are not
+# rendered (exec() must not run) and are listed as "(if changed)".
+# status, by contrast, renders templates by design — clear its exec traces
+rm -f ~/exec-ran
+dry_out="$(mise system install --dry-run 2>&1)"
+assert_contains_text "$dry_out" "block:activate"
+assert_contains_text "$dry_out" "(if changed)"
 assert_fail "cat ~/.zshrc"
+assert_fail "cat ~/exec-ran"
 
 # line edits append to existing files without touching other content
 echo "preexisting content" >~/hosts
@@ -53,6 +65,9 @@ assert_contains "cat ~/hosts" "127.0.0.1 dev.local"
 assert_contains "cat ~/init.lua" "-- >>> mise:mise >>>"
 # template rendered
 assert_contains "cat ~/rendered.conf" "sum = 2"
+# a real install does render templates — exec() ran this time
+assert_contains "cat ~/execd.conf" "ok"
+assert_succeed "test -f ~/exec-ran"
 
 # idempotent: re-running changes nothing
 assert_succeed "mise system status --missing"

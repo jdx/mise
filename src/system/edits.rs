@@ -301,6 +301,12 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 }
 
 /// Current state of one edit on this machine.
+///
+/// Note: computing a template block's state requires rendering it, so this
+/// runs the template engine — including `exec()` — from `mise system
+/// status`. That's the same trust model as `[env]` templates; only
+/// `--dry-run` promises to execute nothing and therefore skips template
+/// checks entirely (see [`apply`]).
 pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
     if let EditOp::Block {
         source: BlockSource::File(p),
@@ -378,6 +384,22 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
             ));
             continue;
         }
+        // rendering can run exec() — a dry run must not execute anything,
+        // so template blocks are listed without computing their state (same
+        // policy as [system.files])
+        let is_template = matches!(&req.op, EditOp::Block { template: true, .. });
+        if opts.dry_run && is_template {
+            if req.path.is_symlink() {
+                problems.push(format!(
+                    "  \"{}\" ({}): target is a symlink; edit the real file instead",
+                    req.path_raw,
+                    req.describe_op()
+                ));
+            } else {
+                todo.push((req, None));
+            }
+            continue;
+        }
         let desired = desired_content(config, req)?;
         match check_resolved(req, desired.as_deref())? {
             FileState::Applied => continue,
@@ -405,8 +427,17 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
         return Ok(());
     }
     if opts.dry_run {
-        for (req, _) in &todo {
-            miseprintln!("edit {} ({})", req.path.display_user(), req.describe_op());
+        for (req, desired) in &todo {
+            // template state wasn't computed (no rendering on dry runs), so
+            // the entry may already be converged
+            let conditional =
+                desired.is_none() && matches!(&req.op, EditOp::Block { template: true, .. });
+            let suffix = if conditional { " (if changed)" } else { "" };
+            miseprintln!(
+                "edit {} ({}){suffix}",
+                req.path.display_user(),
+                req.describe_op()
+            );
         }
         return Ok(());
     }
