@@ -68,6 +68,46 @@ fn resolve_task_sandbox_path(p: &Path, task_base: Option<&Path>) -> PathBuf {
     }
 }
 
+/// Build the single-line command shown in a task's header (the `$ ...` line).
+///
+/// Skips leading shebang/blank/`set ...` boilerplate so the first real command is
+/// shown, and joins backslash-continued lines into one logical line. Without the
+/// join, a command wrapped across physical lines would display only its first line
+/// ending in `\`, and any extra CLI args would be glued onto that dangling
+/// backslash (e.g. `$ echo foo \ --bar`). Returns the whole script if it contains
+/// only boilerplate.
+///
+/// A trailing backslash with no following line is left untouched, so a literal
+/// trailing backslash that is data rather than a continuation (e.g. a Windows path
+/// like `echo C:\tmp\`) is shown as-is. The remaining ambiguity — a literal `\` at
+/// the end of a line that *is* followed by another line — is still treated as a
+/// continuation, which is acceptable for a display-only string.
+fn display_first_command(script: &str) -> String {
+    let mut lines = script.lines();
+    let Some(first) = lines.find(|line| {
+        let t = line.trim_start();
+        !t.is_empty() && !t.starts_with("#!") && t != "set" && !t.starts_with("set ")
+    }) else {
+        return script.to_string();
+    };
+    let mut cmd = first.to_string();
+    while cmd.trim_end().ends_with('\\') {
+        let Some(next) = lines.next() else {
+            // Trailing backslash with no continuation line: keep it (literal data).
+            break;
+        };
+        let truncated = cmd.trim_end();
+        let base = truncated[..truncated.len() - 1].trim_end().to_string();
+        let next = next.trim();
+        cmd = if base.is_empty() || next.is_empty() {
+            format!("{base}{next}")
+        } else {
+            format!("{base} {next}")
+        };
+    }
+    cmd
+}
+
 /// Configuration for TaskExecutor
 pub struct TaskExecutorConfig {
     pub force: bool,
@@ -813,16 +853,10 @@ impl TaskExecutor {
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
-        // For display, skip leading shebang/blank/`set ...` boilerplate so
-        // the user sees the first real command instead of e.g.
-        // "#!/usr/bin/env bash" or "set -Eeuo pipefail".
-        let display_script = script
-            .lines()
-            .find(|line| {
-                let t = line.trim_start();
-                !t.is_empty() && !t.starts_with("#!") && t != "set" && !t.starts_with("set ")
-            })
-            .unwrap_or(script);
+        // For display, skip leading shebang/blank/`set ...` boilerplate and join
+        // backslash-continued lines so the header shows the first real command as a
+        // single logical line (see display_first_command).
+        let display_script = display_first_command(script);
         let args_str = args.join(" ");
         let cmd = match (display_script.is_empty(), args_str.is_empty()) {
             (true, true) => "$".to_string(),
@@ -1683,6 +1717,64 @@ mod tests {
         let resolved = resolve_task_sandbox_path(Path::new(""), Some(Path::new("/task/base")));
 
         assert_eq!(resolved, PathBuf::new());
+    }
+
+    #[test]
+    fn test_display_first_command_plain() {
+        assert_eq!(display_first_command("echo hi"), "echo hi");
+    }
+
+    #[test]
+    fn test_display_first_command_skips_boilerplate() {
+        let script = "#!/usr/bin/env bash\nset -Eeuo pipefail\necho hi";
+        assert_eq!(display_first_command(script), "echo hi");
+    }
+
+    #[test]
+    fn test_display_first_command_joins_continuations() {
+        let script = "echo long_command \\\n  --option1 value1 \\\n  --option2";
+        assert_eq!(
+            display_first_command(script),
+            "echo long_command --option1 value1 --option2"
+        );
+    }
+
+    #[test]
+    fn test_display_first_command_joins_continuations_after_boilerplate() {
+        let script = "#!/usr/bin/env bash\nset -e\necho foo \\\n  --bar";
+        assert_eq!(display_first_command(script), "echo foo --bar");
+    }
+
+    #[test]
+    fn test_display_first_command_keeps_literal_trailing_backslash() {
+        // A trailing backslash with no following line is treated as literal data
+        // (it cannot be a continuation), so it is preserved rather than dropped or
+        // joined. Only genuine multi-line continuations are merged.
+        assert_eq!(display_first_command("echo foo \\"), "echo foo \\");
+    }
+
+    #[test]
+    fn test_display_first_command_keeps_windows_path_trailing_backslash() {
+        // A Windows path ending in a backslash is data, not a line continuation,
+        // and must be shown verbatim in the header.
+        assert_eq!(display_first_command("echo C:\\tmp\\"), "echo C:\\tmp\\");
+    }
+
+    #[test]
+    fn test_display_first_command_all_boilerplate_returns_script() {
+        let script = "#!/usr/bin/env bash\nset -e";
+        assert_eq!(display_first_command(script), script);
+    }
+
+    #[test]
+    fn test_display_first_command_header_has_no_dangling_backslash_with_args() {
+        // Reproduces #10083: the joined command plus extra args must not contain
+        // the `\ ` sequence that confused the original output.
+        let display_script = display_first_command("echo long_command \\\n  --option1 value1");
+        let args_str = ["--extra", "args"].join(" ");
+        let header = format!("$ {display_script} {args_str}");
+        assert_eq!(header, "$ echo long_command --option1 value1 --extra args");
+        assert!(!header.contains("\\ "));
     }
 
     #[test]
