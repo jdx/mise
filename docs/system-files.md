@@ -18,6 +18,10 @@ the directory of the config file that declares the entry, so a global
 `~/.config/mise/config.toml` can manage dotfiles kept next to it, and a
 project config can ship machine setup from the repo.
 
+To manage one piece of a file something else owns (a line in `.zshrc`, an
+entry in `/etc/hosts`) rather than the whole file, see
+[System Edits](/system-edits.html).
+
 ## Modes
 
 | Mode           | Behavior                                                                                                                                                                                                                                               |

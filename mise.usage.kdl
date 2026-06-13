@@ -287,7 +287,8 @@ cmd bootstrap help="[experimental] Set up a machine for the current config in on
 Runs the bootstrap steps for the current config in order:
 
 1. `mise system install` — install missing `[system.packages]`, apply
-   `[system.files]`, and write `[system.defaults]` (macOS)
+   `[system.files]` and `[system.edits]`, and write `[system.defaults]`
+   (macOS)
 2. `mise install` — install missing tools from `[tools]`
 3. `mise run bootstrap` — if a task named `bootstrap` is defined
 
@@ -2878,34 +2879,41 @@ Examples:
 }
 cmd system subcommand_required=#true help=#"""
 [experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, and macOS defaults from `[system.defaults]`
+from `[system.files]`, edits from `[system.edits]`, and macOS defaults
+from `[system.defaults]`
 """# {
     long_help #"""
 [experimental] Manage system packages from `[system.packages]`, files
-from `[system.files]`, and macOS defaults from `[system.defaults]`
+from `[system.files]`, edits from `[system.edits]`, and macOS defaults
+from `[system.defaults]`
 
 System packages are machine-global packages installed by the OS package
 manager (apt, dnf, pacman) or mise's Homebrew-bottle installer (brew).
 System files are config files (dotfiles) symlinked, copied, or rendered
-to machine-global paths. macOS defaults are user preferences written
-with `defaults write`. Unlike `[tools]`, none of these are version-pinned
-per-project and they are only ever acted on when explicitly requested
-with `mise system install`.
+to machine-global paths. System edits manage one piece of a file
+something else owns — a marker-delimited block or a single line. macOS
+defaults are user preferences written with `defaults write`. Unlike
+`[tools]`, none of these are version-pinned per-project and they are only
+ever acted on when explicitly requested with `mise system install` (or
+`mise bootstrap`).
 """#
     cmd install help=#"""
 Install missing system packages from `[system.packages]`, apply files
-from `[system.files]`, and write macOS defaults from `[system.defaults]`
+from `[system.files]` and edits from `[system.edits]`, and write macOS
+defaults from `[system.defaults]`
 """# {
         alias i
         long_help #"""
 Install missing system packages from `[system.packages]`, apply files
-from `[system.files]`, and write macOS defaults from `[system.defaults]`
+from `[system.files]` and edits from `[system.edits]`, and write macOS
+defaults from `[system.defaults]`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
 root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
-entries that aren't in their desired state are applied, and on macOS any
-`[system.defaults]` entries that are unset or differ are written.
+and `[system.edits]` entries that aren't in their desired state are
+applied, and on macOS any `[system.defaults]` entries that are unset or
+differ are written.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -2934,7 +2942,8 @@ Examples:
     }
     cmd status help=#"""
 Show the status of system packages from `[system.packages]`, files from
-`[system.files]`, and macOS defaults from `[system.defaults]`
+`[system.files]`, edits from `[system.edits]`, and macOS defaults from
+`[system.defaults]`
 """# {
         alias ls
         after_long_help #"""

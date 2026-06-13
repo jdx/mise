@@ -2959,8 +2959,60 @@
     },
     "system": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages, files, macOS defaults)",
+      "description": "[experimental] machine-global bootstrapping (system packages, files, edits, macOS defaults)",
       "properties": {
+        "edits": {
+          "type": "object",
+          "description": "edits to files mise doesn't own, applied with `mise system install`: keyed by target path, then by an id naming each edit (the block marker name)",
+          "additionalProperties": {
+            "type": "object",
+            "description": "edits for one file, keyed by id",
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9_.-]+$"
+            },
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "inline block content, maintained between marker comments"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "block": {
+                      "type": "string",
+                      "description": "block content, maintained between marker comments"
+                    },
+                    "source": {
+                      "type": "string",
+                      "description": "block content from a file, relative to this config file"
+                    },
+                    "template": {
+                      "type": "string",
+                      "description": "template engine to render the block content with; currently only \"tera\"",
+                      "anyOf": [
+                        {
+                          "enum": ["tera"]
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "line": {
+                      "type": "string",
+                      "description": "exact line to ensure exists (appended if absent)"
+                    },
+                    "comment": {
+                      "type": "string",
+                      "description": "comment prefix for the marker lines; inferred from the file extension when omitted"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
         "files": {
           "type": "object",
           "description": "files to apply with `mise system install`, keyed by target path (e.g. \"~/.gitconfig\"); sources resolve relative to this config file",

@@ -89,25 +89,6 @@ export default withMermaid(
             { text: "OCI Images (experimental)", link: "/dev-tools/mise-oci" },
             { text: "Deps", link: "/dev-tools/deps" },
             {
-              text: "System Packages (experimental)",
-              link: "/system-packages/",
-              collapsed: true,
-              items: [
-                { text: "apt", link: "/system-packages/apt" },
-                { text: "dnf", link: "/system-packages/dnf" },
-                { text: "pacman", link: "/system-packages/pacman" },
-                { text: "brew", link: "/system-packages/brew" },
-                {
-                  text: "macOS Defaults",
-                  link: "/system-packages/defaults",
-                },
-              ],
-            },
-            {
-              text: "System Files (experimental)",
-              link: "/system-files",
-            },
-            {
               text: "Backend Architecture",
               link: "/dev-tools/backend_architecture",
             },
@@ -152,6 +133,38 @@ export default withMermaid(
                 { text: "ubi", link: "/dev-tools/backends/ubi" },
                 { text: "vfox", link: "/dev-tools/backends/vfox" },
               ],
+            },
+          ],
+        },
+        {
+          text: "System (experimental)",
+          items: [
+            {
+              text: "System Packages",
+              link: "/system-packages/",
+              collapsed: true,
+              items: [
+                { text: "apt", link: "/system-packages/apt" },
+                { text: "dnf", link: "/system-packages/dnf" },
+                { text: "pacman", link: "/system-packages/pacman" },
+                { text: "brew", link: "/system-packages/brew" },
+              ],
+            },
+            {
+              text: "System Files (dotfiles)",
+              link: "/system-files",
+            },
+            {
+              text: "System Edits",
+              link: "/system-edits",
+            },
+            {
+              text: "macOS Defaults",
+              link: "/system-packages/defaults",
+            },
+            {
+              text: "mise bootstrap",
+              link: "/cli/bootstrap",
             },
           ],
         },
