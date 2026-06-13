@@ -2,37 +2,33 @@
 
 # Test validation for monorepo task paths
 
-# Test 1: Running monorepo task without MISE_EXPERIMENTAL should error
-unset MISE_EXPERIMENTAL
+# Test 1: Running monorepo task without a monorepo root should error
+cat <<EOF >mise.toml
+[tasks.local]
+run = 'echo "local task"'
+EOF
+
+# Should fail with helpful error about monorepo_root
+assert_fail "mise run '//some:task'" "require a monorepo root configuration"
+
+# Test 2: Wildcard patterns should also trigger validation
+cat <<EOF >mise.toml
+[tasks.local]
+run = 'echo "local task"'
+EOF
+
+# Wildcard pattern without monorepo root should fail
+assert_fail "mise run '//...:build'" "require a monorepo root configuration"
+
+# Test 3: Three-dot syntax should also trigger validation
+assert_fail "mise run '...:build'" "require a monorepo root configuration"
+
+# Test 4: Legacy experimental_monorepo_root remains a hidden compatibility alias
 cat <<EOF >mise.toml
 experimental_monorepo_root = true
 
 [tasks.local]
-run = 'echo "local task"'
+run = 'echo "legacy alias works"'
 EOF
 
-# Should fail with helpful error about MISE_EXPERIMENTAL
-assert_fail "mise run '//some:task'" "require experimental mode"
-
-# Test 2: Running monorepo task with MISE_EXPERIMENTAL but without monorepo root should error
-export MISE_EXPERIMENTAL=1
-cat <<EOF >mise.toml
-[tasks.local]
-run = 'echo "local task"'
-EOF
-
-# Should fail with helpful error about experimental_monorepo_root
-assert_fail "mise run '//some:task'" "require a monorepo root configuration"
-
-# Test 3: Wildcard patterns should also trigger validation
-unset MISE_EXPERIMENTAL
-cat <<EOF >mise.toml
-[tasks.local]
-run = 'echo "local task"'
-EOF
-
-# Wildcard pattern without experimental mode should fail
-assert_fail "mise run '//...:build'" "require experimental mode"
-
-# Test 4: Three-dot syntax should also trigger validation
-assert_fail "mise run '...:build'" "require experimental mode"
+assert "mise run ':local'" "legacy alias works"

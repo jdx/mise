@@ -1,7 +1,5 @@
 //! S3 backend for mise - downloads tools from Amazon S3 or S3-compatible storage
 //!
-//! S3 backend requires experimental mode to be enabled.
-//!
 //! This backend allows installing tools from private or public S3 buckets.
 //! It supports version discovery via S3 object listing or manifest files.
 //!
@@ -34,8 +32,7 @@
 //! region = "us-east-1"
 //! ```
 
-/// S3 backend is experimental and requires `experimental = true` in settings
-pub const EXPERIMENTAL: bool = true;
+pub const EXPERIMENTAL: bool = false;
 
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
@@ -513,7 +510,6 @@ impl Backend for S3Backend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        Settings::get().ensure_experimental("s3 backend")?;
         let raw_opts = tv.request.options();
         let opts = S3Options::new(&raw_opts);
 

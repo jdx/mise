@@ -502,12 +502,7 @@ impl Config {
         let config = Config::get().await?;
         time!("load_all_tasks");
 
-        // Collect all task templates from config hierarchy (experimental feature)
-        let templates = if Settings::get().experimental {
-            collect_task_templates(&config.config_files)
-        } else {
-            IndexMap::new()
-        };
+        let templates = collect_task_templates(&config.config_files);
 
         let local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
         let global_tasks = load_global_tasks(&config, &templates).await?;
@@ -928,15 +923,11 @@ fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
     find_monorepo_config(config_files).and_then(|cf| cf.project_root().map(|p| p.to_path_buf()))
 }
 
-/// Find the config file that has experimental_monorepo_root = true
+/// Find the config file that has monorepo_root = true
 fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>> {
-    // This feature requires experimental mode
-    if !Settings::get().experimental {
-        return None;
-    }
     config_files
         .values()
-        .find(|cf| cf.experimental_monorepo_root() == Some(true))
+        .find(|cf| cf.monorepo_root() == Some(true))
 }
 
 async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
@@ -1590,7 +1581,7 @@ async fn load_all_config_files(
         }
 
         // Mark monorepo roots so descendant configs are implicitly trusted
-        if cf.experimental_monorepo_root() == Some(true)
+        if cf.monorepo_root() == Some(true)
             && let Err(err) = config_file::mark_as_monorepo_root(f)
         {
             warn!("failed to mark monorepo root: {err:#}");
@@ -1794,20 +1785,12 @@ fn collect_task_templates(config_files: &ConfigMap) -> IndexMap<String, TaskTemp
 }
 
 /// Resolve a task template and merge it into the task.
-/// Returns an error if the template is not found or if experimental mode is not enabled.
+/// Returns an error if the template is not found.
 fn resolve_task_template(
     task: &mut Task,
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<()> {
     if let Some(template_name) = &task.extends {
-        if !Settings::get().experimental {
-            bail!(
-                "Task '{}' uses 'extends = \"{}\"' which requires 'experimental = true' in settings",
-                task.name,
-                template_name
-            );
-        }
-
         let template = templates.get(template_name).ok_or_else(|| {
             eyre!(
                 "Task '{}' extends template '{}' which was not found. \

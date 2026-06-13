@@ -80,7 +80,7 @@ impl BackendType {
         }
     }
 
-    /// Returns true if this backend requires experimental mode to be enabled
+    /// Returns true if this backend is still gated behind experimental mode.
     pub fn is_experimental(&self) -> bool {
         use super::{dotnet, s3, spm};
         match self {

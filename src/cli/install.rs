@@ -70,14 +70,14 @@ pub struct Install {
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 
-    /// [experimental] Install tool(s) to a shared directory
+    /// Install tool(s) to a shared directory
     ///
     /// Installs to the specified directory instead of the default install location.
     /// May require elevated permissions depending on the path.
     #[clap(long, verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts_with = "system")]
     shared: Option<PathBuf>,
 
-    /// [experimental] Install tool(s) to the system-wide shared directory
+    /// Install tool(s) to the system-wide shared directory
     ///
     /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
     /// May require elevated permissions (e.g. sudo).

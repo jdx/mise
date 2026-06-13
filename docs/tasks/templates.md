@@ -1,9 +1,5 @@
 # Task Templates
 
-::: warning
-This feature is experimental and requires `experimental = true` in your settings.
-:::
-
 Task templates allow you to define reusable task definitions that can be extended by multiple tasks. This is particularly useful in monorepos or projects with similar task patterns across different components.
 
 ## Defining Templates
@@ -11,9 +7,6 @@ Task templates allow you to define reusable task definitions that can be extende
 Templates are defined in the `[task_templates.*]` section of your `mise.toml`:
 
 ```toml
-[settings]
-experimental = true
-
 [task_templates."python:build"]
 description = "Build a Python project"
 run = "uv build"
@@ -128,8 +121,7 @@ Task templates are especially useful in monorepos where multiple packages share 
 ```toml
 # Root mise.toml
 [settings]
-experimental = true
-experimental_monorepo_root = true
+monorepo_root = true
 
 [task_templates."python:build"]
 run = "uv build"

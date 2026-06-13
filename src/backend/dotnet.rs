@@ -12,8 +12,7 @@ use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
 
-/// Dotnet backend requires experimental mode to be enabled
-pub const EXPERIMENTAL: bool = true;
+pub const EXPERIMENTAL: bool = false;
 
 #[derive(Debug)]
 pub struct DotnetBackend {
@@ -93,8 +92,6 @@ impl Backend for DotnetBackend {
         ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
     ) -> eyre::Result<crate::toolset::ToolVersion> {
-        Settings::get().ensure_experimental("dotnet backend")?;
-
         // Check if dotnet is available
         self.warn_if_dependency_missing(
             &ctx.config,

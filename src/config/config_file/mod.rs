@@ -120,7 +120,7 @@ pub trait ConfigFile: Debug + Send + Sync {
         IndexMap::new()
     }
 
-    fn experimental_monorepo_root(&self) -> Option<bool> {
+    fn monorepo_root(&self) -> Option<bool> {
         None
     }
 
@@ -372,9 +372,7 @@ pub fn is_trusted(path: &Path) -> bool {
 
     // Check if this path is within a trusted monorepo root
     // Monorepo roots are marked with a special marker file when trusted
-    if settings.experimental
-        && let Some(parent) = canonicalized_path.parent()
-    {
+    if let Some(parent) = canonicalized_path.parent() {
         let mut current = parent;
         while let Some(dir) = current.parent() {
             let monorepo_marker = with_appended_extension(&trust_path(dir), "monorepo");

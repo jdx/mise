@@ -257,7 +257,7 @@ rm -rf mise-tasks
 rm -f mise.toml
 mkdir -p monorepo-validate/pkg
 cat <<'EOF' >monorepo-validate/mise.toml
-experimental_monorepo_root = true
+monorepo_root = true
 
 [settings]
 experimental = true

@@ -152,11 +152,8 @@ mod tests {
     fn test_entry_types() {
         // redactions is an array
         assert_eq!(entry_type("redactions"), Some(SchemaType::Array));
-        // experimental_monorepo_root is a boolean
-        assert_eq!(
-            entry_type("experimental_monorepo_root"),
-            Some(SchemaType::Boolean)
-        );
+        // monorepo_root is a boolean
+        assert_eq!(entry_type("monorepo_root"), Some(SchemaType::Boolean));
     }
 
     #[test]

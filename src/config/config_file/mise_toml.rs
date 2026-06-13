@@ -185,8 +185,8 @@ pub struct MiseToml {
     #[serde(default)]
     settings: SettingsPartial,
     /// Marks this config as a monorepo root, enabling target path syntax for tasks
-    #[serde(default)]
-    experimental_monorepo_root: Option<bool>,
+    #[serde(default, alias = "experimental_monorepo_root")]
+    monorepo_root: Option<bool>,
     /// Configuration for monorepo task discovery
     #[serde(default)]
     monorepo: Option<MonorepoConfig>,
@@ -984,8 +984,8 @@ impl ConfigFile for MiseToml {
             .transpose()
     }
 
-    fn experimental_monorepo_root(&self) -> Option<bool> {
-        self.experimental_monorepo_root
+    fn monorepo_root(&self) -> Option<bool> {
+        self.monorepo_root
     }
 
     fn monorepo(&self) -> Option<&MonorepoConfig> {
@@ -1131,7 +1131,7 @@ impl Clone for MiseToml {
             oci: self.oci.clone(),
             system: self.system.clone(),
             vars: self.vars.clone(),
-            experimental_monorepo_root: self.experimental_monorepo_root,
+            monorepo_root: self.monorepo_root,
             monorepo: self.monorepo.clone(),
         }
     }

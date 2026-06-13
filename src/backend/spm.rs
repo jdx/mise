@@ -27,8 +27,7 @@ use strum::{AsRefStr, EnumString, VariantNames};
 use url::Url;
 use xx::regex;
 
-/// SPM backend requires experimental mode to be enabled
-pub const EXPERIMENTAL: bool = true;
+pub const EXPERIMENTAL: bool = false;
 
 #[derive(Debug)]
 pub struct SPMBackend {
@@ -205,9 +204,6 @@ impl Backend for SPMBackend {
         ctx: &InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let settings = Settings::get();
-        settings.ensure_experimental("spm backend")?;
-
         // Check if swift is available
         self.warn_if_dependency_missing(
             &ctx.config,

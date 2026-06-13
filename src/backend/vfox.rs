@@ -93,7 +93,6 @@ impl Backend for VfoxBackend {
 
                 // Use backend methods if the plugin supports them
                 if this.is_backend_plugin() {
-                    Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
                     let opts = config
@@ -154,7 +153,6 @@ impl Backend for VfoxBackend {
 
         // Use backend methods if the plugin supports them
         if self.is_backend_plugin() {
-            Settings::get().ensure_experimental("custom backends")?;
             let tool_name = self.get_tool_name()?;
             let tool_opts = tv.request.options();
             vfox.backend_install(

@@ -1017,7 +1017,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-env",
           description:
-            "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
+            "Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
           isRepeatable: true,
           args: {
             name: "var",
@@ -1026,7 +1026,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-net",
           description:
-            "[experimental] Allow network to specific host (implies --deny-net for everything else)\nmacOS only in v1; on Linux falls back to allowing all network",
+            "Allow network to specific host (implies --deny-net for everything else)\nmacOS only in v1; on Linux falls back to allowing all network",
           isRepeatable: true,
           args: {
             name: "host",
@@ -1035,7 +1035,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-read",
           description:
-            "[experimental] Allow reads from specific path (implies --deny-read for everything else)",
+            "Allow reads from specific path (implies --deny-read for everything else)",
           isRepeatable: true,
           args: {
             name: "path",
@@ -1045,7 +1045,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-write",
           description:
-            "[experimental] Allow writes to specific path (implies --deny-write for everything else)",
+            "Allow writes to specific path (implies --deny-write for everything else)",
           isRepeatable: true,
           args: {
             name: "path",
@@ -1054,30 +1054,29 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--deny-all",
-          description:
-            "[experimental] Block reads, writes, network, and env vars",
+          description: "Block reads, writes, network, and env vars",
           isRepeatable: false,
         },
         {
           name: "--deny-env",
           description:
-            "[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
+            "Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
           isRepeatable: false,
         },
         {
           name: "--deny-net",
-          description: "[experimental] Block all network access",
+          description: "Block all network access",
           isRepeatable: false,
         },
         {
           name: "--deny-read",
           description:
-            "[experimental] Block filesystem reads (system libs and tool dirs still accessible)",
+            "Block filesystem reads (system libs and tool dirs still accessible)",
           isRepeatable: false,
         },
         {
           name: "--deny-write",
-          description: "[experimental] Block all filesystem writes",
+          description: "Block all filesystem writes",
           isRepeatable: false,
         },
         {
@@ -1568,7 +1567,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--shared",
-          description: "[experimental] Install tool(s) to a shared directory",
+          description: "Install tool(s) to a shared directory",
           isRepeatable: false,
           args: {
             name: "shared",
@@ -1576,8 +1575,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--system",
-          description:
-            "[experimental] Install tool(s) to the system-wide shared directory",
+          description: "Install tool(s) to the system-wide shared directory",
           isRepeatable: false,
         },
       ],
@@ -1860,7 +1858,7 @@ const completionSpec: Fig.Spec = {
     },
     {
       name: "mcp",
-      description: "[experimental] Run Model Context Protocol (MCP) server",
+      description: "Run Model Context Protocol (MCP) server",
     },
     {
       name: "oci",
@@ -2656,7 +2654,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-env",
           description:
-            "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
+            "Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
           isRepeatable: true,
           args: {
             name: "var",
@@ -2665,7 +2663,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-net",
           description:
-            "[experimental] Allow network to specific host (implies --deny-net for everything else)",
+            "Allow network to specific host (implies --deny-net for everything else)",
           isRepeatable: true,
           args: {
             name: "host",
@@ -2674,7 +2672,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-read",
           description:
-            "[experimental] Allow reads from specific path (implies --deny-read for everything else)",
+            "Allow reads from specific path (implies --deny-read for everything else)",
           isRepeatable: true,
           args: {
             name: "path",
@@ -2684,7 +2682,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-write",
           description:
-            "[experimental] Allow writes to specific path (implies --deny-write for everything else)",
+            "Allow writes to specific path (implies --deny-write for everything else)",
           isRepeatable: true,
           args: {
             name: "path",
@@ -2693,30 +2691,29 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--deny-all",
-          description:
-            "[experimental] Block reads, writes, network, and env vars",
+          description: "Block reads, writes, network, and env vars",
           isRepeatable: false,
         },
         {
           name: "--deny-env",
           description:
-            "[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
+            "Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
           isRepeatable: false,
         },
         {
           name: "--deny-net",
-          description: "[experimental] Block all network access",
+          description: "Block all network access",
           isRepeatable: false,
         },
         {
           name: "--deny-read",
           description:
-            "[experimental] Block filesystem reads (system libs and tool dirs still accessible)",
+            "Block filesystem reads (system libs and tool dirs still accessible)",
           isRepeatable: false,
         },
         {
           name: "--deny-write",
-          description: "[experimental] Block all filesystem writes",
+          description: "Block all filesystem writes",
           isRepeatable: false,
         },
         {
@@ -3732,7 +3729,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-env",
               description:
-                "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
+                "Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
               isRepeatable: true,
               args: {
                 name: "var",
@@ -3741,7 +3738,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-net",
               description:
-                "[experimental] Allow network to specific host (implies --deny-net for everything else)",
+                "Allow network to specific host (implies --deny-net for everything else)",
               isRepeatable: true,
               args: {
                 name: "host",
@@ -3750,7 +3747,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-read",
               description:
-                "[experimental] Allow reads from specific path (implies --deny-read for everything else)",
+                "Allow reads from specific path (implies --deny-read for everything else)",
               isRepeatable: true,
               args: {
                 name: "path",
@@ -3760,7 +3757,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-write",
               description:
-                "[experimental] Allow writes to specific path (implies --deny-write for everything else)",
+                "Allow writes to specific path (implies --deny-write for everything else)",
               isRepeatable: true,
               args: {
                 name: "path",
@@ -3769,30 +3766,29 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: "--deny-all",
-              description:
-                "[experimental] Block reads, writes, network, and env vars",
+              description: "Block reads, writes, network, and env vars",
               isRepeatable: false,
             },
             {
               name: "--deny-env",
               description:
-                "[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
+                "Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)",
               isRepeatable: false,
             },
             {
               name: "--deny-net",
-              description: "[experimental] Block all network access",
+              description: "Block all network access",
               isRepeatable: false,
             },
             {
               name: "--deny-read",
               description:
-                "[experimental] Block filesystem reads (system libs and tool dirs still accessible)",
+                "Block filesystem reads (system libs and tool dirs still accessible)",
               isRepeatable: false,
             },
             {
               name: "--deny-write",
-              description: "[experimental] Block all filesystem writes",
+              description: "Block all filesystem writes",
               isRepeatable: false,
             },
             {
@@ -4021,7 +4017,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--oauth",
               description:
-                "[experimental] Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources",
+                "Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources",
               isRepeatable: false,
             },
             {
@@ -4032,7 +4028,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--refresh",
               description:
-                "[experimental] Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire",
+                "Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire",
               isRepeatable: false,
             },
             {

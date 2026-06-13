@@ -816,10 +816,8 @@ type = "String"
 
 [github.oauth_client_id]
 default = ""
-description = "[experimental] GitHub App client ID for native OAuth device-flow tokens."
+description = "GitHub App client ID for native OAuth device-flow tokens."
 docs = """
-[experimental] Requires `experimental = true`.
-
 When set, mise can create short-lived GitHub App user access tokens using
 GitHub's OAuth device flow. This does not require a GitHub App private key,
 client secret, personal access token, or external credential helper.
@@ -2148,7 +2146,7 @@ optional = true
 type = "Path"
 
 [shared_install_dirs]
-description = "[experimental] Additional read-only directories to search for installed tool versions."
+description = "Additional read-only directories to search for installed tool versions."
 docs = """
 A list of additional directories to search for installed tool versions. These directories
 are checked after the primary install directory (`~/.local/share/mise/installs`) when
@@ -2384,7 +2382,7 @@ type = "Bool"
 default = 5
 description = "Maximum depth to search for task files in monorepo subdirectories."
 docs = """
-When using monorepo mode (experimental_monorepo_root = true), this controls how deep
+When using monorepo mode (monorepo_root = true), this controls how deep
 mise will search for task files in subdirectories.
 
 **Depth levels:**

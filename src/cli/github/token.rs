@@ -19,7 +19,7 @@ pub struct Token {
     #[clap(long)]
     raw: bool,
 
-    /// [experimental] Mint a fresh OAuth token even if the cached one has not
+    /// Mint a fresh OAuth token even if the cached one has not
     /// expired, via the refresh-token grant or a new device-code flow
     #[clap(long, requires = "oauth")]
     refresh: bool,

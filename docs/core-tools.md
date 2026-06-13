@@ -17,5 +17,5 @@ You can see the core plugins with `mise registry -b core`.
 - [Python](/lang/python)
 - [Ruby](/lang/ruby)
 - [Rust](/lang/rust)
-- [Swift](/lang/swift) <Badge type="warning" text="experimental" />
+- [Swift](/lang/swift)
 - [Zig](/lang/zig)

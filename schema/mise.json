@@ -814,7 +814,7 @@
             },
             "oauth_client_id": {
               "default": "",
-              "description": "[experimental] GitHub App client ID for native OAuth device-flow tokens.",
+              "description": "GitHub App client ID for native OAuth device-flow tokens.",
               "type": "string"
             },
             "oauth_export_env": {
@@ -1472,7 +1472,7 @@
           }
         },
         "shared_install_dirs": {
-          "description": "[experimental] Additional read-only directories to search for installed tool versions.",
+          "description": "Additional read-only directories to search for installed tool versions.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1982,8 +1982,8 @@
         }
       }
     },
-    "experimental_monorepo_root": {
-      "description": "Marks this config as a monorepo root, enabling target path syntax for tasks. Requires MISE_EXPERIMENTAL=1. When enabled, tasks can be referenced with paths like //projects/frontend:build",
+    "monorepo_root": {
+      "description": "Marks this config as a monorepo root, enabling target path syntax for tasks. When enabled, tasks can be referenced with paths like //projects/frontend:build",
       "type": "boolean"
     },
     "monorepo": {
@@ -2785,9 +2785,9 @@
         }
       ]
     },
-    "experimental_monorepo_root": {
+    "monorepo_root": {
       "description": "marks this config as a monorepo root for task path syntax",
-      "$ref": "#/$defs/experimental_monorepo_root"
+      "$ref": "#/$defs/monorepo_root"
     },
     "monorepo": {
       "description": "configuration for monorepo task discovery",

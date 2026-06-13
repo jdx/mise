@@ -279,12 +279,12 @@ min_version = { hard = '2024.11.1', soft = '2024.9.0' }
 
 When a soft minimum is not met, mise will print a warning and (if available) show self-update instructions. When a hard minimum is not met, mise errors and shows self-update instructions.
 
-### Monorepo root <Badge type="warning" text="experimental" />
+### Monorepo root
 
-Mark a configuration file as a monorepo root to enable target path syntax for tasks. Requires `MISE_EXPERIMENTAL=1`.
+Mark a configuration file as a monorepo root to enable target path syntax for tasks.
 
 ```toml
-experimental_monorepo_root = true
+monorepo_root = true
 ```
 
 When enabled:

@@ -49,41 +49,41 @@ pub struct Exec {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// [experimental] Allow specific env var through (implies --deny-env for everything else)
+    /// Allow specific env var through (implies --deny-env for everything else)
     /// Supports wildcards, e.g. --allow-env='MYAPP_*'
     #[clap(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
-    /// [experimental] Allow network to specific host (implies --deny-net for everything else)
+    /// Allow network to specific host (implies --deny-net for everything else)
     /// macOS only in v1; on Linux falls back to allowing all network
     #[clap(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
-    /// [experimental] Allow reads from specific path (implies --deny-read for everything else)
+    /// Allow reads from specific path (implies --deny-read for everything else)
     #[clap(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_read: Vec<std::path::PathBuf>,
 
-    /// [experimental] Allow writes to specific path (implies --deny-write for everything else)
+    /// Allow writes to specific path (implies --deny-write for everything else)
     #[clap(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_write: Vec<std::path::PathBuf>,
 
-    /// [experimental] Block reads, writes, network, and env vars
+    /// Block reads, writes, network, and env vars
     #[clap(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
-    /// [experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
     #[clap(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
-    /// [experimental] Block all network access
+    /// Block all network access
     #[clap(long, verbatim_doc_comment)]
     pub deny_net: bool,
 
-    /// [experimental] Block filesystem reads (system libs and tool dirs still accessible)
+    /// Block filesystem reads (system libs and tool dirs still accessible)
     #[clap(long, verbatim_doc_comment)]
     pub deny_read: bool,
 
-    /// [experimental] Block all filesystem writes
+    /// Block all filesystem writes
     #[clap(long, verbatim_doc_comment)]
     pub deny_write: bool,
 
@@ -234,7 +234,7 @@ impl Exec {
             args.insert(0, "-C".into());
         }
 
-        // Build sandbox config from CLI flags (experimental feature)
+        // Build sandbox config from CLI flags.
         let mut sandbox = SandboxConfig {
             deny_read: self.deny_all || self.deny_read,
             deny_write: self.deny_all || self.deny_write,
@@ -247,9 +247,7 @@ impl Exec {
         };
         sandbox.resolve_paths();
 
-        // Check experimental flag if sandbox is being used
         if sandbox.is_active() {
-            Settings::get().ensure_experimental("sandbox")?;
             env = sandbox.filter_env(&env);
         }
 

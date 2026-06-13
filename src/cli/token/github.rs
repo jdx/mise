@@ -13,7 +13,7 @@ pub struct Github {
     #[clap(default_value = "github.com")]
     pub(crate) host: String,
 
-    /// [experimental] Resolve only via the native GitHub OAuth source (cache,
+    /// Resolve only via the native GitHub OAuth source (cache,
     /// refresh, or device-code flow), bypassing other token sources
     #[clap(long)]
     pub(crate) oauth: bool,
@@ -22,7 +22,7 @@ pub struct Github {
     #[clap(long)]
     pub(crate) raw: bool,
 
-    /// [experimental] Mint a fresh OAuth token even if the cached one has not
+    /// Mint a fresh OAuth token even if the cached one has not
     /// expired, via the refresh-token grant or a new device-code flow.
     /// Use after changing the GitHub App's installations or permissions:
     /// cached tokens keep their original access until they expire
