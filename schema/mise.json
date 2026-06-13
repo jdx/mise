@@ -3050,6 +3050,108 @@
           "type": "object",
           "description": "macOS-specific bootstrap config",
           "properties": {
+            "dock": {
+              "type": "object",
+              "description": "curated Dock preferences that compile into macOS defaults",
+              "properties": {
+                "autohide": {
+                  "type": "boolean",
+                  "description": "hide and show the Dock automatically"
+                },
+                "orientation": {
+                  "type": "string",
+                  "enum": ["bottom", "left", "right"],
+                  "description": "Dock screen edge"
+                },
+                "tilesize": {
+                  "type": "integer",
+                  "description": "Dock icon size"
+                },
+                "magnification": {
+                  "type": "boolean",
+                  "description": "enable Dock magnification"
+                },
+                "largesize": {
+                  "type": "integer",
+                  "description": "Dock magnified icon size"
+                },
+                "show_recents": {
+                  "type": "boolean",
+                  "description": "show recent applications in the Dock"
+                },
+                "mru_spaces": {
+                  "type": "boolean",
+                  "description": "automatically rearrange Spaces based on most recent use"
+                }
+              },
+              "additionalProperties": false
+            },
+            "finder": {
+              "type": "object",
+              "description": "curated Finder preferences that compile into macOS defaults",
+              "properties": {
+                "show_all_files": {
+                  "type": "boolean",
+                  "description": "show hidden files in Finder"
+                },
+                "show_pathbar": {
+                  "type": "boolean",
+                  "description": "show the Finder path bar"
+                },
+                "show_status_bar": {
+                  "type": "boolean",
+                  "description": "show the Finder status bar"
+                },
+                "show_extensions_warning": {
+                  "type": "boolean",
+                  "description": "show the warning when changing file extensions"
+                },
+                "preferred_view_style": {
+                  "type": "string",
+                  "enum": ["icon", "list", "column", "gallery"],
+                  "description": "Finder preferred view style"
+                }
+              },
+              "additionalProperties": false
+            },
+            "keyboard": {
+              "type": "object",
+              "description": "curated keyboard preferences that compile into macOS defaults",
+              "properties": {
+                "key_repeat": {
+                  "type": "integer",
+                  "description": "keyboard repeat interval"
+                },
+                "initial_key_repeat": {
+                  "type": "integer",
+                  "description": "delay before key repeat starts"
+                },
+                "press_and_hold": {
+                  "type": "boolean",
+                  "description": "enable press-and-hold accent picker"
+                },
+                "fn_state": {
+                  "type": "boolean",
+                  "description": "use F1, F2, etc. as standard function keys"
+                }
+              },
+              "additionalProperties": false
+            },
+            "trackpad": {
+              "type": "object",
+              "description": "curated trackpad preferences that compile into macOS defaults",
+              "properties": {
+                "tap_to_click": {
+                  "type": "boolean",
+                  "description": "enable tap to click for built-in and Bluetooth trackpads"
+                },
+                "three_finger_drag": {
+                  "type": "boolean",
+                  "description": "enable three finger drag for built-in and Bluetooth trackpads"
+                }
+              },
+              "additionalProperties": false
+            },
             "defaults": {
               "type": "object",
               "description": "macOS user defaults to apply with `mise bootstrap macos-defaults apply`, keyed by preferences domain (e.g. \"com.apple.dock\", \"NSGlobalDomain\")",

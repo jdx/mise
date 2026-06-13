@@ -44,8 +44,23 @@ task runs every time, so keep it idempotent.
 "~/.config/nvim" = { mode = "symlink" }
 "~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
 
+[bootstrap.macos.dock]
+autohide = true
+orientation = "left"
+tilesize = 48
+
+[bootstrap.macos.finder]
+show_pathbar = true
+
+[bootstrap.macos.keyboard]
+key_repeat = 2
+initial_key_repeat = 15
+
+[bootstrap.macos.trackpad]
+tap_to_click = true
+
 [bootstrap.macos.defaults]
-"com.apple.dock" = { autohide = true }
+"com.apple.finder" = { AppleShowAllFiles = true }
 
 [bootstrap.macos.launchd.agents.my-sync]
 program = "~/.local/bin/my-sync"
@@ -106,6 +121,7 @@ place but should not install anything during that check.
 | ---------------------------------- | ------------------------------------------------------------- |
 | `[bootstrap.packages]`             | OS packages from apt, dnf, pacman, or brew                    |
 | `[dotfiles]`                       | Whole-file dotfiles and small managed edits to existing files |
+| `[bootstrap.macos.*]`              | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
 | `[bootstrap.macos.defaults]`       | macOS user preferences written through `defaults write`       |
 | `[bootstrap.macos.launchd.agents]` | macOS user LaunchAgents written and loaded with `launchctl`   |
 | `[bootstrap.user]`                 | Current-user settings such as `login_shell`                   |

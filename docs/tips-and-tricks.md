@@ -92,8 +92,12 @@ defaults, then LaunchAgents, then login shell, then tools, then a
 "~/.config/nvim" = { mode = "symlink" }
 "~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
 
-[bootstrap.macos.defaults]                    # macOS defaults write
-"com.apple.dock" = { autohide = true }
+[bootstrap.macos.dock]                 # friendly macOS defaults
+autohide = true
+orientation = "left"
+
+[bootstrap.macos.finder]
+show_pathbar = true
 
 [bootstrap.macos.launchd.agents.my-sync]      # macOS user LaunchAgents
 program = "~/.local/bin/my-sync"
