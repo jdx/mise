@@ -335,19 +335,30 @@ fn merge_friendly_macos_defaults(
     merge_trackpad_defaults(out, &macos.trackpad);
 }
 
+#[derive(Clone, Copy)]
+struct FriendlyDefaultSpec<'a> {
+    section: &'a str,
+    key: &'a str,
+    defaults_key: &'a str,
+    expected: fn(&toml::Value) -> bool,
+    expected_type: &'a str,
+}
+
 fn insert_friendly_default(
     out: &mut IndexMap<(String, String), toml::Value>,
-    section: &str,
-    key: &str,
     domain: &str,
-    defaults_key: &str,
+    spec: FriendlyDefaultSpec<'_>,
     value: toml::Value,
-    expected: fn(&toml::Value) -> bool,
-    expected_type: &str,
 ) {
-    if expected(&value) {
-        out.insert((domain.to_string(), defaults_key.to_string()), value);
+    if (spec.expected)(&value) {
+        out.insert((domain.to_string(), spec.defaults_key.to_string()), value);
     } else {
+        let FriendlyDefaultSpec {
+            section,
+            key,
+            expected_type,
+            ..
+        } = spec;
         warn!(
             "[bootstrap.macos.{section}].{key}: unsupported value type \
              (expected {expected_type})"
@@ -357,22 +368,24 @@ fn insert_friendly_default(
 
 fn insert_friendly_multi_domain_default(
     out: &mut IndexMap<(String, String), toml::Value>,
-    section: &str,
-    key: &str,
     domains: &[&str],
-    defaults_key: &str,
+    spec: FriendlyDefaultSpec<'_>,
     value: toml::Value,
-    expected: fn(&toml::Value) -> bool,
-    expected_type: &str,
 ) {
-    if expected(&value) {
+    if (spec.expected)(&value) {
         for domain in domains {
             out.insert(
-                (domain.to_string(), defaults_key.to_string()),
+                (domain.to_string(), spec.defaults_key.to_string()),
                 value.clone(),
             );
         }
     } else {
+        let FriendlyDefaultSpec {
+            section,
+            key,
+            expected_type,
+            ..
+        } = spec;
         warn!(
             "[bootstrap.macos.{section}].{key}: unsupported value type \
              (expected {expected_type})"
@@ -396,13 +409,15 @@ fn merge_dock_defaults(
         match key.as_str() {
             "autohide" => insert_friendly_default(
                 out,
-                "dock",
-                key,
                 "com.apple.dock",
-                "autohide",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "autohide",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             "orientation" => match value {
                 toml::Value::String(s) if matches!(s.as_str(), "bottom" | "left" | "right") => {
@@ -421,53 +436,63 @@ fn merge_dock_defaults(
             },
             "tilesize" => insert_friendly_default(
                 out,
-                "dock",
-                key,
                 "com.apple.dock",
-                "tilesize",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "tilesize",
+                    expected: is_integer,
+                    expected_type: "integer",
+                },
                 value.clone(),
-                is_integer,
-                "integer",
             ),
             "magnification" => insert_friendly_default(
                 out,
-                "dock",
-                key,
                 "com.apple.dock",
-                "magnification",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "magnification",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             "largesize" => insert_friendly_default(
                 out,
-                "dock",
-                key,
                 "com.apple.dock",
-                "largesize",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "largesize",
+                    expected: is_integer,
+                    expected_type: "integer",
+                },
                 value.clone(),
-                is_integer,
-                "integer",
             ),
             "show_recents" => insert_friendly_default(
                 out,
-                "dock",
-                key,
                 "com.apple.dock",
-                "show-recents",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "show-recents",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             "mru_spaces" => insert_friendly_default(
                 out,
-                "dock",
-                key,
                 "com.apple.dock",
-                "mru-spaces",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "mru-spaces",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             _ => warn!("[bootstrap.macos.dock].{key}: unknown key, ignoring entry"),
         }
@@ -482,43 +507,51 @@ fn merge_finder_defaults(
         match key.as_str() {
             "show_all_files" => insert_friendly_default(
                 out,
-                "finder",
-                key,
                 "com.apple.finder",
-                "AppleShowAllFiles",
+                FriendlyDefaultSpec {
+                    section: "finder",
+                    key,
+                    defaults_key: "AppleShowAllFiles",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             "show_pathbar" => insert_friendly_default(
                 out,
-                "finder",
-                key,
                 "com.apple.finder",
-                "ShowPathbar",
+                FriendlyDefaultSpec {
+                    section: "finder",
+                    key,
+                    defaults_key: "ShowPathbar",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             "show_status_bar" => insert_friendly_default(
                 out,
-                "finder",
-                key,
                 "com.apple.finder",
-                "ShowStatusBar",
+                FriendlyDefaultSpec {
+                    section: "finder",
+                    key,
+                    defaults_key: "ShowStatusBar",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             "show_extensions_warning" => insert_friendly_default(
                 out,
-                "finder",
-                key,
                 "com.apple.finder",
-                "FXEnableExtensionChangeWarning",
+                FriendlyDefaultSpec {
+                    section: "finder",
+                    key,
+                    defaults_key: "FXEnableExtensionChangeWarning",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             "preferred_view_style" => match value {
                 toml::Value::String(s) => {
@@ -562,43 +595,51 @@ fn merge_keyboard_defaults(
         match key.as_str() {
             "key_repeat" => insert_friendly_default(
                 out,
-                "keyboard",
-                key,
                 "NSGlobalDomain",
-                "KeyRepeat",
+                FriendlyDefaultSpec {
+                    section: "keyboard",
+                    key,
+                    defaults_key: "KeyRepeat",
+                    expected: is_integer,
+                    expected_type: "integer",
+                },
                 value.clone(),
-                is_integer,
-                "integer",
             ),
             "initial_key_repeat" => insert_friendly_default(
                 out,
-                "keyboard",
-                key,
                 "NSGlobalDomain",
-                "InitialKeyRepeat",
+                FriendlyDefaultSpec {
+                    section: "keyboard",
+                    key,
+                    defaults_key: "InitialKeyRepeat",
+                    expected: is_integer,
+                    expected_type: "integer",
+                },
                 value.clone(),
-                is_integer,
-                "integer",
             ),
             "press_and_hold" => insert_friendly_default(
                 out,
-                "keyboard",
-                key,
                 "NSGlobalDomain",
-                "ApplePressAndHoldEnabled",
+                FriendlyDefaultSpec {
+                    section: "keyboard",
+                    key,
+                    defaults_key: "ApplePressAndHoldEnabled",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             "fn_state" => insert_friendly_default(
                 out,
-                "keyboard",
-                key,
                 "NSGlobalDomain",
-                "com.apple.keyboard.fnState",
+                FriendlyDefaultSpec {
+                    section: "keyboard",
+                    key,
+                    defaults_key: "com.apple.keyboard.fnState",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             _ => warn!("[bootstrap.macos.keyboard].{key}: unknown key, ignoring entry"),
         }
@@ -613,29 +654,33 @@ fn merge_trackpad_defaults(
         match key.as_str() {
             "tap_to_click" => insert_friendly_multi_domain_default(
                 out,
-                "trackpad",
-                key,
                 &[
                     "com.apple.AppleMultitouchTrackpad",
                     "com.apple.driver.AppleBluetoothMultitouch.trackpad",
                 ],
-                "Clicking",
+                FriendlyDefaultSpec {
+                    section: "trackpad",
+                    key,
+                    defaults_key: "Clicking",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             "three_finger_drag" => insert_friendly_multi_domain_default(
                 out,
-                "trackpad",
-                key,
                 &[
                     "com.apple.AppleMultitouchTrackpad",
                     "com.apple.driver.AppleBluetoothMultitouch.trackpad",
                 ],
-                "TrackpadThreeFingerDrag",
+                FriendlyDefaultSpec {
+                    section: "trackpad",
+                    key,
+                    defaults_key: "TrackpadThreeFingerDrag",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
                 value.clone(),
-                is_bool,
-                "bool",
             ),
             _ => warn!("[bootstrap.macos.trackpad].{key}: unknown key, ignoring entry"),
         }
