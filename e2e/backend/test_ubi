@@ -7,8 +7,8 @@ assert_contains "$MISE_DATA_DIR/shims/jc --version" "jc version:  1.25.3"
 
 # only run on linux/amd64
 if [ "$(uname -m)" = "x86_64" ] && [ "$(uname -s)" = "Linux" ]; then
-  mise use 'ubi:https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz[exe=ffmpeg]'
-  assert_contains "$MISE_DATA_DIR/shims/ffmpeg -version" "ffmpeg version"
+  mise use 'ubi:https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-unknown-linux-gnu.tar.gz[exe=fd]'
+  assert_contains "$MISE_DATA_DIR/shims/fd --version" "fd 10.3.0"
 fi
 
 cat <<EOF >mise.toml
