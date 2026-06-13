@@ -133,9 +133,9 @@ OS.
 ## sudo
 
 The Linux package managers require root. When not running as root, mise
-elevates with `sudo`, which prompts for your password as usual. This is the
-only place mise ever elevates privileges, and it only happens during an
-explicit `mise system install`:
+elevates with `sudo`, which prompts for your password as usual. The same
+sudo path is used when `[system].login_shell` needs to add a shell to
+`/etc/shells`, and it only happens during an explicit `mise system install`:
 
 - already root (containers, CI): no sudo, commands run directly
 - interactive terminal: e.g. `sudo apt-get install ...` with a normal sudo

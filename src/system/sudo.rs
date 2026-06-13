@@ -1,9 +1,9 @@
 //! The single place in mise that may elevate privileges.
 //!
-//! Only system package managers that mutate machine-global state (apt) use
-//! this. Every elevated command logs its full argv before running, never
-//! prompts for a password without a TTY, and can be disabled entirely with
-//! `system_packages.sudo = false`.
+//! System package managers and declarative system mutations that require
+//! root use this. Every elevated command logs its full argv before running,
+//! never prompts for a password without a TTY, and can be disabled entirely
+//! with `system_packages.sudo = false`.
 
 use std::process::{Command, Stdio};
 

@@ -255,6 +255,10 @@ impl SystemStatus {
                         any_missing = true;
                         "differs"
                     }
+                    LoginShellState::MissingFromShells { .. } => {
+                        any_missing = true;
+                        "missing from /etc/shells"
+                    }
                 };
                 if self.json {
                     json_out.insert(
@@ -262,7 +266,9 @@ impl SystemStatus {
                         json!({
                             "available": true,
                             "shell": status.request.shell,
+                            "user": status.user,
                             "current": status.current,
+                            "shell_listed": status.shell_listed,
                             "state": state,
                         }),
                     );

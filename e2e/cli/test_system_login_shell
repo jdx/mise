@@ -6,6 +6,7 @@ printf '%s\n' "$*" >>"$CHSH_LOG"
 EOF
 chmod +x "$HOME/bin/chsh"
 export CHSH_LOG="$PWD/chsh.log"
+export MISE_TEST_SHELLS_FILE="$PWD/shells"
 
 cat <<EOF >mise.toml
 [system]
@@ -14,6 +15,7 @@ EOF
 
 current="$(mise system status --json | jq -r '.login_shell.current')"
 assert_not_empty "printf '%s' '$current'"
+printf '%s\n' "$current" >"$MISE_TEST_SHELLS_FILE"
 
 # Matching login shell is in sync and install is a no-op.
 cat <<EOF >mise.toml
@@ -56,11 +58,14 @@ cat <<EOF >mise.toml
 login_shell = "/tmp/mise-test-shell"
 EOF
 assert_fail "mise system status --missing"
+assert_contains "mise system status --json" '"shell_listed": false'
 assert_contains "mise system install --dry-run --yes" "chsh -s /tmp/mise-test-shell"
 assert_fail "test -f '$CHSH_LOG'"
+assert_fail "grep -q /tmp/mise-test-shell '$MISE_TEST_SHELLS_FILE'"
 
-# Real apply invokes chsh with the requested shell.
+# Real apply lists the shell first, then invokes chsh with the requested shell.
 assert_succeed "mise system install --yes"
+assert_contains "cat '$MISE_TEST_SHELLS_FILE'" "/tmp/mise-test-shell"
 assert "cat '$CHSH_LOG'" "-s /tmp/mise-test-shell"
 
 # Invalid values warn and are skipped like other malformed [system] entries.
