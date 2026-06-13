@@ -31,6 +31,12 @@ Templates get the same context as other mise templates (`env`, `vars`,
 `exec()`, etc.), which is the main reason to use them: one source file,
 per-machine output.
 
+Detecting whether a template's output has drifted requires rendering it, so
+`mise system status` (and a real install) evaluates templates — including
+any `exec()` calls — from your trusted config, just like `[env]` templates.
+`--dry-run` is the exception: it promises to execute nothing, so it skips
+template rendering and lists those entries as `(if changed)`.
+
 ## Semantics
 
 Files follow the same rules as [system packages](/system-packages/):

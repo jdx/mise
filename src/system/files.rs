@@ -164,6 +164,12 @@ pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
 }
 
 /// Current state of one entry on this machine.
+///
+/// Note: computing a template entry's state requires rendering it, so this
+/// runs the template engine — including `exec()` — from `mise system
+/// status`. That's the same trust model as `[env]` templates (which run on
+/// every command in a trusted config); only `--dry-run` promises to execute
+/// nothing and therefore skips template checks entirely.
 pub fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
     if !req.source.exists() {
         return Ok(FileState::SourceMissing);
@@ -427,8 +433,12 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
         return Ok(());
     }
     if opts.dry_run {
-        for (req, _) in &todo {
-            miseprintln!("{}", describe(req)?);
+        for (req, rendered) in &todo {
+            // template state wasn't computed (no rendering on dry runs), so
+            // the entry may already be converged
+            let conditional = req.mode == FileMode::Template && rendered.is_none();
+            let suffix = if conditional { " (if changed)" } else { "" };
+            miseprintln!("{}{suffix}", describe(req)?);
         }
         return Ok(());
     }
