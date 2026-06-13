@@ -842,9 +842,9 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
     // not conflicts — only a type mismatch blocks
     let file_link_conflicts = |source: &Path, target: &Path| -> Result<bool> {
         if cfg!(windows) && source.is_file() {
-            return Ok(target.exists() && target.is_dir());
+            Ok(target.exists() && target.is_dir())
         } else {
-            if !(target.exists() && !target.is_symlink()) {
+            if !target.exists() || target.is_symlink() {
                 return Ok(false);
             }
             if source.is_file()
