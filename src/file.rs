@@ -938,7 +938,7 @@ pub enum ExtractionFormat {
     TarXz,
     #[strum(serialize = "xz")]
     Xz,
-    #[strum(serialize = "tar.bz2", serialize = "tbz2")]
+    #[strum(serialize = "tar.bz2", serialize = "tbz2", serialize = "tbz")]
     TarBz2,
     #[strum(serialize = "bz2")]
     Bz2,
@@ -2008,6 +2008,11 @@ mod tests {
             ExtractionFormat::from_file_name("foo.tbz2"),
             ExtractionFormat::TarBz2
         );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tbz"),
+            ExtractionFormat::TarBz2
+        );
+        assert_eq!(ExtractionFormat::from_ext("tbz"), ExtractionFormat::TarBz2);
         assert_eq!(
             ExtractionFormat::from_file_name("foo.tar.zst"),
             ExtractionFormat::TarZst
