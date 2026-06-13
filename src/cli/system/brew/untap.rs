@@ -22,6 +22,6 @@ impl SystemBrewUntap {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise system brew untap railwaycat/emacsmacport</bold>
+    $ <bold>mise bootstrap packages brew untap railwaycat/emacsmacport</bold>
 "#
 );

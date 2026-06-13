@@ -32,7 +32,7 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::system::{DotfilesTomlConfig, SystemTomlConfig};
+use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig};
 use crate::task::{Task, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -179,7 +179,7 @@ pub struct MiseToml {
     #[serde(default)]
     oci: Option<OciConfig>,
     #[serde(default)]
-    system: Option<SystemTomlConfig>,
+    bootstrap: Option<BootstrapTomlConfig>,
     #[serde(default)]
     dotfiles: Option<DotfilesTomlConfig>,
     #[serde(default)]
@@ -519,24 +519,24 @@ impl MiseToml {
         Ok(())
     }
 
-    /// Set `[system.packages]."<manager>:<package>" = "<version>"`,
+    /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
     /// creating the tables as needed ("latest" means no pin)
-    pub fn update_system_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
-        self.system
+    pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
+        self.bootstrap
             .get_or_insert_with(Default::default)
             .packages
             .insert(spec.to_string(), version.to_string());
         let mut doc = self.doc_mut()?;
-        let system = doc
+        let bootstrap = doc
             .get_mut()
             .unwrap()
-            .entry("system")
+            .entry("bootstrap")
             .or_insert_with(table)
             .as_table_mut()
             .unwrap();
-        // don't render an empty [system] header above [system.packages]
-        system.set_implicit(true);
-        let packages = system
+        // don't render an empty [bootstrap] header above [bootstrap.packages]
+        bootstrap.set_implicit(true);
+        let packages = bootstrap
             .entry("packages")
             .or_insert_with(table)
             .as_table_mut()
@@ -1053,8 +1053,8 @@ impl ConfigFile for MiseToml {
         self.oci.clone()
     }
 
-    fn system_config(&self) -> Option<SystemTomlConfig> {
-        self.system.clone()
+    fn bootstrap_config(&self) -> Option<BootstrapTomlConfig> {
+        self.bootstrap.clone()
     }
 
     fn dotfiles_config(&self) -> Option<DotfilesTomlConfig> {
@@ -1135,7 +1135,7 @@ impl Clone for MiseToml {
             watch_files: self.watch_files.clone(),
             deps: self.deps.clone(),
             oci: self.oci.clone(),
-            system: self.system.clone(),
+            bootstrap: self.bootstrap.clone(),
             dotfiles: self.dotfiles.clone(),
             vars: self.vars.clone(),
             monorepo_root: self.monorepo_root,
@@ -2144,25 +2144,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_system_packages() {
+    async fn test_bootstrap_packages() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
             r#"
-        [system.packages]
+        [bootstrap.packages]
         "apt:libssl-dev" = "latest"
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
         "future-manager:whatever" = "latest"
 
-        [system.brew.taps]
+        [bootstrap.brew.taps]
         "railwaycat/emacsmacport" = "https://github.com/railwaycat/homebrew-emacsmacport"
         "#,
         )
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
-        let system = cf.system_config().unwrap();
+        let system = cf.bootstrap_config().unwrap();
         assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
         assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
         assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
@@ -2170,68 +2170,60 @@ mod tests {
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
         );
-        assert_eq!(system.login_shell, None);
+        assert_eq!(system.user.login_shell, None);
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
             system.packages.get("future-manager:whatever").unwrap(),
             "latest"
         );
 
-        // no [system] section -> None
+        // no [bootstrap] section -> None
         file::write(&p, "[tools]\n").unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
-        assert!(cf.system_config().is_none());
+        assert!(cf.bootstrap_config().is_none());
         file::remove_file(&p).unwrap();
     }
 
     #[tokio::test]
-    async fn test_system_login_shell() {
+    async fn test_bootstrap_login_shell() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
             r#"
-        [system]
+        [bootstrap.user]
         login_shell = "/bin/zsh"
         "#,
         )
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
-        let system = cf.system_config().unwrap();
-        assert_eq!(system.login_shell.as_deref(), Some("/bin/zsh"));
+        let system = cf.bootstrap_config().unwrap();
+        assert_eq!(system.user.login_shell.as_deref(), Some("/bin/zsh"));
         file::remove_file(&p).unwrap();
     }
 
     #[tokio::test]
-    async fn test_system_defaults() {
+    async fn test_bootstrap_macos_defaults() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
             r#"
-        [system.defaults.NSGlobalDomain]
-        KeyRepeat = 2
-        ApplePressAndHoldEnabled = false
-
-        [system.defaults."com.apple.dock"]
-        autohide = true
-        tilesize = 48
-        magnification-scale = 1.5
-        orientation = "left"
-        # unsupported shapes still parse (forward compatibility)
-        future-array = [1, 2]
+        [bootstrap.macos.defaults]
+        NSGlobalDomain = { KeyRepeat = 2, ApplePressAndHoldEnabled = false }
+        "com.apple.dock" = { autohide = true, tilesize = 48, magnification-scale = 1.5, orientation = "left", future-array = [1, 2] }
         "#,
         )
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
-        let system = cf.system_config().unwrap();
-        let global = system.defaults.get("NSGlobalDomain").unwrap();
+        let system = cf.bootstrap_config().unwrap();
+        let global = system.macos.defaults.get("NSGlobalDomain").unwrap();
         assert_eq!(global.get("KeyRepeat").unwrap(), &toml::Value::Integer(2));
         assert_eq!(
             global.get("ApplePressAndHoldEnabled").unwrap(),
             &toml::Value::Boolean(false)
         );
-        let dock = system.defaults.get("com.apple.dock").unwrap();
+        let dock = system.macos.defaults.get("com.apple.dock").unwrap();
         assert_eq!(dock.get("autohide").unwrap(), &toml::Value::Boolean(true));
         assert_eq!(dock.get("tilesize").unwrap(), &toml::Value::Integer(48));
         assert_eq!(
@@ -2247,26 +2239,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_system_package() {
+    async fn test_update_bootstrap_package() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
-        // creates [system.packages] when absent, preserves other sections
+        // creates [bootstrap.packages] when absent, preserves other sections
         file::write(&p, "[tools]\njq = \"latest\"\n").unwrap();
         let mut cf = MiseToml::from_file(&p).unwrap();
-        cf.update_system_package("apt:curl", "latest").unwrap();
-        cf.update_system_package("brew:postgresql@17", "latest")
+        cf.update_bootstrap_package("apt:curl", "latest").unwrap();
+        cf.update_bootstrap_package("brew:postgresql@17", "latest")
             .unwrap();
         // overrides an existing pin in place
-        cf.update_system_package("apt:curl", "8.5.0-2").unwrap();
+        cf.update_bootstrap_package("apt:curl", "8.5.0-2").unwrap();
         assert_snapshot!(cf.dump().unwrap(), @r#"
         [tools]
         jq = "latest"
 
-        [system.packages]
+        [bootstrap.packages]
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
         "#);
-        let system = cf.system_config().unwrap();
+        let system = cf.bootstrap_config().unwrap();
         assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
         file::remove_file(&p).unwrap();
     }

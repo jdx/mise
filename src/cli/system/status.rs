@@ -3,14 +3,10 @@ use serde_json::json;
 
 use crate::config::{Config, Settings};
 use crate::system;
-use crate::system::defaults::DefaultsState;
-use crate::system::login_shell::LoginShellState;
 use crate::system::packages::PackageState;
 use crate::ui::table::MiseTable;
 
-/// Show the status of system packages from `[system.packages]`, macOS
-/// defaults from `[system.defaults]`, and Unix login shell from
-/// `[system].login_shell`
+/// Show the status of system packages from `[bootstrap.packages]`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemStatus {
@@ -18,15 +14,14 @@ pub struct SystemStatus {
     #[clap(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured packages, defaults, or login shell
-    /// are not in their desired state
+    /// Exit with code 1 if any configured packages are not in their desired state
     #[clap(long, verbatim_doc_comment)]
     missing: bool,
 }
 
 impl SystemStatus {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise system")?;
+        Settings::get().ensure_experimental("mise bootstrap")?;
         let config = Config::get().await?;
         let mgrs = system::packages_from_config(&config);
         let mut any_missing = false;
@@ -94,150 +89,16 @@ impl SystemStatus {
                 );
             }
         }
-        let defaults = system::defaults_from_config(&config);
-        let mut defaults_rows: Vec<Vec<String>> = vec![];
-        if !defaults.is_empty() {
-            if !system::defaults::is_available() {
-                let reason = system::defaults::unavailable_reason();
-                if self.json {
-                    json_out.insert(
-                        "defaults".to_string(),
-                        json!({ "available": false, "reason": reason }),
-                    );
-                } else {
-                    for req in &defaults {
-                        defaults_rows.push(vec![
-                            req.domain.clone(),
-                            req.key.clone(),
-                            req.value.to_string(),
-                            "".to_string(),
-                            format!("skipped ({reason})"),
-                        ]);
-                    }
-                }
-            } else {
-                let statuses = system::defaults::status(&defaults).await?;
-                let mut json_entries = vec![];
-                for s in statuses {
-                    let (current, state) = match &s.state {
-                        DefaultsState::Set => (s.request.value.to_string(), "set"),
-                        DefaultsState::Differs { current } => {
-                            any_missing = true;
-                            (current.clone(), "differs")
-                        }
-                        DefaultsState::Unset => {
-                            any_missing = true;
-                            ("".to_string(), "unset")
-                        }
-                    };
-                    if self.json {
-                        json_entries.push(json!({
-                            "domain": s.request.domain,
-                            "key": s.request.key,
-                            "value": s.request.value.to_json(),
-                            "current": current,
-                            "state": state,
-                        }));
-                    } else {
-                        defaults_rows.push(vec![
-                            s.request.domain.clone(),
-                            s.request.key.clone(),
-                            s.request.value.to_string(),
-                            current,
-                            state.to_string(),
-                        ]);
-                    }
-                }
-                if self.json {
-                    json_out.insert(
-                        "defaults".to_string(),
-                        json!({ "available": true, "entries": json_entries }),
-                    );
-                }
-            }
-        }
-        let login_shell = system::login_shell_from_config(&config);
-        let mut login_shell_rows: Vec<Vec<String>> = vec![];
-        if let Some(req) = login_shell {
-            if !system::login_shell::is_available() {
-                let reason = system::login_shell::unavailable_reason();
-                if self.json {
-                    json_out.insert(
-                        "login_shell".to_string(),
-                        json!({
-                            "available": false,
-                            "reason": reason,
-                            "shell": req.shell,
-                        }),
-                    );
-                } else {
-                    login_shell_rows.push(vec![
-                        req.shell,
-                        "".to_string(),
-                        format!("skipped ({reason})"),
-                    ]);
-                }
-            } else {
-                let status = system::login_shell::status(&req)?;
-                let state = match &status.state {
-                    LoginShellState::Set => "set",
-                    LoginShellState::Differs { .. } => {
-                        any_missing = true;
-                        "differs"
-                    }
-                    LoginShellState::MissingFromShells { .. } => {
-                        any_missing = true;
-                        "missing from /etc/shells"
-                    }
-                };
-                if self.json {
-                    json_out.insert(
-                        "login_shell".to_string(),
-                        json!({
-                            "available": true,
-                            "shell": status.request.shell,
-                            "user": status.user,
-                            "current": status.current,
-                            "shell_listed": status.shell_listed,
-                            "state": state,
-                        }),
-                    );
-                } else {
-                    login_shell_rows.push(vec![
-                        status.request.shell,
-                        status.current,
-                        state.to_string(),
-                    ]);
-                }
-            }
-        }
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
         } else {
-            if rows.is_empty() && defaults_rows.is_empty() && login_shell_rows.is_empty() {
-                info!(
-                    "nothing configured in [system.packages], [system.defaults], or [system].login_shell"
-                );
+            if rows.is_empty() {
+                info!("nothing configured in [bootstrap.packages]");
             }
             if !rows.is_empty() {
                 let mut table =
                     MiseTable::new(false, &["Manager", "Package", "Installed", "State"]);
                 for row in rows {
-                    table.add_row(row);
-                }
-                table.print()?;
-            }
-            if !defaults_rows.is_empty() {
-                let mut table =
-                    MiseTable::new(false, &["Domain", "Key", "Value", "Current", "State"]);
-                for row in defaults_rows {
-                    table.add_row(row);
-                }
-                table.print()?;
-            }
-            if !login_shell_rows.is_empty() {
-                let mut table = MiseTable::new(false, &["Shell", "Current", "State"]);
-                for row in login_shell_rows {
                     table.add_row(row);
                 }
                 table.print()?;
@@ -253,8 +114,8 @@ impl SystemStatus {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise system status</bold>
-    $ <bold>mise system status --json</bold>
-    $ <bold>mise system status --missing</bold> # exit 1 if anything is out of sync
+    $ <bold>mise bootstrap packages status</bold>
+    $ <bold>mise bootstrap packages status --json</bold>
+    $ <bold>mise bootstrap packages status --missing</bold> # exit 1 if anything is out of sync
 "#
 );

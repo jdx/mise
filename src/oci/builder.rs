@@ -45,7 +45,7 @@ pub struct Builder {
     pub ts: Toolset,
     pub oci: OciConfig,
     pub opts: BuildOptions,
-    pub system_files: Vec<FileRequest>,
+    pub dotfiles: Vec<FileRequest>,
     pub system_packages: Vec<ManagerPackages>,
 }
 
@@ -70,13 +70,13 @@ impl Builder {
             ts,
             oci,
             opts,
-            system_files: vec![],
+            dotfiles: vec![],
             system_packages: vec![],
         }
     }
 
-    pub fn with_system_files(mut self, system_files: Vec<FileRequest>) -> Self {
-        self.system_files = system_files;
+    pub fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
+        self.dotfiles = dotfiles;
         self
     }
 
@@ -265,15 +265,11 @@ impl Builder {
             }
         }
 
-        // --- 5. System files layer (optional) ---
-        let system_files_layer = if self.system_files.is_empty() {
+        // --- 5. Dotfiles layer (optional) ---
+        let dotfiles_layer = if self.dotfiles.is_empty() {
             None
         } else {
-            Some(build_system_files_layer(
-                &self.cfg,
-                &self.system_files,
-                owner,
-            )?)
+            Some(build_dotfiles_layer(&self.cfg, &self.dotfiles, owner)?)
         };
 
         // --- 6. Config layer: /etc/mise/config.toml ---
@@ -339,10 +335,10 @@ impl Builder {
             });
         }
 
-        if let Some(blob) = &system_files_layer {
+        if let Some(blob) = &dotfiles_layer {
             layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
             let mut annotations = IndexMap::new();
-            annotations.insert("dev.mise.system.files".to_string(), "true".to_string());
+            annotations.insert("dev.mise.dotfiles".to_string(), "true".to_string());
             manifest_layers.push(Descriptor {
                 media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
                 size: blob.size,
@@ -656,17 +652,17 @@ fn resolve_layer_owner(opts_owner: Option<LayerOwner>, oci: &OciConfig) -> Layer
     })
 }
 
-fn build_system_files_layer(
+fn build_dotfiles_layer(
     cfg: &Config,
     requests: &[FileRequest],
     owner: LayerOwner,
 ) -> Result<LayerBlob> {
-    let mut entries = SystemFileLayerEntries::default();
+    let mut entries = DotfilesLayerEntries::default();
 
     for req in requests {
         if !req.source.exists() {
             bail!(
-                "[system.files].\"{}\": source does not exist: {}",
+                "[dotfiles].\"{}\": source does not exist: {}",
                 req.target_raw,
                 req.source.display()
             );
@@ -676,13 +672,13 @@ fn build_system_files_layer(
             FileMode::Symlink | FileMode::Copy => {
                 collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
                     .wrap_err_with(|| {
-                        format!("adding [system.files].\"{}\" to OCI image", req.target_raw)
+                        format!("adding [dotfiles].\"{}\" to OCI image", req.target_raw)
                     })?;
             }
             FileMode::SymlinkEach => {
                 if !req.source.is_dir() {
                     bail!(
-                        "[system.files].\"{}\": mode symlink-each requires a directory source: {}",
+                        "[dotfiles].\"{}\": mode symlink-each requires a directory source: {}",
                         req.target_raw,
                         req.source.display()
                     );
@@ -715,7 +711,7 @@ fn build_system_files_layer(
         }
     }
 
-    info!("oci: adding {} [system.files] entries", requests.len());
+    info!("oci: adding {} [dotfiles] entries", requests.len());
     let (files, dirs) = entries.into_layer_inputs();
     layer::build_layer_from_files_and_dirs(&files, &dirs, owner)
 }
@@ -723,7 +719,7 @@ fn build_system_files_layer(
 fn collect_source_as_files(
     source: &std::path::Path,
     target: &str,
-    entries: &mut SystemFileLayerEntries,
+    entries: &mut DotfilesLayerEntries,
 ) -> Result<()> {
     if source.is_dir() {
         entries.add_dir(target.to_string())?;
@@ -742,7 +738,7 @@ fn collect_source_as_files(
             let ft = entry.file_type();
             if !(ft.is_file() || ft.is_symlink()) {
                 warn!(
-                    "oci: skipping non-file [system.files] source entry {}",
+                    "oci: skipping non-file [dotfiles] source entry {}",
                     entry.path().display()
                 );
                 continue;
@@ -762,23 +758,23 @@ fn collect_source_as_files(
 }
 
 #[derive(Default)]
-struct SystemFileLayerEntries {
+struct DotfilesLayerEntries {
     files: IndexMap<String, (Vec<u8>, u32)>,
     dirs: IndexSet<String>,
 }
 
-type SystemFileLayerFile = (String, Vec<u8>, u32);
-type SystemFileLayerFiles = Vec<SystemFileLayerFile>;
-type SystemFileLayerDirs = Vec<String>;
+type DotfilesLayerFile = (String, Vec<u8>, u32);
+type DotfilesLayerFiles = Vec<DotfilesLayerFile>;
+type DotfilesLayerDirs = Vec<String>;
 
-impl SystemFileLayerEntries {
+impl DotfilesLayerEntries {
     fn add_file(&mut self, path: String, contents: Vec<u8>, mode: u32) -> Result<()> {
         if self.dirs.contains(&path) {
-            bail!("[system.files]: duplicate OCI path {path:?} as both file and directory");
+            bail!("[dotfiles]: duplicate OCI path {path:?} as both file and directory");
         }
         if let Some((existing_contents, existing_mode)) = self.files.get(&path) {
             if existing_contents != &contents || *existing_mode != mode {
-                bail!("[system.files]: duplicate OCI file path {path:?}");
+                bail!("[dotfiles]: duplicate OCI file path {path:?}");
             }
             return Ok(());
         }
@@ -788,13 +784,13 @@ impl SystemFileLayerEntries {
 
     fn add_dir(&mut self, path: String) -> Result<()> {
         if self.files.contains_key(&path) {
-            bail!("[system.files]: duplicate OCI path {path:?} as both file and directory");
+            bail!("[dotfiles]: duplicate OCI path {path:?} as both file and directory");
         }
         self.dirs.insert(path);
         Ok(())
     }
 
-    fn into_layer_inputs(self) -> (SystemFileLayerFiles, SystemFileLayerDirs) {
+    fn into_layer_inputs(self) -> (DotfilesLayerFiles, DotfilesLayerDirs) {
         let files = self
             .files
             .into_iter()
@@ -814,13 +810,13 @@ fn oci_target_path(req: &FileRequest) -> Result<String> {
     } else {
         req.target
             .strip_prefix("/")
-            .map_err(|_| eyre::eyre!("system file target must be absolute: {}", req.target_raw))?
+            .map_err(|_| eyre::eyre!("dotfile target must be absolute: {}", req.target_raw))?
             .to_string_lossy()
             .replace('\\', "/")
     };
     if path.is_empty() || path.split('/').any(|p| p == "..") {
         bail!(
-            "[system.files].\"{}\": target is not a safe OCI path",
+            "[dotfiles].\"{}\": target is not a safe OCI path",
             req.target_raw
         );
     }

@@ -1,4 +1,4 @@
-//! Shared per-manager execution loop for `mise system install`/`upgrade`/`use`.
+//! Shared per-manager execution loop for `mise bootstrap packages install`/`upgrade`/`use`.
 
 use std::collections::HashMap;
 
@@ -57,7 +57,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         bail!("no packages requested for manager '{only}'");
     }
     if mgrs.is_empty() {
-        info!("no system packages configured in [system.packages]");
+        info!("no bootstrap packages configured in [bootstrap.packages]");
         return Ok(());
     }
     let opts = InstallOpts {
@@ -104,7 +104,9 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             .collect();
         let skipped = statuses.len() - targets.len();
         if action == Action::Upgrade && skipped > 0 {
-            warn!("{name}: {skipped} package(s) not installed — run `mise system install` first");
+            warn!(
+                "{name}: {skipped} package(s) not installed — run `mise bootstrap packages install` first"
+            );
         }
         // a pin this manager can never satisfy must not block the rest
         // of the batch — it stays visible in `status` as a mismatch

@@ -73,8 +73,8 @@ impl BrewManager {
                 && let Some(alias) = roots.iter().find(|r| rf.formula.aliases.contains(r))
             {
                 warn!(
-                    "'{alias}' is an alias of '{}' — use the canonical name in [system.packages] \
-                     so `mise system status` can track it",
+                    "'{alias}' is an alias of '{}' — use the canonical name in [bootstrap.packages] \
+                     so `mise bootstrap packages status` can track it",
                     rf.formula.name
                 );
             }
@@ -129,7 +129,7 @@ impl BrewManager {
         if prefix::sudo_invoking_user().is_some() {
             warn!(
                 "running under sudo — poured files will be owned by root; run \
-                 `mise system install` without sudo instead (mise elevates itself \
+                 `mise bootstrap packages install` without sudo instead (mise elevates itself \
                  for the one-time prefix setup)"
             );
         }

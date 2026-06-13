@@ -149,7 +149,7 @@ pub trait ConfigFile: Debug + Send + Sync {
         None
     }
 
-    fn system_config(&self) -> Option<crate::system::SystemTomlConfig> {
+    fn bootstrap_config(&self) -> Option<crate::system::BootstrapTomlConfig> {
         None
     }
 

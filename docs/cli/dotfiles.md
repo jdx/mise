@@ -9,9 +9,11 @@
 Dotfiles are config files symlinked, copied, or rendered to target paths,
 plus marker-delimited blocks or single lines in files mise doesn't own.
 Unlike `[tools]`, dotfiles are only acted on when explicitly requested with
-`mise dotfiles install` or `mise bootstrap`.
+`mise dotfiles apply` or `mise bootstrap`.
 
 ## Subcommands
 
-- [`mise dotfiles install [FLAGS]`](/cli/dotfiles/install.md)
-- [`mise dotfiles status [-J --json] [--missing]`](/cli/dotfiles/status.md)
+- [`mise dotfiles add [FLAGS] <TARGET>…`](/cli/dotfiles/add.md)
+- [`mise dotfiles apply [FLAGS] [TARGET]…`](/cli/dotfiles/apply.md)
+- [`mise dotfiles edit [FLAGS] <TARGET>`](/cli/dotfiles/edit.md)
+- [`mise dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/dotfiles/status.md)

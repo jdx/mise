@@ -45,7 +45,7 @@ assert_fail "cat bootstrap_ran"
 
 # unavailable system package managers are skipped, not errors
 cat <<EOF >mise.toml
-[system.packages]
+[bootstrap.packages]
 "apt:bc" = "latest"
 "dnf:bc" = "latest"
 "pacman:bc" = "latest"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 cat <<EOF >mise.toml
-[system.packages]
+[bootstrap.packages]
 "apt:bc" = "latest"
 "brew:jq" = "latest"
 "dnf:bc" = "latest"
@@ -9,34 +9,34 @@ cat <<EOF >mise.toml
 EOF
 
 # status renders on any platform; unavailable managers are skipped, not errors
-assert_succeed "mise system status"
-assert_contains "mise system status" "bc"
-assert_contains "mise system status --json" '"apt"'
+assert_succeed "mise bootstrap packages status"
+assert_contains "mise bootstrap packages status" "bc"
+assert_contains "mise bootstrap packages status --json" '"apt"'
 
 # unknown managers warn but don't fail
 cat <<EOF >mise.toml
-[system.packages]
+[bootstrap.packages]
 "not-a-real-manager:whatever" = "latest"
 EOF
-assert_succeed "mise system status"
-assert_contains "mise system status 2>&1" "unknown system package manager"
+assert_succeed "mise bootstrap packages status"
+assert_contains "mise bootstrap packages status 2>&1" "unknown bootstrap package manager"
 
 # the manager prefix is required; entries without one warn but don't fail
 cat <<EOF >mise.toml
-[system.packages]
+[bootstrap.packages]
 "noprefix" = "latest"
 EOF
-assert_succeed "mise system status"
-assert_contains "mise system status 2>&1" "invalid system package spec"
+assert_succeed "mise bootstrap packages status"
+assert_contains "mise bootstrap packages status 2>&1" "invalid system package spec"
 
-# empty [system.packages] section
+# empty [bootstrap.packages] section
 cat <<EOF >mise.toml
-[system.packages]
+[bootstrap.packages]
 EOF
-assert_succeed "mise system status"
+assert_succeed "mise bootstrap packages status"
 
 # no [system] section at all
 cat <<EOF >mise.toml
 [tools]
 EOF
-assert_succeed "mise system status"
+assert_succeed "mise bootstrap packages status"

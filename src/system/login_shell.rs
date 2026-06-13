@@ -1,5 +1,5 @@
-//! `[system].login_shell` - declarative current-user login shell, applied by
-//! `mise system install` or `mise bootstrap`.
+//! `[bootstrap.user].login_shell` - declarative current-user login shell,
+//! applied by `mise bootstrap user apply` or `mise bootstrap`.
 
 use std::fs::OpenOptions;
 use std::io::Write;

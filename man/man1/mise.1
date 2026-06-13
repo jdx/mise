@@ -145,6 +145,59 @@ List all the active runtime bin paths
 \fBbootstrap\fR
 [experimental] Set up a machine for the current config in one command
 .TP
+\fBbootstrap macos\-defaults\fR
+Manage macOS defaults from `[bootstrap.macos.defaults]`
+.TP
+\fBbootstrap macos\-defaults apply\fR
+.TP
+\fBbootstrap macos\-defaults status\fR
+.TP
+\fBbootstrap packages\fR
+Manage bootstrap system packages from `[bootstrap.packages]`
+.TP
+\fBbootstrap packages brew\fR
+Manage Homebrew taps used by bootstrap packages
+.TP
+\fBbootstrap packages brew tap\fR
+Tap a Homebrew formula repository
+.TP
+\fBbootstrap packages brew untap\fR
+Untap Homebrew formula repositories
+.RS
+\fIAliases: \fRremove, rm
+.RE
+.TP
+\fBbootstrap packages install\fR
+Install missing system packages from `[bootstrap.packages]`
+.RS
+\fIAliases: \fRi
+.RE
+.TP
+\fBbootstrap packages status\fR
+Show the status of system packages from `[bootstrap.packages]`
+.RS
+\fIAliases: \fRls
+.RE
+.TP
+\fBbootstrap packages upgrade\fR
+Upgrade installed bootstrap packages from `[bootstrap.packages]`
+.RS
+\fIAliases: \fRup
+.RE
+.TP
+\fBbootstrap packages use\fR
+Add bootstrap packages to [bootstrap.packages] and install them
+.RS
+\fIAliases: \fRu
+.RE
+.TP
+\fBbootstrap user\fR
+Manage current\-user bootstrap settings from `[bootstrap.user]`
+.TP
+\fBbootstrap user apply\fR
+.TP
+\fBbootstrap user status\fR
+.TP
 \fBcache\fR
 Manage the mise cache
 .TP
@@ -193,11 +246,14 @@ Disable mise for current shell session
 \fBdotfiles\fR
 [experimental] Manage dotfiles from `[dotfiles]`
 .TP
-\fBdotfiles install\fR
+\fBdotfiles add\fR
+Add or update dotfiles in `[dotfiles]`
+.TP
+\fBdotfiles apply\fR
 Apply dotfiles from `[dotfiles]`
-.RS
-\fIAliases: \fRi
-.RE
+.TP
+\fBdotfiles edit\fR
+Edit a managed dotfile source
 .TP
 \fBdotfiles status\fR
 Show the status of dotfiles from `[dotfiles]`
@@ -475,45 +531,6 @@ Symlinks all tool versions from an external tool into mise
 \fBsync ruby\fR
 Symlinks all ruby tool versions from an external tool into mise
 .TP
-\fBsystem\fR
-[experimental] Manage system packages from `[system.packages]`, macOS
-.TP
-\fBsystem brew\fR
-Manage Homebrew taps used by system packages
-.TP
-\fBsystem brew tap\fR
-Tap a Homebrew formula repository
-.TP
-\fBsystem brew untap\fR
-Untap Homebrew formula repositories
-.RS
-\fIAliases: \fRremove, rm
-.RE
-.TP
-\fBsystem install\fR
-Install missing system packages from `[system.packages]` and write macOS
-.RS
-\fIAliases: \fRi
-.RE
-.TP
-\fBsystem status\fR
-Show the status of system packages from `[system.packages]`, macOS
-.RS
-\fIAliases: \fRls
-.RE
-.TP
-\fBsystem upgrade\fR
-Upgrade installed system packages from `[system.packages]`
-.RS
-\fIAliases: \fRup
-.RE
-.TP
-\fBsystem use\fR
-Add system packages to [system.packages] and install them
-.RS
-\fIAliases: \fRu
-.RE
-.TP
 \fBtasks\fR
 Manage tasks
 .RS
@@ -769,12 +786,15 @@ e.g.: ruby@3
 
 Runs the bootstrap steps for the current config in order:
 
-1. `mise system install` — install missing `[system.packages]` and write
-   `[system.defaults]` (macOS)
-2. `mise dotfiles install` — apply dotfiles from `[dotfiles]`
-3. set `[system].login_shell` (Unix)
-4. `mise install` — install missing tools from `[tools]`
-5. `mise run bootstrap` — if a task named `bootstrap` is defined
+1. `mise bootstrap packages install` — install missing
+   `[bootstrap.packages]`
+2. `mise dotfiles apply` — apply dotfiles from `[dotfiles]`
+3. `mise bootstrap macos\-defaults apply` — write
+   `[bootstrap.macos.defaults]` entries (macOS)
+4. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+   (Unix)
+5. `mise install` — install missing tools from `[tools]`
+6. `mise run bootstrap` — if a task named `bootstrap` is defined
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re\-running is safe. The `bootstrap` task runs on every
@@ -782,7 +802,7 @@ invocation; keep it idempotent. Use it for any project\-specific setup
 that doesn't fit the declarative sections (cloning repos, seeding
 databases, etc.) — it runs with the installed tools on PATH.
 .PP
-\fBUsage:\fR mise bootstrap [OPTIONS]
+\fBUsage:\fR mise bootstrap [OPTIONS] [COMMAND]
 .PP
 \fBOptions:\fR
 .PP
@@ -795,6 +815,194 @@ Skip confirmation prompts
 .TP
 \fB\-\-update\fR
 Refresh system package manager metadata first (apt: `apt\-get update`)
+.SH "MISE BOOTSTRAP MACOS-DEFAULTS APPLY"
+\fBUsage:\fR mise bootstrap macos\-defaults apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP MACOS-DEFAULTS STATUS"
+\fBUsage:\fR mise bootstrap macos\-defaults status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured defaults are not in their desired state
+.SH "MISE BOOTSTRAP PACKAGES BREW TAP"
+Tap a Homebrew formula repository
+.PP
+\fBUsage:\fR mise bootstrap packages brew tap [OPTIONS] <TAP> [<URL>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the command that would run without running it
+\fBArguments:\fR
+.PP
+.TP
+\fB<TAP>\fR
+Tap name, e.g. `owner/repo`
+.TP
+\fB<URL>\fR
+Git URL for non\-GitHub or otherwise custom taps
+.SH "MISE BOOTSTRAP PACKAGES BREW UNTAP"
+Untap Homebrew formula repositories
+.PP
+\fBUsage:\fR mise bootstrap packages brew untap [OPTIONS] <TAPS> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the command that would run without running it
+\fBArguments:\fR
+.PP
+.TP
+\fB<TAPS>\fR
+Tap name(s), e.g. `owner/repo`
+.SH "MISE BOOTSTRAP PACKAGES INSTALL"
+Install missing system packages from `[bootstrap.packages]`
+
+Checks which configured packages are missing and installs them with the
+system package manager. This may elevate with sudo when not running as
+root (see the `system_packages.sudo` setting).
+
+Packages can also be given explicitly in `manager:package` form (e.g.
+`apt:curl`, `brew:jq`); they are installed whether or not they appear in
+the config. Explicit packages and `\-\-manager` scope the run to packages
+only.
+.PP
+\fBUsage:\fR mise bootstrap packages install [OPTIONS] [<PACKAGE>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only install packages for this manager, e.g. `apt` or `brew`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-\-update\fR
+Refresh package manager metadata first (apt: `apt\-get update`)
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+.SH "MISE BOOTSTRAP PACKAGES STATUS"
+Show the status of system packages from `[bootstrap.packages]`
+.PP
+\fBUsage:\fR mise bootstrap packages status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured packages are not in their desired state
+.SH "MISE BOOTSTRAP PACKAGES UPGRADE"
+Upgrade installed bootstrap packages from `[bootstrap.packages]`
+
+Refreshes package manager metadata and upgrades the configured packages
+that are already installed: apt/dnf/pacman upgrade to the newest available
+version (apt and dnf honor a version pinned in config), brew pours the
+formula's current bottle and replaces the old keg. Packages that are not
+installed yet are skipped — use `mise bootstrap packages install` for those.
+
+Packages can also be given explicitly in `manager:package` form.
+.PP
+\fBUsage:\fR mise bootstrap packages upgrade [OPTIONS] [<PACKAGE>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
+Only upgrade packages for this manager, e.g. `apt` or `brew`
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+.SH "MISE BOOTSTRAP PACKAGES USE"
+Add bootstrap packages to [bootstrap.packages] and install them
+
+Like `mise use` for tools: writes `"manager:package" = "version"` entries
+to mise.toml (the local config by default, the global one with `\-g`) and
+then installs whatever is missing.
+
+Versions are pinned with `@`: `mise bootstrap packages use apt:curl@8.5.0\-2`. Without
+`@` (or with `@latest`) no pin is written. brew formulae version through
+their names instead (`brew:postgresql@17`), so `@` is always part of the
+formula name there.
+.PP
+\fBUsage:\fR mise bootstrap packages use [OPTIONS] <PACKAGE> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Write to the config file for this environment (mise.<ENV>.toml)
+.TP
+\fB\-g, \-\-global\fR
+Write to the global config (~/.config/mise/config.toml) instead of the local one
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without writing config or installing
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Packages in `manager:package[@version]` form
+.SH "MISE BOOTSTRAP USER APPLY"
+\fBUsage:\fR mise bootstrap user apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the commands that would run without running them
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP USER STATUS"
+\fBUsage:\fR mise bootstrap user status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if any configured user setting is not in its desired state
 .SH "MISE CACHE CLEAR"
 Deletes all cache files in mise
 .PP
@@ -934,7 +1142,47 @@ The path of the config to display
 .TP
 \fB<VALUE>\fR
 The value to set the key to (optional if provided as KEY=VALUE)
-.SH "MISE DOTFILES INSTALL"
+.SH "MISE DOTFILES ADD"
+Add or update dotfiles in `[dotfiles]`
+
+If the target is already managed, this updates its source from the live
+target. Otherwise it creates a `[dotfiles]` entry and seeds the source
+under `dotfiles.root` unless `\-\-source` is provided.
+.PP
+\fBUsage:\fR mise dotfiles add [OPTIONS] <TARGET> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-f, \-\-force\fR
+Overwrite existing sources without prompting
+.TP
+\fB\-g, \-\-global\fR
+Write to the global config
+.TP
+\fB\-l, \-\-local\fR
+Write to the local config instead of the global config
+.TP
+\fB\-m, \-\-mode\fR \fI<MODE>\fR
+Dotfile mode to write
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the config/source updates without writing anything
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
+.TP
+\fB\-s, \-\-source\fR \fI<PATH>\fR
+Source path to use for a single target
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Targets to add or update
+.SH "MISE DOTFILES APPLY"
 Apply dotfiles from `[dotfiles]`
 
 Applies configured whole\-file entries and edits that aren't in their
@@ -942,7 +1190,7 @@ desired state. Whole\-file entries may symlink, copy, or render templates.
 Edit entries manage a marker\-delimited block or a single line in a file
 mise doesn't otherwise own.
 .PP
-\fBUsage:\fR mise dotfiles install [OPTIONS]
+\fBUsage:\fR mise dotfiles apply [OPTIONS] [<TARGET>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -955,10 +1203,39 @@ Print the actions that would run without writing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Only apply these targets
+.SH "MISE DOTFILES EDIT"
+Edit a managed dotfile source
+.PP
+\fBUsage:\fR mise dotfiles edit [OPTIONS] <TARGET>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-apply\fR
+Apply this target after the editor exits
+.TP
+\fB\-m, \-\-mode\fR \fI<MODE>\fR
+Dotfile mode to use if the target is not yet managed
+.TP
+\fB\-s, \-\-source\fR \fI<PATH>\fR
+Source path to use if the target is not yet managed
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt when adding an unmanaged target
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Target to edit
 .SH "MISE DOTFILES STATUS"
 Show the status of dotfiles from `[dotfiles]`
 .PP
-\fBUsage:\fR mise dotfiles status [OPTIONS]
+\fBUsage:\fR mise dotfiles status [OPTIONS] [<TARGET>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -969,6 +1246,11 @@ Output in JSON format
 \fB\-\-missing\fR
 Exit with code 1 if any configured dotfiles are not in their desired
 state (missing, source missing, differs)
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Only show these targets
 .SH "MISE DOCTOR"
 Check mise installation for possible problems
 .PP
@@ -2840,155 +3122,6 @@ Symlinks all ruby tool versions from an external tool into mise
 .TP
 \fB\-\-brew\fR
 Get tool versions from Homebrew
-.SH "MISE SYSTEM BREW TAP"
-Tap a Homebrew formula repository
-.PP
-\fBUsage:\fR mise system brew tap [OPTIONS] <TAP> [<URL>]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the command that would run without running it
-\fBArguments:\fR
-.PP
-.TP
-\fB<TAP>\fR
-Tap name, e.g. `owner/repo`
-.TP
-\fB<URL>\fR
-Git URL for non\-GitHub or otherwise custom taps
-.SH "MISE SYSTEM BREW UNTAP"
-Untap Homebrew formula repositories
-.PP
-\fBUsage:\fR mise system brew untap [OPTIONS] <TAPS> ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the command that would run without running it
-\fBArguments:\fR
-.PP
-.TP
-\fB<TAPS>\fR
-Tap name(s), e.g. `owner/repo`
-.SH "MISE SYSTEM INSTALL"
-Install missing system packages from `[system.packages]` and write macOS
-defaults from `[system.defaults]`
-
-Checks which configured packages are missing and installs them with the
-system package manager. This may elevate with sudo when not running as
-root (see the `system_packages.sudo` setting). On macOS, any
-`[system.defaults]` entries that are unset or differ are written.
-
-Packages can also be given explicitly in `manager:package` form (e.g.
-`apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config. Explicit packages and `\-\-manager` scope the run to packages
-only.
-.PP
-\fBUsage:\fR mise system install [OPTIONS] [<PACKAGE>] ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only install packages for this manager, e.g. `apt` or `brew`
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the commands that would run without running them
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt
-.TP
-\fB\-\-update\fR
-Refresh package manager metadata first (apt: `apt\-get update`)
-\fBArguments:\fR
-.PP
-.TP
-\fB<PACKAGE>\fR
-Packages in `manager:package` form; defaults to everything configured in [system.packages]
-.SH "MISE SYSTEM STATUS"
-Show the status of system packages from `[system.packages]`, macOS
-defaults from `[system.defaults]`, and Unix login shell from
-`[system].login_shell`
-.PP
-\fBUsage:\fR mise system status [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-\-missing\fR
-Exit with code 1 if any configured packages, defaults, or login shell
-are not in their desired state
-.SH "MISE SYSTEM UPGRADE"
-Upgrade installed system packages from `[system.packages]`
-
-Refreshes package manager metadata and upgrades the configured packages
-that are already installed: apt/dnf/pacman upgrade to the newest available
-version (apt and dnf honor a version pinned in config), brew pours the
-formula's current bottle and replaces the old keg. Packages that are not
-installed yet are skipped — use `mise system install` for those.
-
-Packages can also be given explicitly in `manager:package` form.
-.PP
-\fBUsage:\fR mise system upgrade [OPTIONS] [<PACKAGE>] ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only upgrade packages for this manager, e.g. `apt` or `brew`
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the commands that would run without running them
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt
-\fBArguments:\fR
-.PP
-.TP
-\fB<PACKAGE>\fR
-Packages in `manager:package` form; defaults to everything configured in [system.packages]
-.SH "MISE SYSTEM USE"
-Add system packages to [system.packages] and install them
-
-Like `mise use` for tools: writes `"manager:package" = "version"` entries
-to mise.toml (the local config by default, the global one with `\-g`) and
-then installs whatever is missing.
-
-Versions are pinned with `@`: `mise system use apt:curl@8.5.0\-2`. Without
-`@` (or with `@latest`) no pin is written. brew formulae version through
-their names instead (`brew:postgresql@17`), so `@` is always part of the
-formula name there.
-.PP
-\fBUsage:\fR mise system use [OPTIONS] <PACKAGE> ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-e, \-\-env\fR \fI<ENV>\fR
-Write to the config file for this environment (mise.<ENV>.toml)
-.TP
-\fB\-g, \-\-global\fR
-Write to the global config (~/.config/mise/config.toml) instead of the local one
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the commands that would run without writing config or installing
-.TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
-Write to this config file or directory
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt
-\fBArguments:\fR
-.PP
-.TP
-\fB<PACKAGE>\fR
-Packages in `manager:package[@version]` form
 .SH "MISE TASKS"
 Manage tasks
 .PP

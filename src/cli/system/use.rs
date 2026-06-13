@@ -11,13 +11,13 @@ use crate::file::display_path;
 use crate::system;
 use crate::system::packages::PackageRequest;
 
-/// Add system packages to [system.packages] and install them
+/// Add bootstrap packages to [bootstrap.packages] and install them
 ///
 /// Like `mise use` for tools: writes `"manager:package" = "version"` entries
 /// to mise.toml (the local config by default, the global one with `-g`) and
 /// then installs whatever is missing.
 ///
-/// Versions are pinned with `@`: `mise system use apt:curl@8.5.0-2`. Without
+/// Versions are pinned with `@`: `mise bootstrap packages use apt:curl@8.5.0-2`. Without
 /// `@` (or with `@latest`) no pin is written. brew formulae version through
 /// their names instead (`brew:postgresql@17`), so `@` is always part of the
 /// formula name there.
@@ -52,7 +52,7 @@ pub struct SystemUse {
 
 impl SystemUse {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise system")?;
+        Settings::get().ensure_experimental("mise bootstrap")?;
         let config = crate::config::Config::get().await?;
         let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
         let mut entries: Vec<(String, String)> = vec![];
@@ -82,7 +82,7 @@ impl SystemUse {
             path: self.path.clone(),
             env: self.env.clone(),
             cwd: None,
-            prefer_toml: true,        // [system] only exists in mise.toml
+            prefer_toml: true,        // [bootstrap] only exists in mise.toml
             prevent_home_local: true, // in $HOME, write the global config
         })?;
         if self.dry_run {
@@ -96,7 +96,7 @@ impl SystemUse {
                 MiseToml::init(&path)
             };
             for (key, version) in &entries {
-                cf.update_system_package(key, version)?;
+                cf.update_bootstrap_package(key, version)?;
             }
             cf.save()?;
             info!(
@@ -110,7 +110,7 @@ impl SystemUse {
             );
         }
 
-        // unlike `mise system install apt:x`, an unavailable manager is not
+        // unlike `mise bootstrap packages install apt:x`, an unavailable manager is not
         // an error here: writing apt: entries from a mac into a shared repo
         // config is the point of a declarative file. Say so (except in
         // dry-run, where nothing was written), then install best-effort for
@@ -140,8 +140,8 @@ impl SystemUse {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise system use apt:curl brew:jq</bold>
-    $ <bold>mise system use -g brew:postgresql@17</bold>
-    $ <bold>mise system use apt:curl@8.5.0-2</bold>
+    $ <bold>mise bootstrap packages use apt:curl brew:jq</bold>
+    $ <bold>mise bootstrap packages use -g brew:postgresql@17</bold>
+    $ <bold>mise bootstrap packages use apt:curl@8.5.0-2</bold>
 "#
 );

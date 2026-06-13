@@ -448,6 +448,18 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
+[dotfiles.default_mode]
+default = "symlink"
+description = "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`."
+env = "MISE_DOTFILES_DEFAULT_MODE"
+type = "String"
+
+[dotfiles.root]
+default = "~/.dotfiles"
+description = "Root directory used for implied dotfile sources."
+env = "MISE_DOTFILES_ROOT"
+type = "Path"
+
 [dotnet.cli_telemetry_optout]
 description = "Set DOTNET_CLI_TELEMETRY_OPTOUT to opt out of .NET CLI telemetry."
 docs = """
@@ -2316,7 +2328,7 @@ description = "[experimental] Restrict which system package managers mise will u
 docs = """
 [experimental] Restrict which system package managers mise will use.
 
-By default mise acts on every manager in `[system.packages]` that is available
+By default mise acts on every manager in `[bootstrap.packages]` that is available
 on the current machine. When more than one could apply (e.g. several package
 managers installed on one machine, or a shared config listing managers you
 don't want on this machine), set this to the subset you want:
@@ -2337,13 +2349,13 @@ type = "ListString"
 
 [system_packages.sudo]
 default = true
-description = "[experimental] Allow `mise system install` to elevate with sudo when not running as root."
+description = "[experimental] Allow `mise bootstrap packages install` to elevate with sudo when not running as root."
 docs = """
-[experimental] Allow `mise system install` to elevate with sudo when not running as root.
+[experimental] Allow `mise bootstrap packages install` to elevate with sudo when not running as root.
 
 When disabled, mise never runs sudo: if elevation would be required, it errors
 with the exact command to run manually. mise only elevates for explicit
-`mise system install` invocations, logs the full command line before running
+`mise bootstrap packages install` invocations, logs the full command line before running
 it, and skips sudo entirely when already running as root (e.g. containers/CI).
 """
 env = "MISE_SYSTEM_PACKAGES_SUDO"

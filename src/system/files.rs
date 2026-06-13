@@ -1,19 +1,20 @@
 //! `[dotfiles]` — declarative config files (dotfiles) applied by
-//! `mise dotfiles install` or `mise bootstrap`.
+//! `mise dotfiles apply` or `mise bootstrap`.
 //!
 //! Entries are keyed by target path and point at a source file or directory,
 //! resolved relative to the config file that declares them:
 //!
 //! ```toml
 //! [dotfiles]
-//! "~/.gitconfig" = "dotfiles/gitconfig"                  # symlink (default)
-//! "~/.config/foo.toml" = { source = "foo.toml", mode = "copy" }
+//! "~/.zshrc" = {}                                        # implied source
+//! "~/.gitconfig" = "dotfiles/gitconfig"                  # explicit source
+//! "~/.config/foo.toml" = { mode = "copy" }               # implied source
 //! "~/.ssh/config" = { source = "ssh.tmpl", mode = "template" }
 //! "~/.config/nvim" = "dotfiles/nvim"                     # symlink the dir itself
 //! "~/.local/bin" = { source = "bin", mode = "symlink-each" }
 //! ```
 //!
-//! Like `[system.packages]`, entries merge across the config hierarchy
+//! Like `[bootstrap.packages]`, entries merge across the config hierarchy
 //! (global -> local, local overrides by target key) and are only ever
 //! applied by an explicit command, never implicitly.
 
@@ -25,7 +26,8 @@ use itertools::Itertools;
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::config::{Config, ConfigMap};
+use crate::config::{Config, ConfigMap, Settings};
+use crate::dirs;
 use crate::file;
 use crate::path::PathExt;
 use crate::ui::prompt;
@@ -46,7 +48,7 @@ pub enum FileMode {
 }
 
 impl FileMode {
-    fn parse(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "symlink" => Some(Self::Symlink),
             "symlink-each" => Some(Self::SymlinkEach),
@@ -72,11 +74,13 @@ impl FileMode {
 pub enum FileTomlEntry {
     /// `"~/.gitconfig" = "dotfiles/gitconfig"`
     Source(String),
-    /// `"~/.gitconfig" = { source = "...", mode = "..." }` — mode stays a
+    /// `"~/.gitconfig" = { source = "...", mode = "..." }` — both fields are
+    /// optional so `{}` can mean implied source/default mode. Mode stays a
     /// string here so configs using modes from newer mise versions still
     /// parse (they warn and are skipped, like unknown package managers)
     Table {
-        source: String,
+        #[serde(default)]
+        source: Option<String>,
         #[serde(default)]
         mode: Option<String>,
     },
@@ -90,7 +94,7 @@ pub struct FileRequest {
     /// absolute target path (`~` expanded)
     pub target: PathBuf,
     /// absolute source path (relative sources resolve against the config
-    /// file's directory)
+    /// file's directory; omitted sources resolve under dotfiles.root)
     pub source: PathBuf,
     pub mode: FileMode,
     /// directory of the declaring config file — base dir for template
@@ -114,7 +118,7 @@ pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
     files_from_config_files(&config.config_files)
 }
 
-/// Aggregate `[system.files]` across a specific set of config files. This is
+/// Aggregate `[dotfiles]` across a specific set of config files. This is
 /// used by OCI builds, which intentionally scope config to project files by
 /// default instead of blindly inheriting global dotfiles.
 pub fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
@@ -140,8 +144,19 @@ pub fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
 fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileTomlEntry> {
     match &value {
         toml::Value::String(_) => {}
-        toml::Value::Table(table) if table.contains_key("mode") => {}
-        _ => return None,
+        toml::Value::Table(table)
+            if table.is_empty()
+                || table.contains_key("mode")
+                || (table.contains_key("source")
+                    && !table.contains_key("block")
+                    && !table.contains_key("line")
+                    && !table.contains_key("template")
+                    && !table.contains_key("comment")) => {}
+        toml::Value::Table(_) => return None,
+        _ => {
+            warn!("[dotfiles].\"{target_raw}\": expected string or table entry, ignoring entry");
+            return None;
+        }
     }
     match value.try_into() {
         Ok(entry) => Some(entry),
@@ -159,11 +174,11 @@ fn merge_file_entry(
     merged: &mut IndexMap<PathBuf, FileRequest>,
 ) {
     let (source, mode) = match entry {
-        FileTomlEntry::Source(source) => (source, None),
+        FileTomlEntry::Source(source) => (Some(source), None),
         FileTomlEntry::Table { source, mode } => (source, mode),
     };
     let mode = match mode.as_deref() {
-        None => FileMode::Symlink,
+        None => default_mode(),
         Some(m) => match FileMode::parse(m) {
             Some(m) => m,
             None => {
@@ -179,15 +194,96 @@ fn merge_file_entry(
         );
         return;
     }
-    let source = file::replace_path(&source);
-    let source = if source.is_relative() {
-        base.join(source)
-    } else {
-        source
+    let source = match source {
+        Some(source) => {
+            let source = file::replace_path(&source);
+            if source.is_relative() {
+                base.join(source)
+            } else {
+                source
+            }
+        }
+        None => match implied_source(&target) {
+            Ok(source) => source,
+            Err(err) => {
+                warn!("[dotfiles].\"{target_raw}\": {err}, ignoring entry");
+                return;
+            }
+        },
     };
     for req in expand_request(target_raw, target, source, mode, base.to_path_buf()) {
         merged.insert(req.target.clone(), req);
     }
+}
+
+pub fn default_mode() -> FileMode {
+    let settings = Settings::get();
+    let mode = settings.dotfiles.default_mode.as_str();
+    match FileMode::parse(mode) {
+        Some(mode) => mode,
+        None => {
+            warn!("dotfiles.default_mode: unknown mode '{mode}', using symlink");
+            FileMode::Symlink
+        }
+    }
+}
+
+pub fn dotfiles_root() -> PathBuf {
+    file::replace_path(&Settings::get().dotfiles.root)
+}
+
+pub fn implied_source(target: &Path) -> Result<PathBuf> {
+    let home: &Path = &dirs::HOME;
+    let rel = target.strip_prefix(home).map_err(|_| {
+        eyre::eyre!(
+            "source is required for targets outside $HOME: {}",
+            target.display_user()
+        )
+    })?;
+    if rel.as_os_str().is_empty() {
+        bail!("source is required for the home directory itself");
+    }
+    Ok(dotfiles_root().join(rel))
+}
+
+pub fn source_is_implied(req: &FileRequest) -> bool {
+    match implied_source(&req.target) {
+        Ok(source) => source == req.source,
+        Err(_) => false,
+    }
+}
+
+pub fn resolve_target_arg(target: &str) -> PathBuf {
+    file::replace_path(target)
+}
+
+pub fn matches_target(req_target: &Path, req_raw: &str, filters: &[String]) -> bool {
+    filters.is_empty()
+        || filters.iter().any(|filter| {
+            filter == req_raw || {
+                let resolved = resolve_target_arg(filter);
+                resolved == req_target
+            }
+        })
+}
+
+pub fn copy_path(source: &Path, target: &Path) -> Result<()> {
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    if source.is_dir() {
+        if target.exists() && !target.is_dir() {
+            remove_existing(target)?;
+        }
+        file::create_dir_all(target)?;
+        file::copy_dir_all(source, target)?;
+    } else {
+        if target.is_symlink() {
+            file::remove_file(target)?;
+        }
+        file::copy(source, target)?;
+    }
+    Ok(())
 }
 
 fn expand_request(
@@ -402,7 +498,7 @@ where
 /// Current state of one entry on this machine.
 ///
 /// Note: computing a template entry's state requires rendering it, so this
-/// runs the template engine — including `exec()` — from `mise system
+/// runs the template engine — including `exec()` — from `mise dotfiles
 /// status`. That's the same trust model as `[env]` templates (which run on
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
@@ -613,6 +709,7 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
 
 pub struct ApplyOpts {
     pub dry_run: bool,
+    pub verbose: bool,
     /// replace conflicting targets (existing real files where a symlink
     /// should go, or type mismatches) instead of erroring
     pub force: bool,
@@ -704,6 +801,9 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             let conditional = req.mode == FileMode::Template && rendered.is_none();
             let suffix = if conditional { " (if changed)" } else { "" };
             miseprintln!("{}{suffix}", describe(req)?);
+            if opts.verbose && !conditional {
+                print_diff(req, rendered.as_deref())?;
+            }
         }
         return Ok(());
     }
@@ -792,6 +892,63 @@ fn describe(req: &FileRequest) -> Result<String> {
         FileMode::Copy => format!("cp {src} {tgt}"),
         FileMode::Template => format!("render {src} -> {tgt}"),
     })
+}
+
+fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
+    match req.mode {
+        FileMode::Symlink => {
+            if req.target.is_symlink() {
+                let dest = std::fs::read_link(&req.target)?;
+                miseprintln!(
+                    "  current symlink: {} -> {}",
+                    req.target.display_user(),
+                    dest.display_user()
+                );
+            } else if req.target.exists() {
+                miseprintln!("  current: {} exists", req.target.display_user());
+            } else {
+                miseprintln!("  current: {} missing", req.target.display_user());
+            }
+            miseprintln!(
+                "  desired symlink: {} -> {}",
+                req.target.display_user(),
+                req.source.display_user()
+            );
+        }
+        FileMode::SymlinkEach => {
+            miseprintln!(
+                "  desired symlink-each: {} files from {}",
+                walk_source_files(req)?.len(),
+                req.source.display_user()
+            );
+        }
+        FileMode::Copy | FileMode::Template if req.source.is_file() => {
+            let desired = match req.mode {
+                FileMode::Template => rendered.unwrap_or_default().as_bytes().to_vec(),
+                _ => file::read(&req.source)?,
+            };
+            let current = if req.target.exists() && req.target.is_file() {
+                file::read(&req.target)?
+            } else {
+                vec![]
+            };
+            if current != desired {
+                miseprintln!(
+                    "  content differs: {} -> {}",
+                    req.source.display_user(),
+                    req.target.display_user()
+                );
+            }
+        }
+        FileMode::Copy | FileMode::Template => {
+            miseprintln!(
+                "  desired directory contents: {} -> {}",
+                req.source.display_user(),
+                req.target.display_user()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {

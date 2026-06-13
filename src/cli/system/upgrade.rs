@@ -4,20 +4,20 @@ use super::driver::{self, Action, DriverOpts};
 use crate::config::{Config, Settings};
 use crate::system;
 
-/// Upgrade installed system packages from `[system.packages]`
+/// Upgrade installed bootstrap packages from `[bootstrap.packages]`
 ///
 /// Refreshes package manager metadata and upgrades the configured packages
 /// that are already installed: apt/dnf/pacman upgrade to the newest available
 /// version (apt and dnf honor a version pinned in config), brew pours the
 /// formula's current bottle and replaces the old keg. Packages that are not
-/// installed yet are skipped — use `mise system install` for those.
+/// installed yet are skipped — use `mise bootstrap packages install` for those.
 ///
 /// Packages can also be given explicitly in `manager:package` form.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemUpgrade {
     /// Packages in `manager:package` form; defaults to everything configured
-    /// in [system.packages]
+    /// in [bootstrap.packages]
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
 
@@ -36,7 +36,7 @@ pub struct SystemUpgrade {
 
 impl SystemUpgrade {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise system")?;
+        Settings::get().ensure_experimental("mise bootstrap")?;
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
             system::packages_from_config(&config)
@@ -60,9 +60,9 @@ impl SystemUpgrade {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise system upgrade</bold>
-    $ <bold>mise system upgrade brew:postgresql@17</bold>
-    $ <bold>mise system upgrade --manager apt --yes</bold>
-    $ <bold>mise system upgrade --dry-run</bold>
+    $ <bold>mise bootstrap packages upgrade</bold>
+    $ <bold>mise bootstrap packages upgrade brew:postgresql@17</bold>
+    $ <bold>mise bootstrap packages upgrade --manager apt --yes</bold>
+    $ <bold>mise bootstrap packages upgrade --dry-run</bold>
 "#
 );

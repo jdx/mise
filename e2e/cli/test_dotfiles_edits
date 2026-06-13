@@ -25,7 +25,7 @@ assert_fail "mise dotfiles status --missing"
 # rendered (exec() must not run) and are listed as "(if changed)".
 # status, by contrast, renders templates by design — clear its exec traces
 rm -f ~/exec-ran
-dry_out="$(mise dotfiles install --dry-run 2>&1)"
+dry_out="$(mise dotfiles apply --dry-run 2>&1)"
 assert_contains_text "$dry_out" "block:activate"
 assert_contains_text "$dry_out" "(if changed)"
 assert_fail "cat ~/.zshrc"
@@ -34,7 +34,7 @@ assert_fail "cat ~/exec-ran"
 # line edits append to existing files without touching other content
 echo "preexisting content" >~/hosts
 
-assert_succeed "mise dotfiles install --yes"
+assert_succeed "mise dotfiles apply --yes"
 
 # two blocks coexist in one file, delimited by id'd markers; multiline
 # block content lands verbatim
@@ -53,10 +53,17 @@ assert_contains "cat ~/rendered.conf" "sum = 2"
 # a real install does render templates — exec() ran this time
 assert_contains "cat ~/execd.conf" "ok"
 assert_succeed "test -f ~/exec-ran"
+assert_contains "mise dotfiles status ~/hosts/dev" "line:dev"
+echo "preexisting content" >~/hosts
+assert_succeed "mise dotfiles apply ~/hosts/dev --yes"
+assert_contains "cat ~/hosts" "127.0.0.1 dev.local"
+assert "grep -c 'mise:activate >>>' ~/.zshrc" "1"
+assert_fail "mise dotfiles add ~/.zshrc --yes" "already managed by [dotfiles] edits"
+assert_fail "EDITOR=true mise dotfiles edit ~/.zshrc" "multiple [dotfiles] edit entries match"
 
 # idempotent: re-running changes nothing
 assert_succeed "mise dotfiles status --missing"
-assert_contains "mise dotfiles install --yes 2>&1" "all edits are applied"
+assert_contains "mise dotfiles apply --yes 2>&1" "all edits are applied"
 assert "grep -c 'dev.local' ~/hosts" "1"
 assert "grep -c 'mise:activate >>>' ~/.zshrc" "1"
 
@@ -69,7 +76,7 @@ cat <<'EOF' >mise.toml
 "~/.zshrc/aliases" = { block = "alias ll='ls -l'" }
 EOF
 assert_contains "mise dotfiles status" "differs (block content differs)"
-assert_succeed "mise dotfiles install --yes"
+assert_succeed "mise dotfiles apply --yes"
 assert_contains "cat ~/.zshrc" "--shims"
 assert_not_contains "cat ~/.zshrc" 'eval "$(mise activate zsh)"'
 assert_contains "cat ~/.zshrc" "alias ll='ls -l'"
@@ -81,19 +88,19 @@ cat <<'EOF' >mise.toml
 "~/.zshrc/activate" = { block = 'echo "keep the >>> mise:activate >>> line intact"' }
 "~/.zshrc/aliases" = { block = "alias ll='ls -l'" }
 EOF
-assert_succeed "mise dotfiles install --yes"
+assert_succeed "mise dotfiles apply --yes"
 assert_succeed "mise dotfiles status --missing"
 cat <<'EOF' >mise.toml
 [dotfiles]
 "~/.zshrc/activate" = { block = 'eval "$(mise activate zsh --shims)"' }
 "~/.zshrc/aliases" = { block = "alias ll='ls -l'" }
 EOF
-assert_succeed "mise dotfiles install --yes"
+assert_succeed "mise dotfiles apply --yes"
 
 # corrupted markers are an error, not a guess
 sed -i.bak '/<<< mise:activate <<</d' ~/.zshrc
 assert_contains "mise dotfiles status" "differs (begin marker without end marker)"
-assert_fail "mise dotfiles install --yes"
+assert_fail "mise dotfiles apply --yes"
 rm ~/.zshrc ~/.zshrc.bak
 
 # symlink targets are refused — edits would write through the link
@@ -104,21 +111,21 @@ cat <<'EOF' >mise.toml
 "~/linked.conf/added" = { line = "added" }
 EOF
 assert_contains "mise dotfiles status" "differs (target is a symlink"
-assert_fail "mise dotfiles install --yes"
+assert_fail "mise dotfiles apply --yes"
 assert "cat real.conf" "real file"
 
 # block content can come from a source file
 echo "source content" >snippet.txt
 cat <<'EOF' >mise.toml
 [dotfiles]
-"~/fromfile.conf/snippet" = { source = "snippet.txt" }
+"~/fromfile.conf/snippet" = { source = "snippet.txt", template = "tera" }
 EOF
-assert_succeed "mise dotfiles install --yes"
+assert_succeed "mise dotfiles apply --yes"
 assert_contains "cat ~/fromfile.conf" "source content"
 # missing sources are visible and error on install
 rm snippet.txt
 assert_contains "mise dotfiles status" "source missing"
-assert_fail "mise dotfiles install --yes"
+assert_fail "mise dotfiles apply --yes"
 
 # two entries with different ids but identical line text don't write the
 # line twice in one batch
@@ -127,7 +134,7 @@ cat <<'EOF' >mise.toml
 "~/dup.conf/a" = { line = "same line" }
 "~/dup.conf/b" = { line = "same line" }
 EOF
-assert_succeed "mise dotfiles install --yes"
+assert_succeed "mise dotfiles apply --yes"
 assert "grep -c 'same line' ~/dup.conf" "1"
 assert_succeed "mise dotfiles status --missing"
 
@@ -136,10 +143,10 @@ assert_succeed "mise dotfiles status --missing"
 cat <<'EOF' >mise.toml
 [dotfiles]
 "~/broken.conf/tmpl" = { block = "{{ not_a_real_function() }}", template = "tera" }
-"~/missing.conf/snippet" = { source = "no-such-snippet.txt" }
+"~/missing.conf/snippet" = { source = "no-such-snippet.txt", template = "tera" }
 EOF
-if install_out="$(mise dotfiles install --yes 2>&1)"; then
-  fail "[mise dotfiles install --yes] expected failure"
+if install_out="$(mise dotfiles apply --yes 2>&1)"; then
+  fail "[mise dotfiles apply --yes] expected failure"
 fi
 assert_contains_text "$install_out" "failed to render"
 assert_contains_text "$install_out" "source does not exist"
@@ -182,3 +189,16 @@ cat <<'EOF' >mise.toml
 EOF
 assert_succeed "mise dotfiles status"
 assert_contains "mise dotfiles status 2>&1" "line may not contain a newline"
+
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/x.conf" = true
+EOF
+assert_succeed "mise dotfiles status"
+assert_contains "mise dotfiles status 2>&1" "expected string or table entry"
+
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/x.conf/id" = { line = "x" }
+EOF
+assert_fail "mise dotfiles apply ~/missing/id --yes" "no dotfiles matched target filter"

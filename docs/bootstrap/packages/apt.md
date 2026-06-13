@@ -3,7 +3,7 @@
 System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
 
 ```toml
-[system.packages]
+[bootstrap.packages]
 "apt:libssl-dev" = "latest"
 "apt:curl" = "8.5.0-2ubuntu10" # version pin
 "apt:gcc:arm64" = "latest"     # architecture qualifier
@@ -13,12 +13,12 @@ System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
 
 - Package state is checked with `dpkg-query` (read-only, never elevates).
 - Missing packages are installed with `apt-get install -y`, elevated with
-  sudo when necessary (see [sudo](/system-packages/index.html#sudo)).
+  sudo when necessary (see [sudo](/bootstrap/packages/#sudo)).
 - Version pins are passed to apt as its native `name=version` syntax;
   `name:arch` qualifiers pass through in the package name.
 - `DEBIAN_FRONTEND=noninteractive` is set so installs never block on
   configuration prompts.
-- `mise system upgrade` runs `apt-get update` and then
+- `mise bootstrap packages upgrade` runs `apt-get update` and then
   `apt-get install --only-upgrade` for the configured packages, so nothing
   not already installed gets pulled in.
 
@@ -30,13 +30,13 @@ touch apt metadata — if an install fails with "Unable to locate package",
 refresh explicitly:
 
 ```sh
-mise system install --update
+mise bootstrap packages install --update
 ```
 
 ## Version pins
 
 A pinned entry (`"apt:curl" = "8.5.0-2ubuntu10"`) shows as `version mismatch`
-in `mise system status` when a different version is installed, and
-`mise system install` passes the pin to apt to correct it. `"latest"` entries
-are satisfied by any installed version — use `mise system upgrade` to move
+in `mise bootstrap packages status` when a different version is installed, and
+`mise bootstrap packages install` passes the pin to apt to correct it. `"latest"` entries
+are satisfied by any installed version — use `mise bootstrap packages upgrade` to move
 them to the newest available version.

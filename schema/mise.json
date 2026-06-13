@@ -667,6 +667,22 @@
             "type": "string"
           }
         },
+        "dotfiles": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "default_mode": {
+              "default": "symlink",
+              "description": "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`.",
+              "type": "string"
+            },
+            "root": {
+              "default": "~/.dotfiles",
+              "description": "Root directory used for implied dotfile sources.",
+              "type": "string"
+            }
+          }
+        },
         "dotnet": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1591,7 +1607,7 @@
             },
             "sudo": {
               "default": true,
-              "description": "[experimental] Allow `mise system install` to elevate with sudo when not running as root.",
+              "description": "[experimental] Allow `mise bootstrap packages install` to elevate with sudo when not running as root.",
               "type": "boolean"
             }
           }
@@ -2957,104 +2973,71 @@
       "description": "mise settings",
       "type": "object"
     },
-    "system": {
+    "dotfiles": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages, files, edits, macOS defaults, login shell)",
-      "properties": {
-        "login_shell": {
-          "type": "string",
-          "pattern": "^/",
-          "description": "current user's desired login shell, applied with `chsh -s`; must be an absolute path"
-        },
-        "edits": {
-          "type": "object",
-          "description": "edits to files mise doesn't own, applied with `mise system install`: keyed by target path, then by an id naming each edit (the block marker name)",
-          "additionalProperties": {
+      "description": "[experimental] dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "source path for a whole-file dotfile entry"
+          },
+          {
             "type": "object",
-            "description": "edits for one file, keyed by id",
-            "propertyNames": {
-              "pattern": "^[A-Za-z0-9_.-]+$"
-            },
-            "additionalProperties": {
-              "oneOf": [
-                {
-                  "type": "string",
-                  "description": "inline block content, maintained between marker comments"
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "block": {
-                      "type": "string",
-                      "description": "block content, maintained between marker comments"
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "block content from a file, relative to this config file"
-                    },
-                    "template": {
-                      "type": "string",
-                      "description": "template engine to render the block content with; currently only \"tera\"",
-                      "anyOf": [
-                        {
-                          "enum": ["tera"]
-                        },
-                        {
-                          "type": "string"
-                        }
-                      ]
-                    },
-                    "line": {
-                      "type": "string",
-                      "description": "exact line to ensure exists (appended if absent)"
-                    },
-                    "comment": {
-                      "type": "string",
-                      "description": "comment prefix for the marker lines; inferred from the file extension when omitted"
-                    }
+            "description": "whole-file dotfile entry or file edit entry",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "source file or directory"
+              },
+              "mode": {
+                "type": "string",
+                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode",
+                "anyOf": [
+                  {
+                    "enum": ["symlink", "symlink-each", "copy", "template"]
+                  },
+                  {
+                    "type": "string"
                   }
-                }
-              ]
+                ]
+              },
+              "block": {
+                "type": "string",
+                "description": "block content, maintained between marker comments"
+              },
+              "template": {
+                "type": "string",
+                "description": "template engine to render block content with; currently only \"tera\"",
+                "anyOf": [
+                  {
+                    "enum": ["tera"]
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "line": {
+                "type": "string",
+                "description": "exact line to ensure exists (appended if absent)"
+              },
+              "comment": {
+                "type": "string",
+                "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
+              }
             }
           }
-        },
-        "files": {
-          "type": "object",
-          "description": "files to apply with `mise system install`, keyed by target path (e.g. \"~/.gitconfig\"); sources resolve relative to this config file",
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "string",
-                "description": "source path, symlinked to the target"
-              },
-              {
-                "type": "object",
-                "required": ["source"],
-                "properties": {
-                  "source": {
-                    "type": "string",
-                    "description": "source file or directory"
-                  },
-                  "mode": {
-                    "type": "string",
-                    "description": "how to apply the source to the target: symlink (default), symlink-each, copy, or template; unknown modes from newer mise versions warn and are skipped",
-                    "anyOf": [
-                      {
-                        "enum": ["symlink", "symlink-each", "copy", "template"]
-                      },
-                      {
-                        "type": "string"
-                      }
-                    ]
-                  }
-                }
-              }
-            ]
-          }
-        },
+        ]
+      }
+    },
+    "bootstrap": {
+      "type": "object",
+      "description": "[experimental] machine-global bootstrapping (system packages, macOS defaults, login shell)",
+      "properties": {
         "packages": {
           "type": "object",
-          "description": "system packages to install with `mise system install`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
+          "description": "system packages to install with `mise bootstrap packages install`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
           "propertyNames": {
             "pattern": "^[A-Za-z0-9_-]+:.+$"
           },
@@ -3063,28 +3046,58 @@
             "description": "version pin in the manager's native format, or \"latest\""
           }
         },
-        "defaults": {
+        "macos": {
           "type": "object",
-          "description": "macOS user defaults to apply with `mise system install`, keyed by preferences domain (e.g. \"com.apple.dock\", \"NSGlobalDomain\")",
-          "additionalProperties": {
-            "type": "object",
-            "description": "defaults keys and their desired values for this domain",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "string"
+          "description": "macOS-specific bootstrap config",
+          "properties": {
+            "defaults": {
+              "type": "object",
+              "description": "macOS user defaults to apply with `mise bootstrap macos-defaults apply`, keyed by preferences domain (e.g. \"com.apple.dock\", \"NSGlobalDomain\")",
+              "additionalProperties": {
+                "type": "object",
+                "description": "defaults keys and their desired values for this domain",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ],
+                  "description": "desired value, written with the matching `defaults write` type (-bool, -int, -float, -string)"
                 }
-              ],
-              "description": "desired value, written with the matching `defaults write` type (-bool, -int, -float, -string)"
+              }
+            }
+          }
+        },
+        "user": {
+          "type": "object",
+          "description": "current-user bootstrap settings",
+          "properties": {
+            "login_shell": {
+              "type": "string",
+              "pattern": "^/",
+              "description": "current user's desired login shell, applied with `chsh -s`; must be an absolute path"
+            }
+          }
+        },
+        "brew": {
+          "type": "object",
+          "description": "Homebrew-specific bootstrap package config",
+          "properties": {
+            "taps": {
+              "type": "object",
+              "description": "Homebrew tap names mapped to custom git URLs",
+              "additionalProperties": {
+                "type": "string"
+              }
             }
           }
         }

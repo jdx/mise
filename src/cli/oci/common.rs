@@ -58,7 +58,7 @@ pub async fn perform_build(opts: BuildOptions, include_global: bool) -> Result<B
         let files = system::files::files_from_config_files(&config.config_files);
         let packages = system::packages_from_config_files(&config.config_files);
         return Builder::new(config.clone(), ts, oci, opts)
-            .with_system_files(files)
+            .with_dotfiles(files)
             .with_system_packages(packages)
             .build()
             .await;
@@ -70,7 +70,7 @@ pub async fn perform_build(opts: BuildOptions, include_global: bool) -> Result<B
     let files = system::files::files_from_config_files(&project_files);
     let packages = system::packages_from_config_files(&project_files);
     Builder::new(config.clone(), ts, oci, opts)
-        .with_system_files(files)
+        .with_dotfiles(files)
         .with_system_packages(packages)
         .build()
         .await
@@ -120,10 +120,11 @@ async fn build_project_toolset(
 fn reject_unsupported_system_defaults(config_files: &ConfigMap) -> Result<()> {
     let mut defaults = 0usize;
     for cf in config_files.values() {
-        let Some(system) = cf.system_config() else {
+        let Some(system) = cf.bootstrap_config() else {
             continue;
         };
         defaults += system
+            .macos
             .defaults
             .values()
             .map(|v| v.as_table().map_or(1, |t| t.len()))
@@ -132,7 +133,7 @@ fn reject_unsupported_system_defaults(config_files: &ConfigMap) -> Result<()> {
 
     if defaults > 0 {
         bail!(
-            "mise oci does not support [system.defaults] (found {defaults} default entries); \
+            "mise oci does not support [bootstrap.macos.defaults] (found {defaults} default entries); \
              macOS defaults do not apply to OCI images."
         );
     }

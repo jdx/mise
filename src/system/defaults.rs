@@ -1,15 +1,16 @@
-//! macOS user defaults (preferences) for the `[system.defaults]` config section.
+//! macOS user defaults (preferences) for the `[bootstrap.macos.defaults]` config section.
 //!
 //! Entries are written with `defaults write <domain> <key> <-type> <value>`
 //! and checked with `defaults read-type`/`defaults read`. Like
-//! `[system.packages]` they are machine-global, declarative, and only ever
-//! applied when explicitly requested with `mise system install`.
+//! `[bootstrap.packages]` they are machine-global, declarative, and only ever
+//! applied when explicitly requested with `mise bootstrap macos-defaults apply`
+//! or `mise bootstrap`.
 
 use std::process::Stdio;
 
 use crate::result::Result;
 
-/// A single `[system.defaults.<domain>]` entry: `key = value`
+/// A single `[bootstrap.macos.defaults.<domain>]` entry: `key = value`
 #[derive(Debug, Clone, PartialEq)]
 pub struct DefaultsRequest {
     /// preferences domain, e.g. "com.apple.dock" or "NSGlobalDomain"
@@ -68,7 +69,7 @@ impl DefaultsValue {
     /// Does the pair from `defaults read-type` ("boolean", "integer", ...)
     /// and `defaults read` (raw value; booleans print as 1/0) match this
     /// value? Types are compared strictly: an integer 1 does not satisfy a
-    /// configured `true` — `mise system install` converges it to the typed
+    /// configured `true` — `mise bootstrap macos-defaults apply` converges it to the typed
     /// value.
     fn matches(&self, read_type: &str, raw: &str) -> bool {
         match self {

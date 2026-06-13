@@ -115,7 +115,7 @@ impl Install {
         Ok(())
     }
 
-    /// one-time hint when `[system.packages]` entries are missing — mise
+    /// one-time hint when `[bootstrap.packages]` entries are missing — mise
     /// never installs system packages implicitly
     async fn hint_missing_system_packages(&self) {
         // the status queries spawn package-manager processes; skip them
@@ -135,7 +135,7 @@ impl Install {
         // when everything is satisfied the hint never fires, so also
         // throttle the checks to once per day — but only while the set of
         // packages that would actually be checked is unchanged, so editing
-        // [system.packages] or widening system_packages.managers re-checks
+        // [bootstrap.packages] or widening system_packages.managers re-checks
         // immediately
         let fingerprint = mgrs
             .iter()
@@ -186,8 +186,8 @@ impl Install {
         if missing > 0 {
             hint!(
                 "system_packages_missing",
-                "{missing} system package(s) from [system.packages] are missing. Install them with",
-                "mise system install"
+                "{missing} system package(s) from [bootstrap.packages] are missing. Install them with",
+                "mise bootstrap packages install"
             );
         }
     }

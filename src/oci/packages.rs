@@ -1,4 +1,4 @@
-//! Native `[system.packages]` support for OCI builds.
+//! Native `[bootstrap.packages]` support for OCI builds.
 //!
 //! This intentionally does not use a container engine. For apt-based base
 //! images, mise unpacks the pulled base image into a temporary rootfs, asks
@@ -51,7 +51,7 @@ pub fn build_system_packages_layer(
     }
     if base_layers.is_empty() {
         bail!(
-            "mise oci requires an apt-based base image when [system.packages] is configured; \
+            "mise oci requires an apt-based base image when [bootstrap.packages] is configured; \
              `scratch` has no apt metadata"
         );
     }
@@ -69,7 +69,7 @@ pub fn build_system_packages_layer(
     unpack_base_layers(layout, base_layers, &rootfs)?;
     if !rootfs.join("etc/apt").is_dir() {
         bail!(
-            "mise oci found apt packages in [system.packages], but the base image does not \
+            "mise oci found apt packages in [bootstrap.packages], but the base image does not \
              contain /etc/apt. Use a Debian/Ubuntu base image or remove the apt entries."
         );
     }
@@ -111,7 +111,7 @@ fn collect_apt_requests(managers: &[ManagerPackages]) -> Result<Vec<PackageReque
         unsupported.sort();
         unsupported.dedup();
         bail!(
-            "mise oci currently supports only apt entries in [system.packages]; unsupported \
+            "mise oci currently supports only apt entries in [bootstrap.packages]; unsupported \
              manager(s): {}",
             unsupported.join(", ")
         );

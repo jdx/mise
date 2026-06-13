@@ -4,13 +4,11 @@ use super::driver::{self, Action, DriverOpts};
 use crate::config::{Config, Settings};
 use crate::system;
 
-/// Install missing system packages from `[system.packages]` and write macOS
-/// defaults from `[system.defaults]`
+/// Install missing system packages from `[bootstrap.packages]`
 ///
 /// Checks which configured packages are missing and installs them with the
 /// system package manager. This may elevate with sudo when not running as
-/// root (see the `system_packages.sudo` setting). On macOS, any
-/// `[system.defaults]` entries that are unset or differ are written.
+/// root (see the `system_packages.sudo` setting).
 ///
 /// Packages can also be given explicitly in `manager:package` form (e.g.
 /// `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -20,7 +18,7 @@ use crate::system;
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemInstall {
     /// Packages in `manager:package` form; defaults to everything configured
-    /// in [system.packages]
+    /// in [bootstrap.packages]
     #[clap(value_name = "PACKAGE")]
     packages: Vec<String>,
 
@@ -43,16 +41,9 @@ pub struct SystemInstall {
 
 impl SystemInstall {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise system")?;
-        // defaults only participate in the full converge-everything form —
-        // explicit package specs and --manager filters scope the run to
-        // packages
-        let mut defaults = vec![];
+        Settings::get().ensure_experimental("mise bootstrap")?;
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
-            if self.manager.is_none() {
-                defaults = system::defaults_from_config(&config);
-            }
             system::packages_from_config(&config)
         } else {
             let config = Config::get().await?;
@@ -65,17 +56,12 @@ impl SystemInstall {
             update: self.update,
             yes: self.yes,
         };
-        // when only defaults are configured, skip the driver so
-        // it doesn't print "no system packages configured"
-        if !mgrs.is_empty() || defaults.is_empty() {
-            driver::run(mgrs, Action::Install, &opts).await?;
-        }
-        apply_defaults(defaults, self.dry_run, self.yes).await
+        driver::run(mgrs, Action::Install, &opts).await
     }
 }
 
-/// Apply `[system.defaults]` entries that are unset or differ — shared by
-/// `mise system install` and `mise bootstrap`. Inert off-macOS.
+/// Apply `[bootstrap.macos.defaults]` entries that are unset or differ.
+/// Inert off-macOS.
 pub(crate) async fn apply_defaults(
     defaults: Vec<system::defaults::DefaultsRequest>,
     dry_run: bool,
@@ -86,7 +72,7 @@ pub(crate) async fn apply_defaults(
         return Ok(());
     }
     if !defaults::is_available() {
-        // cross-platform config: [system.defaults] is simply inert off-macOS
+        // cross-platform config: [bootstrap.macos.defaults] is simply inert off-macOS
         debug!("defaults: skipping, {}", defaults::unavailable_reason());
         return Ok(());
     }
@@ -122,7 +108,7 @@ pub(crate) async fn apply_defaults(
     Ok(())
 }
 
-/// Apply `[system].login_shell` when it differs for `mise bootstrap`.
+/// Apply `[bootstrap.user].login_shell` when it differs for `mise bootstrap`.
 /// Inert off-Unix or when `chsh` is missing.
 pub(crate) fn apply_login_shell(
     request: Option<system::login_shell::LoginShellRequest>,
@@ -165,9 +151,9 @@ pub(crate) fn apply_login_shell(
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise system install</bold>
-    $ <bold>mise system install apt:curl brew:jq</bold>
-    $ <bold>mise system install --dry-run</bold>
-    $ <bold>mise system install --manager apt --yes</bold>
+    $ <bold>mise bootstrap packages install</bold>
+    $ <bold>mise bootstrap packages install apt:curl brew:jq</bold>
+    $ <bold>mise bootstrap packages install --dry-run</bold>
+    $ <bold>mise bootstrap packages install --manager apt --yes</bold>
 "#
 );

@@ -11,6 +11,10 @@ use crate::ui::table::MiseTable;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct DotfilesStatus {
+    /// Only show these targets
+    #[clap(value_name = "TARGET")]
+    targets: Vec<String>,
+
     /// Output in JSON format
     #[clap(long, short = 'J')]
     json: bool,
@@ -27,7 +31,14 @@ impl DotfilesStatus {
         let config = Config::get().await?;
         let mut any_missing = false;
 
-        let files = system::files::files_from_config(&config);
+        let all_files = system::files::files_from_config(&config);
+        let files = all_files
+            .iter()
+            .filter(|req| {
+                system::files::matches_target(&req.target, &req.target_raw, &self.targets)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
         let mut file_rows: Vec<Vec<String>> = vec![];
         let mut json_files = vec![];
         for req in &files {
@@ -64,7 +75,22 @@ impl DotfilesStatus {
             }
         }
 
-        let edits = system::edits::edits_from_config(&config);
+        let all_edits = system::edits::edits_from_config(&config);
+        let edits = all_edits
+            .iter()
+            .filter(|req| system::edits::matches_target(req, &self.targets))
+            .cloned()
+            .collect::<Vec<_>>();
+        if files.is_empty()
+            && edits.is_empty()
+            && !self.targets.is_empty()
+            && (!all_files.is_empty() || !all_edits.is_empty())
+        {
+            eyre::bail!(
+                "no dotfiles matched target filter: {}",
+                self.targets.join(", ")
+            );
+        }
         let mut edit_rows: Vec<Vec<String>> = vec![];
         let mut json_edits = vec![];
         for req in &edits {
@@ -133,6 +159,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise dotfiles status</bold>
+    $ <bold>mise dotfiles status ~/.zshrc</bold>
     $ <bold>mise dotfiles status --json</bold>
     $ <bold>mise dotfiles status --missing</bold> # exit 1 if anything is out of sync
 "#

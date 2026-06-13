@@ -1,5 +1,5 @@
 //! `[dotfiles]` — declarative edits to files mise doesn't own,
-//! applied by `mise dotfiles install` or `mise bootstrap`.
+//! applied by `mise dotfiles apply` or `mise bootstrap`.
 //!
 //! Where whole-file dotfile entries manage whole files, an edit owns one small piece
 //! of a file something else owns — the `mise activate` line in a shell rc,
@@ -9,14 +9,14 @@
 //! ```toml
 //! [dotfiles]
 //! "~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
-//! "~/.zshrc/aliases" = { source = "snippets/aliases.sh" }
+//! "~/.zshrc/aliases" = { source = "snippets/aliases.sh", template = "tera" }
 //! "/etc/hosts/dev" = { line = "127.0.0.1 dev.local" }
 //! ```
 //!
 //! A `block` is delimited by marker comments in the target file —
 //! `# >>> mise:activate >>>` / `# <<< mise:activate <<<` — which double as
 //! the ownership record: apply replaces only what's between them, so the
-//! design stays stateless like the rest of `[system]`. A `line` ensures an
+//! design stays stateless like the rest of `[dotfiles]`. A `line` ensures an
 //! exact line exists, appending it if absent.
 //!
 //! Entries merge across the config hierarchy as a union keyed by
@@ -104,6 +104,8 @@ pub struct EditRequest {
     /// directory of the declaring config file — base dir for relative
     /// sources and template functions like `exec` and `read_file`
     pub base: PathBuf,
+    /// config file that declared this edit
+    pub config_path: PathBuf,
 }
 
 impl EditRequest {
@@ -114,6 +116,29 @@ impl EditRequest {
             EditOp::Line { .. } => format!("line:{}", self.id),
         }
     }
+
+    pub fn config_key(&self) -> String {
+        format!("{}/{}", self.path_raw.trim_end_matches('/'), self.id)
+    }
+}
+
+pub fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
+    filters.is_empty()
+        || filters.iter().any(|filter| {
+            filter == &req.path_raw
+                || filter == &req.config_key()
+                || filter == &format!("{}/{}", req.path.display_user(), req.id)
+                || filter.rsplit_once('/').is_some_and(|(path, id)| {
+                    id == req.id && {
+                        let resolved = crate::system::files::resolve_target_arg(path);
+                        resolved == req.path
+                    }
+                })
+                || {
+                    let resolved = crate::system::files::resolve_target_arg(filter);
+                    resolved == req.path
+                }
+        })
 }
 
 /// Aggregate edit `[dotfiles]` entries across all loaded config files. Entries
@@ -132,7 +157,7 @@ pub fn edits_from_config(config: &Config) -> Vec<EditRequest> {
                 continue;
             };
             match split_edit_key(&path_and_id) {
-                Some((path_raw, id)) => match resolve_entry(&path_raw, id, entry, &base) {
+                Some((path_raw, id)) => match resolve_entry(&path_raw, id, entry, &base, cf_path) {
                     Ok(req) => {
                         merged.insert(format!("{}\u{0}{}", req.path.display(), req.id), req);
                     }
@@ -149,7 +174,18 @@ pub fn edits_from_config(config: &Config) -> Vec<EditRequest> {
 
 fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTomlEntry> {
     match &value {
-        toml::Value::Table(table) if !table.contains_key("mode") => {}
+        toml::Value::Table(table) => {
+            let is_whole_file_table = table.is_empty()
+                || table.contains_key("mode")
+                || table.contains_key("source")
+                    && !table.contains_key("block")
+                    && !table.contains_key("line")
+                    && !table.contains_key("template")
+                    && !table.contains_key("comment");
+            if is_whole_file_table {
+                return None;
+            }
+        }
         _ => return None,
     }
     match value.try_into() {
@@ -174,6 +210,7 @@ fn resolve_entry(
     id: String,
     entry: EditTomlEntry,
     base: &Path,
+    config_path: &Path,
 ) -> Result<EditRequest> {
     let path = file::replace_path(path_raw);
     if path.is_relative() {
@@ -262,6 +299,7 @@ fn resolve_entry(
         id,
         op,
         base: base.to_path_buf(),
+        config_path: config_path.to_path_buf(),
     })
 }
 
@@ -469,6 +507,7 @@ fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
 
 pub struct ApplyOpts {
     pub dry_run: bool,
+    pub verbose: bool,
     pub yes: bool,
 }
 
@@ -576,6 +615,9 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
                 req.path.display_user(),
                 req.describe_op()
             );
+            if opts.verbose && !conditional {
+                miseprintln!("  desired {}", req.describe_op());
+            }
         }
         return Ok(());
     }

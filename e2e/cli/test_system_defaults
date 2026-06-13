@@ -1,49 +1,45 @@
 #!/usr/bin/env bash
 
 cat <<EOF >mise.toml
-[system.defaults.NSGlobalDomain]
-KeyRepeat = 2
-
-[system.defaults."com.apple.dock"]
-autohide = true
-tilesize = 48
-orientation = "left"
+[bootstrap.macos.defaults]
+NSGlobalDomain = { KeyRepeat = 2 }
+"com.apple.dock" = { autohide = true, tilesize = 48, orientation = "left" }
 EOF
 
 # status renders on any platform; on non-macOS entries are skipped, not errors
-assert_succeed "mise system status"
-assert_contains "mise system status" "com.apple.dock"
-assert_contains "mise system status --json" '"defaults"'
+assert_succeed "mise bootstrap macos-defaults status"
+assert_contains "mise bootstrap macos-defaults status" "com.apple.dock"
+assert_contains "mise bootstrap macos-defaults status --json" '"macos_defaults"'
 if [[ $(uname) != "Darwin" ]]; then
-  assert_contains "mise system status" "skipped"
-  assert_contains "mise system status --json" '"available": false'
+  assert_contains "mise bootstrap macos-defaults status" "skipped"
+  assert_contains "mise bootstrap macos-defaults status --json" '"available": false'
   # unavailable entries don't count as missing (cross-platform configs)
-  assert_succeed "mise system status --missing"
+  assert_succeed "mise bootstrap macos-defaults status --missing"
   # install skips defaults silently off-macOS
-  assert_succeed "mise system install --yes"
+  assert_succeed "mise bootstrap macos-defaults apply --yes"
 fi
 
 # dry-run never writes anything
-assert_succeed "mise system install --dry-run --yes"
+assert_succeed "mise bootstrap macos-defaults apply --dry-run --yes"
 
 # unsupported value types warn but don't fail
 cat <<EOF >mise.toml
-[system.defaults."com.apple.dock"]
-future-array = [1, 2]
+[bootstrap.macos.defaults]
+"com.apple.dock" = { future-array = [1, 2] }
 EOF
-assert_succeed "mise system status"
-assert_contains "mise system status 2>&1" "unsupported value type"
+assert_succeed "mise bootstrap macos-defaults status"
+assert_contains "mise bootstrap macos-defaults status 2>&1" "unsupported value type"
 
 # a domain entry that isn't a table warns but doesn't fail
 cat <<EOF >mise.toml
-[system.defaults]
+[bootstrap.macos.defaults]
 autohide = true
 EOF
-assert_succeed "mise system status"
-assert_contains "mise system status 2>&1" "expected a table"
+assert_succeed "mise bootstrap macos-defaults status"
+assert_contains "mise bootstrap macos-defaults status 2>&1" "expected a table"
 
-# empty [system.defaults] section
+# empty [bootstrap.macos.defaults] section
 cat <<EOF >mise.toml
-[system.defaults]
+[bootstrap.macos.defaults]
 EOF
-assert_succeed "mise system status"
+assert_succeed "mise bootstrap macos-defaults status"

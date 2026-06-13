@@ -1,10 +1,11 @@
-# System Login Shell <Badge type="warning" text="experimental" />
+# User Login Shell <Badge type="warning" text="experimental" />
 
-mise can declare the current user's login shell in the `[system]` section of
-`mise.toml` and apply it with [`mise bootstrap`](/cli/bootstrap.html):
+mise can declare the current user's login shell in `[bootstrap.user]` and
+apply it with `mise bootstrap user apply` or
+[`mise bootstrap`](/cli/bootstrap.html):
 
 ```toml
-[system]
+[bootstrap.user]
 login_shell = "/bin/zsh"
 ```
 
@@ -18,8 +19,8 @@ chsh -s /bin/zsh
 
 ## Semantics
 
-`[system].login_shell` follows the same manual, idempotent model as
-[system packages](/system-packages/):
+`[bootstrap.user].login_shell` follows the same manual, idempotent model as
+[bootstrap packages](/bootstrap/packages/):
 
 - **Most local wins** - a project config can override a global
   `login_shell`; unlike package/file lists, there is only one desired value.
@@ -29,7 +30,8 @@ chsh -s /bin/zsh
   accepts it on many platforms. mise adds the configured path to that file
   when it is missing.
 - **Unix-only** - on non-Unix platforms, or when `chsh` is not available,
-  `mise system status` reports the entry as skipped and bootstrap ignores it.
+  `mise bootstrap user status` reports the entry as skipped and bootstrap
+  ignores it.
 - **Absolute path required** - relative shell names are skipped with a
   warning. Use the full path, such as `/bin/zsh` or `/opt/homebrew/bin/fish`.
 
@@ -45,10 +47,10 @@ still target root.
 ## Commands
 
 ```sh
-mise system status            # shows login shell state
-mise system status --missing  # exit 1 if the shell differs or is not listed
+mise bootstrap user status            # shows login shell state
+mise bootstrap user status --missing  # exit 1 if the shell differs or is not listed
 
-mise bootstrap           # updates /etc/shells and runs chsh -s when needed
-mise bootstrap --dry-run # print the commands instead
-mise bootstrap --yes     # skip the confirmation prompt
+mise bootstrap user apply           # updates /etc/shells and runs chsh -s
+mise bootstrap user apply --dry-run # print the commands instead
+mise bootstrap user apply --yes     # skip the confirmation prompt
 ```
