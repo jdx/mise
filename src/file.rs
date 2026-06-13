@@ -933,37 +933,37 @@ pub fn decompress_file(input: &Path, dest: &Path, format: ExtractionFormat) -> R
 
 #[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
 pub enum ExtractionFormat {
-    #[strum(serialize = "tar.gz", serialize = "tgz")]
+    #[strum(to_string = "tar.gz", serialize = "tgz")]
     TarGz,
     #[strum(serialize = "gz")]
     Gz,
-    #[strum(serialize = "tar.xz", serialize = "txz")]
+    #[strum(to_string = "tar.xz", serialize = "txz")]
     TarXz,
     #[strum(serialize = "xz")]
     Xz,
-    #[strum(serialize = "tar.bz2", serialize = "tbz2", serialize = "tbz")]
+    #[strum(to_string = "tar.bz2", serialize = "tbz2", serialize = "tbz")]
     TarBz2,
     #[strum(serialize = "bz2")]
     Bz2,
-    #[strum(serialize = "tar.zst", serialize = "tzst")]
+    #[strum(to_string = "tar.zst", serialize = "tzst")]
     TarZst,
     #[strum(serialize = "zst")]
     Zst,
     #[strum(serialize = "tar")]
     Tar,
-    #[strum(serialize = "zip", serialize = "vsix")]
+    #[strum(to_string = "zip", serialize = "vsix")]
     Zip,
     #[strum(serialize = "7z")]
     SevenZip,
-    #[strum(serialize = "tar.br", serialize = "tbr")]
+    #[strum(to_string = "tar.br", serialize = "tbr")]
     TarBr,
     #[strum(serialize = "br")]
     Br,
-    #[strum(serialize = "tar.lz4", serialize = "tlz4")]
+    #[strum(to_string = "tar.lz4", serialize = "tlz4")]
     TarLz4,
     #[strum(serialize = "lz4")]
     Lz4,
-    #[strum(serialize = "tar.sz", serialize = "tsz")]
+    #[strum(to_string = "tar.sz", serialize = "tsz")]
     TarSz,
     #[strum(serialize = "sz")]
     Sz,
@@ -1031,28 +1031,8 @@ impl ExtractionFormat {
         )
     }
 
-    pub fn extension(&self) -> Option<&'static str> {
-        match self {
-            ExtractionFormat::TarGz => Some("tar.gz"),
-            ExtractionFormat::Gz => Some("gz"),
-            ExtractionFormat::TarXz => Some("tar.xz"),
-            ExtractionFormat::Xz => Some("xz"),
-            ExtractionFormat::TarBz2 => Some("tar.bz2"),
-            ExtractionFormat::Bz2 => Some("bz2"),
-            ExtractionFormat::TarZst => Some("tar.zst"),
-            ExtractionFormat::Zst => Some("zst"),
-            ExtractionFormat::Tar => Some("tar"),
-            ExtractionFormat::Zip => Some("zip"),
-            ExtractionFormat::SevenZip => Some("7z"),
-            ExtractionFormat::TarBr => Some("tar.br"),
-            ExtractionFormat::Br => Some("br"),
-            ExtractionFormat::TarLz4 => Some("tar.lz4"),
-            ExtractionFormat::Lz4 => Some("lz4"),
-            ExtractionFormat::TarSz => Some("tar.sz"),
-            ExtractionFormat::Sz => Some("sz"),
-            ExtractionFormat::Rar => Some("rar"),
-            ExtractionFormat::Raw => None,
-        }
+    pub fn extension(&self) -> Option<String> {
+        (*self != ExtractionFormat::Raw).then(|| self.to_string())
     }
 }
 
@@ -2183,6 +2163,23 @@ mod tests {
         assert!(ExtractionFormat::Br.is_compressed_file());
         assert!(ExtractionFormat::Lz4.is_compressed_file());
         assert!(ExtractionFormat::Sz.is_compressed_file());
+    }
+
+    #[test]
+    fn test_extraction_format_extension_uses_canonical_display() {
+        for (format, expected) in [
+            (ExtractionFormat::TarGz, Some("tar.gz")),
+            (ExtractionFormat::TarXz, Some("tar.xz")),
+            (ExtractionFormat::TarBz2, Some("tar.bz2")),
+            (ExtractionFormat::TarZst, Some("tar.zst")),
+            (ExtractionFormat::TarBr, Some("tar.br")),
+            (ExtractionFormat::TarLz4, Some("tar.lz4")),
+            (ExtractionFormat::TarSz, Some("tar.sz")),
+            (ExtractionFormat::Zip, Some("zip")),
+            (ExtractionFormat::Raw, None),
+        ] {
+            assert_eq!(format.extension().as_deref(), expected);
+        }
     }
 
     #[test]
