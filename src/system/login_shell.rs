@@ -69,9 +69,9 @@ fn login_shell_state(current: &str, requested: &str, shell_listed: bool) -> Logi
 }
 
 pub fn apply(request: &LoginShellRequest, dry_run: bool) -> Result<()> {
-    ensure_shell_listed(&request.shell, dry_run)?;
     let user = target_user()?;
     let args = chsh_args(request, &user);
+    ensure_shell_listed(&request.shell, dry_run)?;
     let display = shell_words::join(&args);
     if dry_run {
         miseprintln!("chsh {display}");
