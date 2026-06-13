@@ -134,6 +134,13 @@ impl ErlangPlugin {
         ))
     }
 
+    fn linux_precompiled_cache_name(url: &str) -> String {
+        url.strip_prefix("https://builds.hex.pm/builds/otp/")
+            .unwrap_or(url)
+            .replace('/', "__")
+            .replace(':', "_")
+    }
+
     fn lockfile_precompiled_os_option(target: &PlatformTarget) -> Option<String> {
         if target.os_name() == "linux" && target.libc() != Some("musl") {
             Self::linux_precompiled_os_version().ok()
@@ -224,7 +231,9 @@ impl ErlangPlugin {
         };
 
         let filename = url.split('/').next_back().unwrap();
-        let tarball_path = tv.download_path().join(filename);
+        let tarball_path = tv
+            .download_path()
+            .join(Self::linux_precompiled_cache_name(&url));
 
         ctx.pr.set_message(format!("Downloading {filename}"));
         if !tarball_path.exists() {
