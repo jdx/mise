@@ -62,7 +62,8 @@ impl SystemInstall {
             }
             system::packages_from_config(&config)
         } else {
-            system::packages_from_specs(&self.packages)?
+            let config = Config::get().await?;
+            system::packages_from_specs_with_config(&self.packages, Some(&config))?
         };
         // explicit packages or a --manager filter narrow the run to those
         // packages; files, edits, and defaults are part of the "apply

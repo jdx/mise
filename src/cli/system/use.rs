@@ -53,6 +53,7 @@ pub struct SystemUse {
 impl SystemUse {
     pub async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise system")?;
+        let config = crate::config::Config::get().await?;
         let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
         let mut entries: Vec<(String, String)> = vec![];
         for spec in &self.packages {
@@ -71,6 +72,7 @@ impl SystemUse {
                 None => requests.push(request),
             }
         }
+        system::attach_brew_tap_urls(&config, &mut by_mgr);
         // resolve managers before touching the config file so a typo'd
         // manager doesn't get written
         let mgrs = system::packages_from_requests(by_mgr)?;

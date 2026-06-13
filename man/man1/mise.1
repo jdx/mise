@@ -463,6 +463,18 @@ Symlinks all ruby tool versions from an external tool into mise
 \fBsystem\fR
 [experimental] Manage system packages from `[system.packages]`, files
 .TP
+\fBsystem brew\fR
+Manage Homebrew taps used by system packages
+.TP
+\fBsystem brew tap\fR
+Tap a Homebrew formula repository
+.TP
+\fBsystem brew untap\fR
+Untap Homebrew formula repositories
+.RS
+\fIAliases: \fRremove, rm
+.RE
+.TP
 \fBsystem install\fR
 Install missing system packages from `[system.packages]`, apply files
 .RS
@@ -2777,6 +2789,39 @@ Symlinks all ruby tool versions from an external tool into mise
 .TP
 \fB\-\-brew\fR
 Get tool versions from Homebrew
+.SH "MISE SYSTEM BREW TAP"
+Tap a Homebrew formula repository
+.PP
+\fBUsage:\fR mise system brew tap [OPTIONS] <TAP> [<URL>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the command that would run without running it
+\fBArguments:\fR
+.PP
+.TP
+\fB<TAP>\fR
+Tap name, e.g. `owner/repo`
+.TP
+\fB<URL>\fR
+Git URL for non\-GitHub or otherwise custom taps
+.SH "MISE SYSTEM BREW UNTAP"
+Untap Homebrew formula repositories
+.PP
+\fBUsage:\fR mise system brew untap [OPTIONS] <TAPS> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the command that would run without running it
+\fBArguments:\fR
+.PP
+.TP
+\fB<TAPS>\fR
+Tap name(s), e.g. `owner/repo`
 .SH "MISE SYSTEM INSTALL"
 Install missing system packages from `[system.packages]`, apply files
 from `[system.files]` and edits from `[system.edits]`, and write macOS

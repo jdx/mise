@@ -319,6 +319,9 @@ export const commands: { [key: string]: Command } = {
   system: {
     hide: false,
     subcommands: {
+      brew: {
+        hide: false,
+      },
       install: {
         hide: false,
       },

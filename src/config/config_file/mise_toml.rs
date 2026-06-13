@@ -2148,6 +2148,9 @@ mod tests {
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
         "future-manager:whatever" = "latest"
+
+        [system.brew.taps]
+        "railwaycat/emacsmacport" = "https://github.com/railwaycat/homebrew-emacsmacport"
         "#,
         )
         .unwrap();
@@ -2156,6 +2159,10 @@ mod tests {
         assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
         assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
         assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        assert_eq!(
+            system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
+            "https://github.com/railwaycat/homebrew-emacsmacport"
+        );
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
             system.packages.get("future-manager:whatever").unwrap(),

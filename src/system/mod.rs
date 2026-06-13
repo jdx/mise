@@ -46,6 +46,18 @@ pub struct SystemTomlConfig {
     /// (see [`edits`])
     #[serde(default)]
     pub edits: IndexMap<String, IndexMap<String, edits::EditTomlEntry>>,
+    /// Homebrew-specific system config.
+    #[serde(default)]
+    pub brew: SystemBrewTomlConfig,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct SystemBrewTomlConfig {
+    /// `[system.brew.taps]`: `owner/tap` -> git URL. Like `[plugins]`,
+    /// this lets shared config name non-GitHub or otherwise custom tap
+    /// remotes while package entries stay focused on formulae.
+    #[serde(default)]
+    pub taps: IndexMap<String, String>,
 }
 
 /// Packages for one manager, aggregated across the config hierarchy
@@ -86,6 +98,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
             PackageRequest {
                 name: rest,
                 version: None,
+                tap_url: None,
             },
         ));
     }
@@ -95,6 +108,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
             PackageRequest {
                 name: name.to_string(),
                 version: (version != "latest").then(|| version.to_string()),
+                tap_url: None,
             },
         )),
         Some(_) => {
@@ -105,6 +119,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
             PackageRequest {
                 name: rest,
                 version: None,
+                tap_url: None,
             },
         )),
     }
@@ -119,6 +134,16 @@ pub fn packages_from_requests(
     resolve_managers(by_mgr, true)
 }
 
+pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<PackageRequest>>) {
+    let brew_taps = brew_taps_from_config(config);
+    let Some(requests) = by_mgr.get_mut("brew") else {
+        return;
+    };
+    for request in requests {
+        request.tap_url = brew_tap_name(&request.name).and_then(|tap| brew_taps.get(tap).cloned());
+    }
+}
+
 /// Aggregate `[system.packages]` across all loaded config files.
 ///
 /// Keys union global -> local; a more local config overrides the version pin
@@ -128,6 +153,7 @@ pub fn packages_from_requests(
 /// all.
 pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
     let mut merged: IndexMap<String, String> = IndexMap::new();
+    let brew_taps = brew_taps_from_config(config);
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.system_config() {
@@ -141,10 +167,16 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
         match parse_spec(&spec) {
             Ok((mgr, name)) => {
                 let version = (version != "latest").then_some(version);
-                by_mgr
-                    .entry(mgr)
-                    .or_default()
-                    .push(PackageRequest { name, version });
+                let tap_url = if mgr == "brew" {
+                    brew_tap_name(&name).and_then(|tap| brew_taps.get(tap).cloned())
+                } else {
+                    None
+                };
+                by_mgr.entry(mgr).or_default().push(PackageRequest {
+                    name,
+                    version,
+                    tap_url,
+                });
             }
             Err(err) => warn!("[system.packages]: {err}"),
         }
@@ -189,23 +221,62 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
     out
 }
 
-/// Build [`ManagerPackages`] from explicit CLI specs like `apt:curl`.
+/// Build [`ManagerPackages`] from explicit CLI specs, attaching configured
+/// brew tap URLs when a config is available.
+///
 /// Unlike the config path, malformed specs and unknown managers are hard
 /// errors. CLI specs carry no version pin — pins live in the config value.
-pub fn packages_from_specs(specs: &[String]) -> eyre::Result<Vec<ManagerPackages>> {
+pub fn packages_from_specs_with_config(
+    specs: &[String],
+    config: Option<&Config>,
+) -> eyre::Result<Vec<ManagerPackages>> {
+    let brew_taps = config.map(brew_taps_from_config).unwrap_or_default();
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
+        let tap_url = if mgr == "brew" {
+            brew_tap_name(&name).and_then(|tap| brew_taps.get(tap).cloned())
+        } else {
+            None
+        };
         let requests = by_mgr.entry(mgr).or_default();
         let request = PackageRequest {
             name,
             version: None,
+            tap_url,
         };
         if !requests.contains(&request) {
             requests.push(request);
         }
     }
     resolve_managers(by_mgr, true)
+}
+
+pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
+    let mut parts = name.split('/');
+    let owner = parts.next()?;
+    let tap = parts.next()?;
+    let formula = parts.next()?;
+    if parts.next().is_some() || owner.is_empty() || tap.is_empty() || formula.is_empty() {
+        return None;
+    }
+    if owner == "homebrew" && tap == "core" {
+        None
+    } else {
+        name.rsplit_once('/').map(|(tap, _)| tap)
+    }
+}
+
+fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
+    let mut brew_taps: IndexMap<String, String> = IndexMap::new();
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.system_config() {
+            for (tap, url) in sys.brew.taps {
+                brew_taps.insert(tap, url);
+            }
+        }
+    }
+    brew_taps
 }
 
 fn resolve_managers(
@@ -283,5 +354,16 @@ mod tests {
 
         assert!(parse_use_spec("apt:curl@").is_err());
         assert!(parse_use_spec("noprefix").is_err());
+    }
+
+    #[test]
+    fn test_brew_tap_name() {
+        assert_eq!(
+            brew_tap_name("railwaycat/emacsmacport/emacs-mac"),
+            Some("railwaycat/emacsmacport")
+        );
+        assert_eq!(brew_tap_name("homebrew/core/jq"), None);
+        assert_eq!(brew_tap_name("jq"), None);
+        assert_eq!(brew_tap_name("too/many/slashes/here"), None);
     }
 }

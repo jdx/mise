@@ -1,6 +1,8 @@
 use clap::Subcommand;
 use eyre::Result;
 
+#[cfg(unix)]
+mod brew;
 pub(super) mod driver;
 pub(super) mod install;
 mod status;
@@ -30,6 +32,8 @@ pub struct System {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    #[cfg(unix)]
+    Brew(brew::SystemBrew),
     Install(install::SystemInstall),
     Status(status::SystemStatus),
     Upgrade(upgrade::SystemUpgrade),
@@ -39,6 +43,8 @@ enum Commands {
 impl System {
     pub async fn run(self) -> Result<()> {
         match self.command {
+            #[cfg(unix)]
+            Commands::Brew(cmd) => cmd.run().await,
             Commands::Install(cmd) => cmd.run().await,
             Commands::Status(cmd) => cmd.run().await,
             Commands::Upgrade(cmd) => cmd.run().await,
