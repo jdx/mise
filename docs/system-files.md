@@ -10,6 +10,7 @@ mise can place config files (dotfiles) at machine-global paths via the
 "~/.ssh/config" = { source = "dotfiles/ssh_config.tmpl", mode = "template" }
 "~/.config/nvim" = "dotfiles/nvim"                                   # symlink the directory itself
 "~/.local/bin" = { source = "dotfiles/bin", mode = "symlink-each" }  # symlink each file within
+"~/.config/*.toml" = { source = "dotfiles/config/*.toml", mode = "copy" }
 ```
 
 Each entry is keyed by the target path — absolute or starting with `~/` —
@@ -21,6 +22,18 @@ project config can ship machine setup from the repo.
 To manage one piece of a file something else owns (a line in `.zshrc`, an
 entry in `/etc/hosts`) rather than the whole file, see
 [System Edits](/system-edits.html).
+
+Source paths may contain glob wildcards like `*`, `**`, `?`, or `[ab]`.
+When a wildcard source matches multiple paths, the target path must contain
+matching wildcards so each source expands to a unique target:
+
+```toml
+[system.files]
+"~/.config/*.toml" = "dotfiles/config/*.toml"
+"~/.local/share/app/**/*.json" = { source = "dotfiles/app/**/*.json", mode = "copy" }
+"~/.config/app?.toml" = "dotfiles/config/app?.toml"
+"~/.config/theme-[ab].toml" = "dotfiles/config/theme-[ab].toml"
+```
 
 ## Modes
 
