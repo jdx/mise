@@ -64,6 +64,23 @@ enum SystemDefaultsDiagnosis {
     },
 }
 
+/// outcome of the `[system].login_shell` doctor check
+enum SystemLoginShellDiagnosis {
+    Unavailable {
+        reason: String,
+        shell: String,
+    },
+    Checked {
+        shell: String,
+        current: String,
+        out_of_sync: bool,
+    },
+    CheckFailed {
+        shell: String,
+        error: String,
+    },
+}
+
 impl Doctor {
     pub async fn run(self) -> eyre::Result<()> {
         if let Some(cmd) = self.subcommand {
@@ -213,6 +230,10 @@ impl Doctor {
 
         if let Some(system_defaults) = self.system_defaults_json(&config).await {
             data.insert("system_defaults".into(), system_defaults);
+        }
+
+        if let Some(system_login_shell) = self.system_login_shell_json(&config).await {
+            data.insert("system_login_shell".into(), system_login_shell);
         }
 
         if !self.errors.is_empty() {
@@ -386,6 +407,7 @@ impl Doctor {
 
         self.analyze_system_packages(config).await?;
         self.analyze_system_defaults(config).await?;
+        self.analyze_system_login_shell(config).await?;
 
         Ok(())
     }
@@ -542,6 +564,96 @@ impl Doctor {
             }
         };
         info::section("system_defaults", line)?;
+        Ok(())
+    }
+
+    /// Shared `[system].login_shell` check for the text and JSON doctor paths.
+    /// Pushes the relevant warnings; returns None when nothing is configured.
+    async fn check_system_login_shell(
+        &mut self,
+        config: &Arc<Config>,
+    ) -> Option<SystemLoginShellDiagnosis> {
+        if !Settings::get().experimental {
+            return None;
+        }
+        let request = crate::system::login_shell_from_config(config)?;
+        if !crate::system::login_shell::is_available() {
+            return Some(SystemLoginShellDiagnosis::Unavailable {
+                reason: crate::system::login_shell::unavailable_reason(),
+                shell: request.shell,
+            });
+        }
+        match crate::system::login_shell::status(&request) {
+            Ok(status) => {
+                let out_of_sync = status.state != crate::system::login_shell::LoginShellState::Set;
+                if out_of_sync {
+                    self.warnings.push(
+                        "login shell is out of sync, apply it with `mise system install`"
+                            .to_string(),
+                    );
+                }
+                Some(SystemLoginShellDiagnosis::Checked {
+                    shell: status.request.shell,
+                    current: status.current,
+                    out_of_sync,
+                })
+            }
+            Err(err) => {
+                self.warnings
+                    .push(format!("failed to check login shell: {err}"));
+                Some(SystemLoginShellDiagnosis::CheckFailed {
+                    shell: request.shell,
+                    error: err.to_string(),
+                })
+            }
+        }
+    }
+
+    /// same diagnostics as [`Self::analyze_system_login_shell`] for `doctor -J`
+    async fn system_login_shell_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        let json = match self.check_system_login_shell(config).await? {
+            SystemLoginShellDiagnosis::Unavailable { reason, shell } => serde_json::json!({
+                "available": false,
+                "reason": reason,
+                "shell": shell,
+            }),
+            SystemLoginShellDiagnosis::Checked {
+                shell,
+                current,
+                out_of_sync,
+            } => serde_json::json!({
+                "available": true,
+                "shell": shell,
+                "current": current,
+                "out_of_sync": out_of_sync,
+            }),
+            SystemLoginShellDiagnosis::CheckFailed { shell, error } => serde_json::json!({
+                "available": true,
+                "shell": shell,
+                "error": error,
+            }),
+        };
+        Some(json)
+    }
+
+    async fn analyze_system_login_shell(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        let Some(diagnosis) = self.check_system_login_shell(config).await else {
+            return Ok(());
+        };
+        let line = match diagnosis {
+            SystemLoginShellDiagnosis::Unavailable { reason, shell } => {
+                format!("{shell}: unavailable ({reason}), skipped")
+            }
+            SystemLoginShellDiagnosis::Checked {
+                shell,
+                current,
+                out_of_sync,
+            } => format!("{shell} requested, current {current}, out_of_sync={out_of_sync}"),
+            SystemLoginShellDiagnosis::CheckFailed { shell, error } => {
+                format!("{shell} requested, check failed: {error}")
+            }
+        };
+        info::section("system_login_shell", line)?;
         Ok(())
     }
 

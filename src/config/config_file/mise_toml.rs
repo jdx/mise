@@ -2163,6 +2163,7 @@ mod tests {
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
         );
+        assert_eq!(system.login_shell, None);
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
             system.packages.get("future-manager:whatever").unwrap(),
@@ -2173,6 +2174,24 @@ mod tests {
         file::write(&p, "[tools]\n").unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         assert!(cf.system_config().is_none());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_system_login_shell() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [system]
+        login_shell = "/bin/zsh"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.system_config().unwrap();
+        assert_eq!(system.login_shell.as_deref(), Some("/bin/zsh"));
         file::remove_file(&p).unwrap();
     }
 

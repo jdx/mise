@@ -6,12 +6,13 @@ use crate::path::PathExt;
 use crate::system;
 use crate::system::defaults::DefaultsState;
 use crate::system::files::FileState;
+use crate::system::login_shell::LoginShellState;
 use crate::system::packages::PackageState;
 use crate::ui::table::MiseTable;
 
 /// Show the status of system packages from `[system.packages]`, files from
 /// `[system.files]`, edits from `[system.edits]`, and macOS defaults from
-/// `[system.defaults]`
+/// `[system.defaults]`, and Unix login shell from `[system].login_shell`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SystemStatus {
@@ -19,8 +20,8 @@ pub struct SystemStatus {
     #[clap(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured packages, files, or defaults are
-    /// not in their desired state (missing, version mismatch, differs)
+    /// Exit with code 1 if any configured packages, files, edits, defaults, or
+    /// login shell are not in their desired state
     #[clap(long, verbatim_doc_comment)]
     missing: bool,
 }
@@ -225,6 +226,61 @@ impl SystemStatus {
                 }
             }
         }
+        let login_shell = system::login_shell_from_config(&config);
+        let mut login_shell_rows: Vec<Vec<String>> = vec![];
+        if let Some(req) = login_shell {
+            if !system::login_shell::is_available() {
+                let reason = system::login_shell::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "login_shell".to_string(),
+                        json!({
+                            "available": false,
+                            "reason": reason,
+                            "shell": req.shell,
+                        }),
+                    );
+                } else {
+                    login_shell_rows.push(vec![
+                        req.shell,
+                        "".to_string(),
+                        format!("skipped ({reason})"),
+                    ]);
+                }
+            } else {
+                let status = system::login_shell::status(&req)?;
+                let state = match &status.state {
+                    LoginShellState::Set => "set",
+                    LoginShellState::Differs { .. } => {
+                        any_missing = true;
+                        "differs"
+                    }
+                    LoginShellState::MissingFromShells { .. } => {
+                        any_missing = true;
+                        "missing from /etc/shells"
+                    }
+                };
+                if self.json {
+                    json_out.insert(
+                        "login_shell".to_string(),
+                        json!({
+                            "available": true,
+                            "shell": status.request.shell,
+                            "user": status.user,
+                            "current": status.current,
+                            "shell_listed": status.shell_listed,
+                            "state": state,
+                        }),
+                    );
+                } else {
+                    login_shell_rows.push(vec![
+                        status.request.shell,
+                        status.current,
+                        state.to_string(),
+                    ]);
+                }
+            }
+        }
         if self.json {
             json_out.insert("files".to_string(), json!(json_files));
             json_out.insert("edits".to_string(), json!(json_edits));
@@ -234,9 +290,10 @@ impl SystemStatus {
                 && file_rows.is_empty()
                 && edit_rows.is_empty()
                 && defaults_rows.is_empty()
+                && login_shell_rows.is_empty()
             {
                 info!(
-                    "nothing configured in [system.packages], [system.files], [system.edits], or [system.defaults]"
+                    "nothing configured in [system.packages], [system.files], [system.edits], [system.defaults], or [system].login_shell"
                 );
             }
             if !rows.is_empty() {
@@ -265,6 +322,13 @@ impl SystemStatus {
                 let mut table =
                     MiseTable::new(false, &["Domain", "Key", "Value", "Current", "State"]);
                 for row in defaults_rows {
+                    table.add_row(row);
+                }
+                table.print()?;
+            }
+            if !login_shell_rows.is_empty() {
+                let mut table = MiseTable::new(false, &["Shell", "Current", "State"]);
+                for row in login_shell_rows {
                     table.add_row(row);
                 }
                 table.print()?;

@@ -755,8 +755,8 @@ e.g.: ruby@3
 Runs the bootstrap steps for the current config in order:
 
 1. `mise system install` — install missing `[system.packages]`, apply
-   `[system.files]` and `[system.edits]`, and write `[system.defaults]`
-   (macOS)
+   `[system.files]` and `[system.edits]`, write `[system.defaults]`
+   (macOS), and set `[system].login_shell` (Unix)
 2. `mise install` — install missing tools from `[tools]`
 3. `mise run bootstrap` — if a task named `bootstrap` is defined
 
@@ -2824,15 +2824,17 @@ Print the command that would run without running it
 Tap name(s), e.g. `owner/repo`
 .SH "MISE SYSTEM INSTALL"
 Install missing system packages from `[system.packages]`, apply files
-from `[system.files]` and edits from `[system.edits]`, and write macOS
-defaults from `[system.defaults]`
+from `[system.files]` and edits from `[system.edits]`, write macOS
+defaults from `[system.defaults]`, and set Unix login shell from
+`[system].login_shell`
 
 Checks which configured packages are missing and installs them with the
 system package manager. This may elevate with sudo when not running as
 root (see the `system_packages.sudo` setting). Afterwards, `[system.files]`
 and `[system.edits]` entries that aren't in their desired state are
-applied, and on macOS any `[system.defaults]` entries that are unset or
-differ are written.
+applied, on macOS any `[system.defaults]` entries that are unset or
+differ are written, and on Unix `[system].login_shell` is added to
+`/etc/shells` if needed before `chsh \-s` applies it.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
 `apt:curl`, `brew:jq`); they are installed whether or not they appear in
@@ -2866,7 +2868,7 @@ Packages in `manager:package` form; defaults to everything configured in [system
 .SH "MISE SYSTEM STATUS"
 Show the status of system packages from `[system.packages]`, files from
 `[system.files]`, edits from `[system.edits]`, and macOS defaults from
-`[system.defaults]`
+`[system.defaults]`, and Unix login shell from `[system].login_shell`
 .PP
 \fBUsage:\fR mise system status [OPTIONS]
 .PP
@@ -2877,8 +2879,8 @@ Show the status of system packages from `[system.packages]`, files from
 Output in JSON format
 .TP
 \fB\-\-missing\fR
-Exit with code 1 if any configured packages, files, or defaults are
-not in their desired state (missing, version mismatch, differs)
+Exit with code 1 if any configured packages, files, edits, defaults, or
+login shell are not in their desired state
 .SH "MISE SYSTEM UPGRADE"
 Upgrade installed system packages from `[system.packages]`
 

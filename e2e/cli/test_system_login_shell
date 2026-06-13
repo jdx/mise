@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+mkdir -p "$HOME/bin"
+export CHSH_LOG="$PWD/chsh.log"
+rm -f "$CHSH_LOG"
+cat <<'EOF' >"$HOME/bin/chsh"
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$CHSH_LOG"
+EOF
+chmod +x "$HOME/bin/chsh"
+export MISE_TEST_SHELLS_FILE="$PWD/shells"
+
+cat <<EOF >mise.toml
+[system]
+login_shell = "/bin/sh"
+EOF
+
+current="$(mise system status --json | jq -r '.login_shell.current')"
+assert_not_empty "printf '%s' '$current'"
+printf '%s\n' "$current" >"$MISE_TEST_SHELLS_FILE"
+
+# Matching login shell is in sync and install is a no-op.
+cat <<EOF >mise.toml
+[system]
+login_shell = "$current"
+EOF
+assert_succeed "mise system status --missing"
+assert_contains "mise system status --json" '"state": "set"'
+assert_succeed "mise system install --yes"
+assert_fail "test -f '$CHSH_LOG'"
+
+# A local config overrides the global login shell.
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[system]
+login_shell = "/tmp/global-shell"
+EOF
+cat <<EOF >mise.toml
+[system]
+login_shell = " /tmp/local-shell "
+EOF
+assert_contains "mise system status --json | jq -r '.login_shell.shell'" "/tmp/local-shell"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# Invalid local values are skipped, so a valid global value can still apply.
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[system]
+login_shell = "/tmp/global-shell"
+EOF
+cat <<EOF >mise.toml
+[system]
+login_shell = "relative-shell"
+EOF
+assert_contains "mise system status --json 2>&1" "shell must be an absolute path"
+assert_contains "mise system status --json | jq -r '.login_shell.shell'" "/tmp/global-shell"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# Dry-run prints the chsh command without calling it.
+cat <<EOF >mise.toml
+[system]
+login_shell = "/tmp/mise-test-shell"
+EOF
+assert_fail "mise system status --missing"
+assert_contains "mise system status --json" '"shell_listed": false'
+assert_contains "mise system install --dry-run --yes" "chsh -s /tmp/mise-test-shell"
+assert_fail "test -f '$CHSH_LOG'"
+assert_fail "grep -q /tmp/mise-test-shell '$MISE_TEST_SHELLS_FILE'"
+
+# Real apply lists the shell first, then invokes chsh with the requested shell.
+assert_succeed "mise system install --yes"
+assert_contains "cat '$MISE_TEST_SHELLS_FILE'" "/tmp/mise-test-shell"
+assert "cat '$CHSH_LOG'" "-s /tmp/mise-test-shell"
+
+# Invalid values warn and are skipped like other malformed [system] entries.
+cat <<EOF >mise.toml
+[system]
+login_shell = "relative-shell"
+EOF
+assert_succeed "mise system status"
+assert_contains "mise system status 2>&1" "shell must be an absolute path"

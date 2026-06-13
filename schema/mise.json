@@ -2959,8 +2959,13 @@
     },
     "system": {
       "type": "object",
-      "description": "[experimental] machine-global bootstrapping (system packages, files, edits, macOS defaults)",
+      "description": "[experimental] machine-global bootstrapping (system packages, files, edits, macOS defaults, login shell)",
       "properties": {
+        "login_shell": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "current user's desired login shell, applied with `chsh -s`; must be an absolute path"
+        },
         "edits": {
           "type": "object",
           "description": "edits to files mise doesn't own, applied with `mise system install`: keyed by target path, then by an id naming each edit (the block marker name)",

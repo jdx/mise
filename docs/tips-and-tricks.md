@@ -96,6 +96,9 @@ a `bootstrap` task if you define one:
 [system.defaults]                      # macOS defaults write
 "com.apple.dock.autohide" = true
 
+[system]                               # current user's login shell
+login_shell = "/bin/zsh"
+
 [tasks.bootstrap]                      # anything else, with tools on PATH
 run = "gh auth status || gh auth login"
 ```
@@ -109,7 +112,8 @@ already in its desired state, `mise system status --missing` makes a CI
 check, and nothing is ever applied implicitly. See
 [System Packages](/system-packages/), [System Files](/system-files.html),
 [System Edits](/system-edits.html), and
-[macOS Defaults](/system-packages/defaults.html).
+[macOS Defaults](/system-packages/defaults.html), and
+[System Login Shell](/system-login-shell.html).
 
 ## Installation via zsh zinit
 
