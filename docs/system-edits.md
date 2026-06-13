@@ -24,7 +24,7 @@ too when you prefer one entry per line:
 ```toml
 [system.edits]
 "~/.zshrc".activate = 'eval "$(mise activate zsh)"'
-"~/.gitconfig".identity = { source = "snippets/git-identity.tmpl", template = true }
+"~/.gitconfig".identity = { source = "snippets/git-identity.tmpl", template = "tera" }
 ```
 
 ## Blocks
@@ -48,7 +48,7 @@ Content can come from three places:
 "~/.zshrc" = {
   activate = "...",                                  # inline (string shorthand)
   aliases = { source = "snippets/aliases.sh" },      # from a file, relative to this config
-  prompt = { source = "snippets/prompt.tmpl", template = true }, # rendered with the template engine
+  prompt = { source = "snippets/prompt.tmpl", template = "tera" }, # rendered with the template engine
 }
 ```
 
@@ -58,6 +58,10 @@ prefix is inferred from the file extension (`#` for shell/config files,
 be overridden with `comment = "..."`. Files that can't hold line comments
 at all (strict JSON, XML) aren't a fit for blocks — use
 [System Files](/system-files.html) to own the whole file instead.
+
+`template = "tera"` names the engine rather than being a boolean so other
+engines can be added later; unknown engines from newer mise versions warn
+and are skipped, like unrecognized operations.
 
 Detecting whether a template block has drifted requires rendering it, so
 `mise system status` (and a real install) evaluates templates — including

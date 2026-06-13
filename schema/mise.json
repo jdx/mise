@@ -2985,8 +2985,16 @@
                       "description": "block content from a file, relative to this config file"
                     },
                     "template": {
-                      "type": "boolean",
-                      "description": "render the block content through the mise template engine"
+                      "type": "string",
+                      "description": "template engine to render the block content with; currently only \"tera\"",
+                      "anyOf": [
+                        {
+                          "enum": ["tera"]
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
                     },
                     "line": {
                       "type": "string",

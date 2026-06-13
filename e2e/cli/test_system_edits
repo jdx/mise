@@ -15,8 +15,8 @@ alias la='ls -la'
 }
 "~/hosts".dev = { line = "127.0.0.1 dev.local" }
 "~/init.lua".mise = "require('mise')"
-"~/rendered.conf".sum = { block = "sum = {{ 1 + 1 }}", template = true }
-"~/execd.conf".execd = { block = '{{ exec(command="touch $HOME/exec-ran") }}ok', template = true }
+"~/rendered.conf".sum = { block = "sum = {{ 1 + 1 }}", template = "tera" }
+"~/execd.conf".execd = { block = '{{ exec(command="touch $HOME/exec-ran") }}ok', template = "tera" }
 EOF
 
 # everything is missing before applying
@@ -139,7 +139,7 @@ assert_succeed "mise system status --missing"
 # missing source
 cat <<'EOF' >mise.toml
 [system.edits]
-"~/broken.conf".tmpl = { block = "{{ not_a_real_function() }}", template = true }
+"~/broken.conf".tmpl = { block = "{{ not_a_real_function() }}", template = "tera" }
 "~/missing.conf".snippet = { source = "no-such-snippet.txt" }
 EOF
 if install_out="$(mise system install --yes 2>&1)"; then
@@ -170,3 +170,11 @@ cat <<'EOF' >mise.toml
 EOF
 assert_succeed "mise system status"
 assert_contains "mise system status 2>&1" "ids may only contain"
+
+# unknown template engines warn but don't fail (forward compatibility)
+cat <<'EOF' >mise.toml
+[system.edits]
+"~/x.conf".tmpl = { block = "a", template = "jinja" }
+EOF
+assert_succeed "mise system status"
+assert_contains "mise system status 2>&1" "unknown template engine"

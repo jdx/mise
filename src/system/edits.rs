@@ -46,7 +46,7 @@ use crate::ui::prompt;
 pub enum EditTomlEntry {
     /// `activate = 'eval "$(mise activate zsh)"'` — inline block content
     Block(String),
-    /// `aliases = { source = "...", template = true }` /
+    /// `aliases = { source = "...", template = "tera" }` /
     /// `dev = { line = "..." }`
     Table(EditTomlTable),
 }
@@ -59,9 +59,11 @@ pub struct EditTomlTable {
     /// block content from a file (relative to the declaring config file)
     #[serde(default)]
     pub source: Option<String>,
-    /// render the block content through the mise template engine
+    /// template engine to render the block content with; currently only
+    /// `"tera"` (string-typed so engines from newer mise versions warn and
+    /// skip instead of failing to parse)
     #[serde(default)]
-    pub template: Option<bool>,
+    pub template: Option<String>,
     /// exact line to ensure exists
     #[serde(default)]
     pub line: Option<String>,
@@ -199,12 +201,21 @@ fn resolve_entry(
                 }
                 (None, None) => unreachable!("is_block"),
             };
+            let template = match entry.template.as_deref() {
+                None => false,
+                Some("tera") => true,
+                Some(other) => {
+                    bail!(
+                        "\"{path_raw}\".{id}: unknown template engine '{other}' (expected \"tera\"), ignoring entry"
+                    )
+                }
+            };
             let comment = entry
                 .comment
                 .unwrap_or_else(|| infer_comment(&path).to_string());
             EditOp::Block {
                 source,
-                template: entry.template.unwrap_or(false),
+                template,
                 comment,
             }
         }
