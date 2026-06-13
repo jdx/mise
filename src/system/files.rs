@@ -248,10 +248,22 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
             req.source.display_user()
         );
     }
+    let files = walk_source_files(req)?;
+    // with no files to link the desired state is just the target directory —
+    // a blocking non-directory must still surface (and be --force-able)
+    if files.is_empty() {
+        return if req.target.is_dir() {
+            Ok(FileState::Applied)
+        } else if req.target.exists() || req.target.is_symlink() {
+            Ok(FileState::Differs("exists but is not a directory".into()))
+        } else {
+            Ok(FileState::Missing)
+        };
+    }
     let mut applied = 0;
     let mut missing = 0;
     let mut differs: Option<String> = None;
-    for (source, target) in walk_source_files(req)? {
+    for (source, target) in files {
         match check_symlink(&source, &target)? {
             FileState::Applied => applied += 1,
             FileState::Missing => missing += 1,
@@ -564,6 +576,9 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                     remove_existing(&dir)?;
                 }
             }
+            // even an empty source dir must produce the target dir, or the
+            // entry would never converge
+            file::create_dir_all(&req.target)?;
             for (source, target) in walk_source_files(req)? {
                 if check_symlink(&source, &target)? == FileState::Applied {
                     continue;

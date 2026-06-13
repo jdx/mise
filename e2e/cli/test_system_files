@@ -66,6 +66,18 @@ assert_succeed "mise system install --yes"
 assert_directory_exists "$HOME/.local/emptydir"
 assert_succeed "mise system status --missing"
 
+# same for symlink-each, including a blocking file being a --force-able
+# conflict rather than silently reported applied
+mkdir -p dotfiles/emptylinks
+cat <<EOF >>mise.toml
+"~/.local/emptylinks" = { source = "dotfiles/emptylinks", mode = "symlink-each" }
+EOF
+echo "blocker" >~/.local/emptylinks
+assert_fail "mise system install --yes"
+assert_succeed "mise system install --yes --force"
+assert_directory_exists "$HOME/.local/emptylinks"
+assert_succeed "mise system status --missing"
+
 # dry-run never renders templates (exec() in a template must not run)
 cat <<EOF >dotfiles/exec.tmpl
 {{ exec(command="touch exec-ran") }}
