@@ -39,7 +39,11 @@ cat <<'EOF' >mise.toml
 [tools]
 "vfox:attacker/evil" = "latest"
 EOF
-output=$(MISE_YES=0 mise install 2>&1 || true)
+set +e
+output=$(MISE_YES=0 mise install 2>&1)
+status=$?
+set -e
+[[ $status -ne 0 ]] || fail "expected community plugin install to abort without confirmation"
 echo "$output" | grep -q "community-developed plugin" || fail "expected community plugin prompt, got: $output"
 echo "$output" | grep -q "github.com/attacker/evil" || fail "expected attacker plugin URL, got: $output"
 assert_no_trust_marker "community plugin prompt should not trust config"

@@ -420,6 +420,13 @@ mod tests {
     }
 
     #[test]
+    fn test_is_trusted_plugin_rejects_non_normalizable_remote() {
+        use super::*;
+
+        assert!(!is_trusted_plugin("cmake", "not-a-url"));
+    }
+
+    #[test]
     fn test_is_trusted_plugin_rejects_non_registry_plugin_url() {
         use super::*;
 
