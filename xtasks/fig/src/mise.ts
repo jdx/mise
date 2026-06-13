@@ -3236,6 +3236,53 @@ const completionSpec: Fig.Spec = {
         "[experimental] Manage system packages from `[system.packages]`, files\nfrom `[system.files]`, edits from `[system.edits]`, and macOS defaults\nfrom `[system.defaults]`",
       subcommands: [
         {
+          name: "brew",
+          description: "Manage Homebrew taps used by system packages",
+          subcommands: [
+            {
+              name: "tap",
+              description: "Tap a Homebrew formula repository",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the command that would run without running it",
+                  isRepeatable: false,
+                },
+              ],
+              args: [
+                {
+                  name: "tap",
+                  description: "Tap name, e.g. `owner/repo`",
+                },
+                {
+                  name: "url",
+                  description:
+                    "Git URL for non-GitHub or otherwise custom taps",
+                  isOptional: true,
+                },
+              ],
+            },
+            {
+              name: ["untap", "remove", "rm"],
+              description: "Untap Homebrew formula repositories",
+              options: [
+                {
+                  name: ["-n", "--dry-run"],
+                  description:
+                    "Print the command that would run without running it",
+                  isRepeatable: false,
+                },
+              ],
+              args: {
+                name: "taps",
+                description: "Tap name(s), e.g. `owner/repo`",
+                isVariadic: true,
+              },
+            },
+          ],
+        },
+        {
           name: ["install", "i"],
           description:
             "Install missing system packages from `[system.packages]`, apply files\nfrom `[system.files]` and edits from `[system.edits]`, and write macOS\ndefaults from `[system.defaults]`",

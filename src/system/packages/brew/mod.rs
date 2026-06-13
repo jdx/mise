@@ -12,11 +12,15 @@
 //! Homebrew: mise provisions a mise-managed ruby and evaluates the formula
 //! with its own Formula-DSL shim (see source.rs and shim.rb).
 //!
-//! Scope: formulae only. Casks and services are not implemented; taps are
-//! unsupported (only homebrew/core formulae are served by the API).
+//! Scope: formulae only. Casks and services are not implemented. homebrew/core
+//! formulae use mise's direct pour path; fully-qualified third-party tap
+//! formulae (`owner/tap/formula`) use a real Homebrew installation.
 
 use async_trait::async_trait;
-use eyre::bail;
+use eyre::{WrapErr, bail, eyre};
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
 use crate::result::Result;
@@ -35,11 +39,20 @@ mod source;
 mod state;
 mod tag;
 
+const BREW_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
 pub struct BrewManager {}
 
 impl BrewManager {
     pub fn new() -> Self {
         Self {}
+    }
+
+    fn split_tapped<'a>(
+        &self,
+        pkgs: &'a [PackageRequest],
+    ) -> (Vec<&'a PackageRequest>, Vec<&'a PackageRequest>) {
+        pkgs.iter().partition(|p| is_tapped_formula(&p.name))
     }
 
     async fn install_via_pour(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
@@ -181,6 +194,30 @@ impl BrewManager {
         prefix::setup_linux_runtime()?;
         Ok(())
     }
+
+    async fn install_via_brew(&self, pkgs: &[&PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if pkgs.is_empty() {
+            return Ok(());
+        }
+        let brew = brew_bin_for_tapped(pkgs, opts.dry_run)?;
+        ensure_taps(&brew, pkgs, opts.dry_run).await?;
+        run_brew(&brew, &["update-if-needed".to_string()], opts.dry_run).await?;
+        let mut args = vec!["install".to_string()];
+        args.extend(pkgs.iter().map(|p| p.name.clone()));
+        run_brew(&brew, &args, opts.dry_run).await
+    }
+
+    async fn upgrade_via_brew(&self, pkgs: &[&PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if pkgs.is_empty() {
+            return Ok(());
+        }
+        let brew = brew_bin_for_tapped(pkgs, opts.dry_run)?;
+        ensure_taps(&brew, pkgs, opts.dry_run).await?;
+        run_brew(&brew, &["update-if-needed".to_string()], opts.dry_run).await?;
+        let mut args = vec!["upgrade".to_string()];
+        args.extend(pkgs.iter().map(|p| p.name.clone()));
+        run_brew(&brew, &args, opts.dry_run).await
+    }
 }
 
 #[async_trait(?Send)]
@@ -210,32 +247,244 @@ impl SystemPackageManager for BrewManager {
         // or by a real brew; a formula counts as installed only when its opt
         // symlink resolves to a keg — a Cellar directory without one is a
         // remnant of a failed install and must not mask a retry
-        Ok(pkgs
-            .iter()
-            .map(|req| {
-                let state = match pour::linked_version(&req.name) {
-                    // a pin matches the keg version exactly or up to its
-                    // revision suffix ("17.5" matches keg "17.5_1")
-                    Some(version) => match &req.version {
-                        Some(requested)
-                            if version != *requested
-                                && !version.starts_with(&format!("{requested}_")) =>
-                        {
-                            PackageState::VersionMismatch { installed: version }
-                        }
-                        _ => PackageState::Installed { version },
-                    },
-                    None => PackageState::Missing,
-                };
-                PackageStatus {
-                    request: req.clone(),
-                    state,
+        let brew = brew_bin();
+        let mut statuses = Vec::with_capacity(pkgs.len());
+        for req in pkgs {
+            let linked_name = if is_tapped_formula(&req.name) {
+                tapped_formula_name(&req.name)
+            } else {
+                core_formula_name(&req.name)
+            };
+            let version = if is_tapped_formula(&req.name) {
+                match &brew {
+                    Some(brew) => brew_list_version(brew, &req.name)
+                        .await?
+                        .or_else(|| pour::linked_version(linked_name)),
+                    None => pour::linked_version(linked_name),
                 }
-            })
-            .collect())
+            } else {
+                pour::linked_version(linked_name)
+            };
+            let state = match version {
+                // a pin matches the keg version exactly or up to its
+                // revision suffix ("17.5" matches keg "17.5_1")
+                Some(version) => match &req.version {
+                    Some(requested)
+                        if version != *requested
+                            && !version.starts_with(&format!("{requested}_")) =>
+                    {
+                        PackageState::VersionMismatch { installed: version }
+                    }
+                    _ => PackageState::Installed { version },
+                },
+                None => PackageState::Missing,
+            };
+            statuses.push(PackageStatus {
+                request: req.clone(),
+                state,
+            });
+        }
+        Ok(statuses)
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        self.install_via_pour(pkgs, opts).await
+        let (tapped, core) = self.split_tapped(pkgs);
+        if !tapped.is_empty() {
+            brew_bin_for_tapped(&tapped, opts.dry_run)?;
+        }
+        if !core.is_empty() {
+            let core = core
+                .into_iter()
+                .map(normalize_core_request)
+                .collect::<Vec<_>>();
+            self.install_via_pour(&core, opts).await?;
+        }
+        self.install_via_brew(&tapped, opts).await
+    }
+
+    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        let (tapped, core) = self.split_tapped(pkgs);
+        if !tapped.is_empty() {
+            brew_bin_for_tapped(&tapped, opts.dry_run)?;
+        }
+        if !core.is_empty() {
+            let core = core
+                .into_iter()
+                .map(normalize_core_request)
+                .collect::<Vec<_>>();
+            self.install_via_pour(&core, opts).await?;
+        }
+        self.upgrade_via_brew(&tapped, opts).await
+    }
+}
+
+fn is_tapped_formula(name: &str) -> bool {
+    crate::system::brew_tap_name(name).is_some()
+}
+
+fn tapped_formula_name(name: &str) -> &str {
+    name.rsplit('/').next().unwrap_or(name)
+}
+
+fn core_formula_name(name: &str) -> &str {
+    match split_formula_name(name) {
+        Some(("homebrew", "core", formula)) => formula,
+        _ => name,
+    }
+}
+
+fn normalize_core_request(req: &PackageRequest) -> PackageRequest {
+    let mut req = req.clone();
+    req.name = core_formula_name(&req.name).to_string();
+    req
+}
+
+fn split_formula_name(name: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = name.split('/');
+    let owner = parts.next()?;
+    let tap = parts.next()?;
+    let formula = parts.next()?;
+    if parts.next().is_some() || owner.is_empty() || tap.is_empty() || formula.is_empty() {
+        None
+    } else {
+        Some((owner, tap, formula))
+    }
+}
+
+fn brew_bin() -> Option<PathBuf> {
+    crate::file::which("brew").or_else(|| {
+        let brew = prefix::prefix().join("bin").join("brew");
+        brew.exists().then_some(brew)
+    })
+}
+
+fn brew_bin_for_run(dry_run: bool) -> Option<PathBuf> {
+    brew_bin().or_else(|| dry_run.then(|| PathBuf::from("brew")))
+}
+
+fn brew_bin_for_tapped(pkgs: &[&PackageRequest], dry_run: bool) -> Result<PathBuf> {
+    brew_bin_for_run(dry_run).ok_or_else(|| {
+        eyre!(
+            "brew: custom tap formulae require Homebrew to be installed \
+             (needed for {})",
+            pkgs.iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })
+}
+
+fn display_cmd(program: &Path, args: &[String]) -> String {
+    std::iter::once(program.to_string_lossy().to_string())
+        .chain(args.iter().cloned())
+        .map(|s| shell_escape::escape(s.into()).to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+async fn run_brew(brew: &PathBuf, args: &[String], dry_run: bool) -> Result<()> {
+    if dry_run {
+        miseprintln!("{}", display_cmd(brew, args));
+        return Ok(());
+    }
+    let display = display_cmd(brew, args);
+    debug!("$ {display}");
+    let mut cmd = tokio::process::Command::new(brew);
+    cmd.args(args).stdin(Stdio::null()).kill_on_drop(true);
+    let status = tokio::time::timeout(BREW_TIMEOUT, cmd.status())
+        .await
+        .map_err(|_| eyre!("brew timed out after {:?} running {display}", BREW_TIMEOUT))?
+        .wrap_err_with(|| format!("failed to run {display}"))?;
+    if !status.success() {
+        bail!("{display} failed with {status}");
+    }
+    Ok(())
+}
+
+pub(crate) async fn tap(tap: &str, url: Option<&str>, dry_run: bool) -> Result<()> {
+    let brew = brew_bin_for_run(dry_run)
+        .ok_or_else(|| eyre::eyre!("brew: Homebrew must be installed to tap {tap}"))?;
+    let mut args = vec!["tap".to_string(), tap.to_string()];
+    if let Some(url) = url {
+        args.push(url.to_string());
+    }
+    run_brew(&brew, &args, dry_run).await
+}
+
+pub(crate) async fn untap(taps: &[String], dry_run: bool) -> Result<()> {
+    let brew = brew_bin_for_run(dry_run).ok_or_else(|| {
+        eyre::eyre!(
+            "brew: Homebrew must be installed to untap {}",
+            taps.join(", ")
+        )
+    })?;
+    let mut args = vec!["untap".to_string()];
+    args.extend(taps.iter().cloned());
+    run_brew(&brew, &args, dry_run).await
+}
+
+async fn ensure_taps(brew: &PathBuf, pkgs: &[&PackageRequest], dry_run: bool) -> Result<()> {
+    let mut taps = indexmap::IndexMap::<String, Option<String>>::new();
+    for pkg in pkgs {
+        if let Some(tap) = crate::system::brew_tap_name(&pkg.name) {
+            taps.entry(tap.to_string()).or_insert(pkg.tap_url.clone());
+        }
+    }
+    for (tap, url) in taps {
+        let mut args = vec!["tap".to_string(), tap];
+        if let Some(url) = url {
+            args.push(url);
+        }
+        run_brew(brew, &args, dry_run).await?;
+    }
+    Ok(())
+}
+
+async fn brew_list_version(brew: &PathBuf, name: &str) -> Result<Option<String>> {
+    let args = vec![
+        "list".to_string(),
+        "--versions".to_string(),
+        name.to_string(),
+    ];
+    let display = display_cmd(brew, &args);
+    debug!("$ {display}");
+    let mut cmd = tokio::process::Command::new(brew);
+    cmd.args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(BREW_TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| eyre!("brew timed out after {:?} running {display}", BREW_TIMEOUT))?
+        .wrap_err_with(|| format!("failed to run {display}"))?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.lines().find_map(|line| {
+        let mut tokens = line.split_whitespace();
+        tokens.next();
+        tokens.next().map(str::to_string)
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tapped_formula_detection() {
+        assert!(!is_tapped_formula("jq"));
+        assert!(!is_tapped_formula("postgresql@17"));
+        assert!(!is_tapped_formula("homebrew/core/jq"));
+        assert!(is_tapped_formula("railwaycat/emacsmacport/emacs-mac"));
+        assert_eq!(core_formula_name("homebrew/core/jq"), "jq");
+        assert_eq!(core_formula_name("jq"), "jq");
+        assert_eq!(
+            tapped_formula_name("railwaycat/emacsmacport/emacs-mac"),
+            "emacs-mac"
+        );
     }
 }

@@ -41,7 +41,8 @@ impl SystemUpgrade {
             let config = Config::get().await?;
             system::packages_from_config(&config)
         } else {
-            system::packages_from_specs(&self.packages)?
+            let config = Config::get().await?;
+            system::packages_from_specs_with_config(&self.packages, Some(&config))?
         };
         let opts = DriverOpts {
             manager: self.manager,

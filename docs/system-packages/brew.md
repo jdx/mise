@@ -1,6 +1,7 @@
 # brew <Badge type="warning" text="experimental" />
 
-Homebrew formulae — **without requiring Homebrew to be installed**.
+Homebrew formulae from `homebrew/core` — **without requiring Homebrew to be
+installed**.
 
 ```toml
 [system.packages]
@@ -17,7 +18,41 @@ prebuilt bottles from ghcr.io (verifying sha256 checksums), and performs the
 same relocation, code-signing, and linking work `brew` does when pouring a
 bottle. Formulae without a usable bottle are built from source, also without
 Homebrew (see [Source formulae](#source-formulae)). mise never shells out to
-`brew`.
+`brew` for homebrew/core formulae.
+
+Third-party taps are supported when Homebrew itself is installed. Tapped
+formulae are delegated to a real `brew` command; use the same
+fully-qualified formula name you would pass to `brew install`:
+
+```toml
+[system.packages]
+"brew:railwaycat/emacsmacport/emacs-mac" = "latest"
+```
+
+For non-GitHub taps, or taps whose URL cannot be inferred by Homebrew, add a
+tap source. This mirrors `[plugins]`: the key is the tap name and the value
+is the git URL.
+
+```toml
+[system.brew.taps]
+"acme/tools" = "https://git.example.com/acme/homebrew-tools.git"
+
+[system.packages]
+"brew:acme/tools/widget" = "latest"
+```
+
+Before installing or upgrading tapped formulae, mise runs `brew tap` for any
+configured tap URL and then `brew update-if-needed` so the tap is current.
+
+You can also manage taps imperatively, matching `mise plugins install` /
+`mise plugins uninstall`: these commands shell out to Homebrew and do not
+modify `mise.toml`.
+
+```sh
+mise system brew tap railwaycat/emacsmacport
+mise system brew tap acme/tools https://git.example.com/acme/homebrew-tools.git
+mise system brew untap acme/tools
+```
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
@@ -131,8 +166,9 @@ operation.
 
 - **Formulae only.** Casks (GUI apps) and `brew services` are not
   implemented.
-- **No taps.** Third-party taps are Ruby code that requires Homebrew to
-  evaluate; only homebrew/core is supported.
+- **Tapped formulae require Homebrew.** mise's direct bottle/source installer
+  is only for homebrew/core. Fully-qualified third-party tap formulae are
+  delegated to a real `brew` command.
 - **Source builds cover the common formula shapes.** mise's formula shim
   implements the widely-used subset of the DSL (see
   [Source formulae](#source-formulae)); formulae that reach beyond it fail

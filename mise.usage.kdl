@@ -2897,6 +2897,37 @@ defaults are user preferences written with `defaults write`. Unlike
 ever acted on when explicitly requested with `mise system install` (or
 `mise bootstrap`).
 """#
+    cmd brew subcommand_required=#true help="Manage Homebrew taps used by system packages" {
+        long_help #"""
+Manage Homebrew taps used by system packages
+
+These commands shell out to Homebrew and do not modify `mise.toml`. Use
+`[system.brew.taps]` when you want tap sources shared in config.
+"""#
+        cmd tap help="Tap a Homebrew formula repository" {
+            after_long_help #"""
+Examples:
+
+    $ mise system brew tap railwaycat/emacsmacport
+    $ mise system brew tap acme/tools https://git.example.com/acme/homebrew-tools.git
+
+"""#
+            flag "-n --dry-run" help="Print the command that would run without running it"
+            arg <TAP> help="Tap name, e.g. `owner/repo`"
+            arg "[URL]" help="Git URL for non-GitHub or otherwise custom taps" required=#false
+        }
+        cmd untap help="Untap Homebrew formula repositories" {
+            alias remove rm
+            after_long_help #"""
+Examples:
+
+    $ mise system brew untap railwaycat/emacsmacport
+
+"""#
+            flag "-n --dry-run" help="Print the command that would run without running it"
+            arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
+        }
+    }
     cmd install help=#"""
 Install missing system packages from `[system.packages]`, apply files
 from `[system.files]` and edits from `[system.edits]`, and write macOS
